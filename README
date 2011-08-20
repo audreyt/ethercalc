@@ -1,11 +1,11 @@
-                                -=[MeetingCalc]=-
+                              -=[MeetingCalc]=-
 
     Language: CoffeeScript
     Runtime: Node.js
     Services: Redis
     Browsers currently tested: Safari & Firefox.
 
-                          .oO( Setup Instructions )Oo.
+                          -=[ Setup Instructions ]=-
 
     $ stackato push meetingcalc
     Would you like to deploy from the current directory ?  [Yn]:
@@ -30,3 +30,24 @@
       Uploading (12K): 98% OK
     Push Status: OK
     Staging Application: OK                                                         
+                               -=[ Licenses ]=-
+
+    Common Public Attribution License (Socialtext Inc.):
+
+        socialcalcspreadsheetcontrol.js
+        socialcalctableeditor.js
+        images/*
+
+    Artistic License 2.0 (Socialtext Inc.):
+
+        formatnumber2.js
+        formula1.js
+        socialcalc-3.js
+        socialcalcconstants.js
+        socialcalcpopup.js
+
+    CC0 Public Domain (唐鳳):
+
+        app.coffee
+        app.js # produced by "coffee -c app.coffee"
+
