@@ -1,0 +1,72 @@
+SOCIALCALC LEGAL.txt FILE:
+
+LEGAL INFORMATION
+
+This LEGAL.txt file accompanies the SocialCalc program. It includes notices required by the 
+licenses as well as general legal notices.
+
+=========================================
+    COPYRIGHT AND ATTRIBUTION NOTICES
+=========================================
+
+Copyright (C) 2009 Socialtext, Inc. 
+All Rights Reserved.
+
+image:sc-logo.gif
+"SocialCalc"
+http://www.socialcalc.org/xoattrib
+
+=========================================
+     SOURCE CODE AVAILABILITY NOTICE
+=========================================
+
+The source code for this product is available from:
+http://socialcalc.org/.
+
+=========================================
+          GENERAL LEGAL NOTICES
+=========================================
+
+wikiCalc, Garden, and Software Garden are registered trademarks of Software Garden, Inc.
+Socialtext and SocialCalc are registered trademarks of Socialtext, Inc.
+The Socialtext logo and Dreamcatcher are trademarks of Socialtext, Inc.
+
+=========================================
+  LEGAL NOTICES REQUIRED BY THE LICENSE
+=========================================
+
+CHANGES MADE TO THE COVERED CODE (see CPAL Version 1.0 Section 3.3):
+
+2008-02-08:
+ Original Code started as a translation to JavaScript of code in SocialCalc 1.1.0 plus
+ much new code.
+
+ Python code for the OLPC XO-1 initially coded by Luke Closs of Socialtext, Inc.
+
+ JavaScript initially coded by Dan Bricklin of Software Garden, Inc., for Socialtext, Inc.
+ Based in part on the SocialCalc 1.1.0 code written in Perl.
+ The SocialCalc 1.1.0 code was:
+    Portions (c) Copyright 2005, 2006, 2007 Software Garden, Inc.
+    All Rights Reserved.
+    Portions (c) Copyright 2007 Socialtext, Inc.
+    All Rights Reserved.
+ The Perl SocialCalc started as modifications to the wikiCalc(R) program, version 1.0.
+ wikiCalc 1.0 was written by Software Garden, Inc.
+ Unless otherwise specified, referring to "SocialCalc" in comments refers to this
+ JavaScript version of the code, not the SocialCalc Perl code.
+
+----------
+
+(Documentation of future changes as the result of Modifications, including the date of 
+change, will go here in this LEGAL.txt file. This documentation may be summaries of 
+changes with the more detailed descriptions included in the actual modified files as 
+appropriate.)
+
+==========
+
+THIRD PARTY CLAIMS (see CPAL Version 1.0 Section 3.4(a)):
+
+None.
+
+[End of LEGAL.txt]
+

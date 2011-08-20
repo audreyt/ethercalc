@@ -1,0 +1,9 @@
+{ "name" :            "socialcalc"
+    , "description" :     "Multi-Player SocialCalc"
+    , "version" :    "0.0.1"
+    , "dependencies": {
+        "zappa": "*",
+        "redis": "*",
+        "uuid-pure": "*"
+    }
+}

@@ -1,0 +1,20 @@
+form {
+    display: none;
+}
+#msgform {
+    display: block;
+}
+div.wiki p {
+    margin: 0;
+}
+
+div.wiki .wafl {
+    white-space: nowrap;
+    background: #ccc;
+    border: 1px solid #333;
+    padding-left: 2px;
+    padding-right: 2px;
+    border-radius: 5px;
+    -moz-border-radius: 5px;
+    -webkit-border-radius: 5px;
+}
