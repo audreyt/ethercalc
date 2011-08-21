@@ -11,9 +11,7 @@ This work is published from Taiwan.
 
 port = Number(process.env.VCAP_APP_PORT || 3000)
 host = process.env.VCAP_APP_HOST || '127.0.0.1'
-redisPort = null
-redisHost = null
-redisPass = null
+[redisPort, redisHost, redisPass] = [null, null, null]
 
 services = JSON.parse(process.env.VCAP_SERVICES || "{}")
 for name, items of services
@@ -28,16 +26,10 @@ db.auth(redisPass) if redisPass
 db.on "error", (err) ->
   return if db.DB
   db.DB = {}
-  db.rpush = (key, val, cb) ->
-    (db.DB[key] ?= []).push val
-    cb?()
-  db.lrange = (key, from, to, cb) ->
-    cb?(null, db.DB[key] ?= [])
-  db.hset = (key, idx, val) ->
-    (db.DB[key] ?= [])[idx] = val
-    cb?()
-  db.hgetall = (key, cb) ->
-    cb?(null, db.DB[key] ?= {})
+  db.rpush = (key, val, cb) -> (db.DB[key] ?= []).push val; cb?()
+  db.lrange = (key, from, to, cb) -> cb?(null, db.DB[key] ?= [])
+  db.hset = (key, idx, val) -> (db.DB[key] ?= [])[idx] = val; cb?()
+  db.hgetall = (key, cb) -> cb?(null, db.DB[key] ?= {})
 
 require('zappa') port, host, {db}, ->
   enable 'serve jquery'
@@ -83,36 +75,33 @@ require('zappa') port, host, {db}, ->
   
   at broadcast: ->
     #io.sockets.in(@room).emit 'broadcast', @
+    emit = (msg) -> io.sockets.emit 'broadcast', msg
     switch @type
       when 'chat'
-        db.rpush "chat-#{@room}", @msg, =>
-          io.sockets.emit 'chat', @
+        db.rpush "chat-#{@room}", @msg, => emit @
         return
       when 'ask.ecells'
-        db.hgetall "ecell-#{@room}", (err, values) =>
-          io.sockets.emit 'broadcast',
-            type: 'ecells'
-            ecells: values
-            room: @room
+        db.hgetall "ecell-#{@room}", (err, values) => emit
+          type: 'ecells'
+          ecells: values
+          room: @room
         return
       when 'my.ecell'
         db.hset "ecell-#{@room}", @user, @ecell
         return
       when 'execute'
-        db.rpush "log-#{@room}", @cmdstr, =>
-          io.sockets.emit 'broadcast', @
+        db.rpush "log-#{@room}", @cmdstr, => emit @
         return
       when 'ask.snapshot'
         db.lrange "log-#{@room}", 0, -1, (err, log) =>
-          db.lrange "chat-#{@room}", 0, -1, (err, chat) =>
-            io.sockets.emit 'broadcast',
-              type: 'log'
-              to: @user
-              room: @room
-              log: log
-              chat: chat
+          db.lrange "chat-#{@room}", 0, -1, (err, chat) => emit
+            type: 'log'
+            to: @user
+            room: @room
+            log: log
+            chat: chat
         return
-    io.sockets.emit 'broadcast', @
+    emit @
   
   client '/player.js': ->
     SocialCalc ?= {}

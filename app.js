@@ -9,13 +9,11 @@
   
   <http://creativecommons.org/publicdomain/zero/1.0>
   */
-  var db, host, items, name, port, redisHost, redisPass, redisPort, services;
+  var db, host, items, name, port, redisHost, redisPass, redisPort, services, _ref;
   var __bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; };
   port = Number(process.env.VCAP_APP_PORT || 3000);
   host = process.env.VCAP_APP_HOST || '127.0.0.1';
-  redisPort = null;
-  redisHost = null;
-  redisPass = null;
+  _ref = [null, null, null], redisPort = _ref[0], redisHost = _ref[1], redisPass = _ref[2];
   services = JSON.parse(process.env.VCAP_SERVICES || "{}");
   for (name in services) {
     items = services[name];
@@ -38,22 +36,22 @@
     }
     db.DB = {};
     db.rpush = function(key, val, cb) {
-      var _base, _ref;
-      ((_ref = (_base = db.DB)[key]) != null ? _ref : _base[key] = []).push(val);
+      var _base, _ref2;
+      ((_ref2 = (_base = db.DB)[key]) != null ? _ref2 : _base[key] = []).push(val);
       return typeof cb === "function" ? cb() : void 0;
     };
     db.lrange = function(key, from, to, cb) {
-      var _base, _ref;
-      return typeof cb === "function" ? cb(null, (_ref = (_base = db.DB)[key]) != null ? _ref : _base[key] = []) : void 0;
+      var _base, _ref2;
+      return typeof cb === "function" ? cb(null, (_ref2 = (_base = db.DB)[key]) != null ? _ref2 : _base[key] = []) : void 0;
     };
     db.hset = function(key, idx, val) {
-      var _base, _ref;
-      ((_ref = (_base = db.DB)[key]) != null ? _ref : _base[key] = [])[idx] = val;
+      var _base, _ref2;
+      ((_ref2 = (_base = db.DB)[key]) != null ? _ref2 : _base[key] = [])[idx] = val;
       return typeof cb === "function" ? cb() : void 0;
     };
     return db.hgetall = function(key, cb) {
-      var _base, _ref;
-      return typeof cb === "function" ? cb(null, (_ref = (_base = db.DB)[key]) != null ? _ref : _base[key] = {}) : void 0;
+      var _base, _ref2;
+      return typeof cb === "function" ? cb(null, (_ref2 = (_base = db.DB)[key]) != null ? _ref2 : _base[key] = {}) : void 0;
     };
   });
   require('zappa')(port, host, {
@@ -149,15 +147,19 @@
     });
     at({
       broadcast: function() {
+        var emit;
+        emit = function(msg) {
+          return io.sockets.emit('broadcast', msg);
+        };
         switch (this.type) {
           case 'chat':
             db.rpush("chat-" + this.room, this.msg, __bind(function() {
-              return io.sockets.emit('chat', this);
+              return emit(this);
             }, this));
             return;
           case 'ask.ecells':
             db.hgetall("ecell-" + this.room, __bind(function(err, values) {
-              return io.sockets.emit('broadcast', {
+              return emit({
                 type: 'ecells',
                 ecells: values,
                 room: this.room
@@ -169,13 +171,13 @@
             return;
           case 'execute':
             db.rpush("log-" + this.room, this.cmdstr, __bind(function() {
-              return io.sockets.emit('broadcast', this);
+              return emit(this);
             }, this));
             return;
           case 'ask.snapshot':
             db.lrange("log-" + this.room, 0, -1, __bind(function(err, log) {
               return db.lrange("chat-" + this.room, 0, -1, __bind(function(err, chat) {
-                return io.sockets.emit('broadcast', {
+                return emit({
                   type: 'log',
                   to: this.user,
                   room: this.room,
@@ -186,7 +188,7 @@
             }, this));
             return;
         }
-        return io.sockets.emit('broadcast', this);
+        return emit(this);
       }
     });
     client({
@@ -219,7 +221,7 @@
         SocialCalc.Callbacks.broadcast("ask.snapshot");
         return at({
           broadcast: function() {
-            var cell, cmdstr, cr, ecell, editor, find, origCR, origCell, parts, peerClass, spreadsheet, user, _ref;
+            var cell, cmdstr, cr, ecell, editor, find, origCR, origCell, parts, peerClass, spreadsheet, user, _ref2;
             if (!(typeof SocialCalc !== "undefined" && SocialCalc !== null ? SocialCalc.isConnected : void 0)) {
               return;
             }
@@ -237,9 +239,9 @@
               case "chat":
                 return window.addmsg(this.msg);
               case "ecells":
-                _ref = this.ecells;
-                for (user in _ref) {
-                  ecell = _ref[user];
+                _ref2 = this.ecells;
+                for (user in _ref2) {
+                  ecell = _ref2[user];
                   if (user === SocialCalc._username) {
                     continue;
                   }
