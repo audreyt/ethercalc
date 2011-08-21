@@ -32,6 +32,30 @@
   if (redisPass) {
     db.auth(redisPass);
   }
+  db.on("error", function(err) {
+    if (db.DB) {
+      return;
+    }
+    db.DB = {};
+    db.rpush = function(key, val, cb) {
+      var _base, _ref;
+      ((_ref = (_base = db.DB)[key]) != null ? _ref : _base[key] = []).push(val);
+      return typeof cb === "function" ? cb() : void 0;
+    };
+    db.lrange = function(key, from, to, cb) {
+      var _base, _ref;
+      return typeof cb === "function" ? cb(null, (_ref = (_base = db.DB)[key]) != null ? _ref : _base[key] = []) : void 0;
+    };
+    db.hset = function(key, idx, val) {
+      var _base, _ref;
+      ((_ref = (_base = db.DB)[key]) != null ? _ref : _base[key] = [])[idx] = val;
+      return typeof cb === "function" ? cb() : void 0;
+    };
+    return db.hgetall = function(key, cb) {
+      var _base, _ref;
+      return typeof cb === "function" ? cb(null, (_ref = (_base = db.DB)[key]) != null ? _ref : _base[key] = {}) : void 0;
+    };
+  });
   require('zappa')(port, host, {
     db: db
   }, function() {

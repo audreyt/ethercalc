@@ -25,6 +25,19 @@ for name, items of services
 
 db = require('redis').createClient(redisPort, redisHost)
 db.auth(redisPass) if redisPass
+db.on "error", (err) ->
+  return if db.DB
+  db.DB = {}
+  db.rpush = (key, val, cb) ->
+    (db.DB[key] ?= []).push val
+    cb?()
+  db.lrange = (key, from, to, cb) ->
+    cb?(null, db.DB[key] ?= [])
+  db.hset = (key, idx, val) ->
+    (db.DB[key] ?= [])[idx] = val
+    cb?()
+  db.hgetall = (key, cb) ->
+    cb?(null, db.DB[key] ?= {})
 
 require('zappa') port, host, {db}, ->
   enable 'serve jquery'
