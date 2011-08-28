@@ -9,6 +9,8 @@
         window.location = '/start'
         return
     
+    try window.history.pushState {}, '', '/'+SocialCalc._room
+
     connect()
     #subscribe(SocialCalc._room)
 
