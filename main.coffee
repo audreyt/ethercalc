@@ -23,8 +23,8 @@
   view start: ->
     div id:"topnav_wrap", -> div id:"navigation"
     div id:"intro-left", ->
-      h1 "MeetingCalc"
-      h2 "MeetingCalc is a web spreadsheet."
+      h1 "EtherCalc"
+      h2 "EtherCalc is a web spreadsheet."
       p "Your data is saved on the web, and people can edit the same document at the same time. Everybody's changes are instantly reflected on all screens."
       p "Work together on inventories, survey forms, list managements, brainstorming sessions and more!"
       div id:"intro-links", ->
@@ -35,7 +35,7 @@
   view layout: ->
     html ->
       head ->
-        title "MeetingCalc"
+        title "EtherCalc"
         link href:"/start.css", rel:"stylesheet", type:"text/css"
       body id:"framedpagebody", class:"home", ->
         div id:"top", -> @body
@@ -80,7 +80,7 @@
 CC0 1.0 Universal
 
 To the extent possible under law, 唐鳳 has waived all copyright and
-related or neighboring rights to MeetingCalc.
+related or neighboring rights to EtherCalc.
 
 This work is published from Taiwan.
 

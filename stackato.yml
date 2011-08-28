@@ -1,0 +1,11 @@
+name: ethercalc
+
+framework:
+  type: Node
+
+instances: 1
+
+services:
+  redis: redis-ethercalc
+
+mem: 64M

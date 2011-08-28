@@ -1,4 +1,4 @@
-                              -=[MeetingCalc]=-
+                               -=[EtherCalc]=-
 
     Language: CoffeeScript
     Runtime: Node.js
@@ -7,12 +7,12 @@
 
                           -=[ Setup Instructions ]=-
 
-    $ stackato push meetingcalc
+    $ stackato push ethercalc
     Would you like to deploy from the current directory ?  [Yn]:
-    Application Deployed URL: 'meetingcalc.stackato.local'? 
+    Application Deployed URL: 'ethercalc.stackato.local'? 
     Detected a Node.js Application, is this correct ?  [Yn]:
     Memory Reservation ?  (64M, 128M, 256M, 512M, 1G, or 2G):
-    Would you like to bind any services to 'meetingcalc' ?  [yN]: y
+    Would you like to bind any services to 'ethercalc' ?  [yN]: y
     The following system services are available
     1. mongodb            
     2. mysql              

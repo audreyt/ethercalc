@@ -96,7 +96,7 @@
 CC0 1.0 Universal
 
 To the extent possible under law, 唐鳳 has waived all copyright and
-related or neighboring rights to MeetingCalc.
+related or neighboring rights to EtherCalc.
 
 This work is published from Taiwan.
 
