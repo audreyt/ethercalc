@@ -29,9 +29,9 @@
       p "Work together on inventories, survey forms, list managements, brainstorming sessions and more!"
       div id:"intro-links", ->
         a id:"newpadbutton", href:"/new", alt: "Create Spreadsheet", ->
-            span "Create Spreadsheet"
-            br ""
-            small "No sign-up, start editing instantly"
+          span "Create Spreadsheet"
+          br ""
+          small "No sign-up, start editing instantly"
 
   view layout: ->
     html ->
@@ -81,4 +81,3 @@
   get '/:room': ->
     @layout = no
     render 'room', @
-###
