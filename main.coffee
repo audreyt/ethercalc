@@ -2,9 +2,7 @@
   enable 'serve jquery'
   app.use express.static __dirname
 
-  io.configure ->
-    io.set "transports", ["xhr-polling"]
-    io.set "polling duration", 10
+  include 'dotcloud'
 
   def {db}
 
