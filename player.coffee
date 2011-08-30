@@ -93,14 +93,4 @@
         when "execute"
           SocialCalc.CurrentSpreadsheetControlObject.context.sheetobj.ScheduleSheetCommands @cmdstr, @saveundo, true
           break
-
-###
-CC0 1.0 Universal
-
-To the extent possible under law, 唐鳳 has waived all copyright and
-related or neighboring rights to EtherCalc.
-
-This work is published from Taiwan.
-
-<http://creativecommons.org/publicdomain/zero/1.0>
 ###

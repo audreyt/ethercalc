@@ -1,4 +1,14 @@
 @include = ->
+  json = try require('fs').readFileSync('/home/dotcloud/environment.json', 'utf8')
+  return unless json?
+
+  env = process.env
+
+  { DOTCLOUD_DATA_REDIS_HOST: env.REDIS_HOST
+  , DOTCLOUD_DATA_REDIS_PORT: env.REDIS_PORT
+  , DOTCLOUD_DATA_REDIS_PASSWORD: env.REDIS_PASS
+  } = JSON.parse(json)
+
   io.configure ->
     io.set "transports", ["xhr-polling"]
     io.set "polling duration", 10
@@ -22,14 +32,3 @@
       @response.writeHead 200, headers
       @response.write data
       # @log.debug this.name + ' writing', data
-
-###
-CC0 1.0 Universal
-
-To the extent possible under law, 唐鳳 has waived all copyright and
-related or neighboring rights to EtherCalc.
-
-This work is published from Taiwan.
-
-<http://creativecommons.org/publicdomain/zero/1.0>
-###

@@ -3,8 +3,7 @@
   app.use express.static __dirname
 
   include 'dotcloud'
-
-  def {db}
+  include 'db'
 
   get '/': ->
     response.contentType 'text/html'
@@ -77,14 +76,4 @@
   get '/:room': ->
     @layout = no
     render 'room', @
-
-###
-CC0 1.0 Universal
-
-To the extent possible under law, 唐鳳 has waived all copyright and
-related or neighboring rights to EtherCalc.
-
-This work is published from Taiwan.
-
-<http://creativecommons.org/publicdomain/zero/1.0>
 ###
