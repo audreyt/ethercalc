@@ -9,7 +9,7 @@ This work is published from Taiwan.
 <http://creativecommons.org/publicdomain/zero/1.0>
 ###
 
-port = Number(process.env.VCAP_APP_PORT || 3000)
+port = Number(process.env.VCAP_APP_PORT || 8080)
 host = process.env.VCAP_APP_HOST || '127.0.0.1'
 [redisPort, redisHost, redisPass] = [null, null, null]
 
