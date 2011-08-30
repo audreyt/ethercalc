@@ -2,6 +2,10 @@
   enable 'serve jquery'
   app.use express.static __dirname
 
+  io.configure ->
+    io.set "transports", ["xhr-polling"]
+    io.set "polling duration", 10
+
   def {db}
 
   get '/': ->
@@ -28,8 +32,8 @@
       p "Your data is saved on the web, and people can edit the same document at the same time. Everybody's changes are instantly reflected on all screens."
       p "Work together on inventories, survey forms, list managements, brainstorming sessions and more!"
       div id:"intro-links", ->
-        a id:"newpadbutton", href:"/new", ->
-            span "Create new pad"
+        a id:"newpadbutton", href:"/new", alt: "Create Spreadsheet", ->
+            span "Create Spreadsheet"
             small "No sign-up, start editing instantly"
 
   view layout: ->
