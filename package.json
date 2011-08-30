@@ -1,9 +1,10 @@
-{ "name" :            "socialcalc"
-    , "description" :     "Multi-Player SocialCalc"
+{ "name" :            "ethercalc"
+    , "description" :     "Multi-user Spreadsheet"
     , "version" :    "0.0.1"
     , "dependencies": {
         "zappa": "*",
         "redis": "*",
         "uuid-pure": "*"
+        "coffee-script": "*"
     }
 }
