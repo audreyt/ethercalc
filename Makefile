@@ -13,7 +13,7 @@ ETHERCALC_FILES=\
 	third-party/wikiwyg/lib/Document/Parser/Wikitext.js \
 	jquery.js
 
-all :: app.js ethercalc.js
+all :: app.js ethercalc.js start.css
 
 ethercalc.js :: $(ETHERCALC_FILES)
 	@perl -e 'system(join(" ", closure => map { ("--js", $$_) } @ARGV). " > $@")' $(ETHERCALC_FILES) 
@@ -24,4 +24,7 @@ run :: app.js
 .coffee.js:
 	coffee -c $<
 
-.SUFFIXES: .js .coffee
+.sass.css:
+	sass -t compressed $< > $@
+
+.SUFFIXES: .js .coffee .css .sass

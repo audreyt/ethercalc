@@ -1,36 +1,11 @@
-                               -=[EtherCalc]=-
+                              -=[ EtherCalc ]=-
 
     Language: CoffeeScript
     Runtime: Node.js
     Services: Redis
-    Browsers currently tested: Safari & Firefox.
+    Browsers currently tested: Safari, Chrome & Firefox.
 
-                          -=[ Setup Instructions ]=-
-
-    $ stackato push ethercalc
-    Would you like to deploy from the current directory ?  [Yn]:
-    Application Deployed URL: 'ethercalc.stackato.local'? 
-    Detected a Node.js Application, is this correct ?  [Yn]:
-    Memory Reservation ?  (64M, 128M, 256M, 512M, 1G, or 2G):
-    Would you like to bind any services to 'ethercalc' ?  [yN]: y
-    The following system services are available
-    1. mongodb            
-    2. mysql              
-    3. postgresql         
-    4. redis              
-    5. <None of the above>
-    Please select one you wish to provision: 4
-    Specify the name of the service [redis-dd80a]: 
-    Creating Service: OK
-    Binding Service: OK
-    Uploading Application:
-      Checking for available resources: OK
-      Processing resources: OK
-      Packing application: OK
-      Uploading (12K): 98% OK
-    Push Status: OK
-    Staging Application: OK                                                         
-                               -=[ Licenses ]=-
+                               -[ Licensing ]-
 
     Common Public Attribution License (Socialtext Inc.):
 
@@ -46,8 +21,15 @@
         socialcalcconstants.js
         socialcalcpopup.js
 
+    MIT License (John Resig, The Dojo Foundation):
+
+        jquery.js
+
     CC0 Public Domain (唐鳳):
 
         app.coffee
         app.js # produced by "coffee -c app.coffee"
-
+        db.coffee
+        dotcloud.coffee
+        main.coffee
+        player.coffee
