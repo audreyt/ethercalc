@@ -14,6 +14,7 @@
   , DOTCLOUD_DATA_REDIS_PASSWORD: env.REDIS_PASS
   } = JSON.parse(json)
 
+  # Thanks sugyan++ for the Socket.IO 0.7 workaround: http://d.hatena.ne.jp/sugyan/20110813/1313206163
   io.configure ->
     io.set "transports", ["xhr-polling"]
     io.set "polling duration", 10
@@ -36,4 +37,3 @@
         
       @response.writeHead 200, headers
       @response.write data
-      # @log.debug this.name + ' writing', data
