@@ -11,10 +11,6 @@
   get '/start': -> render 'start'
   get '/new': -> response.redirect require("uuid-pure").newId(10, 62)
 
-  view room: ->
-    coffeescript ->
-      window.location = '/#' + window.location.pathname.replace(/.*\//, '')
-
   view start: ->
     div id:"topnav_wrap", -> div id:"navigation"
     div id:"intro-left", ->
@@ -64,10 +60,16 @@
             room: @room
             log: log
             chat: chat
-    emit @
+      else emit @
+    return
   
   include 'player'
 
   get '/:room': ->
     @layout = no
     render 'room', @
+
+  view room: ->
+    coffeescript ->
+      window.location = '/#' + window.location.pathname.replace(/.*\//, '')
+
