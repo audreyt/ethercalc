@@ -1,23 +1,16 @@
 <html>
 <head>
 <title>EtherCalc - Share the URL to your friends and edit together!</title>
-
-<script type="text/javascript" src="socialcalcconstants.js"></script>
-<script type="text/javascript" src="socialcalc-3.js"></script>
-<script type="text/javascript" src="socialcalctableeditor.js"></script>
-<script type="text/javascript" src="formatnumber2.js"></script>
-<script type="text/javascript" src="formula1.js"></script>
-<script type="text/javascript" src="socialcalcpopup.js"></script>
-<script type="text/javascript" src="socialcalcspreadsheetcontrol.js"></script>
-<script type="text/javascript" src="third-party/class-js/lib/Class.js"></script>
-<script type="text/javascript" src="third-party/wikiwyg/lib/Document/Emitter.js"></script>
-<script type="text/javascript" src="third-party/wikiwyg/lib/Document/Emitter/HTML.js"></script>
-<script type="text/javascript" src="third-party/wikiwyg/lib/Document/Parser.js"></script>
-<script type="text/javascript" src="third-party/wikiwyg/lib/Document/Parser/Wikitext.js"></script>
+<script>
+if (!(window.location.hash.replace('#', ''))) {
+    window.location = '/start';
+}
+</script>
+<script src="/ethercalc.js"></script>
 <script src="/socket.io/socket.io.js"></script>
 <script src="/zappa/jquery.js"></script>
 <script src="/zappa/zappa.js"></script>
-<script src="player.js"></script>
+<script src="/player.js"></script>
 
 <link rel="stylesheet" type="text/css" href="socialcalc.css">
 <link rel="stylesheet" type="text/css" href="index.css">

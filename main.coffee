@@ -14,8 +14,7 @@
     response.sendfile 'index.html'
 
   get '/start': -> render 'start'
-  get '/new': ->
-    response.redirect require("uuid-pure").newId(10)
+  get '/new': -> response.redirect require("uuid-pure").newId(10, 62)
 
   view room: ->
     coffeescript ->
