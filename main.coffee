@@ -52,19 +52,15 @@
     switch @type
       when 'chat'
         db.rpush "chat-#{@room}", @msg, => emit @
-        return
       when 'ask.ecells'
         db.hgetall "ecell-#{@room}", (err, values) => emit
           type: 'ecells'
           ecells: values
           room: @room
-        return
       when 'my.ecell'
         db.hset "ecell-#{@room}", @user, @ecell
-        return
       when 'execute'
         db.rpush "log-#{@room}", @cmdstr, => emit @
-        return
       when 'ask.snapshot'
         db.lrange "log-#{@room}", 0, -1, (err, log) =>
           db.lrange "chat-#{@room}", 0, -1, (err, chat) => emit
@@ -73,7 +69,6 @@
             room: @room
             log: log
             chat: chat
-        return
     emit @
   
   include 'player'

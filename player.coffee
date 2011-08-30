@@ -42,7 +42,6 @@
             cr = SocialCalc.coordToCr(ecell)
             cell = SocialCalc.GetEditorCellElement(editor, cr.row, cr.col)
             cell.element.className += peerClass if cell.element.className.search(find) == -1
-          break
         when "ecell"
             peerClass = " " + @user + " defaultPeer"
             find = new RegExp(peerClass, "g")
@@ -61,7 +60,6 @@
           SocialCalc.Callbacks.broadcast "ecell",
             to: @user
             ecell: editor.ecell.coord
-          break
         when "log"
           break if SocialCalc.hadSnapshot
           SocialCalc.hadSnapshot = true
@@ -89,8 +87,6 @@
           else
             spreadsheet.ExecuteCommand "recalc", ""
             spreadsheet.ExecuteCommand "set sheet defaulttextvalueformat text-wiki"
-          break
         when "execute"
           SocialCalc.CurrentSpreadsheetControlObject.context.sheetobj.ScheduleSheetCommands @cmdstr, @saveundo, true
-          break
-###
+      return
