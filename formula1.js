@@ -4021,7 +4021,7 @@ SocialCalc.Formula.ZeroArgFunctions = function(fname, operand, foperand, sheet) 
          nowdays = start_1_1_1970 + startval / seconds_in_a_day - tzoffset/(24*60);
          result.value = nowdays;
          result.type = "ndt";
-         SocialCalc.Formula.FreshnessInfo.volatile.NOW = true; // remember
+         SocialCalc.Formula.FreshnessInfo['volatile'].NOW = true; // remember
          break;
 
       case "PI":
@@ -4038,7 +4038,7 @@ SocialCalc.Formula.ZeroArgFunctions = function(fname, operand, foperand, sheet) 
          nowdays = start_1_1_1970 + startval / seconds_in_a_day - tzoffset/(24*60);
          result.value = Math.floor(nowdays);
          result.type = "nd";
-         SocialCalc.Formula.FreshnessInfo.volatile.TODAY = true; // remember
+         SocialCalc.Formula.FreshnessInfo['volatile'].TODAY = true; // remember
          break;
 
       case "TRUE":
@@ -4678,7 +4678,7 @@ SocialCalc.Formula.FreshnessInfo = {
 
    // For each volatile function that is called an attribute of that name with value true.
 
-   volatile: {},
+   'volatile': {},
 
    // Set to false when started and true when recalc completes
 
@@ -4702,7 +4702,7 @@ SocialCalc.Formula.FreshnessInfoReset = function() {
    // Reset freshness info.
 
    scffi.sheets = {};
-   scffi.volatile = {};
+   scffi['volatile'] = {};
    scffi.recalc_completed = false;
 
    }
