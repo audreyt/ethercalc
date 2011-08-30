@@ -10,7 +10,8 @@ ETHERCALC_FILES=\
 	third-party/wikiwyg/lib/Document/Emitter.js \
 	third-party/wikiwyg/lib/Document/Emitter/HTML.js \
 	third-party/wikiwyg/lib/Document/Parser.js \
-	third-party/wikiwyg/lib/Document/Parser/Wikitext.js
+	third-party/wikiwyg/lib/Document/Parser/Wikitext.js \
+	jquery.js
 
 all :: app.js ethercalc.js
 
