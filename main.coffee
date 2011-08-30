@@ -21,7 +21,7 @@
       h1 "EtherCalc"
       h2 "EtherCalc is a web spreadsheet."
       p "Your data is saved on the web, and people can edit the same document at the same time. Everybody's changes are instantly reflected on all screens."
-      p "Work together on inventories, survey forms, list managements, brainstorming sessions and more!"
+      p "Work together on inventories, survey forms, list management, brainstorming sessions and more!"
       div id:"intro-links", ->
         a id:"newpadbutton", href:"/new", alt: "Create Spreadsheet", ->
           span "Create Spreadsheet"
