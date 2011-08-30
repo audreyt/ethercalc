@@ -1,6 +1,11 @@
 @include = ->
   json = try require('fs').readFileSync('/home/dotcloud/environment.json', 'utf8')
-  return unless json?
+
+  unless json?
+    io.configure ->
+      io.set "transports", ['server-events', 'flashsocket', 'htmlfile', 'xhr-multipart', 'xhr-polling']
+      io.set "polling duration", 10
+    return
 
   env = process.env
 

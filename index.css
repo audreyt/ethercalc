@@ -1,6 +1,9 @@
 form {
     display: none;
 }
+#msg {
+    display: none;
+}
 #msgform {
     display: block;
 }
@@ -17,4 +20,8 @@ div.wiki .wafl {
     border-radius: 5px;
     -moz-border-radius: 5px;
     -webkit-border-radius: 5px;
+}
+#tableeditor {
+    /* margin:8px 140px 10px 0px; */
+    margin:8px 10px 10px 0px;
 }
