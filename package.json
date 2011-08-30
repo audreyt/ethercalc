@@ -4,7 +4,7 @@
     , "dependencies": {
         "zappa": "*",
         "redis": "*",
-        "uuid-pure": "*"
+        "uuid-pure": "*",
         "coffee-script": "*"
     }
 }
