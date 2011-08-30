@@ -11,7 +11,7 @@
   */
   var db, host, items, name, port, redisHost, redisPass, redisPort, services, _ref;
   port = Number(process.env.VCAP_APP_PORT || 8080);
-  host = process.env.VCAP_APP_HOST || '127.0.0.1';
+  host = process.env.VCAP_APP_HOST || '0.0.0.0';
   _ref = [null, null, null], redisPort = _ref[0], redisHost = _ref[1], redisPass = _ref[2];
   services = JSON.parse(process.env.VCAP_SERVICES || "{}");
   for (name in services) {
