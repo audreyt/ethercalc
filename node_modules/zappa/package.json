@@ -1,0 +1,40 @@
+{
+  "name": "zappa",
+  "description": "CoffeeScript minimalist interface to express, socket.io and others",
+  "version": "0.2.0beta2",
+  "author": "Maurice Machado <maurice@bitbending.com>",
+  "repository": {"type": "git", "url": "git://github.com/mauricemach/zappa.git"},
+  "dependencies": {
+    "underscore": "1.1.7",
+    "express": "2.4.4",
+    "socket.io": "0.7.9",
+    "jsdom": "0.2.3",
+    "jquery": "1.6.2",
+    "coffeekup": "0.3.0beta",
+    "node-uuid": "1.2.0"
+  },
+  "devDependencies": {
+    "request": "2.1.0",
+    "socket.io-client": "0.7.9",
+    "eco": "1.1.0-rc-1",
+    "jade": "0.14.1",
+    "stylus": "0.15.0"
+  },
+  "keywords": ["framework", "websockets", "coffeescript", "express", "socket.io", "sammy", "sinatra", "dsl"],
+  "main": "./lib/zappa",
+  "engines": { "node": ">= 0.4.7" },
+  "contributors": [
+    "Nicholas Kinsey <nicholas.kinsey@feistystudios.com>",
+    "Jae Kwon <jae@flywheelnetworks.com>",
+    "Yuya Nishiyama <nsy@ulz.nu>",
+    "Esa-Matti Suuronen <esa-matti@suuronen.org>",
+    "Isaac Wolkerstorfer <agnoster@gmail.com>",
+    "Jason King <jasonk@amcoonline.net>",
+    "Tim Shadel <github@timshadel.com>",
+    "Vladimir Dronnikov <dronnikov@gmail.com>",
+    "Aldo Bucchi <aldo.bucchi@gmail.com>",
+    "Simon Epstein <simon@simondo.com>",
+    "Kris Molendyke <kris@visibiz.com>",
+    "Rafael de Oleza Alomar <rafeca@gmail.com>"
+  ]
+}

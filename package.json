@@ -5,6 +5,10 @@
         "zappa": "*",
         "redis": "*",
         "uuid-pure": "*",
-        "coffee-script": "*"
+        "coffee-script": "*",
+        "express": "2.4.3",
+        "socket.io": "0.8.3",
+        "jsdom": "0.2.1",
+        "coffeekup": "0.3.0beta"
     }
 }
