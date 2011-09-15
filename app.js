@@ -10,7 +10,7 @@
   <http://creativecommons.org/publicdomain/zero/1.0>
   */
   var host, port;
-  port = Number(process.env.VCAP_APP_PORT || 8080);
+  port = Number(process.env.PORT || process.env.VCAP_APP_PORT || 8000);
   host = process.env.VCAP_APP_HOST || '0.0.0.0';
   require('zappa')(port, host, function() {
     return include('main');
