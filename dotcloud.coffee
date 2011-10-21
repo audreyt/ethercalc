@@ -3,7 +3,7 @@
 
   unless json?
     io.configure ->
-      io.set "transports", ['server-events', 'flashsocket', 'htmlfile', 'xhr-multipart', 'xhr-polling']
+      io.set "transports", ['flashsocket', 'htmlfile', 'xhr-polling']
       io.set "polling duration", 10
     return
 

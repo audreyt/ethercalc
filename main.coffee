@@ -9,7 +9,7 @@
     response.contentType 'text/html'
     response.sendfile 'index.html'
   get '/start': -> render 'start'
-  get '/new': -> response.redirect require("uuid-pure").newId(10, 62)
+  get '/new': -> response.redirect '/#' + require("uuid-pure").newId(10, 62)
 
   view start: ->
     div id:"topnav_wrap", -> div id:"navigation"
