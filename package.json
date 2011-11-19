@@ -2,7 +2,7 @@
     , "description" :     "Multi-user Spreadsheet"
     , "version" :    "0.0.1"
     , "dependencies": {
-        "zappa": "*",
+        "zappa": "0.3.x",
         "redis": "*",
         "uuid-pure": "*",
         "node-uuid": "1.2.0",
