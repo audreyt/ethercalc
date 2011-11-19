@@ -60,6 +60,11 @@
             room: @room
             log: log
             chat: chat
+      when 'stopHuddle'
+        db.del "log-#{@room}", (err) =>
+          db.del "chat-#{@room}", (err) =>
+            db.del "ecell-#{@room}", (err) =>
+              emit @
       else emit @
     return
   
