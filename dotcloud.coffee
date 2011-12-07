@@ -1,21 +1,4 @@
 @include = ->
-  json = try require('fs').readFileSync('/home/dotcloud/environment.json', 'utf8')
-
-  unless json?
-    io.configure ->
-      io.set "transports", ['flashsocket', 'htmlfile', 'xhr-polling']
-      io.set "polling duration", 10
-    return
-
-  env = process.env
-
-  { DOTCLOUD_DATA_REDIS_HOST: env.REDIS_HOST
-  , DOTCLOUD_DATA_REDIS_PORT: env.REDIS_PORT
-  , DOTCLOUD_DATA_REDIS_PASSWORD: env.REDIS_PASS
-  } = JSON.parse(json)
-
-  return
-
   # Thanks sugyan++ for the Socket.IO 0.7 workaround: http://d.hatena.ne.jp/sugyan/20110813/1313206163
   io.configure ->
     io.set "transports", ["xhr-polling"]

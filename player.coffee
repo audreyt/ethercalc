@@ -9,7 +9,7 @@
         window.location = '/start'
         return
     
-    try window.history.pushState {}, '', '/'+SocialCalc._room
+    # try window.history.pushState {}, '', '/'+SocialCalc._room
 
     connect()
     #subscribe(SocialCalc._room)
@@ -32,6 +32,16 @@
 
       editor = SocialCalc.CurrentSpreadsheetControlObject.editor
       switch @type
+        when "stopHuddle"
+          $('#content').uiDisable()
+          alert """
+[Huddle Session Completed]
+
+Thank you for your participation.
+
+Check the activity stream to see the newly created page!
+"""
+          window.location = '/'
         when "chat"
           window.addmsg @msg
         when "ecells"
@@ -83,10 +93,8 @@
             spreadsheet.editor.LoadEditorSettings @snapshot.substring(parts.edit.start, parts.edit.end)  if parts.edit
           if spreadsheet.editor.context.sheetobj.attribs.recalc == "off"
             spreadsheet.ExecuteCommand "redisplay", ""
-            spreadsheet.ExecuteCommand "set sheet defaulttextvalueformat text-wiki"
           else
             spreadsheet.ExecuteCommand "recalc", ""
-            spreadsheet.ExecuteCommand "set sheet defaulttextvalueformat text-wiki"
         when "execute"
           SocialCalc.CurrentSpreadsheetControlObject.context.sheetobj.ScheduleSheetCommands @cmdstr, @saveundo, true
       return
