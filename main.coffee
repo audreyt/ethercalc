@@ -83,7 +83,6 @@
     {room} = @data
     db.set "snapshot-#{room}", @snapshot, (err) =>
       db.get "snapshot-#{room}", (err, snapshot) =>
-        console.log snapshot
         @response.send 'text', { 'Content-Type': 'text/plain' }, 201
 
   @view room: ->
