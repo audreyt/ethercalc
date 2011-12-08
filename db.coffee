@@ -15,6 +15,8 @@
   db.on "error", (err) ->
     return if db.DB
     db.DB = {}
+    db.get = (key, cb) -> cb?(null, db.DB[key])
+    db.set = (key, val, cb) -> db.DB[key] = val; cb?()
     db.rpush = (key, val, cb) -> (db.DB[key] ?= []).push val; cb?()
     db.lrange = (key, from, to, cb) -> cb?(null, db.DB[key] ?= [])
     db.hset = (key, idx, val) -> (db.DB[key] ?= [])[idx] = val; cb?()
