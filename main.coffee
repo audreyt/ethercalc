@@ -54,18 +54,21 @@
         db.rpush "log-#{room}", cmdstr, =>
           emit @data
       when 'ask.snapshot'
-        db.lrange "log-#{room}", 0, -1, (err, log) =>
-          db.lrange "chat-#{room}", 0, -1, (err, chat) => @emit broadcast:
-            type: 'log'
-            to: user
-            room: room
-            log: log
-            chat: chat
+        db.get "snapshot-#{room}", (err, snapshot) =>
+          db.lrange "log-#{room}", 0, -1, (err, log) =>
+            db.lrange "chat-#{room}", 0, -1, (err, chat) => @emit broadcast:
+              type: 'log'
+              to: user
+              room: room
+              log: log
+              chat: chat
+              snapshot: snapshot
       when 'stopHuddle'
         db.del "log-#{room}", (err) =>
           db.del "chat-#{room}", (err) =>
             db.del "ecell-#{room}", (err) =>
-              emit @data
+              db.del "snapshot-#{room}", (err) =>
+                emit @data
       else emit @data
     return
   
@@ -73,6 +76,15 @@
 
   @get '/:room': ->
     @render room: { layout: no }
+
+  @use 'bodyParser'
+
+  @post '/:room': ->
+    {room} = @data
+    db.set "snapshot-#{room}", @snapshot, (err) =>
+      db.get "snapshot-#{room}", (err, snapshot) =>
+        console.log snapshot
+        @response.send 'text', { 'Content-Type': 'text/plain' }, 201
 
   @view room: ->
     coffeescript ->

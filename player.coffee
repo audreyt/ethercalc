@@ -63,10 +63,20 @@
           break if SocialCalc.hadSnapshot
           SocialCalc.hadSnapshot = true
           spreadsheet = SocialCalc.CurrentSpreadsheetControlObject
+          parts = spreadsheet.DecodeSpreadsheetSave(@data.snapshot) if @data.snapshot
+          if parts
+            if parts.sheet
+              spreadsheet.sheet.ResetSheet()
+              spreadsheet.ParseSheetSave @data.snapshot.substring(parts.sheet.start, parts.sheet.end)
+            spreadsheet.editor.LoadEditorSettings @data.snapshot.substring(parts.edit.start, parts.edit.end)  if parts.edit
           window.addmsg @data.chat.join("\n"), true
           cmdstr = @data.log.join("\n")
           SocialCalc.CurrentSpreadsheetControlObject.context.sheetobj.ScheduleSheetCommands cmdstr, false, true
           editor = SocialCalc.CurrentSpreadsheetControlObject.editor
+          if editor.context.sheetobj.attribs.recalc == "off"
+            spreadsheet.ExecuteCommand "redisplay", ""
+          else
+            spreadsheet.ExecuteCommand "recalc", ""
 #          editor.MoveECellCallback.broadcast = (e) ->
 #            SocialCalc.Callbacks.broadcast "my.ecell"
 #              ecell: e.ecell.coord
