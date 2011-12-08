@@ -53,9 +53,7 @@
       when 'execute'
         db.rpush "log-#{@room}", @cmdstr, => emit @
       when 'ask.snapshot'
-        console.log "Sakas"
         db.get "snapshot-#{@room}", (err, snapshot) =>
-          console.log snapshot
           db.lrange "log-#{@room}", 0, -1, (err, log) =>
             db.lrange "chat-#{@room}", 0, -1, (err, chat) => emit
               type: 'log'
@@ -84,7 +82,6 @@
     @layout = no
     db.set "snapshot-#{@room}", @snapshot, (err) =>
       db.get "snapshot-#{@room}", (err, snapshot) =>
-        console.log snapshot
         response.send('text', { 'Content-Type': 'text/plain' }, 201)
 
   view room: ->
