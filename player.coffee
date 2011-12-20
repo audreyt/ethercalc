@@ -70,7 +70,9 @@
               spreadsheet.ParseSheetSave @data.snapshot.substring(parts.sheet.start, parts.sheet.end)
             spreadsheet.editor.LoadEditorSettings @data.snapshot.substring(parts.edit.start, parts.edit.end)  if parts.edit
           window.addmsg @data.chat.join("\n"), true
-          cmdstr = @data.log.join("\n")
+          cmdstr = (
+            line for line in @data.log when not /^re(calc|display)$/.test(line)
+          ).join("\n")
           SocialCalc.CurrentSpreadsheetControlObject.context.sheetobj.ScheduleSheetCommands cmdstr, false, true
           editor = SocialCalc.CurrentSpreadsheetControlObject.editor
           if editor.context.sheetobj.attribs.recalc == "off"
