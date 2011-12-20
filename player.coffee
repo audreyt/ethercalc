@@ -73,12 +73,12 @@
           cmdstr = (
             line for line in @data.log when not /^re(calc|display)$/.test(line)
           ).join("\n")
-          SocialCalc.CurrentSpreadsheetControlObject.context.sheetobj.ScheduleSheetCommands cmdstr, false, true
-          editor = SocialCalc.CurrentSpreadsheetControlObject.editor
-          if editor.context.sheetobj.attribs.recalc == "off"
-            spreadsheet.ExecuteCommand "redisplay", ""
-          else
-            spreadsheet.ExecuteCommand "recalc", ""
+          if cmdstr.length
+            refreshCmd = "redisplay"
+            editor = SocialCalc.CurrentSpreadsheetControlObject.editor
+            if editor.context.sheetobj.attribs.recalc != "off"
+              refreshCmd = "recalc"
+            SocialCalc.CurrentSpreadsheetControlObject.context.sheetobj.ScheduleSheetCommands cmdstr + "\n#{refreshCmd}\n", false, true
 #          editor.MoveECellCallback.broadcast = (e) ->
 #            SocialCalc.Callbacks.broadcast "my.ecell"
 #              ecell: e.ecell.coord
