@@ -9,7 +9,9 @@ This work is published from Taiwan.
 <http://creativecommons.org/publicdomain/zero/1.0>
 ###
 
+argv = require('optimist').argv
 json = try JSON.parse(require('fs').readFileSync('/home/dotcloud/environment.json', 'utf8'))
-port = Number(json?.PORT_NODEJS || process.env.PORT || process.env.VCAP_APP_PORT || 8000)
-host = process.env.VCAP_APP_HOST || '0.0.0.0'
+port = Number(argv.port || json?.PORT_NODEJS || process.env.PORT || process.env.VCAP_APP_PORT || 8000)
+host = argv.host || process.env.VCAP_APP_HOST || '0.0.0.0'
+
 require('zappa') port, host, -> @include 'main'

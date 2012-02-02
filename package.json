@@ -11,6 +11,7 @@
         "socket.io": "*",
         "jsdom": "*",
         "coffeekup": "*",
-        "underscore": "*"
+        "underscore": "*",
+        "optimist": "*"
     }
 }
