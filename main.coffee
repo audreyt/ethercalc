@@ -1,17 +1,17 @@
 @include = ->
-  enable 'serve jquery'
-  app.use express.static __dirname
+  @enable 'serve jquery'
+  @use @express.static __dirname
 
-  include 'dotcloud'
-  include 'db'
+  @include 'dotcloud'
+  db = @include 'db'
 
-  get '/': ->
-    response.contentType 'text/html'
-    response.sendfile 'index.html'
-  get '/start': -> render 'start'
-  get '/new': -> response.redirect '/#' + require("uuid-pure").newId(10, 62)
+  @get '/': ->
+    @response.contentType 'text/html'
+    @response.sendfile 'index.html'
+  @get '/start': -> @render 'start'
+  @get '/new': -> @response.redirect '/#' + require("uuid-pure").newId(10, 62)
 
-  view start: ->
+  @view start: ->
     div id:"topnav_wrap", -> div id:"navigation"
     div id:"intro-left", ->
       h1 "EtherCalc"
@@ -24,7 +24,7 @@
           br ""
           small "No sign-up, start editing instantly"
 
-  view layout: ->
+  @view layout: ->
     html ->
       head ->
         title "EtherCalc"
@@ -37,54 +37,55 @@
             src:"//a248.e.akamai.net/assets.github.com/img/7afbc8b248c68eb468279e8c17986ad46549fb71/687474703a2f2f73332e616d617a6f6e6177732e636f6d2f6769746875622f726962626f6e732f666f726b6d655f72696768745f6461726b626c75655f3132313632312e706e67"
             alt:"Fork me on GitHub"
   
-  at broadcast: ->
-    #io.sockets.in(@room).emit 'broadcast', @
-    emit = (msg) -> io.sockets.emit 'broadcast', msg
-    switch @type
+  @on broadcast: ->
+    emit = (data) => @broadcast broadcast: data
+    {room, msg, user, ecell, cmdstr, type} = @data
+    switch type
       when 'chat'
-        db.rpush "chat-#{@room}", @msg, => emit @
+        db.rpush "chat-#{room}", msg, => emit @data
       when 'ask.ecells'
-        db.hgetall "ecell-#{@room}", (err, values) => emit
+        db.hgetall "ecell-#{room}", (err, values) => emit
           type: 'ecells'
           ecells: values
-          room: @room
+          room: room
       when 'my.ecell'
-        db.hset "ecell-#{@room}", @user, @ecell
+        db.hset "ecell-#{room}", user, ecell
       when 'execute'
-        db.rpush "log-#{@room}", @cmdstr, => emit @
+        db.rpush "log-#{room}", cmdstr, =>
+          emit @data
       when 'ask.snapshot'
-        db.get "snapshot-#{@room}", (err, snapshot) =>
-          db.lrange "log-#{@room}", 0, -1, (err, log) =>
-            db.lrange "chat-#{@room}", 0, -1, (err, chat) => emit
+        db.get "snapshot-#{room}", (err, snapshot) =>
+          db.lrange "log-#{room}", 0, -1, (err, log) =>
+            db.lrange "chat-#{room}", 0, -1, (err, chat) => @emit broadcast:
               type: 'log'
-              to: @user
-              room: @room
+              to: user
+              room: room
               log: log
               chat: chat
               snapshot: snapshot
       when 'stopHuddle'
-        db.del "log-#{@room}", (err) =>
-          db.del "chat-#{@room}", (err) =>
-            db.del "ecell-#{@room}", (err) =>
-              db.del "snapshot-#{@room}", (err) =>
-                emit @
-      else emit @
+        db.del "log-#{room}", (err) =>
+          db.del "chat-#{room}", (err) =>
+            db.del "ecell-#{room}", (err) =>
+              db.del "snapshot-#{room}", (err) =>
+                emit @data
+      else emit @data
     return
   
-  include 'player'
+  @include 'player'
 
-  get '/:room': ->
-    @layout = no
-    render 'room', @
+  @get '/:room': ->
+    @render room: { layout: no }
 
-  use 'bodyParser'
-  post '/:room': ->
-    @layout = no
-    db.set "snapshot-#{@room}", @snapshot, (err) =>
-      db.get "snapshot-#{@room}", (err, snapshot) =>
-        response.send('text', { 'Content-Type': 'text/plain' }, 201)
+  @use 'bodyParser'
 
-  view room: ->
+  @post '/:room': ->
+    {room} = @data
+    db.set "snapshot-#{room}", @snapshot, (err) =>
+      db.get "snapshot-#{room}", (err, snapshot) =>
+        @response.send 'text', { 'Content-Type': 'text/plain' }, 201
+
+  @view room: ->
     coffeescript ->
       window.location = '/#' + window.location.pathname.replace(/.*\//, '')
 

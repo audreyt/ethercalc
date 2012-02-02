@@ -22,5 +22,4 @@
     db.hset = (key, idx, val) -> (db.DB[key] ?= [])[idx] = val; cb?()
     db.hgetall = (key, cb) -> cb?(null, db.DB[key] ?= {})
     db.del = (key, cb) -> delete db.DB[key]; cb?(null)
-
-  def {db}
+  return db

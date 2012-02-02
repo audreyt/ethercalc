@@ -18,6 +18,6 @@
   port = Number((json != null ? json.PORT_NODEJS : void 0) || process.env.PORT || process.env.VCAP_APP_PORT || 8000);
   host = process.env.VCAP_APP_HOST || '0.0.0.0';
   require('zappa')(port, host, function() {
-    return include('main');
+    return this.include('main');
   });
 }).call(this);

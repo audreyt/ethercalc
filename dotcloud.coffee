@@ -1,8 +1,8 @@
 @include = ->
   # Thanks sugyan++ for the Socket.IO 0.7 workaround: http://d.hatena.ne.jp/sugyan/20110813/1313206163
-  io.configure ->
-    io.set "transports", ["xhr-polling"]
-    io.set "polling duration", 10
+  @io.configure ->
+    @io.set "transports", ["xhr-polling"]
+    @io.set "polling duration", 10
 
     path = require('path')
     HTTPPolling = require(path.join(path.dirname(require.resolve('socket.io')), 'lib', 'transports', 'http-polling'))

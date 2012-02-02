@@ -2,7 +2,7 @@
     , "description" :     "Multi-user Spreadsheet"
     , "version" :    "0.0.1"
     , "dependencies": {
-        "zappa": "*",
+        "zappa": "0.3.x",
         "redis": "*",
         "uuid-pure": "*",
         "node-uuid": "1.2.0",
@@ -10,7 +10,7 @@
         "express": "2.4.3",
         "socket.io": "0.8.x",
         "jsdom": "0.2.1",
-        "coffeekup": "0.3.x",
+        "coffeekup": "0.3.1",
         "underscore": "1.1.7"
     }
 }

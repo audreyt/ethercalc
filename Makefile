@@ -13,13 +13,13 @@ ETHERCALC_FILES=\
 	third-party/wikiwyg/lib/Document/Parser/Wikitext.js \
 	jquery.js
 
-all :: app.js ethercalc.js start.css
+all :: app.js
+	node app.js
+
+depends :: app.js ethercalc.js start.css
 
 ethercalc.js :: $(ETHERCALC_FILES)
 	@perl -e 'system(join(" ", closure => map { ("--js", $$_) } @ARGV). " > $@")' $(ETHERCALC_FILES) 
-
-run :: app.js
-	node app.js
 
 .coffee.js:
 	coffee -c $<
