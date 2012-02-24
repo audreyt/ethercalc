@@ -52,7 +52,8 @@
         db.hset "ecell-#{room}", user, ecell
       when 'execute'
         db.rpush "log-#{room}", cmdstr, =>
-          emit @data
+          db.bgsave =>
+            emit @data
       when 'ask.snapshot'
         db.get "snapshot-#{room}", (err, snapshot) =>
           db.lrange "log-#{room}", 0, -1, (err, log) =>
