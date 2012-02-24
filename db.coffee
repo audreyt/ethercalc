@@ -10,10 +10,20 @@
       redisHost = items[0].credentials.hostname
       redisPass = items[0].credentials.password
 
+  redisHost ?= 'localhost'
+  redisPort ?= 6379
+
   db = require('redis').createClient(redisPort, redisHost)
   db.auth(redisPass) if redisPass
+  db.on "connect", (err) ->
+    db.DB = true
+    console.log "Connected to Redis Server: #{redisHost}:#{redisPort}"
   db.on "error", (err) ->
+    if db.DB is true
+      console.log "Lost connection to Redis Server - attempting to reconnect"
     return if db.DB
+    console.log err
+    console.log "Falling back to in-memory DB"
     db.DB = {}
     db.get = (key, cb) -> cb?(null, db.DB[key])
     db.set = (key, val, cb) -> db.DB[key] = val; cb?()
