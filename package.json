@@ -8,6 +8,7 @@
         "uuid-pure": "*",
         "node-uuid": "*",
         "coffee-script": "*",
+        "coco": "*",
         "express": "*",
         "socket.io": "*",
         "jsdom": "*",

@@ -24,7 +24,10 @@ ethercalc.js :: $(ETHERCALC_FILES)
 .coffee.js:
 	coffee -c $<
 
+.co.js:
+	coco -c $<
+
 .sass.css:
 	sass -t compressed $< > $@
 
-.SUFFIXES: .js .coffee .css .sass
+.SUFFIXES: .js .coffee .css .sass .co
