@@ -1,3 +1,5 @@
+return if not require('streamline/module')(module)
+
 @include = ->
   @enable 'serve jquery'
   @use @express.static __dirname
@@ -37,41 +39,45 @@
             src:"//a248.e.akamai.net/assets.github.com/img/7afbc8b248c68eb468279e8c17986ad46549fb71/687474703a2f2f73332e616d617a6f6e6177732e636f6d2f6769746875622f726962626f6e732f666f726b6d655f72696768745f6461726b626c75655f3132313632312e706e67"
             alt:"Fork me on GitHub"
   
-  @on broadcast: ->
+  @on broadcast: -> ((_) =>
     emit = (data) => @broadcast broadcast: data
     {room, msg, user, ecell, cmdstr, type} = @data
     switch type
       when 'chat'
-        db.rpush "chat-#{room}", msg, => emit @data
+        db.rpush "chat-#{room}", msg, _
+        emit @data
       when 'ask.ecells'
-        db.hgetall "ecell-#{room}", (err, values) => emit
+        values = db.hgetall "ecell-#{room}", _
+        emit
           type: 'ecells'
           ecells: values
           room: room
       when 'my.ecell'
         db.hset "ecell-#{room}", user, ecell
       when 'execute'
-        db.rpush "log-#{room}", cmdstr, =>
-          db.bgsave =>
-            emit @data
+        db.rpush "log-#{room}", cmdstr, _
+        db.bgsave _
+        emit @data
       when 'ask.snapshot'
-        db.get "snapshot-#{room}", (err, snapshot) =>
-          db.lrange "log-#{room}", 0, -1, (err, log) =>
-            db.lrange "chat-#{room}", 0, -1, (err, chat) => @emit broadcast:
-              type: 'log'
-              to: user
-              room: room
-              log: log
-              chat: chat
-              snapshot: snapshot
+        snapshot = db.get "snapshot-#{room}", _
+        log = db.lrange "log-#{room}", 0, -1, _
+        chat = db.lrange "chat-#{room}", 0, -1, _
+        @emit broadcast:
+          type: 'log'
+          to: user
+          room: room
+          log: log
+          chat: chat
+          snapshot: snapshot
       when 'stopHuddle'
-        db.del "log-#{room}", (err) =>
-          db.del "chat-#{room}", (err) =>
-            db.del "ecell-#{room}", (err) =>
-              db.del "snapshot-#{room}", (err) =>
-                emit @data
+        db.del "log-#{room}", _
+        db.del "chat-#{room}", _
+        db.del "ecell-#{room}", _
+        db.del "snapshot-#{room}", _
+        emit @data
       else emit @data
     return
+  )(->)
   
   @include 'player'
 

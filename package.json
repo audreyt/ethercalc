@@ -13,6 +13,7 @@
         "jsdom": "*",
         "coffeekup": "*",
         "underscore": "*",
-        "optimist": "*"
+        "optimist": "*",
+        "streamline": "*"
     }
 }
