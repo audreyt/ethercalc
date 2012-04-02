@@ -13,7 +13,9 @@
         "jsdom": "*",
         "coffeekup": "*",
         "underscore": "*",
-        "optimist": "*",
+        "optimist": "*"
+    }
+    , "devDependencies": {
         "streamline": "*"
     }
 }

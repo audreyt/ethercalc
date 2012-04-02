@@ -13,8 +13,14 @@ ETHERCALC_FILES=\
 	third-party/wikiwyg/lib/Document/Parser/Wikitext.js \
 	jquery.js
 
-all :: app.js
+all :: app.js main.js
 	node app.js
+
+main.js : main_.js ./node_modules/streamline/bin/_node
+	./node_modules/streamline/bin/_node -c $<
+
+./node_modules/streamline/bin/_node :
+	npm i --dev
 
 depends :: app.js ethercalc.js start.css
 
