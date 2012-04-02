@@ -33,4 +33,7 @@ ethercalc.js :: $(ETHERCALC_FILES)
 .sass.css:
 	sass -t compressed $< > $@
 
+push ::
+	dotcloud push -b dotcloud ethercalc
+
 .SUFFIXES: .js .coffee .css .sass
