@@ -20,13 +20,18 @@
     console.log "Connected to Redis Server: #{redisHost}:#{redisPort}"
   db.on "error", (err) ->
     if db.DB is true
-      console.log "Lost connection to Redis Server - attempting to reconnect"
+      console.log "==> Lost connection to Redis Server - attempting to reconnect"
     return if db.DB
     console.log err
-    console.log "Falling back to in-memory DB"
+    console.log "==> Falling back to JSON storage"
+
+    fs = require('fs')
     db.DB = {}
+    try
+      db.DB = JSON.parse(require('fs').readFileSync('dump.json', 'utf8'))
+      console.log "==> Restored previous session from dump.json"
     Commands =
-      bgsave: (cb) -> cb?(null)
+      bgsave: (cb) -> fs.writeFileSync('dump.json', JSON.stringify(db.DB), 'utf8'); cb?(null)
       get: (key, cb) -> cb?(null, db.DB[key])
       set: (key, val, cb) -> db.DB[key] = val; cb?()
       rpush: (key, val, cb) -> (db.DB[key] ?= []).push val; cb?()
