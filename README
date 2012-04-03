@@ -1,9 +1,9 @@
                               -=[ EtherCalc ]=-
 
     Language: CoffeeScript
-    Runtime: Node.js (0.6+ preferred)
+    Runtime: Node.js (0.6+ preferred; compatible with 0.4)
     Services: Redis (2.4+)
-    Browsers currently tested: Safari, Chrome & Firefox.
+    Browsers currently tested: Safari, Chrome, Firefox, IE.
 
                                -[ Licensing ]-
 
