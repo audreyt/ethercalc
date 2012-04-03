@@ -15,7 +15,4 @@
         "underscore": "*",
         "optimist": "*"
     }
-    , "devDependencies": {
-        "streamline": "*"
-    }
 }

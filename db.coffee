@@ -25,12 +25,23 @@
     console.log err
     console.log "Falling back to in-memory DB"
     db.DB = {}
-    db.bgsave = (cb) -> cb?(null)
-    db.get = (key, cb) -> cb?(null, db.DB[key])
-    db.set = (key, val, cb) -> db.DB[key] = val; cb?()
-    db.rpush = (key, val, cb) -> (db.DB[key] ?= []).push val; cb?()
-    db.lrange = (key, from, to, cb) -> cb?(null, db.DB[key] ?= [])
-    db.hset = (key, idx, val) -> (db.DB[key] ?= [])[idx] = val; cb?()
-    db.hgetall = (key, cb) -> cb?(null, db.DB[key] ?= {})
-    db.del = (key, cb) -> delete db.DB[key]; cb?(null)
+    Commands =
+      bgsave: (cb) -> cb?(null)
+      get: (key, cb) -> cb?(null, db.DB[key])
+      set: (key, val, cb) -> db.DB[key] = val; cb?()
+      rpush: (key, val, cb) -> (db.DB[key] ?= []).push val; cb?()
+      lrange: (key, from, to, cb) -> cb?(null, db.DB[key] ?= [])
+      hset: (key, idx, val) -> (db.DB[key] ?= [])[idx] = val; cb?()
+      hgetall: (key, cb) -> cb?(null, db.DB[key] ?= {})
+      del: (keys, cb) -> delete db.DB[key] for key in (if Array.isArray(keys) then keys else [keys]); cb?(null)
+    db[name] = func for name, func of Commands
+    db.multi = (cmds...) ->
+      for name of Commands
+        do (name) -> cmds[name] = (args...) -> @push [name, args...]; @
+      cmds.results = []
+      cmds.exec = (cb) ->
+        return cb(null, @results) unless @length
+        [cmd, args...] = @shift()
+        db[cmd](args..., (_, result) => @results.push result; @exec(cb))
+      return cmds
   return db
