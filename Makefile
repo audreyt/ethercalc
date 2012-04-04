@@ -1,11 +1,14 @@
-ETHERCALC_FILES=\
+SOCIALCALC_FILES=\
 	socialcalcconstants.js \
 	socialcalc-3.js \
 	socialcalctableeditor.js \
 	formatnumber2.js \
 	formula1.js \
 	socialcalcpopup.js \
-	socialcalcspreadsheetcontrol.js \
+	socialcalcspreadsheetcontrol.js
+
+ETHERCALC_FILES=\
+	$(SOCIALCALC_FILES) \
 	third-party/class-js/lib/Class.js \
 	third-party/wikiwyg/lib/Document/Emitter.js \
 	third-party/wikiwyg/lib/Document/Emitter/HTML.js \
@@ -20,6 +23,9 @@ all :: app.js
 	npm i --dev
 
 depends :: app.js ethercalc.js start.css
+
+SocialCalc.js :: $(SOCIALCALC_FILES) exports.js
+	@perl -e 'system(join(" ", closure => map { ("--js", $$_) } @ARGV). " > $@")' $(SOCIALCALC_FILES) exports.js
 
 ethercalc.js :: $(ETHERCALC_FILES)
 	@perl -e 'system(join(" ", closure => map { ("--js", $$_) } @ARGV). " > $@")' $(ETHERCALC_FILES) 
