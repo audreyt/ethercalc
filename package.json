@@ -1,6 +1,6 @@
 { "name" :            "ethercalc"
-    , "description" :     "Multi-user Spreadsheet"
-    , "version" :    "0.0.1"
+    , "description" : "Multi-User Spreadsheet Server"
+    , "version" :    "0.0.20120406"
     , "dependencies": {
         "zappa": "0.3.x",
         "hiredis": "0.1.x",
@@ -12,7 +12,7 @@
         "socket.io": "*",
         "jsdom": "*",
         "coffeekup": "*",
-        "underscore": "*",
         "optimist": "*"
     }
+    , "directories": { "bin": "./bin" }
 }
