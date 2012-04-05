@@ -1,4 +1,6 @@
 @include = ->
+  SC = {}
+
   @enable 'serve jquery'
   @use @express.static __dirname
 
@@ -56,13 +58,37 @@
         db.multi()
           .rpush("log-#{room}", cmdstr)
           .bgsave()
-          .exec => broadcast @data
+          .exec =>
+            SC[room].ExecuteCommand cmdstr
+            broadcast @data
       when 'ask.snapshot'
         db.multi()
           .get("snapshot-#{room}")
           .lrange("log-#{room}", 0, -1)
           .lrange("chat-#{room}", 0, -1)
           .exec (_, [snapshot, log, chat]) =>
+            unless SC[room]
+              SocialCalc = require('./SocialCalc')
+              SocialCalc.SaveEditorSettings = -> ""
+              SocialCalc.CreateAuditString = -> ""
+              SocialCalc.CalculateEditorPositions = ->
+              SC[room] = new SocialCalc.SpreadsheetControl
+              delete SC[room].editor.StatusCallback.statusline
+              SC[room].InitializeSpreadsheetControl("tableeditor", 0, 0, 0)
+              SC[room].editor.StatusCallback.EtherCalc = func: (editor, status, arg) ->
+                return unless status is 'doneposcalc' and not SC[room].editor.busy
+                db.multi()
+                  .set("snapshot-#{room}", SC[room].CreateSpreadsheetSave())
+                  .del("log-#{room}")
+                  .bgsave()
+                  .exec => console.log "Regenerated snapshot for #{room}"
+              parts = SC[room].DecodeSpreadsheetSave(snapshot) if snapshot
+              if parts?.sheet
+                SC[room].sheet.ResetSheet()
+                SC[room].ParseSheetSave snapshot.substring(parts.sheet.start, parts.sheet.end)
+              cmdstr = (line for line in log when not /^re(calc|display)$/.test(line)).join("\n")
+              cmdstr += "\n" if cmdstr.length
+              SC[room].context.sheetobj.ScheduleSheetCommands cmdstr + "recalc\n", false, true
             @emit broadcast:
               type: 'log'
               to: user
@@ -88,10 +114,9 @@
   @use 'bodyParser'
 
   @post '/:room': ->
-    {room} = @data
-    db.set "snapshot-#{room}", @snapshot, (err) =>
-      db.get "snapshot-#{room}", (err, snapshot) =>
-        @response.send 'text', { 'Content-Type': 'text/plain' }, 201
+    {room, snapshot} = @data
+    db.set "snapshot-#{room}", snapshot, (err) =>
+      @response.send 'text', { 'Content-Type': 'text/plain' }, 201
 
   @view room: ->
     coffeescript ->

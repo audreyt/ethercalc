@@ -68,7 +68,7 @@
             if parts.sheet
               spreadsheet.sheet.ResetSheet()
               spreadsheet.ParseSheetSave @data.snapshot.substring(parts.sheet.start, parts.sheet.end)
-            spreadsheet.editor.LoadEditorSettings @data.snapshot.substring(parts.edit.start, parts.edit.end)  if parts.edit
+            # spreadsheet.editor.LoadEditorSettings @data.snapshot.substring(parts.edit.start, parts.edit.end)  if parts.edit
           window.addmsg @data.chat.join("\n"), true
           cmdstr = (
             line for line in @data.log when not /^re(calc|display)$/.test(line)
@@ -79,6 +79,8 @@
             if editor.context.sheetobj.attribs.recalc != "off"
               refreshCmd = "recalc"
             SocialCalc.CurrentSpreadsheetControlObject.context.sheetobj.ScheduleSheetCommands cmdstr + "\n#{refreshCmd}\n", false, true
+          else
+            SocialCalc.CurrentSpreadsheetControlObject.context.sheetobj.ScheduleSheetCommands "redisplay\n", false, true
 #          editor.MoveECellCallback.broadcast = (e) ->
 #            SocialCalc.Callbacks.broadcast "my.ecell"
 #              ecell: e.ecell.coord

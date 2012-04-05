@@ -1061,8 +1061,8 @@ spreadsheet.Buttons = {
    spreadsheet.statuslineDiv.style.cssText = spreadsheet.statuslineCSS;
 //   spreadsheet.statuslineDiv.style.height = spreadsheet.statuslineheight + "px"; // didn't take padding into account!
    spreadsheet.statuslineDiv.style.height = spreadsheet.statuslineheight -
-      (spreadsheet.statuslineDiv.style.paddingTop.slice(0,-2)-0) -
-      (spreadsheet.statuslineDiv.style.paddingBottom.slice(0,-2)-0) + "px";
+      ((spreadsheet.statuslineDiv.style.paddingTop || '0px').slice(0,-2)-0) -
+      ((spreadsheet.statuslineDiv.style.paddingBottom || '0px').slice(0,-2)-0) + "px";
    spreadsheet.statuslineDiv.id = spreadsheet.idPrefix+"statusline";
    spreadsheet.spreadsheetDiv.appendChild(spreadsheet.statuslineDiv);
 
