@@ -40,9 +40,9 @@ SC = {}
             alt:"Fork me on GitHub"
   
   @on broadcast: ->
-    emit = (data) => @emit broadcast: data
-    broadcast = (data) => @broadcast broadcast: data
     {room, msg, user, ecell, cmdstr, type} = @data
+    emit = (data) => @emit broadcast: data
+    broadcast = (data) => @socket.broadcast.to(room).emit 'broadcast', data
     switch type
       when 'chat'
         db.rpush "chat-#{room}", msg, =>
@@ -63,6 +63,7 @@ SC = {}
             SC[room]?.ExecuteCommand cmdstr
             broadcast @data
       when 'ask.log', 'ask.recalc'
+        @socket.join(room) if type is 'ask.log'
         db.multi()
           .get("snapshot-#{room}")
           .lrange("log-#{room}", 0, -1)
