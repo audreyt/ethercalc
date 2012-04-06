@@ -1,9 +1,8 @@
 { "name" :            "ethercalc"
     , "description" : "Multi-User Spreadsheet Server"
-    , "version" :    "0.0.20120406"
+    , "version" :    "0.20120406.201434"
     , "dependencies": {
         "zappa": "0.3.x",
-        "hiredis": "0.1.x",
         "redis": "*",
         "uuid-pure": "*",
         "node-uuid": "*",
@@ -13,6 +12,9 @@
         "jsdom": "*",
         "coffeekup": "*",
         "optimist": "*"
+    }
+    , "optionalDependencies": {
+        "hiredis": "0.1.x"
     }
     , "directories": { "bin": "./bin" }
 }
