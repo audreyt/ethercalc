@@ -40,6 +40,7 @@
             alt:"Fork me on GitHub"
   
   @on broadcast: ->
+    emit = (data) => @emit broadcast: data
     broadcast = (data) => @broadcast broadcast: data
     {room, msg, user, ecell, cmdstr, type} = @data
     switch type
@@ -67,35 +68,13 @@
           .lrange("log-#{room}", 0, -1)
           .lrange("chat-#{room}", 0, -1)
           .exec (_, [snapshot, log, chat]) =>
-            unless SC[room]
-              SocialCalc = require('./SocialCalc')
-              SocialCalc.SaveEditorSettings = -> ""
-              SocialCalc.CreateAuditString = -> ""
-              SocialCalc.CalculateEditorPositions = ->
-              SC[room] = new SocialCalc.SpreadsheetControl
-              delete SC[room].editor.StatusCallback.statusline
-              SC[room].InitializeSpreadsheetControl("tableeditor", 0, 0, 0)
-              SC[room].editor.StatusCallback.EtherCalc = func: (editor, status, arg) ->
-                return unless status is 'doneposcalc' and not SC[room].editor.busy
-                db.multi()
-                  .set("snapshot-#{room}", SC[room].CreateSpreadsheetSave())
-                  .del("log-#{room}")
-                  .bgsave()
-                  .exec => console.log "Regenerated snapshot for #{room}"
-              parts = SC[room].DecodeSpreadsheetSave(snapshot) if snapshot
-              if parts?.sheet
-                SC[room].sheet.ResetSheet()
-                SC[room].ParseSheetSave snapshot.substring(parts.sheet.start, parts.sheet.end)
-              cmdstr = (line for line in log when not /^re(calc|display)$/.test(line)).join("\n")
-              cmdstr += "\n" if cmdstr.length
-              SC[room].context.sheetobj.ScheduleSheetCommands cmdstr + "recalc\n", false, true
-            @emit broadcast:
-              type: 'log'
-              to: user
-              room: room
-              log: log
-              chat: chat
-              snapshot: snapshot
+            SC[room] ?= initSC snapshot, log, (newSnapshot) =>
+              db.multi()
+                .set("snapshot-#{room}", newSnapshot)
+                .del("log-#{room}")
+                .bgsave()
+                .exec => console.log "Regenerated snapshot for #{room}"
+            emit { type: 'log', room, log, chat, snapshot }
       when 'stopHuddle'
         db.del [
           "log-#{room}"
@@ -122,3 +101,22 @@
     coffeescript ->
       window.location = '/#' + window.location.pathname.replace(/.*\//, '')
 
+initSC = (snapshot, log, doSaveSnapshot) ->
+  SocialCalc = require('./SocialCalc')
+  SocialCalc.SaveEditorSettings = -> ""
+  SocialCalc.CreateAuditString = -> ""
+  SocialCalc.CalculateEditorPositions = ->
+  ss = new SocialCalc.SpreadsheetControl
+  delete ss.editor.StatusCallback.statusline
+  ss.InitializeSpreadsheetControl("tableeditor", 0, 0, 0)
+  ss.editor.StatusCallback.EtherCalc = func: (editor, status, arg) ->
+    return unless status is 'doneposcalc' and not ss.editor.busy
+    doSaveSnapshot?(ss.CreateSpreadsheetSave())
+  parts = ss.DecodeSpreadsheetSave(snapshot) if snapshot
+  if parts?.sheet
+    ss.sheet.ResetSheet()
+    ss.ParseSheetSave snapshot.substring(parts.sheet.start, parts.sheet.end)
+  cmdstr = (line for line in log when not /^re(calc|display)$/.test(line)).join("\n")
+  cmdstr += "\n" if cmdstr.length
+  ss.context.sheetobj.ScheduleSheetCommands cmdstr + "recalc\n", false, true
+  return ss
