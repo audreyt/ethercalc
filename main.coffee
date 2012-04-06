@@ -1,6 +1,6 @@
-@include = ->
-  SC = {}
+SC = {}
 
+@include = ->
   @enable 'serve jquery'
   @use @express.static __dirname
 
@@ -11,7 +11,7 @@
     @response.contentType 'text/html'
     @response.sendfile 'index.html'
   @get '/start': -> @render 'start'
-  @get '/new': -> @response.redirect '/#' + require("uuid-pure").newId(10, 62)
+  @get '/new': -> @response.redirect '/#' + require("uuid-pure").newId(10, 62).toLowerCase()
 
   @view start: ->
     div id:"topnav_wrap", -> div id:"navigation"
@@ -60,21 +60,16 @@
           .rpush("log-#{room}", cmdstr)
           .bgsave()
           .exec =>
-            SC[room].ExecuteCommand cmdstr
+            SC[room]?.ExecuteCommand cmdstr
             broadcast @data
-      when 'ask.snapshot'
+      when 'ask.log', 'ask.recalc'
         db.multi()
           .get("snapshot-#{room}")
           .lrange("log-#{room}", 0, -1)
           .lrange("chat-#{room}", 0, -1)
           .exec (_, [snapshot, log, chat]) =>
-            SC[room] ?= initSC snapshot, log, (newSnapshot) =>
-              db.multi()
-                .set("snapshot-#{room}", newSnapshot)
-                .del("log-#{room}")
-                .bgsave()
-                .exec => console.log "Regenerated snapshot for #{room}"
-            emit { type: 'log', room, log, chat, snapshot }
+            SC[room] = initSC snapshot, log, db, room
+            emit { type: type.replace('ask.', ''), room, log, chat, snapshot }
       when 'stopHuddle'
         db.del [
           "log-#{room}"
@@ -101,17 +96,51 @@
     coffeescript ->
       window.location = '/#' + window.location.pathname.replace(/.*\//, '')
 
-initSC = (snapshot, log, doSaveSnapshot) ->
-  SocialCalc = require('./SocialCalc')
+vm = require('vm')
+bootSC = require('fs').readFileSync('./SocialCalc.js', 'utf8')
+initSC = (snapshot, log, db, room) ->
+  if SC[room]?
+    SC[room]._doClearCache()
+    return SC[room]
+  sandbox = vm.createContext(SocialCalc: null, ss: null, console: console, require: -> require('jsdom'))
+  vm.runInContext bootSC, sandbox
+  SocialCalc = sandbox.SocialCalc
   SocialCalc.SaveEditorSettings = -> ""
   SocialCalc.CreateAuditString = -> ""
   SocialCalc.CalculateEditorPositions = ->
-  ss = new SocialCalc.SpreadsheetControl
+  SocialCalc.Popup.Types.List.Create = ->
+  SocialCalc.Popup.Types.ColorChooser.Create = ->
+  SocialCalc.Popup.Initialize = ->
+  vm.runInContext 'ss = new SocialCalc.SpreadsheetControl', sandbox
+  SocialCalc.RecalcInfo.LoadSheet = (ref) ->
+    ref = ref.replace(/[^a-zA-Z0-9]+/g, "").toLowerCase()
+    if SC[ref]
+      serialization = SC[ref].CreateSpreadsheetSave()
+      parts = SC[ref].DecodeSpreadsheetSave(serialization)
+      SocialCalc.RecalcLoadedSheet(
+        ref,
+        serialization.substring(parts.sheet.start, parts.sheet.end),
+        true # recalc
+      )
+    else
+      SocialCalc.RecalcLoadedSheet(ref, "", true)
+    return true
+
+  ss = sandbox.ss
   delete ss.editor.StatusCallback.statusline
-  ss.InitializeSpreadsheetControl("tableeditor", 0, 0, 0)
+  div = SocialCalc.document.createElement('div')
+  SocialCalc.document.body.appendChild div
+  ss.InitializeSpreadsheetControl(div, 0, 0, 0)
+  ss._room = room
+  ss._doClearCache = -> SocialCalc.Formula.SheetCache.sheets = {}
   ss.editor.StatusCallback.EtherCalc = func: (editor, status, arg) ->
     return unless status is 'doneposcalc' and not ss.editor.busy
-    doSaveSnapshot?(ss.CreateSpreadsheetSave())
+    newSnapshot = ss.CreateSpreadsheetSave()
+    db.multi()
+      .set("snapshot-#{ss._room}", newSnapshot)
+      .del("log-#{ss._room}")
+      .bgsave()
+      .exec => console.log "Regenerated snapshot for #{ss._room}"
   parts = ss.DecodeSpreadsheetSave(snapshot) if snapshot
   if parts?.sheet
     ss.sheet.ResetSheet()

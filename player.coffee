@@ -21,13 +21,16 @@
       emit data
 
     SocialCalc.isConnected = true
-    SocialCalc.Callbacks.broadcast "ask.snapshot"
+    SocialCalc.Callbacks.broadcast "ask.log"
+    SocialCalc.RecalcInfo.LoadSheet = (ref) ->
+      ref = ref.replace(/[^a-zA-Z0-9]+/g, "").toLowerCase()
+      emit { type: "ask.recalc", user: SocialCalc._username, room: ref }
 
     @on broadcast: ->
       return unless SocialCalc?.isConnected
       return if @data.user == SocialCalc._username
       return if @data.to and @data.to != SocialCalc._username
-      return if @data.room and @data.room != SocialCalc._room
+      return if @data.room and @data.room != SocialCalc._room and @data.type != "recalc"
 
       editor = SocialCalc.CurrentSpreadsheetControlObject.editor
       switch @data.type
@@ -51,10 +54,6 @@
             cr = SocialCalc.coordToCr(@data.ecell)
             cell = SocialCalc.GetEditorCellElement(editor, cr.row, cr.col)
             cell.element.className += peerClass if cell.element.className.search(find) == -1
-        when "ask.snapshot"
-          SocialCalc.Callbacks.broadcast "snapshot",
-            to: @data.user
-            snapshot: SocialCalc.CurrentSpreadsheetControlObject.CreateSpreadsheetSave()
         when "ask.ecell"
           SocialCalc.Callbacks.broadcast "ecell",
             to: @data.user
@@ -84,22 +83,16 @@
 #          editor.MoveECellCallback.broadcast = (e) ->
 #            SocialCalc.Callbacks.broadcast "my.ecell"
 #              ecell: e.ecell.coord
-        when "snapshot"
-          break if SocialCalc.hadSnapshot
-          SocialCalc.hadSnapshot = true
-          spreadsheet = SocialCalc.CurrentSpreadsheetControlObject
-          parts = spreadsheet.DecodeSpreadsheetSave(@data.snapshot)
-          if parts
-            if parts.sheet
-              spreadsheet.sheet.ResetSheet()
-              spreadsheet.ParseSheetSave @data.snapshot.substring(parts.sheet.start, parts.sheet.end)
-            spreadsheet.editor.LoadEditorSettings @data.snapshot.substring(parts.edit.start, parts.edit.end)  if parts.edit
-          if spreadsheet.editor.context.sheetobj.attribs.recalc == "off"
-            spreadsheet.ExecuteCommand "redisplay", ""
-            spreadsheet.ExecuteCommand "set sheet defaulttextvalueformat text-wiki"
+        when "recalc"
+          parts = SocialCalc.CurrentSpreadsheetControlObject.DecodeSpreadsheetSave(@data.snapshot) if @data.snapshot
+          if parts?.sheet
+            SocialCalc.RecalcLoadedSheet(
+              @data.room,
+              @data.snapshot.substring(parts.sheet.start, parts.sheet.end),
+              true # recalc
+            )
           else
-            spreadsheet.ExecuteCommand "recalc", ""
-            spreadsheet.ExecuteCommand "set sheet defaulttextvalueformat text-wiki"
+            SocialCalc.RecalcLoadedSheet(@data.room, "", true)
         when "execute"
           SocialCalc.CurrentSpreadsheetControlObject.context.sheetobj.ScheduleSheetCommands @data.cmdstr, @data.saveundo, true
       return
