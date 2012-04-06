@@ -150,5 +150,7 @@ initSC = (snapshot, log, db, room) ->
     ss.ParseSheetSave snapshot.substring(parts.sheet.start, parts.sheet.end)
   cmdstr = (line for line in log when not /^re(calc|display)$/.test(line)).join("\n")
   cmdstr += "\n" if cmdstr.length
-  ss.context.sheetobj.ScheduleSheetCommands cmdstr + "recalc\n", false, true
+  ss.context.sheetobj.ScheduleSheetCommands "set sheet defaulttextvalueformat text-wiki\n#{
+    cmdstr
+  }recalc\n", false, true
   return ss
