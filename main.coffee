@@ -97,7 +97,10 @@ SC = {}
       window.location = '/#' + window.location.pathname.replace(/.*\//, '')
 
 vm = require('vm')
-bootSC = require('fs').readFileSync('./SocialCalc.js', 'utf8')
+fs = require("fs")
+path = require("path")
+bootSC = fs.readFileSync(path.join(path.dirname(fs.realpathSync(__filename)) + '/SocialCalc.js'), 'utf8')
+
 initSC = (snapshot, log, db, room) ->
   if SC[room]?
     SC[room]._doClearCache()
