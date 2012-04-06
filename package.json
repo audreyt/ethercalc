@@ -1,6 +1,6 @@
 { "name" :            "ethercalc"
     , "description" : "Multi-User Spreadsheet Server"
-    , "version" :    "0.20120406.201434"
+    , "version" :    "0.20120407.014958"
     , "dependencies": {
         "zappa": "0.3.x",
         "redis": "*",
