@@ -5,13 +5,27 @@ SC = {}
   @use @express.static __dirname
 
   @include 'dotcloud'
-  db = @include 'db'
+  @include 'player'
+
+  DB = @include 'db'
 
   @get '/': ->
     @response.contentType 'text/html'
     @response.sendfile 'index.html'
+
+  @get '/:room': ->
+    @response.contentType 'text/html'
+    @response.sendfile 'index.html'
+
   @get '/start': -> @render 'start'
   @get '/new': -> @response.redirect '/' + require("uuid-pure").newId(10, 62).toLowerCase()
+
+  @use 'bodyParser'
+
+  @post '/:room': ->
+    {room, snapshot} = @data
+    DB.set "snapshot-#{room}", snapshot, (err) =>
+      @response.send 'text', { 'Content-Type': 'text/plain' }, 201
 
   @view start: ->
     div id:"topnav_wrap", -> div id:"navigation"
@@ -45,18 +59,18 @@ SC = {}
     broadcast = (data) => @socket.broadcast.to(room).emit 'broadcast', data
     switch type
       when 'chat'
-        db.rpush "chat-#{room}", msg, =>
+        DB.rpush "chat-#{room}", msg, =>
           broadcast @data
       when 'ask.ecells'
-        db.hgetall "ecell-#{room}", (_, values) =>
+        DB.hgetall "ecell-#{room}", (_, values) =>
           broadcast
             type: 'ecells'
             ecells: values
             room: room
       when 'my.ecell'
-        db.hset "ecell-#{room}", user, ecell
+        DB.hset "ecell-#{room}", user, ecell
       when 'execute'
-        db.multi()
+        DB.multi()
           .rpush("log-#{room}", cmdstr)
           .bgsave()
           .exec =>
@@ -64,26 +78,26 @@ SC = {}
             broadcast @data
       when 'ask.log'
         @socket.join(room)
-        db.multi()
+        DB.multi()
           .get("snapshot-#{room}")
           .lrange("log-#{room}", 0, -1)
           .lrange("chat-#{room}", 0, -1)
           .exec (_, [snapshot, log, chat]) =>
-            SC[room] = initSC snapshot, log, db, room, @io
+            SC[room] = initSC snapshot, log, DB, room, @io
             emit { type: 'log', room, log, chat, snapshot }
       when 'ask.recalc'
         @socket.join(room + ".recalc")
         if SC[room]?._snapshot
           emit { type: 'recalc', room, snapshot: SC[room]._snapshot }
         else
-          db.multi()
+          DB.multi()
             .get("snapshot-#{room}")
             .lrange("log-#{room}", 0, -1)
             .exec (_, [snapshot, log]) =>
-              SC[room] = initSC snapshot, log, db, room, @io
+              SC[room] = initSC snapshot, log, DB, room, @io
               emit { type: 'recalc', room, log, snapshot }
       when 'stopHuddle'
-        db.del [
+        DB.del [
           "log-#{room}"
           "chat-#{room}"
           "ecell-#{room}"
@@ -92,25 +106,12 @@ SC = {}
       else broadcast @data
     return
   
-  @include 'player'
-
-  @get '/:room': ->
-    @response.contentType 'text/html'
-    @response.sendfile 'index.html'
-
-  @use 'bodyParser'
-
-  @post '/:room': ->
-    {room, snapshot} = @data
-    db.set "snapshot-#{room}", snapshot, (err) =>
-      @response.send 'text', { 'Content-Type': 'text/plain' }, 201
-
 vm = require('vm')
 fs = require("fs")
 path = require("path")
 bootSC = fs.readFileSync(path.join(path.dirname(fs.realpathSync(__filename)) + '/SocialCalc.js'), 'utf8')
 
-initSC = (snapshot, log, db, room, io) ->
+initSC = (snapshot, log, DB, room, io) ->
   if SC[room]?
     SC[room]._doClearCache()
     return SC[room]
@@ -156,7 +157,7 @@ initSC = (snapshot, log, db, room, io) ->
       force: true
     }
     ss._snapshot = newSnapshot
-    db.multi()
+    DB.multi()
       .set("snapshot-#{ss._room}", newSnapshot)
       .del("log-#{ss._room}")
       .bgsave()
