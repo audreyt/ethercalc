@@ -73,17 +73,20 @@
             line for line in @data.log when not /^re(calc|display)$/.test(line)
           ).join("\n")
           if cmdstr.length
-            refreshCmd = "redisplay"
+            refreshCmd = "recalc"
             editor = SocialCalc.CurrentSpreadsheetControlObject.editor
-            if editor.context.sheetobj.attribs.recalc != "off"
-              refreshCmd = "recalc"
+            # if editor.context.sheetobj.attribs.recalc != "off"
+            #   refreshCmd = "recalc"
             SocialCalc.CurrentSpreadsheetControlObject.context.sheetobj.ScheduleSheetCommands cmdstr + "\n#{refreshCmd}\n", false, true
           else
-            SocialCalc.CurrentSpreadsheetControlObject.context.sheetobj.ScheduleSheetCommands "redisplay\n", false, true
+            SocialCalc.CurrentSpreadsheetControlObject.context.sheetobj.ScheduleSheetCommands "recalc\n", false, true
 #          editor.MoveECellCallback.broadcast = (e) ->
 #            SocialCalc.Callbacks.broadcast "my.ecell"
 #              ecell: e.ecell.coord
         when "recalc"
+          if @data.force
+            SocialCalc.Formula.SheetCache.sheets = {}
+            SocialCalc.CurrentSpreadsheetControlObject?.sheet.recalconce = true
           parts = SocialCalc.CurrentSpreadsheetControlObject.DecodeSpreadsheetSave(@data.snapshot) if @data.snapshot
           if parts?.sheet
             SocialCalc.RecalcLoadedSheet(
@@ -91,6 +94,7 @@
               @data.snapshot.substring(parts.sheet.start, parts.sheet.end),
               true # recalc
             )
+            SocialCalc.CurrentSpreadsheetControlObject.context.sheetobj.ScheduleSheetCommands "recalc\n", false, true
           else
             SocialCalc.RecalcLoadedSheet(@data.room, "", true)
         when "execute"

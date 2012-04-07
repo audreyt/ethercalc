@@ -62,15 +62,26 @@ SC = {}
           .exec =>
             SC[room]?.ExecuteCommand cmdstr
             broadcast @data
-      when 'ask.log', 'ask.recalc'
-        @socket.join(room) if type is 'ask.log'
+      when 'ask.log'
+        @socket.join(room)
         db.multi()
           .get("snapshot-#{room}")
           .lrange("log-#{room}", 0, -1)
           .lrange("chat-#{room}", 0, -1)
           .exec (_, [snapshot, log, chat]) =>
-            SC[room] = initSC snapshot, log, db, room
-            emit { type: type.replace('ask.', ''), room, log, chat, snapshot }
+            SC[room] = initSC snapshot, log, db, room, @io
+            emit { type: 'log', room, log, chat, snapshot }
+      when 'ask.recalc'
+        @socket.join(room + ".recalc")
+        if SC[room]?._snapshot
+          emit { type: 'recalc', room, snapshot: SC[room]._snapshot }
+        else
+          db.multi()
+            .get("snapshot-#{room}")
+            .lrange("log-#{room}", 0, -1)
+            .exec (_, [snapshot, log]) =>
+              SC[room] = initSC snapshot, log, db, room, @io
+              emit { type: 'recalc', room, log, snapshot }
       when 'stopHuddle'
         db.del [
           "log-#{room}"
@@ -99,7 +110,7 @@ fs = require("fs")
 path = require("path")
 bootSC = fs.readFileSync(path.join(path.dirname(fs.realpathSync(__filename)) + '/SocialCalc.js'), 'utf8')
 
-initSC = (snapshot, log, db, room) ->
+initSC = (snapshot, log, db, room, io) ->
   if SC[room]?
     SC[room]._doClearCache()
     return SC[room]
@@ -137,6 +148,14 @@ initSC = (snapshot, log, db, room) ->
   ss.editor.StatusCallback.EtherCalc = func: (editor, status, arg) ->
     return unless status is 'doneposcalc' and not ss.editor.busy
     newSnapshot = ss.CreateSpreadsheetSave()
+    return if ss._snapshot is newSnapshot
+    io.sockets.in(ss._room + ".recalc").emit 'broadcast', {
+      type: 'recalc'
+      room: ss._room
+      snapshot: newSnapshot
+      force: true
+    }
+    ss._snapshot = newSnapshot
     db.multi()
       .set("snapshot-#{ss._room}", newSnapshot)
       .del("log-#{ss._room}")
