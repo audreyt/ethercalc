@@ -5,8 +5,9 @@
     SocialCalc.isConnected = true
     SocialCalc.hadSnapshot = false
     SocialCalc._room ?= window.location.hash.replace('#', '')
+    SocialCalc._room = SocialCalc._room.replace(/^_+/, '')
     unless SocialCalc._room
-        window.location = '/start'
+        window.location = '/_start'
         return
     
     try window.history.pushState {}, '', '/'+SocialCalc._room
