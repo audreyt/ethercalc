@@ -13,7 +13,7 @@
     try window.history.pushState {}, '', '/'+SocialCalc._room
     @connect()
 
-    emit = (data) => @emit broadcast: data
+    emit = (data) => @emit { data }
     SocialCalc.Callbacks.broadcast = (type, data={}) =>
       return unless SocialCalc.isConnected
       data.user = SocialCalc._username
@@ -27,7 +27,7 @@
       ref = ref.replace(/[^a-zA-Z0-9]+/g, "").toLowerCase()
       emit { type: "ask.recalc", user: SocialCalc._username, room: ref }
 
-    @on broadcast: ->
+    @on data: ->
       return unless SocialCalc?.isConnected
       return if @data.user == SocialCalc._username
       return if @data.to and @data.to != SocialCalc._username

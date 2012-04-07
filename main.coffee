@@ -52,11 +52,11 @@
             src:"//a248.e.akamai.net/assets.github.com/img/7afbc8b248c68eb468279e8c17986ad46549fb71/687474703a2f2f73332e616d617a6f6e6177732e636f6d2f6769746875622f726962626f6e732f666f726b6d655f72696768745f6461726b626c75655f3132313632312e706e67"
             alt:"Fork me on GitHub"
   
-  @on broadcast: ->
+  @on data: ->
     {room, msg, user, ecell, cmdstr, type} = @data
     room = room.replace(/^_+/, '') # preceding underscore is reserved
-    emit = (data) => @emit broadcast: data
-    broadcast = (data) => @socket.broadcast.to("log-#{room}").emit 'broadcast', data
+    reply = (data) => @emit { data }
+    broadcast = (data) => @socket.broadcast.to("log-#{room}").emit 'data', data
     switch type
       when 'chat'
         DB.rpush "chat-#{room}", msg, =>
@@ -84,18 +84,18 @@
           .lrange("chat-#{room}", 0, -1)
           .exec (_, [snapshot, log, chat]) =>
             SC[room] = SC._init(snapshot, log, DB, room, @io)
-            emit { type: 'log', room, log, chat, snapshot }
+            reply { type: 'log', room, log, chat, snapshot }
       when 'ask.recalc'
         @socket.join("recalc.#{room}")
         if SC[room]?._snapshot
-          emit { type: 'recalc', room, snapshot: SC[room]._snapshot }
+          reply { type: 'recalc', room, snapshot: SC[room]._snapshot }
         else
           DB.multi()
             .get("snapshot-#{room}")
             .lrange("log-#{room}", 0, -1)
             .exec (_, [snapshot, log]) =>
               SC[room] = SC._init(snapshot, log, DB, room, @io)
-              emit { type: 'recalc', room, log, snapshot }
+              reply { type: 'recalc', room, log, snapshot }
       when 'stopHuddle'
         DB.del [
           "log-#{room}"

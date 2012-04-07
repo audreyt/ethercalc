@@ -45,18 +45,18 @@ SC ?= {}
       return unless status is 'doneposcalc' and not ss.editor.busy
       newSnapshot = ss.CreateSpreadsheetSave()
       return if ss._snapshot is newSnapshot
-      io.sockets.in("recalc.#{room}").emit 'broadcast', {
+      io.sockets.in("recalc.#{room}").emit 'data', {
         type: 'recalc'
-        room: ss._room
+        room: room
         snapshot: newSnapshot
         force: true
       }
       ss._snapshot = newSnapshot
       DB.multi()
-        .set("snapshot-#{ss._room}", newSnapshot)
-        .del("log-#{ss._room}")
+        .set("snapshot-#{room}", newSnapshot)
+        .del("log-#{room}")
         .bgsave()
-        .exec => console.log "Regenerated snapshot for #{ss._room}"
+        .exec => console.log "Regenerated snapshot for #{room}"
     parts = ss.DecodeSpreadsheetSave(snapshot) if snapshot
     if parts?.sheet
       ss.sheet.ResetSheet()
