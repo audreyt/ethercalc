@@ -4,7 +4,7 @@
     SocialCalc._username = Math.random().toString()
     SocialCalc.isConnected = true
     SocialCalc.hadSnapshot = false
-    SocialCalc._room = window.location.hash.replace('#', '')
+    SocialCalc._room ?= window.location.hash.replace('#', '')
     unless SocialCalc._room
         window.location = '/start'
         return

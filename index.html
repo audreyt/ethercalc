@@ -3,7 +3,13 @@
 <title>EtherCalc - Share the URL to your friends and edit together!</title>
 <script>
 if (!(window.location.hash.replace('#', ''))) {
-    window.location = '/start';
+    var match = window.location.href.match(/\/([^\/]+)$/);
+    if (match) {
+        window.SocialCalc = { _room: match[1] };
+    }
+    else {
+        window.location = '/start';
+    }
 }
 </script>
 <script src="/ethercalc.js"></script>

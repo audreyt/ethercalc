@@ -11,7 +11,7 @@ SC = {}
     @response.contentType 'text/html'
     @response.sendfile 'index.html'
   @get '/start': -> @render 'start'
-  @get '/new': -> @response.redirect '/#' + require("uuid-pure").newId(10, 62).toLowerCase()
+  @get '/new': -> @response.redirect '/' + require("uuid-pure").newId(10, 62).toLowerCase()
 
   @view start: ->
     div id:"topnav_wrap", -> div id:"navigation"
@@ -84,7 +84,8 @@ SC = {}
   @include 'player'
 
   @get '/:room': ->
-    @render room: { layout: no }
+    @response.contentType 'text/html'
+    @response.sendfile 'index.html'
 
   @use 'bodyParser'
 
@@ -92,10 +93,6 @@ SC = {}
     {room, snapshot} = @data
     db.set "snapshot-#{room}", snapshot, (err) =>
       @response.send 'text', { 'Content-Type': 'text/plain' }, 201
-
-  @view room: ->
-    coffeescript ->
-      window.location = '/#' + window.location.pathname.replace(/.*\//, '')
 
 vm = require('vm')
 fs = require("fs")
