@@ -25,13 +25,13 @@ DB = null
       console.log "==> Lost connection to Redis Server - attempting to reconnect"
     return if db.DB
     console.log err
-    console.log "==> Falling back to JSON storage"
+    console.log "==> Falling back to JSON storage: #{ process.cwd() }/dump.json"
 
     fs = require('fs')
     db.DB = {}
     try
       db.DB = JSON.parse(require('fs').readFileSync('dump.json', 'utf8'))
-      console.log "==> Restored previous session from dump.json"
+      console.log "==> Restored previous session from JSON file"
     Commands =
       bgsave: (cb) -> fs.writeFileSync('dump.json', JSON.stringify(db.DB), 'utf8'); cb?(null)
       get: (key, cb) -> cb?(null, db.DB[key])

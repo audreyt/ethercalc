@@ -14,7 +14,6 @@ SC ?= {}
       .get("snapshot-#{room}")
       .lrange("log-#{room}", 0, -1)
       .exec (_, [snapshot, log]) =>
-        console.log "==>" + snapshot
         SC[room] = SC._init(snapshot, log, DB, room, @io) if @io
         cb { log, snapshot }
 
@@ -75,7 +74,7 @@ SC ?= {}
         .set("snapshot-#{room}", newSnapshot)
         .del("log-#{room}")
         .bgsave()
-        .exec => console.log "Regenerated snapshot for #{room}"
+        .exec => console.log "==> Regenerated snapshot for #{room}"
     parts = ss.DecodeSpreadsheetSave(snapshot) if snapshot
     if parts?.sheet
       ss.sheet.ResetSheet()

@@ -7,9 +7,10 @@
   DB = @include 'db'
   SC = @include 'sc'
 
+  RealBin = require("path").dirname(require("fs").realpathSync(__filename))
   static = (file) -> ->
     @response.contentType 'text/html'
-    @response.sendfile file
+    @response.sendfile "#{RealBin}/#{file}"
 
   @get '/': static "index.html"
   @get '/_new': -> @response.redirect '/' + require("uuid-pure").newId(10, 36).toLowerCase()
