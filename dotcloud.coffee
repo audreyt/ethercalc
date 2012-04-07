@@ -1,4 +1,6 @@
 @include = -> try
+  @io.configure => @io.set "transports", ["websocket", "flashsocket", "xhr-polling", "jsonp-polling"]
+
   json = require('fs').readFileSync('/home/dotcloud/environment.json', 'utf8')
   env = process.env
   { DOTCLOUD_DATA_REDIS_HOST: env.REDIS_HOST

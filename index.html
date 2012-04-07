@@ -3,9 +3,8 @@
 <title>EtherCalc - Share the URL to your friends and edit together!</title>
 <script>
 if (!(window.location.hash.replace('#', ''))) {
-    var match = window.location.href.match(/\/([^_][^\/]*)$/);
-    if (match) {
-        window.SocialCalc = { _room: match[1] };
+    if (window.location.href.match(/\/([^_][^\/]*)$/) {
+        var SocialCalc = { _room: RegExp.$1 };
     }
     else {
         window.location = '/_start';
