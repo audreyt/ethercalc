@@ -52,6 +52,10 @@
               origCR = SocialCalc.coordToCr(@data.original)
               origCell = SocialCalc.GetEditorCellElement(editor, origCR.row, origCR.col)
               origCell.element.className = origCell.element.className.replace(find, "")
+              if @data.original is editor.ecell.coord or @data.ecell is editor.ecell.coord
+                SocialCalc.Callbacks.broadcast "ecell",
+                  to: @data.user
+                  ecell: editor.ecell.coord
             cr = SocialCalc.coordToCr(@data.ecell)
             cell = SocialCalc.GetEditorCellElement(editor, cr.row, cr.col)
             cell.element.className += peerClass if cell.element.className.search(find) == -1

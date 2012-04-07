@@ -1,4 +1,6 @@
+DB = null
 @include = ->
+  return DB if DB
   env = process.env
   [redisPort, redisHost, redisPass] = [env.REDIS_PORT, env.REDIS_HOST, env.REDIS_PASS]
 
@@ -49,4 +51,5 @@
         [cmd, args...] = @shift()
         db[cmd](args..., (_, result) => @results.push result; @exec(cb))
       return cmds
+  DB = db
   return db

@@ -3,22 +3,22 @@
 <title>EtherCalc - Share the URL to your friends and edit together!</title>
 <script>
 if (!(window.location.hash.replace('#', ''))) {
-    var match = window.location.href.match(/\/([^\/]+)$/);
+    var match = window.location.href.match(/\/([^_][^\/]*)$/);
     if (match) {
         window.SocialCalc = { _room: match[1] };
     }
     else {
-        window.location = '/start';
+        window.location = '/_start';
     }
 }
 </script>
-<script src="/ethercalc.js"></script>
+<script src="/static/ethercalc.js"></script>
 <script src="/socket.io/socket.io.js"></script>
 <script src="/zappa/zappa.js"></script>
 <script src="/player.js"></script>
 
-<link rel="stylesheet" type="text/css" href="socialcalc.css">
-<link rel="stylesheet" type="text/css" href="index.css">
+<link rel="stylesheet" type="text/css" href="static/socialcalc.css">
+<link rel="stylesheet" type="text/css" href="static/index.css">
 <style>
 body
  {font-family:verdana,helvetica,sans-serif;font-size:small;}
@@ -40,7 +40,7 @@ body
     */
 ">
 <form name="f0" action="" method="POST">
-<div style="padding:6px;background-color:#80A9F3;">
+<div style="padding:6px;background-color:#80A9F3;display:none">
 <span style="font-weight:bold;color:white;">ssctrltest1.html</span>
 <input type="button" name="savespreadsheet" value="Save" onclick="dosave();" class="smaller">
 <input type="submit" name="newcolors" value="New Colors" onclick="document.f0.action='?4C808';" class="smaller">
@@ -69,7 +69,7 @@ body
 <input type="hidden" name="sheetname" value="$sheetname">
 </div>
 </form>
-<div id="msg" style="position:absolute;right:15px;top: 8px; bottom: 80px">
+<div id="msg" style="position:absolute;right:15px;top: 8px; bottom: 80px; display: none">
 <textarea id="msgtext" style="margin-top:10px;width:110px;height:100%;"></textarea><br>
 <form id="msgform">
 <input type="text" id="msgout" name="msgout" style="width: 110px">

@@ -1,62 +1,44 @@
 @include = ->
   @enable 'serve jquery'
-  @use @express.static __dirname
-
+  @use 'bodyParser', @app.router, @express.static __dirname
   @include 'dotcloud'
   @include 'player'
 
   DB = @include 'db'
   SC = @include 'sc'
 
-  @get '/': ->
+  static = (file) -> ->
     @response.contentType 'text/html'
-    @response.sendfile 'index.html'
+    @response.sendfile file
 
-  @get '/:room': ->
-    @response.contentType 'text/html'
-    @response.sendfile 'index.html'
+  @get '/': static "index.html"
+  @get '/_new': -> @response.redirect '/' + require("uuid-pure").newId(10, 36).toLowerCase()
+  @get '/_start': static "start.html"
+  @get '/:room': static "index.html"
 
-  @get '/_start': -> @render 'start'
-  @get '/_new': -> @response.redirect '/' + require("uuid-pure").newId(10, 62).toLowerCase()
+  @get '/_/:room': ->
+    SC._get @params.room, null, ({ log, snapshot }) =>
+      @response.send '', { 'Content-Type': 'text/plain' }, 404 unless snapshot
+      @response.send snapshot, { 'Content-Type': 'text/plain' }, 201
 
-  @use 'bodyParser'
+  @put '/_/:room': ->
+    buf = ''
+    @request.setEncoding('utf8')
+    @request.on 'data', (chunk) => buf += chunk
+    @request.on 'end', => SC._put @params.room, buf, =>
+      @response.send 'OK', { 'Content-Type': 'text/plain' }, 201
 
   @post '/:room': ->
     {room, snapshot} = @data
-    DB.set "snapshot-#{room}", snapshot, (err) =>
-      @response.send 'text', { 'Content-Type': 'text/plain' }, 201
+    SC._put room, snapshot, =>
+      @response.send 'OK', { 'Content-Type': 'text/plain' }, 201
 
-  @view start: ->
-    div id:"topnav_wrap", -> div id:"navigation"
-    div id:"intro-left", ->
-      h1 "EtherCalc"
-      h2 "EtherCalc is a web spreadsheet."
-      p "Your data is saved on the web, and people can edit the same document at the same time. Everybody's changes are instantly reflected on all screens."
-      p "Work together on inventories, survey forms, list management, brainstorming sessions and more!"
-      div id:"intro-links", ->
-        a id:"newpadbutton", href:"/_new", alt: "Create Spreadsheet", ->
-          span "Create Spreadsheet"
-          br ""
-          small "No sign-up, start editing instantly"
-
-  @view layout: ->
-    html ->
-      head ->
-        title "EtherCalc"
-        link href:"/start.css", rel:"stylesheet", type:"text/css"
-      body id:"framedpagebody", class:"home", ->
-        div id:"top", -> @body
-        a href:"https://github.com/audreyt/ethercalc", ->
-          img
-            style:"z-order: 9999; position: absolute; top: 0; right: 0; border: 0"
-            src:"//a248.e.akamai.net/assets.github.com/img/7afbc8b248c68eb468279e8c17986ad46549fb71/687474703a2f2f73332e616d617a6f6e6177732e636f6d2f6769746875622f726962626f6e732f666f726b6d655f72696768745f6461726b626c75655f3132313632312e706e67"
-            alt:"Fork me on GitHub"
-  
   @on data: ->
     {room, msg, user, ecell, cmdstr, type} = @data
     room = room.replace(/^_+/, '') # preceding underscore is reserved
     reply = (data) => @emit { data }
-    broadcast = (data) => @socket.broadcast.to("log-#{room}").emit 'data', data
+    broadcast = (data) =>
+      @socket.broadcast.to(if @data.to then "user-#{@data.to}" else "log-#{room}").emit 'data', data
     switch type
       when 'chat'
         DB.rpush "chat-#{room}", msg, =>
@@ -72,12 +54,12 @@
       when 'execute'
         DB.multi()
           .rpush("log-#{room}", cmdstr)
-          .bgsave()
-          .exec =>
+          .bgsave().exec =>
             SC[room]?.ExecuteCommand cmdstr
             broadcast @data
       when 'ask.log'
         @socket.join("log-#{room}")
+        @socket.join("user-#{user}")
         DB.multi()
           .get("snapshot-#{room}")
           .lrange("log-#{room}", 0, -1)
@@ -87,21 +69,14 @@
             reply { type: 'log', room, log, chat, snapshot }
       when 'ask.recalc'
         @socket.join("recalc.#{room}")
-        if SC[room]?._snapshot
-          reply { type: 'recalc', room, snapshot: SC[room]._snapshot }
-        else
-          DB.multi()
-            .get("snapshot-#{room}")
-            .lrange("log-#{room}", 0, -1)
-            .exec (_, [snapshot, log]) =>
-              SC[room] = SC._init(snapshot, log, DB, room, @io)
-              reply { type: 'recalc', room, log, snapshot }
+        SC._get room, @io, ({ log, snapshot }) =>
+          reply { type: 'recalc', room, log, snapshot }
       when 'stopHuddle'
         DB.del [
           "log-#{room}"
           "chat-#{room}"
           "ecell-#{room}"
           "snapshot-#{room}"
-        ], => broadcast @data
+        ], => delete SC[room]; broadcast @data
       else broadcast @data
     return

@@ -6,6 +6,25 @@ bootSC = fs.readFileSync(path.join(path.dirname(fs.realpathSync(__filename)) + '
 SC ?= {}
 
 @include = ->
+  DB = @include 'db'
+
+  SC._get = (room, @io, cb) ->
+    return cb { snapshot: SC[room]._snapshot } if SC[room]?._snapshot
+    DB.multi()
+      .get("snapshot-#{room}")
+      .lrange("log-#{room}", 0, -1)
+      .exec (_, [snapshot, log]) =>
+        console.log "==>" + snapshot
+        SC[room] = SC._init(snapshot, log, DB, room, @io) if @io
+        cb { log, snapshot }
+
+  SC._put = (room, snapshot, cb) ->
+    return cb?() unless snapshot
+    DB.multi()
+      .set("snapshot-#{room}", snapshot)
+      .del(["log-#{room}", "chat-#{room}", "ecell-#{room}"])
+      .bgsave().exec => cb?()
+
   SC._init = (snapshot, log, DB, room, io) ->
     if SC[room]?
       SC[room]._doClearCache()

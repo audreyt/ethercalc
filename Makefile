@@ -22,13 +22,13 @@ all :: app.js
 ./node_modules/streamline/bin/_node :
 	npm i --dev
 
-depends :: app.js ethercalc.js start.css
+depends :: app.js static/ethercalc.js static/start.css
 
 SocialCalc.js :: $(SOCIALCALC_FILES) exports.js
 	cat $(SOCIALCALC_FILES) exports.js > $@
 	#@perl -e 'system(join(" ", closure => map { ("--js", $$_) } @ARGV). " > $@")' $(SOCIALCALC_FILES) exports.js
 
-ethercalc.js :: $(ETHERCALC_FILES)
+static/ethercalc.js :: $(ETHERCALC_FILES)
 	@perl -e 'system(join(" ", closure => map { ("--js", $$_) } @ARGV). " > $@")' $(ETHERCALC_FILES) 
 
 .coffee.js:
