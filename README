@@ -30,6 +30,10 @@
         socialcalcconstants.js
         socialcalcpopup.js
 
+    Apache License 2.0 (Sencha Inc.):
+
+        static/PIE.htc
+
     MIT License (John Resig, The Dojo Foundation):
 
         jquery.js
