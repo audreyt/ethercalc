@@ -1,7 +1,6 @@
 vm = require('vm')
 fs = require("fs")
 path = require("path")
-jsdom = require("jsdom")
 bootSC = fs.readFileSync(path.join(path.dirname(fs.realpathSync(__filename)) + '/SocialCalc.js'), 'utf8')
 SC ?= {}
 
@@ -28,8 +27,12 @@ SC ?= {}
     if SC[room]?
       SC[room]._doClearCache()
       return SC[room]
-    sandbox = vm.createContext(SocialCalc: null, ss: null, console: console, require: -> jsdom)
-    vm.runInContext bootSC, sandbox
+    sandbox = vm.createContext(SocialCalc: null, ss: null, console: console, require: -> try require('jsdom'))
+    try vm.runInContext bootSC, sandbox
+    unless sandbox.SocialCalc
+      console.log '==> Cannot load jsdom/contextify; falling back to log-only mode without support for ="page"!A1 refs'
+      SC._init = -> null
+      return null
     SocialCalc = sandbox.SocialCalc
     SocialCalc.SaveEditorSettings = -> ""
     SocialCalc.CreateAuditString = -> ""

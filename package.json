@@ -9,12 +9,12 @@
         "coffee-script": "*",
         "express": "*",
         "socket.io": "*",
-        "jsdom": "*",
         "coffeekup": "*",
         "optimist": "*"
     }
     , "optionalDependencies": {
-        "hiredis": "0.1.x"
+        "hiredis": "0.1.x",
+        "jsdom": "*"
     }
     , "directories": { "bin": "./bin" }
 }
