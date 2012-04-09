@@ -17,10 +17,18 @@
 // Initially coded by Dan Bricklin of Software Garden, Inc., for Socialtext, Inc.
 */
 
+body:last-child .defaultPeer {
+    border-collapse: separate;
+    filter: none;
+}
+
 .defaultPeer {
     box-shadow: inset 0 0 0 2px blue;
     -webkit-box-shadow: inset 0 0 0 2px blue;
     -moz-box-shadow: inset 0 0 0 2px blue;
+    /*zoom: 1;
+    filter: progid:DXImageTransform.Microsoft.Shadow(color='#0000ff', Direction=135, Strength=3);
+    */
     /*
      * concat peer combinations into multishadows:
     inset 0 0 0 4px orange,
