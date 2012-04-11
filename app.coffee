@@ -14,5 +14,5 @@ json = try JSON.parse(require('fs').readFileSync('/home/dotcloud/environment.jso
 port = Number(argv?.port || json?.PORT_NODEJS || process.env.PORT || process.env.VCAP_APP_PORT) || 8000
 host = argv?.host || process.env.VCAP_APP_HOST || '0.0.0.0'
 
-console.log "Please connect to: http://#{host}:#{port}/"
+console.log "Please connect to: http://#{if host is '0.0.0.0' then require('os').hostname() else host}:#{port}/"
 require('zappa') port, host, -> @include 'main'
