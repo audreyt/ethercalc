@@ -8,14 +8,14 @@
   SC = @include 'sc'
 
   RealBin = require("path").dirname(require("fs").realpathSync(__filename))
-  static = (file) -> ->
+  sendFile = (file) -> ->
     @response.contentType 'text/html'
     @response.sendfile "#{RealBin}/#{file}"
 
-  @get '/': static "index.html"
+  @get '/': sendFile "index.html"
   @get '/_new': -> @response.redirect '/' + require("uuid-pure").newId(10, 36).toLowerCase()
-  @get '/_start': static "start.html"
-  @get '/:room': static "index.html"
+  @get '/_start': sendFile "start.html"
+  @get '/:room': sendFile "index.html"
 
   @get '/_/:room': ->
     SC._get @params.room, null, ({ log, snapshot }) =>
