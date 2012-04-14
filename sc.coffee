@@ -2,7 +2,7 @@ vm = require('vm')
 fs = require("fs")
 path = require("path")
 bootSC = fs.readFileSync(path.join(path.dirname(fs.realpathSync(__filename)) + '/SocialCalc.js'), 'utf8')
-SC ?= {}
+global.SC ?= {}
 
 @include = ->
   DB = @include 'db'

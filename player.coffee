@@ -1,6 +1,6 @@
 @include = ->
   @client '/player.js': ->
-    SocialCalc ?= {}
+    window.SocialCalc ?= {}
     SocialCalc._username = Math.random().toString()
     SocialCalc.isConnected = true
     SocialCalc.hadSnapshot = false
