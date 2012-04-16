@@ -1,0 +1,1 @@
+h2 "CoffeeKup file template: #{@foo}"

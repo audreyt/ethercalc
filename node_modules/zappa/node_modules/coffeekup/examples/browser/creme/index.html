@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Client-side CoffeeKup (Crème)</title>
+
+    <!-- jQuery is NOT required, used here for convenience -->
+    <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.4.2/jquery.min.js"></script>
+
+    <script src="http://jashkenas.github.com/coffee-script/extras/coffee-script.js"></script>
+    <script src="coffeekup.js"></script>
+
+    <script type="text/coffeescript">
+      stooges = ['moe', 'larry', 'curly']
+      
+      $().ready ->
+        stringy = """
+          h2 'Template as string'
+
+          ul ->
+            for guy in @stooges
+              li guy
+        """
+
+        codey = ->
+          h2 'Template as a function'
+
+          ul ->
+            for guy in @stooges
+              li guy
+
+        $('body').append CoffeeKup.render(stringy, stooges: stooges)
+        $('body').append CoffeeKup.render(codey, stooges: stooges)
+    </script>
+  </head>
+  <body>
+    <h1>Client-side CoffeeKup (crème)</h1>
+    <p>Doing everything on the client. Lots of flexibility but a fatty download.</p>
+  </body>
+</html>

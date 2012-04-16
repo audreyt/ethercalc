@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Client-side CoffeeKup (decaf)</title>
+
+    <!-- jQuery is NOT required, used here for convenience -->
+    <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.4.2/jquery.min.js"></script>
+
+    <script src="template.js"></script>
+
+    <script>
+      $().ready(function(){
+        $('body').append(templates.template({stooges: ['moe', 'larry', 'curly']}));
+      });
+    </script>
+  </head>
+  <body>
+    <h1>Client-side CoffeeKup (decaf)</h1>
+    <p>Consuming a template from a non-CoffeeScript app.</p>
+  </body>
+</html>

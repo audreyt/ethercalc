@@ -2,18 +2,13 @@
     , "description" : "Multi-User Spreadsheet Server"
     , "version" :    "0.20120417.035053"
     , "dependencies": {
-        "zappa": "0.3.x",
         "redis": "*",
         "uuid-pure": "*",
-        "node-uuid": "*",
         "coffee-script": "*",
-        "express": "*",
-        "socket.io": "*",
-        "coffeekup": "*",
         "optimist": "*"
     }
     , "optionalDependencies": {
-        "hiredis": "0.1.x",
+        "hiredis": "~0.1",
         "jsdom": "*"
     }
     , "directories": { "bin": "./bin" }

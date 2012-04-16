@@ -1,0 +1,3 @@
+#!/usr/bin/env sh
+coffeekup --js template.coffee 
+

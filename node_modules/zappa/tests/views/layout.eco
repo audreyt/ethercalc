@@ -1,0 +1,7 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Eco file layout</title>
+  </head>
+  <body><%- @body %></body>
+</html>
