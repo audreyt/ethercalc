@@ -1,0 +1,2 @@
+require('./zappa') ->
+  @get '/': 'hi'

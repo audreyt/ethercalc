@@ -1,0 +1,82 @@
+<!DOCTYPE html>  <html> <head>   <title>client.coffee</title>   <meta http-equiv="content-type" content="text/html; charset=UTF-8">   <link rel="stylesheet" media="all" href="docco.css" /> </head> <body>   <div id="container">     <div id="background"></div>            <div id="jump_to">         Jump To &hellip;         <div id="jump_wrapper">           <div id="jump_page">                                           <a class="source" href="client.html">                 client.coffee               </a>                                           <a class="source" href="zappa.html">                 zappa.coffee               </a>                        </div>         </div>       </div>          <table cellpadding="0" cellspacing="0">       <thead>         <tr>           <th class="docs">             <h1>               client.coffee             </h1>           </th>           <th class="code">           </th>         </tr>       </thead>       <tbody>                               <tr id="section-1">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-1">&#182;</a>               </div>               <p>Client-side zappa.</p>             </td>             <td class="code">               <div class="highlight"><pre><span class="nv">skeleton = </span><span class="o">-&gt;</span>
+  <span class="nv">zappa = </span><span class="nb">window</span><span class="p">.</span><span class="nv">zappa = </span><span class="p">{}</span>
+  <span class="nv">zappa.version = </span><span class="kc">null</span>
+
+  <span class="nv">settings = </span><span class="kc">null</span>
+
+  <span class="nv">zappa.run = </span><span class="nf">(func) -&gt;</span>
+    <span class="nv">context = </span><span class="p">{}</span>
+    </pre></div>             </td>           </tr>                               <tr id="section-2">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-2">&#182;</a>               </div>               <p>Storage for the functions provided by the user.</p>             </td>             <td class="code">               <div class="highlight"><pre>    <span class="nv">ws_handlers = </span><span class="p">{}</span>
+    <span class="nv">helpers = </span><span class="p">{}</span>
+
+    <span class="nv">app = context.app = </span><span class="nx">Sammy</span><span class="p">()</span> <span class="k">if</span> <span class="nx">Sammy</span><span class="o">?</span>
+
+    <span class="nv">context.get = </span><span class="o">-&gt;</span>
+      <span class="k">if</span> <span class="k">typeof</span> <span class="nx">arguments</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">isnt</span> <span class="s1">&#39;object&#39;</span>
+        <span class="nx">route</span> <span class="nv">path: </span><span class="nx">arguments</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="nv">handler: </span><span class="nx">arguments</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+      <span class="k">else</span>
+        <span class="k">for</span> <span class="nx">k</span><span class="p">,</span> <span class="nx">v</span> <span class="k">of</span> <span class="nx">arguments</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+          <span class="nx">route</span> <span class="nv">path: </span><span class="nx">k</span><span class="p">,</span> <span class="nv">handler: </span><span class="nx">v</span>
+
+    <span class="nv">context.helper = </span><span class="nf">(obj) -&gt;</span>
+      <span class="k">for</span> <span class="nx">k</span><span class="p">,</span> <span class="nx">v</span> <span class="k">of</span> <span class="nx">obj</span>
+        <span class="nx">helpers</span><span class="p">[</span><span class="nx">k</span><span class="p">]</span> <span class="o">=</span> <span class="nx">v</span>
+
+    <span class="nv">context.on = </span><span class="nf">(obj) -&gt;</span>
+      <span class="k">for</span> <span class="nx">k</span><span class="p">,</span> <span class="nx">v</span> <span class="k">of</span> <span class="nx">obj</span>
+        <span class="nx">ws_handlers</span><span class="p">[</span><span class="nx">k</span><span class="p">]</span> <span class="o">=</span> <span class="nx">v</span>
+
+    <span class="nv">context.connect = </span><span class="o">-&gt;</span>
+      <span class="nv">context.socket = </span><span class="nx">io</span><span class="p">.</span><span class="nx">connect</span><span class="p">.</span><span class="nx">apply</span> <span class="nx">io</span><span class="p">,</span> <span class="nx">arguments</span>
+      
+    <span class="nv">context.emit = </span><span class="o">-&gt;</span>
+      <span class="k">if</span> <span class="k">typeof</span> <span class="nx">arguments</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">isnt</span> <span class="s1">&#39;object&#39;</span>
+        <span class="nx">context</span><span class="p">.</span><span class="nx">socket</span><span class="p">.</span><span class="nx">emit</span><span class="p">.</span><span class="nx">apply</span> <span class="nx">context</span><span class="p">.</span><span class="nx">socket</span><span class="p">,</span> <span class="nx">arguments</span>
+      <span class="k">else</span>
+        <span class="k">for</span> <span class="nx">k</span><span class="p">,</span> <span class="nx">v</span> <span class="k">of</span> <span class="nx">arguments</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+          <span class="nx">context</span><span class="p">.</span><span class="nx">socket</span><span class="p">.</span><span class="nx">emit</span><span class="p">.</span><span class="nx">apply</span> <span class="nx">context</span><span class="p">.</span><span class="nx">socket</span><span class="p">,</span> <span class="p">[</span><span class="nx">k</span><span class="p">,</span> <span class="nx">v</span><span class="p">]</span>
+
+    <span class="nv">route = </span><span class="nf">(r) -&gt;</span>
+      <span class="nv">ctx = </span><span class="p">{</span><span class="nx">app</span><span class="p">}</span>
+
+      <span class="k">for</span> <span class="nx">name</span><span class="p">,</span> <span class="nx">helper</span> <span class="k">of</span> <span class="nx">helpers</span>
+        <span class="nx">ctx</span><span class="p">[</span><span class="nx">name</span><span class="p">]</span> <span class="o">=</span> <span class="o">-&gt;</span>
+          <span class="nx">helper</span><span class="p">.</span><span class="nx">apply</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span> <span class="nx">arguments</span><span class="p">)</span>
+
+      <span class="nx">app</span><span class="p">.</span><span class="nx">get</span> <span class="nx">r</span><span class="p">.</span><span class="nx">path</span><span class="p">,</span> <span class="nf">(sammy_context) -&gt;</span>
+        <span class="nv">ctx.params = </span><span class="nx">sammy_context</span><span class="p">.</span><span class="nx">params</span>
+        <span class="nv">ctx.sammy_context = </span><span class="nx">sammy_context</span>
+        <span class="nv">ctx.render = </span><span class="o">-&gt;</span> <span class="nx">sammy_context</span><span class="p">.</span><span class="nx">render</span><span class="p">.</span><span class="nx">apply</span> <span class="nx">sammy_context</span><span class="p">,</span> <span class="nx">arguments</span>
+        <span class="nv">ctx.redirect = </span><span class="o">-&gt;</span> <span class="nx">sammy_context</span><span class="p">.</span><span class="nx">redirect</span><span class="p">.</span><span class="nx">apply</span> <span class="nx">sammy_context</span><span class="p">,</span> <span class="nx">arguments</span>
+        <span class="k">switch</span> <span class="nx">settings</span><span class="p">[</span><span class="s1">&#39;databag&#39;</span><span class="p">]</span>
+          <span class="k">when</span> <span class="s1">&#39;this&#39;</span> <span class="k">then</span> <span class="nx">r</span><span class="p">.</span><span class="nx">handler</span><span class="p">.</span><span class="nx">apply</span><span class="p">(</span><span class="nx">sammy_context</span><span class="p">.</span><span class="nx">params</span><span class="p">,</span> <span class="p">[</span><span class="nx">ctx</span><span class="p">])</span>
+          <span class="k">when</span> <span class="s1">&#39;param&#39;</span> <span class="k">then</span> <span class="nx">r</span><span class="p">.</span><span class="nx">handler</span><span class="p">.</span><span class="nx">apply</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span> <span class="p">[</span><span class="nx">sammy_context</span><span class="p">.</span><span class="nx">params</span><span class="p">])</span>
+          <span class="k">else</span> <span class="nx">r</span><span class="p">.</span><span class="nx">handler</span><span class="p">.</span><span class="nx">apply</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span> <span class="p">[</span><span class="nx">ctx</span><span class="p">])</span></pre></div>             </td>           </tr>                               <tr id="section-3">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-3">&#182;</a>               </div>               <p>GO!!!</p>             </td>             <td class="code">               <div class="highlight"><pre>    <span class="nx">func</span><span class="p">.</span><span class="nx">apply</span><span class="p">(</span><span class="nx">context</span><span class="p">,</span> <span class="p">[</span><span class="nx">context</span><span class="p">])</span></pre></div>             </td>           </tr>                               <tr id="section-4">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-4">&#182;</a>               </div>               <p>Implements the websockets client with socket.io.</p>             </td>             <td class="code">               <div class="highlight"><pre>    <span class="k">if</span> <span class="nx">context</span><span class="p">.</span><span class="nx">socket</span><span class="o">?</span>
+      <span class="k">for</span> <span class="nx">name</span><span class="p">,</span> <span class="nx">h</span> <span class="k">of</span> <span class="nx">ws_handlers</span>
+        <span class="nx">do</span> <span class="nf">(name, h) -&gt;</span>
+          <span class="nx">context</span><span class="p">.</span><span class="nx">socket</span><span class="p">.</span><span class="kc">on</span> <span class="nx">name</span><span class="p">,</span> <span class="nf">(data) -&gt;</span>
+            <span class="nv">ctx =</span>
+              <span class="nv">app: </span><span class="nx">app</span>
+              <span class="nv">socket: </span><span class="nx">context</span><span class="p">.</span><span class="nx">socket</span>
+              <span class="nv">id: </span><span class="nx">context</span><span class="p">.</span><span class="nx">socket</span><span class="p">.</span><span class="nx">id</span>
+              <span class="nv">data: </span><span class="nx">data</span>
+              <span class="nv">emit: </span><span class="nx">context</span><span class="p">.</span><span class="nx">emit</span>
+
+            <span class="k">for</span> <span class="nx">name</span><span class="p">,</span> <span class="nx">helper</span> <span class="k">of</span> <span class="nx">helpers</span>
+              <span class="nx">do</span> <span class="nf">(name, helper) -&gt;</span>
+                <span class="nx">ctx</span><span class="p">[</span><span class="nx">name</span><span class="p">]</span> <span class="o">=</span> <span class="o">-&gt;</span>
+                  <span class="nx">helper</span><span class="p">.</span><span class="nx">apply</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span> <span class="nx">arguments</span><span class="p">)</span>
+
+            <span class="k">switch</span> <span class="nx">settings</span><span class="p">[</span><span class="s1">&#39;databag&#39;</span><span class="p">]</span>
+              <span class="k">when</span> <span class="s1">&#39;this&#39;</span> <span class="k">then</span> <span class="nx">h</span><span class="p">.</span><span class="nx">apply</span><span class="p">(</span><span class="nx">data</span><span class="p">,</span> <span class="p">[</span><span class="nx">ctx</span><span class="p">])</span>
+              <span class="k">when</span> <span class="s1">&#39;param&#39;</span> <span class="k">then</span> <span class="nx">h</span><span class="p">.</span><span class="nx">apply</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span> <span class="p">[</span><span class="nx">data</span><span class="p">])</span>
+              <span class="k">else</span> <span class="nx">h</span><span class="p">.</span><span class="nx">apply</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span> <span class="p">[</span><span class="nx">ctx</span><span class="p">])</span>
+
+    <span class="nx">$</span><span class="p">(</span><span class="o">-&gt;</span> <span class="nx">app</span><span class="p">.</span><span class="nx">run</span> <span class="s1">&#39;#/&#39;</span><span class="p">)</span> <span class="k">if</span> <span class="nx">app</span><span class="o">?</span>
+
+<span class="vi">@build = </span><span class="nf">(version, settings) -&gt;</span>
+  <span class="nb">String</span><span class="p">(</span><span class="nx">skeleton</span><span class="p">)</span>
+    <span class="p">.</span><span class="nx">replace</span><span class="p">(</span><span class="s1">&#39;version = null;&#39;</span><span class="p">,</span> <span class="s2">&quot;version = &#39;#{version}&#39;;&quot;</span><span class="p">)</span>
+    <span class="p">.</span><span class="nx">replace</span><span class="p">(</span><span class="s1">&#39;settings = null;&#39;</span><span class="p">,</span> <span class="s2">&quot;var settings = #{JSON.stringify settings};&quot;</span><span class="p">)</span>
+
+</pre></div>             </td>           </tr>                </tbody>     </table>   </div> </body> </html> 

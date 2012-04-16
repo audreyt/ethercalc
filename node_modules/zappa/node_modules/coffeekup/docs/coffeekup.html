@@ -1,0 +1,284 @@
+<!DOCTYPE html>  <html> <head>   <title>coffeekup.coffee</title>   <meta http-equiv="content-type" content="text/html; charset=UTF-8">   <link rel="stylesheet" media="all" href="docco.css" /> </head> <body>   <div id="container">     <div id="background"></div>          <table cellpadding="0" cellspacing="0">       <thead>         <tr>           <th class="docs">             <h1>               coffeekup.coffee             </h1>           </th>           <th class="code">           </th>         </tr>       </thead>       <tbody>                               <tr id="section-1">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-1">&#182;</a>               </div>               <p><strong>CoffeeKup</strong> lets you to write HTML templates in 100% pure
+<a href="http://coffeescript.org">CoffeeScript</a>.</p>
+
+<p>You can run it on <a href="http://nodejs.org">node.js</a> or the browser, or compile your
+templates down to self-contained javascript functions, that will take in data
+and options and return generated HTML on any JS runtime.</p>
+
+<p>The concept is directly stolen from the amazing
+<a href="http://markaby.rubyforge.org/">Markaby</a> by Tim Fletcher and why the lucky
+stiff.</p>             </td>             <td class="code">               <div class="highlight"><pre><span class="k">if</span> <span class="nb">window</span><span class="o">?</span>
+  <span class="nv">coffeekup = </span><span class="nb">window</span><span class="p">.</span><span class="nv">CoffeeKup = </span><span class="p">{}</span>
+  <span class="nv">coffee = </span><span class="k">if</span> <span class="nx">CoffeeScript</span><span class="o">?</span> <span class="k">then</span> <span class="nx">CoffeeScript</span> <span class="k">else</span> <span class="kc">null</span>
+<span class="k">else</span>
+  <span class="nv">coffeekup = </span><span class="nx">exports</span>
+  <span class="nv">coffee = </span><span class="nx">require</span> <span class="s1">&#39;coffee-script&#39;</span>
+
+<span class="nv">coffeekup.version = </span><span class="s1">&#39;0.3.1&#39;</span></pre></div>             </td>           </tr>                               <tr id="section-2">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-2">&#182;</a>               </div>               <p>Values available to the <code>doctype</code> function inside a template.
+Ex.: <code>doctype 'strict'</code></p>             </td>             <td class="code">               <div class="highlight"><pre><span class="nv">coffeekup.doctypes =</span>
+  <span class="s1">&#39;default&#39;</span><span class="o">:</span> <span class="s1">&#39;&lt;!DOCTYPE html&gt;&#39;</span>
+  <span class="s1">&#39;5&#39;</span><span class="o">:</span> <span class="s1">&#39;&lt;!DOCTYPE html&gt;&#39;</span>
+  <span class="s1">&#39;xml&#39;</span><span class="o">:</span> <span class="s1">&#39;&lt;?xml version=&quot;1.0&quot; encoding=&quot;utf-8&quot; ?&gt;&#39;</span>
+  <span class="s1">&#39;transitional&#39;</span><span class="o">:</span> <span class="s1">&#39;&lt;!DOCTYPE html PUBLIC &quot;-//W3C//DTD XHTML 1.0 Transitional//EN&quot; &quot;http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd&quot;&gt;&#39;</span>
+  <span class="s1">&#39;strict&#39;</span><span class="o">:</span> <span class="s1">&#39;&lt;!DOCTYPE html PUBLIC &quot;-//W3C//DTD XHTML 1.0 Strict//EN&quot; &quot;http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd&quot;&gt;&#39;</span>
+  <span class="s1">&#39;frameset&#39;</span><span class="o">:</span> <span class="s1">&#39;&lt;!DOCTYPE html PUBLIC &quot;-//W3C//DTD XHTML 1.0 Frameset//EN&quot; &quot;http://www.w3.org/TR/xhtml1/DTD/xhtml1-frameset.dtd&quot;&gt;&#39;</span>
+  <span class="s1">&#39;1.1&#39;</span><span class="o">:</span> <span class="s1">&#39;&lt;!DOCTYPE html PUBLIC &quot;-//W3C//DTD XHTML 1.1//EN&quot; &quot;http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd&quot;&gt;&#39;</span><span class="p">,</span>
+  <span class="s1">&#39;basic&#39;</span><span class="o">:</span> <span class="s1">&#39;&lt;!DOCTYPE html PUBLIC &quot;-//W3C//DTD XHTML Basic 1.1//EN&quot; &quot;http://www.w3.org/TR/xhtml-basic/xhtml-basic11.dtd&quot;&gt;&#39;</span>
+  <span class="s1">&#39;mobile&#39;</span><span class="o">:</span> <span class="s1">&#39;&lt;!DOCTYPE html PUBLIC &quot;-//WAPFORUM//DTD XHTML Mobile 1.2//EN&quot; &quot;http://www.openmobilealliance.org/tech/DTD/xhtml-mobile12.dtd&quot;&gt;&#39;</span>
+  <span class="s1">&#39;ce&#39;</span><span class="o">:</span> <span class="s1">&#39;&lt;!DOCTYPE html PUBLIC &quot;-//W3C//DTD XHTML 1.0 Transitional//EN&quot; &quot;ce-html-1.0-transitional.dtd&quot;&gt;&#39;</span></pre></div>             </td>           </tr>                               <tr id="section-3">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-3">&#182;</a>               </div>               <p>CoffeeScript-generated JavaScript may contain anyone of these; but when we
+take a function to string form to manipulate it, and then recreate it through
+the <code>Function()</code> constructor, it loses access to its parent scope and
+consequently to any helpers it might need. So we need to reintroduce these
+inside any "rewritten" function.</p>             </td>             <td class="code">               <div class="highlight"><pre><span class="nv">coffeescript_helpers = </span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">  var __slice = Array.prototype.slice;</span>
+<span class="s2">  var __hasProp = Object.prototype.hasOwnProperty;</span>
+<span class="s2">  var __bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; };</span>
+<span class="s2">  var __extends = function(child, parent) {</span>
+<span class="s2">    for (var key in parent) { if (__hasProp.call(parent, key)) child[key] = parent[key]; }</span>
+<span class="s2">    function ctor() { this.constructor = child; }</span>
+<span class="s2">    ctor.prototype = parent.prototype; child.prototype = new ctor; child.__super__ = parent.prototype;</span>
+<span class="s2">    return child; };</span>
+<span class="s2">  var __indexOf = Array.prototype.indexOf || function(item) {</span>
+<span class="s2">    for (var i = 0, l = this.length; i &lt; l; i++) {</span>
+<span class="s2">      if (this[i] === item) return i;</span>
+<span class="s2">    } return -1; };</span>
+<span class="s2">&quot;&quot;&quot;</span><span class="p">.</span><span class="nx">replace</span> <span class="sr">/\n/g</span><span class="p">,</span> <span class="s1">&#39;&#39;</span></pre></div>             </td>           </tr>                               <tr id="section-4">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-4">&#182;</a>               </div>               <p>Private HTML element reference.
+Please mind the gap (1 space at the beginning of each subsequent line).</p>             </td>             <td class="code">               <div class="highlight"><pre><span class="nv">elements =</span></pre></div>             </td>           </tr>                               <tr id="section-5">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-5">&#182;</a>               </div>               <p>Valid HTML 5 elements requiring a closing tag.
+Note: the <code>var</code> element is out for obvious reasons, please use <code>tag 'var'</code>.</p>             </td>             <td class="code">               <div class="highlight"><pre>  <span class="nv">regular: </span><span class="s1">&#39;a abbr address article aside audio b bdi bdo blockquote body button</span>
+<span class="s1"> canvas caption cite code colgroup datalist dd del details dfn div dl dt em</span>
+<span class="s1"> fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 head header hgroup</span>
+<span class="s1"> html i iframe ins kbd label legend li map mark menu meter nav noscript object</span>
+<span class="s1"> ol optgroup option output p pre progress q rp rt ruby s samp script section</span>
+<span class="s1"> select small span strong style sub summary sup table tbody td textarea tfoot</span>
+<span class="s1"> th thead time title tr u ul video&#39;</span></pre></div>             </td>           </tr>                               <tr id="section-6">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-6">&#182;</a>               </div>               <p>Valid self-closing HTML 5 elements.</p>             </td>             <td class="code">               <div class="highlight"><pre>  <span class="nv">void: </span><span class="s1">&#39;area base br col command embed hr img input keygen link meta param</span>
+<span class="s1"> source track wbr&#39;</span>
+
+  <span class="nv">obsolete: </span><span class="s1">&#39;applet acronym bgsound dir frameset noframes isindex listing</span>
+<span class="s1"> nextid noembed plaintext rb strike xmp big blink center font marquee multicol</span>
+<span class="s1"> nobr spacer tt&#39;</span>
+
+  <span class="nv">obsolete_void: </span><span class="s1">&#39;basefont frame&#39;</span></pre></div>             </td>           </tr>                               <tr id="section-7">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-7">&#182;</a>               </div>               <p>Create a unique list of element names merging the desired groups.</p>             </td>             <td class="code">               <div class="highlight"><pre><span class="nv">merge_elements = </span><span class="nf">(args...) -&gt;</span>
+  <span class="nv">result = </span><span class="p">[]</span>
+  <span class="k">for</span> <span class="nx">a</span> <span class="k">in</span> <span class="nx">args</span>
+    <span class="k">for</span> <span class="nx">element</span> <span class="k">in</span> <span class="nx">elements</span><span class="p">[</span><span class="nx">a</span><span class="p">].</span><span class="nx">split</span> <span class="s1">&#39; &#39;</span>
+      <span class="nx">result</span><span class="p">.</span><span class="nx">push</span> <span class="nx">element</span> <span class="nx">unless</span> <span class="nx">element</span> <span class="k">in</span> <span class="nx">result</span>
+  <span class="nx">result</span></pre></div>             </td>           </tr>                               <tr id="section-8">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-8">&#182;</a>               </div>               <p>Public/customizable list of possible elements.
+For each name in this list that is also present in the input template code,
+a function with the same name will be added to the compiled template.</p>             </td>             <td class="code">               <div class="highlight"><pre><span class="nv">coffeekup.tags = </span><span class="nx">merge_elements</span> <span class="s1">&#39;regular&#39;</span><span class="p">,</span> <span class="s1">&#39;obsolete&#39;</span><span class="p">,</span> <span class="s1">&#39;void&#39;</span><span class="p">,</span> <span class="s1">&#39;obsolete_void&#39;</span></pre></div>             </td>           </tr>                               <tr id="section-9">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-9">&#182;</a>               </div>               <p>Public/customizable list of elements that should be rendered self-closed.</p>             </td>             <td class="code">               <div class="highlight"><pre><span class="nv">coffeekup.self_closing = </span><span class="nx">merge_elements</span> <span class="s1">&#39;void&#39;</span><span class="p">,</span> <span class="s1">&#39;obsolete_void&#39;</span></pre></div>             </td>           </tr>                               <tr id="section-10">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-10">&#182;</a>               </div>               <p>This is the basic material from which compiled templates will be formed.
+It will be manipulated in its string form at the <code>coffeekup.compile</code> function
+to generate the final template function. </p>             </td>             <td class="code">               <div class="highlight"><pre><span class="nv">skeleton = </span><span class="nf">(data = {}) -&gt;</span></pre></div>             </td>           </tr>                               <tr id="section-11">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-11">&#182;</a>               </div>               <p>Whether to generate formatted HTML with indentation and line breaks, or
+just the natural "faux-minified" output.</p>             </td>             <td class="code">               <div class="highlight"><pre>  <span class="nx">data</span><span class="p">.</span><span class="nx">format</span> <span class="o">?=</span> <span class="kc">off</span></pre></div>             </td>           </tr>                               <tr id="section-12">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-12">&#182;</a>               </div>               <p>Whether to autoescape all content or let you handle it on a case by case
+basis with the <code>h</code> function.</p>             </td>             <td class="code">               <div class="highlight"><pre>  <span class="nx">data</span><span class="p">.</span><span class="nx">autoescape</span> <span class="o">?=</span> <span class="kc">off</span></pre></div>             </td>           </tr>                               <tr id="section-13">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-13">&#182;</a>               </div>               <p>Internal CoffeeKup stuff.</p>             </td>             <td class="code">               <div class="highlight"><pre>  <span class="nv">__ck =</span>
+    <span class="nv">buffer: </span><span class="p">[]</span>
+      
+    <span class="nv">esc: </span><span class="nf">(txt) -&gt;</span>
+      <span class="k">if</span> <span class="nx">data</span><span class="p">.</span><span class="nx">autoescape</span> <span class="k">then</span> <span class="nx">h</span><span class="p">(</span><span class="nx">txt</span><span class="p">)</span> <span class="k">else</span> <span class="nb">String</span><span class="p">(</span><span class="nx">txt</span><span class="p">)</span>
+
+    <span class="nv">tabs: </span><span class="mi">0</span>
+
+    <span class="nv">repeat: </span><span class="nf">(string, count) -&gt;</span> <span class="nb">Array</span><span class="p">(</span><span class="nx">count</span> <span class="o">+</span> <span class="mi">1</span><span class="p">).</span><span class="nx">join</span> <span class="nx">string</span>
+
+    <span class="nv">indent: </span><span class="o">-&gt;</span> <span class="nx">text</span> <span class="nx">@repeat</span><span class="p">(</span><span class="s1">&#39;  &#39;</span><span class="p">,</span> <span class="nx">@tabs</span><span class="p">)</span> <span class="k">if</span> <span class="nx">data</span><span class="p">.</span><span class="nx">format</span></pre></div>             </td>           </tr>                               <tr id="section-14">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-14">&#182;</a>               </div>               <p>Adapter to keep the builtin tag functions DRY.</p>             </td>             <td class="code">               <div class="highlight"><pre>    <span class="nv">tag: </span><span class="nf">(name, args) -&gt;</span>
+      <span class="nv">combo = </span><span class="p">[</span><span class="nx">name</span><span class="p">]</span>
+      <span class="nx">combo</span><span class="p">.</span><span class="nx">push</span> <span class="nx">i</span> <span class="k">for</span> <span class="nx">i</span> <span class="k">in</span> <span class="nx">args</span>
+      <span class="nx">tag</span><span class="p">.</span><span class="nx">apply</span> <span class="nx">data</span><span class="p">,</span> <span class="nx">combo</span>
+
+    <span class="nv">render_idclass: </span><span class="nf">(str) -&gt;</span>
+      <span class="nv">classes = </span><span class="p">[]</span>
+        
+      <span class="k">for</span> <span class="nx">i</span> <span class="k">in</span> <span class="nx">str</span><span class="p">.</span><span class="nx">split</span> <span class="s1">&#39;.&#39;</span>
+        <span class="k">if</span> <span class="s1">&#39;#&#39;</span> <span class="k">in</span> <span class="nx">i</span>
+          <span class="nv">id = </span><span class="nx">i</span><span class="p">.</span><span class="nx">replace</span> <span class="s1">&#39;#&#39;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span>
+        <span class="k">else</span>
+          <span class="nx">classes</span><span class="p">.</span><span class="nx">push</span> <span class="nx">i</span> <span class="nx">unless</span> <span class="nx">i</span> <span class="o">is</span> <span class="s1">&#39;&#39;</span>
+            
+      <span class="nx">text</span> <span class="s2">&quot; id=\&quot;#{id}\&quot;&quot;</span> <span class="k">if</span> <span class="nx">id</span>
+      
+      <span class="k">if</span> <span class="nx">classes</span><span class="p">.</span><span class="nx">length</span> <span class="o">&gt;</span> <span class="mi">0</span>
+        <span class="nx">text</span> <span class="s2">&quot; class=\&quot;&quot;</span>
+        <span class="k">for</span> <span class="nx">c</span> <span class="k">in</span> <span class="nx">classes</span>
+          <span class="nx">text</span> <span class="s1">&#39; &#39;</span> <span class="nx">unless</span> <span class="nx">c</span> <span class="o">is</span> <span class="nx">classes</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+          <span class="nx">text</span> <span class="nx">c</span>
+        <span class="nx">text</span> <span class="s1">&#39;&quot;&#39;</span>
+
+    <span class="nv">render_attrs: </span><span class="nf">(obj, prefix = &#39;&#39;) -&gt;</span>
+      <span class="k">for</span> <span class="nx">k</span><span class="p">,</span> <span class="nx">v</span> <span class="k">of</span> <span class="nx">obj</span></pre></div>             </td>           </tr>                               <tr id="section-15">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-15">&#182;</a>               </div>               <p><code>true</code> is rendered as <code>selected="selected"</code>.</p>             </td>             <td class="code">               <div class="highlight"><pre>        <span class="nv">v = </span><span class="nx">k</span> <span class="k">if</span> <span class="k">typeof</span> <span class="nx">v</span> <span class="o">is</span> <span class="s1">&#39;boolean&#39;</span> <span class="o">and</span> <span class="nx">v</span>
+        </pre></div>             </td>           </tr>                               <tr id="section-16">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-16">&#182;</a>               </div>               <p>Functions are rendered in an executable form.</p>             </td>             <td class="code">               <div class="highlight"><pre>        <span class="nv">v = </span><span class="s2">&quot;(#{v}).call(this);&quot;</span> <span class="k">if</span> <span class="k">typeof</span> <span class="nx">v</span> <span class="o">is</span> <span class="s1">&#39;function&#39;</span></pre></div>             </td>           </tr>                               <tr id="section-17">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-17">&#182;</a>               </div>               <p>Prefixed attribute.</p>             </td>             <td class="code">               <div class="highlight"><pre>        <span class="k">if</span> <span class="k">typeof</span> <span class="nx">v</span> <span class="o">is</span> <span class="s1">&#39;object&#39;</span> <span class="o">and</span> <span class="nx">v</span> <span class="o">not</span> <span class="k">instanceof</span> <span class="nb">Array</span></pre></div>             </td>           </tr>                               <tr id="section-18">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-18">&#182;</a>               </div>               <p><code>data: {icon: 'foo'}</code> is rendered as <code>data-icon="foo"</code>.</p>             </td>             <td class="code">               <div class="highlight"><pre>          <span class="nx">@render_attrs</span><span class="p">(</span><span class="nx">v</span><span class="p">,</span> <span class="nx">prefix</span> <span class="o">+</span> <span class="nx">k</span> <span class="o">+</span> <span class="s1">&#39;-&#39;</span><span class="p">)</span></pre></div>             </td>           </tr>                               <tr id="section-19">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-19">&#182;</a>               </div>               <p><code>undefined</code>, <code>false</code> and <code>null</code> result in the attribute not being rendered.</p>             </td>             <td class="code">               <div class="highlight"><pre>        <span class="k">else</span> <span class="k">if</span> <span class="nx">v</span></pre></div>             </td>           </tr>                               <tr id="section-20">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-20">&#182;</a>               </div>               <p>strings, numbers, arrays and functions are rendered "as is".</p>             </td>             <td class="code">               <div class="highlight"><pre>          <span class="nx">text</span> <span class="s2">&quot; #{prefix + k}=\&quot;#{@esc(v)}\&quot;&quot;</span>
+
+    <span class="nv">render_contents: </span><span class="nf">(contents) -&gt;</span>
+      <span class="k">switch</span> <span class="k">typeof</span> <span class="nx">contents</span>
+        <span class="k">when</span> <span class="s1">&#39;string&#39;</span><span class="p">,</span> <span class="s1">&#39;number&#39;</span><span class="p">,</span> <span class="s1">&#39;boolean&#39;</span>
+          <span class="nx">text</span> <span class="nx">@esc</span><span class="p">(</span><span class="nx">contents</span><span class="p">)</span>
+        <span class="k">when</span> <span class="s1">&#39;function&#39;</span>
+          <span class="nx">text</span> <span class="s1">&#39;\n&#39;</span> <span class="k">if</span> <span class="nx">data</span><span class="p">.</span><span class="nx">format</span>
+          <span class="nx">@tabs</span><span class="o">++</span>
+          <span class="nv">result = </span><span class="nx">contents</span><span class="p">.</span><span class="nx">call</span> <span class="nx">data</span>
+          <span class="k">if</span> <span class="k">typeof</span> <span class="nx">result</span> <span class="o">is</span> <span class="s1">&#39;string&#39;</span>
+            <span class="nx">@indent</span><span class="p">()</span>
+            <span class="nx">text</span> <span class="nx">@esc</span><span class="p">(</span><span class="nx">result</span><span class="p">)</span>
+            <span class="nx">text</span> <span class="s1">&#39;\n&#39;</span> <span class="k">if</span> <span class="nx">data</span><span class="p">.</span><span class="nx">format</span>
+          <span class="nx">@tabs</span><span class="o">--</span>
+          <span class="nx">@indent</span><span class="p">()</span>
+
+    <span class="nv">render_tag: </span><span class="nf">(name, idclass, attrs, contents) -&gt;</span>
+      <span class="nx">@indent</span><span class="p">()</span>
+    
+      <span class="nx">text</span> <span class="s2">&quot;&lt;#{name}&quot;</span>
+      <span class="nx">@render_idclass</span><span class="p">(</span><span class="nx">idclass</span><span class="p">)</span> <span class="k">if</span> <span class="nx">idclass</span>
+      <span class="nx">@render_attrs</span><span class="p">(</span><span class="nx">attrs</span><span class="p">)</span> <span class="k">if</span> <span class="nx">attrs</span>
+  
+      <span class="k">if</span> <span class="nx">name</span> <span class="k">in</span> <span class="nx">@self_closing</span>
+        <span class="nx">text</span> <span class="s1">&#39; /&gt;&#39;</span>
+        <span class="nx">text</span> <span class="s1">&#39;\n&#39;</span> <span class="k">if</span> <span class="nx">data</span><span class="p">.</span><span class="nx">format</span>
+      <span class="k">else</span>
+        <span class="nx">text</span> <span class="s1">&#39;&gt;&#39;</span>
+  
+        <span class="nx">@render_contents</span><span class="p">(</span><span class="nx">contents</span><span class="p">)</span>
+
+        <span class="nx">text</span> <span class="s2">&quot;&lt;/#{name}&gt;&quot;</span>
+        <span class="nx">text</span> <span class="s1">&#39;\n&#39;</span> <span class="k">if</span> <span class="nx">data</span><span class="p">.</span><span class="nx">format</span>
+  
+      <span class="kc">null</span>
+
+  <span class="nv">tag = </span><span class="nf">(name, args...) -&gt;</span>
+    <span class="k">for</span> <span class="nx">a</span> <span class="k">in</span> <span class="nx">args</span>
+      <span class="k">switch</span> <span class="k">typeof</span> <span class="nx">a</span>
+        <span class="k">when</span> <span class="s1">&#39;function&#39;</span>
+          <span class="nv">contents = </span><span class="nx">a</span>
+        <span class="k">when</span> <span class="s1">&#39;object&#39;</span>
+          <span class="nv">attrs = </span><span class="nx">a</span>
+        <span class="k">when</span> <span class="s1">&#39;number&#39;</span><span class="p">,</span> <span class="s1">&#39;boolean&#39;</span>
+          <span class="nv">contents = </span><span class="nx">a</span>
+        <span class="k">when</span> <span class="s1">&#39;string&#39;</span>
+          <span class="k">if</span> <span class="nx">args</span><span class="p">.</span><span class="nx">length</span> <span class="o">is</span> <span class="mi">1</span>
+            <span class="nv">contents = </span><span class="nx">a</span>
+          <span class="k">else</span>
+            <span class="k">if</span> <span class="nx">a</span> <span class="o">is</span> <span class="nx">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+              <span class="nv">idclass = </span><span class="nx">a</span>
+            <span class="k">else</span>
+              <span class="nv">contents = </span><span class="nx">a</span>
+
+    <span class="nx">__ck</span><span class="p">.</span><span class="nx">render_tag</span><span class="p">(</span><span class="nx">name</span><span class="p">,</span> <span class="nx">idclass</span><span class="p">,</span> <span class="nx">attrs</span><span class="p">,</span> <span class="nx">contents</span><span class="p">)</span>
+
+  <span class="nv">yield = </span><span class="nf">(f) -&gt;</span>
+    <span class="nv">temp_buffer = </span><span class="p">[]</span>
+    <span class="nv">old_buffer = </span><span class="nx">__ck</span><span class="p">.</span><span class="nx">buffer</span>
+    <span class="nv">__ck.buffer = </span><span class="nx">temp_buffer</span>
+    <span class="nx">f</span><span class="p">()</span>
+    <span class="nv">__ck.buffer = </span><span class="nx">old_buffer</span>
+    <span class="nx">temp_buffer</span><span class="p">.</span><span class="nx">join</span> <span class="s1">&#39;&#39;</span>
+
+  <span class="nv">h = </span><span class="nf">(txt) -&gt;</span>
+    <span class="nb">String</span><span class="p">(</span><span class="nx">txt</span><span class="p">).</span><span class="nx">replace</span><span class="p">(</span><span class="sr">/&amp;/g</span><span class="p">,</span> <span class="s1">&#39;&amp;amp;&#39;</span><span class="p">)</span>
+      <span class="p">.</span><span class="nx">replace</span><span class="p">(</span><span class="sr">/&lt;/g</span><span class="p">,</span> <span class="s1">&#39;&amp;lt;&#39;</span><span class="p">)</span>
+      <span class="p">.</span><span class="nx">replace</span><span class="p">(</span><span class="sr">/&gt;/g</span><span class="p">,</span> <span class="s1">&#39;&amp;gt;&#39;</span><span class="p">)</span>
+      <span class="p">.</span><span class="nx">replace</span><span class="p">(</span><span class="sr">/&quot;/g</span><span class="p">,</span> <span class="s1">&#39;&amp;quot;&#39;</span><span class="p">)</span>
+    
+  <span class="nv">doctype = </span><span class="nf">(type = &#39;default&#39;) -&gt;</span>
+    <span class="nx">text</span> <span class="nx">__ck</span><span class="p">.</span><span class="nx">doctypes</span><span class="p">[</span><span class="nx">type</span><span class="p">]</span>
+    <span class="nx">text</span> <span class="s1">&#39;\n&#39;</span> <span class="k">if</span> <span class="nx">data</span><span class="p">.</span><span class="nx">format</span>
+    
+  <span class="nv">text = </span><span class="nf">(txt) -&gt;</span>
+    <span class="nx">__ck</span><span class="p">.</span><span class="nx">buffer</span><span class="p">.</span><span class="nx">push</span> <span class="nb">String</span><span class="p">(</span><span class="nx">txt</span><span class="p">)</span>
+    <span class="kc">null</span>
+
+  <span class="nv">comment = </span><span class="nf">(cmt) -&gt;</span>
+    <span class="nx">text</span> <span class="s2">&quot;&lt;!--#{cmt}--&gt;&quot;</span>
+    <span class="nx">text</span> <span class="s1">&#39;\n&#39;</span> <span class="k">if</span> <span class="nx">data</span><span class="p">.</span><span class="nx">format</span>
+  
+  <span class="nv">coffeescript = </span><span class="nf">(param) -&gt;</span>
+    <span class="k">switch</span> <span class="k">typeof</span> <span class="nx">param</span></pre></div>             </td>           </tr>                               <tr id="section-21">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-21">&#182;</a>               </div>               <p><code>coffeescript -&gt; alert 'hi'</code> becomes:
+<code>&lt;script&gt;;(function () {return alert('hi');})();&lt;/script&gt;</code></p>             </td>             <td class="code">               <div class="highlight"><pre>      <span class="k">when</span> <span class="s1">&#39;function&#39;</span>
+        <span class="nx">script</span> <span class="s2">&quot;#{__ck.coffeescript_helpers}(#{param}).call(this);&quot;</span></pre></div>             </td>           </tr>                               <tr id="section-22">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-22">&#182;</a>               </div>               <p><code>coffeescript "alert 'hi'"</code> becomes:
+<code>&lt;script type="text/coffeescript"&gt;alert 'hi'&lt;/script&gt;</code></p>             </td>             <td class="code">               <div class="highlight"><pre>      <span class="k">when</span> <span class="s1">&#39;string&#39;</span>
+        <span class="nx">script</span> <span class="nv">type: </span><span class="s1">&#39;text/coffeescript&#39;</span><span class="p">,</span> <span class="o">-&gt;</span> <span class="nx">param</span></pre></div>             </td>           </tr>                               <tr id="section-23">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-23">&#182;</a>               </div>               <p><code>coffeescript src: 'script.coffee'</code> becomes:
+<code>&lt;script type="text/coffeescript" src="script.coffee"&gt;&lt;/script&gt;</code></p>             </td>             <td class="code">               <div class="highlight"><pre>      <span class="k">when</span> <span class="s1">&#39;object&#39;</span>
+        <span class="nv">param.type = </span><span class="s1">&#39;text/coffeescript&#39;</span>
+        <span class="nx">script</span> <span class="nx">param</span>
+  </pre></div>             </td>           </tr>                               <tr id="section-24">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-24">&#182;</a>               </div>               <p>Conditional IE comments.</p>             </td>             <td class="code">               <div class="highlight"><pre>  <span class="nv">ie = </span><span class="nf">(condition, contents) -&gt;</span>
+    <span class="nx">__ck</span><span class="p">.</span><span class="nx">indent</span><span class="p">()</span>
+    
+    <span class="nx">text</span> <span class="s2">&quot;&lt;!--[if #{condition}]&gt;&quot;</span>
+    <span class="nx">__ck</span><span class="p">.</span><span class="nx">render_contents</span><span class="p">(</span><span class="nx">contents</span><span class="p">)</span>
+    <span class="nx">text</span> <span class="s2">&quot;&lt;![endif]--&gt;&quot;</span>
+    <span class="nx">text</span> <span class="s1">&#39;\n&#39;</span> <span class="k">if</span> <span class="nx">data</span><span class="p">.</span><span class="nx">format</span>
+
+  <span class="kc">null</span></pre></div>             </td>           </tr>                               <tr id="section-25">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-25">&#182;</a>               </div>               <p>Stringify the skeleton and unwrap it from its enclosing <code>function(){}</code>, then
+add the CoffeeScript helpers.</p>             </td>             <td class="code">               <div class="highlight"><pre><span class="nv">skeleton = </span><span class="nb">String</span><span class="p">(</span><span class="nx">skeleton</span><span class="p">)</span>
+  <span class="p">.</span><span class="nx">replace</span><span class="p">(</span><span class="sr">/function\s*\(.*\)\s*\{/</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">)</span>
+  <span class="p">.</span><span class="nx">replace</span><span class="p">(</span><span class="sr">/return null;\s*\}$/</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">)</span>
+
+<span class="nv">skeleton = </span><span class="nx">coffeescript_helpers</span> <span class="o">+</span> <span class="nx">skeleton</span></pre></div>             </td>           </tr>                               <tr id="section-26">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-26">&#182;</a>               </div>               <p>Compiles a template into a standalone JavaScript function.</p>             </td>             <td class="code">               <div class="highlight"><pre><span class="nv">coffeekup.compile = </span><span class="nf">(template, options = {}) -&gt;</span></pre></div>             </td>           </tr>                               <tr id="section-27">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-27">&#182;</a>               </div>               <p>The template can be provided as either a function or a CoffeeScript string
+(in the latter case, the CoffeeScript compiler must be available).</p>             </td>             <td class="code">               <div class="highlight"><pre>  <span class="k">if</span> <span class="k">typeof</span> <span class="nx">template</span> <span class="o">is</span> <span class="s1">&#39;function&#39;</span> <span class="k">then</span> <span class="nv">template = </span><span class="nb">String</span><span class="p">(</span><span class="nx">template</span><span class="p">)</span>
+  <span class="k">else</span> <span class="k">if</span> <span class="k">typeof</span> <span class="nx">template</span> <span class="o">is</span> <span class="s1">&#39;string&#39;</span> <span class="o">and</span> <span class="nx">coffee</span><span class="o">?</span>
+    <span class="nv">template = </span><span class="nx">coffee</span><span class="p">.</span><span class="nx">compile</span> <span class="nx">template</span><span class="p">,</span> <span class="nv">bare: </span><span class="kc">yes</span>
+    <span class="nv">template = </span><span class="s2">&quot;function(){#{template}}&quot;</span></pre></div>             </td>           </tr>                               <tr id="section-28">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-28">&#182;</a>               </div>               <p>If an object <code>hardcode</code> is provided, insert the stringified value
+of each variable directly in the function body. This is a less flexible but
+faster alternative to the standard method of using <code>with</code> (see below). </p>             </td>             <td class="code">               <div class="highlight"><pre>  <span class="nv">hardcoded_locals = </span><span class="s1">&#39;&#39;</span>
+  
+  <span class="k">if</span> <span class="nx">options</span><span class="p">.</span><span class="nx">hardcode</span>
+    <span class="k">for</span> <span class="nx">k</span><span class="p">,</span> <span class="nx">v</span> <span class="k">of</span> <span class="nx">options</span><span class="p">.</span><span class="nx">hardcode</span>
+      <span class="k">if</span> <span class="k">typeof</span> <span class="nx">v</span> <span class="o">is</span> <span class="s1">&#39;function&#39;</span></pre></div>             </td>           </tr>                               <tr id="section-29">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-29">&#182;</a>               </div>               <p>Make sure these functions have access to <code>data</code> as <code>@/this</code>.</p>             </td>             <td class="code">               <div class="highlight"><pre>        <span class="nx">hardcoded_locals</span> <span class="o">+=</span> <span class="s2">&quot;var #{k} = function(){return (#{v}).apply(data, arguments);};&quot;</span>
+      <span class="k">else</span> <span class="nx">hardcoded_locals</span> <span class="o">+=</span> <span class="s2">&quot;var #{k} = #{JSON.stringify v};&quot;</span></pre></div>             </td>           </tr>                               <tr id="section-30">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-30">&#182;</a>               </div>               <p>Add a function for each tag this template references. We don't want to have
+all hundred-odd tags wasting space in the compiled function.</p>             </td>             <td class="code">               <div class="highlight"><pre>  <span class="nv">tag_functions = </span><span class="s1">&#39;&#39;</span>
+  <span class="nv">tags_used = </span><span class="p">[]</span>
+  
+  <span class="k">for</span> <span class="nx">t</span> <span class="k">in</span> <span class="nx">coffeekup</span><span class="p">.</span><span class="nx">tags</span>
+    <span class="k">if</span> <span class="nx">template</span><span class="p">.</span><span class="nx">indexOf</span><span class="p">(</span><span class="nx">t</span><span class="p">)</span> <span class="o">&gt;</span> <span class="o">-</span><span class="mi">1</span> <span class="o">or</span> <span class="nx">hardcoded_locals</span><span class="p">.</span><span class="nx">indexOf</span><span class="p">(</span><span class="nx">t</span><span class="p">)</span> <span class="o">&gt;</span> <span class="o">-</span><span class="mi">1</span>
+      <span class="nx">tags_used</span><span class="p">.</span><span class="nx">push</span> <span class="nx">t</span>
+      
+  <span class="nx">tag_functions</span> <span class="o">+=</span> <span class="s2">&quot;var #{tags_used.join &#39;,&#39;};&quot;</span>
+  <span class="k">for</span> <span class="nx">t</span> <span class="k">in</span> <span class="nx">tags_used</span>
+    <span class="nx">tag_functions</span> <span class="o">+=</span> <span class="s2">&quot;#{t} = function(){return __ck.tag(&#39;#{t}&#39;, arguments);};&quot;</span></pre></div>             </td>           </tr>                               <tr id="section-31">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-31">&#182;</a>               </div>               <p>Main function assembly.</p>             </td>             <td class="code">               <div class="highlight"><pre>  <span class="nv">code = </span><span class="nx">tag_functions</span> <span class="o">+</span> <span class="nx">hardcoded_locals</span> <span class="o">+</span> <span class="nx">skeleton</span>
+
+  <span class="nx">code</span> <span class="o">+=</span> <span class="s2">&quot;__ck.doctypes = #{JSON.stringify coffeekup.doctypes};&quot;</span>
+  <span class="nx">code</span> <span class="o">+=</span> <span class="s2">&quot;__ck.coffeescript_helpers = #{JSON.stringify coffeescript_helpers};&quot;</span>
+  <span class="nx">code</span> <span class="o">+=</span> <span class="s2">&quot;__ck.self_closing = #{JSON.stringify coffeekup.self_closing};&quot;</span></pre></div>             </td>           </tr>                               <tr id="section-32">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-32">&#182;</a>               </div>               <p>If <code>locals</code> is set, wrap the template inside a <code>with</code> block. This is the
+most flexible but slower approach to specifying local variables.</p>             </td>             <td class="code">               <div class="highlight"><pre>  <span class="nx">code</span> <span class="o">+=</span> <span class="s1">&#39;with(data.locals){&#39;</span> <span class="k">if</span> <span class="nx">options</span><span class="p">.</span><span class="nx">locals</span>
+  <span class="nx">code</span> <span class="o">+=</span> <span class="s2">&quot;(#{template}).call(data);&quot;</span>
+  <span class="nx">code</span> <span class="o">+=</span> <span class="s1">&#39;}&#39;</span> <span class="k">if</span> <span class="nx">options</span><span class="p">.</span><span class="nx">locals</span>
+  <span class="nx">code</span> <span class="o">+=</span> <span class="s2">&quot;return __ck.buffer.join(&#39;&#39;);&quot;</span>
+  
+  <span class="k">new</span> <span class="nb">Function</span><span class="p">(</span><span class="s1">&#39;data&#39;</span><span class="p">,</span> <span class="nx">code</span><span class="p">)</span>
+
+<span class="nv">cache = </span><span class="p">{}</span></pre></div>             </td>           </tr>                               <tr id="section-33">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-33">&#182;</a>               </div>               <p>Template in, HTML out. Accepts functions or strings as does <code>coffeekup.compile</code>.</p>
+
+<p>Accepts an option <code>cache</code>, by default <code>false</code>. If set to <code>false</code> templates will
+be recompiled each time.</p>
+
+<p><code>options</code> is just a convenience parameter to pass options separately from the
+data, but the two will be merged and passed down to the compiler (which uses
+<code>locals</code> and <code>hardcode</code>), and the template (which understands <code>locals</code>, <code>format</code>
+and <code>autoescape</code>).</p>             </td>             <td class="code">               <div class="highlight"><pre><span class="nv">coffeekup.render = </span><span class="nf">(template, data = {}, options = {}) -&gt;</span>
+  <span class="nx">data</span><span class="p">[</span><span class="nx">k</span><span class="p">]</span> <span class="o">=</span> <span class="nx">v</span> <span class="k">for</span> <span class="nx">k</span><span class="p">,</span> <span class="nx">v</span> <span class="k">of</span> <span class="nx">options</span>
+  <span class="nx">data</span><span class="p">.</span><span class="nx">cache</span> <span class="o">?=</span> <span class="kc">off</span>
+
+  <span class="k">if</span> <span class="nx">data</span><span class="p">.</span><span class="nx">cache</span> <span class="o">and</span> <span class="nx">cache</span><span class="p">[</span><span class="nx">template</span><span class="p">]</span><span class="o">?</span> <span class="k">then</span> <span class="nv">tpl = </span><span class="nx">cache</span><span class="p">[</span><span class="nx">template</span><span class="p">]</span>
+  <span class="k">else</span> <span class="k">if</span> <span class="nx">data</span><span class="p">.</span><span class="nx">cache</span> <span class="k">then</span> <span class="nv">tpl = </span><span class="nx">cache</span><span class="p">[</span><span class="nx">template</span><span class="p">]</span> <span class="o">=</span> <span class="nx">coffeekup</span><span class="p">.</span><span class="nx">compile</span><span class="p">(</span><span class="nx">template</span><span class="p">,</span> <span class="nx">data</span><span class="p">)</span>
+  <span class="k">else</span> <span class="nv">tpl = </span><span class="nx">coffeekup</span><span class="p">.</span><span class="nx">compile</span><span class="p">(</span><span class="nx">template</span><span class="p">,</span> <span class="nx">data</span><span class="p">)</span>
+  <span class="nx">tpl</span><span class="p">(</span><span class="nx">data</span><span class="p">)</span>
+
+<span class="nx">unless</span> <span class="nb">window</span><span class="o">?</span>
+  <span class="nv">coffeekup.adapters =</span></pre></div>             </td>           </tr>                               <tr id="section-34">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-34">&#182;</a>               </div>               <p>Legacy adapters for when CoffeeKup expected data in the <code>context</code> attribute.</p>             </td>             <td class="code">               <div class="highlight"><pre>    <span class="nv">simple: </span><span class="nx">coffeekup</span><span class="p">.</span><span class="nx">render</span>
+    <span class="nv">meryl: </span><span class="nx">coffeekup</span><span class="p">.</span><span class="nx">render</span>
+    
+    <span class="nv">express:</span>
+      <span class="nv">TemplateError: </span><span class="k">class</span> <span class="k">extends</span> <span class="nb">Error</span>
+        <span class="nv">constructor: </span><span class="nf">(@message) -&gt;</span>
+          <span class="nb">Error</span><span class="p">.</span><span class="nx">call</span> <span class="k">this</span><span class="p">,</span> <span class="nx">@message</span>
+          <span class="nb">Error</span><span class="p">.</span><span class="nx">captureStackTrace</span> <span class="k">this</span><span class="p">,</span> <span class="nx">arguments</span><span class="p">.</span><span class="nx">callee</span>
+        <span class="nv">name: </span><span class="s1">&#39;TemplateError&#39;</span>
+        
+      <span class="nv">compile: </span><span class="nf">(template, data) -&gt;</span> </pre></div>             </td>           </tr>                               <tr id="section-35">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-35">&#182;</a>               </div>               <p>Allows <code>partial 'foo'</code> instead of <code>text @partial 'foo'</code>.</p>             </td>             <td class="code">               <div class="highlight"><pre>        <span class="nx">data</span><span class="p">.</span><span class="nx">hardcode</span> <span class="o">?=</span> <span class="p">{}</span>
+        <span class="nv">data.hardcode.partial = </span><span class="o">-&gt;</span>
+          <span class="nx">text</span> <span class="nx">@partial</span><span class="p">.</span><span class="nx">apply</span> <span class="err">@</span><span class="p">,</span> <span class="nx">arguments</span>
+        
+        <span class="nv">TemplateError = </span><span class="nx">@TemplateError</span>
+        <span class="k">try</span> <span class="nv">tpl = </span><span class="nx">coffeekup</span><span class="p">.</span><span class="nx">compile</span><span class="p">(</span><span class="nx">template</span><span class="p">,</span> <span class="nx">data</span><span class="p">)</span>
+        <span class="k">catch</span> <span class="nx">e</span> <span class="k">then</span> <span class="k">throw</span> <span class="k">new</span> <span class="nx">TemplateError</span> <span class="s2">&quot;Error compiling #{data.filename}: #{e.message}&quot;</span>
+        
+        <span class="k">return</span> <span class="o">-&gt;</span>
+          <span class="k">try</span> <span class="nx">tpl</span> <span class="nx">arguments</span><span class="p">...</span>
+          <span class="k">catch</span> <span class="nx">e</span> <span class="k">then</span> <span class="k">throw</span> <span class="k">new</span> <span class="nx">TemplateError</span> <span class="s2">&quot;Error rendering #{data.filename}: #{e.message}&quot;</span>
+
+</pre></div>             </td>           </tr>                </tbody>     </table>   </div> </body> </html> 

@@ -1,0 +1,377 @@
+<!DOCTYPE html>  <html> <head>   <title>zappa.coffee</title>   <meta http-equiv="content-type" content="text/html; charset=UTF-8">   <link rel="stylesheet" media="all" href="docco.css" /> </head> <body>   <div id="container">     <div id="background"></div>            <div id="jump_to">         Jump To &hellip;         <div id="jump_wrapper">           <div id="jump_page">                                           <a class="source" href="client.html">                 client.coffee               </a>                                           <a class="source" href="zappa.html">                 zappa.coffee               </a>                        </div>         </div>       </div>          <table cellpadding="0" cellspacing="0">       <thead>         <tr>           <th class="docs">             <h1>               zappa.coffee             </h1>           </th>           <th class="code">           </th>         </tr>       </thead>       <tbody>                               <tr id="section-1">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-1">&#182;</a>               </div>               <p><strong>Zappa</strong> is a <a href="http://coffeescript.org">CoffeeScript</a> DSL-ish interface for building web apps on the
+<a href="http://nodejs.org">node.js</a> runtime, integrating <a href="http://expressjs.com">express</a>, <a href="http://socket.io">socket.io</a>
+and other best-of-breed libraries.</p>             </td>             <td class="code">               <div class="highlight"><pre><span class="nv">zappa = version: </span><span class="s1">&#39;0.3.3&#39;</span>
+
+<span class="nv">codename = </span><span class="s1">&#39;The Gumbo Variations&#39;</span>
+
+<span class="nv">log = </span><span class="nx">console</span><span class="p">.</span><span class="nx">log</span>
+<span class="nv">fs = </span><span class="nx">require</span> <span class="s1">&#39;fs&#39;</span>
+<span class="nv">path = </span><span class="nx">require</span> <span class="s1">&#39;path&#39;</span>
+<span class="nv">uuid = </span><span class="nx">require</span> <span class="s1">&#39;node-uuid&#39;</span>
+<span class="nv">express = </span><span class="nx">require</span> <span class="s1">&#39;express&#39;</span>
+<span class="nv">socketio = </span><span class="nx">require</span> <span class="s1">&#39;socket.io&#39;</span>
+<span class="nv">jquery = </span><span class="nx">fs</span><span class="p">.</span><span class="nx">readFileSync</span><span class="p">(</span><span class="nx">__dirname</span> <span class="o">+</span> <span class="s1">&#39;/../vendor/jquery-1.6.4.min.js&#39;</span><span class="p">).</span><span class="nx">toString</span><span class="p">()</span>
+<span class="nv">sammy = </span><span class="nx">fs</span><span class="p">.</span><span class="nx">readFileSync</span><span class="p">(</span><span class="nx">__dirname</span> <span class="o">+</span> <span class="s1">&#39;/../vendor/sammy-0.7.0.min.js&#39;</span><span class="p">).</span><span class="nx">toString</span><span class="p">()</span>
+<span class="nv">uglify = </span><span class="nx">require</span> <span class="s1">&#39;uglify-js&#39;</span></pre></div>             </td>           </tr>                               <tr id="section-2">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-2">&#182;</a>               </div>               <p>Soft dependencies:</p>             </td>             <td class="code">               <div class="highlight"><pre><span class="nv">jsdom = </span><span class="kc">null</span></pre></div>             </td>           </tr>                               <tr id="section-3">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-3">&#182;</a>               </div>               <p>CoffeeScript-generated JavaScript may contain anyone of these; when we "rewrite"
+a function (see below) though, it loses access to its parent scope, and consequently to
+any helpers it might need. So we need to reintroduce these helpers manually inside any
+"rewritten" function.</p>             </td>             <td class="code">               <div class="highlight"><pre><span class="nv">coffeescript_helpers = </span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">  var __slice = Array.prototype.slice;</span>
+<span class="s2">  var __hasProp = Object.prototype.hasOwnProperty;</span>
+<span class="s2">  var __bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; };</span>
+<span class="s2">  var __extends = function(child, parent) {</span>
+<span class="s2">    for (var key in parent) { if (__hasProp.call(parent, key)) child[key] = parent[key]; }</span>
+<span class="s2">    function ctor() { this.constructor = child; }</span>
+<span class="s2">    ctor.prototype = parent.prototype; child.prototype = new ctor; child.__super__ = parent.prototype;</span>
+<span class="s2">    return child; };</span>
+<span class="s2">  var __indexOf = Array.prototype.indexOf || function(item) {</span>
+<span class="s2">    for (var i = 0, l = this.length; i &lt; l; i++) {</span>
+<span class="s2">      if (this[i] === item) return i;</span>
+<span class="s2">    } return -1; };</span>
+<span class="s2">&quot;&quot;&quot;</span><span class="p">.</span><span class="nx">replace</span> <span class="sr">/\n/g</span><span class="p">,</span> <span class="s1">&#39;&#39;</span>
+
+<span class="nv">minify = </span><span class="nf">(js) -&gt;</span>
+  <span class="nv">ast = </span><span class="nx">uglify</span><span class="p">.</span><span class="nx">parser</span><span class="p">.</span><span class="nx">parse</span><span class="p">(</span><span class="nx">js</span><span class="p">)</span>
+  <span class="nv">ast = </span><span class="nx">uglify</span><span class="p">.</span><span class="nx">uglify</span><span class="p">.</span><span class="nx">ast_mangle</span><span class="p">(</span><span class="nx">ast</span><span class="p">)</span>
+  <span class="nv">ast = </span><span class="nx">uglify</span><span class="p">.</span><span class="nx">uglify</span><span class="p">.</span><span class="nx">ast_squeeze</span><span class="p">(</span><span class="nx">ast</span><span class="p">)</span>
+  <span class="nx">uglify</span><span class="p">.</span><span class="nx">uglify</span><span class="p">.</span><span class="nx">gen_code</span><span class="p">(</span><span class="nx">ast</span><span class="p">)</span></pre></div>             </td>           </tr>                               <tr id="section-4">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-4">&#182;</a>               </div>               <p>Shallow copy attributes from <code>sources</code> (array of objects) to <code>recipient</code>.
+Does NOT overwrite attributes already present in <code>recipient</code>.</p>             </td>             <td class="code">               <div class="highlight"><pre><span class="nv">copy_data_to = </span><span class="nf">(recipient, sources) -&gt;</span>
+  <span class="k">for</span> <span class="nx">obj</span> <span class="k">in</span> <span class="nx">sources</span>
+    <span class="k">for</span> <span class="nx">k</span><span class="p">,</span> <span class="nx">v</span> <span class="k">of</span> <span class="nx">obj</span>
+      <span class="nx">recipient</span><span class="p">[</span><span class="nx">k</span><span class="p">]</span> <span class="o">=</span> <span class="nx">v</span> <span class="nx">unless</span> <span class="nx">recipient</span><span class="p">[</span><span class="nx">k</span><span class="p">]</span></pre></div>             </td>           </tr>                               <tr id="section-5">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-5">&#182;</a>               </div>               <p>Keep inline views at the module level and namespaced by app id
+so that the monkeypatched express can look them up.</p>             </td>             <td class="code">               <div class="highlight"><pre><span class="nv">views = </span><span class="p">{}</span>
+  </pre></div>             </td>           </tr>                               <tr id="section-6">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-6">&#182;</a>               </div>               <p>Monkeypatch express to support lookup of inline templates. Such is life.</p>             </td>             <td class="code">               <div class="highlight"><pre><span class="nx">express</span><span class="p">.</span><span class="nx">View</span><span class="p">.</span><span class="nx">prototype</span><span class="p">.</span><span class="nx">__defineGetter__</span> <span class="s1">&#39;exists&#39;</span><span class="p">,</span> <span class="o">-&gt;</span></pre></div>             </td>           </tr>                               <tr id="section-7">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-7">&#182;</a>               </div>               <p>Path given by zappa: /path/to/appid/foo.bar.</p>             </td>             <td class="code">               <div class="highlight"><pre>  </pre></div>             </td>           </tr>                               <tr id="section-8">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-8">&#182;</a>               </div>               <p>Try appid/foo.bar in memory.</p>             </td>             <td class="code">               <div class="highlight"><pre>  <span class="nv">p = </span><span class="nx">@path</span><span class="p">.</span><span class="nx">replace</span> <span class="nx">@root</span> <span class="o">+</span> <span class="s1">&#39;/&#39;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span>
+  <span class="nv">id = </span><span class="nx">p</span><span class="p">.</span><span class="nx">split</span><span class="p">(</span><span class="s1">&#39;/&#39;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+  <span class="k">return</span> <span class="kc">true</span> <span class="k">if</span> <span class="nx">views</span><span class="p">[</span><span class="nx">p</span><span class="p">]</span></pre></div>             </td>           </tr>                               <tr id="section-9">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-9">&#182;</a>               </div>               <p>Try appid/foo in memory.</p>             </td>             <td class="code">               <div class="highlight"><pre>  <span class="nv">p = </span><span class="nx">p</span><span class="p">.</span><span class="nx">replace</span><span class="p">(</span><span class="nx">path</span><span class="p">.</span><span class="nx">extname</span><span class="p">(</span><span class="nx">p</span><span class="p">),</span> <span class="s1">&#39;&#39;</span><span class="p">)</span>
+  <span class="k">return</span> <span class="kc">true</span> <span class="k">if</span> <span class="nx">views</span><span class="p">[</span><span class="nx">p</span><span class="p">]</span></pre></div>             </td>           </tr>                               <tr id="section-10">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-10">&#182;</a>               </div>               <p>Try /path/to/foo.bar in filesystem (normal express behaviour).</p>             </td>             <td class="code">               <div class="highlight"><pre>  <span class="nv">p = </span><span class="nx">@path</span><span class="p">.</span><span class="nx">replace</span> <span class="nx">id</span> <span class="o">+</span> <span class="s1">&#39;/&#39;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span>
+  <span class="k">try</span>
+    <span class="nx">fs</span><span class="p">.</span><span class="nx">statSync</span><span class="p">(</span><span class="nx">p</span><span class="p">)</span>
+    <span class="k">return</span> <span class="kc">true</span>
+  <span class="k">catch</span> <span class="nx">err</span>
+    <span class="k">return</span> <span class="kc">false</span>
+
+<span class="nx">express</span><span class="p">.</span><span class="nx">View</span><span class="p">.</span><span class="nx">prototype</span><span class="p">.</span><span class="nx">__defineGetter__</span> <span class="s1">&#39;contents&#39;</span><span class="p">,</span> <span class="o">-&gt;</span></pre></div>             </td>           </tr>                               <tr id="section-11">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-11">&#182;</a>               </div>               <p>Path given by zappa: /path/to/appid/foo.bar.</p>             </td>             <td class="code">               <div class="highlight"><pre></pre></div>             </td>           </tr>                               <tr id="section-12">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-12">&#182;</a>               </div>               <p>Try appid/foo.bar in memory.</p>             </td>             <td class="code">               <div class="highlight"><pre>  <span class="nv">p = </span><span class="nx">@path</span><span class="p">.</span><span class="nx">replace</span> <span class="nx">@root</span> <span class="o">+</span> <span class="s1">&#39;/&#39;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span>
+  <span class="nv">id = </span><span class="nx">p</span><span class="p">.</span><span class="nx">split</span><span class="p">(</span><span class="s1">&#39;/&#39;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+  <span class="k">return</span> <span class="nx">views</span><span class="p">[</span><span class="nx">p</span><span class="p">]</span> <span class="k">if</span> <span class="nx">views</span><span class="p">[</span><span class="nx">p</span><span class="p">]</span></pre></div>             </td>           </tr>                               <tr id="section-13">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-13">&#182;</a>               </div>               <p>Try appid/foo in memory.</p>             </td>             <td class="code">               <div class="highlight"><pre>  <span class="nv">p = </span><span class="nx">p</span><span class="p">.</span><span class="nx">replace</span><span class="p">(</span><span class="nx">path</span><span class="p">.</span><span class="nx">extname</span><span class="p">(</span><span class="nx">p</span><span class="p">),</span> <span class="s1">&#39;&#39;</span><span class="p">)</span>
+  <span class="k">return</span> <span class="nx">views</span><span class="p">[</span><span class="nx">p</span><span class="p">]</span> <span class="k">if</span> <span class="nx">views</span><span class="p">[</span><span class="nx">p</span><span class="p">]</span></pre></div>             </td>           </tr>                               <tr id="section-14">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-14">&#182;</a>               </div>               <p>Try /path/to/foo.bar in filesystem (normal express behaviour).</p>             </td>             <td class="code">               <div class="highlight"><pre>  <span class="nv">p = </span><span class="nx">@path</span><span class="p">.</span><span class="nx">replace</span> <span class="nx">id</span> <span class="o">+</span> <span class="s1">&#39;/&#39;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span>
+  <span class="nx">fs</span><span class="p">.</span><span class="nx">readFileSync</span> <span class="nx">p</span><span class="p">,</span> <span class="s1">&#39;utf8&#39;</span></pre></div>             </td>           </tr>                               <tr id="section-15">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-15">&#182;</a>               </div>               <p>Takes in a function and builds express/socket.io apps based on the rules contained in it.</p>             </td>             <td class="code">               <div class="highlight"><pre><span class="nv">zappa.app = </span><span class="nf">(func) -&gt;</span>
+  <span class="nv">context = </span><span class="p">{</span><span class="nv">id: </span><span class="nx">uuid</span><span class="p">(),</span> <span class="nx">zappa</span><span class="p">,</span> <span class="nx">express</span><span class="p">}</span>
+  
+  <span class="nv">context.root = </span><span class="nx">path</span><span class="p">.</span><span class="nx">dirname</span><span class="p">(</span><span class="nx">module</span><span class="p">.</span><span class="nx">parent</span><span class="p">.</span><span class="nx">filename</span><span class="p">)</span></pre></div>             </td>           </tr>                               <tr id="section-16">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-16">&#182;</a>               </div>               <p>Storage for user-provided stuff.
+Views are kept at the module level.</p>             </td>             <td class="code">               <div class="highlight"><pre>  <span class="nv">ws_handlers = </span><span class="p">{}</span>
+  <span class="nv">helpers = </span><span class="p">{}</span>
+  <span class="nv">postrenders = </span><span class="p">{}</span>
+  
+  <span class="nv">app = context.app = </span><span class="nx">express</span><span class="p">.</span><span class="nx">createServer</span><span class="p">()</span>
+  <span class="nv">io = context.io = </span><span class="nx">socketio</span><span class="p">.</span><span class="nx">listen</span><span class="p">(</span><span class="nx">app</span><span class="p">)</span></pre></div>             </td>           </tr>                               <tr id="section-17">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-17">&#182;</a>               </div>               <p>Reference to the zappa client, the value will be set later.</p>             </td>             <td class="code">               <div class="highlight"><pre>  <span class="nv">client = </span><span class="kc">null</span>
+  </pre></div>             </td>           </tr>                               <tr id="section-18">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-18">&#182;</a>               </div>               <p>Tracks if the zappa middleware is already mounted (<code>@use 'zappa'</code>).</p>             </td>             <td class="code">               <div class="highlight"><pre>  <span class="nv">zappa_used = </span><span class="kc">no</span></pre></div>             </td>           </tr>                               <tr id="section-19">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-19">&#182;</a>               </div>               <p>Zappa's default settings.</p>             </td>             <td class="code">               <div class="highlight"><pre>  <span class="nx">app</span><span class="p">.</span><span class="nx">set</span> <span class="s1">&#39;view engine&#39;</span><span class="p">,</span> <span class="s1">&#39;coffee&#39;</span>
+  <span class="nx">app</span><span class="p">.</span><span class="nx">register</span> <span class="s1">&#39;.coffee&#39;</span><span class="p">,</span> <span class="nx">zappa</span><span class="p">.</span><span class="nx">adapter</span> <span class="nx">require</span><span class="p">(</span><span class="s1">&#39;coffeekup&#39;</span><span class="p">).</span><span class="nx">adapters</span><span class="p">.</span><span class="nx">express</span><span class="p">,</span>
+    <span class="nv">blacklist: </span><span class="p">[</span><span class="s1">&#39;format&#39;</span><span class="p">,</span> <span class="s1">&#39;autoescape&#39;</span><span class="p">,</span> <span class="s1">&#39;locals&#39;</span><span class="p">,</span> <span class="s1">&#39;hardcode&#39;</span><span class="p">,</span> <span class="s1">&#39;cache&#39;</span><span class="p">]</span></pre></div>             </td>           </tr>                               <tr id="section-20">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-20">&#182;</a>               </div>               <p>Sets default view dir to @root (<code>path.dirname(module.parent.filename)</code>).</p>             </td>             <td class="code">               <div class="highlight"><pre>  <span class="nx">app</span><span class="p">.</span><span class="nx">set</span> <span class="s1">&#39;views&#39;</span><span class="p">,</span> <span class="nx">path</span><span class="p">.</span><span class="nx">join</span><span class="p">(</span><span class="nx">context</span><span class="p">.</span><span class="nx">root</span><span class="p">,</span> <span class="s1">&#39;/views&#39;</span><span class="p">)</span>
+
+  <span class="k">for</span> <span class="nx">verb</span> <span class="k">in</span> <span class="p">[</span><span class="s1">&#39;get&#39;</span><span class="p">,</span> <span class="s1">&#39;post&#39;</span><span class="p">,</span> <span class="s1">&#39;put&#39;</span><span class="p">,</span> <span class="s1">&#39;del&#39;</span><span class="p">]</span>
+    <span class="nx">do</span> <span class="nf">(verb) -&gt;</span>
+      <span class="nx">context</span><span class="p">[</span><span class="nx">verb</span><span class="p">]</span> <span class="o">=</span> <span class="o">-&gt;</span>
+        <span class="k">if</span> <span class="nx">arguments</span><span class="p">.</span><span class="nx">length</span> <span class="o">&gt;</span> <span class="mi">1</span>
+          <span class="nx">route</span> <span class="nv">verb: </span><span class="nx">verb</span><span class="p">,</span> <span class="nv">path: </span><span class="nx">arguments</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="nv">handler: </span><span class="nx">arguments</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="k">else</span>
+          <span class="k">for</span> <span class="nx">k</span><span class="p">,</span> <span class="nx">v</span> <span class="k">of</span> <span class="nx">arguments</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="nx">route</span> <span class="nv">verb: </span><span class="nx">verb</span><span class="p">,</span> <span class="nv">path: </span><span class="nx">k</span><span class="p">,</span> <span class="nv">handler: </span><span class="nx">v</span>
+
+  <span class="nv">context.client = </span><span class="nf">(obj) -&gt;</span>
+    <span class="nx">context</span><span class="p">.</span><span class="nx">use</span> <span class="s1">&#39;zappa&#39;</span> <span class="nx">unless</span> <span class="nx">zappa_used</span>
+    <span class="k">for</span> <span class="nx">k</span><span class="p">,</span> <span class="nx">v</span> <span class="k">of</span> <span class="nx">obj</span>
+      <span class="nv">js = </span><span class="s2">&quot;;zappa.run(#{v});&quot;</span>
+      <span class="nv">js = </span><span class="nx">minify</span><span class="p">(</span><span class="nx">js</span><span class="p">)</span> <span class="k">if</span> <span class="nx">app</span><span class="p">.</span><span class="nx">settings</span><span class="p">[</span><span class="s1">&#39;minify&#39;</span><span class="p">]</span>
+      <span class="nx">route</span> <span class="nv">verb: </span><span class="s1">&#39;get&#39;</span><span class="p">,</span> <span class="nv">path: </span><span class="nx">k</span><span class="p">,</span> <span class="nv">handler: </span><span class="nx">js</span><span class="p">,</span> <span class="nv">contentType: </span><span class="s1">&#39;js&#39;</span>
+
+  <span class="nv">context.coffee = </span><span class="nf">(obj) -&gt;</span>
+    <span class="k">for</span> <span class="nx">k</span><span class="p">,</span> <span class="nx">v</span> <span class="k">of</span> <span class="nx">obj</span>
+      <span class="nv">js = </span><span class="s2">&quot;;#{coffeescript_helpers}(#{v})();&quot;</span>
+      <span class="nv">js = </span><span class="nx">minify</span><span class="p">(</span><span class="nx">js</span><span class="p">)</span> <span class="k">if</span> <span class="nx">app</span><span class="p">.</span><span class="nx">settings</span><span class="p">[</span><span class="s1">&#39;minify&#39;</span><span class="p">]</span>
+      <span class="nx">route</span> <span class="nv">verb: </span><span class="s1">&#39;get&#39;</span><span class="p">,</span> <span class="nv">path: </span><span class="nx">k</span><span class="p">,</span> <span class="nv">handler: </span><span class="nx">js</span><span class="p">,</span> <span class="nv">contentType: </span><span class="s1">&#39;js&#39;</span>
+
+  <span class="nv">context.js = </span><span class="nf">(obj) -&gt;</span>
+    <span class="k">for</span> <span class="nx">k</span><span class="p">,</span> <span class="nx">v</span> <span class="k">of</span> <span class="nx">obj</span>
+      <span class="nv">js = </span><span class="nb">String</span><span class="p">(</span><span class="nx">v</span><span class="p">)</span>
+      <span class="nv">js = </span><span class="nx">minify</span><span class="p">(</span><span class="nx">js</span><span class="p">)</span> <span class="k">if</span> <span class="nx">app</span><span class="p">.</span><span class="nx">settings</span><span class="p">[</span><span class="s1">&#39;minify&#39;</span><span class="p">]</span>
+      <span class="nx">route</span> <span class="nv">verb: </span><span class="s1">&#39;get&#39;</span><span class="p">,</span> <span class="nv">path: </span><span class="nx">k</span><span class="p">,</span> <span class="nv">handler: </span><span class="nx">js</span><span class="p">,</span> <span class="nv">contentType: </span><span class="s1">&#39;js&#39;</span>
+
+  <span class="nv">context.css = </span><span class="nf">(obj) -&gt;</span>
+    <span class="k">for</span> <span class="nx">k</span><span class="p">,</span> <span class="nx">v</span> <span class="k">of</span> <span class="nx">obj</span>
+      <span class="nv">css = </span><span class="nb">String</span><span class="p">(</span><span class="nx">v</span><span class="p">)</span>
+      <span class="nx">route</span> <span class="nv">verb: </span><span class="s1">&#39;get&#39;</span><span class="p">,</span> <span class="nv">path: </span><span class="nx">k</span><span class="p">,</span> <span class="nv">handler: </span><span class="nx">css</span><span class="p">,</span> <span class="nv">contentType: </span><span class="s1">&#39;css&#39;</span>
+
+  <span class="nv">context.stylus = </span><span class="nf">(obj) -&gt;</span>
+    <span class="k">for</span> <span class="nx">k</span><span class="p">,</span> <span class="nx">v</span> <span class="k">of</span> <span class="nx">obj</span>
+      <span class="nv">css = </span><span class="nx">require</span><span class="p">(</span><span class="s1">&#39;stylus&#39;</span><span class="p">).</span><span class="nx">render</span> <span class="nx">v</span><span class="p">,</span> <span class="nv">filename: </span><span class="nx">k</span><span class="p">,</span> <span class="nf">(err, css) -&gt;</span>
+        <span class="k">throw</span> <span class="nx">err</span> <span class="k">if</span> <span class="nx">err</span>
+        <span class="nx">route</span> <span class="nv">verb: </span><span class="s1">&#39;get&#39;</span><span class="p">,</span> <span class="nv">path: </span><span class="nx">k</span><span class="p">,</span> <span class="nv">handler: </span><span class="nx">css</span><span class="p">,</span> <span class="nv">contentType: </span><span class="s1">&#39;css&#39;</span>
+
+  <span class="nv">context.helper = </span><span class="nf">(obj) -&gt;</span>
+    <span class="k">for</span> <span class="nx">k</span><span class="p">,</span> <span class="nx">v</span> <span class="k">of</span> <span class="nx">obj</span>
+      <span class="nx">helpers</span><span class="p">[</span><span class="nx">k</span><span class="p">]</span> <span class="o">=</span> <span class="nx">v</span>
+
+  <span class="nv">context.postrender = </span><span class="nf">(obj) -&gt;</span>
+    <span class="nv">jsdom = </span><span class="nx">require</span> <span class="s1">&#39;jsdom&#39;</span>
+    <span class="k">for</span> <span class="nx">k</span><span class="p">,</span> <span class="nx">v</span> <span class="k">of</span> <span class="nx">obj</span>
+      <span class="nx">postrenders</span><span class="p">[</span><span class="nx">k</span><span class="p">]</span> <span class="o">=</span> <span class="nx">v</span>
+
+  <span class="nv">context.on = </span><span class="nf">(obj) -&gt;</span>
+    <span class="k">for</span> <span class="nx">k</span><span class="p">,</span> <span class="nx">v</span> <span class="k">of</span> <span class="nx">obj</span>
+      <span class="nx">ws_handlers</span><span class="p">[</span><span class="nx">k</span><span class="p">]</span> <span class="o">=</span> <span class="nx">v</span>
+
+  <span class="nv">context.view = </span><span class="nf">(obj) -&gt;</span>
+    <span class="k">for</span> <span class="nx">k</span><span class="p">,</span> <span class="nx">v</span> <span class="k">of</span> <span class="nx">obj</span>
+      <span class="nx">views</span><span class="p">[</span><span class="s2">&quot;#{context.id}/#{k}&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nx">v</span>
+
+  <span class="nv">context.register = </span><span class="nf">(obj) -&gt;</span>
+    <span class="k">for</span> <span class="nx">k</span><span class="p">,</span> <span class="nx">v</span> <span class="k">of</span> <span class="nx">obj</span>
+      <span class="nx">app</span><span class="p">.</span><span class="nx">register</span> <span class="s1">&#39;.&#39;</span> <span class="o">+</span> <span class="nx">k</span><span class="p">,</span> <span class="nx">v</span>
+
+  <span class="nv">context.set = </span><span class="nf">(obj) -&gt;</span>
+    <span class="k">for</span> <span class="nx">k</span><span class="p">,</span> <span class="nx">v</span> <span class="k">of</span> <span class="nx">obj</span>
+      <span class="nx">app</span><span class="p">.</span><span class="nx">set</span> <span class="nx">k</span><span class="p">,</span> <span class="nx">v</span>
+      
+  <span class="nv">context.enable = </span><span class="o">-&gt;</span>
+    <span class="nx">app</span><span class="p">.</span><span class="nx">enable</span> <span class="nx">i</span> <span class="k">for</span> <span class="nx">i</span> <span class="k">in</span> <span class="nx">arguments</span>
+
+  <span class="nv">context.disable = </span><span class="o">-&gt;</span>
+    <span class="nx">app</span><span class="p">.</span><span class="nx">disable</span> <span class="nx">i</span> <span class="k">for</span> <span class="nx">i</span> <span class="k">in</span> <span class="nx">arguments</span>
+
+  <span class="nv">context.use = </span><span class="o">-&gt;</span>
+    <span class="nv">zappa_middleware =</span>
+      <span class="nv">static: </span><span class="p">(</span><span class="nv">p = </span><span class="nx">path</span><span class="p">.</span><span class="nx">join</span><span class="p">(</span><span class="nx">context</span><span class="p">.</span><span class="nx">root</span><span class="p">,</span> <span class="s1">&#39;/public&#39;</span><span class="p">))</span> <span class="o">-&gt;</span>
+        <span class="nx">express</span><span class="p">.</span><span class="nx">static</span><span class="p">(</span><span class="nx">p</span><span class="p">)</span>
+      <span class="nv">zappa: </span><span class="o">-&gt;</span>
+        <span class="nf">(req, res, next) -&gt;</span>
+          <span class="nv">send = </span><span class="nf">(code) -&gt;</span>
+            <span class="nx">res</span><span class="p">.</span><span class="nx">contentType</span> <span class="s1">&#39;js&#39;</span>
+            <span class="nx">res</span><span class="p">.</span><span class="nx">send</span> <span class="nx">code</span>
+          <span class="k">if</span> <span class="nx">req</span><span class="p">.</span><span class="nx">method</span><span class="p">.</span><span class="nx">toUpperCase</span><span class="p">()</span> <span class="o">isnt</span> <span class="s1">&#39;GET&#39;</span> <span class="k">then</span> <span class="nx">next</span><span class="p">()</span>
+          <span class="k">else</span>
+            <span class="k">switch</span> <span class="nx">req</span><span class="p">.</span><span class="nx">url</span>
+              <span class="k">when</span> <span class="s1">&#39;/zappa/zappa.js&#39;</span> <span class="k">then</span> <span class="nx">send</span> <span class="nx">client</span>
+              <span class="k">when</span> <span class="s1">&#39;/zappa/jquery.js&#39;</span> <span class="k">then</span> <span class="nx">send</span> <span class="nx">jquery</span>
+              <span class="k">when</span> <span class="s1">&#39;/zappa/sammy.js&#39;</span> <span class="k">then</span> <span class="nx">send</span> <span class="nx">sammy</span>
+              <span class="k">else</span> <span class="nx">next</span><span class="p">()</span>
+
+    <span class="nv">use = </span><span class="nf">(name, arg = null) -&gt;</span>
+      <span class="nv">zappa_used = </span><span class="kc">yes</span> <span class="k">if</span> <span class="nx">name</span> <span class="o">is</span> <span class="s1">&#39;zappa&#39;</span>
+      
+      <span class="k">if</span> <span class="nx">zappa_middleware</span><span class="p">[</span><span class="nx">name</span><span class="p">]</span>
+        <span class="nx">app</span><span class="p">.</span><span class="nx">use</span> <span class="nx">zappa_middleware</span><span class="p">[</span><span class="nx">name</span><span class="p">](</span><span class="nx">arg</span><span class="p">)</span>
+      <span class="k">else</span> <span class="k">if</span> <span class="k">typeof</span> <span class="nx">express</span><span class="p">[</span><span class="nx">name</span><span class="p">]</span> <span class="o">is</span> <span class="s1">&#39;function&#39;</span>
+        <span class="nx">app</span><span class="p">.</span><span class="nx">use</span> <span class="nx">express</span><span class="p">[</span><span class="nx">name</span><span class="p">](</span><span class="nx">arg</span><span class="p">)</span>
+     
+    <span class="k">for</span> <span class="nx">a</span> <span class="k">in</span> <span class="nx">arguments</span>
+      <span class="k">switch</span> <span class="k">typeof</span> <span class="nx">a</span>
+        <span class="k">when</span> <span class="s1">&#39;function&#39;</span> <span class="k">then</span> <span class="nx">app</span><span class="p">.</span><span class="nx">use</span> <span class="nx">a</span>
+        <span class="k">when</span> <span class="s1">&#39;string&#39;</span> <span class="k">then</span> <span class="nx">use</span> <span class="nx">a</span>
+        <span class="k">when</span> <span class="s1">&#39;object&#39;</span> <span class="k">then</span> <span class="nx">use</span> <span class="nx">k</span><span class="p">,</span> <span class="nx">v</span> <span class="k">for</span> <span class="nx">k</span><span class="p">,</span> <span class="nx">v</span> <span class="k">of</span> <span class="nx">a</span>
+    
+  <span class="nv">context.configure = </span><span class="nf">(p) -&gt;</span>
+    <span class="k">if</span> <span class="k">typeof</span> <span class="nx">p</span> <span class="o">is</span> <span class="s1">&#39;function&#39;</span> <span class="k">then</span> <span class="nx">app</span><span class="p">.</span><span class="nx">configure</span> <span class="nx">p</span>
+    <span class="k">else</span> <span class="nx">app</span><span class="p">.</span><span class="nx">configure</span> <span class="nx">k</span><span class="p">,</span> <span class="nx">v</span> <span class="k">for</span> <span class="nx">k</span><span class="p">,</span> <span class="nx">v</span> <span class="k">of</span> <span class="nx">p</span>
+    
+  <span class="nv">context.settings = </span><span class="nx">app</span><span class="p">.</span><span class="nx">settings</span>
+
+  <span class="nv">context.shared = </span><span class="nf">(obj) -&gt;</span>
+    <span class="nx">context</span><span class="p">.</span><span class="nx">use</span> <span class="s1">&#39;zappa&#39;</span> <span class="nx">unless</span> <span class="nx">zappa_used</span>
+    <span class="k">for</span> <span class="nx">k</span><span class="p">,</span> <span class="nx">v</span> <span class="k">of</span> <span class="nx">obj</span>
+      <span class="nv">js = </span><span class="s2">&quot;;zappa.run(#{v});&quot;</span>
+      <span class="nv">js = </span><span class="nx">minify</span><span class="p">(</span><span class="nx">js</span><span class="p">)</span> <span class="k">if</span> <span class="nx">app</span><span class="p">.</span><span class="nx">settings</span><span class="p">[</span><span class="s1">&#39;minify&#39;</span><span class="p">]</span>
+      <span class="nx">route</span> <span class="nv">verb: </span><span class="s1">&#39;get&#39;</span><span class="p">,</span> <span class="nv">path: </span><span class="nx">k</span><span class="p">,</span> <span class="nv">handler: </span><span class="nx">js</span><span class="p">,</span> <span class="nv">contentType: </span><span class="s1">&#39;js&#39;</span>
+      <span class="nx">v</span><span class="p">.</span><span class="nx">apply</span><span class="p">(</span><span class="nx">context</span><span class="p">,</span> <span class="p">[</span><span class="nx">context</span><span class="p">])</span>
+
+  <span class="nv">context.include = </span><span class="nf">(p) -&gt;</span>
+    <span class="nv">sub = </span><span class="nx">require</span> <span class="nx">path</span><span class="p">.</span><span class="nx">join</span><span class="p">(</span><span class="nx">context</span><span class="p">.</span><span class="nx">root</span><span class="p">,</span> <span class="nx">p</span><span class="p">)</span>
+    <span class="nx">sub</span><span class="p">.</span><span class="nx">include</span><span class="p">.</span><span class="nx">apply</span><span class="p">(</span><span class="nx">context</span><span class="p">,</span> <span class="p">[</span><span class="nx">context</span><span class="p">])</span></pre></div>             </td>           </tr>                               <tr id="section-21">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-21">&#182;</a>               </div>               <p>Register a route with express.</p>             </td>             <td class="code">               <div class="highlight"><pre>  <span class="nv">route = </span><span class="nf">(r) -&gt;</span>
+    <span class="k">if</span> <span class="k">typeof</span> <span class="nx">r</span><span class="p">.</span><span class="nx">handler</span> <span class="o">is</span> <span class="s1">&#39;string&#39;</span>
+      <span class="nx">app</span><span class="p">[</span><span class="nx">r</span><span class="p">.</span><span class="nx">verb</span><span class="p">]</span> <span class="nx">r</span><span class="p">.</span><span class="nx">path</span><span class="p">,</span> <span class="nf">(req, res) -&gt;</span>
+        <span class="nx">res</span><span class="p">.</span><span class="nx">contentType</span> <span class="nx">r</span><span class="p">.</span><span class="nx">contentType</span> <span class="k">if</span> <span class="nx">r</span><span class="p">.</span><span class="nx">contentType</span><span class="o">?</span>
+        <span class="nx">res</span><span class="p">.</span><span class="nx">send</span> <span class="nx">r</span><span class="p">.</span><span class="nx">handler</span>
+    <span class="k">else</span>
+      <span class="nx">app</span><span class="p">[</span><span class="nx">r</span><span class="p">.</span><span class="nx">verb</span><span class="p">]</span> <span class="nx">r</span><span class="p">.</span><span class="nx">path</span><span class="p">,</span> <span class="nf">(req, res, next) -&gt;</span>
+        <span class="nv">ctx =</span>
+          <span class="nv">app: </span><span class="nx">app</span>
+          <span class="nv">settings: </span><span class="nx">app</span><span class="p">.</span><span class="nx">settings</span>
+          <span class="nv">request: </span><span class="nx">req</span>
+          <span class="nv">query: </span><span class="nx">req</span><span class="p">.</span><span class="nx">query</span>
+          <span class="nv">params: </span><span class="nx">req</span><span class="p">.</span><span class="nx">params</span>
+          <span class="nv">body: </span><span class="nx">req</span><span class="p">.</span><span class="nx">body</span>
+          <span class="nv">session: </span><span class="nx">req</span><span class="p">.</span><span class="nx">session</span>
+          <span class="nv">response: </span><span class="nx">res</span>
+          <span class="nv">next: </span><span class="nx">next</span>
+          <span class="nv">send: </span><span class="o">-&gt;</span> <span class="nx">res</span><span class="p">.</span><span class="nx">send</span><span class="p">.</span><span class="nx">apply</span> <span class="nx">res</span><span class="p">,</span> <span class="nx">arguments</span>
+          <span class="nv">redirect: </span><span class="o">-&gt;</span> <span class="nx">res</span><span class="p">.</span><span class="nx">redirect</span><span class="p">.</span><span class="nx">apply</span> <span class="nx">res</span><span class="p">,</span> <span class="nx">arguments</span>
+          <span class="nv">render: </span><span class="o">-&gt;</span>
+            <span class="k">if</span> <span class="k">typeof</span> <span class="nx">arguments</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">isnt</span> <span class="s1">&#39;object&#39;</span>
+              <span class="nx">render</span><span class="p">.</span><span class="nx">apply</span> <span class="err">@</span><span class="p">,</span> <span class="nx">arguments</span>
+            <span class="k">else</span>
+              <span class="k">for</span> <span class="nx">k</span><span class="p">,</span> <span class="nx">v</span> <span class="k">of</span> <span class="nx">arguments</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                <span class="nx">render</span><span class="p">.</span><span class="nx">apply</span> <span class="err">@</span><span class="p">,</span> <span class="p">[</span><span class="nx">k</span><span class="p">,</span> <span class="nx">v</span><span class="p">]</span>
+
+        <span class="nv">render = </span><span class="nf">(args...) -&gt;</span></pre></div>             </td>           </tr>                               <tr id="section-22">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-22">&#182;</a>               </div>               <p>Adds the app id to the view name so that the monkeypatched
+express.View.exists and express.View.contents can lookup
+this app's inline templates.</p>             </td>             <td class="code">               <div class="highlight"><pre>          <span class="nx">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="nx">context</span><span class="p">.</span><span class="nx">id</span> <span class="o">+</span> <span class="s1">&#39;/&#39;</span> <span class="o">+</span> <span class="nx">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        </pre></div>             </td>           </tr>                               <tr id="section-23">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-23">&#182;</a>               </div>               <p>Make sure the second arg is an object.</p>             </td>             <td class="code">               <div class="highlight"><pre>          <span class="nx">args</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">?=</span> <span class="p">{}</span>
+          <span class="nx">args</span><span class="p">.</span><span class="nx">splice</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">{}</span> <span class="k">if</span> <span class="k">typeof</span> <span class="nx">args</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">is</span> <span class="s1">&#39;function&#39;</span>
+        
+          <span class="k">if</span> <span class="nx">app</span><span class="p">.</span><span class="nx">settings</span><span class="p">[</span><span class="s1">&#39;databag&#39;</span><span class="p">]</span>
+            <span class="nx">args</span><span class="p">[</span><span class="mi">1</span><span class="p">].</span><span class="nv">params = </span><span class="nx">data</span>
+
+          <span class="k">if</span> <span class="nx">args</span><span class="p">[</span><span class="mi">1</span><span class="p">].</span><span class="nx">postrender</span><span class="o">?</span></pre></div>             </td>           </tr>                               <tr id="section-24">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-24">&#182;</a>               </div>               <p>Apply postrender before sending response.</p>             </td>             <td class="code">               <div class="highlight"><pre>            <span class="nx">res</span><span class="p">.</span><span class="nx">render</span> <span class="nx">args</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="nx">args</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="nf">(err, str) -&gt;</span>
+              <span class="nx">jsdom</span><span class="p">.</span><span class="nx">env</span> <span class="nv">html: </span><span class="nx">str</span><span class="p">,</span> <span class="nv">src: </span><span class="p">[</span><span class="nx">jquery</span><span class="p">],</span> <span class="nv">done: </span><span class="nf">(err, window) -&gt;</span>
+                <span class="nv">ctx.window = </span><span class="nb">window</span>
+                <span class="nv">rendered = </span><span class="nx">postrenders</span><span class="p">[</span><span class="nx">args</span><span class="p">[</span><span class="mi">1</span><span class="p">].</span><span class="nx">postrender</span><span class="p">].</span><span class="nx">apply</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span> <span class="p">[</span><span class="nb">window</span><span class="p">.</span><span class="nx">$</span><span class="p">,</span> <span class="nx">ctx</span><span class="p">])</span>
+
+                <span class="nv">doctype = </span><span class="p">(</span><span class="nb">window</span><span class="p">.</span><span class="nb">document</span><span class="p">.</span><span class="nx">doctype</span> <span class="o">or</span> <span class="s1">&#39;&#39;</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;\n&quot;</span>
+                <span class="nx">res</span><span class="p">.</span><span class="nx">send</span> <span class="nx">doctype</span> <span class="o">+</span> <span class="nb">window</span><span class="p">.</span><span class="nb">document</span><span class="p">.</span><span class="nx">documentElement</span><span class="p">.</span><span class="nx">outerHTML</span>
+          <span class="k">else</span></pre></div>             </td>           </tr>                               <tr id="section-25">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-25">&#182;</a>               </div>               <p>Just forward params to express.</p>             </td>             <td class="code">               <div class="highlight"><pre>            <span class="nx">res</span><span class="p">.</span><span class="nx">render</span><span class="p">.</span><span class="nx">apply</span> <span class="nx">res</span><span class="p">,</span> <span class="nx">args</span>
+
+        <span class="k">for</span> <span class="nx">name</span><span class="p">,</span> <span class="nx">helper</span> <span class="k">of</span> <span class="nx">helpers</span>
+          <span class="nx">do</span> <span class="nf">(name, helper) -&gt;</span>
+            <span class="nx">ctx</span><span class="p">[</span><span class="nx">name</span><span class="p">]</span> <span class="o">=</span> <span class="nf">(args...) -&gt;</span>
+              <span class="nx">args</span><span class="p">.</span><span class="nx">push</span> <span class="nx">ctx</span>
+              <span class="nx">helper</span><span class="p">.</span><span class="nx">apply</span> <span class="nx">ctx</span><span class="p">,</span> <span class="nx">args</span>
+
+        <span class="k">if</span> <span class="nx">app</span><span class="p">.</span><span class="nx">settings</span><span class="p">[</span><span class="s1">&#39;databag&#39;</span><span class="p">]</span>
+          <span class="nv">data = </span><span class="p">{}</span>
+          <span class="nx">copy_data_to</span> <span class="nx">data</span><span class="p">,</span> <span class="p">[</span><span class="nx">req</span><span class="p">.</span><span class="nx">query</span><span class="p">,</span> <span class="nx">req</span><span class="p">.</span><span class="nx">params</span><span class="p">,</span> <span class="nx">req</span><span class="p">.</span><span class="nx">body</span><span class="p">]</span></pre></div>             </td>           </tr>                               <tr id="section-26">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-26">&#182;</a>               </div>               <p>Go!</p>             </td>             <td class="code">               <div class="highlight"><pre>        <span class="k">switch</span> <span class="nx">app</span><span class="p">.</span><span class="nx">settings</span><span class="p">[</span><span class="s1">&#39;databag&#39;</span><span class="p">]</span>
+          <span class="k">when</span> <span class="s1">&#39;this&#39;</span> <span class="k">then</span> <span class="nv">result = </span><span class="nx">r</span><span class="p">.</span><span class="nx">handler</span><span class="p">.</span><span class="nx">apply</span><span class="p">(</span><span class="nx">data</span><span class="p">,</span> <span class="p">[</span><span class="nx">ctx</span><span class="p">])</span>
+          <span class="k">when</span> <span class="s1">&#39;param&#39;</span> <span class="k">then</span> <span class="nv">result = </span><span class="nx">r</span><span class="p">.</span><span class="nx">handler</span><span class="p">.</span><span class="nx">apply</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span> <span class="p">[</span><span class="nx">data</span><span class="p">])</span>
+          <span class="k">else</span> <span class="nv">result = </span><span class="nx">r</span><span class="p">.</span><span class="nx">handler</span><span class="p">.</span><span class="nx">apply</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span> <span class="p">[</span><span class="nx">ctx</span><span class="p">])</span>
+        
+        <span class="nx">res</span><span class="p">.</span><span class="nx">contentType</span><span class="p">(</span><span class="nx">r</span><span class="p">.</span><span class="nx">contentType</span><span class="p">)</span> <span class="k">if</span> <span class="nx">r</span><span class="p">.</span><span class="nx">contentType</span><span class="o">?</span>
+        <span class="k">if</span> <span class="k">typeof</span> <span class="nx">result</span> <span class="o">is</span> <span class="s1">&#39;string&#39;</span> <span class="k">then</span> <span class="nx">res</span><span class="p">.</span><span class="nx">send</span> <span class="nx">result</span>
+        <span class="k">else</span> <span class="k">return</span> <span class="nx">result</span>
+  </pre></div>             </td>           </tr>                               <tr id="section-27">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-27">&#182;</a>               </div>               <p>Register socket.io handlers.</p>             </td>             <td class="code">               <div class="highlight"><pre>  <span class="nx">io</span><span class="p">.</span><span class="nx">sockets</span><span class="p">.</span><span class="kc">on</span> <span class="s1">&#39;connection&#39;</span><span class="p">,</span> <span class="nf">(socket) -&gt;</span>
+    <span class="nv">c = </span><span class="p">{}</span>
+    
+    <span class="nv">build_ctx = </span><span class="o">-&gt;</span>
+      <span class="nv">ctx =</span>
+        <span class="nv">app: </span><span class="nx">app</span>
+        <span class="nv">io: </span><span class="nx">io</span>
+        <span class="nv">settings: </span><span class="nx">app</span><span class="p">.</span><span class="nx">settings</span>
+        <span class="nv">socket: </span><span class="nx">socket</span>
+        <span class="nv">id: </span><span class="nx">socket</span><span class="p">.</span><span class="nx">id</span>
+        <span class="nv">client: </span><span class="nx">c</span>
+        <span class="nv">emit: </span><span class="o">-&gt;</span>
+          <span class="k">if</span> <span class="k">typeof</span> <span class="nx">arguments</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">isnt</span> <span class="s1">&#39;object&#39;</span>
+            <span class="nx">socket</span><span class="p">.</span><span class="nx">emit</span><span class="p">.</span><span class="nx">apply</span> <span class="nx">socket</span><span class="p">,</span> <span class="nx">arguments</span>
+          <span class="k">else</span>
+            <span class="k">for</span> <span class="nx">k</span><span class="p">,</span> <span class="nx">v</span> <span class="k">of</span> <span class="nx">arguments</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+              <span class="nx">socket</span><span class="p">.</span><span class="nx">emit</span><span class="p">.</span><span class="nx">apply</span> <span class="nx">socket</span><span class="p">,</span> <span class="p">[</span><span class="nx">k</span><span class="p">,</span> <span class="nx">v</span><span class="p">]</span>
+        <span class="nv">broadcast: </span><span class="o">-&gt;</span>
+          <span class="k">if</span> <span class="k">typeof</span> <span class="nx">arguments</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">isnt</span> <span class="s1">&#39;object&#39;</span>
+            <span class="nx">socket</span><span class="p">.</span><span class="nx">broadcast</span><span class="p">.</span><span class="nx">emit</span><span class="p">.</span><span class="nx">apply</span> <span class="nx">socket</span><span class="p">.</span><span class="nx">broadcast</span><span class="p">,</span> <span class="nx">arguments</span>
+          <span class="k">else</span>
+            <span class="k">for</span> <span class="nx">k</span><span class="p">,</span> <span class="nx">v</span> <span class="k">of</span> <span class="nx">arguments</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+              <span class="nx">socket</span><span class="p">.</span><span class="nx">broadcast</span><span class="p">.</span><span class="nx">emit</span><span class="p">.</span><span class="nx">apply</span> <span class="nx">socket</span><span class="p">.</span><span class="nx">broadcast</span><span class="p">,</span> <span class="p">[</span><span class="nx">k</span><span class="p">,</span> <span class="nx">v</span><span class="p">]</span>
+
+      <span class="k">for</span> <span class="nx">name</span><span class="p">,</span> <span class="nx">helper</span> <span class="k">of</span> <span class="nx">helpers</span>
+        <span class="nx">do</span> <span class="nf">(name, helper) -&gt;</span>
+          <span class="nx">ctx</span><span class="p">[</span><span class="nx">name</span><span class="p">]</span> <span class="o">=</span> <span class="o">-&gt;</span>
+            <span class="nx">helper</span><span class="p">.</span><span class="nx">apply</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span> <span class="nx">arguments</span><span class="p">)</span>
+      <span class="nx">ctx</span>
+
+    <span class="nv">ctx = </span><span class="nx">build_ctx</span><span class="p">()</span>
+    <span class="nx">ws_handlers</span><span class="p">.</span><span class="nx">connection</span><span class="p">.</span><span class="nx">apply</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span> <span class="p">[</span><span class="nx">ctx</span><span class="p">])</span> <span class="k">if</span> <span class="nx">ws_handlers</span><span class="p">.</span><span class="nx">connection</span><span class="o">?</span>
+
+    <span class="nx">socket</span><span class="p">.</span><span class="kc">on</span> <span class="s1">&#39;disconnect&#39;</span><span class="p">,</span> <span class="o">-&gt;</span>
+      <span class="nv">ctx = </span><span class="nx">build_ctx</span><span class="p">()</span>
+      <span class="nx">ws_handlers</span><span class="p">.</span><span class="nx">disconnect</span><span class="p">.</span><span class="nx">apply</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span> <span class="p">[</span><span class="nx">ctx</span><span class="p">])</span> <span class="k">if</span> <span class="nx">ws_handlers</span><span class="p">.</span><span class="nx">disconnect</span><span class="o">?</span>
+
+    <span class="k">for</span> <span class="nx">name</span><span class="p">,</span> <span class="nx">h</span> <span class="k">of</span> <span class="nx">ws_handlers</span>
+      <span class="nx">do</span> <span class="nf">(name, h) -&gt;</span>
+        <span class="k">if</span> <span class="nx">name</span> <span class="o">isnt</span> <span class="s1">&#39;connection&#39;</span> <span class="o">and</span> <span class="nx">name</span> <span class="o">isnt</span> <span class="s1">&#39;disconnect&#39;</span>
+          <span class="nx">socket</span><span class="p">.</span><span class="kc">on</span> <span class="nx">name</span><span class="p">,</span> <span class="nf">(data) -&gt;</span>
+            <span class="nv">ctx = </span><span class="nx">build_ctx</span><span class="p">()</span>
+            <span class="nv">ctx.data = </span><span class="nx">data</span>
+            <span class="k">switch</span> <span class="nx">app</span><span class="p">.</span><span class="nx">settings</span><span class="p">[</span><span class="s1">&#39;databag&#39;</span><span class="p">]</span>
+              <span class="k">when</span> <span class="s1">&#39;this&#39;</span> <span class="k">then</span> <span class="nx">h</span><span class="p">.</span><span class="nx">apply</span><span class="p">(</span><span class="nx">data</span><span class="p">,</span> <span class="p">[</span><span class="nx">ctx</span><span class="p">])</span>
+              <span class="k">when</span> <span class="s1">&#39;param&#39;</span> <span class="k">then</span> <span class="nx">h</span><span class="p">.</span><span class="nx">apply</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span> <span class="p">[</span><span class="nx">data</span><span class="p">])</span>
+              <span class="k">else</span> <span class="nx">h</span><span class="p">.</span><span class="nx">apply</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span> <span class="p">[</span><span class="nx">ctx</span><span class="p">])</span></pre></div>             </td>           </tr>                               <tr id="section-28">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-28">&#182;</a>               </div>               <p>Go!</p>             </td>             <td class="code">               <div class="highlight"><pre>  <span class="nx">func</span><span class="p">.</span><span class="nx">apply</span><span class="p">(</span><span class="nx">context</span><span class="p">,</span> <span class="p">[</span><span class="nx">context</span><span class="p">])</span></pre></div>             </td>           </tr>                               <tr id="section-29">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-29">&#182;</a>               </div>               <p>The stringified zappa client.</p>             </td>             <td class="code">               <div class="highlight"><pre>  <span class="nv">client = </span><span class="nx">require</span><span class="p">(</span><span class="s1">&#39;./client&#39;</span><span class="p">).</span><span class="nx">build</span><span class="p">(</span><span class="nx">zappa</span><span class="p">.</span><span class="nx">version</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">settings</span><span class="p">)</span>
+  <span class="nv">client = </span><span class="s2">&quot;;#{coffeescript_helpers}(#{client})();&quot;</span>
+  <span class="nv">client = </span><span class="nx">minify</span><span class="p">(</span><span class="nx">client</span><span class="p">)</span> <span class="k">if</span> <span class="nx">app</span><span class="p">.</span><span class="nx">settings</span><span class="p">[</span><span class="s1">&#39;minify&#39;</span><span class="p">]</span>
+
+  <span class="k">if</span> <span class="nx">app</span><span class="p">.</span><span class="nx">settings</span><span class="p">[</span><span class="s1">&#39;default layout&#39;</span><span class="p">]</span>
+    <span class="nx">context</span><span class="p">.</span><span class="nx">view</span> <span class="nv">layout: </span><span class="o">-&gt;</span>
+      <span class="nx">doctype</span> <span class="mi">5</span>
+      <span class="nx">html</span> <span class="o">-&gt;</span>
+        <span class="nx">head</span> <span class="o">-&gt;</span>
+          <span class="nx">title</span> <span class="nx">@title</span> <span class="k">if</span> <span class="nx">@title</span>
+          <span class="k">if</span> <span class="nx">@scripts</span>
+            <span class="k">for</span> <span class="nx">s</span> <span class="k">in</span> <span class="nx">@scripts</span>
+              <span class="nx">script</span> <span class="nv">src: </span><span class="nx">s</span> <span class="o">+</span> <span class="s1">&#39;.js&#39;</span>
+          <span class="nx">script</span><span class="p">(</span><span class="nv">src: </span><span class="nx">@script</span> <span class="o">+</span> <span class="s1">&#39;.js&#39;</span><span class="p">)</span> <span class="k">if</span> <span class="nx">@script</span>
+          <span class="k">if</span> <span class="nx">@stylesheets</span>
+            <span class="k">for</span> <span class="nx">s</span> <span class="k">in</span> <span class="nx">@stylesheets</span>
+              <span class="nx">link</span> <span class="nv">rel: </span><span class="s1">&#39;stylesheet&#39;</span><span class="p">,</span> <span class="nv">href: </span><span class="nx">s</span> <span class="o">+</span> <span class="s1">&#39;.css&#39;</span>
+          <span class="nx">link</span><span class="p">(</span><span class="nv">rel: </span><span class="s1">&#39;stylesheet&#39;</span><span class="p">,</span> <span class="nv">href: </span><span class="nx">@stylesheet</span> <span class="o">+</span> <span class="s1">&#39;.css&#39;</span><span class="p">)</span> <span class="k">if</span> <span class="nx">@stylesheet</span>
+          <span class="nx">style</span> <span class="nx">@style</span> <span class="k">if</span> <span class="nx">@style</span>
+        <span class="nx">body</span> <span class="nx">@body</span>
+
+  <span class="nx">context</span></pre></div>             </td>           </tr>                               <tr id="section-30">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-30">&#182;</a>               </div>               <p>Takes a function and runs it as a zappa app. Optionally accepts a port number, and/or
+a hostname (any order). The hostname must be a string, and the port number must be
+castable as a number.
+Returns an object where <code>app</code> is the express server and <code>io</code> is the socket.io handle.
+Ex.:
+    require('zappa') -> get '/': 'hi'
+    require('zappa').run 80, -> get '/': 'hi'
+    require('zappa') -> 'domain.com', 80, -> get '/': 'hi'</p>             </td>             <td class="code">               <div class="highlight"><pre><span class="nv">zappa.run = </span><span class="o">-&gt;</span>
+  <span class="nv">host = </span><span class="kc">null</span>
+  <span class="nv">port = </span><span class="mi">3000</span>
+  <span class="nv">root_function = </span><span class="kc">null</span>
+
+  <span class="k">for</span> <span class="nx">a</span> <span class="k">in</span> <span class="nx">arguments</span>
+    <span class="k">switch</span> <span class="k">typeof</span> <span class="nx">a</span>
+      <span class="k">when</span> <span class="s1">&#39;string&#39;</span>
+        <span class="k">if</span> <span class="nb">isNaN</span><span class="p">(</span> <span class="p">(</span><span class="nb">Number</span><span class="p">)</span> <span class="nx">a</span> <span class="p">)</span> <span class="k">then</span> <span class="nv">host = </span><span class="nx">a</span>
+        <span class="k">else</span> <span class="nv">port = </span><span class="p">(</span><span class="nb">Number</span><span class="p">)</span> <span class="nx">a</span>
+      <span class="k">when</span> <span class="s1">&#39;number&#39;</span> <span class="k">then</span> <span class="nv">port = </span><span class="nx">a</span>
+      <span class="k">when</span> <span class="s1">&#39;function&#39;</span> <span class="k">then</span> <span class="nv">root_function = </span><span class="nx">a</span>
+
+  <span class="nv">zapp = </span><span class="nx">zappa</span><span class="p">.</span><span class="nx">app</span><span class="p">(</span><span class="nx">root_function</span><span class="p">)</span>
+  <span class="nv">app = </span><span class="nx">zapp</span><span class="p">.</span><span class="nx">app</span>
+
+  <span class="k">if</span> <span class="nx">host</span> <span class="k">then</span> <span class="nx">app</span><span class="p">.</span><span class="nx">listen</span> <span class="nx">port</span><span class="p">,</span> <span class="nx">host</span>
+  <span class="k">else</span> <span class="nx">app</span><span class="p">.</span><span class="nx">listen</span> <span class="nx">port</span>
+
+  <span class="nx">log</span> <span class="s1">&#39;Express server listening on port %d in %s mode&#39;</span><span class="p">,</span>
+    <span class="nx">app</span><span class="p">.</span><span class="nx">address</span><span class="p">()</span><span class="o">?</span><span class="p">.</span><span class="nx">port</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">settings</span><span class="p">.</span><span class="nx">env</span>
+
+  <span class="nx">log</span> <span class="s2">&quot;Zappa #{zappa.version} \&quot;#{codename}\&quot; orchestrating the show&quot;</span>
+
+  <span class="nx">zapp</span></pre></div>             </td>           </tr>                               <tr id="section-31">             <td class="docs">               <div class="pilwrap">                 <a class="pilcrow" href="#section-31">&#182;</a>               </div>               <p>Creates a zappa view adapter for templating engine <code>engine</code>. This adapter
+can be used with <code>app.register</code> and creates params "shortcuts".</p>
+
+<p>Zappa, by default, automatically sends all request params to templates,
+but inside the <code>params</code> local.</p>
+
+<p>This adapter adds a "root local" for each of these params, <em>only</em> 
+if a local with the same name doesn't exist already, <em>and</em> the name is not
+in the optional blacklist.</p>
+
+<p>The blacklist is useful to prevent request params from triggering unset
+template engine options.</p>
+
+<p>If <code>engine</code> is a string, the adapter will use <code>require(engine)</code>. Otherwise,
+it will assume the <code>engine</code> param is an object with a <code>compile</code> function.</p>             </td>             <td class="code">               <div class="highlight"><pre><span class="nv">zappa.adapter = </span><span class="nf">(engine, options = {}) -&gt;</span>
+  <span class="nx">options</span><span class="p">.</span><span class="nx">blacklist</span> <span class="o">?=</span> <span class="p">[]</span>
+  <span class="nv">engine = </span><span class="nx">require</span><span class="p">(</span><span class="nx">engine</span><span class="p">)</span> <span class="k">if</span> <span class="k">typeof</span> <span class="nx">engine</span> <span class="o">is</span> <span class="s1">&#39;string&#39;</span>
+  <span class="nv">compile: </span><span class="nf">(template, data) -&gt;</span>
+    <span class="nv">template = </span><span class="nx">engine</span><span class="p">.</span><span class="nx">compile</span><span class="p">(</span><span class="nx">template</span><span class="p">,</span> <span class="nx">data</span><span class="p">)</span>
+    <span class="nf">(data) -&gt;</span>
+      <span class="k">for</span> <span class="nx">k</span><span class="p">,</span> <span class="nx">v</span> <span class="k">of</span> <span class="nx">data</span><span class="p">.</span><span class="nx">params</span>
+        <span class="k">if</span> <span class="k">typeof</span> <span class="nx">data</span><span class="p">[</span><span class="nx">k</span><span class="p">]</span> <span class="o">is</span> <span class="s1">&#39;undefined&#39;</span> <span class="o">and</span> <span class="nx">k</span> <span class="o">not</span> <span class="k">in</span> <span class="nx">options</span><span class="p">.</span><span class="nx">blacklist</span>
+          <span class="nx">data</span><span class="p">[</span><span class="nx">k</span><span class="p">]</span> <span class="o">=</span> <span class="nx">v</span>
+      <span class="nx">template</span><span class="p">(</span><span class="nx">data</span><span class="p">)</span>
+
+<span class="nv">module.exports = </span><span class="nx">zappa</span><span class="p">.</span><span class="nx">run</span>
+<span class="nv">module.exports.run = </span><span class="nx">zappa</span><span class="p">.</span><span class="nx">run</span>
+<span class="nv">module.exports.app = </span><span class="nx">zappa</span><span class="p">.</span><span class="nx">app</span>
+<span class="nv">module.exports.adapter = </span><span class="nx">zappa</span><span class="p">.</span><span class="nx">adapter</span>
+<span class="nv">module.exports.version = </span><span class="nx">zappa</span><span class="p">.</span><span class="nx">version</span>
+
+</pre></div>             </td>           </tr>                </tbody>     </table>   </div> </body> </html> 

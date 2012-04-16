@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+
+# Adapted from: https://raw.github.com/visionmedia/express/0.14.1/benchmarks/run
+
+SLEEP=${SLEEP-2}
+ABFLAGS=${ABFLAGS-"-n 2000 -c 50"}
+ADDR=${ADDR-http://127.0.0.1:3000/}
+AB=${AB-ab}
+export NODE_ENV=production
+
+log(){
+  echo "... $@"
+}
+
+bm(){
+  local file=$1
+  log benchmarking $file
+  coffee $file.coffee &
+  pid=$!
+  sleep $SLEEP
+  $AB $ABFLAGS -g out/$file.dat $ADDR > out/$file.out
+  log $(cat out/$file.out | grep Requests)
+  kill -KILL $pid
+}
+
+log ab $ABFLAGS $ADDR
+
+bm zappa
+bm express
