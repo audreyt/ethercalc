@@ -7,7 +7,6 @@
         "uuid-pure": "*",
         "node-uuid": "*",
         "coffee-script": "*",
-        "express": "~2",
         "socket.io": "~0.9",
         "coffeekup": "*",
         "optimist": "*"
