@@ -29,12 +29,12 @@ This work is published from Taiwan.
 
   host = (argv != null ? argv.host : void 0) || process.env.VCAP_APP_HOST || '0.0.0.0';
 
-  key = (typeof args !== "undefined" && args !== null ? args.key : void 0) || null;
+  key = (argv != null ? argv.key : void 0) || null;
 
   console.log("Please connect to: http://" + (host === '0.0.0.0' ? require('os').hostname() : host) + ":" + port + "/");
 
   require('zappa')(port, host, function() {
-    if (key) this.app._key = key;
+    this.KEY = key;
     return this.include('main');
   });
 

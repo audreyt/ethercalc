@@ -1,5 +1,5 @@
-@include = ->
-  @client '/player.js': ->
+@include = -> @client '/player.js': ->
+  doPlay = =>
     window.SocialCalc ?= {}
     SocialCalc._username = Math.random().toString()
     SocialCalc.isConnected = true
@@ -36,7 +36,7 @@
       editor = SocialCalc.CurrentSpreadsheetControlObject.editor
       switch @data.type
         when "chat"
-          window.addmsg @data.msg
+          window.addmsg? @data.msg
         when "ecells"
           for user, ecell of @data.ecells
             continue if user == SocialCalc._username
@@ -73,7 +73,7 @@
               spreadsheet.sheet.ResetSheet()
               spreadsheet.ParseSheetSave @data.snapshot.substring(parts.sheet.start, parts.sheet.end)
             # spreadsheet.editor.LoadEditorSettings @data.snapshot.substring(parts.edit.start, parts.edit.end)  if parts.edit
-          window.addmsg @data.chat.join("\n"), true
+          window.addmsg? @data.chat.join("\n"), true
           cmdstr = (
             line for line in @data.log when not /^re(calc|display)$/.test(line)
           ).join("\n")
@@ -105,3 +105,39 @@
         when "execute"
           SocialCalc.CurrentSpreadsheetControlObject.context.sheetobj.ScheduleSheetCommands @data.cmdstr, @data.saveundo, true
       return
+
+  window.doresize = -> spreadsheet.DoOnResize()
+  scc = SocialCalc.Constants
+  b1 = window.location.search.charAt(1) or "4"
+  b2 = window.location.search.charAt(2) or "C"
+  b3 = window.location.search.charAt(3) or "8"
+  b4 = window.location.search.charAt(4) or "9"
+  b5 = window.location.search.charAt(5) or "8"
+  scc.SCToolbarbackground = "background-color:#4040" + b1 + "0;"
+  scc.SCTabbackground = "background-color:#CC" + b2 + ";"
+  scc.SCTabselectedCSS = "font-size:small;padding:6px 30px 6px 8px;color:#FFF;background-color:#4040" + b1 + "0;cursor:default;border-right:1px solid #CC" + b2 + ";"
+  scc.SCTabplainCSS = "font-size:small;padding:6px 30px 6px 8px;color:#FFF;background-color:#8080" + b3 + "0;cursor:default;border-right:1px solid #CC" + b2 + ";"
+  scc.SCToolbartext = "font-size:x-small;font-weight:bold;color:#FFF;padding-bottom:4px;"
+  scc.ISCButtonBorderNormal = "#4040" + b1 + "0"
+  scc.ISCButtonBorderHover = "#99" + b4 + ""
+  scc.ISCButtonBorderDown = "#FFF"
+  scc.ISCButtonDownBackground = "#88" + b5 + ""
+  SocialCalc.Popup.LocalizeString = SocialCalc.LocalizeString
+  $ ->
+    spreadsheet = new SocialCalc.SpreadsheetControl()
+    document.getElementById("msgtext").value = ""
+    savestr = document.getElementById("savestr")
+    spreadsheet.InitializeSpreadsheetControl "tableeditor", 0, 0, 0
+    spreadsheet.ExecuteCommand "redisplay", ""
+    spreadsheet.ExecuteCommand "set sheet defaulttextvalueformat text-wiki"
+    spreadsheet.ExportCallback = (s) ->
+      alert SocialCalc.ConvertSaveToOtherFormat(SocialCalc.Clipboard.clipboard, "csv")
+
+  SocialCalc.Callbacks.expand_wiki = (val) -> """
+    <div class="wiki">#{
+      (new Document.Parser.Wikitext()).parse(
+        val, new Document.Emitter.HTML()
+      )
+    }</div>
+  """
+  do doPlay
