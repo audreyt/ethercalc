@@ -1,4 +1,5 @@
 @include = ->
+  # console.log @KEY
   @enable 'serve jquery'
   @use 'bodyParser', @app.router, @express.static __dirname
   @include 'dotcloud'
