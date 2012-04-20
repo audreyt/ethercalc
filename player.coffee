@@ -4,13 +4,16 @@
     SocialCalc._username = Math.random().toString()
     SocialCalc.isConnected = true
     SocialCalc.hadSnapshot = false
+    SocialCalc._auth = window.location.search?.replace(/\??auth=/, '')
     SocialCalc._room ?= window.location.hash.replace('#', '')
-    SocialCalc._room = SocialCalc._room.replace(/^_+/, '')
+    SocialCalc._room = SocialCalc._room.replace(/^_+/, '').replace(/\?.*/, '')
     unless SocialCalc._room
         window.location = '/_start'
         return
     
-    try window.history.pushState {}, '', '/'+SocialCalc._room
+    try window.history.pushState {}, '', "/#{
+      SocialCalc._room
+    }" + if SocialCalc._auth then "/edit" else ""
     @connect()
 
     emit = (data) => @emit { data }
@@ -19,6 +22,7 @@
       data.user = SocialCalc._username
       data.room = SocialCalc._room
       data.type = type
+      data.auth = SocialCalc._auth if SocialCalc._auth
       emit data
 
     SocialCalc.isConnected = true
@@ -106,13 +110,13 @@
           SocialCalc.CurrentSpreadsheetControlObject.context.sheetobj.ScheduleSheetCommands @data.cmdstr, @data.saveundo, true
       return
 
-  window.doresize = -> spreadsheet.DoOnResize()
+  window.doresize = -> window.spreadsheet?.DoOnResize()
   scc = SocialCalc.Constants
-  b1 = window.location.search.charAt(1) or "4"
-  b2 = window.location.search.charAt(2) or "C"
-  b3 = window.location.search.charAt(3) or "8"
-  b4 = window.location.search.charAt(4) or "9"
-  b5 = window.location.search.charAt(5) or "8"
+  b1 = if window.location.search then 'A' else '4'
+  b2 = 'C'
+  b3 = '8'
+  b4 = '9'
+  b5 = '8'
   scc.SCToolbarbackground = "background-color:#4040" + b1 + "0;"
   scc.SCTabbackground = "background-color:#CC" + b2 + ";"
   scc.SCTabselectedCSS = "font-size:small;padding:6px 30px 6px 8px;color:#FFF;background-color:#4040" + b1 + "0;cursor:default;border-right:1px solid #CC" + b2 + ";"
@@ -122,9 +126,10 @@
   scc.ISCButtonBorderHover = "#99" + b4 + ""
   scc.ISCButtonBorderDown = "#FFF"
   scc.ISCButtonDownBackground = "#88" + b5 + ""
+  scc.defaultImagePrefix = "/images/sc-"
   SocialCalc.Popup.LocalizeString = SocialCalc.LocalizeString
   $ ->
-    spreadsheet = new SocialCalc.SpreadsheetControl()
+    window.spreadsheet = spreadsheet = new SocialCalc.SpreadsheetControl()
     document.getElementById("msgtext").value = ""
     savestr = document.getElementById("savestr")
     spreadsheet.InitializeSpreadsheetControl "tableeditor", 0, 0, 0

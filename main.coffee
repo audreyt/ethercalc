@@ -1,5 +1,4 @@
 @include = ->
-  # console.log @KEY
   @enable 'serve jquery'
   @use 'bodyParser', @app.router, @express.static __dirname
   @include 'dotcloud'
@@ -13,11 +12,21 @@
     @response.contentType 'text/html'
     @response.sendfile "#{RealBin}/#{file}"
 
+  KEY = @KEY
+  hmac = if !KEY then (x) -> (x) else (x) ->
+    encoder = require('crypto').createHmac('sha256', KEY)
+    encoder.update x.toString()
+    encoder.digest('hex')
+
   @get '/': sendFile "index.html"
-  @get '/_new': -> @response.redirect '/' + require("uuid-pure").newId(10, 36).toLowerCase()
+  @get '/_new': ->
+    room = require("uuid-pure").newId(10, 36).toLowerCase()
+    @response.redirect if KEY then "/#{ room }/edit" else "/#{ room }"
   @get '/_start': sendFile "start.html"
   @get '/:room': sendFile "index.html"
-
+  @get '/:room/edit': ->
+    room = @params.room
+    @response.redirect "/#{ room }?auth=#{ hmac(room) }"
   @get '/_/:room': ->
     SC._get @params.room, null, ({ log, snapshot }) =>
       @response.send '', { 'Content-Type': 'text/plain' }, 404 unless snapshot
@@ -36,7 +45,7 @@
       @response.send 'OK', { 'Content-Type': 'text/plain' }, 201
 
   @on data: ->
-    {room, msg, user, ecell, cmdstr, type} = @data
+    {room, msg, user, ecell, cmdstr, type, auth} = @data
     room = room.replace(/^_+/, '') # preceding underscore is reserved
     reply = (data) => @emit { data }
     broadcast = (data) =>
@@ -54,6 +63,7 @@
       when 'my.ecell'
         DB.hset "ecell-#{room}", user, ecell
       when 'execute'
+        return if KEY and hmac(room) isnt auth
         DB.multi()
           .rpush("log-#{room}", cmdstr)
           .bgsave().exec =>
@@ -74,11 +84,15 @@
         SC._get room, @io, ({ log, snapshot }) =>
           reply { type: 'recalc', room, log, snapshot }
       when 'stopHuddle'
+        return if @KEY and KEY isnt @KEY
         DB.del [
           "log-#{room}"
           "chat-#{room}"
           "ecell-#{room}"
           "snapshot-#{room}"
         ], => delete SC[room]; broadcast @data
+      when 'ecell'
+        return if KEY and hmac(room) isnt auth
+        broadcast @data
       else broadcast @data
     return
