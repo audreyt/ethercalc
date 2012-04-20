@@ -5,6 +5,7 @@
     SocialCalc.isConnected = true
     SocialCalc.hadSnapshot = false
     SocialCalc._auth = window.location.search?.replace(/\??auth=/, '')
+    SocialCalc._view = (SocialCalc._auth is '0')
     SocialCalc._room ?= window.location.hash.replace('#', '')
     SocialCalc._room = SocialCalc._room.replace(/^_+/, '').replace(/\?.*/, '')
     unless SocialCalc._room
@@ -13,7 +14,8 @@
     
     try window.history.pushState {}, '', "/#{
       SocialCalc._room
-    }" + if SocialCalc._auth then "/edit" else ""
+    }" + if SocialCalc._view then "/view" else
+         if SocialCalc._auth then "/edit" else ""
     @connect()
 
     emit = (data) => @emit { data }
@@ -37,7 +39,8 @@
       return if @data.to and @data.to != SocialCalc._username
       return if @data.room and @data.room != SocialCalc._room and @data.type != "recalc"
 
-      editor = SocialCalc.CurrentSpreadsheetControlObject.editor
+      ss = window.spreadsheet
+      editor = ss.editor
       switch @data.type
         when "chat"
           window.addmsg? @data.msg
@@ -70,44 +73,42 @@
         when "log"
           break if SocialCalc.hadSnapshot
           SocialCalc.hadSnapshot = true
-          spreadsheet = SocialCalc.CurrentSpreadsheetControlObject
-          parts = spreadsheet.DecodeSpreadsheetSave(@data.snapshot) if @data.snapshot
+          parts = ss.DecodeSpreadsheetSave(@data.snapshot) if @data.snapshot
           if parts
             if parts.sheet
-              spreadsheet.sheet.ResetSheet()
-              spreadsheet.ParseSheetSave @data.snapshot.substring(parts.sheet.start, parts.sheet.end)
-            # spreadsheet.editor.LoadEditorSettings @data.snapshot.substring(parts.edit.start, parts.edit.end)  if parts.edit
+              ss.sheet.ResetSheet()
+              ss.ParseSheetSave @data.snapshot.substring(parts.sheet.start, parts.sheet.end)
+            # ss.editor.LoadEditorSettings @data.snapshot.substring(parts.edit.start, parts.edit.end)  if parts.edit
           window.addmsg? @data.chat.join("\n"), true
           cmdstr = (
             line for line in @data.log when not /^re(calc|display)$/.test(line)
           ).join("\n")
           if cmdstr.length
             refreshCmd = "recalc"
-            editor = SocialCalc.CurrentSpreadsheetControlObject.editor
             # if editor.context.sheetobj.attribs.recalc != "off"
             #   refreshCmd = "recalc"
-            SocialCalc.CurrentSpreadsheetControlObject.context.sheetobj.ScheduleSheetCommands cmdstr + "\n#{refreshCmd}\n", false, true
+            ss.context.sheetobj.ScheduleSheetCommands cmdstr + "\n#{refreshCmd}\n", false, true
           else
-            SocialCalc.CurrentSpreadsheetControlObject.context.sheetobj.ScheduleSheetCommands "recalc\n", false, true
+            ss.context.sheetobj.ScheduleSheetCommands "recalc\n", false, true
 #          editor.MoveECellCallback.broadcast = (e) ->
 #            SocialCalc.Callbacks.broadcast "my.ecell"
 #              ecell: e.ecell.coord
         when "recalc"
           if @data.force
             SocialCalc.Formula.SheetCache.sheets = {}
-            SocialCalc.CurrentSpreadsheetControlObject?.sheet.recalconce = true
-          parts = SocialCalc.CurrentSpreadsheetControlObject.DecodeSpreadsheetSave(@data.snapshot) if @data.snapshot
+            ss?.sheet.recalconce = true
+          parts = ss.DecodeSpreadsheetSave(@data.snapshot) if @data.snapshot
           if parts?.sheet
             SocialCalc.RecalcLoadedSheet(
               @data.room,
               @data.snapshot.substring(parts.sheet.start, parts.sheet.end),
               true # recalc
             )
-            SocialCalc.CurrentSpreadsheetControlObject.context.sheetobj.ScheduleSheetCommands "recalc\n", false, true
+            ss.context.sheetobj.ScheduleSheetCommands "recalc\n", false, true
           else
             SocialCalc.RecalcLoadedSheet(@data.room, "", true)
         when "execute"
-          SocialCalc.CurrentSpreadsheetControlObject.context.sheetobj.ScheduleSheetCommands @data.cmdstr, @data.saveundo, true
+          ss.context.sheetobj.ScheduleSheetCommands @data.cmdstr, @data.saveundo, true
       return
 
   window.doresize = -> window.spreadsheet?.DoOnResize()
@@ -129,13 +130,19 @@
   scc.defaultImagePrefix = "/images/sc-"
   SocialCalc.Popup.LocalizeString = SocialCalc.LocalizeString
   $ ->
-    window.spreadsheet = spreadsheet = new SocialCalc.SpreadsheetControl()
+    window.spreadsheet = ss = (
+      if SocialCalc._view
+        new SocialCalc.SpreadsheetViewer()
+      else
+        new SocialCalc.SpreadsheetControl()
+    )
     document.getElementById("msgtext").value = ""
     savestr = document.getElementById("savestr")
-    spreadsheet.InitializeSpreadsheetControl "tableeditor", 0, 0, 0
-    spreadsheet.ExecuteCommand "redisplay", ""
-    spreadsheet.ExecuteCommand "set sheet defaulttextvalueformat text-wiki"
-    spreadsheet.ExportCallback = (s) ->
+    ss.InitializeSpreadsheetViewer? "tableeditor", 0, 0, 0
+    ss.InitializeSpreadsheetControl? "tableeditor", 0, 0, 0
+    ss.ExecuteCommand? "redisplay", ""
+    ss.ExecuteCommand? "set sheet defaulttextvalueformat text-wiki"
+    ss.ExportCallback = (s) ->
       alert SocialCalc.ConvertSaveToOtherFormat(SocialCalc.Clipboard.clipboard, "csv")
 
   SocialCalc.Callbacks.expand_wiki = (val) -> """

@@ -5,7 +5,8 @@ SOCIALCALC_FILES=\
 	formatnumber2.js \
 	formula1.js \
 	socialcalcpopup.js \
-	socialcalcspreadsheetcontrol.js
+	socialcalcspreadsheetcontrol.js \
+	socialcalcviewer.js
 
 ETHERCALC_FILES=\
 	$(SOCIALCALC_FILES) \

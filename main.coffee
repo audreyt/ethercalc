@@ -13,20 +13,28 @@
     @response.sendfile "#{RealBin}/#{file}"
 
   KEY = @KEY
+  HMAC_CACHE = {}
   hmac = if !KEY then (x) -> (x) else (x) ->
+    return HMAC_CACHE[x] if HMAC_CACHE[x]
     encoder = require('crypto').createHmac('sha256', KEY)
     encoder.update x.toString()
-    encoder.digest('hex')
+    HMAC_CACHE[x] = encoder.digest('hex')
 
   @get '/': sendFile "index.html"
   @get '/_new': ->
     room = require("uuid-pure").newId(10, 36).toLowerCase()
     @response.redirect if KEY then "/#{ room }/edit" else "/#{ room }"
   @get '/_start': sendFile "start.html"
-  @get '/:room': sendFile "index.html"
+  @get '/:room': if KEY then ->
+    return sendFile("index.html").call(@) if @query.auth?.length
+    @response.redirect "/#{ @params.room }?auth=0"
+  else sendFile "index.html"
   @get '/:room/edit': ->
     room = @params.room
     @response.redirect "/#{ room }?auth=#{ hmac(room) }"
+  @get '/:room/view': ->
+    room = @params.room
+    @response.redirect "/#{ room }?auth=0"
   @get '/_/:room': ->
     SC._get @params.room, null, ({ log, snapshot }) =>
       @response.send '', { 'Content-Type': 'text/plain' }, 404 unless snapshot
