@@ -37,12 +37,20 @@
     @response.redirect "/#{ room }?auth=0"
 
   IO = @io
-  @get '/_/:room': ->
-    SC._get @params.room, IO, ({ log, snapshot }) =>
-      if snapshot
-        @response.send snapshot, { 'Content-Type': 'text/plain' }, 201
-      else
-        @response.send '', { 'Content-Type': 'text/plain' }, 404
+  @get '/_/:room/cells/:cell': -> SC._get @params.room, IO, ({ snapshot }) => if snapshot
+    @response.send JSON.stringify(SC[@params.room].sheet.cells[@params.cell]), { 'Content-Type': 'application/json' }, 200
+  else
+    @response.send '', { 'Content-Type': 'text/plain' }, 404
+
+  @get '/_/:room/cells': -> SC._get @params.room, IO, ({ snapshot }) => if snapshot
+    @response.send JSON.stringify(SC[@params.room].sheet.cells), { 'Content-Type': 'application/json' }, 200
+  else
+    @response.send '', { 'Content-Type': 'text/plain' }, 404
+
+  @get '/_/:room': -> SC._get @params.room, IO, ({ snapshot }) => if snapshot
+    @response.send snapshot, { 'Content-Type': 'text/plain' }, 200
+  else
+    @response.send '', { 'Content-Type': 'text/plain' }, 404
 
   @put '/_/:room': ->
     buf = ''
