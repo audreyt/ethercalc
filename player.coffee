@@ -109,6 +109,8 @@
             SocialCalc.RecalcLoadedSheet(@data.room, "", true)
         when "execute"
           ss.context.sheetobj.ScheduleSheetCommands @data.cmdstr, @data.saveundo, true
+          if ss.currentTab is ss.tabnums?.graph
+            setTimeout (-> window.DoGraph false, false), 100
       return
 
   window.doresize = -> window.spreadsheet?.DoOnResize()
@@ -249,7 +251,7 @@
     ele.innerHTML = spreadsheet.graphrange
     DoGraph false, false
     return
-  DoGraph = (helpflag, isResize) ->
+  window.DoGraph = DoGraph = (helpflag, isResize) ->
     spreadsheet = SocialCalc.GetSpreadsheetControlObject()
     editor = spreadsheet.editor
     gview = spreadsheet.views.graph.element
