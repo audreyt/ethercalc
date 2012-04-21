@@ -37,6 +37,13 @@ The Socialtext logo and Dreamcatcher are trademarks of Socialtext, Inc.
 
 CHANGES MADE TO THE COVERED CODE (see CPAL Version 1.0 Section 3.3):
 
+2012-04-21:
+ Incorporated charting framework from OLPC Sugar into player.coffee.
+
+ The pie, line and bar chart tools was developed by Nicholas Doiron,
+ an engineering student from Carnegie Mellon University, U.S.A under
+ the guidance of Manusheel Gupta.
+
 2008-02-08:
  Original Code started as a translation to JavaScript of code in SocialCalc 1.1.0 plus
  much new code.
