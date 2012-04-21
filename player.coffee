@@ -545,6 +545,9 @@
     colors = [ "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "a", "b", "c", "d", "e", "f" ]
     i = 0
     while i < values.length
+      if Number(values[i]) == 0
+        i++
+        continue
       ctx.beginPath()
       ctx.moveTo centerX, centerY
       arcColor = "#" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)]
