@@ -411,6 +411,8 @@
     else
       ctx.translate 5, zeroLine - 15
     ctx.fillText labels[0], 0, 0
+    if labels[0] isnt values[0]
+      ctx.fillText values[0], 0, -24
     i = 1
     while i < values.length
       if (values[i] > 0) and (values[i - 1] < 0)
@@ -421,6 +423,8 @@
         else
           ctx.translate eachwidth, 0
       ctx.fillText labels[i], 0, 0
+      if labels[i] isnt values[i]
+        ctx.fillText values[i], 0, -24
       i++
     gChart = document.getElementById("googleBarChart")
     zeroLine = (-1 * minval) * yScale / 340
@@ -499,6 +503,8 @@
     else
       ctx.translate zeroLine + 15, 45
     ctx.fillText labels[0], 0, 0
+    if labels[0] isnt values[0]
+      ctx.fillText values[0], 0, 24
     i = 1
     while i < values.length
       if (values[i] > 0) and (values[i - 1] < 0)
@@ -509,6 +515,8 @@
         else
           ctx.translate 0, eachwidth
       ctx.fillText labels[i], 0, 0
+      if labels[i] isnt values[i]
+        ctx.fillText values[i], 0, 24
       i++
     gChart = document.getElementById("googleBarChart")
     zeroLine = (-1 * minval) * yScale / (canv.width)
