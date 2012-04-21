@@ -35,10 +35,14 @@
   @get '/:room/view': ->
     room = @params.room
     @response.redirect "/#{ room }?auth=0"
+
+  IO = @io
   @get '/_/:room': ->
-    SC._get @params.room, null, ({ log, snapshot }) =>
-      @response.send '', { 'Content-Type': 'text/plain' }, 404 unless snapshot
-      @response.send snapshot, { 'Content-Type': 'text/plain' }, 201
+    SC._get @params.room, IO, ({ log, snapshot }) =>
+      if snapshot
+        @response.send snapshot, { 'Content-Type': 'text/plain' }, 201
+      else
+        @response.send '', { 'Content-Type': 'text/plain' }, 404
 
   @put '/_/:room': ->
     buf = ''
@@ -47,8 +51,24 @@
     @request.on 'end', => SC._put @params.room, buf, =>
       @response.send 'OK', { 'Content-Type': 'text/plain' }, 201
 
+  @post '/_/:room': ->
+    {room} = @params
+    {command} = @body
+    if command
+      command = [command] unless Array.isArray command
+      SC._get room, IO, =>
+        SC[room]?.ExecuteCommand command.join("\n")
+        IO.sockets.in("log-#{room}").emit 'data', {
+          type: 'execute'
+          room: room
+          cmdstr: command.join("\n")
+        }
+        @response.send JSON.stringify({command}), { 'Content-Type': 'text/plain' }, 201
+    else
+      @response.send 'Please send command', { 'Content-Type': 'text/plain' }, 201
+
   @post '/:room': ->
-    {room, snapshot} = @data
+    {room, snapshot} = @body
     SC._put room, snapshot, =>
       @response.send 'OK', { 'Content-Type': 'text/plain' }, 201
 

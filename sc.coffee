@@ -7,13 +7,13 @@ global.SC ?= {}
 @include = ->
   DB = @include 'db'
 
-  SC._get = (room, @io, cb) ->
+  SC._get = (room, io, cb) ->
     return cb { snapshot: SC[room]._snapshot } if SC[room]?._snapshot
     DB.multi()
       .get("snapshot-#{room}")
       .lrange("log-#{room}", 0, -1)
       .exec (_, [snapshot, log]) =>
-        SC[room] = SC._init(snapshot, log, DB, room, @io) if @io
+        SC[room] = SC._init(snapshot, log, DB, room, io) if (snapshot or log.length) and io
         cb { log, snapshot }
 
   SC._put = (room, snapshot, cb) ->
