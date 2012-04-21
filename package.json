@@ -5,11 +5,11 @@
         "redis": "*",
         "uuid-pure": "*",
         "coffee-script": "*",
-        "optimist": "*"
+        "optimist": "*",
+        "jsdom": "*"
     }
     , "optionalDependencies": {
-        "hiredis": "~0.1",
-        "jsdom": "*"
+        "hiredis": "~0.1"
     }
     , "directories": { "bin": "./bin" }
 }
