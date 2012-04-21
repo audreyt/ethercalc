@@ -102,6 +102,7 @@
         return if KEY and hmac(room) isnt auth
         DB.multi()
           .rpush("log-#{room}", cmdstr)
+          .rpush("audit-#{room}", cmdstr)
           .bgsave().exec =>
             SC[room]?.ExecuteCommand cmdstr
             broadcast @data
@@ -122,6 +123,7 @@
       when 'stopHuddle'
         return if @KEY and KEY isnt @KEY
         DB.del [
+          "audit-#{room}"
           "log-#{room}"
           "chat-#{room}"
           "ecell-#{room}"
