@@ -572,19 +572,6 @@
     profChartUrl = "chs=300x145&cht=p&chd=t:" + profChartUrl.substring(1) + "&chl=" + profChartLabels.substring(1)
     # gChart.innerHTML = "<iframe src=\"urlJump.html?img=" + escape(profChartUrl) + "\" style=\"width:315px;height:270px;\"></iframe>"
   MakeLineChart = (spreadsheet, range, gview, gtype, helpflag, isResize) ->
-    nitems = undefined
-    byrow = undefined
-    maxval = undefined
-    minval = undefined
-    i = undefined
-    cr = undefined
-    cr1 = undefined
-    cell = undefined
-    val = undefined
-    extra = undefined
-    str = undefined
-    maxX = undefined
-    minX = undefined
     values = []
     labels = []
     total = 0
@@ -735,20 +722,6 @@
     profChartUrl = "chs=300x250" + colorMarkings + "&cht=lxy&chxt=x,y&chxr=0," + minX + "," + maxX + "|1," + minval + "," + maxval + "&chd=t:" + profChart.join("|")
     # gChart.innerHTML = "<iframe src=\"urlJump.html?img=" + escape(profChartUrl) + "\" style=\"width:315px;height:270px;\"></iframe>"
   MakeScatterChart = (spreadsheet, range, gview, gtype, helpflag, isResize) ->
-    nitems = undefined
-    byrow = undefined
-    maxval = undefined
-    minval = undefined
-    i = undefined
-    cr = undefined
-    cr1 = undefined
-    cell = undefined
-    val = undefined
-    extra = undefined
-    str = undefined
-    maxX = undefined
-    minX = undefined
-    dotSizes = undefined
     values = []
     labels = []
     total = 0
