@@ -20,7 +20,7 @@ global.SC ?= {}
     return cb?() unless snapshot
     DB.multi()
       .set("snapshot-#{room}", snapshot)
-      .del(["log-#{room}", "chat-#{room}", "ecell-#{room}"])
+      .del(["log-#{room}", "chat-#{room}", "ecell-#{room}", "audit-#{room}"])
       .bgsave().exec => cb?()
 
   SC._init = (snapshot, log, DB, room, io) ->
