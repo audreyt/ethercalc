@@ -395,16 +395,21 @@
       i++
     ctx.strokeStyle = "#000000"
     ctx.fillStyle = "#000000"
-    ctx.fillText labels[0], 5, if values[0] > 0 then zeroLine + 22 else zeroLine - 15
+    if values[0] > 0
+      ctx.translate 5, zeroLine + 22
+    else
+      ctx.translate 5, zeroLine - 15
+    ctx.fillText labels[0], 0, 0
     i = 1
     while i < values.length
       if (values[i] > 0) and (values[i - 1] < 0)
-        ctx.fillText labels[i], eachwidth, 37
+        ctx.translate eachwidth, 37
       else
         if (values[i] < 0) and (values[i - 1] > 0)
-          ctx.fillText labels[i], eachwidth, -37
+          ctx.translate eachwidth, -37
         else
-          ctx.fillText labels[i], eachwidth, 0
+          ctx.translate eachwidth, 0
+      ctx.fillText labels[i], 0, 0
       i++
     gChart = document.getElementById("googleBarChart")
     zeroLine = (-1 * minval) * yScale / 340
@@ -478,16 +483,21 @@
       i++
     ctx.strokeStyle = "#000000"
     ctx.fillStyle = "#000000"
-    ctx.fillText labels[0], (if values[0] > 0 then zeroLine - 22 else zeroLine + 15), 45
+    if values[0] > 0
+      ctx.translate zeroLine - 22, 45
+    else
+      ctx.translate zeroLine + 15, 45
+    ctx.fillText labels[0], 0, 0
     i = 1
     while i < values.length
       if (values[i] > 0) and (values[i - 1] < 0)
-        ctx.fillText labels[i], -37, eachwidth
+        ctx.translate -37, eachwidth
       else
         if (values[i] < 0) and (values[i - 1] > 0)
-          ctx.fillText labels[i], 37, eachwidth
+          ctx.translate 37, eachwidth
         else
-          ctx.fillText labels[i], 0, eachwidth
+          ctx.translate 0, eachwidth
+      ctx.fillText labels[i], 0, 0
       i++
     gChart = document.getElementById("googleBarChart")
     zeroLine = (-1 * minval) * yScale / (canv.width)
@@ -546,7 +556,8 @@
       centralRad = lastStart + 0.5 * arcRads
       leftBias = 0
       leftBias = 55  if (centralRad > 1.5) and (centralRad < 4.6)
-      ctx.fillText labels[i] + " (" + Math.round(values[i] / total * 100) + "%)", centerX + Math.cos(centralRad) * textRad - leftBias, centerY + Math.sin(centralRad) * textRad
+      ctx.translate centerX + Math.cos(centralRad) * textRad - leftBias, centerY + Math.sin(centralRad) * textRad
+      ctx.fillText labels[i] + " (" + Math.round(values[i] / total * 100) + "%)", 0, 0
       ctx.translate -1 * centerX - Math.cos(centralRad) * textRad + leftBias, -1 * centerY - Math.sin(centralRad) * textRad
       ctx.fillRect 1, 1, 1, 1
       ctx.closePath()
@@ -862,8 +873,7 @@
     # gChart.innerHTML = "<iframe src=\"urlJump.html?img=" + escape(profChartUrl) + "\" style=\"width:315px;height:270px;\"></iframe>"
 
   SocialCalc.GraphTypesInfo =
-    # displayorder: ["verticalbar","horizontalbar","piechart","linechart","scatterchart"]
-    displayorder: ["verticalbar","horizontalbar","linechart","scatterchart"]
+    displayorder: ["verticalbar","horizontalbar","piechart","linechart","scatterchart"]
     verticalbar: {display: SocialCalc.Constants.s_loc_vertical_bar, func: GraphVerticalBar}
     horizontalbar: {display: SocialCalc.Constants.s_loc_horizontal_bar, func: GraphHorizontalBar}
     piechart: {display: SocialCalc.Constants.s_loc_pie_chart, func: MakePieChart}
