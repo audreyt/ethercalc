@@ -199,7 +199,15 @@
 
   SocialCalc.Constants.s_GraphRangeNotSelected = "Select a range of cells with numeric values to graph and use the OK button above to set the range as the graph range."
 
+  colorIndex = 0
+  getBarColor = ->
+    colors = [ "ff0", "0ff", "f0f", "00f", "f00", "0f0", "888", "880", "088", "808", "008", "800", "080"]
+    return colors[colorIndex++] || (colors[Math.round(Math.random() * 14)] + colors[Math.round(Math.random() * 14)] + colors[Math.round(Math.random() * 14)] + colors[Math.round(Math.random() * 14)] + colors[Math.round(Math.random() * 14)] + colors[Math.round(Math.random() * 14)])
+  getDrawColor = ->
+    return "##{ do getBarColor }"
+
   GraphOnClick = (s, t) ->
+    colorIndex = 0
     SCLoc = SocialCalc.LocalizeString
     namelist = []
     nl = document.getElementById(s.idPrefix + "graphlist")
@@ -252,6 +260,7 @@
     DoGraph false, false
     return
   window.DoGraph = DoGraph = (helpflag, isResize) ->
+    colorIndex = 0
     spreadsheet = SocialCalc.GetSpreadsheetControlObject()
     editor = spreadsheet.editor
     gview = spreadsheet.views.graph.element
@@ -376,7 +385,7 @@
     maxheight = canv.height - 60
     totalwidth = canv.width
     colors = [ "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "a", "b", "c", "d", "e", "f" ]
-    barColor = colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)]
+    barColor = do getBarColor
     ctx.fillStyle = "#" + barColor
     colorList = [ barColor ]
     eachwidth = Math.floor(totalwidth / (values.length or 1)) - 4 or 1
@@ -391,7 +400,7 @@
       ctx.fillRect i * eachwidth, zeroLine - yScale * values[i], eachwidth, yScale * values[i]
       profChartVals.push Math.floor((values[i] - minval) * yScale / 3.4)
       profChartLabels.push labels[i]
-      barColor = colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)]
+      barColor = do getBarColor
       ctx.fillStyle = "#" + barColor
       colorList.push barColor
       i++
@@ -463,7 +472,7 @@
     maxheight = canv.height - 60
     totalwidth = canv.width
     colors = [ "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "a", "b", "c", "d", "e", "f" ]
-    barColor = colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)]
+    barColor = do getBarColor
     ctx.fillStyle = "#" + barColor
     colorList = [ barColor ]
     eachwidth = Math.floor(maxheight / (values.length or 1)) - 4 or 1
@@ -479,7 +488,7 @@
       ctx.fillRect zeroLine + yScale * values[i], i * eachwidth + 30, -1 * yScale * values[i], eachwidth
       profChartVals.push Math.floor((values[i] - minval) * yScale / 4.4)
       profChartLabels.push labels[i]
-      barColor = colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)]
+      barColor = do getBarColor
       ctx.fillStyle = "#" + barColor
       colorList.push barColor
       i++
@@ -550,7 +559,7 @@
         continue
       ctx.beginPath()
       ctx.moveTo centerX, centerY
-      arcColor = "#" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)]
+      arcColor = do getDrawColor # "#" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)]
       ctx.fillStyle = arcColor
       arcRads = 2 * Math.PI * (values[i] / total)
       profChartUrl += "," + values[i]
@@ -651,7 +660,7 @@
     lastY = scaleFactorY * (values[0] - minval) + 20
     profChart = [ Math.floor(lastX / canv.width * 100), Math.floor(lastY / canv.height * 100) ]
     topY = canv.height
-    drawColor = "#" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)]
+    drawColor = do getDrawColor
     colorArray = [ drawColor.replace("#", "") ]
     ctx.strokeStyle = drawColor
     ctx.fillStyle = drawColor
@@ -664,7 +673,7 @@
         ctx.lineTo (scaleFactorX * (labels[i] - minX)) + 20, topY - (scaleFactorY * (values[i] - minval) + 20)
         ctx.stroke()
       else
-        drawColor = "#" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)]
+        drawColor = do getDrawColor
         ctx.strokeStyle = drawColor
         ctx.fillStyle = drawColor
         colorArray.push drawColor.replace("#", "")
@@ -808,7 +817,7 @@
     lastY = scaleFactorY * (values[0] - minval) + 20
     profChart = [ Math.floor(lastX / canv.width * 100), Math.floor(lastY / canv.height * 100), dotSizes[0] * 10 ]
     topY = canv.height
-    drawColor = "#" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)]
+    drawColor = do getDrawColor
     ctx.fillStyle = drawColor
     ctx.beginPath()
     ctx.arc lastX, topY - lastY, dotSizes[0], 0, 2 * Math.PI, false
