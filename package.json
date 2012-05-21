@@ -6,6 +6,7 @@
         "uuid-pure": "*",
         "coffee-script": "*",
         "optimist": "*",
+        "contextify": "*",
         "jsdom": "*"
     }
     , "optionalDependencies": {
