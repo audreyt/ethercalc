@@ -25,3 +25,12 @@ div.wiki .wafl {
     /* margin:8px 140px 10px 0px; */
     margin:8px 10px 10px 0px;
 }
+
+#te_fullgrid tr:nth-child(2) td:nth-child(1) {
+    background: url('gear.png') #969696 5px no-repeat;
+    cursor: pointer;
+}
+
+#te_fullgrid tr:nth-child(2) td:nth-child(1):hover {
+    background-color: #a0a0a0;
+}

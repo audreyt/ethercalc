@@ -167,6 +167,10 @@
     ss.InitializeSpreadsheetControl? "tableeditor", 0, 0, 0
     ss.ExecuteCommand? "redisplay", ""
     ss.ExecuteCommand? "set sheet defaulttextvalueformat text-wiki"
+    $('#te_fullgrid tr:nth-child(2) td:first').live 'mouseover', ->
+      $(@).attr title: 'Export to HTML'
+    $('#te_fullgrid tr:nth-child(2) td:first').live 'click', ->
+      window.open("/_/#{ SocialCalc._room }/html")
 
   SocialCalc.Callbacks.expand_wiki = (val) -> """
     <div class="wiki">#{

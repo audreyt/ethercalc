@@ -47,6 +47,11 @@
   else
     @response.send '', { 'Content-Type': 'text/plain' }, 404
 
+  @get '/_/:room/html': -> SC._get @params.room, IO, ({ snapshot }) => if snapshot
+    @response.send SC[@params.room]?.CreateSheetHTML(), { 'Content-Type': 'text/html; charset=UTF-8' }, 200
+  else
+    @response.send '', { 'Content-Type': 'text/plain' }, 404
+
   @get '/_/:room': -> SC._get @params.room, IO, ({ snapshot }) => if snapshot
     @response.send snapshot, { 'Content-Type': 'text/plain' }, 200
   else
