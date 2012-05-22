@@ -1,12 +1,13 @@
 { "name" :            "ethercalc"
     , "description" : "Multi-User Spreadsheet Server"
-    , "version" :    "0.20120417.035053"
+    , "version" :    "0.20120522.151601"
     , "dependencies": {
         "redis": "*",
         "uuid-pure": "*",
         "coffee-script": "*",
         "optimist": "*",
         "contextify": "*",
+        "zappa": "*",
         "jsdom": "*"
     }
     , "optionalDependencies": {
