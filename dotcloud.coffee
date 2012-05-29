@@ -1,5 +1,9 @@
 @include = -> try
-  @io.configure => @io.set "transports", ["websocket", "flashsocket", "xhr-polling", "jsonp-polling"]
+  @io.configure => @io.set "transports", if @KEY then [
+    "jsonp-polling"
+  ] else [
+    "websocket", "flashsocket", "xhr-polling", "jsonp-polling"
+  ]
 
   json = require('fs').readFileSync('/home/dotcloud/environment.json', 'utf8')
   env = process.env
