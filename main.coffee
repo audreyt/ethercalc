@@ -13,6 +13,7 @@
     @response.sendfile "#{RealBin}/#{file}"
 
   KEY = @KEY
+  BASEPATH = @BASEPATH
   HMAC_CACHE = {}
   hmac = if !KEY then (x) -> (x) else (x) ->
     return HMAC_CACHE[x] if HMAC_CACHE[x]
@@ -23,18 +24,18 @@
   @get '/': sendFile "index.html"
   @get '/_new': ->
     room = require("uuid-pure").newId(10, 36).toLowerCase()
-    @response.redirect if KEY then "/#{ room }/edit" else "/#{ room }"
+    @response.redirect "#{ BASEPATH }/#{ room }#{ if KEY then "/edit" else "" }"
   @get '/_start': sendFile "start.html"
   @get '/:room': if KEY then ->
     return sendFile("index.html").call(@) if @query.auth?.length
-    @response.redirect "/#{ @params.room }?auth=0"
+    @response.redirect "#{ BASEPATH }/#{ @params.room }?auth=0"
   else sendFile "index.html"
   @get '/:room/edit': ->
     room = @params.room
-    @response.redirect "/#{ room }?auth=#{ hmac(room) }"
+    @response.redirect "#{ BASEPATH }/#{ room }?auth=#{ hmac(room) }"
   @get '/:room/view': ->
     room = @params.room
-    @response.redirect "/#{ room }?auth=0"
+    @response.redirect "#{ BASEPATH }/#{ room }?auth=0"
 
   IO = @io
   @get '/_/:room/cells/:cell': -> SC._get @params.room, IO, ({ snapshot }) => if snapshot

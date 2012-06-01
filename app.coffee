@@ -15,7 +15,12 @@ port = Number(argv?.port || json?.PORT_NODEJS || process.env.PORT || process.env
 host = argv?.host || process.env.VCAP_APP_HOST || '0.0.0.0'
 key = argv?.key || null
 
-console.log "Please connect to: http://#{if host is '0.0.0.0' then require('os').hostname() else host}:#{port}/"
+basepath = argv?.basepath || ""
+if basepath.substr(-1) == "/" then basepath = basepath.substr(0, basepath.length-1)
+
+url = if basepath then "#{basepath}/" else "http://#{if host is '0.0.0.0' then require('os').hostname() else host}:#{port}/"
+console.log "Please connect to: #{url}"
 require('zappa') port, host, ->
   @KEY = key
+  @BASEPATH = basepath
   @include 'main'
