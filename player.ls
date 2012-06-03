@@ -1,25 +1,25 @@
 @include = -> @client '/player.js': ->
-  doPlay = =>
+  doPlay = ~>
     window.SocialCalc ?= {}
-    SocialCalc._username = Math.random().toString()
+    SocialCalc._username = Math.random!.toString!
     SocialCalc.isConnected = true
     SocialCalc.hadSnapshot = false
     SocialCalc._auth = window.location.search?.replace(/\??auth=/, '')
     SocialCalc._view = (SocialCalc._auth is '0')
     SocialCalc._room ?= window.location.hash.replace('#', '')
-    SocialCalc._room = SocialCalc._room.replace(/^_+/, '').replace(/\?.*/, '')
+    SocialCalc._room .= replace(/^_+/, '').replace(/\?.*/, '')
     unless SocialCalc._room
-        window.location = '/_start'
-        return
-    
+      window.location = '/_start'
+      return
+
     try window.history.pushState {}, '', "/#{
       SocialCalc._room
     }" + if SocialCalc._view then "/view" else
          if SocialCalc._auth then "/edit" else ""
-    @connect()
+    do @connect
 
-    emit = (data) => @emit { data }
-    SocialCalc.Callbacks.broadcast = (type, data={}) =>
+    emit = (data) ~> @emit {data}
+    SocialCalc.Callbacks.broadcast = (type, data={}) ~>
       return unless SocialCalc.isConnected
       data.user = SocialCalc._username
       data.room = SocialCalc._room
@@ -28,10 +28,10 @@
       emit data
 
     SocialCalc.isConnected = true
-    SocialCalc.Callbacks.broadcast "ask.log"
+    SocialCalc.Callbacks.broadcast \ask.log
     SocialCalc.RecalcInfo.LoadSheet = (ref) ->
-      ref = ref.replace(/[^a-zA-Z0-9]+/g, "").toLowerCase()
-      emit { type: "ask.recalc", user: SocialCalc._username, room: ref }
+      ref .= replace(/[^a-zA-Z0-9]+/g, "").toLowerCase!
+      emit { type: \ask.recalc, user: SocialCalc._username, room: ref }
 
     @on data: ->
       return unless SocialCalc?.isConnected
@@ -42,118 +42,113 @@
       ss = window.spreadsheet
       editor = ss.editor
       switch @data.type
-        when "chat"
-          window.addmsg? @data.msg
-        when "ecells"
-          for user, ecell of @data.ecells
-            continue if user == SocialCalc._username
-            peerClass = " " + user + " defaultPeer"
-            find = new RegExp(peerClass, "g")
-            cr = SocialCalc.coordToCr(ecell)
-            cell = SocialCalc.GetEditorCellElement(editor, cr.row, cr.col)
-            cell.element.className += peerClass if cell.element.className.search(find) == -1
-        when "ecell"
-            peerClass = " " + @data.user + " defaultPeer"
-            find = new RegExp(peerClass, "g")
-            if @data.original
-              origCR = SocialCalc.coordToCr(@data.original)
-              origCell = SocialCalc.GetEditorCellElement(editor, origCR.row, origCR.col)
-              origCell.element.className = origCell.element.className.replace(find, "")
-              if @data.original is editor.ecell.coord or @data.ecell is editor.ecell.coord
-                SocialCalc.Callbacks.broadcast "ecell",
-                  to: @data.user
-                  ecell: editor.ecell.coord
-            cr = SocialCalc.coordToCr(@data.ecell)
-            cell = SocialCalc.GetEditorCellElement(editor, cr.row, cr.col)
-            cell.element.className += peerClass if cell.element.className.search(find) == -1
-        when "ask.ecell"
-          SocialCalc.Callbacks.broadcast "ecell",
-            to: @data.user
-            ecell: editor.ecell.coord
-        when "log"
-          break if SocialCalc.hadSnapshot
-          SocialCalc.hadSnapshot = true
-          parts = ss.DecodeSpreadsheetSave(@data.snapshot) if @data.snapshot
-          if parts
-            if parts.sheet
-              ss.sheet.ResetSheet()
-              ss.ParseSheetSave @data.snapshot.substring(parts.sheet.start, parts.sheet.end)
-            # ss.editor.LoadEditorSettings @data.snapshot.substring(parts.edit.start, parts.edit.end)  if parts.edit
-          window.addmsg? @data.chat.join("\n"), true
-          cmdstr = (
-            line for line in @data.log when not /^re(calc|display)$/.test(line)
-          ).join("\n")
-          if cmdstr.length
-            refreshCmd = "recalc"
-            # if editor.context.sheetobj.attribs.recalc != "off"
-            #   refreshCmd = "recalc"
-            ss.context.sheetobj.ScheduleSheetCommands cmdstr + "\n#{refreshCmd}\n", false, true
-          else
-            ss.context.sheetobj.ScheduleSheetCommands "recalc\n", false, true
-#          editor.MoveECellCallback.broadcast = (e) ->
-#            SocialCalc.Callbacks.broadcast "my.ecell"
-#              ecell: e.ecell.coord
-        when "recalc"
-          if @data.force
-            SocialCalc.Formula.SheetCache.sheets = {}
-            ss?.sheet.recalconce = true
-          parts = ss.DecodeSpreadsheetSave(@data.snapshot) if @data.snapshot
-          if parts?.sheet
-            SocialCalc.RecalcLoadedSheet(
-              @data.room,
-              @data.snapshot.substring(parts.sheet.start, parts.sheet.end),
-              true # recalc
-            )
-            ss.context.sheetobj.ScheduleSheetCommands "recalc\n", false, true
-          else
-            SocialCalc.RecalcLoadedSheet(@data.room, "", true)
-        when "execute"
-          ss.context.sheetobj.ScheduleSheetCommands @data.cmdstr, @data.saveundo, true
-          if ss.currentTab is ss.tabnums?.graph
-            setTimeout (-> window.DoGraph false, false), 100
+      | \chat => window.addmsg? @data.msg
+      | \ecells => for user, ecell of @data.ecells
+        continue if user == SocialCalc._username
+        peerClass = " #user defaultPeer"
+        find = new RegExp(peerClass, \g)
+        cr = SocialCalc.coordToCr(ecell)
+        cell = SocialCalc.GetEditorCellElement(editor, cr.row, cr.col)
+        if cell.element.className.search(find) == -1
+          cell.element.className += peerClass
+      | \ecell
+        peerClass = " #{@data.user} defaultPeer"
+        find = new RegExp(peerClass, \g)
+        if @data.original
+          origCR = SocialCalc.coordToCr(@data.original)
+          origCell = SocialCalc.GetEditorCellElement(editor, origCR.row, origCR.col)
+          origCell.element.className .= replace(find, "")
+          if @data.original is editor.ecell.coord or @data.ecell is editor.ecell.coord
+            SocialCalc.Callbacks.broadcast \ecell,
+              to: @data.user
+              ecell: editor.ecell.coord
+        cr = SocialCalc.coordToCr(@data.ecell)
+        cell = SocialCalc.GetEditorCellElement(editor, cr.row, cr.col)
+        cell.element.className += peerClass if cell.element.className.search(find) == -1
+      | \ask.ecell
+        SocialCalc.Callbacks.broadcast \ecell,
+          to: @data.user
+          ecell: editor.ecell.coord
+      | \log
+        break if SocialCalc.hadSnapshot
+        SocialCalc.hadSnapshot = true
+        parts = ss.DecodeSpreadsheetSave(@data.snapshot) if @data.snapshot
+        if parts
+          if parts.sheet
+            ss.sheet.ResetSheet!
+            ss.ParseSheetSave @data.snapshot.substring(parts.sheet.start, parts.sheet.end)
+          # ss.editor.LoadEditorSettings @data.snapshot.substring(parts.edit.start, parts.edit.end)  if parts.edit
+        window.addmsg? @data.chat.join("\n"), true
+        cmdstr = [ line for line in @data.log
+            when not /^re(calc|display)$/.test(line)
+        ].join("\n")
+        if cmdstr.length
+          refreshCmd = \recalc
+          ss.context.sheetobj.ScheduleSheetCommands "#cmdstr\n#refreshCmd\n", false, true
+        else
+          ss.context.sheetobj.ScheduleSheetCommands "recalc\n", false, true
+      | \recalc
+        if @data.force
+          SocialCalc.Formula.SheetCache.sheets = {}
+          ss?.sheet.recalconce = true
+        parts = ss.DecodeSpreadsheetSave(@data.snapshot) if @data.snapshot
+        if parts?.sheet
+          SocialCalc.RecalcLoadedSheet(
+            @data.room,
+            @data.snapshot.substring(parts.sheet.start, parts.sheet.end),
+            true # recalc
+          )
+          ss.context.sheetobj.ScheduleSheetCommands "recalc\n", false, true
+        else
+          SocialCalc.RecalcLoadedSheet(@data.room, "", true)
+      | \execute
+        ss.context.sheetobj.ScheduleSheetCommands @data.cmdstr, @data.saveundo, true
+        if ss.currentTab is ss.tabnums?.graph
+          setTimeout (-> window.DoGraph false, false), 100
       return
 
-  window.doresize = -> window.spreadsheet?.DoOnResize()
+  window.doresize = -> window.spreadsheet?.DoOnResize!
   scc = SocialCalc.Constants
   b1 = if window.location.search then 'A' else '4'
   b2 = 'C'
   b3 = '8'
   b4 = '9'
   b5 = '8'
-  scc.SCToolbarbackground = "background-color:#4040" + b1 + "0;"
-  scc.SCTabbackground = "background-color:#CC" + b2 + ";"
-  scc.SCTabselectedCSS = "font-size:small;padding:6px 30px 6px 8px;color:#FFF;background-color:#4040" + b1 + "0;cursor:default;border-right:1px solid #CC" + b2 + ";"
-  scc.SCTabplainCSS = "font-size:small;padding:6px 30px 6px 8px;color:#FFF;background-color:#8080" + b3 + "0;cursor:default;border-right:1px solid #CC" + b2 + ";"
-  scc.SCToolbartext = "font-size:x-small;font-weight:bold;color:#FFF;padding-bottom:4px;"
-  scc.ISCButtonBorderNormal = "#4040" + b1 + "0"
-  scc.ISCButtonBorderHover = "#99" + b4 + ""
-  scc.ISCButtonBorderDown = "#FFF"
-  scc.ISCButtonDownBackground = "#88" + b5 + ""
-  scc.defaultImagePrefix = "/images/sc-"
+  scc.SCToolbarbackground = 'background-color:#4040' + b1 + '0;'
+  scc.SCTabbackground = 'background-color:#CC' + b2 + ';'
+  scc.SCTabselectedCSS = 'font-size:small;padding:6px 30px 6px 8px;color:#FFF;background-color:#4040' + b1 + '0;cursor:default;border-right:1px solid #CC' + b2 + ';'
+  scc.SCTabplainCSS = 'font-size:small;padding:6px 30px 6px 8px;color:#FFF;background-color:#8080' + b3 + '0;cursor:default;border-right:1px solid #CC' + b2 + ';'
+  scc.SCToolbartext = 'font-size:x-small;font-weight:bold;color:#FFF;padding-bottom:4px;'
+  scc.ISCButtonBorderNormal = '#4040' + b1 + '0'
+  scc.ISCButtonBorderHover = '#99' + b4
+  scc.ISCButtonBorderDown = '#FFF'
+  scc.ISCButtonDownBackground = '#88' + b5
+  scc.defaultImagePrefix = '/images/sc-'
   SocialCalc.Popup.LocalizeString = SocialCalc.LocalizeString
   $ ->
     window.spreadsheet = ss = (
       if SocialCalc._view
-        new SocialCalc.SpreadsheetViewer()
+        new SocialCalc.SpreadsheetViewer!
       else
-        new SocialCalc.SpreadsheetControl()
+        new SocialCalc.SpreadsheetControl!
     )
-    document.getElementById("msgtext").value = ""
+    document.getElementById(\msgtext).value = ""
     ss.ExportCallback = (s) ->
       alert SocialCalc.ConvertSaveToOtherFormat(SocialCalc.Clipboard.clipboard, "csv")
 
     ss.tabnums.graph = ss.tabs.length if ss.tabs
-    ss.tabs?.push
-      name: "graph"
+    ss.tabs?.push(
+      name: \graph
       text: SocialCalc.Constants.s_loc_graph
       html: '<div id="%id.graphtools" style="display:none;"> <div style="%tbt."> <table cellspacing="0" cellpadding="0"><tr>   <td style="vertical-align:middle;padding-right:32px;padding-left:16px;">    <div style="%tbt.">Cells to Graph</div>    <div id="%id.graphrange" style="font-weight:bold;">Not Set</div>   </td>  <td style="vertical-align:top;padding-right:32px;">   <div style="%tbt.">Set Cells To Graph</div>    <select id="%id.graphlist" size="1" onfocus="%s.CmdGotFocus(this);"><option selected>[select range]</option></select>   </td>   <td style="vertical-align:middle;padding-right:4px;">    <div style="%tbt.">Graph Type</div>     <select id="%id.graphtype" size="1" onchange="window.GraphChanged(this);" onfocus="%s.CmdGotFocus(this);"></select>     <input type="button" value="OK" onclick="window.GraphSetCells();" style="font-size:x-small;">    </div>   </td>   <td style="vertical-align:middle;padding-right:16px;">    <div style="%tbt.">&nbsp;</div>     <input id="%id.graphhelp" type="button" onclick="DoGraph(true);" value="Help" style="font-size:x-small;">    </div>   </td>   <td style="vertical-align:middle;padding-right:16px;">     Min X <input id="%id.graphMinX" onchange="window.MinMaxChanged(this,0);" onfocus="%s.CmdGotFocus(this);" size=5/>     Max X <input id="%id.graphMaxX" onchange="window.MinMaxChanged(this,1);" onfocus="%s.CmdGotFocus(this);" size=5/><br/>     Min Y <input id="%id.graphMinY" onchange="window.MinMaxChanged(this,2);" onfocus="%s.CmdGotFocus(this);" size=5/>     Max Y <input id="%id.graphMaxY" onchange="window.MinMaxChanged(this,3);" onfocus="%s.CmdGotFocus(this);" size=5/>    </div>   </td>  </tr></table> </div></div>'
-      view: "graph"
+      view: \graph
       onclick: GraphOnClick
       onclickFocus: true
+    )
 
     if ss.views?
-      ss.views["graph"] =
-        name: "graph"
+      ss.views[\graph] =
+        name: \graph
         divStyle: "overflow:auto;"
         values: {}
         html: "<div style=\"padding:6px;\">Graph View</div>"
@@ -162,9 +157,9 @@
       save: window.GraphSave
       load: window.GraphLoad
 
-    savestr = document.getElementById("savestr")
-    ss.InitializeSpreadsheetViewer? "tableeditor", 0, 0, 0
-    ss.InitializeSpreadsheetControl? "tableeditor", 0, 0, 0
+    savestr = document.getElementById(\savestr)
+    ss.InitializeSpreadsheetViewer? \tableeditor, 0, 0, 0
+    ss.InitializeSpreadsheetControl? \tableeditor, 0, 0, 0
     ss.ExecuteCommand? "redisplay", ""
     ss.ExecuteCommand? "set sheet defaulttextvalueformat text-wiki"
     $('#te_fullgrid tr:nth-child(2) td:first').live 'mouseover', ->
@@ -174,8 +169,8 @@
 
   SocialCalc.Callbacks.expand_wiki = (val) -> """
     <div class="wiki">#{
-      (new Document.Parser.Wikitext()).parse(
-        val, new Document.Emitter.HTML()
+      (new Document.Parser.Wikitext!).parse(
+        val, new Document.Emitter.HTML!
       )
     }</div>
   """
@@ -194,7 +189,7 @@
   SocialCalc.Constants.s_loc_not_set = "Not Set"
   SocialCalc.Constants.s_loc_unknown_range_name = "Unknown range name"
   SocialCalc.Constants.s_loc_hide_help = "Hide Help"
-  
+
   SocialCalc.Constants.s_loc_x="X "
   SocialCalc.Constants.s_loc_y="Y "
   SocialCalc.Constants.s_loc_max="Max "
@@ -205,8 +200,8 @@
 
   colorIndex = 0
   getBarColor = ->
-    colors = [ "ff0", "0ff", "f0f", "00f", "f00", "0f0", "888", "880", "088", "808", "008", "800", "080"]
-    return colors[colorIndex++] || (colors[Math.round(Math.random() * 14)] + colors[Math.round(Math.random() * 14)] + colors[Math.round(Math.random() * 14)] + colors[Math.round(Math.random() * 14)] + colors[Math.round(Math.random() * 14)] + colors[Math.round(Math.random() * 14)])
+    colors = <[ ff0 0ff f0f 00f f00 0f0 888 880 088 808 008 800 080 ]>
+    return colors[colorIndex++] || (colors[Math.round(Math.random! * 14)] + colors[Math.round(Math.random! * 14)] + colors[Math.round(Math.random! * 14)] + colors[Math.round(Math.random! * 14)] + colors[Math.round(Math.random! * 14)] + colors[Math.round(Math.random! * 14)])
   getDrawColor = ->
     return "##{ do getBarColor }"
 
@@ -218,7 +213,7 @@
     s.editor.RangeChangeCallback.graph = UpdateGraphRangeProposal
     for name of s.sheet.names
       namelist.push name
-    namelist.sort()
+    namelist.sort!
     nl.length = 0
     nl.options[0] = new Option(SCLoc("[select range]"))
     i = 0
@@ -243,13 +238,13 @@
     DoGraph false, true
     return
   UpdateGraphRangeProposal = (editor) ->
-    ele = document.getElementById(SocialCalc.GetSpreadsheetControlObject().idPrefix + "graphlist")
+    ele = document.getElementById(SocialCalc.GetSpreadsheetControlObject!.idPrefix + "graphlist")
     if editor.range.hasrange
       ele.options[0].text = SocialCalc.crToCoord(editor.range.left, editor.range.top) + ":" + SocialCalc.crToCoord(editor.range.right, editor.range.bottom)
     else
       ele.options[0].text = SocialCalc.LocalizeString("[select range]")
   window.GraphSetCells = GraphSetCells = ->
-    spreadsheet = SocialCalc.GetSpreadsheetControlObject()
+    spreadsheet = SocialCalc.GetSpreadsheetControlObject!
     editor = spreadsheet.editor
     lele = document.getElementById(spreadsheet.idPrefix + "graphlist")
     if lele.selectedIndex is 0
@@ -265,7 +260,7 @@
     return
   window.DoGraph = DoGraph = (helpflag, isResize) ->
     colorIndex = 0
-    spreadsheet = SocialCalc.GetSpreadsheetControlObject()
+    spreadsheet = SocialCalc.GetSpreadsheetControlObject!
     editor = spreadsheet.editor
     gview = spreadsheet.views.graph.element
     ginfo = SocialCalc.GraphTypesInfo[spreadsheet.graphtype]
@@ -305,32 +300,26 @@
     DoGraph false, false
   window.MinMaxChanged = MinMaxChanged = (minmaxobj, index) ->
     switch index
-      when 0
-        window.spreadsheet.graphMinX = minmaxobj.value
-      when 1
-        window.spreadsheet.graphMaxX = minmaxobj.value
-      when 2
-        window.spreadsheet.graphMinY = minmaxobj.value
-      when 3
-        window.spreadsheet.graphMaxY = minmaxobj.value
+    | 0 => window.spreadsheet.graphMinX = minmaxobj.value
+    | 1 => window.spreadsheet.graphMaxX = minmaxobj.value
+    | 2 => window.spreadsheet.graphMinY = minmaxobj.value
+    | 3 => window.spreadsheet.graphMaxY = minmaxobj.value
     DoGraph false, true
   window.GraphSave = GraphSave = (editor, setting) ->
-    spreadsheet = SocialCalc.GetSpreadsheetControlObject()
+    spreadsheet = SocialCalc.GetSpreadsheetControlObject!
     gtype = spreadsheet.graphtype or ""
     str = "graph:range:" + SocialCalc.encodeForSave(spreadsheet.graphrange) + ":type:" + SocialCalc.encodeForSave(gtype)
     str += ":minmax:" + SocialCalc.encodeForSave(spreadsheet.graphMinX + "," + spreadsheet.graphMaxX + "," + spreadsheet.graphMinY + "," + spreadsheet.graphMaxY) + "\n"
     str
   window.GraphLoad = GraphLoad = (editor, setting, line, flags) ->
-    spreadsheet = SocialCalc.GetSpreadsheetControlObject()
+    spreadsheet = SocialCalc.GetSpreadsheetControlObject!
     parts = line.split(":")
     i = 1
     while i < parts.length
       switch parts[i]
-        when "range"
-          spreadsheet.graphrange = SocialCalc.decodeFromSave(parts[i + 1])
-        when "type"
-          spreadsheet.graphtype = SocialCalc.decodeFromSave(parts[i + 1])
-        when "minmax"
+      | \range => spreadsheet.graphrange = SocialCalc.decodeFromSave(parts[i + 1])
+      | \type => spreadsheet.graphtype = SocialCalc.decodeFromSave(parts[i + 1])
+      | \minmax
           splitMinMax = SocialCalc.decodeFromSave(parts[i + 1]).split(",")
           spreadsheet.graphMinX = splitMinMax[0]
           document.getElementById("SocialCalc-graphMinX").value = spreadsheet.graphMinX
@@ -381,23 +370,23 @@
     minval = 0  if minval > 0
     str = "<table><tr><td><canvas id=\"myBarCanvas\" width=\"500px\" height=\"400px\" style=\"border:1px solid black;\"></canvas></td><td><span id=\"googleBarChart\"></span></td></tr></table>"
     gview.innerHTML = str
-    profChartVals = new Array()
-    profChartLabels = new Array()
+    profChartVals = new Array!
+    profChartLabels = new Array!
     canv = document.getElementById("myBarCanvas")
     ctx = canv.getContext("2d")
     ctx.font = "10pt bold Arial"
     maxheight = canv.height - 60
     totalwidth = canv.width
-    colors = [ "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "a", "b", "c", "d", "e", "f" ]
+    colors = ['0' to '9'] +++ ['a' to 'f']
     barColor = do getBarColor
-    ctx.fillStyle = "#" + barColor
+    ctx.fillStyle = '#' + barColor
     colorList = [ barColor ]
     eachwidth = Math.floor(totalwidth / (values.length or 1)) - 4 or 1
     zeroLine = maxheight * (maxval / (maxval - minval)) + 30
     ctx.lineWidth = 5
     ctx.moveTo 0, zeroLine
     ctx.lineTo canv.width, zeroLine
-    ctx.stroke()
+    ctx.stroke!
     yScale = maxheight / (maxval - minval)
     i = 0
     while i < values.length
@@ -405,11 +394,11 @@
       profChartVals.push Math.floor((values[i] - minval) * yScale / 3.4)
       profChartLabels.push labels[i]
       barColor = do getBarColor
-      ctx.fillStyle = "#" + barColor
+      ctx.fillStyle = '#' + barColor
       colorList.push barColor
       i++
-    ctx.strokeStyle = "#000000"
-    ctx.fillStyle = "#000000"
+    ctx.strokeStyle = '#000000'
+    ctx.fillStyle = '#000000'
     if values[0] > 0
       ctx.translate 5, zeroLine + 22
     else
@@ -472,14 +461,14 @@
     minval = 0  if minval > 0
     str = "<table><tr><td><canvas id=\"myBarCanvas\" width=\"500px\" height=\"400px\" style=\"border:1px solid black;\"></canvas></td><td><span id=\"googleBarChart\"></span></td></tr></table>"
     gview.innerHTML = str
-    profChartVals = new Array()
-    profChartLabels = new Array()
+    profChartVals = new Array!
+    profChartLabels = new Array!
     canv = document.getElementById("myBarCanvas")
     ctx = canv.getContext("2d")
     ctx.font = "10pt bold Arial"
     maxheight = canv.height - 60
     totalwidth = canv.width
-    colors = [ "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "a", "b", "c", "d", "e", "f" ]
+    colors = ['0' to '9'] +++ ['a' to 'f']
     barColor = do getBarColor
     ctx.fillStyle = "#" + barColor
     colorList = [ barColor ]
@@ -489,7 +478,7 @@
     ctx.lineWidth = 5
     ctx.moveTo zeroLine, 0
     ctx.lineTo zeroLine, canv.height
-    ctx.stroke()
+    ctx.stroke!
     yScale = totalwidth / (maxval - minval) * 4.4 / 5
     i = 0
     while i < values.length
@@ -524,7 +513,7 @@
       i++
     gChart = document.getElementById("googleBarChart")
     zeroLine = (-1 * minval) * yScale / (canv.width)
-    profChartUrl = "chs=300x250&cht=bhs&chd=t:" + profChartVals.join(",") + "&chxt=x,y&chxl=1:|" + profChartLabels.reverse().join("|") + "|&chxr=0," + minval + "," + maxval + "&chp=" + zeroLine + "&chbh=a&chm=r,000000,0," + zeroLine + "," + (zeroLine + 0.005) + "&chco=" + colorList.join("|")
+    profChartUrl = "chs=300x250&cht=bhs&chd=t:" + profChartVals.join(",") + "&chxt=x,y&chxl=1:|" + profChartLabels.reverse!.join("|") + "|&chxr=0," + minval + "," + maxval + "&chp=" + zeroLine + "&chbh=a&chm=r,000000,0," + zeroLine + "," + (zeroLine + 0.005) + "&chco=" + colorList.join("|")
     # gChart.innerHTML = "<iframe src=\"urlJump.html?img=" + escape(profChartUrl) + "\" style=\"width:315px;height:270px;\"></iframe>"
   MakePieChart = (spreadsheet, range, gview, gtype, helpflag) ->
     values = []
@@ -563,21 +552,21 @@
     rad = centerY - 50
     textRad = rad * 1.1
     lastStart = 0
-    colors = [ "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "a", "b", "c", "d", "e", "f" ]
+    colors = ['0' to '9'] +++ ['a' to 'f']
     i = 0
     while i < values.length
       if Number(values[i]) == 0
         i++
         continue
-      ctx.beginPath()
+      ctx.beginPath!
       ctx.moveTo centerX, centerY
-      arcColor = do getDrawColor # "#" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)] + "" + colors[Math.round(Math.random() * 14)]
+      arcColor = do getDrawColor
       ctx.fillStyle = arcColor
       arcRads = 2 * Math.PI * (values[i] / total)
       profChartUrl += "," + values[i]
       ctx.arc centerX, centerY, rad, lastStart, lastStart + arcRads, false
-      ctx.closePath()
-      ctx.fill()
+      ctx.closePath!
+      ctx.fill!
       ctx.fillStyle = "black"
       centralRad = lastStart + 0.5 * arcRads
       leftBias = 0
@@ -586,12 +575,12 @@
       ctx.fillText labels[i] + " (" + Math.round(values[i] / total * 100) + "%)", 0, 0
       ctx.translate -1 * centerX - Math.cos(centralRad) * textRad + leftBias, -1 * centerY - Math.sin(centralRad) * textRad
       ctx.fillRect 1, 1, 1, 1
-      ctx.closePath()
+      ctx.closePath!
       profChartLabels += "|" + labels[i]
       lastStart += arcRads
       i++
     realCanv = document.getElementById("canvImg")
-    realCanv.src = canv.toDataURL()
+    realCanv.src = canv.toDataURL!
     gChart = document.getElementById("googleChart")
     profChartUrl = "chs=300x145&cht=p&chd=t:" + profChartUrl.substring(1) + "&chl=" + profChartLabels.substring(1)
     # gChart.innerHTML = "<iframe src=\"urlJump.html?img=" + escape(profChartUrl) + "\" style=\"width:315px;height:270px;\"></iframe>"
@@ -599,8 +588,8 @@
     values = []
     labels = []
     total = 0
-    colors = [ "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "a", "b", "c", "d", "e", "f" ]
-    shapes = [ "s", "o", "c" ]
+    colors = ['0' to '9'] +++ ['a' to 'f']
+    shapes = <[ s o c ]>
     if range.left is range.right
       nitems = range.bottom - range.top + 1
       byrow = true
@@ -677,27 +666,27 @@
     ctx.strokeStyle = drawColor
     ctx.fillStyle = drawColor
     ctx.fillRect lastX - 3, topY - lastY - 3, 6, 6
-    ctx.beginPath()
+    ctx.beginPath!
     i = 1
     while i < values.length
       if (labels[i] * 1) > (labels[i - 1] * 1)
         ctx.moveTo lastX, topY - lastY
         ctx.lineTo (scaleFactorX * (labels[i] - minX)) + 20, topY - (scaleFactorY * (values[i] - minval) + 20)
-        ctx.stroke()
+        ctx.stroke!
       else
         drawColor = do getDrawColor
         ctx.strokeStyle = drawColor
         ctx.fillStyle = drawColor
         colorArray.push drawColor.replace("#", "")
-        ctx.beginPath()
+        ctx.beginPath!
       lastX = scaleFactorX * (labels[i] - minX) + 20
       lastY = scaleFactorY * (values[i] - minval) + 20
       if (colorArray.length - 1) % 3 is 0
         ctx.fillRect lastX - 3, topY - lastY - 3, 6, 6
       else if (colorArray.length - 1) % 3 is 1
-        ctx.beginPath()
+        ctx.beginPath!
         ctx.arc lastX, topY - lastY, 3, 0, Math.PI * 2, false
-        ctx.fill()
+        ctx.fill!
       else
         ctx.fillRect lastX, topY - lastY - 3, 2, 8
         ctx.fillRect lastX - 3, topY - lastY, 8, 2
@@ -709,7 +698,7 @@
         profChart[newIndex] = Math.floor(lastX / canv.width * 100)
         profChart[newIndex + 1] = Math.floor(lastY / canv.height * 100)
       i++
-    ctx.stroke()
+    ctx.stroke!
     colorMarkings = "&chco=" + colorArray.join(",") + "&chm="
     i = 0
 
@@ -723,19 +712,19 @@
       i++
     colorMarkings += colorArray.join("|")
     if minval <= 0 and maxval >= 0
-      ctx.beginPath()
+      ctx.beginPath!
       ctx.strokeStyle = "#000000"
       ctx.moveTo 0, canv.height - (scaleFactorY * -1 * minval + 20)
       ctx.lineTo canv.width, canv.height - (scaleFactorY * -1 * minval + 20)
-      ctx.stroke()
+      ctx.stroke!
       graphPlace = 1 - ((canv.height - (scaleFactorY * -1 * minval + 20)) / canv.height)
       colorMarkings += "|r,000000,0," + graphPlace + "," + (graphPlace + 0.005)
     if minX <= 0 and maxX >= 0
-      ctx.beginPath()
+      ctx.beginPath!
       ctx.strokeStyle = "#000000"
       ctx.moveTo scaleFactorX * -1 * minX + 20, 0
       ctx.lineTo scaleFactorX * -1 * minX + 20, canv.height
-      ctx.stroke()
+      ctx.stroke!
       graphPlace = (scaleFactorX * -1 * minX + 20) / canv.width
       colorMarkings += "|R,000000,0," + graphPlace + "," + (graphPlace + 0.005)
     gChart = document.getElementById("googleLineChart")
@@ -749,7 +738,7 @@
     values = []
     labels = []
     total = 0
-    colors = [ "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "a", "b", "c", "d", "e", "f" ]
+    colors = ['0' to '9'] +++ ['a' to 'f']
     if range.left is range.right
       nitems = range.bottom - range.top + 1
       byrow = true
@@ -774,7 +763,7 @@
       catch e
         maxval = null
     evenlySpaced = false
-    dotSizes = new Array()
+    dotSizes = new Array!
     i = 0
     while i < nitems
       cr = (if byrow then SocialCalc.rcColname(range.left) + (i + range.top) else SocialCalc.rcColname(i + range.left) + range.top)
@@ -831,36 +820,36 @@
     topY = canv.height
     drawColor = do getDrawColor
     ctx.fillStyle = drawColor
-    ctx.beginPath()
+    ctx.beginPath!
     ctx.arc lastX, topY - lastY, dotSizes[0], 0, 2 * Math.PI, false
-    ctx.fill()
+    ctx.fill!
     i = 1
     while i < values.length
       ctx.moveTo lastX, topY - lastY
       lastX = scaleFactorX * (labels[i] - minX) + 20
       lastY = scaleFactorY * (values[i] - minval) + 20
-      ctx.beginPath()
+      ctx.beginPath!
       ctx.arc lastX, topY - lastY, dotSizes[i], 0, 2 * Math.PI, false
-      ctx.fill()
+      ctx.fill!
       profChart[profChart.length - 3] += "," + Math.floor(lastX / canv.width * 100)
       profChart[profChart.length - 2] += "," + Math.floor(lastY / canv.height * 100)
       profChart[profChart.length - 1] += "," + (dotSizes[i] * 10)
       i++
     colorMarkings = "&chm=o," + drawColor.replace("#", "") + ",0,-1,10"
     if minval <= 0 and maxval >= 0
-      ctx.beginPath()
+      ctx.beginPath!
       ctx.strokeStyle = "#000000"
       ctx.moveTo 0, canv.height - (scaleFactorY * -1 * minval + 20)
       ctx.lineTo canv.width, canv.height - (scaleFactorY * -1 * minval + 20)
-      ctx.stroke()
+      ctx.stroke!
       graphPlace = 1 - ((canv.height - (scaleFactorY * -1 * minval + 20)) / canv.height)
       colorMarkings += "|r,000000,0," + graphPlace + "," + (graphPlace + 0.005)
     if minX <= 0 and maxX >= 0
-      ctx.beginPath()
+      ctx.beginPath!
       ctx.strokeStyle = "#000000"
       ctx.moveTo scaleFactorX * -1 * minX + 20, 0
       ctx.lineTo scaleFactorX * -1 * minX + 20, canv.height
-      ctx.stroke()
+      ctx.stroke!
       graphPlace = (scaleFactorX * -1 * minX + 20) / canv.width
       colorMarkings += "|R,000000,0," + graphPlace + "," + (graphPlace + 0.005)
     gChart = document.getElementById("googleScatterChart")
