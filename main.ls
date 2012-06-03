@@ -125,7 +125,7 @@
       <~ DB.multi!
         .rpush("log-#room", cmdstr)
         .rpush("audit-#room", cmdstr)
-        .bgsave!.exec
+        .bgsave!.exec!
       SC[room]?.ExecuteCommand cmdstr
       broadcast @data
     | \ask.log
@@ -135,7 +135,7 @@
         .get "snapshot-#room"
         .lrange "log-#room", 0, -1
         .lrange "chat-#room", 0, -1
-        .exec
+        .exec!
       SC[room] = SC._init(snapshot, log, DB, room, @io)
       reply { type: \log, room, log, chat, snapshot }
     | \ask.recalc

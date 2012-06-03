@@ -169,9 +169,9 @@
               __ref.ExecuteCommand(command.join("\n"));
             }
             IO.sockets['in']("log-" + room).emit('data', {
-              room: room,
               type: 'execute',
-              cmdstr: command.join("\n")
+              cmdstr: command.join("\n"),
+              room: room
             });
             return __this.response.send(JSON.stringify({
               command: command

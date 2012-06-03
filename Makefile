@@ -18,7 +18,7 @@ ETHERCALC_FILES=\
 	jquery.js
 
 JS_FILES=\
-	app.js dotcloud.js player.js main.js
+	app.js dotcloud.js player.js main.js sc.js
 
 all :: $(JS_FILES)
 	node app.js
