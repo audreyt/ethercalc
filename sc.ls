@@ -10,21 +10,21 @@ global.SC ?= {}
   DB = @include \db
 
   SC._get = (room, io, cb) ->
-    return cb { snapshot: SC[room]._snapshot } if SC[room]?._snapshot
+    return cb { snapshot: SC[room]._snapshot } if SC[room]?_snapshot
     _, [snapshot, log] <~ DB.multi!
-      .get("snapshot-#room")
-      .lrange("log-#room", 0, -1)
+      .get "snapshot-#room"
+      .lrange "log-#room", 0, -1
       .exec!
     if (snapshot or log.length) and io
-      SC[room] = SC._init(snapshot, log, DB, room, io)
+      SC[room] = SC._init snapshot, log, DB, room, io
     cb {log, snapshot}
 
   SC._put = (room, snapshot, cb) ->
     return cb?! unless snapshot
     <~ DB.multi!
-      .set("snapshot-#room", snapshot)
-      .del(["log-#room", "chat-#room", "ecell-#room", "audit-#room"])
-      .bgsave!.exec!
+      .set "snapshot-#room", snapshot 
+      .del ["log-#room", "chat-#room", "ecell-#room", "audit-#room"]
+      .bgsave!exec!
     cb?!
 
   SC._init = (snapshot, log, DB, room, io) ->
@@ -50,7 +50,7 @@ global.SC ?= {}
     SocialCalc.Popup.Initialize = ->
     vm.runInContext 'ss = new SocialCalc.SpreadsheetControl', sandbox
     SocialCalc.RecalcInfo.LoadSheet = (ref) ->
-      ref .= replace(/[^a-zA-Z0-9]+/g, '').toLowerCase!
+      ref .= replace /[^a-zA-Z0-9]+/g, '' .toLowerCase!
       if SC[ref]
         serialization = SC[ref].CreateSpreadsheetSave!
         parts = SC[ref].DecodeSpreadsheetSave(serialization)
@@ -65,9 +65,9 @@ global.SC ?= {}
 
     ss = sandbox.ss
     delete ss.editor.StatusCallback.statusline
-    div = SocialCalc.document.createElement(\div)
+    div = SocialCalc.document.createElement \div
     SocialCalc.document.body.appendChild div
-    ss.InitializeSpreadsheetControl(div, 0, 0, 0)
+    ss.InitializeSpreadsheetControl div, 0, 0, 0
     ss._room = room
     ss._doClearCache = -> SocialCalc.Formula.SheetCache.sheets = {}
     ss.editor.StatusCallback.EtherCalc = func: (editor, status, arg) ->
@@ -88,12 +88,12 @@ global.SC ?= {}
         .exec!
       console.log "==> Regenerated snapshot for #room"
     parts = ss.DecodeSpreadsheetSave(snapshot) if snapshot
-    if parts?.sheet
+    if parts?sheet
       ss.sheet.ResetSheet!
-      ss.ParseSheetSave snapshot.substring(parts.sheet.start, parts.sheet.end)
+      ss.ParseSheetSave snapshot.substring parts.sheet.start, parts.sheet.end
     cmdstr = [line for line in log
         when not /^re(calc|display)$/.test(line)
-    ].join("\n")
+    ] * \\n
     cmdstr += "\n" if cmdstr.length
     ss.context.sheetobj.ScheduleSheetCommands "set sheet defaulttextvalueformat text-wiki\n#{ cmdstr }recalc\n", false, true
     return ss
