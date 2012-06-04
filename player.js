@@ -1,4 +1,5 @@
 (function(){
+  var __join = [].join;
   this.include = function(){
     return this.client({
       '/player.js': function(){
@@ -95,7 +96,7 @@
                 if (this.data.original) {
                   origCR = SocialCalc.coordToCr(this.data.original);
                   origCell = SocialCalc.GetEditorCellElement(editor, origCR.row, origCR.col);
-                  (__ref = origCell.element).className = __ref.className.replace(find, "");
+                  (__ref = origCell.element).className = __ref.className.replace(find, '');
                   if (this.data.original === editor.ecell.coord || this.data.ecell === editor.ecell.coord) {
                     SocialCalc.Callbacks.broadcast('ecell', {
                       to: this.data.user,
@@ -130,7 +131,7 @@
                   }
                 }
                 if (typeof window.addmsg === 'function') {
-                  window.addmsg(this.data.chat.join("\n"), true);
+                  window.addmsg(__join.call(this.data.chat, '\n'), true);
                 }
                 cmdstr = (function(){
                   var __i, __ref, __len, __results = [];
@@ -141,12 +142,12 @@
                     }
                   }
                   return __results;
-                }.call(this)).join("\n");
+                }.call(this)).join('\n');
                 if (cmdstr.length) {
                   refreshCmd = 'recalc';
                   ss.context.sheetobj.ScheduleSheetCommands(cmdstr + "\n" + refreshCmd + "\n", false, true);
                 } else {
-                  ss.context.sheetobj.ScheduleSheetCommands("recalc\n", false, true);
+                  ss.context.sheetobj.ScheduleSheetCommands('recalc\n', false, true);
                 }
                 break;
               case 'recalc':
@@ -161,9 +162,9 @@
                 }
                 if (parts != null && parts.sheet) {
                   SocialCalc.RecalcLoadedSheet(this.data.room, this.data.snapshot.substring(parts.sheet.start, parts.sheet.end), true);
-                  ss.context.sheetobj.ScheduleSheetCommands("recalc\n", false, true);
+                  ss.context.sheetobj.ScheduleSheetCommands('recalc\n', false, true);
                 } else {
-                  SocialCalc.RecalcLoadedSheet(this.data.room, "", true);
+                  SocialCalc.RecalcLoadedSheet(this.data.room, '', true);
                 }
                 break;
               case 'execute':
@@ -203,7 +204,7 @@
           window.spreadsheet = ss = SocialCalc._view
             ? new SocialCalc.SpreadsheetViewer()
             : new SocialCalc.SpreadsheetControl();
-          document.getElementById('msgtext').value = "";
+          document.getElementById('msgtext').value = '';
           ss.ExportCallback = function(s){
             return alert(SocialCalc.ConvertSaveToOtherFormat(SocialCalc.Clipboard.clipboard, "csv"));
           };
@@ -221,11 +222,11 @@
             });
           }
           if (ss.views != null) {
-            ss.views['graph'] = {
+            ss.views.graph = {
               name: 'graph',
               divStyle: "overflow:auto;",
               values: {},
-              html: "<div style=\"padding:6px;\">Graph View</div>"
+              html: '<div style="padding:6px;">Graph View</div>'
             };
           }
           if ((__ref = ss.editor) != null) {
@@ -242,10 +243,10 @@
             ss.InitializeSpreadsheetControl('tableeditor', 0, 0, 0);
           }
           if (typeof ss.ExecuteCommand === 'function') {
-            ss.ExecuteCommand("redisplay", "");
+            ss.ExecuteCommand('redisplay', '');
           }
           if (typeof ss.ExecuteCommand === 'function') {
-            ss.ExecuteCommand("set sheet defaulttextvalueformat text-wiki");
+            ss.ExecuteCommand('set sheet defaulttextvalueformat text-wiki');
           }
           $('#te_fullgrid tr:nth-child(2) td:first').live('mouseover', function(){
             return $(this).attr({
@@ -293,14 +294,14 @@
           colorIndex = 0;
           SCLoc = SocialCalc.LocalizeString;
           namelist = [];
-          nl = document.getElementById(s.idPrefix + "graphlist");
+          nl = document.getElementById(s.idPrefix + 'graphlist');
           s.editor.RangeChangeCallback.graph = UpdateGraphRangeProposal;
           for (name in s.sheet.names) {
             namelist.push(name);
           }
           namelist.sort();
           nl.length = 0;
-          nl.options[0] = new Option(SCLoc("[select range]"));
+          nl.options[0] = new Option(SCLoc('[select range]'));
           i = 0;
           while (i < namelist.length) {
             name = namelist[i];
@@ -310,11 +311,11 @@
             }
             i++;
           }
-          if (s.graphrange === "") {
+          if (s.graphrange === '') {
             nl.options[0].selected = true;
           }
           UpdateGraphRangeProposal(s.editor);
-          nl = document.getElementById(s.idPrefix + "graphtype");
+          nl = document.getElementById(s.idPrefix + 'graphtype');
           nl.length = 0;
           i = 0;
           while (i < SocialCalc.GraphTypesInfo.displayorder.length) {
@@ -411,16 +412,12 @@
         window.MinMaxChanged = MinMaxChanged = function(minmaxobj, index){
           switch (index) {
           case 0:
+          case 1:
             window.spreadsheet.graphMinX = minmaxobj.value;
             break;
-          case 1:
-            window.spreadsheet.graphMaxX = minmaxobj.value;
-            break;
           case 2:
-            window.spreadsheet.graphMinY = minmaxobj.value;
-            break;
           case 3:
-            window.spreadsheet.graphMaxY = minmaxobj.value;
+            window.spreadsheet.graphMinY = minmaxobj.value;
           }
           return DoGraph(false, true);
         };
@@ -446,7 +443,7 @@
               spreadsheet.graphtype = SocialCalc.decodeFromSave(parts[i + 1]);
               break;
             case 'minmax':
-              splitMinMax = SocialCalc.decodeFromSave(parts[i + 1]).split(",");
+              splitMinMax = SocialCalc.decodeFromSave(parts[i + 1]).split(',');
               spreadsheet.graphMinX = splitMinMax[0];
               document.getElementById("SocialCalc-graphMinX").value = spreadsheet.graphMinX;
               spreadsheet.graphMaxX = splitMinMax[1];
