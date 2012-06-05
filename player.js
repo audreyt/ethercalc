@@ -412,12 +412,16 @@
         window.MinMaxChanged = MinMaxChanged = function(minmaxobj, index){
           switch (index) {
           case 0:
-          case 1:
             window.spreadsheet.graphMinX = minmaxobj.value;
             break;
+          case 1:
+            window.spreadsheet.graphMaxX = minmaxobj.value;
+            break;
           case 2:
-          case 3:
             window.spreadsheet.graphMinY = minmaxobj.value;
+            break;
+          case 3:
+            window.spreadsheet.graphMaxY = minmaxobj.value;
           }
           return DoGraph(false, true);
         };

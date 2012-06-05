@@ -300,8 +300,10 @@
     DoGraph false, false
   window.MinMaxChanged = MinMaxChanged = (minmaxobj, index) ->
     switch index
-    | 0 1 => window.spreadsheet.graphMinX = minmaxobj.value
-    | 2 3 => window.spreadsheet.graphMinY = minmaxobj.value
+    | 0 => window.spreadsheet.graphMinX = minmaxobj.value
+    | 1 => window.spreadsheet.graphMaxX = minmaxobj.value
+    | 2 => window.spreadsheet.graphMinY = minmaxobj.value
+    | 3 => window.spreadsheet.graphMaxY = minmaxobj.value
     DoGraph false, true
   window.GraphSave = GraphSave = (editor, setting) ->
     spreadsheet = SocialCalc.GetSpreadsheetControlObject!
