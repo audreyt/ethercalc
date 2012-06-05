@@ -7,7 +7,7 @@
   DB = @include \db
   SC = @include \sc
 
-  RealBin = require(\path).dirname(require(\fs).realpathSync(__filename))
+  RealBin = require \path .dirname(require \fs .realpathSync __filename)
   sendFile = (file) -> ->
     @response.contentType \text/html
     @response.sendfile "#RealBin/#file"
@@ -22,11 +22,11 @@
 
   @get '/': sendFile \index.html
   @get '/_new': ->
-    room = require(\uuid-pure).newId(10, 36).toLowerCase!
+    room = require \uuid-pure .newId 10, 36 .toLowerCase!
     @response.redirect if KEY then "/#room/edit" else "/#room"
   @get '/_start': sendFile \start.html
   @get '/:room': if KEY then ->
-    return sendFile(\index.html).call(@) if @query.auth?.length
+    return sendFile \index.html .call @ if @query.auth?length
     @response.redirect "/#{ @params.room }?auth=0"
   else sendFile \index.html
   @get '/:room/edit': ->
@@ -38,7 +38,7 @@
 
   IO = @io
   @get '/_/:room/cells/:cell': ->
-    {snapshot} <~ SC._get(@params.room, IO)
+    {snapshot} <~ SC._get @params.room, IO
     if snapshot
       @response.send JSON.stringify(
         SC[@params.room].sheet.cells[@params.cell]
@@ -47,7 +47,7 @@
       @response.send '', { \Content-Type : \text/plain }, 404
 
   @get '/_/:room/cells': ->
-    {snapshot} <~ SC._get(@params.room, IO)
+    {snapshot} <~ SC._get @params.room, IO
     if snapshot
       @response.send JSON.stringify(
         SC[@params.room].sheet.cells
@@ -56,16 +56,16 @@
       @response.send '', { \Content-Type : \text/plain }, 404
 
   @get '/_/:room/html': ->
-    {snapshot} <~ SC._get(@params.room, IO)
+    {snapshot} <~ SC._get @params.room, IO
     if snapshot
-      @response.send SC[@params.room]?.CreateSheetHTML!, {
+      @response.send SC[@params.room]?CreateSheetHTML!, {
         \Content-Type : 'text/html; charset=UTF-8'
       }, 200
     else
       @response.send '', { \Content-Type : \text/plain }, 404
 
   @get '/_/:room': ->
-    {snapshot} <~ SC._get(@params.room, IO)
+    {snapshot} <~ SC._get @params.room, IO
     if snapshot
       @response.send snapshot, { \Content-Type : \text/plain }, 200
     else
@@ -84,9 +84,9 @@
     {command} = @body
     if command
       command = [command] unless Array.isArray(command)
-      <~ SC._get(room, IO)
-      SC[room]?.ExecuteCommand command.join("\n")
-      IO.sockets.in("log-#room").emit 'data', {
+      <~ SC._get room, IO 
+      SC[room]?ExecuteCommand command * \\n
+      IO.sockets.in "log-#room" .emit 'data', {
         type: \execute
         cmdstr: command.join("\n")
         room
@@ -126,7 +126,7 @@
         .rpush("log-#room", cmdstr)
         .rpush("audit-#room", cmdstr)
         .bgsave!.exec!
-      SC[room]?.ExecuteCommand cmdstr
+      SC[room]?ExecuteCommand cmdstr
       broadcast @data
     | \ask.log
       @socket.join("log-#room")

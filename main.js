@@ -1,4 +1,5 @@
 (function(){
+  var __join = [].join;
   this.include = function(){
     var DB, SC, RealBin, sendFile, KEY, HMAC_CACHE, hmac, IO;
     this.enable('serve jquery');
@@ -166,7 +167,7 @@
           return SC._get(room, IO, function(){
             var __ref;
             if ((__ref = SC[room]) != null) {
-              __ref.ExecuteCommand(command.join("\n"));
+              __ref.ExecuteCommand(__join.call(command, '\n'));
             }
             IO.sockets['in']("log-" + room).emit('data', {
               type: 'execute',
