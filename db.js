@@ -27,11 +27,11 @@
     });
     db.on('error', function(err){
       var fs, Commands;
-      if (db.DB === true) {
-        console.log("==> Lost connection to Redis Server - attempting to reconnect");
-      }
-      if (db.DB) {
-        return;
+      switch (false) {
+      case db.DB !== true:
+        return console.log("==> Lost connection to Redis Server - attempting to reconnect...");
+      case !db.DB:
+        return false;
       }
       console.log(err);
       console.log("==> Falling back to JSON storage: " + process.cwd() + "/dump.json");
@@ -103,10 +103,7 @@
           if (!this.length) {
             return cb(null, this.results);
           }
-          __ref = this.shift(), cmd = __ref[0], args = __slice.call(__ref, 1);
-          console.log(db);
-          console.log(cmd);
-          console.log(db[cmd]);
+          __ref = this.shift(), cmd = __ref[0], args = __ref[1];
           return db[cmd].apply(db, __slice.call(args).concat([function(_, result){
             __this.results.push(result);
             return __this.exec(cb);
@@ -114,10 +111,10 @@
         };
         return cmds;
         function __fn(name){
-          console.log(name);
-          cmds[name] = function(args){
-            args == null && (args = []);
-            this.push([name].concat(__slice.call(args)));
+          cmds[name] = function(){
+            var args;
+            args = __slice.call(arguments);
+            this.push([name, args]);
             return this;
           };
         }

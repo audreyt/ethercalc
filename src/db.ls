@@ -17,9 +17,11 @@
     db.DB = true
     console.log "Connected to Redis Server: #redisHost:#redisPort"
   db.on \error, (err) ->
-    if db.DB is true
-      console.log "==> Lost connection to Redis Server - attempting to reconnect"
-    return if db.DB
+    | db.DB is true => return console.log """
+        ==> Lost connection to Redis Server - attempting to reconnect...
+    """
+    | db.DB => return false
+    | otherwise
     console.log err
     console.log "==> Falling back to JSON storage: #{ process.cwd! }/dump.json"
 
@@ -43,11 +45,11 @@
     db <<<< Commands
     db.multi = (...cmds) ->
       for name of Commands then let name
-        cmds[name] = (args=[]) -> @push [name, ...args]; @
+        cmds[name] = (...args) -> @push [name, args]; @
       cmds.results = []
       cmds.exec = (cb) ->
         return cb(null, @results) unless @length
-        [cmd, ...args] = @shift!
+        [cmd, args] = @shift!
         _, result <~ db[cmd](...args)
         @results.push result
         @exec cb
