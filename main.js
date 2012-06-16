@@ -1,7 +1,7 @@
 (function(){
   var __join = [].join;
   this.include = function(){
-    var DB, SC, RealBin, sendFile, KEY, HMAC_CACHE, hmac, IO;
+    var DB, SC, RealBin, sendFile, KEY, HMAC_CACHE, hmac, IO, TextType, JsonType, HtmlType, api;
     this.enable('serve jquery');
     this.use('bodyParser', this.app.router, this.express['static'](__dirname));
     this.include('dotcloud');
@@ -44,10 +44,12 @@
       '/:room': KEY
         ? function(){
           var __ref;
-          if ((__ref = this.query.auth) != null && __ref.length) {
+          switch (false) {
+          case !((__ref = this.query.auth) != null && __ref.length):
             return sendFile('index.html').call(this);
+          default:
+            return this.response.redirect("/" + this.params.room + "?auth=0");
           }
-          return this.response.redirect("/" + this.params.room + "?auth=0");
         }
         : sendFile('index.html')
     });
@@ -66,77 +68,50 @@
       }
     });
     IO = this.io;
-    this.get({
-      '/_/:room/cells/:cell': function(){
+    TextType = {
+      'Content-Type': 'text/plain; charset=utf-8'
+    };
+    JsonType = {
+      'Content-Type': 'application/json; charset=utf-8'
+    };
+    HtmlType = {
+      'Content-Type': 'text/html; charset=utf-8'
+    };
+    api = function(cb){
+      return function(){
         var __this = this;
         return SC._get(this.params.room, IO, function(__arg){
-          var snapshot;
+          var snapshot, type, content, __ref;
           snapshot = __arg.snapshot;
           if (snapshot) {
-            return __this.response.send(JSON.stringify(SC[__this.params.room].sheet.cells[__this.params.cell]), {
-              'Content-Type': 'application/json'
-            }, 200);
+            __ref = cb.call(__this.params, snapshot), type = __ref[0], content = __ref[1];
+            return __this.response.send(content, type, 200);
           } else {
-            return __this.response.send('', {
-              'Content-Type': 'text/plain'
-            }, 404);
+            return __this.response.send('', TextType, 404);
           }
         });
-      }
+      };
+    };
+    this.get({
+      '/_/:room/cells/:cell': api(function(){
+        return [JsonType, JSON.stringify(SC[this.room].sheet.cells[this.cell])];
+      })
     });
     this.get({
-      '/_/:room/cells': function(){
-        var __this = this;
-        return SC._get(this.params.room, IO, function(__arg){
-          var snapshot;
-          snapshot = __arg.snapshot;
-          if (snapshot) {
-            return __this.response.send(JSON.stringify(SC[__this.params.room].sheet.cells), {
-              'Content-Type': 'application/json'
-            }, 200);
-          } else {
-            return __this.response.send('', {
-              'Content-Type': 'text/plain'
-            }, 404);
-          }
-        });
-      }
+      '/_/:room/cells': api(function(){
+        return [JsonType, JSON.stringify(SC[this.room].sheet.cells)];
+      })
     });
     this.get({
-      '/_/:room/html': function(){
-        var __this = this;
-        return SC._get(this.params.room, IO, function(__arg){
-          var snapshot, __ref;
-          snapshot = __arg.snapshot;
-          if (snapshot) {
-            return __this.response.send((__ref = SC[__this.params.room]) != null ? __ref.CreateSheetHTML() : void 8, {
-              'Content-Type': 'text/html; charset=UTF-8'
-            }, 200);
-          } else {
-            return __this.response.send('', {
-              'Content-Type': 'text/plain'
-            }, 404);
-          }
-        });
-      }
+      '/_/:room/html': api(function(){
+        var __ref;
+        return [HtmlType, (__ref = SC[this.room]) != null ? __ref.CreateSheetHTML() : void 8];
+      })
     });
     this.get({
-      '/_/:room': function(){
-        var __this = this;
-        return SC._get(this.params.room, IO, function(__arg){
-          var snapshot;
-          snapshot = __arg.snapshot;
-          if (snapshot) {
-            return __this.response.send(snapshot, {
-              'Content-Type': 'text/plain'
-            }, 200);
-          } else {
-            return __this.response.send('', {
-              'Content-Type': 'text/plain'
-            }, 404);
-          }
-        });
-      }
+      '/_/:room': api(function(it){
+        return [TextType, it];
+      })
     });
     this.put({
       '/_/:room': function(){
@@ -148,9 +123,7 @@
         });
         return this.request.on('end', function(){
           return SC._put(__this.params.room, buf, function(){
-            return __this.response.send('OK', {
-              'Content-Type': 'text/plain'
-            }, 201);
+            return __this.response.send('OK', TextType, 201);
           });
         });
       }
@@ -160,31 +133,26 @@
         var room, command, __this = this;
         room = this.params.room;
         command = this.body.command;
-        if (command) {
-          if (!Array.isArray(command)) {
-            command = [command];
-          }
-          return SC._get(room, IO, function(){
-            var __ref;
-            if ((__ref = SC[room]) != null) {
-              __ref.ExecuteCommand(__join.call(command, '\n'));
-            }
-            IO.sockets['in']("log-" + room).emit('data', {
-              type: 'execute',
-              cmdstr: command.join("\n"),
-              room: room
-            });
-            return __this.response.send(JSON.stringify({
-              command: command
-            }), {
-              'Content-Type': 'text/plain'
-            }, 201);
-          });
-        } else {
-          return this.response.send('Please send command', {
-            'Content-Type': 'text/plain'
-          }, 201);
+        if (!command) {
+          return this.response.send('Please send command', TextType, 400);
         }
+        if (!Array.isArray(command)) {
+          command = [command];
+        }
+        return SC._get(room, IO, function(){
+          var __ref;
+          if ((__ref = SC[room]) != null) {
+            __ref.ExecuteCommand(__join.call(command, '\n'));
+          }
+          IO.sockets['in']("log-" + room).emit('data', {
+            type: 'execute',
+            cmdstr: __join.call(command, '\n'),
+            room: room
+          });
+          return __this.response.send(JSON.stringify({
+            command: command
+          }), JsonType, 202);
+        });
       }
     });
     this.post({
@@ -192,9 +160,7 @@
         var room, snapshot, __ref, __this = this;
         __ref = this.body, room = __ref.room, snapshot = __ref.snapshot;
         return SC._put(room, snapshot, function(){
-          return __this.response.send('OK', {
-            'Content-Type': 'text/plain'
-          }, 201);
+          return __this.response.send('OK', TextType, 201);
         });
       }
     });

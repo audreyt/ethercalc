@@ -21,7 +21,7 @@
     if (redisPass) {
       db.auth(redisPass);
     }
-    db.on('connect', function(err){
+    db.on('connect', function(){
       db.DB = true;
       return console.log("Connected to Redis Server: " + redisHost + ":" + redisPort);
     });
@@ -44,7 +44,7 @@
       Commands = {
         bgsave: function(cb){
           fs.writeFileSync('dump.json', JSON.stringify(db.DB), 'utf8');
-          return typeof cb === 'function' ? cb(null) : void 8;
+          return typeof cb === 'function' ? cb() : void 8;
         },
         get: function(key, cb){
           return typeof cb === 'function' ? cb(null, db.DB[key]) : void 8;
@@ -87,7 +87,7 @@
             key = __ref[__i];
             delete db.DB[key];
           }
-          return typeof cb === 'function' ? cb(null) : void 8;
+          return typeof cb === 'function' ? cb() : void 8;
         }
       };
       __importAll(db, Commands);
@@ -100,14 +100,17 @@
         cmds.results = [];
         cmds.exec = function(cb){
           var cmd, args, __ref, __this = this;
-          if (!this.length) {
-            return cb(null, this.results);
+          switch (false) {
+          case !this.length:
+            __ref = this.shift(), cmd = __ref[0], args = __ref[1];
+            db[cmd].apply(db, __slice.call(args).concat([function(_, result){
+              __this.results.push(result);
+              __this.exec(cb);
+            }]));
+            break;
+          default:
+            cb(null, this.results);
           }
-          __ref = this.shift(), cmd = __ref[0], args = __ref[1];
-          return db[cmd].apply(db, __slice.call(args).concat([function(_, result){
-            __this.results.push(result);
-            return __this.exec(cb);
-          }]));
         };
         return cmds;
         function __fn(name){

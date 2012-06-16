@@ -5,18 +5,19 @@
   [redisPort, redisHost, redisPass] = env<[ REDIS_PORT REDIS_HOST REDIS_PASS ]>
 
   services = JSON.parse(process.env.VCAP_SERVICES || '{}')
-  for name, items of services when /^redis/.test(name) and items?.length
-    [redisPort, redisHost, redisPass] = items.0.credentials<[ port hostname password ]>
+  for name, items of services
+    | /^redis/.test(name) and items?length
+      [redisPort, redisHost, redisPass] = items.0.credentials<[ port hostname password ]>
 
   redisHost ?= \localhost
   redisPort ?= 6379
 
-  db = require(\redis).createClient(redisPort, redisHost)
-  db.auth(redisPass) if redisPass
-  db.on \connect, (err) ->
+  db = require \redis .createClient redisPort, redisHost
+  db.auth redisPass if redisPass
+  db.on \connect ->
     db.DB = true
     console.log "Connected to Redis Server: #redisHost:#redisPort"
-  db.on \error, (err) ->
+  db.on \error (err) ->
     | db.DB is true => return console.log """
         ==> Lost connection to Redis Server - attempting to reconnect...
     """
@@ -25,13 +26,13 @@
     console.log err
     console.log "==> Falling back to JSON storage: #{ process.cwd! }/dump.json"
 
-    fs = require(\fs)
+    fs = require \fs
     db.DB = {}
     try
-      db.DB = JSON.parse(require(\fs).readFileSync('dump.json', \utf8))
+      db.DB = JSON.parse(require \fs .readFileSync \dump.json \utf8)
       console.log "==> Restored previous session from JSON file"
     Commands =
-      bgsave: (cb) -> fs.writeFileSync('dump.json', JSON.stringify(db.DB), \utf8); cb?(null)
+      bgsave: (cb) -> fs.writeFileSync(\dump.json, JSON.stringify(db.DB), \utf8); cb?!
       get: (key, cb) -> cb?(null, db.DB[key])
       set: (key, val, cb) -> db.DB[key] = val; cb?!
       rpush: (key, val, cb) -> (db.DB[key] ?= []).push val; cb?!
@@ -41,17 +42,18 @@
       del: (keys, cb) ->
         for key in (if Array.isArray(keys) then keys else [keys])
           delete db.DB[key]
-        cb?(null)
+        cb?!
     db <<<< Commands
     db.multi = (...cmds) ->
-      for name of Commands then let name
+      for name of Commands => let name
         cmds[name] = (...args) -> @push [name, args]; @
       cmds.results = []
-      cmds.exec = (cb) ->
-        return cb(null, @results) unless @length
-        [cmd, args] = @shift!
-        _, result <~ db[cmd](...args)
-        @results.push result
-        @exec cb
+      cmds.exec = !(cb) ->
+        | @length
+          [cmd, args] = @shift!
+          _, result <~! db[cmd](...args)
+          @results.push result
+          @exec cb
+        | otherwise => cb null, @results
       return cmds
   @__DB__ = db
