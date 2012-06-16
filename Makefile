@@ -20,7 +20,8 @@ ETHERCALC_FILES=\
 JS_FILES=\
 	app.js dotcloud.js player.js main.js sc.js db.js
 
-all :: $(JS_FILES)
+all ::
+	env PATH="$$PATH:./node_modules/LiveScript/bin" livescript -c -o . src
 	node app.js
 
 ./node_modules/streamline/bin/_node :
@@ -34,9 +35,6 @@ SocialCalc.js :: $(SOCIALCALC_FILES) exports.js
 
 static/ethercalc.js :: $(ETHERCALC_FILES)
 	@perl -e 'system(join(" ", closure => map { ("--js", $$_) } @ARGV). " > $@")' $(ETHERCALC_FILES) 
-
-.ls.js:
-	env PATH="./node_modules/.bin:$$PATH" livescript -c $<
 
 .coffee.js:
 	coffee -c $<
