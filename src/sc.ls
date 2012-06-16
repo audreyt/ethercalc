@@ -22,12 +22,12 @@ global.SC ?= {}
   SC._put = (room, snapshot, cb) ->
     return cb?! unless snapshot
     <~ DB.multi!
-      .set "snapshot-#room", snapshot 
+      .set "snapshot-#room", snapshot
       .del ["log-#room", "chat-#room", "ecell-#room", "audit-#room"]
       .bgsave!exec!
     cb?!
 
-  SC._init = (snapshot, log, DB, room, io) ->
+  SC._init = (snapshot, log=[], DB, room, io) ->
     if SC[room]?
       SC[room]._doClearCache!
       return SC[room]

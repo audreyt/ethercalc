@@ -26,7 +26,7 @@
       return console.log("Connected to Redis Server: " + redisHost + ":" + redisPort);
     });
     db.on('error', function(err){
-      var fs, Commands, name, func, __res;
+      var fs, Commands;
       if (db.DB === true) {
         console.log("==> Lost connection to Redis Server - attempting to reconnect");
       }
@@ -90,17 +90,12 @@
           return typeof cb === 'function' ? cb(null) : void 8;
         }
       };
-      __res = [];
-      for (name in Commands) {
-        func = Commands[name];
-        __res.push(func);
-      }
-      db[name] = __res;
+      __importAll(db, Commands);
       return db.multi = function(){
         var cmds, name;
         cmds = __slice.call(arguments);
         for (name in Commands) {
-          __fn();
+          (__fn.call(this, name));
         }
         cmds.results = [];
         cmds.exec = function(cb){
@@ -109,6 +104,9 @@
             return cb(null, this.results);
           }
           __ref = this.shift(), cmd = __ref[0], args = __slice.call(__ref, 1);
+          console.log(db);
+          console.log(cmd);
+          console.log(db[cmd]);
           return db[cmd].apply(db, __slice.call(args).concat([function(_, result){
             __this.results.push(result);
             return __this.exec(cb);
@@ -116,7 +114,9 @@
         };
         return cmds;
         function __fn(name){
-          return cmds[name] = function(args){
+          console.log(name);
+          cmds[name] = function(args){
+            args == null && (args = []);
             this.push([name].concat(__slice.call(args)));
             return this;
           };
@@ -125,4 +125,8 @@
     });
     return this.__DB__ = db;
   };
+  function __importAll(obj, src){
+    for (var key in src) obj[key] = src[key];
+    return obj;
+  }
 }).call(this);

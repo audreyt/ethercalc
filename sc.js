@@ -38,6 +38,7 @@
     };
     SC._init = function(snapshot, log, DB, room, io){
       var sandbox, SocialCalc, ss, div, parts, line, cmdstr;
+      log == null && (log = []);
       if (SC[room] != null) {
         SC[room]._doClearCache();
         return SC[room];

@@ -40,10 +40,10 @@
         for key in (if Array.isArray(keys) then keys else [keys])
           delete db.DB[key]
         cb?(null)
-    db[name] = [func for name, func of Commands]
+    db <<<< Commands
     db.multi = (...cmds) ->
-      for name of Commands
-        do (name) -> cmds[name] = (args) -> @push [name, ...args]; @
+      for name of Commands then let name
+        cmds[name] = (args=[]) -> @push [name, ...args]; @
       cmds.results = []
       cmds.exec = (cb) ->
         return cb(null, @results) unless @length
