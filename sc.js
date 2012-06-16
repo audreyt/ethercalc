@@ -83,7 +83,7 @@
           parts = SC[ref].DecodeSpreadsheetSave(serialization);
           SocialCalc.RecalcLoadedSheet(ref, serialization.substring(parts.sheet.start, parts.sheet.end), true);
         } else {
-          SocialCalc.RecalcLoadedSheet(ref, "", true);
+          SocialCalc.RecalcLoadedSheet(ref, '', true);
         }
         return true;
       };

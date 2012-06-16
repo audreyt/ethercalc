@@ -1,20 +1,12 @@
 (function(){
   var __join = [].join;
   this.include = function(){
-    var DB, SC, RealBin, sendFile, KEY, HMAC_CACHE, hmac, IO, TextType, JsonType, HtmlType, api;
-    this.enable('serve jquery');
+    var DB, SC, KEY, HMAC_CACHE, hmac, RealBin, sendFile, IO, TextType, JsonType, HtmlType, api;
     this.use('bodyParser', this.app.router, this.express['static'](__dirname));
     this.include('dotcloud');
     this.include('player');
     DB = this.include('db');
     SC = this.include('sc');
-    RealBin = require('path').dirname(require('fs').realpathSync(__filename));
-    sendFile = function(file){
-      return function(){
-        this.response.contentType('text/html');
-        return this.response.sendfile(RealBin + "/" + file);
-      };
-    };
     KEY = this.KEY;
     HMAC_CACHE = {};
     hmac = !KEY
@@ -25,6 +17,13 @@
         var encoder;
         return HMAC_CACHE[it] || (HMAC_CACHE[it] = (encoder = require('crypto').createHmac('sha256', KEY), encoder.update(it.toString()), encoder.digest('hex')));
       };
+    RealBin = require('path').dirname(require('fs').realpathSync(__filename));
+    sendFile = function(file){
+      return function(){
+        this.response.contentType('text/html');
+        return this.response.sendfile(RealBin + "/" + file);
+      };
+    };
     this.get({
       '/': sendFile('index.html')
     });

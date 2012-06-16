@@ -19,9 +19,16 @@
             return;
           }
           try {
-            window.history.pushState({}, '', ("/" + SocialCalc._room) + (SocialCalc._view
-              ? "/view"
-              : SocialCalc._auth ? "/edit" : ""));
+            window.history.pushState({}, '', "/" + SocialCalc._room + (function(){
+              switch (false) {
+              case !SocialCalc._view:
+                return '/view';
+              case !SocialCalc._auth:
+                return '/edit';
+              default:
+                return '';
+              }
+            }()));
           } catch (__e) {}
           __this.connect();
           emit = function(data){
@@ -45,7 +52,7 @@
           SocialCalc.isConnected = true;
           SocialCalc.Callbacks.broadcast('ask.log');
           SocialCalc.RecalcInfo.LoadSheet = function(ref){
-            ref = ref.replace(/[^a-zA-Z0-9]+/g, "").toLowerCase();
+            ref = ref.replace(/[^a-zA-Z0-9]+/g, '').toLowerCase();
             return emit({
               type: 'ask.recalc',
               user: SocialCalc._username,
@@ -124,11 +131,9 @@
                 if (this.data.snapshot) {
                   parts = ss.DecodeSpreadsheetSave(this.data.snapshot);
                 }
-                if (parts) {
-                  if (parts.sheet) {
-                    ss.sheet.ResetSheet();
-                    ss.ParseSheetSave(this.data.snapshot.substring(parts.sheet.start, parts.sheet.end));
-                  }
+                if (parts != null && parts.sheet) {
+                  ss.sheet.ResetSheet();
+                  ss.ParseSheetSave(this.data.snapshot.substring(parts.sheet.start, parts.sheet.end));
                 }
                 if (typeof window.addmsg === 'function') {
                   window.addmsg(__join.call(this.data.chat, '\n'), true);
@@ -147,7 +152,7 @@
                   refreshCmd = 'recalc';
                   ss.context.sheetobj.ScheduleSheetCommands(cmdstr + "\n" + refreshCmd + "\n", false, true);
                 } else {
-                  ss.context.sheetobj.ScheduleSheetCommands('recalc\n', false, true);
+                  ss.context.sheetobj.ScheduleSheetCommands("recalc\n", false, true);
                 }
                 break;
               case 'recalc':
@@ -162,7 +167,7 @@
                 }
                 if (parts != null && parts.sheet) {
                   SocialCalc.RecalcLoadedSheet(this.data.room, this.data.snapshot.substring(parts.sheet.start, parts.sheet.end), true);
-                  ss.context.sheetobj.ScheduleSheetCommands('recalc\n', false, true);
+                  ss.context.sheetobj.ScheduleSheetCommands("recalc\n", false, true);
                 } else {
                   SocialCalc.RecalcLoadedSheet(this.data.room, '', true);
                 }
@@ -180,7 +185,9 @@
         };
         window.doresize = function(){
           var __ref;
-          return (__ref = window.spreadsheet) != null ? __ref.DoOnResize() : void 8;
+          if ((__ref = window.spreadsheet) != null) {
+            __ref.DoOnResize();
+          }
         };
         scc = SocialCalc.Constants;
         b1 = window.location.search ? 'A' : '4';
@@ -215,14 +222,14 @@
             __ref.push({
               name: 'graph',
               text: SocialCalc.Constants.s_loc_graph,
-              html: '<div id="%id.graphtools" style="display:none;"> <div style="%tbt."> <table cellspacing="0" cellpadding="0"><tr>   <td style="vertical-align:middle;padding-right:32px;padding-left:16px;">    <div style="%tbt.">Cells to Graph</div>    <div id="%id.graphrange" style="font-weight:bold;">Not Set</div>   </td>  <td style="vertical-align:top;padding-right:32px;">   <div style="%tbt.">Set Cells To Graph</div>    <select id="%id.graphlist" size="1" onfocus="%s.CmdGotFocus(this);"><option selected>[select range]</option></select>   </td>   <td style="vertical-align:middle;padding-right:4px;">    <div style="%tbt.">Graph Type</div>     <select id="%id.graphtype" size="1" onchange="window.GraphChanged(this);" onfocus="%s.CmdGotFocus(this);"></select>     <input type="button" value="OK" onclick="window.GraphSetCells();" style="font-size:x-small;">    </div>   </td>   <td style="vertical-align:middle;padding-right:16px;">    <div style="%tbt.">&nbsp;</div>     <input id="%id.graphhelp" type="button" onclick="DoGraph(true);" value="Help" style="font-size:x-small;">    </div>   </td>   <td style="vertical-align:middle;padding-right:16px;">     Min X <input id="%id.graphMinX" onchange="window.MinMaxChanged(this,0);" onfocus="%s.CmdGotFocus(this);" size=5/>     Max X <input id="%id.graphMaxX" onchange="window.MinMaxChanged(this,1);" onfocus="%s.CmdGotFocus(this);" size=5/><br/>     Min Y <input id="%id.graphMinY" onchange="window.MinMaxChanged(this,2);" onfocus="%s.CmdGotFocus(this);" size=5/>     Max Y <input id="%id.graphMaxY" onchange="window.MinMaxChanged(this,3);" onfocus="%s.CmdGotFocus(this);" size=5/>    </div>   </td>  </tr></table> </div></div>',
+              html: "<div id=\"%id.graphtools\" style=\"display:none;\"><div style=\"%tbt.\"><table cellspacing=\"0\" cellpadding=\"0\"><tr><td style=\"vertical-align:middle;padding-right:32px;padding-left:16px;\"><div style=\"%tbt.\">Cells to Graph</div><div id=\"%id.graphrange\" style=\"font-weight:bold;\">Not Set</div></td><td style=\"vertical-align:top;padding-right:32px;\"><div style=\"%tbt.\">Set Cells To Graph</div><select id=\"%id.graphlist\" size=\"1\" onfocus=\"%s.CmdGotFocus(this);\"><option selected>[select range]</option></select></td><td style=\"vertical-align:middle;padding-right:4px;\"><div style=\"%tbt.\">Graph Type</div><select id=\"%id.graphtype\" size=\"1\" onchange=\"window.GraphChanged(this);\" onfocus=\"%s.CmdGotFocus(this);\"></select><input type=\"button\" value=\"OK\" onclick=\"window.GraphSetCells();\" style=\"font-size:x-small;\"></div></td><td style=\"vertical-align:middle;padding-right:16px;\"><div style=\"%tbt.\">&nbsp;</div><input id=\"%id.graphhelp\" type=\"button\" onclick=\"DoGraph(true);\" value=\"Help\" style=\"font-size:x-small;\"></div></td><td style=\"vertical-align:middle;padding-right:16px;\">Min X <input id=\"%id.graphMinX\" onchange=\"window.MinMaxChanged(this,0);\" onfocus=\"%s.CmdGotFocus(this);\" size=5/>Max X <input id=\"%id.graphMaxX\" onchange=\"window.MinMaxChanged(this,1);\" onfocus=\"%s.CmdGotFocus(this);\" size=5/><br/>Min Y <input id=\"%id.graphMinY\" onchange=\"window.MinMaxChanged(this,2);\" onfocus=\"%s.CmdGotFocus(this);\" size=5/>Max Y <input id=\"%id.graphMaxY\" onchange=\"window.MinMaxChanged(this,3);\" onfocus=\"%s.CmdGotFocus(this);\" size=5/></div></td></tr></table></div></div>",
               view: 'graph',
               onclick: GraphOnClick,
               onclickFocus: true
             });
           }
-          if (ss.views != null) {
-            ss.views.graph = {
+          if ((__ref = ss.views) != null) {
+            __ref.graph = {
               name: 'graph',
               divStyle: "overflow:auto;",
               values: {},
@@ -248,12 +255,12 @@
           if (typeof ss.ExecuteCommand === 'function') {
             ss.ExecuteCommand('set sheet defaulttextvalueformat text-wiki');
           }
-          $('#te_fullgrid tr:nth-child(2) td:first').live('mouseover', function(){
+          $(document).on('mouseover', '#te_fullgrid tr:nth-child(2) td:first', function(){
             return $(this).attr({
               title: 'Export to HTML'
             });
           });
-          return $('#te_fullgrid tr:nth-child(2) td:first').live('click', function(){
+          return $(document).on('click', '#te_fullgrid tr:nth-child(2) td:first', function(){
             return window.open("/_/" + SocialCalc._room + "/html");
           });
         });
@@ -440,11 +447,11 @@
           i = 1;
           while (i < parts.length) {
             switch (parts[i]) {
-            case 'range':
-              spreadsheet.graphrange = SocialCalc.decodeFromSave(parts[i + 1]);
-              break;
             case 'type':
               spreadsheet.graphtype = SocialCalc.decodeFromSave(parts[i + 1]);
+              break;
+            case 'range':
+              spreadsheet.graphrange = SocialCalc.decodeFromSave(parts[i + 1]);
               break;
             case 'minmax':
               splitMinMax = SocialCalc.decodeFromSave(parts[i + 1]).split(',');
@@ -462,7 +469,7 @@
           return true;
         };
         GraphVerticalBar = function(spreadsheet, range, gview, gtype, helpflag){
-          var values, labels, str, nitems, byrow, maxheight, totalwidth, minval, maxval, i, cr, cr1, cell, val, profChartVals, profChartLabels, canv, ctx, colors, barColor, colorList, eachwidth, zeroLine, yScale, gChart, profChartUrl;
+          var values, labels, str, nitems, byrow, maxheight, totalwidth, maxval, minval, i, cr, cr1, cell, val, profChartVals, profChartLabels, canv, ctx, colors, barColor, colorList, eachwidth, zeroLine, yScale, gChart, profChartUrl;
           values = [];
           labels = [];
           if (helpflag || !range) {
@@ -481,8 +488,7 @@
           str = "";
           maxheight = (spreadsheet.height - spreadsheet.nonviewheight) - 50;
           totalwidth = spreadsheet.width - 30;
-          minval = null;
-          maxval = null;
+          minval = maxval = null;
           i = 0;
           while (i < nitems) {
             cr = byrow
@@ -520,8 +526,8 @@
           gview.innerHTML = str;
           profChartVals = new Array();
           profChartLabels = new Array();
-          canv = document.getElementById("myBarCanvas");
-          ctx = canv.getContext("2d");
+          canv = document.getElementById('myBarCanvas');
+          ctx = canv.getContext('2d');
           ctx.font = "10pt bold Arial";
           maxheight = canv.height - 60;
           totalwidth = canv.width;

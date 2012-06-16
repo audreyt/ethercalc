@@ -80,12 +80,16 @@
             : __ref[key] = {}) : void 8;
         },
         del: function(keys, cb){
-          var key, __i, __ref, __len;
-          for (__i = 0, __len = (__ref = Array.isArray(keys)
-            ? keys
-            : [keys]).length; __i < __len; ++__i) {
-            key = __ref[__i];
-            delete db.DB[key];
+          var key, __i, __len;
+          switch (false) {
+          case !Array.isArray(keys):
+            for (__i = 0, __len = keys.length; __i < __len; ++__i) {
+              key = keys[__i];
+              delete db.DB[key];
+            }
+            break;
+          default:
+            delete db.DB[keys];
           }
           return typeof cb === 'function' ? cb() : void 8;
         }

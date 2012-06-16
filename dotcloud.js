@@ -3,7 +3,7 @@
     var json, env, __ref, __this = this;
     try {
       this.io.configure(function(){
-        return __this.io.set("transports", __this.KEY
+        return __this.io.set('transports', __this.KEY
           ? ['jsonp-polling']
           : ['websocket', 'flashsocket', 'xhr-polling', 'jsonp-polling']);
       });
