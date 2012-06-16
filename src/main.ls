@@ -9,7 +9,7 @@
 
     KEY = @KEY
     HMAC_CACHE = {}
-    hmac = if !KEY then (-> it) else -> HMAC_CACHE[it] ||= do
+    hmac = if !KEY then -> it else -> HMAC_CACHE[it] ||= do
         encoder = require \crypto .createHmac \sha256 KEY
         encoder.update it.toString!
         encoder.digest \hex
@@ -135,7 +135,7 @@
             delete SC[room]
             broadcast @data
         | \ecell
-            return if KEY and hmac(room) isnt auth
+            return if KEY and auth isnt hmac room
             broadcast @data
         | otherwise
             broadcast @data

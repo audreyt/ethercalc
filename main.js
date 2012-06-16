@@ -249,7 +249,7 @@
           });
           break;
         case 'ecell':
-          if (KEY && hmac(room) !== auth) {
+          if (KEY && auth !== hmac(room)) {
             return;
           }
           broadcast(this.data);
