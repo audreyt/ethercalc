@@ -16,6 +16,6 @@ host = argv?.host || process.env.VCAP_APP_HOST || '0.0.0.0'
 key = argv?.key || null
 
 console.log "Please connect to: http://#{if host is '0.0.0.0' then require('os').hostname() else host}:#{port}/"
-require('zappa') port, host, ->
+require('zappajs') port, host, ->
   @KEY = key
   @include 'main'
