@@ -167,7 +167,7 @@
       data: function(){
         var room, msg, user, ecell, cmdstr, type, auth, reply, broadcast, __ref, __this = this;
         __ref = this.data, room = __ref.room, msg = __ref.msg, user = __ref.user, ecell = __ref.ecell, cmdstr = __ref.cmdstr, type = __ref.type, auth = __ref.auth;
-        room = room.replace(/^_+/, '');
+        room = (room + "").replace(/^_+/, '');
         reply = function(data){
           return __this.emit({
             data: data

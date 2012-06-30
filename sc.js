@@ -77,7 +77,7 @@
       vm.runInContext('ss = new SocialCalc.SpreadsheetControl', sandbox);
       SocialCalc.RecalcInfo.LoadSheet = function(ref){
         var serialization, parts;
-        ref = ref.replace(/[^a-zA-Z0-9]+/g, '').toLowerCase();
+        __compose((ref),(replace(/[^a-zA-Z0-9]+/g, '').toLowerCase()));
         if (SC[ref]) {
           serialization = SC[ref].CreateSpreadsheetSave();
           parts = SC[ref].DecodeSpreadsheetSave(serialization);
@@ -143,4 +143,9 @@
     };
     return SC;
   };
+  function __compose(f, g){
+    return function(){
+      return f(g.apply(this, arguments)); 
+    }
+  }
 }).call(this);

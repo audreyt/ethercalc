@@ -24,7 +24,7 @@ This work is published from Taiwan.
   host = (argv != null ? argv.host : void 8) || process.env.VCAP_APP_HOST || '0.0.0.0';
   key = (argv != null ? argv.key : void 8) || null;
   console.log("Please connect to: http://" + (host === '0.0.0.0' ? require('os').hostname() : host) + ":" + port + "/");
-  require('zappa')(port, host, function(){
+  require('zappajs')(port, host, function(){
     this.KEY = key;
     return this.include('main');
   });

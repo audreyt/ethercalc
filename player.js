@@ -13,7 +13,7 @@
           SocialCalc._auth = (__ref = window.location.search) != null ? __ref.replace(/\??auth=/, '') : void 8;
           SocialCalc._view = SocialCalc._auth === '0';
           SocialCalc._room == null && (SocialCalc._room = window.location.hash.replace('#', ''));
-          SocialCalc._room = SocialCalc._room.replace(/^_+/, '').replace(/\?.*/, '');
+          SocialCalc._room = (SocialCalc._room + "").replace(/^_+/, '').replace(/\?.*/, '');
           if (!SocialCalc._room) {
             window.location = '/_start';
             return;
@@ -52,7 +52,7 @@
           SocialCalc.isConnected = true;
           SocialCalc.Callbacks.broadcast('ask.log');
           SocialCalc.RecalcInfo.LoadSheet = function(ref){
-            ref = ref.replace(/[^a-zA-Z0-9]+/g, '').toLowerCase();
+            __compose((ref),(replace(/[^a-zA-Z0-9]+/g, '').toLowerCase()));
             return emit({
               type: 'ask.recalc',
               user: SocialCalc._username,
@@ -103,7 +103,7 @@
                 if (this.data.original) {
                   origCR = SocialCalc.coordToCr(this.data.original);
                   origCell = SocialCalc.GetEditorCellElement(editor, origCR.row, origCR.col);
-                  (__ref = origCell.element).className = __ref.className.replace(find, '');
+                  __compose((origCell.element.className),(replace(find, '')));
                   if (this.data.original === editor.ecell.coord || this.data.ecell === editor.ecell.coord) {
                     SocialCalc.Callbacks.broadcast('ecell', {
                       to: this.data.user,
@@ -1148,4 +1148,9 @@
       }
     });
   };
+  function __compose(f, g){
+    return function(){
+      return f(g.apply(this, arguments)); 
+    }
+  }
 }).call(this);

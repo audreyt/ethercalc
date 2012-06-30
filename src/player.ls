@@ -7,7 +7,7 @@
         SocialCalc._auth = window.location.search?replace /\??auth=/ ''
         SocialCalc._view = SocialCalc._auth is \0
         SocialCalc._room ?= window.location.hash.replace \# ''
-        SocialCalc._room .= replace /^_+/, '' .replace /\?.*/ ''
+        SocialCalc._room = "#{SocialCalc._room}" - /^_+/ - /\?.*/
 
         unless SocialCalc._room
             window.location = '/_start'

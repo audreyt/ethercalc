@@ -92,7 +92,7 @@
 
     @on data: !->
         {room, msg, user, ecell, cmdstr, type, auth} = @data
-        room .= replace /^_+/ '' # preceding underscore is reserved
+        room = "#room" - /^_+/ # preceding underscore is reserved
         reply = (data) ~> @emit {data}
         broadcast = (data) ~>
             @socket.broadcast.to do
