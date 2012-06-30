@@ -1,6 +1,6 @@
 { "name" :            "ethercalc"
     , "description" : "Multi-User Spreadsheet Server"
-    , "version" :    "0.20120522.151601"
+    , "version" :    "0.20120630.163712"
     , "dependencies": {
         "redis": "*",
         "uuid-pure": "*",
