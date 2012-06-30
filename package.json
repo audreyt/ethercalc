@@ -7,7 +7,7 @@
         "coffee-script": "*",
         "optimist": "*",
         "contextify": "*",
-        "zappa": "*",
+        "zappajs": "0.3.x",
         "jsdom": "*"
     }
     , "optionalDependencies": {
