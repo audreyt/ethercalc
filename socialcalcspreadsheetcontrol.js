@@ -106,7 +106,7 @@ See the comments in the main SocialCalc code module file of the SocialCalc packa
 
 // Constructor:
 
-SocialCalc.SpreadsheetControl = function() {
+SocialCalc.SpreadsheetControl = function(idPrefix) {
 
    var scc = SocialCalc.Constants;
 
@@ -178,7 +178,7 @@ SocialCalc.SpreadsheetControl = function() {
 
    // Constants:
 
-   this.idPrefix = "SocialCalc-"; // prefix added to element ids used here, should end in "-"
+   this.idPrefix = idPrefix || "SocialCalc-"; // prefix added to element ids used here, should end in "-"
    this.multipartBoundary = "SocialCalcSpreadsheetControlSave"; // boundary used by SpreadsheetControlCreateSpreadsheetSave
    this.imagePrefix = scc.defaultImagePrefix; // prefix added to img src
 
@@ -256,6 +256,9 @@ SocialCalc.SpreadsheetControl = function() {
 '<img id="%id.button_delete" src="%img.delete.gif" style="vertical-align:bottom;">'+
 ' <img id="%id.button_pasteformats" src="%img.pasteformats.gif" style="vertical-align:bottom;">'+
 ' &nbsp;<img src="%img.divider1.gif" style="vertical-align:bottom;">&nbsp; '+
+' <span id="%id.locktools"><img id="%id.button_lock" src="%img.lock.gif" style="vertical-align:bottom;">'+
+' <img id="%id.button_unlock" src="%img.unlock.gif" style="vertical-align:bottom;">'+
+' &nbsp;<img src="%img.divider1.gif" style="vertical-align:bottom;">&nbsp;</span> '+
 '<img id="%id.button_filldown" src="%img.filldown.gif" style="vertical-align:bottom;">'+
 ' <img id="%id.button_fillright" src="%img.fillright.gif" style="vertical-align:bottom;">'+
 ' &nbsp;<img src="%img.divider1.gif" style="vertical-align:bottom;">&nbsp; '+
@@ -278,6 +281,8 @@ SocialCalc.SpreadsheetControl = function() {
 ' <img id="%id.button_insertcol" src="%img.insertcol.gif" style="vertical-align:bottom;"> '+
 '&nbsp; <img id="%id.button_deleterow" src="%img.deleterow.gif" style="vertical-align:bottom;"> '+
 ' <img id="%id.button_deletecol" src="%img.deletecol.gif" style="vertical-align:bottom;"> '+
+'&nbsp; <img id="%id.button_hiderow" src="%img.hiderow.gif" style="vertical-align:bottom;"> '+
+' <img id="%id.button_hidecol" src="%img.hidecol.gif" style="vertical-align:bottom;"> '+
 ' &nbsp;<img id="%id.divider_recalc" src="%img.divider1.gif" style="vertical-align:bottom;">&nbsp; '+
 '<img id="%id.button_recalc" src="%img.recalc.gif" style="vertical-align:bottom;"> '+
       ' </div>',
@@ -370,7 +375,12 @@ SocialCalc.SpreadsheetControl = function() {
             colwidth: {setting: "colwidth", type: "PopupList", id: s.idPrefix+"colwidth",
                initialdata: scc.SCFormatColwidth},
             recalc: {setting: "recalc", type: "PopupList", id: s.idPrefix+"recalc",
-               initialdata: scc.SCFormatRecalc}
+               initialdata: scc.SCFormatRecalc},
+            usermaxcol: {setting: "usermaxcol", type: "PopupList", id: s.idPrefix+"usermaxcol",
+               initialdata: scc.SCFormatUserMaxCol},
+            usermaxrow: {setting: "usermaxrow", type: "PopupList", id: s.idPrefix+"usermaxrow",
+               initialdata: scc.SCFormatUserMaxRow}
+
             };
          viewobj.values.cellspanel = {
             name: "cell",
@@ -523,6 +533,21 @@ SocialCalc.SpreadsheetControl = function() {
 '    <td %bodypart.>'+
 '     <div %parttitle.>&nbsp;</div>'+
 '     <span id="%id.recalc"></span>'+
+'    </td>'+
+'   </tr></table>'+
+' </td>'+
+'</tr>'+
+'<tr>'+
+' <td %itemtitle.><br>%loc!Dimensions!:</td>'+
+' <td %itembody.>'+
+'   <table cellspacing="0" cellpadding="0"><tr>'+
+'    <td %bodypart.>'+
+'     <div %parttitle.>%loc!Columns!</div>'+
+'     <span id="%id.usermaxcol"></span>'+
+'    </td>'+
+'    <td %bodypart.>'+
+'     <div %parttitle.>%loc!Rows!</div>'+
+'     <span id="%id.usermaxrow"></span>'+
 '    </td>'+
 '   </tr></table>'+
 ' </td>'+
@@ -953,6 +978,8 @@ spreadsheet.Buttons = {
    button_cut: {tooltip: "Cut", command: "cut"},
    button_paste: {tooltip: "Paste", command: "paste"},
    button_pasteformats: {tooltip: "Paste Formats", command: "pasteformats"},
+   button_lock: {tooltip: "Lock", command: "lock"},
+   button_unlock: {tooltip: "Unlock", command: "unlock"},
    button_delete: {tooltip: "Delete Contents", command: "delete"},
    button_filldown: {tooltip: "Fill Down", command: "filldown"},
    button_fillright: {tooltip: "Fill Right", command: "fillright"},
@@ -971,6 +998,8 @@ spreadsheet.Buttons = {
    button_insertcol: {tooltip: "Insert Column", command: "insertcol"},
    button_deleterow: {tooltip: "Delete Row", command: "deleterow"},
    button_deletecol: {tooltip: "Delete Column", command: "deletecol"},
+   button_hiderow: {tooltip: "Hide Row", command: "hiderow"},
+   button_hidecol: {tooltip: "Hide Column", command: "hidecol"},
    button_recalc: {tooltip: "Recalc", command: "recalc"}
    }
 
@@ -978,8 +1007,8 @@ spreadsheet.Buttons = {
       bele = document.getElementById(spreadsheet.idPrefix+button);
       if (!bele) {alert("Button "+(spreadsheet.idPrefix+button)+" missing"); continue;}
       bele.style.border = "1px solid "+scc.ISCButtonBorderNormal;
-      SocialCalc.TooltipRegister(bele, SCLoc(spreadsheet.Buttons[button].tooltip), {});
-      SocialCalc.ButtonRegister(bele,
+      SocialCalc.TooltipRegister(bele, SCLoc(spreadsheet.Buttons[button].tooltip), {}, spreadsheet.spreadsheetDiv);
+      SocialCalc.ButtonRegister(spreadsheet.editor, bele,
          {normalstyle: "border:1px solid "+scc.ISCButtonBorderNormal+";backgroundColor:"+scc.ISCButtonBorderNormal+";",
           hoverstyle: "border:1px solid "+scc.ISCButtonBorderHover+";backgroundColor:"+scc.ISCButtonBorderNormal+";",
           downstyle: "border:1px solid "+scc.ISCButtonBorderDown+";backgroundColor:"+scc.ISCButtonDownBackground+";"}, 
@@ -997,16 +1026,17 @@ spreadsheet.Buttons = {
    for (button in spreadsheet.formulabuttons) {
       bele = document.createElement("img");
       bele.id = spreadsheet.idPrefix+button;
-      bele.src = spreadsheet.imagePrefix+spreadsheet.formulabuttons[button].image;
+      bele.src = (spreadsheet.formulabuttons[button].skipImagePrefix ? "" : spreadsheet.imagePrefix)+spreadsheet.formulabuttons[button].image;
       bele.style.verticalAlign = "middle";
       bele.style.border = "1px solid #FFF";
       bele.style.marginLeft = "4px";
-      SocialCalc.TooltipRegister(bele, SCLoc(spreadsheet.formulabuttons[button].tooltip), {});
-      SocialCalc.ButtonRegister(bele,
+      SocialCalc.TooltipRegister(bele, SCLoc(spreadsheet.formulabuttons[button].tooltip), {}, spreadsheet.spreadsheetDiv);
+      SocialCalc.ButtonRegister(spreadsheet.editor, bele,
          {normalstyle: "border:1px solid #FFF;backgroundColor:#FFF;",
           hoverstyle: "border:1px solid #CCC;backgroundColor:#FFF;",
           downstyle: "border:1px solid #000;backgroundColor:#FFF;"}, 
-         {MouseDown: spreadsheet.formulabuttons[button].command});
+         {MouseDown: spreadsheet.formulabuttons[button].command, Disabled: function() {return spreadsheet.editor.ECellReadonly();}});
+      
       spreadsheet.formulabarDiv.appendChild(bele);
       }
 
@@ -1042,6 +1072,7 @@ spreadsheet.Buttons = {
       v.style.display = "none";
       v.style.width = spreadsheet.width + "px";
       v.style.height = spreadsheet.viewheight + "px";
+      v.id = spreadsheet.idPrefix + views[vname].name + "view";
 
       html = SCLocSS(html); // localize with %loc!string!, etc.
 
@@ -1059,12 +1090,25 @@ spreadsheet.Buttons = {
 
    spreadsheet.statuslineDiv = document.createElement("div");
    spreadsheet.statuslineDiv.style.cssText = spreadsheet.statuslineCSS;
-//   spreadsheet.statuslineDiv.style.height = spreadsheet.statuslineheight + "px"; // didn't take padding into account!
    spreadsheet.statuslineDiv.style.height = spreadsheet.statuslineheight -
-      ((spreadsheet.statuslineDiv.style.paddingTop || '0px').slice(0,-2)-0) -
-      ((spreadsheet.statuslineDiv.style.paddingBottom || '0px').slice(0,-2)-0) + "px";
+      (spreadsheet.statuslineDiv.style.paddingTop.slice(0,-2)-0) -
+      (spreadsheet.statuslineDiv.style.paddingBottom.slice(0,-2)-0) + "px";
    spreadsheet.statuslineDiv.id = spreadsheet.idPrefix+"statusline";
    spreadsheet.spreadsheetDiv.appendChild(spreadsheet.statuslineDiv);
+
+   // set current control object based on mouseover
+
+   if (spreadsheet.spreadsheetDiv.addEventListener) { // DOM Level 2 -- Firefox, et al
+      spreadsheet.spreadsheetDiv.addEventListener("mousedown", function() { SocialCalc.SetSpreadsheetControlObject(spreadsheet); }, false);
+      spreadsheet.spreadsheetDiv.addEventListener("mouseover", function() { SocialCalc.SetSpreadsheetControlObject(spreadsheet); }, false);
+      }
+   else if (spreadsheet.spreadsheetDiv.attachEvent) { // IE 5+
+      spreadsheet.spreadsheetDiv.attachEvent("onmousedown", function() { SocialCalc.SetSpreadsheetControlObject(spreadsheet); });
+      spreadsheet.spreadsheetDiv.attachEvent("onmouseover", function() { SocialCalc.SetSpreadsheetControlObject(spreadsheet); });
+      }
+   else { // don't handle this
+      throw SocialCalc.Constants.s_BrowserNotSupported;
+      }
 
    // done - refresh screen needed
 
@@ -1145,6 +1189,20 @@ SocialCalc.GetSpreadsheetControlObject = function() {
 
    }
 
+//
+// SetSpreadsheetControlObject(spreadsheet)
+//
+
+SocialCalc.SetSpreadsheetControlObject = function(spreadsheet) {
+
+   SocialCalc.CurrentSpreadsheetControlObject = spreadsheet;
+
+   if (SocialCalc.Keyboard.focusTable && spreadsheet) {
+      SocialCalc.Keyboard.focusTable = spreadsheet.editor;
+      }
+
+   }
+
 
 //
 // SocialCalc.DoOnResize(spreadsheet)
@@ -1222,6 +1280,8 @@ SocialCalc.SizeSSDiv = function(spreadsheet) {
       spreadsheet.spreadsheetDiv.style.width = newval + "px";
       resized = true;
       }
+
+   spreadsheet.spreadsheetDiv.style.position = "relative";
 
    return resized;
 
@@ -1653,6 +1713,8 @@ SocialCalc.SpreadsheetCmdLookup = {
  'cut': 'cut %C all',
  'paste': 'paste %C all',
  'pasteformats': 'paste %C formats',
+ 'lock': 'set %C readonly yes',
+ 'unlock': 'set %C readonly no',
  'delete': 'erase %C formulas',
  'filldown': 'filldown %C all',
  'fillright': 'fillright %C all',
@@ -1669,6 +1731,8 @@ SocialCalc.SpreadsheetCmdLookup = {
  'insertcol': 'insertcol %C',
  'deleterow': 'deleterow %C',
  'deletecol': 'deletecol %C',
+ 'hiderow': 'set %H hide yes',
+ 'hidecol': 'set %W hide yes',
  'undo': 'undo',
  'redo': 'redo',
  'recalc': 'recalc'
@@ -1866,11 +1930,13 @@ SocialCalc.SpreadsheetControlExecuteCommand = function(obj, combostr, sstr) {
              ":"+SocialCalc.crToCoord(eobj.range.right, eobj.range.bottom);
       str.C = str.R;
       str.W = SocialCalc.rcColname(eobj.range.left) + ":" + SocialCalc.rcColname(eobj.range.right);
+      str.H = eobj.range.top + ":" + eobj.range.bottom;
       }
    else {
       str.C = eobj.ecell.coord;
       str.R = eobj.ecell.coord+":"+eobj.ecell.coord;
       str.W = SocialCalc.rcColname(SocialCalc.coordToCr(eobj.ecell.coord).col);
+      str.H = SocialCalc.coordToCr(eobj.ecell.coord).row;
       }
    str.S = sstr;
    combostr = combostr.replace(/%C/g, str.C);
@@ -1878,6 +1944,7 @@ SocialCalc.SpreadsheetControlExecuteCommand = function(obj, combostr, sstr) {
    combostr = combostr.replace(/%N/g, str.N);
    combostr = combostr.replace(/%S/g, str.S);
    combostr = combostr.replace(/%W/g, str.W);
+   combostr = combostr.replace(/%H/g, str.H);
    combostr = combostr.replace(/%P/g, str.P);
 
    eobj.EditorScheduleSheetCommands(combostr, true, false);
@@ -2027,9 +2094,10 @@ SocialCalc.SpreadsheetControl.DoFunctionList = function() {
    main.style.position = "absolute";
 
    var vp = SocialCalc.GetViewportInfo();
+   var pos = SocialCalc.GetElementPositionWithScroll(spreadsheet.spreadsheetDiv);
 
-   main.style.top = (vp.height/3)+"px";
-   main.style.left = (vp.width/3)+"px";
+   main.style.top = ((vp.height/3)-pos.top)+"px";
+   main.style.left = ((vp.width/3)-pos.left)+"px";
    main.style.zIndex = 100;
    main.style.backgroundColor = "#FFF";
    main.style.border = "1px solid black";
@@ -2045,9 +2113,12 @@ SocialCalc.SpreadsheetControl.DoFunctionList = function() {
 
    main.innerHTML = str;
 
-   SocialCalc.DragRegister(main.firstChild.firstChild.firstChild.firstChild, true, true, {MouseDown: SocialCalc.DragFunctionStart, MouseMove: SocialCalc.DragFunctionPosition,
+   SocialCalc.DragRegister(main.firstChild.firstChild.firstChild.firstChild, true, true,
+                 {MouseDown: SocialCalc.DragFunctionStart, 
+                  MouseMove: SocialCalc.DragFunctionPosition,
                   MouseUp: SocialCalc.DragFunctionPosition,
-                  Disabled: null, positionobj: main});
+                  Disabled: null, positionobj: main},
+                  spreadsheet.spreadsheetDiv);
 
    spreadsheet.spreadsheetDiv.appendChild(main);
 
@@ -2211,9 +2282,10 @@ SocialCalc.SpreadsheetControl.DoMultiline = function() {
    main.style.position = "absolute";
 
    var vp = SocialCalc.GetViewportInfo();
+   var pos = SocialCalc.GetElementPositionWithScroll(spreadsheet.spreadsheetDiv);
 
-   main.style.top = (vp.height/3)+"px";
-   main.style.left = (vp.width/3)+"px";
+   main.style.top = ((vp.height/3)-pos.top)+"px";
+   main.style.left = ((vp.width/3)-pos.left)+"px";
    main.style.zIndex = 100;
    main.style.backgroundColor = "#FFF";
    main.style.border = "1px solid black";
@@ -2226,9 +2298,12 @@ SocialCalc.SpreadsheetControl.DoMultiline = function() {
       '<td style="font-size:10px;cursor:default;color:#666;" onclick="SocialCalc.SpreadsheetControl.HideMultiline();">&nbsp;X&nbsp;</td></tr></table>'+
       '<div style="background-color:#DDD;">'+str+'</div>';
 
-   SocialCalc.DragRegister(main.firstChild.firstChild.firstChild.firstChild, true, true, {MouseDown: SocialCalc.DragFunctionStart, MouseMove: SocialCalc.DragFunctionPosition,
+   SocialCalc.DragRegister(main.firstChild.firstChild.firstChild.firstChild, true, true, 
+                 {MouseDown: SocialCalc.DragFunctionStart, 
+                  MouseMove: SocialCalc.DragFunctionPosition,
                   MouseUp: SocialCalc.DragFunctionPosition,
-                  Disabled: null, positionobj: main});
+                  Disabled: null, positionobj: main},
+                  spreadsheet.spreadsheetDiv);
 
    spreadsheet.spreadsheetDiv.appendChild(main);
 
@@ -2395,9 +2470,10 @@ SocialCalc.SpreadsheetControl.DoLink = function() {
    main.style.position = "absolute";
 
    var vp = SocialCalc.GetViewportInfo();
+   var pos = SocialCalc.GetElementPositionWithScroll(spreadsheet.spreadsheetDiv);
 
-   main.style.top = (vp.height/3)+"px";
-   main.style.left = (vp.width/3)+"px";
+   main.style.top = ((vp.height/3)-pos.top)+"px";
+   main.style.left = ((vp.width/3)-pos.left)+"px";
    main.style.zIndex = 100;
    main.style.backgroundColor = "#FFF";
    main.style.border = "1px solid black";
@@ -2409,9 +2485,12 @@ SocialCalc.SpreadsheetControl.DoLink = function() {
       '<td style="font-size:10px;cursor:default;color:#666;" onclick="SocialCalc.SpreadsheetControl.HideLink();">&nbsp;X&nbsp;</td></tr></table>'+
       '<div style="background-color:#DDD;">'+str+'</div>';
 
-   SocialCalc.DragRegister(main.firstChild.firstChild.firstChild.firstChild, true, true, {MouseDown: SocialCalc.DragFunctionStart, MouseMove: SocialCalc.DragFunctionPosition,
+   SocialCalc.DragRegister(main.firstChild.firstChild.firstChild.firstChild, true, true, 
+                 {MouseDown: SocialCalc.DragFunctionStart, 
+                  MouseMove: SocialCalc.DragFunctionPosition,
                   MouseUp: SocialCalc.DragFunctionPosition,
-                  Disabled: null, positionobj: main});
+                  Disabled: null, positionobj: main},
+                  spreadsheet.spreadsheetDiv);
 
    spreadsheet.spreadsheetDiv.appendChild(main);
 
@@ -2710,7 +2789,10 @@ SocialCalc.SpreadsheetControlCommentSet = function() {
    var s=SocialCalc.GetSpreadsheetControlObject();
    s.ExecuteCommand("set %C comment "+SocialCalc.encodeForSave(document.getElementById(s.idPrefix+"commenttext").value));
    var cell=SocialCalc.GetEditorCellElement(s.editor, s.editor.ecell.row, s.editor.ecell.col);
-   s.editor.UpdateCellCSS(cell, s.editor.ecell.row, s.editor.ecell.col);
+   if (!s.editor.ECellReadonly()) {
+      cell.element.title = document.getElementById(s.idPrefix+"commenttext").value;
+      s.editor.UpdateCellCSS(cell, s.editor.ecell.row, s.editor.ecell.col);
+      }
    SocialCalc.KeyboardFocus();
    }
 

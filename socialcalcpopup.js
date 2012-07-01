@@ -62,11 +62,6 @@
 
    SocialCalc.Popup.Current = {};
 
-   // Other values used by the Popup system
-   //
-
-   SocialCalc.Popup.imagePrefix = "images/sc-"; // image prefix
-
    // Override this for localization
 
    SocialCalc.Popup.LocalizeString = function(str) {return str;};
@@ -90,6 +85,8 @@ SocialCalc.Popup.Create = function(type, id, attribs) {
    if (pt && pt.Create) {
       pt.Create(type, id, attribs);
       }
+
+   SocialCalc.Popup.imagePrefix = SocialCalc.Constants.defaultImagePrefix; // image prefix
 
    }
 
@@ -314,10 +311,10 @@ SocialCalc.Popup.CreatePopupDiv = function(id, attribs) {
    var main = document.createElement("div");
    main.style.position = "absolute";
 
-   pos = SocialCalc.GetElementPositionWithScroll(spcdata.mainele);
+   pos = SocialCalc.GetElementPosition(spcdata.mainele);
 
    main.style.top = (pos.top+spcdata.mainele.offsetHeight)+"px";
-   main.style.left = (pos.left)+"px";
+   main.style.left = pos.left+"px";
    main.style.zIndex = 100;
    main.style.backgroundColor = "#FFF";
    main.style.border = "1px solid black";
@@ -335,9 +332,12 @@ SocialCalc.Popup.CreatePopupDiv = function(id, attribs) {
 
       if (attribs.moveable) {
          spcdata.dragregistered = main.firstChild.firstChild.firstChild.firstChild;
-         SocialCalc.DragRegister(spcdata.dragregistered, true, true, {MouseDown: SocialCalc.DragFunctionStart, MouseMove: SocialCalc.DragFunctionPosition,
+         SocialCalc.DragRegister(spcdata.dragregistered, true, true, 
+                    {MouseDown: SocialCalc.DragFunctionStart, 
+                     MouseMove: SocialCalc.DragFunctionPosition,
                      MouseUp: SocialCalc.DragFunctionPosition,
-                     Disabled: null, positionobj: main});
+                     Disabled: null, positionobj: main},
+                     spcdata.mainele);
          }
       }
 
@@ -363,7 +363,7 @@ SocialCalc.Popup.EnsurePosition = function(id, container) {
    var popup = spcdata.popupele;
 
    function GetLayoutValues(ele) {
-      var r = SocialCalc.GetElementPositionWithScroll(ele);
+      var r = SocialCalc.GetElementPosition(ele);
       r.height = ele.offsetHeight;
       r.width = ele.offsetWidth;
       r.bottom = r.top+r.height;
@@ -561,7 +561,7 @@ SocialCalc.Popup.Types.List.Create = function(type, id, attribs) {
    var spc = sp.Controls;
 
    var spcid = {type: type, value: "", display: "", data: {}};
-   if (spc[id]) {alert("Already created "+id); return;}
+   //if (spc[id]) {alert("Already created "+id); return;}
    spc[id] = spcid;
    var spcdata = spcid.data;
 
@@ -572,7 +572,7 @@ SocialCalc.Popup.Types.List.Create = function(type, id, attribs) {
 
    spcdata.mainele = ele;
 
-   ele.innerHTML = '<input style="cursor:pointer;width:'+(spcdata.attribs.inputWidth||'100px')+';font-size:smaller;" onfocus="this.blur();" onclick="SocialCalc.Popup.CClick(\''+id+'\');" value="">';
+   ele.innerHTML = '<input style="cursor:pointer;width:100px;font-size:smaller;" onfocus="this.blur();" onclick="SocialCalc.Popup.CClick(\''+id+'\');" value="">';
 
    spcdata.options = []; // set to nothing - use Initialize to fill
 
@@ -965,7 +965,7 @@ SocialCalc.Popup.Types.ColorChooser.Create = function(type, id, attribs) {
    var spc = sp.Controls;
 
    var spcid = {type: type, value: "", display: "", data: {}};
-   if (spc[id]) {alert("Already created "+id); return;}
+   //if (spc[id]) {alert("Already created "+id); return;}
    spc[id] = spcid;
    var spcdata = spcid.data;
 
@@ -1448,10 +1448,12 @@ SocialCalc.Popup.Types.ColorChooser.GridMouseDown = function(e) {
          break;
       }
 
-   var viewport = SocialCalc.GetViewportInfo();
-   var clientX = event.clientX + viewport.horizontalScroll;
-   var clientY = event.clientY + viewport.verticalScroll;
-   var gpos = SocialCalc.GetElementPosition(grid.table);
+   var pos = SocialCalc.GetElementPositionWithScroll(spcdata.mainele);
+   var clientX = event.clientX - pos.left;
+   var clientY = event.clientY - pos.top;
+   var gpos = SocialCalc.GetElementPositionWithScroll(grid.table);
+   gpos.left -= pos.left;
+   gpos.top -= pos.top
    var row = Math.floor((clientY-gpos.top-2)/10); // -2 is to split the diff btw IE & FF
    row = row < 0 ? 0 : row;
    var col = Math.floor((clientX-gpos.left)/20);

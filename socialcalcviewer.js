@@ -106,7 +106,7 @@ See the comments in the main SocialCalc code module file of the SocialCalc packa
 
 // Constructor:
 
-SocialCalc.SpreadsheetViewer = function() {
+SocialCalc.SpreadsheetViewer = function(idPrefix) {
 
    var scc = SocialCalc.Constants;
 
@@ -134,7 +134,7 @@ SocialCalc.SpreadsheetViewer = function() {
 
    // Constants:
 
-   this.idPrefix = "SocialCalc-"; // prefix added to element ids used here, should end in "-"
+   this.idPrefix = idPrefix || "SocialCalc-"; // prefix added to element ids used here, should end in "-"
    this.imagePrefix = scc.defaultImagePrefix; // prefix added to img src
 
    this.statuslineheight = scc.SVStatuslineheight; // in pixels
@@ -525,6 +525,8 @@ SocialCalc.SizeSSDiv = function(spreadsheet) {
       spreadsheet.spreadsheetDiv.style.width = newval + "px";
       resized = true;
       }
+
+   spreadsheet.spreadsheetDiv.style.position = "relative";
 
    return resized;
 

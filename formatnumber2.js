@@ -91,9 +91,18 @@ SocialCalc.FormatNumber.formatNumberWithFormat = function(rawvalue, format_strin
    var integerdigits2, integerpos, fractionpos, textcolor, textstyle, separatorchar, decimalchar;
    var value; // working copy to change sign, etc.
 
-   rawvalue = rawvalue-0; // make sure a number
-   value = rawvalue;
-   if (!isFinite(value)) return "NaN";
+   if (typeof(rawvalue) == "string" && !rawvalue.length) return "";
+
+   value = rawvalue-0; // make sure a number
+   if (!isFinite(value)) {
+      if (typeof(rawvalue) == "string") { // if original was a string, try to format it
+         return scfn.formatTextWithFormat(rawvalue, format_string);
+         }
+      else {
+         return "NaN";
+         }
+      }
+   rawvalue = value;
 
    var negativevalue = value < 0 ? 1 : 0; // determine sign, etc.
    if (negativevalue) value = -value;
@@ -157,7 +166,7 @@ SocialCalc.FormatNumber.formatNumberWithFormat = function(rawvalue, format_strin
             section = 0; // use first for all others
             }
          }
-      else if (section == 2) { // three sections
+      else if (section == 2 || section == 3) { // three or four sections
          if (negativevalue) {
             negativevalue = 0; // sign will provided by section, not automatically
             section = 1; // use second section for negative values
@@ -566,6 +575,76 @@ SocialCalc.FormatNumber.formatNumberWithFormat = function(rawvalue, format_strin
 
 /* *******************
 
+ result = SocialCalc.FormatNumber.formatTextWithFormat = function(rawvalue, format_string)
+
+************************* */
+
+SocialCalc.FormatNumber.formatTextWithFormat = function(rawvalue, format_string) {
+
+   var scc = SocialCalc.Constants;
+   var scfn = SocialCalc.FormatNumber;
+   var value = rawvalue+"";
+   var result = "";
+   var section;
+   var sectioninfo;
+   var oppos;
+   var operandstr;
+   var textcolor = "";
+   var textstyle = "";
+
+   scfn.parse_format_string(scfn.format_definitions, format_string); // make sure format is parsed
+   thisformat = scfn.format_definitions[format_string]; // Get format structure
+
+   if (!thisformat) throw "Format not parsed error!";
+
+   section = thisformat.sectioninfo.length - 1; // get number of sections - 1
+   if (section == 0) {
+      section = 0;
+      }
+   else if (section == 3) {
+      section = 3;
+      }
+   else {
+      return value;
+      }
+
+   sectioninfo = thisformat.sectioninfo[section]; // look at values for our section
+   oppos = sectioninfo.sectionstart;
+
+   while (op = thisformat.operators[oppos]) { // execute format
+      operandstr = thisformat.operands[oppos++]; // get next operator and operand
+
+      if (op == scfn.commands.copy) { // put char in result
+         if (operandstr == "@") {
+            result += value;
+            }
+         else {
+            result += operandstr.replace(/ /g, "&nbsp;");
+            }
+         }
+
+      else if (op == scfn.commands.color) { // set color
+         textcolor = operandstr;
+         }
+
+      else if (op == scfn.commands.style) { // set style
+         textstyle = operandstr;
+         }
+      }
+
+   if (textcolor) {
+      result = '<span style="color:'+textcolor+';">'+result+'</span>';
+      }
+   if (textstyle) {
+      result = '<span style="'+textstyle+';">'+result+'</span>';
+      }
+
+   return result;
+
+   };
+
+/* *******************
+
  SocialCalc.FormatNumber.parse_format_string(format_defs, format_string)
 
  Takes a format string (e.g., "#,##0.00_);(#,##0.00)") and fills in format_defs with the parsed info
@@ -716,6 +795,7 @@ SocialCalc.FormatNumber.parse_format_string = function(format_defs, format_strin
             }
          else {
             sectioninfo.fractiondigits++;
+            lastwasinteger = 1;
             thisformat.operators.push(scfn.commands.fraction_placeholder);
             thisformat.operands.push(ch);
             }

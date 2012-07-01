@@ -47,7 +47,7 @@ SocialCalc.Formula = {};
    SocialCalc.Formula.CharClass = {num: 1, numstart: 2, op: 3, eof: 4, alpha: 5, incoord: 6, error: 7, quote: 8, space: 9, specialstart: 10};
  
    SocialCalc.Formula.CharClassTable = {
-      " ": 9, "!": 3, '"': 8, "#": 10, "$":6, "%":3, "&":3, "(": 3, ")": 3, "*": 3, "+": 3, ",": 3, "-": 3, ".": 2, "/": 3,
+      " ": 9, "!": 3, '"': 8, "'": 8, "#": 10, "$":6, "%":3, "&":3, "(": 3, ")": 3, "*": 3, "+": 3, ",": 3, "-": 3, ".": 2, "/": 3,
        "0": 1, "1": 1, "2": 1, "3": 1, "4": 1, "5": 1, "6": 1, "7": 1, "8": 1, "9": 1,
        ":": 3, "<": 3, "=": 3, ">": 3,
        "A": 5, "B": 5, "C": 5, "D": 5, "E": 5, "F": 5, "G": 5, "H": 5, "I": 5, "J": 5, "K": 5, "L": 5, "M": 5, "N": 5,
@@ -59,7 +59,9 @@ SocialCalc.Formula = {};
 
    SocialCalc.Formula.UpperCaseTable = {
        "a": "A", "b": "B", "c": "C", "d": "D", "e": "E", "f": "F", "g": "G", "h": "H", "i": "I", "j": "J", "k": "K", "l": "L", "m": "M",
-       "n": "N", "o": "O", "p": "P", "q": "Q", "r": "R", "s": "S", "t": "T", "u": "U", "v": "V", "w": "W", "x": "X", "y": "Y", "z": "Z"
+       "n": "N", "o": "O", "p": "P", "q": "Q", "r": "R", "s": "S", "t": "T", "u": "U", "v": "V", "w": "W", "x": "X", "y": "Y", "z": "Z",
+       "A": "A", "B": "B", "C": "C", "D": "D", "E": "E", "F": "F", "G": "G", "H": "H", "I": "I", "J": "J", "K": "K", "L": "L", "M": "M",
+       "N": "N", "O": "O", "P": "P", "Q": "Q", "R": "R", "S": "S", "T": "T", "U": "U", "V": "V", "W": "W", "X": "X", "Y": "Y", "Z": "Z"
        }
 
    SocialCalc.Formula.SpecialConstants = { // names that turn into constants for name lookup
@@ -115,10 +117,11 @@ SocialCalc.Formula = {};
                 'e*': '|e*:1|n*:1|t*:1|b:1|'
                },
        concat: {
-                't': '|t:t|th:th|tw:tw|tl:t|t*:2|e*:2|',
-                'th': '|t:th|th:th|tw:t|tl:th|t*:t|e*:2|',
-                'tw': '|t:tw|th:t|tw:tw|tl:tw|t*:t|e*:2|',
-                'tl': '|t:tl|th:th|tw:tw|tl:tl|t*:t|e*:2|',
+                't': '|t:t|th:th|tw:tw|tl:t|tr:tr|t*:2|e*:2|',
+                'th': '|t:th|th:th|tw:t|tl:th|tr:t|t*:t|e*:2|',
+                'tw': '|t:tw|th:t|tw:tw|tl:tw|tr:tw|t*:t|e*:2|',
+                'tl': '|t:tl|th:th|tw:tw|tl:tl|tr:tr|t*:t|e*:2|',
+                't*': '|t*:t|e*:2|',
                 'e*': '|e*:1|n*:1|t*:1|'
                },
        oneargnumeric: { 'n*': '|n*:n|', 'e*': '|e*:1|', 't*': '|t*:e#VALUE!|', 'b': '|b:n|'},
@@ -145,7 +148,7 @@ SocialCalc.Formula = {};
 
 SocialCalc.Formula.ParseFormulaIntoTokens = function(line) {
 
-   var i, ch, chclass, haddecimal, last_token, last_token_type, last_token_text, t;
+   var i, ch, cclass, haddecimal, last_token, last_token_type, last_token_text, t;
 
    var scf = SocialCalc.Formula;
    var scc = SocialCalc.Constants;
@@ -296,7 +299,7 @@ SocialCalc.Formula.ParseFormulaIntoTokens = function(line) {
          }
       else if (state == parsestate.stringquote) { // note else if here
          if (cclass == charclass.quote) {
-            str +='"';
+            str += ch;
             state = parsestate.string; // double quote: add one then continue getting string
             }
          else { // something else -- end of string
@@ -408,7 +411,7 @@ SocialCalc.Formula.ParseFormulaIntoTokens = function(line) {
             state = parsestate.string;
             }
          else if (cclass == charclass.space) { // store so can reconstruct spacing
-            pushtoken(parseinfo, " ", tokentype.space, 0);
+            //pushtoken(parseinfo, " ", tokentype.space, 0);
             }
          else if (cclass == charclass.eof) { // ignore -- needed to have extra loop to close out other things
             }
@@ -1950,6 +1953,58 @@ SocialCalc.Formula.FunctionList["VARP"] = [SocialCalc.Formula.SeriesFunctions, -
 
 /*
 #
+# SUMPRODUCT(range1, range2, ...)
+#
+*/
+
+SocialCalc.Formula.SumProductFunction = function(fname, operand, foperand, sheet) {
+  
+   var range, products = [], sum = 0;
+   var scf = SocialCalc.Formula;
+   var ncols = 0, nrows = 0;
+
+   var PushOperand = function(t, v) {operand.push({type: t, value: v});};
+
+   while (foperand.length > 0) {
+      range = scf.TopOfStackValueAndType(sheet, foperand);
+      if (range.type != "range") {
+         PushOperand("e#VALUE!", 0);
+         return;
+         }
+      rangeinfo = scf.DecodeRangeParts(sheet, range.value);
+      if (!ncols) ncols = rangeinfo.ncols;
+      else if (ncols != rangeinfo.ncols) {
+         PushOperand("e#VALUE!", 0);
+         return;
+         }
+      if (!nrows) nrows = rangeinfo.nrows;
+      else if (nrows != rangeinfo.nrows) {
+         PushOperand("e#VALUE!", 0);
+         return;
+         }
+      for (i=0; i<rangeinfo.ncols; i++) {
+         for (j=0; j<rangeinfo.nrows; j++) {
+            k = i * rangeinfo.nrows + j;
+            cellcr = SocialCalc.crToCoord(rangeinfo.col1num + i, rangeinfo.row1num + j);
+            cell = rangeinfo.sheetdata.GetAssuredCell(cellcr);
+            value = cell.valuetype == "n" ? cell.datavalue : 0;
+            products[k] = (products[k] || 1) * value;
+            }
+         }
+      }
+   for (i=0; i<products.length; i++) {
+      sum += products[i];
+      }
+   PushOperand("n", sum);
+
+   return;
+
+   }
+
+SocialCalc.Formula.FunctionList["SUMPRODUCT"] = [SocialCalc.Formula.SumProductFunction, -1, "rangen", "", "stat"];
+
+/*
+#
 # DAVERAGE(databaserange, fieldname, criteriarange)
 # DCOUNT(databaserange, fieldname, criteriarange)
 # DCOUNTA(databaserange, fieldname, criteriarange)
@@ -2665,16 +2720,26 @@ SocialCalc.Formula.IfFunction = function(fname, operand, foperand, sheet) {
       return;
       }
 
-   if (!cond.value) foperand.pop();
-   operand.push(foperand.pop());
-   if (cond.value) foperand.pop();
+   var op1, op2;
 
-   return null;
+   op1 = foperand.pop();
+   if (foperand.length == 1) {
+      op2 = foperand.pop();
+      }
+   else if (foperand.length == 0) {
+      op2 = {type: "n", value: 0};
+      }
+   else {
+      scf.FunctionArgsError(fname, operand);
+      return;
+   }
+
+   operand.push(cond.value ? op1 : op2);
 
    }
 
 // Add to function list
-SocialCalc.Formula.FunctionList["IF"] = [SocialCalc.Formula.IfFunction, 3, "iffunc", "", "test"];
+SocialCalc.Formula.FunctionList["IF"] = [SocialCalc.Formula.IfFunction, -2, "iffunc", "", "test"];
 
 /*
 #
@@ -3691,6 +3756,71 @@ SocialCalc.Formula.FunctionList["ROUND"] = [SocialCalc.Formula.RoundFunction, -1
 
 /*
 #
+# CEILING(value, [significance])
+# FLOOR(value, [significance])
+#
+*/
+
+SocialCalc.Formula.CeilingFloorFunctions = function(fname, operand, foperand, sheet) {
+
+   var scf = SocialCalc.Formula;
+   var val, sig, t;
+
+   var PushOperand = function(t, v) {operand.push({type: t, value: v});};
+
+   val = scf.OperandValueAndType(sheet, foperand);
+   t = val.type.charAt(0);
+   if (t != "n") {
+      PushOperand("e#VALUE!", 0);
+      return;
+      }
+   if (val.value == 0) {
+      PushOperand("n", 0);
+      return;
+      }
+
+   if (foperand.length == 1) {
+      sig = scf.OperandValueAndType(sheet, foperand);
+      t = val.type.charAt(0);
+      if (t != "n") {
+         PushOperand("e#VALUE!", 0);
+         return;
+         }
+      }
+   else if (foperand.length == 0) {
+      sig = {type: "n", value: val.value > 0 ? 1 : -1};
+      }
+   else {
+      PushOperand("e#VALUE!", 0);
+      return;
+      }
+   if (sig.value == 0) {
+      PushOperand("n", 0);
+      return;
+      }
+   if (sig.value * val.value < 0) {
+      PushOperand("e#NUM!", 0);
+      return;
+      }
+
+   switch (fname) {
+      case "CEILING":
+         PushOperand("n", Math.ceil(val.value / sig.value) * sig.value);
+         break;
+      case "FLOOR":
+         PushOperand("n", Math.floor(val.value / sig.value) * sig.value);
+         break;
+      }
+
+   return;
+
+   }
+
+SocialCalc.Formula.FunctionList["CEILING"] = [SocialCalc.Formula.CeilingFloorFunctions, -1, "vsig", "", "math"];
+SocialCalc.Formula.FunctionList["FLOOR"] = [SocialCalc.Formula.CeilingFloorFunctions, -1, "vsig", "", "math"];
+
+/*
+#
 # AND(v1,c1:c2,...)
 # OR(v1,c1:c2,...)
 #
@@ -3891,7 +4021,7 @@ SocialCalc.Formula.ZeroArgFunctions = function(fname, operand, foperand, sheet) 
          nowdays = start_1_1_1970 + startval / seconds_in_a_day - tzoffset/(24*60);
          result.value = nowdays;
          result.type = "ndt";
-         SocialCalc.Formula.FreshnessInfo['volatile'].NOW = true; // remember
+         SocialCalc.Formula.FreshnessInfo.volatile.NOW = true; // remember
          break;
 
       case "PI":
@@ -3908,7 +4038,7 @@ SocialCalc.Formula.ZeroArgFunctions = function(fname, operand, foperand, sheet) 
          nowdays = start_1_1_1970 + startval / seconds_in_a_day - tzoffset/(24*60);
          result.value = Math.floor(nowdays);
          result.type = "nd";
-         SocialCalc.Formula.FreshnessInfo['volatile'].TODAY = true; // remember
+         SocialCalc.Formula.FreshnessInfo.volatile.TODAY = true; // remember
          break;
 
       case "TRUE":
@@ -4463,6 +4593,11 @@ SocialCalc.Formula.FindInSheetCache = function(sheetname) {
       return null; // return not found
       }
 
+   if (sfsc.loadsheet) { // Deprecated old format synchronous callback
+alert("Using SocialCalc.Formula.SheetCache.loadsheet - deprecated");
+      return SocialCalc.Formula.AddSheetToCache(nsheetname, sfsc.loadsheet(nsheetname));
+      }
+
    sfsc.waitingForLoading = nsheetname; // let recalc loop know that we have a sheet to load
 
    return null; // return not found
@@ -4470,13 +4605,13 @@ SocialCalc.Formula.FindInSheetCache = function(sheetname) {
    }
 
 //
-// newsheet = SocialCalc.Formula.AddSheetToCache(sheetname, str)
+// newsheet = SocialCalc.Formula.AddSheetToCache(sheetname, str, live)
 //
 // Adds a new sheet to the sheet cache.
 // Returns the sheet object filled out with the str (a saved sheet).
 //
 
-SocialCalc.Formula.AddSheetToCache = function(sheetname, str) {
+SocialCalc.Formula.AddSheetToCache = function(sheetname, str, live) {
 
    var newsheet = null;
    var sfsc = SocialCalc.Formula.SheetCache;
@@ -4490,7 +4625,7 @@ SocialCalc.Formula.AddSheetToCache = function(sheetname, str) {
 
    sfsc.sheets[newsheetname] = {sheet: newsheet, recalcstate: sfscc.asloaded, name: newsheetname};
 
-   SocialCalc.Formula.FreshnessInfo.sheets[newsheetname] = true;
+   SocialCalc.Formula.FreshnessInfo.sheets[newsheetname] = (typeof(live) == "undefined" || live === false);
 
    return newsheet;
 
@@ -4536,13 +4671,14 @@ SocialCalc.Formula.RemoteFunctionInfo = {
 
 SocialCalc.Formula.FreshnessInfo = {
 
-   // For each external sheet referenced successfully an attribute of that name with value true.
+   // For each external sheet referenced successfully an attribute of that name with value true to keep the sheet cached.
+   // Value false means the sheet is reloaded at each recalc.
 
    sheets: {},
 
    // For each volatile function that is called an attribute of that name with value true.
 
-   'volatile': {},
+   volatile: {},
 
    // Set to false when started and true when recalc completes
 
@@ -4553,9 +4689,20 @@ SocialCalc.Formula.FreshnessInfo = {
 SocialCalc.Formula.FreshnessInfoReset = function() {
 
    var scffi = SocialCalc.Formula.FreshnessInfo;
+   var scfsc = SocialCalc.Formula.SheetCache;
+
+   // Loop through sheets freshness, deleting cached sheets that should be reloaded.
+
+   for (var sheet in scffi.sheets) {
+      if (scffi.sheets[sheet] === false) {
+         delete scfsc.sheets[sheet];
+         }
+      }
+   
+   // Reset freshness info.
 
    scffi.sheets = {};
-   scffi['volatile'] = {};
+   scffi.volatile = {};
    scffi.recalc_completed = false;
 
    }
