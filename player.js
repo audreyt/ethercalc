@@ -1,9 +1,9 @@
 (function(){
-  var __join = [].join;
   this.include = function(){
     return this.client({
       '/player.js': function(){
-        var doPlay, scc, b1, b2, b3, b4, b5, colorIndex, getBarColor, getDrawColor, GraphOnClick, UpdateGraphRangeProposal, GraphSetCells, DoGraph, GraphChanged, MinMaxChanged, GraphSave, GraphLoad, GraphVerticalBar, GraphHorizontalBar, MakePieChart, MakeLineChart, MakeScatterChart, __this = this;
+        var $, doPlay, scc, b1, b2, b3, b4, b5, onLoad, colorIndex, getBarColor, getDrawColor, GraphOnClick, UpdateGraphRangeProposal, GraphSetCells, DoGraph, GraphChanged, MinMaxChanged, GraphSave, GraphLoad, GraphVerticalBar, GraphHorizontalBar, MakePieChart, MakeLineChart, MakeScatterChart, __ref, __this = this;
+        $ = window.jQuery || window.$ || alert('jQuery not available');
         doPlay = function(){
           var emit, __ref;
           window.SocialCalc == null && (window.SocialCalc = {});
@@ -14,29 +14,37 @@
           SocialCalc._view = SocialCalc._auth === '0';
           SocialCalc._room == null && (SocialCalc._room = window.location.hash.replace('#', ''));
           SocialCalc._room = (SocialCalc._room + "").replace(/^_+/, '').replace(/\?.*/, '');
-          if (!SocialCalc._room) {
+          if ((typeof Drupal != 'undefined' && Drupal !== null) && Drupal.sheetnode) {
+            if (/overlay=node\/\d+/.test(window.location.hash)) {
+              SocialCalc._room = window.location.hash.match(/=node\/(\d+)/)[1];
+            } else if (/\/node\/\d+/.test(window.location.href)) {
+              SocialCalc._room = window.location.href.match(/\/node\/(\d+)/)[1];
+            }
+          } else if (SocialCalc._room) {
+            try {
+              window.history.pushState({}, '', "/" + SocialCalc._room + (function(){
+                switch (false) {
+                case !SocialCalc._view:
+                  return '/view';
+                case !SocialCalc._auth:
+                  return '/edit';
+                default:
+                  return '';
+                }
+              }()));
+            } catch (__e) {}
+          } else {
             window.location = '/_start';
             return;
           }
-          try {
-            window.history.pushState({}, '', "/" + SocialCalc._room + (function(){
-              switch (false) {
-              case !SocialCalc._view:
-                return '/view';
-              case !SocialCalc._auth:
-                return '/edit';
-              default:
-                return '';
-              }
-            }()));
-          } catch (__e) {}
-          __this.connect();
+          __this.connect(($('script[src*="socket.io/socket.io.js"]').attr('src') + "").replace(/socket.io\/socket.io.js.*/, ''));
           emit = function(data){
             return __this.emit({
               data: data
             });
           };
           SocialCalc.Callbacks.broadcast = function(type, data){
+            var data;
             data == null && (data = {});
             if (!SocialCalc.isConnected) {
               return;
@@ -52,7 +60,8 @@
           SocialCalc.isConnected = true;
           SocialCalc.Callbacks.broadcast('ask.log');
           SocialCalc.RecalcInfo.LoadSheet = function(ref){
-            __compose((ref),(replace(/[^a-zA-Z0-9]+/g, '').toLowerCase()));
+            var ref;
+            ref = ref.replace(/[^a-zA-Z0-9]+/g, '').toLowerCase();
             return emit({
               type: 'ask.recalc',
               user: SocialCalc._username,
@@ -103,7 +112,7 @@
                 if (this.data.original) {
                   origCR = SocialCalc.coordToCr(this.data.original);
                   origCell = SocialCalc.GetEditorCellElement(editor, origCR.row, origCR.col);
-                  __compose((origCell.element.className),(replace(find, '')));
+                  origCell.element.className = origCell.element.className.replace(find, '');
                   if (this.data.original === editor.ecell.coord || this.data.ecell === editor.ecell.coord) {
                     SocialCalc.Callbacks.broadcast('ecell', {
                       to: this.data.user,
@@ -136,7 +145,7 @@
                   ss.ParseSheetSave(this.data.snapshot.substring(parts.sheet.start, parts.sheet.end));
                 }
                 if (typeof window.addmsg === 'function') {
-                  window.addmsg(__join.call(this.data.chat, '\n'), true);
+                  window.addmsg(this.data.chat.join('\n'), true);
                 }
                 cmdstr = (function(){
                   var __i, __ref, __len, __results = [];
@@ -207,11 +216,22 @@
         scc.defaultImagePrefix = '/images/sc-';
         SocialCalc.Popup.LocalizeString = SocialCalc.LocalizeString;
         $(function(){
-          var ss, savestr, __ref;
-          window.spreadsheet = ss = SocialCalc._view
+          var $container, __ref, __ref1;
+          if (!((typeof Drupal != 'undefined' && Drupal !== null) && ((__ref = Drupal.sheetnode) != null && ((__ref1 = __ref.sheetviews) != null && __ref1.length)))) {
+            return onLoad();
+          }
+          $container = Drupal.sheetnode.sheetviews[0].$container;
+          return $container.bind('sheetnodeReady', function(_, __arg){
+            var spreadsheet;
+            spreadsheet = __arg.spreadsheet;
+            return onLoad(spreadsheet);
+          });
+        });
+        onLoad = function(ssInstance){
+          var ss, __ref;
+          window.spreadsheet = ss = ssInstance || (SocialCalc._view
             ? new SocialCalc.SpreadsheetViewer()
-            : new SocialCalc.SpreadsheetControl();
-          document.getElementById('msgtext').value = '';
+            : new SocialCalc.SpreadsheetControl());
           ss.ExportCallback = function(s){
             return alert(SocialCalc.ConvertSaveToOtherFormat(SocialCalc.Clipboard.clipboard, "csv"));
           };
@@ -242,7 +262,9 @@
               load: window.GraphLoad
             };
           }
-          savestr = document.getElementById('savestr');
+          if (ssInstance) {
+            return;
+          }
           if (typeof ss.InitializeSpreadsheetViewer === 'function') {
             ss.InitializeSpreadsheetViewer('tableeditor', 0, 0, 0);
           }
@@ -263,10 +285,12 @@
           return $(document).on('click', '#te_fullgrid tr:nth-child(2) td:first', function(){
             return window.open("/_/" + SocialCalc._room + "/html");
           });
-        });
-        SocialCalc.Callbacks.expand_wiki = function(val){
-          return "<div class=\"wiki\">" + new Document.Parser.Wikitext().parse(val, new Document.Emitter.HTML()) + "</div>";
         };
+        if ((__ref = window.Document) != null && __ref.Parser) {
+          SocialCalc.Callbacks.expand_wiki = function(val){
+            return "<div class=\"wiki\">" + new Document.Parser.Wikitext().parse(val, new Document.Emitter.HTML()) + "</div>";
+          };
+        }
         SocialCalc.Constants.s_loc_plain = "Plain";
         SocialCalc.Constants.s_loc_graph = "Graph";
         SocialCalc.Constants.s_loc_cells_to_graph = "Cells to Graph";
@@ -1148,9 +1172,4 @@
       }
     });
   };
-  function __compose(f, g){
-    return function(){
-      return f(g.apply(this, arguments)); 
-    }
-  }
 }).call(this);

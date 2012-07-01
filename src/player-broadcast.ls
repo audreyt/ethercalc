@@ -1,25 +1,27 @@
 @include = -> @client '/player-broadcast.js': ->
     SocialCalc = window.SocialCalc || alert 'Cannot find window.SocialCalc'
+
     return if SocialCalc?OrigDoPositionCalculations
+
     SocialCalc.OrigDoPositionCalculations = SocialCalc.DoPositionCalculations
     SocialCalc.DoPositionCalculations = ->
-        SocialCalc.OrigDoPositionCalculations!
+        SocialCalc.OrigDoPositionCalculations.apply SocialCalc, arguments
         SocialCalc.Callbacks.broadcast? \ask.ecell
         return
 
-    SocialCalc.Sheet::ScheduleSheetCommands = (cmd, saveundo, isRemote) ->
-        SocialCalc.ScheduleSheetCommands(@, cmd, saveundo, isRemote)
+    SocialCalc.Sheet::ScheduleSheetCommands = ->
+        SocialCalc.ScheduleSheetCommands.apply(SocialCalc, [@].concat([].slice.call(arguments)))
     SocialCalc.OrigScheduleSheetCommands = SocialCalc.ScheduleSheetCommands
     SocialCalc.ScheduleSheetCommands = (sheet, cmdstr, saveundo, isRemote) ->
-        cmdstr = cmdstr.replace /\n\n+/g, '\n'
+        cmdstr = cmdstr.replace /\n\n+/g '\n'
         return unless /\S/.test cmdstr
-        if cmdstr and not isRemote and cmdstr isnt \redisplay and cmdstr isnt \recalc
+        if not isRemote and cmdstr isnt \redisplay and cmdstr isnt \recalc
             SocialCalc.Callbacks.broadcast? \execute { cmdstr, saveundo }
         SocialCalc.OrigScheduleSheetCommands sheet, cmdstr, saveundo, isRemote
     SocialCalc.MoveECell = (editor, newcell) ->
         highlights = editor.context.highlights
         if editor.ecell
-            return newcell if editor.ecell.coord == newcell
+            return newcell if editor.ecell.coord is newcell
             SocialCalc.Callbacks.broadcast? \ecell do
                 original: editor.ecell.coord
                 ecell: newcell

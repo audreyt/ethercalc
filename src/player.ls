@@ -1,4 +1,5 @@
 @include = -> @client '/player.js': ->
+    $ = window.jQuery || window.$ || alert('jQuery not available')
     doPlay = ~>
         window.SocialCalc ?= {}
         SocialCalc._username = Math.random!toString!
@@ -7,20 +8,27 @@
         SocialCalc._auth = window.location.search?replace /\??auth=/ ''
         SocialCalc._view = SocialCalc._auth is \0
         SocialCalc._room ?= window.location.hash.replace \# ''
-        SocialCalc._room = "#{SocialCalc._room}" - /^_+/ - /\?.*/
+        SocialCalc._room = "#{SocialCalc._room}".replace /^_+/ '' .replace /\?.*/ ''
 
-        unless SocialCalc._room
+        if Drupal?sheetnode
+            if // overlay=node/\d+ //.test window.location.hash
+                SocialCalc._room = window.location.hash.match // =node/(\d+) // .1
+            else if // /node/\d+ //.test window.location.href
+                SocialCalc._room = window.location.href.match // /node/(\d+) // .1
+        else if SocialCalc._room
+            try window.history.pushState {} '' "/#{ SocialCalc._room }#{
+                switch
+                | SocialCalc._view  => '/view'
+                | SocialCalc._auth  => '/edit'
+                | otherwise         => ''
+            }"
+        else
             window.location = '/_start'
             return
 
-        try window.history.pushState {} '' "/#{ SocialCalc._room }#{
-            switch
-            | SocialCalc._view  => '/view'
-            | SocialCalc._auth  => '/edit'
-            | otherwise         => ''
-        }"
-
-        @connect!
+        @connect "#{
+            $ 'script[src*="socket.io/socket.io.js"]' .attr \src
+        }".replace /socket.io\/socket.io.js.*/ ''
 
         emit = (data) ~> @emit {data}
         SocialCalc.Callbacks.broadcast = (type, data={}) ~>
@@ -34,7 +42,7 @@
         SocialCalc.isConnected = true
         SocialCalc.Callbacks.broadcast \ask.log
         SocialCalc.RecalcInfo.LoadSheet = (ref) ->
-            ref .= replace /[^a-zA-Z0-9]+/g '' .toLowerCase!
+            ref = ref.replace /[^a-zA-Z0-9]+/g '' .toLowerCase!
             emit type: \ask.recalc, user: SocialCalc._username, room: ref
 
         @on data: !->
@@ -61,7 +69,7 @@
                 if @data.original
                     origCR     = SocialCalc.coordToCr @data.original
                     origCell = SocialCalc.GetEditorCellElement editor, origCR.row, origCR.col
-                    origCell.element.className .= replace find, ''
+                    origCell.element.className = origCell.element.className.replace find, ''
                     if @data.original is editor.ecell.coord or @data.ecell is editor.ecell.coord
                         SocialCalc.Callbacks.broadcast \ecell,
                             to: @data.user
@@ -81,9 +89,9 @@
                 if parts?sheet
                     ss.sheet.ResetSheet!
                     ss.ParseSheetSave @data.snapshot.substring parts.sheet.start, parts.sheet.end
-                window.addmsg? @data.chat * \\n, true
+                window.addmsg? @data.chat.join(\\n), true
                 cmdstr = [ line for line in @data.log
-                         | not /^re(calc|display)$/.test(line) ] * \\n
+                         | not /^re(calc|display)$/.test(line) ].join \\n
                 if cmdstr.length
                     refreshCmd = \recalc
                     ss.context.sheetobj.ScheduleSheetCommands "#cmdstr\n#refreshCmd\n", false, true
@@ -129,13 +137,17 @@
     scc.defaultImagePrefix = '/images/sc-'
     SocialCalc.Popup.LocalizeString = SocialCalc.LocalizeString
     $ ->
-        window.spreadsheet = ss = (
+        return onLoad! unless Drupal?sheetnode?sheetviews?length
+        $container = Drupal.sheetnode.sheetviews[0].$container
+        $container.bind \sheetnodeReady (_, {spreadsheet}) ->
+            onLoad spreadsheet
+    onLoad = (ssInstance) ->
+        window.spreadsheet = ss = ssInstance || (
             if SocialCalc._view
                 new SocialCalc.SpreadsheetViewer!
             else
                 new SocialCalc.SpreadsheetControl!
         )
-        document.getElementById \msgtext .value = ''
         ss.ExportCallback = (s) ->
             alert SocialCalc.ConvertSaveToOtherFormat(SocialCalc.Clipboard.clipboard, "csv")
 
@@ -160,7 +172,7 @@
             save: window.GraphSave
             load: window.GraphLoad
 
-        savestr = document.getElementById \savestr
+        return if ssInstance
         ss.InitializeSpreadsheetViewer? \tableeditor, 0, 0, 0
         ss.InitializeSpreadsheetControl? \tableeditor, 0, 0, 0
         ss.ExecuteCommand? \redisplay, ''
@@ -170,12 +182,13 @@
         $ document .on \click '#te_fullgrid tr:nth-child(2) td:first' ->
             window.open "/_/#{ SocialCalc._room }/html"
 
-    SocialCalc.Callbacks.expand_wiki = (val) -> """
-        <div class="wiki">#{
-            new Document.Parser.Wikitext!
-                .parse val, new Document.Emitter.HTML!
-        }</div>
-    """
+    if window.Document?Parser
+        SocialCalc.Callbacks.expand_wiki = (val) -> """
+            <div class="wiki">#{
+                new Document.Parser.Wikitext!
+                    .parse val, new Document.Emitter.HTML!
+            }</div>
+        """
 
     SocialCalc.Constants.s_loc_plain = "Plain"
     SocialCalc.Constants.s_loc_graph = "Graph"
@@ -877,3 +890,4 @@
         scatterchart: {display: SocialCalc.Constants.s_loc_scatter_chart, func: MakeScatterChart}
 
     doPlay!
+    #setTimeout doPlay, 10

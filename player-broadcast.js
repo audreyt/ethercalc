@@ -10,13 +10,13 @@
         SocialCalc.OrigDoPositionCalculations = SocialCalc.DoPositionCalculations;
         SocialCalc.DoPositionCalculations = function(){
           var __ref;
-          SocialCalc.OrigDoPositionCalculations();
+          SocialCalc.OrigDoPositionCalculations.apply(SocialCalc, arguments);
           if (typeof (__ref = SocialCalc.Callbacks).broadcast === 'function') {
             __ref.broadcast('ask.ecell');
           }
         };
-        SocialCalc.Sheet.prototype.ScheduleSheetCommands = function(cmd, saveundo, isRemote){
-          return SocialCalc.ScheduleSheetCommands(this, cmd, saveundo, isRemote);
+        SocialCalc.Sheet.prototype.ScheduleSheetCommands = function(){
+          return SocialCalc.ScheduleSheetCommands.apply(SocialCalc, [this].concat([].slice.call(arguments)));
         };
         SocialCalc.OrigScheduleSheetCommands = SocialCalc.ScheduleSheetCommands;
         SocialCalc.ScheduleSheetCommands = function(sheet, cmdstr, saveundo, isRemote){
@@ -25,7 +25,7 @@
           if (!/\S/.test(cmdstr)) {
             return;
           }
-          if (cmdstr && !isRemote && cmdstr !== 'redisplay' && cmdstr !== 'recalc') {
+          if (!isRemote && cmdstr !== 'redisplay' && cmdstr !== 'recalc') {
             if (typeof (__ref = SocialCalc.Callbacks).broadcast === 'function') {
               __ref.broadcast('execute', {
                 cmdstr: cmdstr,
