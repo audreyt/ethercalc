@@ -37,8 +37,7 @@
       });
     };
     SC._init = function(snapshot, log, DB, room, io){
-      var sandbox, SocialCalc, ss, div, parts, line, cmdstr;
-      log == null && (log = []);
+      var log, sandbox, SocialCalc, ss, div, parts, line, cmdstr;
       if (SC[room] != null) {
         SC[room]._doClearCache();
         return SC[room];
@@ -127,7 +126,7 @@
       }
       cmdstr = (function(){
         var __i, __ref, __len, __results = [];
-        for (__i = 0, __len = (__ref = log).length; __i < __len; ++__i) {
+        for (__i = 0, __len = (__ref = log || (log = [])).length; __i < __len; ++__i) {
           line = __ref[__i];
           if (!/^re(calc|display)$/.test(line)) {
             __results.push(line);
