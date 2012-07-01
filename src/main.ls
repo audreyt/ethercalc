@@ -3,6 +3,7 @@
 
     @include \dotcloud
     @include \player-broadcast
+    @include \player-graph
     @include \player
 
     DB = @include \db
