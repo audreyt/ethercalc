@@ -133,6 +133,12 @@ SocialCalc.Constants = {
    defaultCommentNoGridClass: "", // class added to cells with non-null comments when grid not enabled
    defaultCommentNoGridStyle: "", // style added to cells with non-null comments when grid not enabled
 
+   defaultReadonlyClass: "", // class added to readonly cells when grid enabled
+   defaultReadonlyStyle: "background-repeat:no-repeat;background-position:top right;background-image:url(images/sc-lockbg.gif);", // style added to readonly cells when grid enabled
+   defaultReadonlyNoGridClass: "", // class added to readonly cells when grid not enabled
+   defaultReadonlyNoGridStyle: "", // style added to readonly cells when grid not enabled
+   defaultReadonlyComment: "Locked cell",
+
    defaultColWidth: "80", // text
    defaultMinimumColWidth: 10, // numeric
 
@@ -157,6 +163,14 @@ SocialCalc.Constants = {
    defaultSkippedCellStyle: "font-size:small;background-color:#CCC", // used if present
    defaultPaneDividerClass: "", // used if present for the look of the space between panes (at least one of class/style needed)
    defaultPaneDividerStyle: "font-size:small;background-color:#C0C0C0;padding:0px;", // used if present
+   defaultUnhideLeftClass: "",
+   defaultUnhideLeftStyle: "float:right;width:9px;height:12px;cursor:pointer;background-image:url(images/sc-unhideleft.gif);padding:0;", // used if present
+   defaultUnhideRightClass: "",
+   defaultUnhideRightStyle: "float:left;width:9px;height:12px;cursor:pointer;background-image:url(images/sc-unhideright.gif);padding:0;", // used if present
+   defaultUnhideTopClass: "",
+   defaultUnhideTopStyle: "float:left;position:absolute;bottom:-4px;width:12px;height:9px;cursor:pointer;background-image:url(images/sc-unhidetop.gif);padding:0;",
+   defaultUnhideBottomClass: "",
+   defaultUnhideBottomStyle: "float:left;width:12px;height:9px;cursor:pointer;background-image:url(images/sc-unhidebottom.gif);padding:0;",
 
    s_rcMissingSheet: "Render Context must have a sheet object", // unlikely thrown error
 
@@ -168,6 +182,8 @@ SocialCalc.Constants = {
 
    //*** SocialCalc.format_number_for_display
 
+   defaultFormatp: '#,##0.0%',
+   defaultFormatc: '[$$]#,##0.00',
    defaultFormatdt: 'd-mmm-yyyy h:mm:ss',
    defaultFormatd: 'd-mmm-yyyy',
    defaultFormatt: '[h]:mm:ss',
@@ -375,6 +391,10 @@ SocialCalc.Constants = {
                   "20 pixels:20|40:40|60:60|80:80|100:100|120:120|140:140|160:160|"+
                   "[newcol]:|180 pixels:180|200:200|220:220|240:240|260:260|280:280|300:300|",
    SCFormatRecalc: "[cancel]:|[break]:|%loc!Auto!:|%loc!Manual!:off|",
+   SCFormatUserMaxCol: "[cancel]:|[break]:|%loc!Default!:|[custom]:|[newcol]:|"+
+                  "Unlimited:0|10:10|20:20|30:30|40:40|50:50|60:60|80:80|100:100|",
+   SCFormatUserMaxRow: "[cancel]:|[break]:|%loc!Default!:|[custom]:|[newcol]:|"+
+                  "Unlimited:0|10:10|20:20|30:30|40:40|50:50|60:60|80:80|100:100|",
 
    //*** SocialCalc.InitializeSpreadsheetControl
 
@@ -700,6 +720,9 @@ SocialCalc.Constants = {
    s_fdef_VLOOKUP: 'Look for the matching value for the given value in the range and return the corresponding value in the cell specified by the column offset. If rangelookup is 1 (the default) and not 0, match if within numeric brackets (match>=value) instead of exact match. ',
    s_fdef_WEEKDAY: 'Returns the day of week specified by the date value. If type is 1 (the default), Sunday is day and Saturday is day 7. If type is 2, Monday is day 1 and Sunday is day 7. If type is 3, Monday is day 0 and Sunday is day 6. ',
    s_fdef_YEAR: 'Returns the year part of a date value. ',
+   s_fdef_SUMPRODUCT: 'Sums the pairwise products of 2 or more ranges. The ranges must be of equal length.',
+   s_fdef_CEILING: 'Rounds the given number up to the nearest integer or multiple of significance. Significance is the value to whose multiple of ten the value is to be rounded up (.01, .1, 1, 10, etc.)',
+   s_fdef_FLOOR: 'Rounds the given number down to the nearest multiple of significance. Significance is the value to whose multiple of ten the number is to be rounded down (.01, .1, 1, 10, etc.)',
 
    s_farg_v: "value",
    s_farg_vn: "value1, value2, ...",
@@ -709,11 +732,11 @@ SocialCalc.Constants = {
    s_farg_rangec: "range, criteria",
    s_farg_date: "year, month, day",
    s_farg_dfunc: "databaserange, fieldname, criteriarange",
-   s_farg_ddb: "cost, salvage, lifetime, period [, factor]",
-   s_farg_find: "string1, string2 [, start]",
+   s_farg_ddb: "cost, salvage, lifetime, period, [factor]",
+   s_farg_find: "string1, string2, [start]",
    s_farg_fv: "rate, n, payment, [pv, [paytype]]",
    s_farg_hlookup: "value, range, row, [rangelookup]",
-   s_farg_iffunc: "logical-expression, true-value, false-value",
+   s_farg_iffunc: "logical-expression, true-value, [false-value]",
    s_farg_index: "range, rownum, colnum",
    s_farg_irr: "range, [guess]",
    s_farg_tc: "text, count",
@@ -730,13 +753,15 @@ SocialCalc.Constants = {
    s_farg_valpre: "value, precision",
    s_farg_csl: "cost, salvage, lifetime",
    s_farg_cslp: "cost, salvage, lifetime, period",
-   s_farg_subs: "text1, oldtext, newtext [, occurrence]",
-   s_farg_sumif: "range1, criteria [, range2]",
+   s_farg_subs: "text1, oldtext, newtext, [occurrence]",
+   s_farg_sumif: "range1, criteria, [range2]",
    s_farg_hms: "hour, minute, second",
    s_farg_txt: "text",
    s_farg_vlookup: "value, range, col, [rangelookup]",
    s_farg_weekday: "date, [type]",
    s_farg_dt: "date",
+   s_farg_rangen: "range1, range2, ...",
+   s_farg_vsig: 'value, [significance]',
 
    function_classlist: ["all", "stat", "lookup", "datetime", "financial", "test", "math", "text"], // order of function classes
 
@@ -814,5 +839,20 @@ SocialCalc.ConstantsSetClasses = function(prefix) {
          scc[item+"Style"] = defaults[item].style;
          }
       }
+   }
+
+// Set the image prefix on all images.
+
+SocialCalc.ConstantsSetImagePrefix = function(imagePrefix) {
+
+   var scc = SocialCalc.Constants;
+
+   for (var item in scc) {
+      if (typeof scc[item] == "string") {
+         scc[item] = scc[item].replace(scc.defaultImagePrefix, imagePrefix);
+         }
+      }
+   scc.defaultImagePrefix = imagePrefix;
+
    }
 

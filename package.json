@@ -4,7 +4,7 @@
     , "dependencies": {
         "redis": "*",
         "uuid-pure": "*",
-        "coffee-script": "*",
+        "LiveScript": "0.9.x",
         "optimist": "*",
         "contextify": "*",
         "zappajs": "0.3.x",

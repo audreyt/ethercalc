@@ -1,0 +1,7 @@
+name = EtherCalc
+description = Adds EtherCalc Collaboration to Sheetnode editor.
+package = Sheetnode
+dependencies[] = sheetnode
+configure = admin/config/content/ethercalc
+core = 7.x
+version = "7.x-1.0-1341126056-dev"

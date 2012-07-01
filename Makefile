@@ -15,9 +15,13 @@ ETHERCALC_FILES=\
 	third-party/wikiwyg/lib/Document/Emitter/HTML.js \
 	third-party/wikiwyg/lib/Document/Parser.js \
 	third-party/wikiwyg/lib/Document/Parser/Wikitext.js \
-	jquery.js
+	static/jquery.js
 
-all :: app.js
+JS_FILES=\
+	app.js dotcloud.js player.js main.js sc.js db.js
+
+all ::
+	env PATH="$$PATH:./node_modules/LiveScript/bin" livescript -c -o . src
 	node app.js
 
 ./node_modules/streamline/bin/_node :
@@ -27,10 +31,10 @@ depends :: app.js static/ethercalc.js static/start.css
 
 SocialCalc.js :: $(SOCIALCALC_FILES) exports.js
 	cat $(SOCIALCALC_FILES) exports.js > $@
-	#@perl -e 'system(join(" ", closure => map { ("--js", $$_) } @ARGV). " > $@")' $(SOCIALCALC_FILES) exports.js
+	#@perl -e 'system(join(" ", "closure-compiler" => map { ("--js", $$_) } @ARGV). " > $@")' $(SOCIALCALC_FILES) exports.js
 
 static/ethercalc.js :: $(ETHERCALC_FILES)
-	@perl -e 'system(join(" ", closure => map { ("--js", $$_) } @ARGV). " > $@")' $(ETHERCALC_FILES) 
+	@perl -e 'system(join(" ", "closure-compiler" => map { ("--js", $$_) } @ARGV). " > $@")' $(ETHERCALC_FILES) 
 
 .coffee.js:
 	coffee -c $<
@@ -38,7 +42,10 @@ static/ethercalc.js :: $(ETHERCALC_FILES)
 .sass.css:
 	sass -t compressed $< > $@
 
+clean ::
+	@-rm $(JS_FILES)
+
 push ::
 	dotcloud push ethercalc
 
-.SUFFIXES: .js .coffee .css .sass
+.SUFFIXES: .js .coffee .css .sass .ls

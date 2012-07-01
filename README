@@ -49,13 +49,8 @@
 
     MIT License (John Resig, The Dojo Foundation):
 
-        jquery.js
+        static/jquery.js
 
     CC0 Public Domain (唐鳳):
 
-        app.coffee
-        app.js # produced by "coffee -c app.coffee"
-        db.coffee
-        dotcloud.coffee
-        main.coffee
-        player.coffee
+        src/*.ls
