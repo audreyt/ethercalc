@@ -84,6 +84,9 @@
                 return;
               }
               ss = window.spreadsheet;
+              if (!ss) {
+                return;
+              }
               editor = ss.editor;
               switch (this.data.type) {
               case 'chat':
@@ -207,6 +210,12 @@
           return $container.bind('sheetnodeReady', function(_, __arg){
             var spreadsheet;
             spreadsheet = __arg.spreadsheet;
+            if (spreadsheet.tabbackground === 'display:none;') {
+              if (spreadsheet.InitializeSpreadsheetControl) {
+                return;
+              }
+              SocialCalc._auth = '0';
+            }
             return onLoad(spreadsheet);
           });
         });
@@ -215,6 +224,9 @@
           window.spreadsheet = ss = ssInstance || (SocialCalc._view
             ? new SocialCalc.SpreadsheetViewer()
             : new SocialCalc.SpreadsheetControl());
+          if (ssInstance) {
+            return;
+          }
           ss.ExportCallback = function(s){
             return alert(SocialCalc.ConvertSaveToOtherFormat(SocialCalc.Clipboard.clipboard, "csv"));
           };
@@ -244,9 +256,6 @@
               save: window.GraphSave,
               load: window.GraphLoad
             };
-          }
-          if (ssInstance) {
-            return;
           }
           if (typeof ss.InitializeSpreadsheetViewer === 'function') {
             ss.InitializeSpreadsheetViewer('tableeditor', 0, 0, 0);

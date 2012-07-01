@@ -199,7 +199,7 @@
           DB.hset("ecell-" + room, user, ecell);
           break;
         case 'execute':
-          if (KEY && hmac(room) !== auth) {
+          if (auth === '0' || KEY && hmac(room) !== auth) {
             return;
           }
           DB.multi().rpush("log-" + room, cmdstr).rpush("audit-" + room, cmdstr).bgsave().exec(function(){
@@ -251,7 +251,7 @@
           });
           break;
         case 'ecell':
-          if (KEY && auth !== hmac(room)) {
+          if (auth === '0' || KEY && auth !== hmac(room)) {
             return;
           }
           broadcast(this.data);

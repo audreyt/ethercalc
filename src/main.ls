@@ -110,7 +110,7 @@
         | \my.ecell
             DB.hset "ecell-#room", user, ecell
         | \execute
-            return if KEY and hmac(room) isnt auth
+            return if auth is \0 or KEY and hmac(room) isnt auth
             <~ DB.multi!
                 .rpush "log-#room" cmdstr
                 .rpush "audit-#room" cmdstr
@@ -137,7 +137,7 @@
             delete SC[room]
             broadcast @data
         | \ecell
-            return if KEY and auth isnt hmac room
+            return if auth is \0 or KEY and auth isnt hmac room
             broadcast @data
         | otherwise
             broadcast @data

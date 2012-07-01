@@ -15,6 +15,13 @@
             __ref.broadcast('ask.ecell');
           }
         };
+        SocialCalc.OrigSizeSSDiv = SocialCalc.SizeSSDiv;
+        SocialCalc.SizeSSDiv = function(spreadsheet){
+          if (!(spreadsheet != null && spreadsheet.parentNode)) {
+            return;
+          }
+          return SocialCalc.OrigSizeSSDiv(spreadsheet);
+        };
         SocialCalc.Sheet.prototype.ScheduleSheetCommands = function(){
           return SocialCalc.ScheduleSheetCommands.apply(SocialCalc, [this].concat([].slice.call(arguments)));
         };

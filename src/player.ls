@@ -52,6 +52,7 @@
             return if @data.room and @data.room != SocialCalc._room and @data.type != "recalc"
 
             ss = window.spreadsheet
+            return unless ss
             editor = ss.editor
             switch @data.type
             | \chat     => window.addmsg? @data.msg
@@ -123,6 +124,10 @@
         return onLoad! unless Drupal?sheetnode?sheetviews?length
         $container = Drupal.sheetnode.sheetviews[0].$container
         $container.bind \sheetnodeReady (_, {spreadsheet}) ->
+            if spreadsheet.tabbackground is 'display:none;'
+                if spreadsheet.InitializeSpreadsheetControl
+                    return
+                SocialCalc._auth = \0
             onLoad spreadsheet
 
     onLoad = (ssInstance) ->
@@ -132,6 +137,8 @@
             else
                 new SocialCalc.SpreadsheetControl!
         )
+        return if ssInstance
+
         ss.ExportCallback = (s) ->
             alert SocialCalc.ConvertSaveToOtherFormat(SocialCalc.Clipboard.clipboard, "csv")
 
@@ -156,7 +163,6 @@
             save: window.GraphSave
             load: window.GraphLoad
 
-        return if ssInstance
         ss.InitializeSpreadsheetViewer? \tableeditor, 0, 0, 0
         ss.InitializeSpreadsheetControl? \tableeditor, 0, 0, 0
         ss.ExecuteCommand? \redisplay, ''

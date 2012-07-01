@@ -9,6 +9,12 @@
         SocialCalc.Callbacks.broadcast? \ask.ecell
         return
 
+
+    SocialCalc.OrigSizeSSDiv = SocialCalc.SizeSSDiv
+    SocialCalc.SizeSSDiv = (spreadsheet) ->
+        return unless spreadsheet?parentNode
+        SocialCalc.OrigSizeSSDiv spreadsheet
+
     SocialCalc.Sheet::ScheduleSheetCommands = ->
         SocialCalc.ScheduleSheetCommands.apply(SocialCalc, [@].concat([].slice.call(arguments)))
     SocialCalc.OrigScheduleSheetCommands = SocialCalc.ScheduleSheetCommands
