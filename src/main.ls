@@ -2,6 +2,7 @@
     @use \bodyParser, @app.router, @express.static __dirname
 
     @include \dotcloud
+    @include \player-broadcast
     @include \player
 
     DB = @include \db

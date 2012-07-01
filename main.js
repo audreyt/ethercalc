@@ -4,6 +4,7 @@
     var DB, SC, KEY, HMAC_CACHE, hmac, RealBin, sendFile, IO, TextType, JsonType, HtmlType, api;
     this.use('bodyParser', this.app.router, this.express['static'](__dirname));
     this.include('dotcloud');
+    this.include('player-broadcast');
     this.include('player');
     DB = this.include('db');
     SC = this.include('sc');
