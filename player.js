@@ -224,7 +224,7 @@
           window.spreadsheet = ss = ssInstance || (SocialCalc._view
             ? new SocialCalc.SpreadsheetViewer()
             : new SocialCalc.SpreadsheetControl());
-          if (ssInstance) {
+          if (!window.GraphOnClick) {
             return;
           }
           ss.ExportCallback = function(s){

@@ -137,7 +137,7 @@
             else
                 new SocialCalc.SpreadsheetControl!
         )
-        return if ssInstance
+        return unless window.GraphOnClick
 
         ss.ExportCallback = (s) ->
             alert SocialCalc.ConvertSaveToOtherFormat(SocialCalc.Clipboard.clipboard, "csv")
