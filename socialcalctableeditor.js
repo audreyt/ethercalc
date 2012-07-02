@@ -3505,10 +3505,24 @@ SocialCalc.InputBox.prototype.Select = function(t) {
    if (!this.element) return;
    switch (t) {
       case "end":
-         if (this.element.selectionStart!=undefined) {
+         if (document.selection && document.selection.createRange) {
+            /* IE 4+ - Safer than setting .selectionEnd as it also works for Textareas. */
+            try {
+               var range = document.selection.createRange().duplicate();
+               range.moveToElementText(this.element);
+               range.collapse(false);
+               range.select();
+            }
+            catch (e) {
+               if (this.element.selectionStart!=undefined) {
+                  this.element.selectionStart=this.element.value.length;
+                  this.element.selectionEnd=this.element.value.length;
+               }
+            }
+         } else if (this.element.selectionStart!=undefined) {
             this.element.selectionStart=this.element.value.length;
             this.element.selectionEnd=this.element.value.length;
-            }
+         }
          break;
       }
    };
