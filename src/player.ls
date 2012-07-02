@@ -1,4 +1,4 @@
-@include = -> @client '/player.js': ->
+@include = -> @client '/player/main.js': ->
     $ = window.jQuery || window.$ || alert('jQuery not available')
     doPlay = ~>
         window.SocialCalc ?= {}
@@ -62,7 +62,7 @@
                 find = new RegExp peerClass, \g
                 cr     = SocialCalc.coordToCr ecell
                 cell = SocialCalc.GetEditorCellElement editor, cr.row, cr.col
-                if cell.element.className.search(find) == -1
+                if cell?element.className.search(find) == -1
                     cell.element.className += peerClass
             | \ecell
                 peerClass = " #{@data.user} defaultPeer"
@@ -137,6 +137,12 @@
             else
                 new SocialCalc.SpreadsheetControl!
         )
+
+        if window.CryptoJS
+            ss.editor?SettingsCallbacks.ethercalc =
+                save: -> "ethercalc:#{CryptoJS.MD5 ss.sheet.CreateSheetSave!}\n"
+                load: (...args) -> alert JSON.stringify args
+
         return unless window.GraphOnClick
 
         ss.ExportCallback = (s) ->

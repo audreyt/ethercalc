@@ -1,4 +1,4 @@
-@include = -> @client '/player-graph.js': ->
+@include = -> @client '/player/graph.js': ->
     $ = window.jQuery || window.$ || alert('jQuery not available')
     SocialCalc = window.SocialCalc || alert 'Cannot find window.SocialCalc'
 

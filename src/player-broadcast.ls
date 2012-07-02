@@ -1,4 +1,4 @@
-@include = -> @client '/player-broadcast.js': ->
+@include = -> @client '/player/broadcast.js': ->
     SocialCalc = window.SocialCalc || alert 'Cannot find window.SocialCalc'
 
     return if SocialCalc?OrigDoPositionCalculations

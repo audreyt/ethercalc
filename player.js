@@ -1,7 +1,8 @@
 (function(){
+  var __slice = [].slice;
   this.include = function(){
     return this.client({
-      '/player.js': function(){
+      '/player/main.js': function(){
         var $, doPlay, onLoad, __ref, __this = this;
         $ = window.jQuery || window.$ || alert('jQuery not available');
         doPlay = function(){
@@ -104,7 +105,7 @@
                   find = new RegExp(peerClass, 'g');
                   cr = SocialCalc.coordToCr(ecell);
                   cell = SocialCalc.GetEditorCellElement(editor, cr.row, cr.col);
-                  if (cell.element.className.search(find) === -1) {
+                  if ((cell != null ? cell.element.className.search(find) : void 8) === -1) {
                     cell.element.className += peerClass;
                   }
                 }
@@ -224,6 +225,20 @@
           window.spreadsheet = ss = ssInstance || (SocialCalc._view
             ? new SocialCalc.SpreadsheetViewer()
             : new SocialCalc.SpreadsheetControl());
+          if (window.CryptoJS) {
+            if ((__ref = ss.editor) != null) {
+              __ref.SettingsCallbacks.ethercalc = {
+                save: function(){
+                  return "ethercalc:" + CryptoJS.MD5(ss.sheet.CreateSheetSave()) + "\n";
+                },
+                load: function(){
+                  var args;
+                  args = __slice.call(arguments);
+                  return alert(JSON.stringify(args));
+                }
+              };
+            }
+          }
           if (!window.GraphOnClick) {
             return;
           }

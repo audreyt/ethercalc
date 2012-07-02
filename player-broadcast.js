@@ -1,7 +1,7 @@
 (function(){
   this.include = function(){
     return this.client({
-      '/player-broadcast.js': function(){
+      '/player/broadcast.js': function(){
         var SocialCalc;
         SocialCalc = window.SocialCalc || alert('Cannot find window.SocialCalc');
         if (SocialCalc != null && SocialCalc.OrigDoPositionCalculations) {

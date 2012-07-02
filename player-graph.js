@@ -1,7 +1,7 @@
 (function(){
   this.include = function(){
     return this.client({
-      '/player-graph.js': function(){
+      '/player/graph.js': function(){
         var $, SocialCalc, colorIndex, getBarColor, getDrawColor, UpdateGraphRangeProposal, GraphSetCells, DoGraph, GraphChanged, MinMaxChanged, GraphSave, GraphLoad, GraphVerticalBar, GraphHorizontalBar, MakePieChart, MakeLineChart, MakeScatterChart, scc, b1, b2, b3, b4, b5;
         $ = window.jQuery || window.$ || alert('jQuery not available');
         SocialCalc = window.SocialCalc || alert('Cannot find window.SocialCalc');
