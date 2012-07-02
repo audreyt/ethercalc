@@ -448,8 +448,8 @@ SocialCalc.CreateTableEditor = function(editor, width, height) {
    editor.height = height;
 
    editor.griddiv = document.createElement("div");
-   editor.tablewidth = width - scc.defaultTableControlThickness;
-   editor.tableheight = height - scc.defaultTableControlThickness;
+   editor.tablewidth = Math.max(0, width - scc.defaultTableControlThickness);
+   editor.tableheight = Math.max(0, height - scc.defaultTableControlThickness);
    editor.griddiv.style.width = editor.tablewidth+"px";
    editor.griddiv.style.height = editor.tableheight+"px";
    editor.griddiv.style.overflow = "hidden";
@@ -567,8 +567,8 @@ SocialCalc.ResizeTableEditor = function(editor, width, height) {
    editor.toplevel.style.width = width+"px";
    editor.toplevel.style.height = height+"px";
 
-   editor.tablewidth = width - scc.defaultTableControlThickness;
-   editor.tableheight = height - scc.defaultTableControlThickness;
+   editor.tablewidth = Math.max(0, width - scc.defaultTableControlThickness);
+   editor.tableheight = Math.max(0, height - scc.defaultTableControlThickness);
    editor.griddiv.style.width=editor.tablewidth+"px";
    editor.griddiv.style.height=editor.tableheight+"px";
 
