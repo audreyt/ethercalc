@@ -4,8 +4,8 @@
         window.SocialCalc ?= {}
         SocialCalc._username = Math.random!toString!
         SocialCalc.isConnected = true
-        SocialCalc.hadSnapshot = false
-        SocialCalc._auth = window.location.search?replace /\??auth=/ ''
+        if /\?auth=/.test window.location.search
+            SocialCalc._auth = window.location.search?replace /\??auth=/ ''
         SocialCalc._view = SocialCalc._auth is \0
         SocialCalc._room ?= window.location.hash.replace \# ''
         SocialCalc._room = "#{SocialCalc._room}".replace /^_+/ '' .replace /\?.*/ ''
@@ -40,7 +40,6 @@
             emit data
 
         SocialCalc.isConnected = true
-        SocialCalc.Callbacks.broadcast \ask.log
         SocialCalc.RecalcInfo.LoadSheet = (ref) ->
             ref = ref.replace /[^a-zA-Z0-9]+/g '' .toLowerCase!
             emit type: \ask.recalc, user: SocialCalc._username, room: ref
@@ -137,6 +136,7 @@
             else
                 new SocialCalc.SpreadsheetControl!
         )
+        SocialCalc.Callbacks.broadcast \ask.log
 
         return unless window.GraphOnClick
 

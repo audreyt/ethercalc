@@ -19,6 +19,7 @@
           md5 = function(it){
             return CryptoJS.MD5(it).toString();
           };
+          SocialCalc.hadSnapshot = true;
           SocialCalc.OrigLoadEditorSettings = SocialCalc.LoadEditorSettings;
           SocialCalc.LoadEditorSettings = function(editor, str, flags){
             editor.SettingsCallbacks.ethercalc = {
@@ -28,7 +29,9 @@
               load: function(editor, setting, line, flags){
                 var hash;
                 hash = line.replace(/^\w+:/, '');
-                if (hash !== md5(editor.context.sheetobj.CreateSheetSave())) {
+                if (hash === md5(editor.context.sheetobj.CreateSheetSave())) {
+                  return SocialCalc.hadSnapshot = false;
+                } else {
                   return SocialCalc.hadSnapshot = true;
                 }
               }
@@ -36,6 +39,8 @@
             SocialCalc.LoadEditorSettings = SocialCalc.OrigLoadEditorSettings;
             return SocialCalc.OrigLoadEditorSettings(editor, str, flags);
           };
+        } else {
+          SocialCalc.hadSnapshot = false;
         }
         SocialCalc.OrigSizeSSDiv = SocialCalc.SizeSSDiv;
         SocialCalc.SizeSSDiv = function(spreadsheet){

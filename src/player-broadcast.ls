@@ -11,6 +11,7 @@
 
     if window.CryptoJS
         md5 = -> CryptoJS.MD5 it .toString!
+        SocialCalc.hadSnapshot = true
         SocialCalc.OrigLoadEditorSettings = SocialCalc.LoadEditorSettings
         SocialCalc.LoadEditorSettings = (editor, str, flags) ->
             editor.SettingsCallbacks.ethercalc =
@@ -19,11 +20,15 @@
                 }\n"
                 load: (editor, setting, line, flags) ->
                     hash = line.replace /^\w+:/ ''
-                    if hash isnt md5 editor.context.sheetobj.CreateSheetSave!
+                    if hash is md5 editor.context.sheetobj.CreateSheetSave!
+                        SocialCalc.hadSnapshot = false
+                    else
                         # TODO: Save back to session
                         SocialCalc.hadSnapshot = true
             SocialCalc.LoadEditorSettings = SocialCalc.OrigLoadEditorSettings
             SocialCalc.OrigLoadEditorSettings(editor, str, flags)
+    else
+        SocialCalc.hadSnapshot = false
 
     SocialCalc.OrigSizeSSDiv = SocialCalc.SizeSSDiv
     SocialCalc.SizeSSDiv = (spreadsheet) ->

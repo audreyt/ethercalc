@@ -9,8 +9,9 @@
           window.SocialCalc == null && (window.SocialCalc = {});
           SocialCalc._username = Math.random().toString();
           SocialCalc.isConnected = true;
-          SocialCalc.hadSnapshot = false;
-          SocialCalc._auth = (__ref = window.location.search) != null ? __ref.replace(/\??auth=/, '') : void 8;
+          if (/\?auth=/.test(window.location.search)) {
+            SocialCalc._auth = (__ref = window.location.search) != null ? __ref.replace(/\??auth=/, '') : void 8;
+          }
           SocialCalc._view = SocialCalc._auth === '0';
           SocialCalc._room == null && (SocialCalc._room = window.location.hash.replace('#', ''));
           SocialCalc._room = (SocialCalc._room + "").replace(/^_+/, '').replace(/\?.*/, '');
@@ -58,7 +59,6 @@
             return emit(data);
           };
           SocialCalc.isConnected = true;
-          SocialCalc.Callbacks.broadcast('ask.log');
           SocialCalc.RecalcInfo.LoadSheet = function(ref){
             var ref;
             ref = ref.replace(/[^a-zA-Z0-9]+/g, '').toLowerCase();
@@ -224,6 +224,7 @@
           window.spreadsheet = ss = ssInstance || (SocialCalc._view
             ? new SocialCalc.SpreadsheetViewer()
             : new SocialCalc.SpreadsheetControl());
+          SocialCalc.Callbacks.broadcast('ask.log');
           if (!window.GraphOnClick) {
             return;
           }
