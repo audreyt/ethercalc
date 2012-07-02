@@ -2,7 +2,7 @@
   this.include = function(){
     return this.client({
       '/player/broadcast.js': function(){
-        var SocialCalc;
+        var SocialCalc, md5;
         SocialCalc = window.SocialCalc || alert('Cannot find window.SocialCalc');
         if (SocialCalc != null && SocialCalc.OrigDoPositionCalculations) {
           return;
@@ -15,6 +15,28 @@
             __ref.broadcast('ask.ecell');
           }
         };
+        if (window.CryptoJS) {
+          md5 = function(it){
+            return CryptoJS.MD5(it).toString();
+          };
+          SocialCalc.OrigLoadEditorSettings = SocialCalc.LoadEditorSettings;
+          SocialCalc.LoadEditorSettings = function(editor, str, flags){
+            editor.SettingsCallbacks.ethercalc = {
+              save: function(){
+                return "ethercalc:" + md5(editor.context.sheetobj.CreateSheetSave()) + "\n";
+              },
+              load: function(editor, setting, line, flags){
+                var hash;
+                hash = line.replace(/^\w+:/, '');
+                if (hash !== md5(editor.context.sheetobj.CreateSheetSave())) {
+                  return SocialCalc.hadSnapshot = true;
+                }
+              }
+            };
+            SocialCalc.LoadEditorSettings = SocialCalc.OrigLoadEditorSettings;
+            return SocialCalc.OrigLoadEditorSettings(editor, str, flags);
+          };
+        }
         SocialCalc.OrigSizeSSDiv = SocialCalc.SizeSSDiv;
         SocialCalc.SizeSSDiv = function(spreadsheet){
           if (!(spreadsheet != null && spreadsheet.parentNode)) {

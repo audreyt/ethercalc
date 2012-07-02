@@ -138,11 +138,6 @@
                 new SocialCalc.SpreadsheetControl!
         )
 
-        if window.CryptoJS
-            ss.editor?SettingsCallbacks.ethercalc =
-                save: -> "ethercalc:#{CryptoJS.MD5 ss.sheet.CreateSheetSave!}\n"
-                load: (...args) -> alert JSON.stringify args
-
         return unless window.GraphOnClick
 
         ss.ExportCallback = (s) ->

@@ -1,5 +1,4 @@
 (function(){
-  var __slice = [].slice;
   this.include = function(){
     return this.client({
       '/player/main.js': function(){
@@ -225,20 +224,6 @@
           window.spreadsheet = ss = ssInstance || (SocialCalc._view
             ? new SocialCalc.SpreadsheetViewer()
             : new SocialCalc.SpreadsheetControl());
-          if (window.CryptoJS) {
-            if ((__ref = ss.editor) != null) {
-              __ref.SettingsCallbacks.ethercalc = {
-                save: function(){
-                  return "ethercalc:" + CryptoJS.MD5(ss.sheet.CreateSheetSave()) + "\n";
-                },
-                load: function(){
-                  var args;
-                  args = __slice.call(arguments);
-                  return alert(JSON.stringify(args));
-                }
-              };
-            }
-          }
           if (!window.GraphOnClick) {
             return;
           }

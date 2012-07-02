@@ -9,6 +9,21 @@
         SocialCalc.Callbacks.broadcast? \ask.ecell
         return
 
+    if window.CryptoJS
+        md5 = -> CryptoJS.MD5 it .toString!
+        SocialCalc.OrigLoadEditorSettings = SocialCalc.LoadEditorSettings
+        SocialCalc.LoadEditorSettings = (editor, str, flags) ->
+            editor.SettingsCallbacks.ethercalc =
+                save: -> "ethercalc:#{
+                    md5 editor.context.sheetobj.CreateSheetSave!
+                }\n"
+                load: (editor, setting, line, flags) ->
+                    hash = line.replace /^\w+:/ ''
+                    if hash isnt md5 editor.context.sheetobj.CreateSheetSave!
+                        # TODO: Save back to session
+                        SocialCalc.hadSnapshot = true
+            SocialCalc.LoadEditorSettings = SocialCalc.OrigLoadEditorSettings
+            SocialCalc.OrigLoadEditorSettings(editor, str, flags)
 
     SocialCalc.OrigSizeSSDiv = SocialCalc.SizeSSDiv
     SocialCalc.SizeSSDiv = (spreadsheet) ->
