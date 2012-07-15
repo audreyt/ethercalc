@@ -10,6 +10,7 @@
     SC = @include \sc
 
     KEY = @KEY
+    BASEPATH = @BASEPATH
     HMAC_CACHE = {}
     hmac = if !KEY then -> it else -> HMAC_CACHE[it] ||= do
         encoder = require \crypto .createHmac \sha256 KEY
@@ -25,19 +26,19 @@
     @get '/': sendFile \index.html
     @get '/_new': ->
         room = require \uuid-pure .newId 10 36 .toLowerCase!
-        @response.redirect if KEY then "/#room/edit" else "/#room"
+        @response.redirect if KEY then "#BASEPATH/#room/edit" else "#BASEPATH/#room"
     @get '/_start': sendFile \start.html
     @get '/:room':
         if KEY then ->
             | @query.auth?length    => sendFile \index.html .call @
-            | otherwise             => @response.redirect "/#{ @params.room }?auth=0"
+            | otherwise             => @response.redirect "#BASEPATH/#{ @params.room }?auth=0"
         else sendFile \index.html
     @get '/:room/edit': ->
         room = @params.room
-        @response.redirect "/#room?auth=#{ hmac room }"
+        @response.redirect "#BASEPATH/#room?auth=#{ hmac room }"
     @get '/:room/view': ->
         room = @params.room
-        @response.redirect "/#room?auth=0"
+        @response.redirect "#BASEPATH/#room?auth=0"
 
     IO = @io
     TextType = { \Content-Type : 'text/plain; charset=utf-8' }

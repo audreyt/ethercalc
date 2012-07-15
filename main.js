@@ -1,7 +1,7 @@
 (function(){
   var __join = [].join;
   this.include = function(){
-    var DB, SC, KEY, HMAC_CACHE, hmac, RealBin, sendFile, IO, TextType, JsonType, HtmlType, api;
+    var DB, SC, KEY, BASEPATH, HMAC_CACHE, hmac, RealBin, sendFile, IO, TextType, JsonType, HtmlType, api;
     this.use('bodyParser', this.app.router, this.express['static'](__dirname));
     this.include('dotcloud');
     this.include('player-broadcast');
@@ -10,6 +10,7 @@
     DB = this.include('db');
     SC = this.include('sc');
     KEY = this.KEY;
+    BASEPATH = this.BASEPATH;
     HMAC_CACHE = {};
     hmac = !KEY
       ? function(it){
@@ -34,8 +35,8 @@
         var room;
         room = require('uuid-pure').newId(10, 36).toLowerCase();
         return this.response.redirect(KEY
-          ? "/" + room + "/edit"
-          : "/" + room);
+          ? BASEPATH + "/" + room + "/edit"
+          : BASEPATH + "/" + room);
       }
     });
     this.get({
@@ -49,7 +50,7 @@
           case !((__ref = this.query.auth) != null && __ref.length):
             return sendFile('index.html').call(this);
           default:
-            return this.response.redirect("/" + this.params.room + "?auth=0");
+            return this.response.redirect(BASEPATH + "/" + this.params.room + "?auth=0");
           }
         }
         : sendFile('index.html')
@@ -58,14 +59,14 @@
       '/:room/edit': function(){
         var room;
         room = this.params.room;
-        return this.response.redirect("/" + room + "?auth=" + hmac(room));
+        return this.response.redirect(BASEPATH + "/" + room + "?auth=" + hmac(room));
       }
     });
     this.get({
       '/:room/view': function(){
         var room;
         room = this.params.room;
-        return this.response.redirect("/" + room + "?auth=0");
+        return this.response.redirect(BASEPATH + "/" + room + "?auth=0");
       }
     });
     IO = this.io;
