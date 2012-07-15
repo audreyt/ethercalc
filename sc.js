@@ -1,5 +1,5 @@
 (function(){
-  var vm, fs, path, bootSC;
+  var vm, fs, path, bootSC, __replace = ''.replace;
   vm = require('vm');
   fs = require('fs');
   path = require('path');
@@ -76,8 +76,8 @@
       SocialCalc.Popup.Initialize = function(){};
       vm.runInContext('ss = new SocialCalc.SpreadsheetControl', sandbox);
       SocialCalc.RecalcInfo.LoadSheet = function(ref){
-        var serialization, parts;
-        __compose((ref),(replace(/[^a-zA-Z0-9]+/g, '').toLowerCase()));
+        var ref, serialization, parts;
+        ref = (__replace.call(ref, /[^a-zA-Z0-9]+/g, '')).toLowerCase();
         if (SC[ref]) {
           serialization = SC[ref].CreateSpreadsheetSave();
           parts = SC[ref].DecodeSpreadsheetSave(serialization);
@@ -143,9 +143,4 @@
     };
     return SC;
   };
-  function __compose(f, g){
-    return function(){
-      return f(g.apply(this, arguments)); 
-    }
-  }
 }).call(this);

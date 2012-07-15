@@ -50,7 +50,7 @@ global.SC ?= {}
         SocialCalc.Popup.Initialize = ->
         vm.runInContext 'ss = new SocialCalc.SpreadsheetControl', sandbox
         SocialCalc.RecalcInfo.LoadSheet = (ref) ->
-            ref .= replace /[^a-zA-Z0-9]+/g '' .toLowerCase!
+            ref = (ref - /[^a-zA-Z0-9]+/g).toLowerCase!
             if SC[ref]
                 serialization = SC[ref].CreateSpreadsheetSave!
                 parts = SC[ref].DecodeSpreadsheetSave serialization
