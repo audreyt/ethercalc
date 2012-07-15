@@ -116,7 +116,7 @@
                 if ss.currentTab is ss.tabnums?graph
                     setTimeout do
                         -> window.DoGraph false false
-                        100
+                        100ms
 
     window.doresize = !-> window.spreadsheet?DoOnResize!
     $ ->
