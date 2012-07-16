@@ -54,7 +54,7 @@
         };
         SocialCalc.OrigScheduleSheetCommands = SocialCalc.ScheduleSheetCommands;
         SocialCalc.ScheduleSheetCommands = function(sheet, cmdstr, saveundo, isRemote){
-          var cmdstr, __ref;
+          var __ref;
           cmdstr = cmdstr.replace(/\n\n+/g, '\n');
           if (!/\S/.test(cmdstr)) {
             return;
@@ -70,7 +70,7 @@
           return SocialCalc.OrigScheduleSheetCommands(sheet, cmdstr, saveundo, isRemote);
         };
         return SocialCalc.MoveECell = function(editor, newcell){
-          var newcell, highlights, cell, f, __ref;
+          var highlights, cell, f, __ref;
           highlights = editor.context.highlights;
           if (editor.ecell) {
             if (editor.ecell.coord === newcell) {

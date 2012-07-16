@@ -269,7 +269,7 @@
           ctx.font = "10pt bold Arial";
           maxheight = canv.height - 60;
           totalwidth = canv.width;
-          colors = (["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]).concat(["a", "b", "c", "d", "e", "f"]);
+          colors = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"].concat(["a", "b", "c", "d", "e", "f"]);
           barColor = getBarColor();
           ctx.fillStyle = '#' + barColor;
           colorList = [barColor];
@@ -385,7 +385,7 @@
           ctx.font = "10pt bold Arial";
           maxheight = canv.height - 60;
           totalwidth = canv.width;
-          colors = (["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]).concat(["a", "b", "c", "d", "e", "f"]);
+          colors = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"].concat(["a", "b", "c", "d", "e", "f"]);
           barColor = getBarColor();
           ctx.fillStyle = "#" + barColor;
           colorList = [barColor];
@@ -485,7 +485,7 @@
           rad = centerY - 50;
           textRad = rad * 1.1;
           lastStart = 0;
-          colors = (["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]).concat(["a", "b", "c", "d", "e", "f"]);
+          colors = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"].concat(["a", "b", "c", "d", "e", "f"]);
           i = 0;
           while (i < values.length) {
             if (Number(values[i]) === 0) {
@@ -526,7 +526,7 @@
           values = [];
           labels = [];
           total = 0;
-          colors = (["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]).concat(["a", "b", "c", "d", "e", "f"]);
+          colors = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"].concat(["a", "b", "c", "d", "e", "f"]);
           shapes = ['s', 'o', 'c'];
           if (range.left === range.right) {
             nitems = range.bottom - range.top + 1;
@@ -708,7 +708,7 @@
           values = [];
           labels = [];
           total = 0;
-          colors = (["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]).concat(["a", "b", "c", "d", "e", "f"]);
+          colors = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"].concat(["a", "b", "c", "d", "e", "f"]);
           if (range.left === range.right) {
             nitems = range.bottom - range.top + 1;
             byrow = true;

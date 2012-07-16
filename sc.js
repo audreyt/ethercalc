@@ -37,7 +37,7 @@
       });
     };
     SC._init = function(snapshot, log, DB, room, io){
-      var log, sandbox, SocialCalc, ss, div, parts, line, cmdstr;
+      var sandbox, SocialCalc, ss, div, parts, line, cmdstr;
       log == null && (log = []);
       if (SC[room] != null) {
         SC[room]._doClearCache();
@@ -76,7 +76,7 @@
       SocialCalc.Popup.Initialize = function(){};
       vm.runInContext('ss = new SocialCalc.SpreadsheetControl', sandbox);
       SocialCalc.RecalcInfo.LoadSheet = function(ref){
-        var ref, serialization, parts;
+        var serialization, parts;
         ref = (__replace.call(ref, /[^a-zA-Z0-9]+/g, '')).toLowerCase();
         if (SC[ref]) {
           serialization = SC[ref].CreateSpreadsheetSave();

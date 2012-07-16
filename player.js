@@ -45,7 +45,6 @@
             });
           };
           SocialCalc.Callbacks.broadcast = function(type, data){
-            var data;
             data == null && (data = {});
             if (!SocialCalc.isConnected) {
               return;
@@ -60,7 +59,6 @@
           };
           SocialCalc.isConnected = true;
           SocialCalc.RecalcInfo.LoadSheet = function(ref){
-            var ref;
             ref = ref.replace(/[^a-zA-Z0-9]+/g, '').toLowerCase();
             return emit({
               type: 'ask.recalc',
