@@ -2,15 +2,15 @@
   this.include = function(){
     return this.client({
       '/player/main.js': function(){
-        var $, doPlay, onLoad, __ref, __this = this;
+        var $, doPlay, onLoad, ref$, this$ = this;
         $ = window.jQuery || window.$ || alert('jQuery not available');
         doPlay = function(){
-          var emit, __ref;
+          var ref$, emit;
           window.SocialCalc == null && (window.SocialCalc = {});
           SocialCalc._username = Math.random().toString();
           SocialCalc.isConnected = true;
           if (/\?auth=/.test(window.location.search)) {
-            SocialCalc._auth = (__ref = window.location.search) != null ? __ref.replace(/\??auth=/, '') : void 8;
+            SocialCalc._auth = (ref$ = window.location.search) != null ? ref$.replace(/\??auth=/, '') : void 8;
           }
           SocialCalc._view = SocialCalc._auth === '0';
           SocialCalc._room == null && (SocialCalc._room = window.location.hash.replace('#', ''));
@@ -33,14 +33,14 @@
                   return '';
                 }
               }()));
-            } catch (__e) {}
+            } catch (e$) {}
           } else {
             window.location = '/_start';
             return;
           }
-          __this.connect(($('script[src*="socket.io/socket.io.js"]').attr('src') + "").replace(/socket.io\/socket.io.js.*/, ''));
+          this$.connect(($('script[src*="socket.io/socket.io.js"]').attr('src') + "").replace(/socket.io\/socket.io.js.*/, ''));
           emit = function(data){
-            return __this.emit({
+            return this$.emit({
               data: data
             });
           };
@@ -66,9 +66,9 @@
               room: ref
             });
           };
-          return __this.on({
+          return this$.on({
             data: function(){
-              var ss, editor, user, ecell, peerClass, find, cr, cell, origCR, origCell, parts, line, cmdstr, refreshCmd, __ref;
+              var ss, editor, user, ref$, ecell, peerClass, find, cr, cell, origCR, origCell, parts, line, cmdstr, refreshCmd;
               if (!((typeof SocialCalc != 'undefined' && SocialCalc !== null) && SocialCalc.isConnected)) {
                 return;
               }
@@ -93,8 +93,8 @@
                 }
                 break;
               case 'ecells':
-                for (user in __ref = this.data.ecells) {
-                  ecell = __ref[user];
+                for (user in ref$ = this.data.ecells) {
+                  ecell = ref$[user];
                   if (user === SocialCalc._username) {
                     continue;
                   }
@@ -149,14 +149,14 @@
                   window.addmsg(this.data.chat.join('\n'), true);
                 }
                 cmdstr = (function(){
-                  var __i, __ref, __len, __results = [];
-                  for (__i = 0, __len = (__ref = this.data.log).length; __i < __len; ++__i) {
-                    line = __ref[__i];
+                  var i$, ref$, len$, results$ = [];
+                  for (i$ = 0, len$ = (ref$ = this.data.log).length; i$ < len$; ++i$) {
+                    line = ref$[i$];
                     if (!/^re(calc|display)$/.test(line)) {
-                      __results.push(line);
+                      results$.push(line);
                     }
                   }
-                  return __results;
+                  return results$;
                 }.call(this)).join('\n');
                 if (cmdstr.length) {
                   refreshCmd = 'recalc';
@@ -184,7 +184,7 @@
                 break;
               case 'execute':
                 ss.context.sheetobj.ScheduleSheetCommands(this.data.cmdstr, this.data.saveundo, true);
-                if (ss.currentTab === ((__ref = ss.tabnums) != null ? __ref.graph : void 8)) {
+                if (ss.currentTab === ((ref$ = ss.tabnums) != null ? ref$.graph : void 8)) {
                   setTimeout(function(){
                     return window.DoGraph(false, false);
                   }, 100);
@@ -194,20 +194,20 @@
           });
         };
         window.doresize = function(){
-          var __ref;
-          if ((__ref = window.spreadsheet) != null) {
-            __ref.DoOnResize();
+          var ref$;
+          if ((ref$ = window.spreadsheet) != null) {
+            ref$.DoOnResize();
           }
         };
         $(function(){
-          var $container, __ref, __ref1;
-          if (!((typeof Drupal != 'undefined' && Drupal !== null) && ((__ref = Drupal.sheetnode) != null && ((__ref1 = __ref.sheetviews) != null && __ref1.length)))) {
+          var ref$, ref1$, $container;
+          if (!((typeof Drupal != 'undefined' && Drupal !== null) && ((ref$ = Drupal.sheetnode) != null && ((ref1$ = ref$.sheetviews) != null && ref1$.length)))) {
             return onLoad();
           }
           $container = Drupal.sheetnode.sheetviews[0].$container;
-          return $container.bind('sheetnodeReady', function(_, __arg){
+          return $container.bind('sheetnodeReady', function(_, arg$){
             var spreadsheet;
-            spreadsheet = __arg.spreadsheet;
+            spreadsheet = arg$.spreadsheet;
             if (spreadsheet.tabbackground === 'display:none;') {
               if (spreadsheet.InitializeSpreadsheetControl) {
                 return;
@@ -218,7 +218,7 @@
           });
         });
         onLoad = function(ssInstance){
-          var ss, __ref;
+          var ss, ref$;
           window.spreadsheet = ss = ssInstance || (SocialCalc._view
             ? new SocialCalc.SpreadsheetViewer()
             : new SocialCalc.SpreadsheetControl());
@@ -232,8 +232,8 @@
           if (ss.tabs) {
             ss.tabnums.graph = ss.tabs.length;
           }
-          if ((__ref = ss.tabs) != null) {
-            __ref.push({
+          if ((ref$ = ss.tabs) != null) {
+            ref$.push({
               name: 'graph',
               text: SocialCalc.Constants.s_loc_graph,
               html: "<div id=\"%id.graphtools\" style=\"display:none;\"><div style=\"%tbt.\"><table cellspacing=\"0\" cellpadding=\"0\"><tr><td style=\"vertical-align:middle;padding-right:32px;padding-left:16px;\"><div style=\"%tbt.\">Cells to Graph</div><div id=\"%id.graphrange\" style=\"font-weight:bold;\">Not Set</div></td><td style=\"vertical-align:top;padding-right:32px;\"><div style=\"%tbt.\">Set Cells To Graph</div><select id=\"%id.graphlist\" size=\"1\" onfocus=\"%s.CmdGotFocus(this);\"><option selected>[select range]</option></select></td><td style=\"vertical-align:middle;padding-right:4px;\"><div style=\"%tbt.\">Graph Type</div><select id=\"%id.graphtype\" size=\"1\" onchange=\"window.GraphChanged(this);\" onfocus=\"%s.CmdGotFocus(this);\"></select><input type=\"button\" value=\"OK\" onclick=\"window.GraphSetCells();\" style=\"font-size:x-small;\"></div></td><td style=\"vertical-align:middle;padding-right:16px;\"><div style=\"%tbt.\">&nbsp;</div><input id=\"%id.graphhelp\" type=\"button\" onclick=\"DoGraph(true);\" value=\"Help\" style=\"font-size:x-small;\"></div></td><td style=\"vertical-align:middle;padding-right:16px;\">Min X <input id=\"%id.graphMinX\" onchange=\"window.MinMaxChanged(this,0);\" onfocus=\"%s.CmdGotFocus(this);\" size=5/>Max X <input id=\"%id.graphMaxX\" onchange=\"window.MinMaxChanged(this,1);\" onfocus=\"%s.CmdGotFocus(this);\" size=5/><br/>Min Y <input id=\"%id.graphMinY\" onchange=\"window.MinMaxChanged(this,2);\" onfocus=\"%s.CmdGotFocus(this);\" size=5/>Max Y <input id=\"%id.graphMaxY\" onchange=\"window.MinMaxChanged(this,3);\" onfocus=\"%s.CmdGotFocus(this);\" size=5/></div></td></tr></table></div></div>",
@@ -242,16 +242,16 @@
               onclickFocus: true
             });
           }
-          if ((__ref = ss.views) != null) {
-            __ref.graph = {
+          if ((ref$ = ss.views) != null) {
+            ref$.graph = {
               name: 'graph',
               divStyle: "overflow:auto;",
               values: {},
               html: '<div style="padding:6px;">Graph View</div>'
             };
           }
-          if ((__ref = ss.editor) != null) {
-            __ref.SettingsCallbacks.graph = {
+          if ((ref$ = ss.editor) != null) {
+            ref$.SettingsCallbacks.graph = {
               save: window.GraphSave,
               load: window.GraphLoad
             };
@@ -277,7 +277,7 @@
             return window.open("/_/" + SocialCalc._room + "/html");
           });
         };
-        if ((__ref = window.Document) != null && __ref.Parser) {
+        if ((ref$ = window.Document) != null && ref$.Parser) {
           SocialCalc.Callbacks.expand_wiki = function(val){
             return "<div class=\"wiki\">" + new Document.Parser.Wikitext().parse(val, new Document.Emitter.HTML()) + "</div>";
           };

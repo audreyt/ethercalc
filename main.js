@@ -1,5 +1,5 @@
 (function(){
-  var __join = [].join;
+  var join$ = [].join;
   this.include = function(){
     var DB, SC, KEY, BASEPATH, HMAC_CACHE, hmac, RealBin, sendFile, IO, TextType, JsonType, HtmlType, api;
     this.use('bodyParser', this.app.router, this.express['static'](__dirname));
@@ -45,9 +45,9 @@
     this.get({
       '/:room': KEY
         ? function(){
-          var __ref;
+          var ref$;
           switch (false) {
-          case !((__ref = this.query.auth) != null && __ref.length):
+          case !((ref$ = this.query.auth) != null && ref$.length):
             return sendFile('index.html').call(this);
           default:
             return this.response.redirect(BASEPATH + "/" + this.params.room + "?auth=0");
@@ -81,15 +81,15 @@
     };
     api = function(cb){
       return function(){
-        var __this = this;
-        return SC._get(this.params.room, IO, function(__arg){
-          var snapshot, type, content, __ref;
-          snapshot = __arg.snapshot;
+        var this$ = this;
+        return SC._get(this.params.room, IO, function(arg$){
+          var snapshot, ref$, type, content;
+          snapshot = arg$.snapshot;
           if (snapshot) {
-            __ref = cb.call(__this.params, snapshot), type = __ref[0], content = __ref[1];
-            return __this.response.send(content, type, 200);
+            ref$ = cb.call(this$.params, snapshot), type = ref$[0], content = ref$[1];
+            return this$.response.send(content, type, 200);
           } else {
-            return __this.response.send('', TextType, 404);
+            return this$.response.send('', TextType, 404);
           }
         });
       };
@@ -106,8 +106,8 @@
     });
     this.get({
       '/_/:room/html': api(function(){
-        var __ref;
-        return [HtmlType, (__ref = SC[this.room]) != null ? __ref.CreateSheetHTML() : void 8];
+        var ref$;
+        return [HtmlType, (ref$ = SC[this.room]) != null ? ref$.CreateSheetHTML() : void 8];
       })
     });
     this.get({
@@ -117,22 +117,22 @@
     });
     this.put({
       '/_/:room': function(){
-        var buf, __this = this;
+        var buf, this$ = this;
         buf = '';
         this.request.setEncoding('utf8');
         this.request.on('data', function(chunk){
           return buf += chunk;
         });
         return this.request.on('end', function(){
-          return SC._put(__this.params.room, buf, function(){
-            return __this.response.send('OK', TextType, 201);
+          return SC._put(this$.params.room, buf, function(){
+            return this$.response.send('OK', TextType, 201);
           });
         });
       }
     });
     this.post({
       '/_/:room': function(){
-        var room, command, __this = this;
+        var room, command, this$ = this;
         room = this.params.room;
         command = this.body.command;
         if (!command) {
@@ -142,16 +142,16 @@
           command = [command];
         }
         return SC._get(room, IO, function(){
-          var __ref;
-          if ((__ref = SC[room]) != null) {
-            __ref.ExecuteCommand(__join.call(command, '\n'));
+          var ref$;
+          if ((ref$ = SC[room]) != null) {
+            ref$.ExecuteCommand(join$.call(command, '\n'));
           }
           IO.sockets['in']("log-" + room).emit('data', {
             type: 'execute',
-            cmdstr: __join.call(command, '\n'),
+            cmdstr: join$.call(command, '\n'),
             room: room
           });
-          return __this.response.send(JSON.stringify({
+          return this$.response.send(JSON.stringify({
             command: command
           }), JsonType, 202);
         });
@@ -159,32 +159,32 @@
     });
     this.post({
       '/:room': function(){
-        var room, snapshot, __ref, __this = this;
-        __ref = this.body, room = __ref.room, snapshot = __ref.snapshot;
+        var ref$, room, snapshot, this$ = this;
+        ref$ = this.body, room = ref$.room, snapshot = ref$.snapshot;
         return SC._put(room, snapshot, function(){
-          return __this.response.send('OK', TextType, 201);
+          return this$.response.send('OK', TextType, 201);
         });
       }
     });
     return this.on({
       data: function(){
-        var room, msg, user, ecell, cmdstr, type, auth, reply, broadcast, __ref, __this = this;
-        __ref = this.data, room = __ref.room, msg = __ref.msg, user = __ref.user, ecell = __ref.ecell, cmdstr = __ref.cmdstr, type = __ref.type, auth = __ref.auth;
+        var ref$, room, msg, user, ecell, cmdstr, type, auth, reply, broadcast, this$ = this;
+        ref$ = this.data, room = ref$.room, msg = ref$.msg, user = ref$.user, ecell = ref$.ecell, cmdstr = ref$.cmdstr, type = ref$.type, auth = ref$.auth;
         room = (room + "").replace(/^_+/, '');
         reply = function(data){
-          return __this.emit({
+          return this$.emit({
             data: data
           });
         };
         broadcast = function(data){
-          return __this.socket.broadcast.to(__this.data.to
-            ? "user-" + __this.data.to
+          return this$.socket.broadcast.to(this$.data.to
+            ? "user-" + this$.data.to
             : "log-" + room).emit('data', data);
         };
         switch (type) {
         case 'chat':
           DB.rpush("chat-" + room, msg, function(){
-            return broadcast(__this.data);
+            return broadcast(this$.data);
           });
           break;
         case 'ask.ecells':
@@ -204,20 +204,20 @@
             return;
           }
           DB.multi().rpush("log-" + room, cmdstr).rpush("audit-" + room, cmdstr).bgsave().exec(function(){
-            var __ref;
-            if ((__ref = SC[room]) != null) {
-              __ref.ExecuteCommand(cmdstr);
+            var ref$;
+            if ((ref$ = SC[room]) != null) {
+              ref$.ExecuteCommand(cmdstr);
             }
-            return broadcast(__this.data);
+            return broadcast(this$.data);
           });
           break;
         case 'ask.log':
           this.socket.join("log-" + room);
           this.socket.join("user-" + user);
-          DB.multi().get("snapshot-" + room).lrange("log-" + room, 0, -1).lrange("chat-" + room, 0, -1).exec(function(_, __arg){
+          DB.multi().get("snapshot-" + room).lrange("log-" + room, 0, -1).lrange("chat-" + room, 0, -1).exec(function(_, arg$){
             var snapshot, log, chat;
-            snapshot = __arg[0], log = __arg[1], chat = __arg[2];
-            SC[room] = SC._init(snapshot, log, DB, room, __this.io);
+            snapshot = arg$[0], log = arg$[1], chat = arg$[2];
+            SC[room] = SC._init(snapshot, log, DB, room, this$.io);
             return reply({
               type: 'log',
               room: room,
@@ -229,9 +229,9 @@
           break;
         case 'ask.recalc':
           this.socket.join("recalc." + room);
-          SC._get(room, this.io, function(__arg){
+          SC._get(room, this.io, function(arg$){
             var log, snapshot;
-            log = __arg.log, snapshot = __arg.snapshot;
+            log = arg$.log, snapshot = arg$.snapshot;
             return reply({
               type: 'recalc',
               room: room,
@@ -248,7 +248,7 @@
             return it + "-" + room;
           }), function(){
             delete SC[room];
-            return broadcast(__this.data);
+            return broadcast(this$.data);
           });
           break;
         case 'ecell':

@@ -1,5 +1,5 @@
 (function(){
-  var vm, fs, path, bootSC, __replace = ''.replace;
+  var vm, fs, path, bootSC, replace$ = ''.replace;
   vm = require('vm');
   fs = require('fs');
   path = require('path');
@@ -9,15 +9,15 @@
     var DB;
     DB = this.include('db');
     SC._get = function(room, io, cb){
-      var __ref, __this = this;
-      if ((__ref = SC[room]) != null && __ref._snapshot) {
+      var ref$, this$ = this;
+      if ((ref$ = SC[room]) != null && ref$._snapshot) {
         return cb({
           snapshot: SC[room]._snapshot
         });
       }
-      return DB.multi().get("snapshot-" + room).lrange("log-" + room, 0, -1).exec(function(_, __arg){
+      return DB.multi().get("snapshot-" + room).lrange("log-" + room, 0, -1).exec(function(_, arg$){
         var snapshot, log;
-        snapshot = __arg[0], log = __arg[1];
+        snapshot = arg$[0], log = arg$[1];
         if ((snapshot || log.length) && io) {
           SC[room] = SC._init(snapshot, log, DB, room, io);
         }
@@ -28,7 +28,7 @@
       });
     };
     SC._put = function(room, snapshot, cb){
-      var __this = this;
+      var this$ = this;
       if (!snapshot) {
         return typeof cb === 'function' ? cb() : void 8;
       }
@@ -49,13 +49,13 @@
         require: function(){
           try {
             return require('jsdom');
-          } catch (__e) {}
+          } catch (e$) {}
         },
         console: console
       });
       try {
         vm.runInContext(bootSC, sandbox);
-      } catch (__e) {}
+      } catch (e$) {}
       if (!sandbox.SocialCalc) {
         console.log('==> Cannot load jsdom/contextify; falling back to log-only mode without support for ="page"!A1 refs');
         SC._init = function(){
@@ -77,7 +77,7 @@
       vm.runInContext('ss = new SocialCalc.SpreadsheetControl', sandbox);
       SocialCalc.RecalcInfo.LoadSheet = function(ref){
         var serialization, parts;
-        ref = (__replace.call(ref, /[^a-zA-Z0-9]+/g, '')).toLowerCase();
+        ref = (replace$.call(ref, /[^a-zA-Z0-9]+/g, '')).toLowerCase();
         if (SC[ref]) {
           serialization = SC[ref].CreateSpreadsheetSave();
           parts = SC[ref].DecodeSpreadsheetSave(serialization);
@@ -98,7 +98,7 @@
       };
       ss.editor.StatusCallback.EtherCalc = {
         func: function(editor, status, arg){
-          var newSnapshot, __this = this;
+          var newSnapshot, this$ = this;
           if (!(status === 'doneposcalc' && !ss.editor.busy)) {
             return;
           }
@@ -126,14 +126,14 @@
         ss.ParseSheetSave(snapshot.substring(parts.sheet.start, parts.sheet.end));
       }
       cmdstr = (function(){
-        var __i, __ref, __len, __results = [];
-        for (__i = 0, __len = (__ref = log).length; __i < __len; ++__i) {
-          line = __ref[__i];
+        var i$, ref$, len$, results$ = [];
+        for (i$ = 0, len$ = (ref$ = log).length; i$ < len$; ++i$) {
+          line = ref$[i$];
           if (!/^re(calc|display)$/.test(line)) {
-            __results.push(line);
+            results$.push(line);
           }
         }
-        return __results;
+        return results$;
       }()).join('\n');
       if (cmdstr.length) {
         cmdstr += "\n";

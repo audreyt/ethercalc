@@ -48,8 +48,8 @@
             hset: (key, idx, val) -> (db.DB[key] ?= [])[idx] = val; cb?!
             hgetall: (key, cb) -> cb?(null, db.DB[key] ?= {})
             del: (keys, cb) ->
-                | Array.isArray keys    => for key in keys => delete db.DB[key]
-                | otherwise             => delete db.DB[keys]
+                if Array.isArray keys   => for key in keys => delete db.DB[key]
+                else                    => delete db.DB[keys]
                 cb?!
         db <<<< Commands
         db.multi = (...cmds) ->

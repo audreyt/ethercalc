@@ -522,7 +522,7 @@
           return profChartUrl = "chs=300x145&cht=p&chd=t:" + profChartUrl.substring(1) + "&chl=" + profChartLabels.substring(1);
         };
         MakeLineChart = function(spreadsheet, range, gview, gtype, helpflag, isResize){
-          var values, labels, total, colors, shapes, nitems, byrow, minX, maxX, minval, maxval, evenlySpaced, i, cr, cr1, cell, val, str, canv, ctx, scaleFactorX, scaleFactorY, lastX, lastY, profChart, topY, drawColor, colorArray, newIndex, colorMarkings, graphPlace, gChart, profChartUrl;
+          var values, labels, total, colors, shapes, nitems, byrow, minX, e, maxX, minval, maxval, evenlySpaced, i, cr, cr1, cell, val, str, canv, ctx, scaleFactorX, scaleFactorY, lastX, lastY, profChart, topY, drawColor, colorArray, newIndex, colorMarkings, graphPlace, gChart, profChartUrl;
           values = [];
           labels = [];
           total = 0;
@@ -538,22 +538,26 @@
           if (isResize) {
             try {
               minX = 1 * document.getElementById("SocialCalc-graphMinX").value;
-            } catch (e) {
+            } catch (e$) {
+              e = e$;
               minX = null;
             }
             try {
               maxX = 1 * document.getElementById("SocialCalc-graphMaxX").value;
-            } catch (e) {
+            } catch (e$) {
+              e = e$;
               maxX = null;
             }
             try {
               minval = 1 * document.getElementById("SocialCalc-graphMinY").value;
-            } catch (e) {
+            } catch (e$) {
+              e = e$;
               minval = null;
             }
             try {
               maxval = 1 * document.getElementById("SocialCalc-graphMaxY").value;
-            } catch (e) {
+            } catch (e$) {
+              e = e$;
               maxval = null;
             }
           }
@@ -704,7 +708,7 @@
           return profChartUrl = "chs=300x250" + colorMarkings + "&cht=lxy&chxt=x,y&chxr=0," + minX + "," + maxX + "|1," + minval + "," + maxval + "&chd=t:" + profChart.join("|");
         };
         MakeScatterChart = function(spreadsheet, range, gview, gtype, helpflag, isResize){
-          var values, labels, total, colors, nitems, byrow, minX, maxX, minval, maxval, evenlySpaced, dotSizes, i, cr, cr1, cr2, cell, val, str, canv, ctx, scaleFactorX, scaleFactorY, lastX, lastY, profChart, topY, drawColor, colorMarkings, graphPlace, gChart, profChartUrl;
+          var values, labels, total, colors, nitems, byrow, minX, e, maxX, minval, maxval, evenlySpaced, dotSizes, i, cr, cr1, cr2, cell, val, str, canv, ctx, scaleFactorX, scaleFactorY, lastX, lastY, profChart, topY, drawColor, colorMarkings, graphPlace, gChart, profChartUrl;
           values = [];
           labels = [];
           total = 0;
@@ -719,22 +723,26 @@
           if (isResize) {
             try {
               minX = 1 * document.getElementById("SocialCalc-graphMinX").value;
-            } catch (e) {
+            } catch (e$) {
+              e = e$;
               minX = null;
             }
             try {
               maxX = 1 * document.getElementById("SocialCalc-graphMaxX").value;
-            } catch (e) {
+            } catch (e$) {
+              e = e$;
               maxX = null;
             }
             try {
               minval = 1 * document.getElementById("SocialCalc-graphMinY").value;
-            } catch (e) {
+            } catch (e$) {
+              e = e$;
               minval = null;
             }
             try {
               maxval = 1 * document.getElementById("SocialCalc-graphMaxY").value;
-            } catch (e) {
+            } catch (e$) {
+              e = e$;
               maxval = null;
             }
           }

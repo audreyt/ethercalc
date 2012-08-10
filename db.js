@@ -1,18 +1,18 @@
 (function(){
-  var __slice = [].slice;
+  var slice$ = [].slice;
   this.__DB__ = null;
   this.include = function(){
-    var env, redisPort, redisHost, redisPass, services, name, items, db, __ref, __ref1;
+    var env, ref$, redisPort, redisHost, redisPass, services, name, items, ref1$, db;
     if (this.__DB__) {
       return this.__DB__;
     }
     env = process.env;
-    __ref = [env['REDIS_PORT'], env['REDIS_HOST'], env['REDIS_PASS']], redisPort = __ref[0], redisHost = __ref[1], redisPass = __ref[2];
+    ref$ = [env['REDIS_PORT'], env['REDIS_HOST'], env['REDIS_PASS']], redisPort = ref$[0], redisHost = ref$[1], redisPass = ref$[2];
     services = JSON.parse(process.env.VCAP_SERVICES || '{}');
     for (name in services) {
       items = services[name];
       if (/^redis/.test(name) && (items != null && items.length)) {
-        __ref1 = [(__ref = items[0].credentials)['port'], __ref['hostname'], __ref['password']], redisPort = __ref1[0], redisHost = __ref1[1], redisPass = __ref1[2];
+        ref1$ = [(ref$ = items[0].credentials)['port'], ref$['hostname'], ref$['password']], redisPort = ref1$[0], redisHost = ref1$[1], redisPass = ref1$[2];
       }
     }
     redisHost == null && (redisHost = 'localhost');
@@ -40,7 +40,7 @@
       try {
         db.DB = JSON.parse(require('fs').readFileSync('dump.json', 'utf8'));
         console.log("==> Restored previous session from JSON file");
-      } catch (__e) {}
+      } catch (e$) {}
       Commands = {
         bgsave: function(cb){
           fs.writeFileSync('dump.json', JSON.stringify(db.DB), 'utf8');
@@ -54,62 +54,61 @@
           return typeof cb === 'function' ? cb() : void 8;
         },
         rpush: function(key, val, cb){
-          var __ref, __ref1;
-          ((__ref1 = (__ref = db.DB)[key]) != null
-            ? __ref1
-            : __ref[key] = []).push(val);
+          var ref$, ref1$;
+          ((ref1$ = (ref$ = db.DB)[key]) != null
+            ? ref1$
+            : ref$[key] = []).push(val);
           return typeof cb === 'function' ? cb() : void 8;
         },
         lrange: function(key, from, to, cb){
-          var __ref, __ref1;
-          return typeof cb === 'function' ? cb(null, (__ref1 = (__ref = db.DB)[key]) != null
-            ? __ref1
-            : __ref[key] = []) : void 8;
+          var ref$, ref1$;
+          return typeof cb === 'function' ? cb(null, (ref1$ = (ref$ = db.DB)[key]) != null
+            ? ref1$
+            : ref$[key] = []) : void 8;
         },
         hset: function(key, idx, val){
-          var __ref, __ref1;
-          ((__ref1 = (__ref = db.DB)[key]) != null
-            ? __ref1
-            : __ref[key] = [])[idx] = val;
+          var ref$, ref1$;
+          ((ref1$ = (ref$ = db.DB)[key]) != null
+            ? ref1$
+            : ref$[key] = [])[idx] = val;
           return typeof cb === 'function' ? cb() : void 8;
         },
         hgetall: function(key, cb){
-          var __ref, __ref1;
-          return typeof cb === 'function' ? cb(null, (__ref1 = (__ref = db.DB)[key]) != null
-            ? __ref1
-            : __ref[key] = {}) : void 8;
+          var ref$, ref1$;
+          return typeof cb === 'function' ? cb(null, (ref1$ = (ref$ = db.DB)[key]) != null
+            ? ref1$
+            : ref$[key] = {}) : void 8;
         },
         del: function(keys, cb){
-          var key, __i, __len;
-          switch (false) {
-          case !Array.isArray(keys):
-            for (__i = 0, __len = keys.length; __i < __len; ++__i) {
-              key = keys[__i];
+          var i$, len$, yet$, key;
+          if (Array.isArray(keys)) {
+            for (yet$ = true, i$ = 0, len$ = keys.length; i$ < len$; ++i$) {
+              key = keys[i$];
+              yet$ = false;
               delete db.DB[key];
+            } if (yet$) {
+              delete db.DB[keys];
             }
-            break;
-          default:
-            delete db.DB[keys];
           }
           return typeof cb === 'function' ? cb() : void 8;
         }
       };
-      __importAll(db, Commands);
+      importAll$(db, Commands);
       return db.multi = function(){
         var cmds, name;
-        cmds = __slice.call(arguments);
+        cmds = slice$.call(arguments);
         for (name in Commands) {
-          (__fn.call(this, name));
+          (fn$.call(this, name));
         }
         cmds.results = [];
         cmds.exec = function(cb){
-          var cmd, args, __ref, __this = this;
+          var ref$, cmd, args, this$ = this;
           switch (false) {
           case !this.length:
-            __ref = this.shift(), cmd = __ref[0], args = __ref[1];
-            db[cmd].apply(db, __slice.call(args).concat([function(_, result){
-              __this.results.push(result);
-              __this.exec(cb);
+            ref$ = this.shift(), cmd = ref$[0], args = ref$[1];
+            db[cmd].apply(db, slice$.call(args).concat([function(_, result){
+              this$.results.push(result);
+              this$.exec(cb);
             }]));
             break;
           default:
@@ -117,10 +116,10 @@
           }
         };
         return cmds;
-        function __fn(name){
+        function fn$(name){
           cmds[name] = function(){
             var args;
-            args = __slice.call(arguments);
+            args = slice$.call(arguments);
             this.push([name, args]);
             return this;
           };
@@ -129,7 +128,7 @@
     });
     return this.__DB__ = db;
   };
-  function __importAll(obj, src){
+  function importAll$(obj, src){
     for (var key in src) obj[key] = src[key];
     return obj;
   }

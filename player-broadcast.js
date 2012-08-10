@@ -9,10 +9,10 @@
         }
         SocialCalc.OrigDoPositionCalculations = SocialCalc.DoPositionCalculations;
         SocialCalc.DoPositionCalculations = function(){
-          var __ref;
+          var ref$;
           SocialCalc.OrigDoPositionCalculations.apply(SocialCalc, arguments);
-          if (typeof (__ref = SocialCalc.Callbacks).broadcast === 'function') {
-            __ref.broadcast('ask.ecell');
+          if (typeof (ref$ = SocialCalc.Callbacks).broadcast === 'function') {
+            ref$.broadcast('ask.ecell');
           }
         };
         if (window.CryptoJS) {
@@ -54,14 +54,14 @@
         };
         SocialCalc.OrigScheduleSheetCommands = SocialCalc.ScheduleSheetCommands;
         SocialCalc.ScheduleSheetCommands = function(sheet, cmdstr, saveundo, isRemote){
-          var __ref;
+          var ref$;
           cmdstr = cmdstr.replace(/\n\n+/g, '\n');
           if (!/\S/.test(cmdstr)) {
             return;
           }
           if (!isRemote && cmdstr !== 'redisplay' && cmdstr !== 'recalc') {
-            if (typeof (__ref = SocialCalc.Callbacks).broadcast === 'function') {
-              __ref.broadcast('execute', {
+            if (typeof (ref$ = SocialCalc.Callbacks).broadcast === 'function') {
+              ref$.broadcast('execute', {
                 cmdstr: cmdstr,
                 saveundo: saveundo
               });
@@ -70,14 +70,14 @@
           return SocialCalc.OrigScheduleSheetCommands(sheet, cmdstr, saveundo, isRemote);
         };
         return SocialCalc.MoveECell = function(editor, newcell){
-          var highlights, cell, f, __ref;
+          var highlights, ref$, cell, f;
           highlights = editor.context.highlights;
           if (editor.ecell) {
             if (editor.ecell.coord === newcell) {
               return newcell;
             }
-            if (typeof (__ref = SocialCalc.Callbacks).broadcast === 'function') {
-              __ref.broadcast('ecell', {
+            if (typeof (ref$ = SocialCalc.Callbacks).broadcast === 'function') {
+              ref$.broadcast('ecell', {
                 original: editor.ecell.coord,
                 ecell: newcell
               });
@@ -91,8 +91,8 @@
             editor.SetECellHeaders('');
             editor.cellhandles.ShowCellHandles(false);
           } else {
-            if (typeof (__ref = SocialCalc.Callbacks).broadcast === 'function') {
-              __ref.broadcast('ecell', {
+            if (typeof (ref$ = SocialCalc.Callbacks).broadcast === 'function') {
+              ref$.broadcast('ecell', {
                 ecell: newcell
               });
             }
