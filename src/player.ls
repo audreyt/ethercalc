@@ -10,7 +10,7 @@
         SocialCalc._room ?= window.location.hash.replace \# ''
         SocialCalc._room = "#{SocialCalc._room}".replace /^_+/ '' .replace /\?.*/ ''
 
-        if Drupal?sheetnode
+        if window.Drupal?sheetnode
             if // overlay=node/\d+ //.test window.location.hash
                 SocialCalc._room = window.location.hash.match // =node/(\d+) // .1
             else if // /node/\d+ //.test window.location.href
@@ -21,14 +21,17 @@
                 | SocialCalc._view  => '/view'
                 | SocialCalc._auth  => '/edit'
                 | otherwise         => ''
-            }"
+            }" unless SocialCalc.CurrentSpreadsheetControlObject
         else
             window.location = '/_start'
             return
 
-        @connect "#{
-            $ 'script[src*="socket.io/socket.io.js"]' .attr \src
-        }".replace /socket.io\/socket.io.js.*/ ''
+        endpoint = $ 'script[src*="socket.io/socket.io.js"]' .attr \src
+        if endpoint
+            @connect(endpoint.replace /socket.io\/socket.io.js.*/ '')
+        else if SocialCalc.CurrentSpreadsheetControlObject
+            @connect null, transports: <[ xhr-polling jsonp-polling ]>
+        else => @connect!
 
         emit = (data) ~> @emit {data}
         SocialCalc.Callbacks.broadcast = (type, data={}) ~>
@@ -119,9 +122,9 @@
                         100ms
 
     window.doresize = !-> window.spreadsheet?DoOnResize!
-    $ ->
-        return onLoad! unless Drupal?sheetnode?sheetviews?length
-        $container = Drupal.sheetnode.sheetviews[0].$container
+    onReady = ->
+        return onLoad! unless window.Drupal?sheetnode?sheetviews?length
+        $container = window.Drupal?sheetnode.sheetviews[0].$container
         $container.bind \sheetnodeReady (_, {spreadsheet}) ->
             if spreadsheet.tabbackground is 'display:none;'
                 if spreadsheet.InitializeSpreadsheetControl
@@ -129,7 +132,9 @@
                 SocialCalc._auth = \0
             onLoad spreadsheet
 
-    onLoad = (ssInstance) ->
+    $ -> setTimeout onReady, 1ms
+
+    onLoad = (ssInstance=SocialCalc.CurrentSpreadsheetControlObject) ->
         window.spreadsheet = ss = ssInstance || (
             if SocialCalc._view
                 new SocialCalc.SpreadsheetViewer!
