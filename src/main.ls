@@ -88,7 +88,7 @@
             JsonType
             202
 
-    @post '/:room': ->
+    @post '/_': ->
         {room, snapshot} = @body
         <~ SC._put room, snapshot
         @response.send \OK, TextType, 201

@@ -158,7 +158,7 @@
       }
     });
     this.post({
-      '/:room': function(){
+      '/_': function(){
         var ref$, room, snapshot, this$ = this;
         ref$ = this.body, room = ref$.room, snapshot = ref$.snapshot;
         return SC._put(room, snapshot, function(){
