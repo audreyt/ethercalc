@@ -2,10 +2,10 @@
   this.include = function(){
     return this.client({
       '/player/main.js': function(){
-        var $, doPlay, onLoad, ref$, this$ = this;
+        var $, doPlay, onReady, onLoad, ref$, this$ = this;
         $ = window.jQuery || window.$ || alert('jQuery not available');
         doPlay = function(){
-          var ref$, emit;
+          var ref$, endpoint, emit;
           window.SocialCalc == null && (window.SocialCalc = {});
           SocialCalc._username = Math.random().toString();
           SocialCalc.isConnected = true;
@@ -15,7 +15,7 @@
           SocialCalc._view = SocialCalc._auth === '0';
           SocialCalc._room == null && (SocialCalc._room = window.location.hash.replace('#', ''));
           SocialCalc._room = (SocialCalc._room + "").replace(/^_+/, '').replace(/\?.*/, '');
-          if ((typeof Drupal != 'undefined' && Drupal !== null) && Drupal.sheetnode) {
+          if ((ref$ = window.Drupal) != null && ref$.sheetnode) {
             if (/overlay=node\/\d+/.test(window.location.hash)) {
               SocialCalc._room = window.location.hash.match(/=node\/(\d+)/)[1];
             } else if (/\/node\/\d+/.test(window.location.href)) {
@@ -23,22 +23,33 @@
             }
           } else if (SocialCalc._room) {
             try {
-              window.history.pushState({}, '', "/" + SocialCalc._room + (function(){
-                switch (false) {
-                case !SocialCalc._view:
-                  return '/view';
-                case !SocialCalc._auth:
-                  return '/edit';
-                default:
-                  return '';
-                }
-              }()));
+              if (!SocialCalc.CurrentSpreadsheetControlObject) {
+                window.history.pushState({}, '', "/" + SocialCalc._room + (function(){
+                  switch (false) {
+                  case !SocialCalc._view:
+                    return '/view';
+                  case !SocialCalc._auth:
+                    return '/edit';
+                  default:
+                    return '';
+                  }
+                }()));
+              }
             } catch (e$) {}
           } else {
             window.location = '/_start';
             return;
           }
-          this$.connect(($('script[src*="socket.io/socket.io.js"]').attr('src') + "").replace(/socket.io\/socket.io.js.*/, ''));
+          endpoint = $('script[src*="socket.io/socket.io.js"]').attr('src');
+          if (endpoint) {
+            this$.connect(endpoint.replace(/socket.io\/socket.io.js.*/, ''));
+          } else if (SocialCalc.CurrentSpreadsheetControlObject) {
+            this$.connect(null, {
+              transports: ['xhr-polling', 'jsonp-polling']
+            });
+          } else {
+            this$.connect();
+          }
           emit = function(data){
             return this$.emit({
               data: data
@@ -199,12 +210,12 @@
             ref$.DoOnResize();
           }
         };
-        $(function(){
+        onReady = function(){
           var ref$, ref1$, $container;
-          if (!((typeof Drupal != 'undefined' && Drupal !== null) && ((ref$ = Drupal.sheetnode) != null && ((ref1$ = ref$.sheetviews) != null && ref1$.length)))) {
+          if (!((ref$ = window.Drupal) != null && ((ref1$ = ref$.sheetnode) != null && ((ref$ = ref1$.sheetviews) != null && ref$.length)))) {
             return onLoad();
           }
-          $container = Drupal.sheetnode.sheetviews[0].$container;
+          $container = (ref$ = window.Drupal) != null ? ref$.sheetnode.sheetviews[0].$container : void 8;
           return $container.bind('sheetnodeReady', function(_, arg$){
             var spreadsheet;
             spreadsheet = arg$.spreadsheet;
@@ -216,9 +227,13 @@
             }
             return onLoad(spreadsheet);
           });
+        };
+        $(function(){
+          return setTimeout(onReady, 1);
         });
         onLoad = function(ssInstance){
           var ss, ref$;
+          ssInstance == null && (ssInstance = SocialCalc.CurrentSpreadsheetControlObject);
           window.spreadsheet = ss = ssInstance || (SocialCalc._view
             ? new SocialCalc.SpreadsheetViewer()
             : new SocialCalc.SpreadsheetControl());
