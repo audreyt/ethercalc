@@ -200,6 +200,11 @@
                     return window.DoGraph(false, false);
                   }, 100);
                 }
+                break;
+              case 'stopHuddle':
+                $('#content').uiDisable();
+                alert("[Collaborative Editing Session Completed]\n\nThank you for your participation.\n\nCheck the activity stream to see the newly edited page!");
+                window.location = '/';
               }
             }
           });

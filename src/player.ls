@@ -120,6 +120,16 @@
                     setTimeout do
                         -> window.DoGraph false false
                         100ms
+            | \stopHuddle
+                $(\#content)uiDisable!
+                alert """
+[Collaborative Editing Session Completed]
+
+Thank you for your participation.
+
+Check the activity stream to see the newly edited page!
+"""
+                window.location = '/'
 
     window.doresize = !-> window.spreadsheet?DoOnResize!
     onReady = ->
