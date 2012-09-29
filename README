@@ -10,10 +10,6 @@
     > npm i -g ethercalc
     > ethercalc
 
-    Installation should work on systems without a C++ compiler environment
-    (e.g. a vanilla Windows system), although cross-page references such as
-    ="page"!A1 would be unsupported.
-
                              -[ REST Interface ]-
 
     GET /_/page
