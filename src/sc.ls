@@ -3,7 +3,7 @@ fs = require \fs
 path = require \path
 bootSC = fs.readFileSync "#{
     path.dirname fs.realpathSync __filename
-}/SocialCalc.js" \utf8
+}/SocialCalcModule.js" \utf8
 global.SC ?= {}
 
 @include = ->

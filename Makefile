@@ -29,7 +29,7 @@ all ::
 
 depends :: app.js static/ethercalc.js static/start.css
 
-SocialCalc.js :: $(SOCIALCALC_FILES) exports.js
+SocialCalcModule.js :: $(SOCIALCALC_FILES) exports.js
 	cat $(SOCIALCALC_FILES) exports.js > $@
 	#@perl -e 'system(join(" ", "closure-compiler" => map { ("--js", $$_) } @ARGV). " > $@")' $(SOCIALCALC_FILES) exports.js
 
