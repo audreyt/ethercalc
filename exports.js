@@ -1,8 +1,12 @@
 if (typeof global != 'undefined') var window = global;
 if (typeof SocialCalc != 'undefined' && typeof module != 'undefined') module.exports = SocialCalc;
-var jsdom    = require("jsdom").jsdom;
-var document = jsdom("<html><head></head><body></body></html>");
-var window   = document.createWindow();
-var navigator = { userAgent: "" };
-var alert = console.log;
-SocialCalc.document = document;
+
+// We don't really need a DOM-based presentation layer for embedded SC.
+SocialCalc.EditorRenderSheet = function () {};
+SocialCalc.SpreadsheetControlSortSave = function () {};
+SocialCalc.SpreadsheetControlStatuslineCallback = function () {};
+SocialCalc.DoPositionCalculations = function () {
+    SocialCalc.EditorSheetStatusCallback(
+        null, "doneposcalc", null, SocialCalc.EditorStepInfo.editor
+    );
+}

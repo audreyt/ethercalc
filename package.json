@@ -6,9 +6,7 @@
         "uuid-pure": "*",
         "LiveScript": "*",
         "optimist": "*",
-        "contextify": "*",
-        "zappajs": "0.3.x",
-        "jsdom": "*"
+        "zappajs": "0.3.x"
     }
     , "optionalDependencies": {
         "hiredis": "~0.1"

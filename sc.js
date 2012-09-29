@@ -37,7 +37,7 @@
       });
     };
     SC._init = function(snapshot, log, DB, room, io){
-      var sandbox, SocialCalc, ss, div, parts, line, cmdstr;
+      var sandbox, SocialCalc, ss, parts, line, cmdstr;
       log == null && (log = []);
       if (SC[room] != null) {
         SC[room]._doClearCache();
@@ -46,23 +46,13 @@
       sandbox = vm.createContext({
         SocialCalc: null,
         ss: null,
-        require: function(){
-          try {
-            return require('jsdom');
-          } catch (e$) {}
+        window: {
+          setTimeout: setTimeout,
+          clearTimeout: clearTimeout
         },
         console: console
       });
-      try {
-        vm.runInContext(bootSC, sandbox);
-      } catch (e$) {}
-      if (!sandbox.SocialCalc) {
-        console.log('==> Cannot load jsdom/contextify; falling back to log-only mode without support for ="page"!A1 refs');
-        SC._init = function(){
-          return null;
-        };
-        return null;
-      }
+      vm.runInContext(bootSC, sandbox);
       SocialCalc = sandbox.SocialCalc;
       SocialCalc.SaveEditorSettings = function(){
         return "";
@@ -88,10 +78,6 @@
         return true;
       };
       ss = sandbox.ss;
-      delete ss.editor.StatusCallback.statusline;
-      div = SocialCalc.document.createElement('div');
-      SocialCalc.document.body.appendChild(div);
-      ss.InitializeSpreadsheetControl(div, 0, 0, 0);
       ss._room = room;
       ss._doClearCache = function(){
         return SocialCalc.Formula.SheetCache.sheets = {};

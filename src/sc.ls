@@ -32,15 +32,10 @@ global.SC ?= {}
             SC[room]._doClearCache!
             return SC[room]
         sandbox = vm.createContext {
-            SocialCalc: null, ss: null
-            require: -> try require \jsdom
+            SocialCalc: null, ss: null, window: { setTimeout, clearTimeout }
             console
         }
-        try vm.runInContext bootSC, sandbox
-        unless sandbox.SocialCalc
-            console.log '==> Cannot load jsdom/contextify; falling back to log-only mode without support for ="page"!A1 refs'
-            SC._init = -> null
-            return null
+        vm.runInContext bootSC, sandbox
         SocialCalc = sandbox.SocialCalc
         SocialCalc.SaveEditorSettings = -> ""
         SocialCalc.CreateAuditString = -> ""
@@ -63,10 +58,6 @@ global.SC ?= {}
             return true
 
         ss = sandbox.ss
-        delete ss.editor.StatusCallback.statusline
-        div = SocialCalc.document.createElement \div
-        SocialCalc.document.body.appendChild div
-        ss.InitializeSpreadsheetControl div, 0, 0, 0
         ss._room = room
         ss._doClearCache = -> SocialCalc.Formula.SheetCache.sheets = {}
         ss.editor.StatusCallback.EtherCalc = func: (editor, status, arg) ->
