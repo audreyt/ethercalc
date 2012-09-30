@@ -147,64 +147,76 @@
         ? elems
         : [];
       this.raw = raw != null ? raw : '';
-      Object.defineProperty(this, 'id', {
-        set: function(it){
-          return this.attrs.id = it;
-        }
-      });
-      Object.defineProperty(this, 'width', {
-        set: function(it){
-          return this.attrs.width = it;
-        }
-      });
-      Object.defineProperty(this, 'height', {
-        set: function(it){
-          return this.attrs.height = it;
-        }
-      });
-      Object.defineProperty(this, 'className', {
-        set: function(it){
-          return this.attrs['class'] = it;
-        }
-      });
-      Object.defineProperty(this, 'innerHTML', {
-        get: function(){
-          return this.raw || join$.call(this.elems.map(function(it){
-            return it.outerHTML;
-          }), "\n");
-        },
-        set: function(it){
-          return this.raw = it;
-        }
-      });
-      Object.defineProperty(this, 'outerHTML', {
-        get: function(){
-          var tag, attrs, style, k, v, css;
-          tag = this.tag, attrs = this.attrs, style = this.style;
-          css = style.cssText || (function(){
-            var ref$, results$ = [];
-            for (k in ref$ = style) {
-              v = ref$[k];
-              results$.push(k + ":" + v);
-            }
-            return results$;
-          }()).join(";");
-          if (css) {
-            attrs.style = css;
-          } else {
-            delete attrs.style;
-          }
-          return "<" + tag + (function(){
-            var ref$, results$ = [];
-            for (k in ref$ = attrs) {
-              v = ref$[k];
-              results$.push(" " + k + "=\"" + v + "\"");
-            }
-            return results$;
-          }()).join("") + ">" + this.innerHTML + "</" + tag + ">";
-        }
-      });
     }
+    Object.defineProperty(prototype, 'id', {
+      set: function(id){
+        this.attrs.id = id;
+      },
+      configurable: true,
+      enumerable: true
+    });
+    Object.defineProperty(prototype, 'width', {
+      set: function(width){
+        this.attrs.width = width;
+      },
+      configurable: true,
+      enumerable: true
+    });
+    Object.defineProperty(prototype, 'height', {
+      set: function(height){
+        this.attrs.height = height;
+      },
+      configurable: true,
+      enumerable: true
+    });
+    Object.defineProperty(prototype, 'className', {
+      set: function($class){
+        this.attrs['class'] = $class;
+      },
+      configurable: true,
+      enumerable: true
+    });
+    Object.defineProperty(prototype, 'innerHTML', {
+      set: function(raw){
+        this.raw = raw;
+      },
+      get: function(){
+        return this.raw || join$.call(this.elems.map(function(it){
+          return it.outerHTML;
+        }), "\n");
+      },
+      configurable: true,
+      enumerable: true
+    });
+    Object.defineProperty(prototype, 'outerHTML', {
+      get: function(){
+        var tag, attrs, style, k, v, css;
+        tag = this.tag, attrs = this.attrs, style = this.style;
+        css = style.cssText || (function(){
+          var ref$, results$ = [];
+          for (k in ref$ = style) {
+            v = ref$[k];
+            results$.push(k + ":" + v);
+          }
+          return results$;
+        }()).join(";");
+        if (css) {
+          attrs.style = css;
+        } else {
+          delete attrs.style;
+        }
+        return "<" + tag + (function(){
+          var ref$, results$ = [];
+          for (k in ref$ = attrs) {
+            v = ref$[k];
+            results$.push(" " + k + "=\"" + v + "\"");
+          }
+          return results$;
+        }()).join("") + ">" + this.innerHTML + "</" + tag + ">";
+      },
+      configurable: true,
+      enumerable: true
+    });
     prototype.appendChild = function(it){
       return this.elems.push(it);
     };
