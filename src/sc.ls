@@ -87,5 +87,31 @@ global.SC ?= {}
         ss.context.sheetobj.ScheduleSheetCommands "set sheet defaulttextvalueformat text-wiki\n#{
             cmdstr
         }recalc\n" false true
+
+        # HTML Export support
+        SocialCalc.document.createElement = -> new Node it
         return ss
     return SC
+
+class Node
+    (@tag="div", @attrs={}, @style={}, @elems=[], @raw='') ->
+        Object.defineProperty @, \id do
+            set: -> @attrs.id = it
+        Object.defineProperty @, \width do
+            set: -> @attrs.width = it
+        Object.defineProperty @, \height do
+            set: -> @attrs.height = it
+        Object.defineProperty @, \className do
+            set: -> @attrs.class = it
+        Object.defineProperty @, \innerHTML do
+            get: -> @raw or (@elems.map -> it.outerHTML) * "\n"
+            set: -> @raw = it
+        Object.defineProperty @, \outerHTML do
+            get: ->
+                {tag, attrs, style} = @
+                css = style.cssText or [ "#k:#v" for k, v of style ] * ";"
+                if css then attrs.style = css else delete attrs.style
+                return "<#tag#{
+                    [ " #k=\"#v\"" for k, v of attrs ] * ""
+                }>#{ @innerHTML }</#tag>"
+    appendChild: -> @elems.push it

@@ -1,5 +1,5 @@
 (function(){
-  var vm, fs, path, bootSC, replace$ = ''.replace;
+  var vm, fs, path, bootSC, Node, replace$ = ''.replace, join$ = [].join;
   vm = require('vm');
   fs = require('fs');
   path = require('path');
@@ -125,8 +125,89 @@
         cmdstr += "\n";
       }
       ss.context.sheetobj.ScheduleSheetCommands("set sheet defaulttextvalueformat text-wiki\n" + cmdstr + "recalc\n", false, true);
+      SocialCalc.document.createElement = function(it){
+        return new Node(it);
+      };
       return ss;
     };
     return SC;
   };
+  Node = (function(){
+    Node.displayName = 'Node';
+    var prototype = Node.prototype, constructor = Node;
+    function Node(tag, attrs, style, elems, raw){
+      this.tag = tag != null ? tag : "div";
+      this.attrs = attrs != null
+        ? attrs
+        : {};
+      this.style = style != null
+        ? style
+        : {};
+      this.elems = elems != null
+        ? elems
+        : [];
+      this.raw = raw != null ? raw : '';
+      Object.defineProperty(this, 'id', {
+        set: function(it){
+          return this.attrs.id = it;
+        }
+      });
+      Object.defineProperty(this, 'width', {
+        set: function(it){
+          return this.attrs.width = it;
+        }
+      });
+      Object.defineProperty(this, 'height', {
+        set: function(it){
+          return this.attrs.height = it;
+        }
+      });
+      Object.defineProperty(this, 'className', {
+        set: function(it){
+          return this.attrs['class'] = it;
+        }
+      });
+      Object.defineProperty(this, 'innerHTML', {
+        get: function(){
+          return this.raw || join$.call(this.elems.map(function(it){
+            return it.outerHTML;
+          }), "\n");
+        },
+        set: function(it){
+          return this.raw = it;
+        }
+      });
+      Object.defineProperty(this, 'outerHTML', {
+        get: function(){
+          var tag, attrs, style, k, v, css;
+          tag = this.tag, attrs = this.attrs, style = this.style;
+          css = style.cssText || (function(){
+            var ref$, results$ = [];
+            for (k in ref$ = style) {
+              v = ref$[k];
+              results$.push(k + ":" + v);
+            }
+            return results$;
+          }()).join(";");
+          if (css) {
+            attrs.style = css;
+          } else {
+            delete attrs.style;
+          }
+          return "<" + tag + (function(){
+            var ref$, results$ = [];
+            for (k in ref$ = attrs) {
+              v = ref$[k];
+              results$.push(" " + k + "=\"" + v + "\"");
+            }
+            return results$;
+          }()).join("") + ">" + this.innerHTML + "</" + tag + ">";
+        }
+      });
+    }
+    prototype.appendChild = function(it){
+      return this.elems.push(it);
+    };
+    return Node;
+  }());
 }).call(this);
