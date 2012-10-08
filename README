@@ -27,6 +27,16 @@
     GET /_/page/cells/A1
         Returns a JSON representation of a single cell in the page.
 
+                               -[ Using SSL ]-
+
+    $ openssl genrsa -out ethercalc-key.pem 1024 
+    $ openssl req -new -key ethercalc-key.pem -out certrequest.csr
+    $ openssl x509 -req -in certrequest.csr -signkey ethercalc-key.pem -out ethercalc-cert.pem
+
+    bin/ethercalc --keyfile ethercalc-key.pem --certfile ethercalc-cert.pem --basepath https://localhost:8000
+
+    Supply basepath because express's @redirect falls back to http.
+
                                -[ Licensing ]-
 
     Common Public Attribution License (Socialtext Inc.):
@@ -50,3 +60,4 @@
     CC0 Public Domain (唐鳳):
 
         src/*.ls
+
