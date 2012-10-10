@@ -24,8 +24,15 @@ This work is published from Taiwan.
   host = (argv != null ? argv.host : void 8) || process.env.VCAP_APP_HOST || '0.0.0.0';
   key = (argv != null ? argv.key : void 8) || null;
   basepath = replace$.call((argv != null ? argv.basepath : void 8) || "", /\/$/, '');
-  console.log("Please connect to: http://" + (host === '0.0.0.0' ? require('os').hostname() : host) + ":" + port + "/");
-  require('zappajs')(port, host, function(){
+  
+  keyfile = (argv != null ? argv.keyfile : void 8) || null;
+  certfile = (argv != null ? argv.certfile : void 8) || null;
+  ssl = (keyfile != null && certfile !=null);
+  options =  ssl ? {https: { key: require('fs').readFileSync(keyfile,'utf8'), 
+                             cert:require('fs').readFileSync(certfile,'utf8')}} : null;
+  transport = (ssl ? "https" : "http");
+  console.log("Please connect to: " + transport + "://" + (host === '0.0.0.0' ? require('os').hostname() : host) + ":" + port + "/");
+  require('zappajs')(port, host, options, function(){
     this.KEY = key;
     this.BASEPATH = basepath;
     return this.include('main');
