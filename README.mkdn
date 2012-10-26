@@ -40,6 +40,14 @@ Returns a JSON representation of a single cell in the page.
 
 Useful when running behind a proxy without WebSocket support.
 
+### URL Prefix: `--basepath /path/prefix`
+
+Useful when running under an URL rewriter.
+
+### Access Control: `--key secret`
+
+Offers read-write vs. read-only modes. See #1 and #4 for details on setting this up.
+
 # Licensing
 
 ### Common Public Attribution License (Socialtext Inc.)
