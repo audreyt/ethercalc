@@ -1,8 +1,5 @@
 # EtherCalc
 
-* Overview:
-    * English: http://ethercalc.net/
-    * 中文版: http://ethercalc.tw/
 * Language: [LiveScript](http://livescript.net/)
 * Runtime: [Node.js](http://nodejs.org/) (0.8+ preferred; compatible with 0.4)
 * Services: [Redis](http://redis.io) (2.4+; fall-back to on-disk JSON storage if not present)
@@ -10,6 +7,9 @@
 * Integrated with content management systems:
     * [Socialtext](http://www.socialtext.com/)
     * [Drupal](https://drupal.org/project/sheetnode)
+* Overview:
+    * English: http://ethercalc.net/
+    * 中文版: http://ethercalc.tw/
 
 ## Installation
 
@@ -32,6 +32,9 @@ Returns a JSON representation of all defined cells in the page.
 
 ### GET /_/page/cells/A1
 Returns a JSON representation of a single cell in the page.
+
+### GET /_/page/html
+Returns a HTML rendering of the page.
 
 ## Flags
 
