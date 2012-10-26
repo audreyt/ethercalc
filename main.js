@@ -151,9 +151,9 @@
             cmdstr: join$.call(command, '\n'),
             room: room
           });
-          return this$.response.send(JSON.stringify({
+          return this$.response.json(202, {
             command: command
-          }), JsonType, 202);
+          });
         });
       }
     });

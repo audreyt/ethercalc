@@ -83,10 +83,7 @@
             cmdstr: command * \\n
             room
         }
-        @response.send do
-            JSON.stringify {command}
-            JsonType
-            202
+        @response.json 202 {command}
 
     @post '/_': ->
         {room, snapshot} = @body

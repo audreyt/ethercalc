@@ -9,19 +9,27 @@ This work is published from Taiwan.
 <http://creativecommons.org/publicdomain/zero/1.0>
 */
 
-argv = try require \optimist .argv
-json = try JSON.parse do
-    require \fs .readFileSync \/home/dotcloud/environment.json \utf8
-port = Number(argv?port or json?PORT_NODEJS or process.env.PORT or process.env.VCAP_APP_PORT) or 8000
-host = argv?host or process.env.VCAP_APP_HOST or \0.0.0.0
-key  = argv?key or null
-basepath = (argv?basepath or "") - //  /$  //
+slurp = -> require \fs .readFileSync it, \utf8
+argv = (try require \optimist .argv) || {}
+json = try JSON.parse slurp \/home/dotcloud/environment.json
+port = Number(argv.port or json?PORT_NODEJS or process.env.PORT or process.env.VCAP_APP_PORT) or 8000
+host = argv.host or process.env.VCAP_APP_HOST or \0.0.0.0
+basepath = (argv.basepath or "") - //  /$  //
 
-console.log "Please connect to: http://#{
+{ keyfile, certfile, key } = argv
+
+transport = \http
+if keyfile? and certfile?
+    options = https:
+        key: slurp keyfile
+        cert: slurp certfile
+    transport = \https
+
+console.log "Please connect to: #transport://#{
     if host is \0.0.0.0 then require \os .hostname! else host
 }:#port/"
 
-<- (require \zappajs) port, host
+<- (require \zappajs) port, host, options
 @KEY = key
 @BASEPATH = basepath
 @include \main

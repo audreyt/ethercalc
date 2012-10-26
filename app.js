@@ -9,28 +9,34 @@ This work is published from Taiwan.
 <http://creativecommons.org/publicdomain/zero/1.0>
 */
 (function(){
-  var argv, json, port, host, key, basepath, replace$ = ''.replace;
+  var slurp, argv, json, port, host, basepath, keyfile, certfile, key, transport, options, replace$ = ''.replace;
+  slurp = function(it){
+    return require('fs').readFileSync(it, 'utf8');
+  };
   argv = (function(){
     try {
       return require('optimist').argv;
     } catch (e$) {}
-  }());
+  }()) || {};
   json = (function(){
     try {
-      return JSON.parse(require('fs').readFileSync('/home/dotcloud/environment.json', 'utf8'));
+      return JSON.parse(slurp('/home/dotcloud/environment.json'));
     } catch (e$) {}
   }());
-  port = Number((argv != null ? argv.port : void 8) || (json != null ? json.PORT_NODEJS : void 8) || process.env.PORT || process.env.VCAP_APP_PORT) || 8000;
-  host = (argv != null ? argv.host : void 8) || process.env.VCAP_APP_HOST || '0.0.0.0';
-  key = (argv != null ? argv.key : void 8) || null;
-  basepath = replace$.call((argv != null ? argv.basepath : void 8) || "", /\/$/, '');
-  
-  keyfile = (argv != null ? argv.keyfile : void 8) || null;
-  certfile = (argv != null ? argv.certfile : void 8) || null;
-  ssl = (keyfile != null && certfile !=null);
-  options =  ssl ? {https: { key: require('fs').readFileSync(keyfile,'utf8'), 
-                             cert:require('fs').readFileSync(certfile,'utf8')}} : null;
-  transport = (ssl ? "https" : "http");
+  port = Number(argv.port || (json != null ? json.PORT_NODEJS : void 8) || process.env.PORT || process.env.VCAP_APP_PORT) || 8000;
+  host = argv.host || process.env.VCAP_APP_HOST || '0.0.0.0';
+  basepath = replace$.call(argv.basepath || "", /\/$/, '');
+  keyfile = argv.keyfile, certfile = argv.certfile, key = argv.key;
+  transport = 'http';
+  if (keyfile != null && certfile != null) {
+    options = {
+      https: {
+        key: slurp(keyfile),
+        cert: slurp(certfile)
+      }
+    };
+    transport = 'https';
+  }
   console.log("Please connect to: " + transport + "://" + (host === '0.0.0.0' ? require('os').hostname() : host) + ":" + port + "/");
   require('zappajs')(port, host, options, function(){
     this.KEY = key;

@@ -33,9 +33,7 @@
     $ openssl req -new -key ethercalc-key.pem -out certrequest.csr
     $ openssl x509 -req -in certrequest.csr -signkey ethercalc-key.pem -out ethercalc-cert.pem
 
-    bin/ethercalc --keyfile ethercalc-key.pem --certfile ethercalc-cert.pem --basepath https://localhost:8000
-
-    Supply basepath because express's @redirect falls back to http.
+    bin/ethercalc --keyfile ethercalc-key.pem --certfile ethercalc-cert.pem
 
                                -[ Licensing ]-
 
