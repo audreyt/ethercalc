@@ -23,8 +23,8 @@ This work is published from Taiwan.
       return JSON.parse(slurp('/home/dotcloud/environment.json'));
     } catch (e$) {}
   }());
-  port = Number(argv.port || (json != null ? json.PORT_NODEJS : void 8) || process.env.PORT || process.env.VCAP_APP_PORT) || 8000;
-  host = argv.host || process.env.VCAP_APP_HOST || '0.0.0.0';
+  port = Number(argv.port || (json != null ? json.PORT_NODEJS : void 8) || process.env.PORT || process.env.VCAP_APP_PORT || process.env.OPENSHIFT_INTERNAL_PORT) || 8000;
+  host = argv.host || process.env.VCAP_APP_HOST || process.env.OPENSHIFT_INTERNAL_IP || '0.0.0.0';
   basepath = replace$.call(argv.basepath || "", /\/$/, '');
   keyfile = argv.keyfile, certfile = argv.certfile, key = argv.key, polling = argv.polling;
   transport = 'http';
