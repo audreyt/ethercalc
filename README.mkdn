@@ -12,20 +12,20 @@
 
 ## REST API
 
-GET /_/*page*
-> Fetch the page as a serialization in SocialCalc save format.
+### GET /_/page
+Fetch the page as a serialization in SocialCalc save format.
 
-PUT /_/*page*
-> Replaces the page with a serialization in SocialCalc save format.
+### PUT /_/page
+Replaces the page with a serialization in SocialCalc save format.
 
-POST /_/*page*?command=*set A1 text t Hello*
-> Runs one or more commands specified as the `command` POST data parameter.
+### POST /_/page?command=...
+Runs one or more commands specified as the `command` POST data parameter.
 
-GET /_/*page*/cells
-> Returns a JSON representation of all defined cells in the page.
+### GET /_/page/cells
+Returns a JSON representation of all defined cells in the page.
 
-GET /_/*page*/cells/*A1*
-> Returns a JSON representation of a single cell in the page.
+### GET /_/page/cells/A1
+Returns a JSON representation of a single cell in the page.
 
 ## Flags
 
