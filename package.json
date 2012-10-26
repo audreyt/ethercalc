@@ -8,7 +8,7 @@
         "zappajs": "0.4.x"
     }
     , "devDependencies": {
-        "LiveScript": "1.0.x"
+        "LiveScript": "*"
     }
     , "optionalDependencies": {
         "hiredis": "~0.1"
