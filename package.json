@@ -4,9 +4,11 @@
     , "dependencies": {
         "redis": "*",
         "uuid-pure": "*",
-        "LiveScript": "1.0.x",
         "optimist": "*",
         "zappajs": "0.4.x"
+    }
+    , "devDependencies": {
+        "LiveScript": "1.0.x"
     }
     , "optionalDependencies": {
         "hiredis": "~0.1"
