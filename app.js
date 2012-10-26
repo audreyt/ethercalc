@@ -9,7 +9,7 @@ This work is published from Taiwan.
 <http://creativecommons.org/publicdomain/zero/1.0>
 */
 (function(){
-  var slurp, argv, json, port, host, basepath, keyfile, certfile, key, transport, options, replace$ = ''.replace;
+  var slurp, argv, json, port, host, basepath, keyfile, certfile, key, polling, transport, options, replace$ = ''.replace;
   slurp = function(it){
     return require('fs').readFileSync(it, 'utf8');
   };
@@ -26,7 +26,7 @@ This work is published from Taiwan.
   port = Number(argv.port || (json != null ? json.PORT_NODEJS : void 8) || process.env.PORT || process.env.VCAP_APP_PORT) || 8000;
   host = argv.host || process.env.VCAP_APP_HOST || '0.0.0.0';
   basepath = replace$.call(argv.basepath || "", /\/$/, '');
-  keyfile = argv.keyfile, certfile = argv.certfile, key = argv.key;
+  keyfile = argv.keyfile, certfile = argv.certfile, key = argv.key, polling = argv.polling;
   transport = 'http';
   if (keyfile != null && certfile != null) {
     options = {
@@ -41,6 +41,7 @@ This work is published from Taiwan.
   require('zappajs')(port, host, options, function(){
     this.KEY = key;
     this.BASEPATH = basepath;
+    this.POLLING = polling;
     return this.include('main');
   });
 }).call(this);

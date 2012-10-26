@@ -35,6 +35,11 @@
 
     bin/ethercalc --keyfile ethercalc-key.pem --certfile ethercalc-cert.pem
 
+                           -[ Disabling WebSocket ]-
+
+    If you're running ethercalc behind a proxy without WebSocket support, please
+    start ethercalc with the --polling flag to disable WebSocket use.
+
                                -[ Licensing ]-
 
     Common Public Attribution License (Socialtext Inc.):

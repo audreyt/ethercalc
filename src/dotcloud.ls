@@ -1,5 +1,5 @@
 @include = -> try
-    @io.configure ~> @io.set \transports if @KEY
+    @io.configure ~> @io.set \transports if @KEY or @POLLING
          then <[ jsonp-polling ]>
          else <[ websocket flashsocket xhr-polling jsonp-polling ]>
 

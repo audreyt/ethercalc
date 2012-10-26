@@ -16,7 +16,7 @@ port = Number(argv.port or json?PORT_NODEJS or process.env.PORT or process.env.V
 host = argv.host or process.env.VCAP_APP_HOST or \0.0.0.0
 basepath = (argv.basepath or "") - //  /$  //
 
-{ keyfile, certfile, key } = argv
+{ keyfile, certfile, key, polling } = argv
 
 transport = \http
 if keyfile? and certfile?
@@ -32,4 +32,5 @@ console.log "Please connect to: #transport://#{
 <- (require \zappajs) port, host, options
 @KEY = key
 @BASEPATH = basepath
+@POLLING = polling
 @include \main
