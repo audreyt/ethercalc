@@ -2,7 +2,7 @@
 @include = ->
     return @__DB__ if @__DB__
     env = process.env
-    [redisPort, redisHost, redisPass] = env<[ REDIS_PORT REDIS_HOST REDIS_PASS ]>
+    [redisPort, redisHost, redisPass, dataDir] = env<[ REDIS_PORT REDIS_HOST REDIS_PASS OPENSHIFT_DATA_DIR ]>
 
     services = JSON.parse do
         process.env.VCAP_SERVICES or '{}'
@@ -13,6 +13,7 @@
 
     redisHost ?= \localhost
     redisPort ?= 6379
+    dataDir ?= process.cwd!
 
     db = require \redis .createClient redisPort, redisHost
     db.auth redisPass if redisPass
@@ -26,18 +27,18 @@
         | db.DB => return false
         | otherwise
         console.log err
-        console.log "==> Falling back to JSON storage: #{ process.cwd! }/dump.json"
+        console.log "==> Falling back to JSON storage: #{ dataDir }/dump.json"
 
         fs = require \fs
         db.DB = {}
         try
             db.DB = JSON.parse do
-                require \fs .readFileSync \dump.json \utf8
+                require \fs .readFileSync "#dataDir/dump.json" \utf8
             console.log "==> Restored previous session from JSON file"
         Commands =
             bgsave: (cb) ->
                 fs.writeFileSync do
-                    \dump.json
+                    "#dataDir/dump.json"
                     JSON.stringify db.DB
                     \utf8
                 cb?!
