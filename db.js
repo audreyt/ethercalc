@@ -2,12 +2,12 @@
   var slice$ = [].slice;
   this.__DB__ = null;
   this.include = function(){
-    var env, ref$, redisPort, redisHost, redisPass, services, name, items, ref1$, db;
+    var env, ref$, redisPort, redisHost, redisPass, dataDir, services, name, items, ref1$, db;
     if (this.__DB__) {
       return this.__DB__;
     }
     env = process.env;
-    ref$ = [env['REDIS_PORT'], env['REDIS_HOST'], env['REDIS_PASS']], redisPort = ref$[0], redisHost = ref$[1], redisPass = ref$[2];
+    ref$ = [env['REDIS_PORT'], env['REDIS_HOST'], env['REDIS_PASS'], env['OPENSHIFT_DATA_DIR']], redisPort = ref$[0], redisHost = ref$[1], redisPass = ref$[2], dataDir = ref$[3];
     services = JSON.parse(process.env.VCAP_SERVICES || '{}');
     for (name in services) {
       items = services[name];
@@ -17,6 +17,7 @@
     }
     redisHost == null && (redisHost = 'localhost');
     redisPort == null && (redisPort = 6379);
+    dataDir == null && (dataDir = process.cwd());
     db = require('redis').createClient(redisPort, redisHost);
     if (redisPass) {
       db.auth(redisPass);
@@ -34,16 +35,16 @@
         return false;
       }
       console.log(err);
-      console.log("==> Falling back to JSON storage: " + process.cwd() + "/dump.json");
+      console.log("==> Falling back to JSON storage: " + dataDir + "/dump.json");
       fs = require('fs');
       db.DB = {};
       try {
-        db.DB = JSON.parse(require('fs').readFileSync('dump.json', 'utf8'));
+        db.DB = JSON.parse(require('fs').readFileSync(dataDir + "/dump.json", 'utf8'));
         console.log("==> Restored previous session from JSON file");
       } catch (e$) {}
       Commands = {
         bgsave: function(cb){
-          fs.writeFileSync('dump.json', JSON.stringify(db.DB), 'utf8');
+          fs.writeFileSync(dataDir + "/dump.json", JSON.stringify(db.DB), 'utf8');
           return typeof cb === 'function' ? cb() : void 8;
         },
         get: function(key, cb){
