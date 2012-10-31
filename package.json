@@ -1,17 +1,27 @@
-{ "name" :            "ethercalc"
-    , "description" : "Multi-User Spreadsheet Server"
-    , "version" :    "0.20121026.162049"
-    , "dependencies": {
+{
+    "name": "ethercalc",
+    "description": "Multi-User Spreadsheet Server",
+    "version": "0.20121026.162049-3",
+    "dependencies": {
         "redis": "*",
         "uuid-pure": "*",
         "optimist": "*",
         "zappajs": "0.4.x"
-    }
-    , "devDependencies": {
+    },
+    "devDependencies": {
         "LiveScript": "*"
-    }
-    , "optionalDependencies": {
+    },
+    "optionalDependencies": {
         "hiredis": "~0.1"
+    },
+    "directories": {
+        "bin": "./bin"
+    },
+    "subdomain": "ethercalc",
+    "scripts": {
+        "start": "app.js"
+    },
+    "engines": {
+        "node": "0.8.x"
     }
-    , "directories": { "bin": "./bin" }
 }

@@ -79,7 +79,7 @@
           };
           return this$.on({
             data: function(){
-              var ss, editor, user, ref$, ecell, peerClass, find, cr, cell, origCR, origCell, parts, line, cmdstr, refreshCmd;
+              var ss, editor, user, ref$, ecell, peerClass, find, cr, cell, origCR, origCell, parts, cmdstr, line, refreshCmd;
               if (!((typeof SocialCalc != 'undefined' && SocialCalc !== null) && SocialCalc.isConnected)) {
                 return;
               }

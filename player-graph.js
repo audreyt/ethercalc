@@ -207,7 +207,7 @@
           return true;
         };
         GraphVerticalBar = function(spreadsheet, range, gview, gtype, helpflag){
-          var values, labels, str, nitems, byrow, maxheight, totalwidth, maxval, minval, i, cr, cr1, cell, val, profChartVals, profChartLabels, canv, ctx, colors, barColor, colorList, eachwidth, zeroLine, yScale, gChart, profChartUrl;
+          var values, labels, str, nitems, byrow, maxheight, totalwidth, minval, maxval, i, cr, cr1, cell, val, profChartVals, profChartLabels, canv, ctx, colors, barColor, colorList, eachwidth, zeroLine, yScale, gChart, profChartUrl;
           values = [];
           labels = [];
           if (helpflag || !range) {

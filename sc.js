@@ -37,7 +37,7 @@
       });
     };
     SC._init = function(snapshot, log, DB, room, io){
-      var sandbox, SocialCalc, ss, parts, line, cmdstr;
+      var sandbox, SocialCalc, ss, parts, cmdstr, line;
       log == null && (log = []);
       if (SC[room] != null) {
         SC[room]._doClearCache();
@@ -190,7 +190,7 @@
     });
     Object.defineProperty(prototype, 'outerHTML', {
       get: function(){
-        var tag, attrs, style, k, v, css;
+        var tag, attrs, style, css, k, v;
         tag = this.tag, attrs = this.attrs, style = this.style;
         css = style.cssText || (function(){
           var ref$, results$ = [];
