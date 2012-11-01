@@ -58,6 +58,7 @@ global.SC ?= {}
             return true
 
         ss = sandbox.ss
+        ss.SocialCalc = SocialCalc
         ss._room = room
         ss._doClearCache = -> SocialCalc.Formula.SheetCache.sheets = {}
         ss.editor.StatusCallback.EtherCalc = func: (editor, status, arg) ->

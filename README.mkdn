@@ -36,6 +36,9 @@ Returns a JSON representation of a single cell in the page.
 ### GET /_/page/html
 Returns a HTML rendering of the page.
 
+### GET /_/page/csv
+Returns a CSV rendering of the page.
+
 ## Flags
 
 ### Using SSL: `--keyfile` / `--certfile`

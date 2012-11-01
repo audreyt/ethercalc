@@ -1,7 +1,7 @@
 (function(){
   var join$ = [].join;
   this.include = function(){
-    var DB, SC, KEY, BASEPATH, HMAC_CACHE, hmac, RealBin, sendFile, IO, TextType, JsonType, HtmlType, api;
+    var DB, SC, KEY, BASEPATH, HMAC_CACHE, hmac, RealBin, sendFile, IO, api;
     this.use('bodyParser', this.app.router, this.express['static'](__dirname));
     this.include('dotcloud');
     this.include('player-broadcast');
@@ -23,7 +23,7 @@
     RealBin = require('path').dirname(require('fs').realpathSync(__filename));
     sendFile = function(file){
       return function(){
-        this.response.contentType('text/html');
+        this.response.type('html');
         return this.response.sendfile(RealBin + "/" + file);
       };
     };
@@ -70,15 +70,6 @@
       }
     });
     IO = this.io;
-    TextType = {
-      'Content-Type': 'text/plain; charset=utf-8'
-    };
-    JsonType = {
-      'Content-Type': 'application/json; charset=utf-8'
-    };
-    HtmlType = {
-      'Content-Type': 'text/html; charset=utf-8'
-    };
     api = function(cb){
       return function(){
         var this$ = this;
@@ -87,32 +78,40 @@
           snapshot = arg$.snapshot;
           if (snapshot) {
             ref$ = cb.call(this$.params, snapshot), type = ref$[0], content = ref$[1];
-            return this$.response.send(content, type, 200);
+            this$.response.type(type);
+            return this$.response.send(200, content);
           } else {
-            return this$.response.send('', TextType, 404);
+            this$.response.type('txt');
+            return this$.response.send(404, '');
           }
         });
       };
     };
     this.get({
       '/_/:room/cells/:cell': api(function(){
-        return [JsonType, JSON.stringify(SC[this.room].sheet.cells[this.cell])];
+        return ['json', JSON.stringify(SC[this.room].sheet.cells[this.cell])];
       })
     });
     this.get({
       '/_/:room/cells': api(function(){
-        return [JsonType, JSON.stringify(SC[this.room].sheet.cells)];
+        return ['json', JSON.stringify(SC[this.room].sheet.cells)];
       })
     });
     this.get({
       '/_/:room/html': api(function(){
         var ref$;
-        return [HtmlType, (ref$ = SC[this.room]) != null ? ref$.CreateSheetHTML() : void 8];
+        return ['html', (ref$ = SC[this.room]) != null ? ref$.CreateSheetHTML() : void 8];
+      })
+    });
+    this.get({
+      '/_/:room/csv': api(function(){
+        var ref$;
+        return ['csv', (ref$ = SC[this.room]) != null ? ref$.SocialCalc.ConvertSaveToOtherFormat((ref$ = SC[this.room]) != null ? ref$.CreateSheetSave() : void 8, 'csv') : void 8];
       })
     });
     this.get({
       '/_/:room': api(function(it){
-        return [TextType, it];
+        return ['txt', it];
       })
     });
     this.put({
@@ -125,7 +124,8 @@
         });
         return this.request.on('end', function(){
           return SC._put(this$.params.room, buf, function(){
-            return this$.response.send('OK', TextType, 201);
+            this$.response.type('txt');
+            return this$.response.send(201, 'OK');
           });
         });
       }
@@ -136,7 +136,8 @@
         room = this.params.room;
         command = this.body.command;
         if (!command) {
-          return this.response.send('Please send command', TextType, 400);
+          this.response.type('txt');
+          return this.response.send(400, 'Please send command');
         }
         if (!Array.isArray(command)) {
           command = [command];
@@ -162,7 +163,8 @@
         var ref$, room, snapshot, this$ = this;
         ref$ = this.body, room = ref$.room, snapshot = ref$.snapshot;
         return SC._put(room, snapshot, function(){
-          return this$.response.send('OK', TextType, 201);
+          this$.response.type('txt');
+          return this$.response.send(201, 'OK');
         });
       }
     });

@@ -20,7 +20,7 @@
     RealBin = require \path .dirname do
         require \fs .realpathSync __filename
     sendFile = (file) -> ->
-        @response.contentType \text/html
+        @response.type \html
         @response.sendfile "#RealBin/#file"
 
     @get '/': sendFile \index.html
@@ -41,26 +41,32 @@
         @response.redirect "#BASEPATH/#room?auth=0"
 
     IO = @io
-    TextType = { \Content-Type : 'text/plain; charset=utf-8' }
-    JsonType = { \Content-Type : 'application/json; charset=utf-8' }
-    HtmlType = { \Content-Type : 'text/html; charset=utf-8' }
     api = (cb) -> ->
         {snapshot} <~ SC._get @params.room, IO
         if snapshot
             [type, content] = cb.call @params, snapshot
-            @response.send content, type, 200
-        else @response.send '', TextType, 404
+            @response.type type
+            @response.send 200 content
+        else
+            @response.type \txt
+            @response.send 404 ''
 
-    @get '/_/:room/cells/:cell': api -> [JsonType
+    @get '/_/:room/cells/:cell': api -> [\json
         JSON.stringify SC[@room].sheet.cells[@cell]
     ]
-    @get '/_/:room/cells': api -> [JsonType
+    @get '/_/:room/cells': api -> [\json
         JSON.stringify SC[@room].sheet.cells
     ]
-    @get '/_/:room/html': api -> [HtmlType
+    @get '/_/:room/html': api -> [\html
         SC[@room]?CreateSheetHTML!
     ]
-    @get '/_/:room': api -> [TextType, it]
+    @get '/_/:room/csv': api -> [\csv
+        SC[@room]?SocialCalc.ConvertSaveToOtherFormat(
+            SC[@room]?CreateSheetSave!
+            \csv
+        )
+    ]
+    @get '/_/:room': api -> [\txt, it]
 
     @put '/_/:room': ->
         buf = ''
@@ -68,13 +74,15 @@
         @request.on \data (chunk) ~> buf += chunk
         @request.on \end ~>
             <~ SC._put @params.room, buf
-            @response.send \OK, TextType, 201
+            @response.type \txt
+            @response.send 201 \OK
 
     @post '/_/:room': ->
         {room} = @params
         {command} = @body
         unless command
-            return @response.send 'Please send command', TextType, 400
+            @response.type \txt
+            return @response.send 400 'Please send command'
         command = [command] unless Array.isArray command
         <~ SC._get room, IO
         SC[room]?ExecuteCommand command * \\n
@@ -88,7 +96,8 @@
     @post '/_': ->
         {room, snapshot} = @body
         <~ SC._put room, snapshot
-        @response.send \OK, TextType, 201
+        @response.type \txt
+        @response.send 201 \OK
 
     @on data: !->
         {room, msg, user, ecell, cmdstr, type, auth} = @data

@@ -78,6 +78,7 @@
         return true;
       };
       ss = sandbox.ss;
+      ss.SocialCalc = SocialCalc;
       ss._room = room;
       ss._doClearCache = function(){
         return SocialCalc.Formula.SheetCache.sheets = {};
