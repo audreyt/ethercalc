@@ -17,10 +17,15 @@
         encoder.update it.toString!
         encoder.digest \hex
 
-    RealBin = require \path .dirname do
+    const Text = 'text/plain; charset=utf-8'
+    const Json = 'application/json; charset=utf-8'
+    const Html = 'text/html; charset=utf-8'
+    const Csv  = 'text/csv; charset=utf-8'
+    const RealBin = require \path .dirname do
         require \fs .realpathSync __filename
+
     sendFile = (file) -> ->
-        @response.type \html
+        @response.type Html
         @response.sendfile "#RealBin/#file"
 
     @get '/': sendFile \index.html
@@ -48,25 +53,25 @@
             @response.type type
             @response.send 200 content
         else
-            @response.type \txt
+            @response.type Text
             @response.send 404 ''
 
-    @get '/_/:room/cells/:cell': api -> [\json
+    @get '/_/:room/cells/:cell': api -> [Json
         JSON.stringify SC[@room].sheet.cells[@cell]
     ]
-    @get '/_/:room/cells': api -> [\json
+    @get '/_/:room/cells': api -> [Json
         JSON.stringify SC[@room].sheet.cells
     ]
-    @get '/_/:room/html': api -> [\html
+    @get '/_/:room/html': api -> [Html
         SC[@room]?CreateSheetHTML!
     ]
-    @get '/_/:room/csv': api -> [\csv
+    @get '/_/:room/csv': api -> [Csv
         SC[@room]?SocialCalc.ConvertSaveToOtherFormat(
             SC[@room]?CreateSheetSave!
             \csv
         )
     ]
-    @get '/_/:room': api -> [\txt, it]
+    @get '/_/:room': api -> [Text, it]
 
     @put '/_/:room': ->
         buf = ''
@@ -74,14 +79,14 @@
         @request.on \data (chunk) ~> buf += chunk
         @request.on \end ~>
             <~ SC._put @params.room, buf
-            @response.type \txt
+            @response.type Text
             @response.send 201 \OK
 
     @post '/_/:room': ->
         {room} = @params
         {command} = @body
         unless command
-            @response.type \txt
+            @response.type Text
             return @response.send 400 'Please send command'
         command = [command] unless Array.isArray command
         <~ SC._get room, IO
@@ -96,7 +101,7 @@
     @post '/_': ->
         {room, snapshot} = @body
         <~ SC._put room, snapshot
-        @response.type \txt
+        @response.type Text
         @response.send 201 \OK
 
     @on data: !->
