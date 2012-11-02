@@ -1,7 +1,7 @@
 (function(){
   var join$ = [].join;
   this.include = function(){
-    var DB, SC, KEY, BASEPATH, HMAC_CACHE, hmac, Text, Json, Html, Csv, RealBin, sendFile, IO, api;
+    var DB, SC, KEY, BASEPATH, HMAC_CACHE, hmac, ref$, Text, Html, Csv, Json, RealBin, sendFile, IO, api;
     this.use('bodyParser', this.app.router, this.express['static'](__dirname));
     this.include('dotcloud');
     this.include('player-broadcast');
@@ -20,10 +20,9 @@
         var encoder;
         return HMAC_CACHE[it] || (HMAC_CACHE[it] = (encoder = require('crypto').createHmac('sha256', KEY), encoder.update(it.toString()), encoder.digest('hex')));
       };
-    Text = 'text/plain; charset=utf-8';
-    Json = 'application/json; charset=utf-8';
-    Html = 'text/html; charset=utf-8';
-    Csv = 'text/csv; charset=utf-8';
+    ref$ = ['text/plain', 'text/html', 'text/csv', 'application/json'].map((function(it){
+      return it + "; charset=utf-8";
+    })), Text = ref$[0], Html = ref$[1], Csv = ref$[2], Json = ref$[3];
     RealBin = require('path').dirname(require('fs').realpathSync(__filename));
     sendFile = function(file){
       return function(){

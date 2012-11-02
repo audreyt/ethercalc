@@ -17,10 +17,10 @@
         encoder.update it.toString!
         encoder.digest \hex
 
-    const Text = 'text/plain; charset=utf-8'
-    const Json = 'application/json; charset=utf-8'
-    const Html = 'text/html; charset=utf-8'
-    const Csv  = 'text/csv; charset=utf-8'
+    [   Text,      Html,     Csv,     Json             ] = <[
+        text/plain text/html text/csv application/json
+    ]>.map (+ "; charset=utf-8")
+
     const RealBin = require \path .dirname do
         require \fs .realpathSync __filename
 
