@@ -47,8 +47,12 @@
         SocialCalc: null,
         ss: null,
         window: {
-          setTimeout: setTimeout,
-          clearTimeout: clearTimeout
+          setTimeout: function(cb, ms){
+            if (ms === 1) {
+              return process.nextTick(cb);
+            }
+          },
+          clearTimeout: function(){}
         },
         console: console
       });

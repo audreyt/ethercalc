@@ -32,7 +32,10 @@ global.SC ?= {}
             SC[room]._doClearCache!
             return SC[room]
         sandbox = vm.createContext {
-            SocialCalc: null, ss: null, window: { setTimeout, clearTimeout }
+            SocialCalc: null, ss: null, window: {
+                setTimeout: (cb, ms) -> process.nextTick cb if ms <= 1
+                clearTimeout: ->
+            }
             console
         }
         vm.runInContext bootSC, sandbox
