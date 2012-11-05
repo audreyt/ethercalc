@@ -48,9 +48,7 @@
         ss: null,
         window: {
           setTimeout: function(cb, ms){
-            if (ms === 1) {
-              return process.nextTick(cb);
-            }
+            return process.nextTick(cb);
           },
           clearTimeout: function(){}
         },

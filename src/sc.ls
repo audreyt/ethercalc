@@ -33,7 +33,7 @@ global.SC ?= {}
             return SC[room]
         sandbox = vm.createContext {
             SocialCalc: null, ss: null, window: {
-                setTimeout: (cb, ms) -> process.nextTick cb if ms <= 1
+                setTimeout: (cb, ms) -> process.nextTick cb
                 clearTimeout: ->
             }
             console
