@@ -29,6 +29,7 @@
         @response.sendfile "#RealBin/#file"
 
     @get '/': sendFile \index.html
+    @get '/favicon.ico': -> @response.send 404 ''
     @get '/_new': ->
         room = require \uuid-pure .newId 10 36 .toLowerCase!
         @response.redirect if KEY then "#BASEPATH/#room/edit" else "#BASEPATH/#room"

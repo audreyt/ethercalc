@@ -34,6 +34,11 @@
       '/': sendFile('index.html')
     });
     this.get({
+      '/favicon.ico': function(){
+        return this.response.send(404, '');
+      }
+    });
+    this.get({
       '/_new': function(){
         var room;
         room = require('uuid-pure').newId(10, 36).toLowerCase();
