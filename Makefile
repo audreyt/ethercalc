@@ -34,7 +34,8 @@ SocialCalcModule.js :: $(SOCIALCALC_FILES) exports.js
 	#@perl -e 'system(join(" ", "closure-compiler" => map { ("--js", $$_) } @ARGV). " > $@")' $(SOCIALCALC_FILES) exports.js
 
 static/ethercalc.js :: $(ETHERCALC_FILES)
-	@perl -e 'system(join(" ", "closure-compiler" => "--language_in=ES5" => map { ("--js", $$_) } @ARGV). " > $@")' $(ETHERCALC_FILES) 
+	@echo "// Auto-generated from "make depends"; all changes here will be lost." > $@
+	@perl -e 'system(join(" ", "closure-compiler" => "--language_in=ES5" => map { ("--js", $$_) } @ARGV). " >> $@")' $(ETHERCALC_FILES) 
 
 .coffee.js:
 	coffee -c $<
