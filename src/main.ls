@@ -105,6 +105,14 @@
         @response.type Text
         @response.send 201 \OK
 
+    @on disconnect: !->
+        { id } = @socket
+        :CleanRoom for key of IO.sockets.manager.roomClients[id] when key is // ^/log- //
+            room = key.substr(5)
+            for client in IO.sockets.clients(key.substr(1))
+            | client.id isnt id => continue CleanRoom
+            delete SC[room]
+
     @on data: !->
         {room, msg, user, ecell, cmdstr, type, auth} = @data
         room = "#room" - /^_+/ # preceding underscore is reserved

@@ -176,6 +176,24 @@
         });
       }
     });
+    this.on({
+      disconnect: function(){
+        var id, key, room, i$, ref$, len$, client;
+        id = this.socket.id;
+        CleanRoom: for (key in IO.sockets.manager.roomClients[id]) {
+          if (/^\/log-/.exec(key)) {
+            room = key.substr(5);
+            for (i$ = 0, len$ = (ref$ = IO.sockets.clients(key.substr(1))).length; i$ < len$; ++i$) {
+              client = ref$[i$];
+              if (client.id !== id) {
+                continue CleanRoom;
+              }
+            }
+            delete SC[room];
+          }
+        }
+      }
+    });
     return this.on({
       data: function(){
         var ref$, room, msg, user, ecell, cmdstr, type, auth, reply, broadcast, this$ = this;
