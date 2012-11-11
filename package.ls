@@ -18,6 +18,6 @@ directories:
 subdomain: \ethercalc
 scripts:
   start: \app.js
-  prepublish: 'lsc -cj package.ls || true'
+  prepublish: 'lsc -cj package.ls || echo'
 engines:
   node: \0.8.x
