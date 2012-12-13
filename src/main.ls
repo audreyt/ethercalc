@@ -51,8 +51,13 @@
         {snapshot} <~ SC._get @params.room, IO
         if snapshot
             [type, content] = cb.call @params, snapshot
-            @response.type type
-            @response.send 200 content
+            if content instanceof Function
+              rv <~ content SC[@params.room]
+              @response.type type
+              @response.send 200 rv
+            else
+              @response.type type
+              @response.send 200 content
         else
             @response.type Text
             @response.send 404 ''
@@ -64,13 +69,14 @@
         JSON.stringify SC[@room].sheet.cells
     ]
     @get '/_/:room/html': api -> [Html
-        SC[@room]?CreateSheetHTML!
+        (sc, cb) ->
+            html <- sc.exportHTML
+            cb html
     ]
     @get '/_/:room/csv': api -> [Csv
-        SC[@room]?SocialCalc.ConvertSaveToOtherFormat(
-            SC[@room]?CreateSheetSave!
-            \csv
-        )
+        (sc, cb) ->
+            csv <- sc.exportCSV
+            cb csv
     ]
     @get '/_/:room': api -> [Text, it]
 
@@ -111,6 +117,7 @@
             room = key.substr(5)
             for client in IO.sockets.clients(key.substr(1))
             | client.id isnt id => continue CleanRoom
+            SC[room]?terminate!
             delete SC[room]
 
     @on data: !->
@@ -155,6 +162,7 @@
         | \stopHuddle
             return if @KEY and KEY isnt @KEY
             <~ DB.del <[ audit log chat ecell snapshot ]>.map -> "#it-#room"
+            SC[room]?terminate!
             delete SC[room]
             broadcast @data
         | \ecell

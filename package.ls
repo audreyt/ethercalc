@@ -1,6 +1,7 @@
+#!/usr/bin/env lsc -cj
 name: \ethercalc
 description: 'Multi-User Spreadsheet Server'
-version: \0.20121111.0
+version: \0.20121213.0
 homepage: 'http://ethercalc.net/'
 repository:
   type: 'git'
@@ -13,6 +14,7 @@ dependencies:
 optional-dependencies:
   hiredis: \0.1.x
   LiveScript: \1.1.x
+  webworker-threads: \0.4.x
 directories:
   bin: \./bin
 subdomain: \ethercalc
