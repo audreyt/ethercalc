@@ -14,7 +14,7 @@ dependencies:
 optional-dependencies:
   hiredis: \0.1.x
   LiveScript: \1.1.x
-  webworker-threads: \0.4.x
+  'webworker-threads': \0.4.x
 directories:
   bin: \./bin
 subdomain: \ethercalc

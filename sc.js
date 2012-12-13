@@ -7,7 +7,7 @@
   global.SC == null && (global.SC = {});
   Worker = (function(){
     try {
-      return require('xebworker-threads').Worker;
+      return require('webworker-threads').Worker;
     } catch (e$) {
       e = e$;
       return (function(){
