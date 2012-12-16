@@ -235,6 +235,27 @@
                 configurable: true,
                 enumerable: true
               });
+              Object.defineProperty(prototype, 'colSpan', {
+                set: function(colspan){
+                  this.attrs.colspan = colspan;
+                },
+                configurable: true,
+                enumerable: true
+              });
+              Object.defineProperty(prototype, 'rowSpan', {
+                set: function(rowspan){
+                  this.attrs.rowspan = rowspan;
+                },
+                configurable: true,
+                enumerable: true
+              });
+              Object.defineProperty(prototype, 'title', {
+                set: function(title){
+                  this.attrs.title = title;
+                },
+                configurable: true,
+                enumerable: true
+              });
               Object.defineProperty(prototype, 'innerHTML', {
                 set: function(raw){
                   this.raw = raw;

@@ -111,6 +111,9 @@ catch => class => (code) ->
               width:      ~(@attrs.width)->
               height:     ~(@attrs.height)->
               className:  ~(@attrs.class)->
+              colSpan:    ~(@attrs.colspan)->
+              rowSpan:    ~(@attrs.rowspan)->
+              title:      ~(@attrs.title)->
               innerHTML:  ~
                 (@raw)->
                 -> @raw or [e.outerHTML for e in @elems].join("\n")
