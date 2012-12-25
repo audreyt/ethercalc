@@ -1,8 +1,7 @@
 (function(){
-  var vm, fs, path, bootSC, Worker, e, using, wt;
+  var vm, fs, path, bootSC, Worker, e, wt;
   vm = require('vm');
   fs = require('fs');
-  sys = require('sys'); // for debugging, pls remove
   argv = require('optimist').argv;
   path = require('path');
   bootSC = fs.readFileSync(path.dirname(fs.realpathSync(__filename)) + "/SocialCalcModule.js", 'utf8');
