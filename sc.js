@@ -1,15 +1,24 @@
 (function(){
-  var vm, fs, path, bootSC, Worker, e;
+  var vm, fs, path, bootSC, Worker, e, using, wt;
   vm = require('vm');
   fs = require('fs');
+  sys = require('sys'); // for debugging, pls remove
+  argv = require('optimist').argv;
   path = require('path');
   bootSC = fs.readFileSync(path.dirname(fs.realpathSync(__filename)) + "/SocialCalcModule.js", 'utf8');
   global.SC == null && (global.SC = {});
   Worker = (function(){
     try {
-      return require('webworker-threads').Worker;
+      wt = require('webworker-threads').Worker;
     } catch (e$) {
-      e = e$;
+	wt=null;
+      }
+    if (wt!=null && argv.v != true) {
+      console.log("starting backend using webworker-threads");
+      return wt;
+    } else {
+      //e = e$;
+      console.log("starting backend using vm.CreateContext");
       return (function(){
         var prototype = constructor.prototype;
         function constructor(code){
