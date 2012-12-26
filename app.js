@@ -15,7 +15,7 @@ This work is published from Taiwan.
   };
   argv = (function(){
     try {
-      return require('optimist').argv;
+      return require('optimist').boolean(['vm', 'polling']).argv;
     } catch (e$) {}
   }()) || {};
   json = (function(){

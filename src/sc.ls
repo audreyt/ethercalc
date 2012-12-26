@@ -5,13 +5,17 @@ bootSC = fs.readFileSync "#{
     path.dirname fs.realpathSync __filename
 }/SocialCalcModule.js" \utf8
 global.SC ?= {}
+argv = (try require \optimist .boolean <[ vm polling ]> .argv) || {}
+console.log argv
 
 ##################################
 ### WebWorker Threads Fallback ###
 ##################################
 Worker = try
+  throw \vm if argv.vm
+  console.log "Starting backend using webworker-threads"
   (require \webworker-threads).Worker
-catch => class => (code) ->
+catch => console.log "Falling back to vm.CreateContext backend"; class => (code) ->
   vm = require \vm
   cxt = { console, self: { onmessage: -> } }
   cxt.window =

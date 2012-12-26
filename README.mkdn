@@ -1,5 +1,8 @@
 # EtherCalc
 
+* Introduction:
+    * English: https://gist.github.com/3978463
+    * 中文版: https://gist.github.com/3985324
 * Language: [LiveScript](http://livescript.net/)
 * Runtime: [Node.js](http://nodejs.org/) (0.8+ preferred; compatible with 0.4)
 * Services: [Redis](http://redis.io) (2.4+; fall-back to on-disk JSON storage if not present)
@@ -59,6 +62,12 @@ Useful when running under an URL rewriter.
 ### Access Control: `--key secret`
 
 Offers read-write vs. read-only modes. See issues [#1](https://github.com/audreyt/ethercalc/issues/1) and [#4](https://github.com/audreyt/ethercalc/issues/4) for details on setting this up.
+
+### Disable server-side WebWorkers: `--vm`
+
+Runs a single-thread background loop with `vm.createContext` instead of `webworker-threads`.
+
+Useful for running custom functions in server side that requires full VM access.
 
 # Licensing
 
