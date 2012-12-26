@@ -6,7 +6,6 @@ bootSC = fs.readFileSync "#{
 }/SocialCalcModule.js" \utf8
 global.SC ?= {}
 argv = (try require \optimist .boolean <[ vm polling ]> .argv) || {}
-console.log argv
 
 ##################################
 ### WebWorker Threads Fallback ###

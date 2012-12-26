@@ -10,7 +10,6 @@
       return require('optimist').boolean(['vm', 'polling']).argv;
     } catch (e$) {}
   }()) || {};
-  console.log(argv);
   Worker = (function(){
     try {
       if (argv.vm) {
