@@ -20,9 +20,13 @@ ETHERCALC_FILES=\
 JS_FILES=\
 	app.js dotcloud.js player.js main.js sc.js db.js
 
-all ::
+all :: SocialCalcModule.js
 	env PATH="$$PATH:./node_modules/LiveScript/bin" livescript -c -o . src
 	node app.js
+
+vm :: SocialCalcModule.js
+	env PATH="$$PATH:./node_modules/LiveScript/bin" livescript -c -o . src
+	node app.js --vm
 
 ./node_modules/streamline/bin/_node :
 	npm i --dev
