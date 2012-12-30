@@ -137,6 +137,11 @@
               type: 'csv',
               csv: csv
             });
+          case 'exportCells':
+            return postMessage({
+              type: 'cells',
+              cells: window.ss.cells
+            });
           case 'init':
             SocialCalc.SaveEditorSettings = function(){
               return "";
@@ -401,6 +406,16 @@
       w.exportSave = function(cb){
         return w.thread.eval('window.ss.CreateSheetSave()', function(err, save){
           return cb(save);
+        });
+      };
+      w.exportCell = function(coord, cb){
+        return w.thread.eval("JSON.stringify(window.ss.sheet.cells[" + JSON.stringify(coord).replace(/\s/g, '') + "])", function(_, cell){
+          return cb(cell);
+        });
+      };
+      w.exportCells = function(cb){
+        return w.thread.eval('JSON.stringify(window.ss.sheet.cells)', function(_, cells){
+          return cb(cells);
         });
       };
       return w;

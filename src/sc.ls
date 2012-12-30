@@ -76,6 +76,8 @@ catch => console.log "Falling back to vm.CreateContext backend"; class => (code)
                 \csv
             )
             postMessage { type: \csv, csv }
+          | \exportCells
+            postMessage { type: \cells, cells: window.ss.cells }
           | \init
             SocialCalc.SaveEditorSettings = -> ""
             SocialCalc.CreateAuditString = -> ""
@@ -173,5 +175,9 @@ catch => console.log "Falling back to vm.CreateContext backend"; class => (code)
         w.exportSave = (cb) ->
           err, save <- w.thread.eval 'window.ss.CreateSheetSave()'
           cb save
+        w.exportCell = (coord, cb) -> w.thread.eval "JSON.stringify(window.ss.sheet.cells[#{
+          JSON.stringify(coord).replace(/\s/g, '')
+        }])", (_, cell) -> cb cell
+        w.exportCells = (cb) -> w.thread.eval 'JSON.stringify(window.ss.sheet.cells)', (_, cells) -> cb cells
         return w
     return SC

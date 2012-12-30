@@ -63,20 +63,16 @@
             @response.send 404 ''
 
     @get '/_/:room/cells/:cell': api -> [Json
-        JSON.stringify SC[@room].sheet.cells[@cell]
+        (sc, cb) ~> sc.exportCell @cell, cb
     ]
     @get '/_/:room/cells': api -> [Json
-        JSON.stringify SC[@room].sheet.cells
+        (sc, cb) -> sc.exportCells cb
     ]
     @get '/_/:room/html': api -> [Html
-        (sc, cb) ->
-            html <- sc.exportHTML
-            cb html
+        (sc, cb) -> sc.exportHTML cb
     ]
     @get '/_/:room/csv': api -> [Csv
-        (sc, cb) ->
-            csv <- sc.exportCSV
-            cb csv
+        (sc, cb) -> sc.exportCSV cb
     ]
     @get '/_/:room': api -> [Text, it]
 
