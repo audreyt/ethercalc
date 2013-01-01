@@ -177,7 +177,7 @@ catch => console.log "Falling back to vm.CreateContext backend"; class => (code)
           JSON.stringify(window.ss.sheet.cells[#{
             JSON.stringify(coord) - /\s/g
           }])
-        """, (, cell) -> cb cell
+        """, (, cell) -> if cell is \undefined then cb 'null' else cb cell
         w.exportCells = (cb) -> w.thread.eval """
           JSON.stringify(window.ss.sheet.cells)
         """, (, cells) -> cb cells

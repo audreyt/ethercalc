@@ -410,7 +410,11 @@
       };
       w.exportCell = function(coord, cb){
         return w.thread.eval("JSON.stringify(window.ss.sheet.cells[" + (replace$.call(JSON.stringify(coord), /\s/g, '')) + "])", function(arg$, cell){
-          return cb(cell);
+          if (cell === 'undefined') {
+            return cb('null');
+          } else {
+            return cb(cell);
+          }
         });
       };
       w.exportCells = function(cb){
