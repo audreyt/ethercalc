@@ -38,7 +38,7 @@ catch => console.log "Falling back to vm.CreateContext backend"; class => (code)
 
     SC._get = (room, io, cb) ->
         return cb { snapshot: SC[room]._snapshot } if SC[room]?_snapshot
-        _, [snapshot, log] <~ DB.multi!
+        (, [snapshot, log]) <~ DB.multi!
             .get "snapshot-#room"
             .lrange "log-#room" 0 -1
             .exec!
@@ -162,22 +162,24 @@ catch => console.log "Falling back to vm.CreateContext backend"; class => (code)
             w.postMessage { type: \recalc, ref, snapshot: '' }
         w._doClearCache = -> @postMessage { type: \clearCache }
         w.ExecuteCommand = (command) -> @postMessage { type: \cmd, command }
-        w.exportHTML = (cb) ->
-          err, html <- w.thread.eval 'window.ss.CreateSheetHTML()'
-          cb html
-        w.exportCSV = (cb) ->
-          err, csv <- w.thread.eval '''
+        w.exportHTML = (cb) -> w.thread.eval """
+          window.ss.CreateSheetHTML()
+        """, (, html) -> cb html
+        w.exportCSV = (cb) -> w.thread.eval """
             window.ss.SocialCalc.ConvertSaveToOtherFormat(
               window.ss.CreateSheetSave(), "csv"
             )
-          '''
-          cb csv
-        w.exportSave = (cb) ->
-          err, save <- w.thread.eval 'window.ss.CreateSheetSave()'
-          cb save
-        w.exportCell = (coord, cb) -> w.thread.eval "JSON.stringify(window.ss.sheet.cells[#{
-          JSON.stringify(coord).replace(/\s/g, '')
-        }])", (_, cell) -> cb cell
-        w.exportCells = (cb) -> w.thread.eval 'JSON.stringify(window.ss.sheet.cells)', (_, cells) -> cb cells
+        """, (, csv) -> cb csv
+        w.exportSave = (cb) -> w.thread.eval """
+          window.ss.CreateSheetSave()
+        """, (, save) -> cb save
+        w.exportCell = (coord, cb) -> w.thread.eval """
+          JSON.stringify(window.ss.sheet.cells[#{
+            JSON.stringify(coord) - /\s/g
+          }])
+        """, (, cell) -> cb cell
+        w.exportCells = (cb) -> w.thread.eval """
+          JSON.stringify(window.ss.sheet.cells)
+        """, (, cells) -> cb cells
         return w
     return SC

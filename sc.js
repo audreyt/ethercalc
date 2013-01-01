@@ -1,5 +1,5 @@
 (function(){
-  var vm, fs, path, bootSC, argv, Worker, e;
+  var vm, fs, path, bootSC, argv, Worker, e, replace$ = ''.replace;
   vm = require('vm');
   fs = require('fs');
   path = require('path');
@@ -80,9 +80,9 @@
           snapshot: SC[room]._snapshot
         });
       }
-      return DB.multi().get("snapshot-" + room).lrange("log-" + room, 0, -1).exec(function(_, arg$){
+      return DB.multi().get("snapshot-" + room).lrange("log-" + room, 0, -1).exec(function(arg$, arg1$){
         var snapshot, log;
-        snapshot = arg$[0], log = arg$[1];
+        snapshot = arg1$[0], log = arg1$[1];
         if ((snapshot || log.length) && io) {
           SC[room] = SC._init(snapshot, log, DB, room, io);
         }
@@ -394,27 +394,27 @@
         });
       };
       w.exportHTML = function(cb){
-        return w.thread.eval('window.ss.CreateSheetHTML()', function(err, html){
+        return w.thread.eval("window.ss.CreateSheetHTML()", function(arg$, html){
           return cb(html);
         });
       };
       w.exportCSV = function(cb){
-        return w.thread.eval('window.ss.SocialCalc.ConvertSaveToOtherFormat(\n  window.ss.CreateSheetSave(), "csv"\n)', function(err, csv){
+        return w.thread.eval("window.ss.SocialCalc.ConvertSaveToOtherFormat(\n  window.ss.CreateSheetSave(), \"csv\"\n)", function(arg$, csv){
           return cb(csv);
         });
       };
       w.exportSave = function(cb){
-        return w.thread.eval('window.ss.CreateSheetSave()', function(err, save){
+        return w.thread.eval("window.ss.CreateSheetSave()", function(arg$, save){
           return cb(save);
         });
       };
       w.exportCell = function(coord, cb){
-        return w.thread.eval("JSON.stringify(window.ss.sheet.cells[" + JSON.stringify(coord).replace(/\s/g, '') + "])", function(_, cell){
+        return w.thread.eval("JSON.stringify(window.ss.sheet.cells[" + (replace$.call(JSON.stringify(coord), /\s/g, '')) + "])", function(arg$, cell){
           return cb(cell);
         });
       };
       w.exportCells = function(cb){
-        return w.thread.eval('JSON.stringify(window.ss.sheet.cells)', function(_, cells){
+        return w.thread.eval("JSON.stringify(window.ss.sheet.cells)", function(arg$, cells){
           return cb(cells);
         });
       };
