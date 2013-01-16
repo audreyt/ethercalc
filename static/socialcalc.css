@@ -70,4 +70,11 @@ body:last-child .defaultPeer {
  font-size:7pt;font-family:Verdana,Arial,Helvetica,sans-serif;
  position:absolute;width:auto;z-index:110;}
 
+#te_fullgrid {
+    table-layout: fixed;
+}
+
+#te_fullgrid td {
+    overflow: hidden;
+}
 
