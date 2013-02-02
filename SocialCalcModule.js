@@ -17365,6 +17365,7 @@ SocialCalc.Formula.FunctionList["EXACT"] = [SocialCalc.Formula.ExactFunction, 2,
 # RIGHT(string,[length])
 # SUBSTITUTE(string,old,new,[which])
 # TRIM(string)
+# HEXCODE(string)
 # UPPER(string)
 #
 */
@@ -17386,6 +17387,7 @@ SocialCalc.Formula.ArgList = {
                 RIGHT: [1, 0],
                 SUBSTITUTE: [1, 1, 1, 0],
                 TRIM: [1],
+                HEXCODE: [1],
                 UPPER: [1]
                };
 
@@ -17570,6 +17572,19 @@ SocialCalc.Formula.StringFunctions = function(fname, operand, foperand, sheet) {
          resulttype = "t";
          break;
 
+      case "HEXCODE":
+         result = String(operand_value[1]);
+         var code = result.charCodeAt(0);
+         if (0xD800 <= code && code <= 0xDBFF) {
+             var next = result.charCodeAt(1);
+             if (0xDC00 <= next && next <= 0xDFFF) {
+                 code = ((code - 0xD800) * 0x400) + (next - 0xDC00) + 0x10000;
+             }
+         }
+         result = code.toString(16).toUpperCase();
+         resulttype = "t";
+         break;
+
       case "UPPER":
          result = operand_value[1].toUpperCase();
          resulttype = "t";
@@ -17593,6 +17608,7 @@ SocialCalc.Formula.FunctionList["REPT"] = [SocialCalc.Formula.StringFunctions, 2
 SocialCalc.Formula.FunctionList["RIGHT"] = [SocialCalc.Formula.StringFunctions, -1, "tc", "", "text"];
 SocialCalc.Formula.FunctionList["SUBSTITUTE"] = [SocialCalc.Formula.StringFunctions, -3, "subs", "", "text"];
 SocialCalc.Formula.FunctionList["TRIM"] = [SocialCalc.Formula.StringFunctions, 1, "v", "", "text"];
+SocialCalc.Formula.FunctionList["HEXCODE"] = [SocialCalc.Formula.StringFunctions, 1, "v", "", "text"];
 SocialCalc.Formula.FunctionList["UPPER"] = [SocialCalc.Formula.StringFunctions, 1, "v", "", "text"];
 
 /*
@@ -19250,7 +19266,6 @@ SocialCalc.Formula.TestCriteria = function(value, type, criteria) {
    return cond;
 
    }
-
 //
 /*
 // The module of the SocialCalc package for the optional popup menus in socialcalcspreadsheetcontrol.js
