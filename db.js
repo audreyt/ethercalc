@@ -2,7 +2,7 @@
   var slice$ = [].slice;
   this.__DB__ = null;
   this.include = function(){
-    var env, ref$, redisPort, redisHost, redisPass, dataDir, services, name, items, ref1$, db;
+    var env, ref$, redisPort, redisHost, redisPass, dataDir, services, name, items, ref1$, redis, makeClient, db, this$ = this;
     if (this.__DB__) {
       return this.__DB__;
     }
@@ -18,10 +18,36 @@
     redisHost == null && (redisHost = 'localhost');
     redisPort == null && (redisPort = 6379);
     dataDir == null && (dataDir = process.cwd());
-    db = require('redis').createClient(redisPort, redisHost);
-    if (redisPass) {
-      db.auth(redisPass);
-    }
+    redis = require('redis');
+    makeClient = function(){
+      var client;
+      client = redis.createClient(redisPort, redisHost);
+      if (redisPass) {
+        client.auth(redisPass(function(){
+          return console.log.apply(console, arguments);
+        }));
+      }
+      return client;
+    };
+    this.io.configure(function(){
+      var RedisStore, redisPub, redisSub, redisClient, store;
+      RedisStore = require('zappajs/node_modules/socket.io/lib/stores/redis');
+      redisPub = makeClient();
+      redisSub = makeClient();
+      redisClient = makeClient();
+      store = new RedisStore({
+        redis: redis,
+        redisPub: redisPub,
+        redisSub: redisSub,
+        redisClient: redisClient
+      });
+      this$.io.set('store', store);
+      this$.io.enable('browser client etag');
+      this$.io.enable('browser client gzip');
+      this$.io.enable('browser client minification');
+      return this$.io.set('log level', 5);
+    });
+    db = makeClient();
     db.on('connect', function(){
       db.DB = true;
       return console.log("Connected to Redis Server: " + redisHost + ":" + redisPort);

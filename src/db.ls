@@ -15,11 +15,30 @@
     redisPort ?= 6379
     dataDir ?= process.cwd!
 
-    db = require \redis .createClient redisPort, redisHost
-    db.auth redisPass if redisPass
-    db.on \connect ->
+    require! \redis
+    make-client = ->
+      client = redis.createClient redisPort, redisHost
+      if redisPass
+        client.auth redisPass -> console.log ...arguments
+      return client
+
+    @io.configure ~>
+      RedisStore = require \zappajs/node_modules/socket.io/lib/stores/redis
+      redis-pub = make-client!
+      redis-sub = make-client!
+      redis-client = make-client!
+      store = new RedisStore { redis, redis-pub, redis-sub, redis-client }
+      @io.set \store store
+      @io.enable 'browser client etag'
+      @io.enable 'browser client gzip'
+      @io.enable 'browser client minification'
+      @io.set 'log level', 5
+
+    db = make-client!
+    db.on \connect ~>
         db.DB = true
         console.log "Connected to Redis Server: #redisHost:#redisPort"
+
     db.on \error (err) ->
         | db.DB is true => return console.log """
             ==> Lost connection to Redis Server - attempting to reconnect...
