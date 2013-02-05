@@ -23,9 +23,9 @@
       var client;
       client = redis.createClient(redisPort, redisHost);
       if (redisPass) {
-        client.auth(redisPass(function(){
+        client.auth(redisPass, function(){
           return console.log.apply(console, arguments);
-        }));
+        });
       }
       return client;
     };

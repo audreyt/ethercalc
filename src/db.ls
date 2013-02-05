@@ -19,7 +19,7 @@
     make-client = ->
       client = redis.createClient redisPort, redisHost
       if redisPass
-        client.auth redisPass -> console.log ...arguments
+        client.auth redisPass, -> console.log ...arguments
       return client
 
     @io.configure ~>
