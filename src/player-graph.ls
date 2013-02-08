@@ -210,7 +210,7 @@
         ctx.font = "10pt bold Arial"
         maxheight = canv.height - 60
         totalwidth = canv.width
-        colors = ['0' to '9'] +++ ['a' to 'f']
+        colors = ['0' to '9'].concat ['a' to 'f']
         barColor = getBarColor!
         ctx.fillStyle = '#' + barColor
         colorList = [ barColor ]
@@ -301,7 +301,7 @@
         ctx.font = "10pt bold Arial"
         maxheight = canv.height - 60
         totalwidth = canv.width
-        colors = ['0' to '9'] +++ ['a' to 'f']
+        colors = ['0' to '9'].concat ['a' to 'f']
         barColor = getBarColor!
         ctx.fillStyle = "#" + barColor
         colorList = [ barColor ]
@@ -385,7 +385,7 @@
         rad = centerY - 50
         textRad = rad * 1.1
         lastStart = 0
-        colors = ['0' to '9'] +++ ['a' to 'f']
+        colors = ['0' to '9'].concat ['a' to 'f']
         i = 0
         while i < values.length
             if Number(values[i]) == 0
@@ -421,7 +421,7 @@
         values = []
         labels = []
         total = 0
-        colors = ['0' to '9'] +++ ['a' to 'f']
+        colors = ['0' to '9'].concat ['a' to 'f']
         shapes = <[ s o c ]>
         if range.left is range.right
             nitems = range.bottom - range.top + 1
@@ -571,7 +571,7 @@
         values = []
         labels = []
         total = 0
-        colors = ['0' to '9'] +++ ['a' to 'f']
+        colors = ['0' to '9'].concat ['a' to 'f']
         if range.left is range.right
             nitems = range.bottom - range.top + 1
             byrow = true
