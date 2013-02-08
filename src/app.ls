@@ -10,13 +10,13 @@ This work is published from Taiwan.
 */
 
 slurp = -> require \fs .readFileSync it, \utf8
-argv = (try require \optimist .boolean <[ vm polling ]> .argv) || {}
+argv = (try require \optimist .boolean <[ vm polling cors ]> .argv) || {}
 json = try JSON.parse slurp \/home/dotcloud/environment.json
 port = Number(argv.port or json?PORT_NODEJS or process.env.PORT or process.env.VCAP_APP_PORT or process.env.OPENSHIFT_INTERNAL_PORT) or 8000
 host = argv.host or process.env.VCAP_APP_HOST or process.env.OPENSHIFT_INTERNAL_IP or \0.0.0.0
 basepath = (argv.basepath or "") - //  /$  //
 
-{ keyfile, certfile, key, polling } = argv
+{ keyfile, certfile, key, polling, cors } = argv
 
 transport = \http
 if keyfile? and certfile?
@@ -33,4 +33,5 @@ console.log "Please connect to: #transport://#{
 @KEY = key
 @BASEPATH = basepath
 @POLLING = polling
+@CORS = cors
 @include \main

@@ -52,9 +52,13 @@ Returns a CSV rendering of the page.
     openssl x509 -req -in certrequest.csr -signkey ethercalc-key.pem -out ethercalc-cert.pem
     ethercalc --keyfile ethercalc-key.pem --certfile ethercalc-cert.pem
 
-### Disable Websocket: `--polling`
+### Prefers polling over Websocket: `--polling`
 
 Useful when running behind a proxy without WebSocket support.
+
+### Enable Cross-Origin Resource Sharing: `--cors`
+
+Useful when setting up EtherCalc as a public REST API server.
 
 ### URL Prefix: `--basepath /path/prefix`
 

@@ -11,6 +11,7 @@ dependencies:
   'uuid-pure': \*
   optimist: \*
   zappajs: \0.4.x
+  cors: \*
 optional-dependencies:
   hiredis: \0.1.x
   LiveScript: \1.1.x

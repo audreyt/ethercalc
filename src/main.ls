@@ -28,6 +28,13 @@
         @response.type Html
         @response.sendfile "#RealBin/#file"
 
+    if @CORS
+      console.log "Cross-Origin Resource Sharing (CORS) enabled."
+      @all \* (,, next) ->
+        @response.header \Access-Control-Allow-Origin  \*
+        @response.header \Access-Control-Allow-Headers \X-Requested-With
+        next!
+
     @get '/': sendFile \index.html
     @get '/favicon.ico': -> @response.send 404 ''
     @get '/_new': ->

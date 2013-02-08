@@ -30,6 +30,14 @@
         return this.response.sendfile(RealBin + "/" + file);
       };
     };
+    if (this.CORS) {
+      console.log("Cross-Origin Resource Sharing (CORS) enabled.");
+      this.all('*', function(arg$, arg1$, next){
+        this.response.header('Access-Control-Allow-Origin', '*');
+        this.response.header('Access-Control-Allow-Headers', 'X-Requested-With');
+        return next();
+      });
+    }
     this.get({
       '/': sendFile('index.html')
     });
