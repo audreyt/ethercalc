@@ -1,7 +1,7 @@
 {
   "name": "ethercalc",
   "description": "Multi-User Spreadsheet Server",
-  "version": "0.20130206.0",
+  "version": "0.20130213.0",
   "homepage": "http://ethercalc.net/",
   "repository": {
     "type": "git",
@@ -11,7 +11,8 @@
     "redis": "*",
     "uuid-pure": "*",
     "optimist": "*",
-    "zappajs": "0.4.x"
+    "zappajs": "0.4.x",
+    "cors": "*"
   },
   "optionalDependencies": {
     "hiredis": "0.1.x",
