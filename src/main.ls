@@ -1,5 +1,5 @@
 @include = ->
-    @use \bodyParser, @app.router, @express.static __dirname
+    @use \json, @app.router, @express.static __dirname
 
     @include \dotcloud
     @include \player-broadcast
@@ -11,6 +11,7 @@
 
     KEY = @KEY
     BASEPATH = @BASEPATH
+
     HMAC_CACHE = {}
     hmac = if !KEY then -> it else -> HMAC_CACHE[it] ||= do
         encoder = require \crypto .createHmac \sha256 KEY
@@ -94,7 +95,7 @@
 
     @post '/_/:room': ->
         {room} = @params
-        {command} = @body
+        command = @body?command
         unless command
             @response.type Text
             return @response.send 400 'Please send command'
@@ -109,7 +110,11 @@
         @response.json 202 {command}
 
     @post '/_': ->
-        {room, snapshot} = @body
+        room = @body?room
+        snapshot = @body?snapshot
+        unless room and snapshot
+            @response.type Text
+            return @response.send 400 'Please send room and snapshot'
         <~ SC._put room, snapshot
         @response.type Text
         @response.send 201 \OK

@@ -22,14 +22,27 @@
 
 ## REST API
 
+Note that POST endpoints accept only `application/json` requests,
+and will reject regular form posts.
+
 ### GET /_/page
 Fetch the page as a serialization in SocialCalc save format.
 
 ### PUT /_/page
 Replaces the page with a serialization in SocialCalc save format.
 
-### POST /_/page?command=...
-Runs one or more commands specified as the `command` POST data parameter.
+### POST /_
+
+Takes a JSON structure with `room` and `snapshot` fields.
+
+Replaces the page with a serialization in Socialtext save format.
+
+### POST /_/page
+
+Takes a JSON structure with a `command` field (either as a string
+or an array of strings).
+
+Runs one or more commands specified in the `command` field.
 
 ### GET /_/page/cells
 Returns a JSON representation of all defined cells in the page.

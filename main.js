@@ -2,7 +2,7 @@
   var join$ = [].join;
   this.include = function(){
     var DB, SC, KEY, BASEPATH, HMAC_CACHE, hmac, ref$, Text, Html, Csv, Json, RealBin, sendFile, IO, api;
-    this.use('bodyParser', this.app.router, this.express['static'](__dirname));
+    this.use('json', this.app.router, this.express['static'](__dirname));
     this.include('dotcloud');
     this.include('player-broadcast');
     this.include('player-graph');
@@ -170,9 +170,9 @@
     });
     this.post({
       '/_/:room': function(){
-        var room, command, this$ = this;
+        var room, command, ref$, this$ = this;
         room = this.params.room;
-        command = this.body.command;
+        command = (ref$ = this.body) != null ? ref$.command : void 8;
         if (!command) {
           this.response.type(Text);
           return this.response.send(400, 'Please send command');
@@ -198,8 +198,13 @@
     });
     this.post({
       '/_': function(){
-        var ref$, room, snapshot, this$ = this;
-        ref$ = this.body, room = ref$.room, snapshot = ref$.snapshot;
+        var room, ref$, snapshot, this$ = this;
+        room = (ref$ = this.body) != null ? ref$.room : void 8;
+        snapshot = (ref$ = this.body) != null ? ref$.snapshot : void 8;
+        if (!(room && snapshot)) {
+          this.response.type(Text);
+          return this.response.send(400, 'Please send room and snapshot');
+        }
         return SC._put(room, snapshot, function(){
           this$.response.type(Text);
           return this$.response.send(201, 'OK');
