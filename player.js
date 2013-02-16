@@ -134,7 +134,7 @@
                 }
                 cr = SocialCalc.coordToCr(this.data.ecell);
                 cell = SocialCalc.GetEditorCellElement(editor, cr.row, cr.col);
-                if (cell.element.className.search(find) === -1) {
+                if ((cell != null ? (ref$ = cell.element) != null ? ref$.className.search(find) : void 8 : void 8) === -1) {
                   cell.element.className += peerClass;
                 }
                 break;

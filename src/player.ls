@@ -79,7 +79,7 @@
                             ecell: editor.ecell.coord
                 cr = SocialCalc.coordToCr @data.ecell
                 cell = SocialCalc.GetEditorCellElement editor, cr.row, cr.col
-                cell.element.className += peerClass if cell.element.className.search(find) == -1
+                cell.element.className += peerClass if cell?element?className.search(find) == -1
             | \ask.ecell
                 SocialCalc.Callbacks.broadcast \ecell do
                     to: @data.user
