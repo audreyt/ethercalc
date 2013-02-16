@@ -154,7 +154,7 @@ SocialCalc.Constants = {
    defaultSelectedColnameClass: "", // column with selected cell, needs a cursor property 
    defaultSelectedColnameStyle: "font-size:small;text-align:center;color:#FFFFFF;background-color:#404040;cursor:e-resize;",
    defaultRownameClass: "", // regular row heading numbers
-   defaultRownameStyle: "font-size:small;text-align:right;color:#FFFFFF;background-color:#808080;",
+   defaultRownameStyle: "font-size:small;text-align:right;color:#FFFFFF;background-color:#808080;direction:rtl;",
    defaultSelectedRownameClass: "", // column with selected cell, needs a cursor property 
    defaultSelectedRownameStyle: "font-size:small;text-align:right;color:#FFFFFF;background-color:#404040;",
    defaultUpperLeftClass: "", // Corner cell in upper left
