@@ -1256,7 +1256,7 @@ SocialCalc.Formula.OperandsAsRangeOnSheet = function(sheet, operand) {
       }
 
    if (value2.type == "name") { // coord:name is allowed, if name is just one cell
-      value2 = scf.LookupName(othersheet, value2.value);
+      value2 = scf.LookupName(othersheet, value2.value, "end");
       }
 
    if (value2.type == "coord") { // value is a coord reference, so return the combined range
@@ -1330,7 +1330,7 @@ SocialCalc.Formula.OperandAsSheetName = function(sheet, operand) {
 // Note: The range must not have sheet names ("!") in them.
 //
 
-SocialCalc.Formula.LookupName = function(sheet, name) {
+SocialCalc.Formula.LookupName = function(sheet, name, isEnd) {
 
    var pos, specialc, parseinfo;
    var names = sheet.names;
@@ -1386,6 +1386,11 @@ SocialCalc.Formula.LookupName = function(sheet, name) {
       value.type = specialc.substring(pos+1);
       return value;
       }
+   else if (/^[a-zA-Z][a-zA-Z]?$/.test(name)) {
+      value.type = "coord";
+      value.value = name.toUpperCase() + (isEnd ? sheet.attribs.lastrow : 1);
+      return value;
+   }
    else {
       value.value = "";
       value.type = "e#NAME?";

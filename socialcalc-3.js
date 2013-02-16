@@ -4022,6 +4022,7 @@ SocialCalc.UndoStack.prototype.PushChange = function(type) { // adding a new thi
    }
 
 SocialCalc.UndoStack.prototype.AddDo = function() {
+   if (!this.stack[this.stack.length-1]) { return; }
    var args = [];
    for (var i=0; i<arguments.length; i++) {
       if (arguments[i]!=null) args.push(arguments[i]); // ignore null or undefined
@@ -4031,6 +4032,7 @@ SocialCalc.UndoStack.prototype.AddDo = function() {
    }
 
 SocialCalc.UndoStack.prototype.AddUndo = function() {
+   if (!this.stack[this.stack.length-1]) { return; }
    var args = [];
    for (var i=0; i<arguments.length; i++) {
       if (arguments[i]!=null) args.push(arguments[i]); // ignore null or undefined
