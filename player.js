@@ -24,7 +24,7 @@
           } else if (SocialCalc._room) {
             try {
               if (!SocialCalc.CurrentSpreadsheetControlObject) {
-                window.history.pushState({}, '', "/" + SocialCalc._room + (function(){
+                window.history.pushState({}, '', "./" + SocialCalc._room + (function(){
                   switch (false) {
                   case !SocialCalc._view:
                     return '/view';
@@ -40,9 +40,9 @@
             window.location = '/_start';
             return;
           }
-          endpoint = $('script[src*="socket.io/socket.io.js"]').attr('src');
+          endpoint = $('script[src*="./socket.io/socket.io.js"]').attr('src');
           if (endpoint) {
-            this$.connect(endpoint.replace(/socket.io\/socket.io.js.*/, ''));
+            this$.connect(endpoint.replace(/.\/socket.io\/socket.io.js.*/, ''));
           } else if (SocialCalc.CurrentSpreadsheetControlObject) {
             this$.connect(null, {
               transports: ['xhr-polling', 'jsonp-polling']

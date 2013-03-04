@@ -1,5 +1,7 @@
 @include = ->
     @use \json, @app.router, @express.static __dirname
+    @use \/edit @express.static __dirname
+    @use \/view @express.static __dirname
 
     @include \dotcloud
     @include \player-broadcast

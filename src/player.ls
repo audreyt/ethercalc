@@ -16,7 +16,7 @@
             else if // /node/\d+ //.test window.location.href
                 SocialCalc._room = window.location.href.match // /node/(\d+) // .1
         else if SocialCalc._room
-            try window.history.pushState {} '' "/#{ SocialCalc._room }#{
+            try window.history.pushState {} '' "./#{ SocialCalc._room }#{
                 switch
                 | SocialCalc._view  => '/view'
                 | SocialCalc._auth  => '/edit'
@@ -26,9 +26,9 @@
             window.location = '/_start'
             return
 
-        endpoint = $ 'script[src*="socket.io/socket.io.js"]' .attr \src
+        endpoint = $ 'script[src*="./socket.io/socket.io.js"]' .attr \src
         if endpoint
-            @connect(endpoint.replace /socket.io\/socket.io.js.*/ '')
+            @connect(endpoint.replace /.\/socket.io\/socket.io.js.*/ '')
         else if SocialCalc.CurrentSpreadsheetControlObject
             @connect null, transports: <[ xhr-polling jsonp-polling ]>
         else => @connect!
