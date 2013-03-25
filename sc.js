@@ -350,6 +350,9 @@
           return console.log("==> Regenerated snapshot for " + room);
         });
       };
+      w.onerror = function(it){
+        return console.log(it);
+      };
       w.onmessage = function(arg$){
         var ref$, type, snapshot, html, csv, ref, parts, save;
         ref$ = arg$.data, type = ref$.type, snapshot = ref$.snapshot, html = ref$.html, csv = ref$.csv, ref = ref$.ref, parts = ref$.parts, save = ref$.save;

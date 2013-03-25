@@ -33,9 +33,10 @@
 
     if @CORS
       console.log "Cross-Origin Resource Sharing (CORS) enabled."
-      @all \* (,, next) ->
+      @all \* (req, res, next) ->
         @response.header \Access-Control-Allow-Origin  \*
         @response.header \Access-Control-Allow-Headers \X-Requested-With
+        return res.send(204) if req?method is \OPTIONS
         next!
 
     @get '/': sendFile \index.html

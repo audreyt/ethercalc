@@ -148,6 +148,7 @@ catch => console.log "Falling back to vm.CreateContext backend"; class => (code)
               .bgsave!
               .exec!
           console.log "==> Regenerated snapshot for #room"
+        w.onerror = -> console.log it
         w.onmessage = ({ data: { type, snapshot, html, csv, ref, parts, save } }) -> switch type
         | \snapshot   => w.on-snapshot snapshot
         | \save       => w.on-save save

@@ -34,9 +34,12 @@
     };
     if (this.CORS) {
       console.log("Cross-Origin Resource Sharing (CORS) enabled.");
-      this.all('*', function(arg$, arg1$, next){
+      this.all('*', function(req, res, next){
         this.response.header('Access-Control-Allow-Origin', '*');
         this.response.header('Access-Control-Allow-Headers', 'X-Requested-With');
+        if ((req != null ? req.method : void 8) === 'OPTIONS') {
+          return res.send(204);
+        }
         return next();
       });
     }
