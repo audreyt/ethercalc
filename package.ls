@@ -1,7 +1,7 @@
 #!/usr/bin/env lsc -cj
 name: \ethercalc
 description: 'Multi-User Spreadsheet Server'
-version: \0.20130213.0
+version: \0.20130325.0
 homepage: 'http://ethercalc.net/'
 repository:
   type: 'git'
@@ -23,4 +23,4 @@ scripts:
   start: \app.js
   prepublish: 'lsc -cj package.ls || echo'
 engines:
-  node: \0.8.x
+  node: '>= 0.8.x'
