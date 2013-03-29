@@ -35,7 +35,8 @@
       console.log "Cross-Origin Resource Sharing (CORS) enabled."
       @all \* (req, res, next) ->
         @response.header \Access-Control-Allow-Origin  \*
-        @response.header \Access-Control-Allow-Headers \X-Requested-With
+        @response.header \Access-Control-Allow-Headers 'X-Requested-With,Content-Type,If-Modified-Since'
+        @response.header \Access-Control-Allow-Methods 'GET,POST,PUT'
         return res.send(204) if req?method is \OPTIONS
         next!
 

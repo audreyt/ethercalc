@@ -36,7 +36,8 @@
       console.log("Cross-Origin Resource Sharing (CORS) enabled.");
       this.all('*', function(req, res, next){
         this.response.header('Access-Control-Allow-Origin', '*');
-        this.response.header('Access-Control-Allow-Headers', 'X-Requested-With');
+        this.response.header('Access-Control-Allow-Headers', 'X-Requested-With,Content-Type,If-Modified-Since');
+        this.response.header('Access-Control-Allow-Methods', 'GET,POST,PUT');
         if ((req != null ? req.method : void 8) === 'OPTIONS') {
           return res.send(204);
         }
