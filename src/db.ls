@@ -16,26 +16,27 @@
     dataDir ?= process.cwd!
 
     require! \redis
-    make-client = ->
+    make-client = (cb) ->
       client = redis.createClient redisPort, redisHost
       if redisPass
         client.auth redisPass, -> console.log ...arguments
+      client.on \connect cb if cb
       return client
 
     @io.configure ~>
       RedisStore = require \zappajs/node_modules/socket.io/lib/stores/redis
-      redis-pub = make-client!
-      redis-sub = make-client!
-      redis-client = make-client!
-      store = new RedisStore { redis, redis-pub, redis-sub, redis-client }
-      @io.set \store store
-      @io.enable 'browser client etag'
-      @io.enable 'browser client gzip'
-      @io.enable 'browser client minification'
-      @io.set 'log level', 5
+      redis-client = make-client ~>
+        redis-pub = make-client!
+        redis-sub = make-client!
+        store = new RedisStore { redis, redis-pub, redis-sub, redis-client }
+        @io.set \store store
+        @io.enable 'browser client etag'
+        @io.enable 'browser client gzip'
+        @io.enable 'browser client minification'
+        @io.set 'log level', 5
+      redis-client.on \error ->
 
-    db = make-client!
-    db.on \connect ~>
+    db = make-client ~>
         db.DB = true
         console.log "Connected to Redis Server: #redisHost:#redisPort"
 
