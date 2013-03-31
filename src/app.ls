@@ -20,13 +20,13 @@ basepath = (argv.basepath or "") - //  /$  //
 
 transport = \http
 if keyfile? and certfile?
-    options = https:
-        key: slurp keyfile
-        cert: slurp certfile
-    transport = \https
+  options = https:
+    key: slurp keyfile
+    cert: slurp certfile
+  transport = \https
 
 console.log "Please connect to: #transport://#{
-    if host is \0.0.0.0 then require \os .hostname! else host
+  if host is \0.0.0.0 then require \os .hostname! else host
 }:#port/"
 
 <- (require \zappajs) port, host, options
