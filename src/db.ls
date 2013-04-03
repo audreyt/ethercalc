@@ -23,8 +23,9 @@
     client.on \connect cb if cb
     return client
 
-  @io.configure ~>
+  try
     RedisStore = require \zappajs/node_modules/socket.io/lib/stores/redis
+    <~ @io.configure
     redis-client = make-client ~>
       redis-pub = make-client!
       redis-sub = make-client!

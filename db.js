@@ -2,7 +2,7 @@
   var slice$ = [].slice;
   this.__DB__ = null;
   this.include = function(){
-    var env, ref$, redisPort, redisHost, redisPass, dataDir, services, name, items, ref1$, redis, makeClient, db, this$ = this;
+    var env, ref$, redisPort, redisHost, redisPass, dataDir, services, name, items, ref1$, redis, makeClient, RedisStore, db, this$ = this;
     if (this.__DB__) {
       return this.__DB__;
     }
@@ -32,27 +32,29 @@
       }
       return client;
     };
-    this.io.configure(function(){
-      var RedisStore, redisClient;
+    try {
       RedisStore = require('zappajs/node_modules/socket.io/lib/stores/redis');
-      redisClient = makeClient(function(){
-        var redisPub, redisSub, store;
-        redisPub = makeClient();
-        redisSub = makeClient();
-        store = new RedisStore({
-          redis: redis,
-          redisPub: redisPub,
-          redisSub: redisSub,
-          redisClient: redisClient
+      this.io.configure(function(){
+        var redisClient;
+        redisClient = makeClient(function(){
+          var redisPub, redisSub, store;
+          redisPub = makeClient();
+          redisSub = makeClient();
+          store = new RedisStore({
+            redis: redis,
+            redisPub: redisPub,
+            redisSub: redisSub,
+            redisClient: redisClient
+          });
+          this$.io.set('store', store);
+          this$.io.enable('browser client etag');
+          this$.io.enable('browser client gzip');
+          this$.io.enable('browser client minification');
+          return this$.io.set('log level', 5);
         });
-        this$.io.set('store', store);
-        this$.io.enable('browser client etag');
-        this$.io.enable('browser client gzip');
-        this$.io.enable('browser client minification');
-        return this$.io.set('log level', 5);
+        return redisClient.on('error', function(){});
       });
-      return redisClient.on('error', function(){});
-    });
+    } catch (e$) {}
     db = makeClient(function(){
       db.DB = true;
       return console.log("Connected to Redis Server: " + redisHost + ":" + redisPort);
