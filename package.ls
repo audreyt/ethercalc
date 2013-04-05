@@ -21,6 +21,6 @@ directories:
 subdomain: \ethercalc
 scripts:
   start: \app.js
-  prepublish: 'lsc -cj package.ls || echo'
+  prepublish: 'node node_modules/LiveScript/bin/lsc -cj package.ls || echo'
 engines:
   node: '>= 0.8.x'

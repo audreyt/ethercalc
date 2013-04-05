@@ -46,10 +46,6 @@
           endpoint = $('script[src*="./socket.io/socket.io.js"]').attr('src');
           if (endpoint) {
             this$.connect(endpoint.replace(/.\/socket.io\/socket.io.js.*/, ''));
-          } else if (SocialCalc.CurrentSpreadsheetControlObject) {
-            this$.connect(null, {
-              transports: ['xhr-polling', 'jsonp-polling']
-            });
           } else {
             this$.connect();
           }

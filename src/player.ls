@@ -30,8 +30,6 @@
     endpoint = $ 'script[src*="./socket.io/socket.io.js"]' .attr \src
     if endpoint
       @connect(endpoint.replace /.\/socket.io\/socket.io.js.*/ '')
-    else if SocialCalc.CurrentSpreadsheetControlObject
-      @connect null, transports: <[ xhr-polling jsonp-polling ]>
     else => @connect!
 
     emit = (data) ~> @emit {data}
