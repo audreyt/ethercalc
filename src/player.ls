@@ -1,5 +1,6 @@
 @include = -> @client '/player/main.js': ->
-  $ = window.jQuery || window.$ || alert('jQuery not available')
+  $ = window.jQuery || window.$
+  return location.reload! unless $
   doPlay = ~>
     window.SocialCalc ?= {}
     SocialCalc._username = Math.random!toString!

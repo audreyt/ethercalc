@@ -3,7 +3,10 @@
     return this.client({
       '/player/main.js': function(){
         var $, doPlay, onReady, onLoad, ref$, this$ = this;
-        $ = window.jQuery || window.$ || alert('jQuery not available');
+        $ = window.jQuery || window.$;
+        if (!$) {
+          return location.reload();
+        }
         doPlay = function(){
           var ref$, endpoint, emit;
           window.SocialCalc == null && (window.SocialCalc = {});
