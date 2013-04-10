@@ -1,7 +1,7 @@
 (function(){
   var join$ = [].join;
   this.include = function(){
-    var DB, SC, KEY, BASEPATH, HMAC_CACHE, hmac, ref$, Text, Html, Csv, Json, RealBin, sendFile, IO, api;
+    var DB, SC, KEY, BASEPATH, HMAC_CACHE, hmac, ref$, Text, Html, Csv, Json, RealBin, sendFile, IO, api, ExportCSV, ExportHTML;
     this.use('json', this.app.router, this.express['static'](__dirname));
     this.use('/edit', this.express['static'](__dirname));
     this.use('/view', this.express['static'](__dirname));
@@ -64,6 +64,54 @@
     this.get({
       '/_start': sendFile('start.html')
     });
+    IO = this.io;
+    api = function(cb){
+      return function(){
+        var this$ = this;
+        return SC._get(this.params.room, IO, function(arg$){
+          var snapshot, ref$, type, content;
+          snapshot = arg$.snapshot;
+          if (snapshot) {
+            ref$ = cb.call(this$.params, snapshot), type = ref$[0], content = ref$[1];
+            if (type === Csv) {
+              this$.response.set('Content-Disposition', "attachment; filename=\"" + this$.params.room + ".csv\"");
+            }
+            if (content instanceof Function) {
+              return content(SC[this$.params.room], function(rv){
+                this$.response.type(type);
+                return this$.response.send(200, rv);
+              });
+            } else {
+              this$.response.type(type);
+              return this$.response.send(200, content);
+            }
+          } else {
+            this$.response.type(Text);
+            return this$.response.send(404, '');
+          }
+        });
+      };
+    };
+    ExportCSV = api(function(){
+      return [
+        Csv, function(sc, cb){
+          return sc.exportCSV(cb);
+        }
+      ];
+    });
+    ExportHTML = api(function(){
+      return [
+        Html, function(sc, cb){
+          return sc.exportHTML(cb);
+        }
+      ];
+    });
+    this.get({
+      '/:room.csv': ExportCSV
+    });
+    this.get({
+      '/:room.html': ExportHTML
+    });
     this.get({
       '/:room': KEY
         ? function(){
@@ -91,31 +139,6 @@
         return this.response.redirect(BASEPATH + "/" + room + "?auth=0");
       }
     });
-    IO = this.io;
-    api = function(cb){
-      return function(){
-        var this$ = this;
-        return SC._get(this.params.room, IO, function(arg$){
-          var snapshot, ref$, type, content;
-          snapshot = arg$.snapshot;
-          if (snapshot) {
-            ref$ = cb.call(this$.params, snapshot), type = ref$[0], content = ref$[1];
-            if (content instanceof Function) {
-              return content(SC[this$.params.room], function(rv){
-                this$.response.type(type);
-                return this$.response.send(200, rv);
-              });
-            } else {
-              this$.response.type(type);
-              return this$.response.send(200, content);
-            }
-          } else {
-            this$.response.type(Text);
-            return this$.response.send(404, '');
-          }
-        });
-      };
-    };
     this.get({
       '/_/:room/cells/:cell': api(function(){
         var this$ = this;
@@ -137,20 +160,12 @@
     });
     this.get({
       '/_/:room/html': api(function(){
-        return [
-          Html, function(sc, cb){
-            return sc.exportHTML(cb);
-          }
-        ];
+        return ExportHTML;
       })
     });
     this.get({
       '/_/:room/csv': api(function(){
-        return [
-          Csv, function(sc, cb){
-            return sc.exportCSV(cb);
-          }
-        ];
+        return ExportCSV;
       })
     });
     this.get({

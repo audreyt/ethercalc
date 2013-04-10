@@ -51,10 +51,10 @@ Returns a JSON representation of all defined cells in the page.
 Returns a JSON representation of a single cell in the page.
 
 ### GET /_/page/html
-Returns a HTML rendering of the page.
+Returns a HTML rendering of the page. (GET /page.html also works.)
 
 ### GET /_/page/csv
-Returns a CSV rendering of the page.
+Returns a CSV rendering of the page. (GET /page.csv also works.)
 
 ## Flags
 

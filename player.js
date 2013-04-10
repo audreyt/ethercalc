@@ -289,11 +289,11 @@
           }
           $(document).on('mouseover', '#te_fullgrid tr:nth-child(2) td:first', function(){
             return $(this).attr({
-              title: 'Export to HTML'
+              title: 'Export to HTML (.csv also works)'
             });
           });
           return $(document).on('click', '#te_fullgrid tr:nth-child(2) td:first', function(){
-            return window.open("/_/" + SocialCalc._room + "/html");
+            return window.open("/" + SocialCalc._room + ".html");
           });
         };
         if ((ref$ = window.Document) != null && ref$.Parser) {

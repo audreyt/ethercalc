@@ -46,23 +46,16 @@
     room = require \uuid-pure .newId 10 36 .toLowerCase!
     @response.redirect if KEY then "#BASEPATH/#room/edit" else "#BASEPATH/#room"
   @get '/_start': sendFile \start.html
-  @get '/:room':
-    if KEY then ->
-      | @query.auth?length  => sendFile \index.html .call @
-      | otherwise       => @response.redirect "#BASEPATH/#{ @params.room }?auth=0"
-    else sendFile \index.html
-  @get '/:room/edit': ->
-    room = @params.room
-    @response.redirect "#BASEPATH/#room?auth=#{ hmac room }"
-  @get '/:room/view': ->
-    room = @params.room
-    @response.redirect "#BASEPATH/#room?auth=0"
 
   IO = @io
   api = (cb) -> ->
     {snapshot} <~ SC._get @params.room, IO
     if snapshot
       [type, content] = cb.call @params, snapshot
+      if type is Csv
+        @response.set \Content-Disposition """
+          attachment; filename="#{ @params.room }.csv"
+        """
       if content instanceof Function
         rv <~ content SC[@params.room]
         @response.type type
@@ -74,18 +67,30 @@
       @response.type Text
       @response.send 404 ''
 
+  ExportCSV = api -> [Csv, (sc, cb) -> sc.exportCSV cb ]
+  ExportHTML = api -> [Html, (sc, cb) -> sc.exportHTML cb ]
+  @get '/:room.csv': ExportCSV
+  @get '/:room.html': ExportHTML
+
+  @get '/:room':
+    if KEY then ->
+      | @query.auth?length  => sendFile \index.html .call @
+      | otherwise       => @response.redirect "#BASEPATH/#{ @params.room }?auth=0"
+    else sendFile \index.html
+  @get '/:room/edit': ->
+    room = @params.room
+    @response.redirect "#BASEPATH/#room?auth=#{ hmac room }"
+  @get '/:room/view': ->
+    room = @params.room
+    @response.redirect "#BASEPATH/#room?auth=0"
   @get '/_/:room/cells/:cell': api -> [Json
     (sc, cb) ~> sc.exportCell @cell, cb
   ]
   @get '/_/:room/cells': api -> [Json
     (sc, cb) -> sc.exportCells cb
   ]
-  @get '/_/:room/html': api -> [Html
-    (sc, cb) -> sc.exportHTML cb
-  ]
-  @get '/_/:room/csv': api -> [Csv
-    (sc, cb) -> sc.exportCSV cb
-  ]
+  @get '/_/:room/html': api -> ExportHTML
+  @get '/_/:room/csv': api -> ExportCSV
   @get '/_/:room': api -> [Text, it]
 
   @put '/_/:room': ->
