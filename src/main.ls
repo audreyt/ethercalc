@@ -89,8 +89,8 @@
   @get '/_/:room/cells': api -> [Json
     (sc, cb) -> sc.exportCells cb
   ]
-  @get '/_/:room/html': api -> ExportHTML
-  @get '/_/:room/csv': api -> ExportCSV
+  @get '/_/:room/html': ExportHTML
+  @get '/_/:room/csv': ExportCSV
   @get '/_/:room': api -> [Text, it]
 
   @put '/_/:room': ->
