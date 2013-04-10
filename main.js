@@ -159,14 +159,10 @@
       })
     });
     this.get({
-      '/_/:room/html': api(function(){
-        return ExportHTML;
-      })
+      '/_/:room/html': ExportHTML
     });
     this.get({
-      '/_/:room/csv': api(function(){
-        return ExportCSV;
-      })
+      '/_/:room/csv': ExportCSV
     });
     this.get({
       '/_/:room': api(function(it){
