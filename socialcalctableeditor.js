@@ -2146,10 +2146,10 @@ SocialCalc.EditorProcessMouseWheel = function(event, delta, mousewheelinfo, wobj
    if (wobj.functionobj.editor.busy) return; // ignore if busy
 
    if (delta > 0) {
-      wobj.functionobj.editor.ScrollRelative(true, Math.floor(-delta));
+      wobj.functionobj.editor.ScrollRelative(true, Math.floor(-delta * 1.5));
       }
    if (delta < 0) {
-      wobj.functionobj.editor.ScrollRelative(true, Math.ceil(-delta));
+      wobj.functionobj.editor.ScrollRelative(true, Math.ceil(-delta * 1.5));
       }
 
    }
