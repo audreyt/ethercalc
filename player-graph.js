@@ -3,7 +3,10 @@
     return this.client({
       '/player/graph.js': function(){
         var $, SocialCalc, colorIndex, getBarColor, getDrawColor, UpdateGraphRangeProposal, GraphSetCells, DoGraph, GraphChanged, MinMaxChanged, GraphSave, GraphLoad, GraphVerticalBar, GraphHorizontalBar, MakePieChart, MakeLineChart, MakeScatterChart, scc, b1, b2, b3, b4, b5;
-        $ = window.jQuery || window.$ || alert('jQuery not available');
+        $ = window.jQuery || window.$;
+        if (!$) {
+          return location.reload();
+        }
         SocialCalc = window.SocialCalc || alert('Cannot find window.SocialCalc');
         SocialCalc.Constants.s_loc_plain = "Plain";
         SocialCalc.Constants.s_loc_graph = "Graph";

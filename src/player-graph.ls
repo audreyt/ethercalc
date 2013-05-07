@@ -1,5 +1,6 @@
 @include = -> @client '/player/graph.js': ->
-  $ = window.jQuery || window.$ || alert('jQuery not available')
+  $ = window.jQuery || window.$
+  return location.reload! unless $
   SocialCalc = window.SocialCalc || alert 'Cannot find window.SocialCalc'
 
   SocialCalc.Constants.s_loc_plain = "Plain"
