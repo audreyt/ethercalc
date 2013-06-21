@@ -7,13 +7,12 @@ repository:
   type: 'git'
   url: 'https://github.com/audreyt/ethercalc'
 dependencies:
-  redis: \*
+  redis: \0.8.2
   'uuid-pure': \*
   optimist: \*
   zappajs: \0.4.x
   cors: \*
 optional-dependencies:
-  hiredis: \0.1.x
   LiveScript: \1.1.x
   'webworker-threads': \0.4.x
 directories:
