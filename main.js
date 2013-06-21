@@ -3,8 +3,8 @@
   this.include = function(){
     var DB, SC, KEY, BASEPATH, HMAC_CACHE, hmac, ref$, Text, Html, Csv, Json, RealBin, sendFile, IO, api, ExportCSV, ExportHTML;
     this.use('json', this.app.router, this.express['static'](__dirname));
-    this.use('/edit', this.express['static'](__dirname));
-    this.use('/view', this.express['static'](__dirname));
+    this.app.use('/edit', this.express['static'](__dirname));
+    this.app.use('/view', this.express['static'](__dirname));
     this.include('dotcloud');
     this.include('player-broadcast');
     this.include('player-graph');
