@@ -1,8 +1,10 @@
-from    heroku/heroku-buildpack-nodejs
-run     echo "deb http://archive.ubuntu.com/ubuntu precise main universe" > /etc/apt/sources.list
-run     apt-get -y install redis-server g++ make
-add     .       /app
-run     /buildpack/bin/compile /app /tmp
-expose  :80
-expose  :6379
-cmd     ["sh", "-c", "/usr/bin/redis-server | PORT=80 /app/bin/node /app/app.js --cors"]
+from    base:latest
+run     echo "deb http://ppa.launchpad.net/chris-lea/node.js/ubuntu precise main" >> /etc/apt/sources.list
+run     echo "deb http://ppa.launchpad.net/chris-lea/redis-server/ubuntu precise main" >> /etc/apt/sources.list
+run     apt-get update
+run     apt-get install --force-yes -y nodejs redis-server
+add     .  /app
+expose  6379
+expose  :6967
+env     PORT 6967
+cmd     ["sh", "-c", "/usr/bin/redis-server | node /app/app.js --cors"]
