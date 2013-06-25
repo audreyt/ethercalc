@@ -102,7 +102,7 @@
       });
     };
     SC._init = function(snapshot, log, DB, room, io){
-      var w;
+      var w, this$ = this;
       log == null && (log = []);
       if (SC[room] != null) {
         SC[room]._doClearCache();
@@ -330,13 +330,6 @@
         };
       });
       w._snapshot = snapshot;
-      w.thread.eval(bootSC);
-      w.postMessage({
-        type: 'init',
-        room: room,
-        log: log,
-        snapshot: snapshot
-      });
       w.onSnapshot = function(newSnapshot){
         var this$ = this;
         io.sockets['in']("recalc." + room).emit('data', {
@@ -406,6 +399,32 @@
           return cb(csv);
         });
       };
+      w.exportCSV = function(cb){
+        var x;
+        x = new Worker(function(){
+          return this.onmessage = function(arg$){
+            var snapshot, parts, save, e;
+            snapshot = arg$.data;
+            try {
+              parts = SocialCalc.SpreadsheetControlDecodeSpreadsheetSave("", snapshot);
+              save = snapshot.substring(parts.sheet.start, parts.sheet.end);
+              return postMessage(SocialCalc.ConvertSaveToOtherFormat(save, 'csv'));
+            } catch (e$) {
+              e = e$;
+              return postMessage("ERROR: " + e);
+            }
+          };
+        });
+        x.onmessage = function(arg$){
+          var data;
+          data = arg$.data;
+          x.thread.destroy();
+          return cb(data);
+        };
+        x.thread.eval(bootSC, function(){
+          return x.postMessage(w._snapshot);
+        });
+      };
       w.exportSave = function(cb){
         return w.thread.eval("window.ss.CreateSheetSave()", function(arg$, save){
           return cb(save);
@@ -425,6 +444,14 @@
           return cb(cells);
         });
       };
+      w.thread.eval(bootSC, function(){
+        return w.postMessage({
+          type: 'init',
+          room: room,
+          log: log,
+          snapshot: snapshot
+        });
+      });
       return w;
     };
     return SC;

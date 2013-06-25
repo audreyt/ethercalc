@@ -132,8 +132,6 @@ catch => console.log "Falling back to vm.CreateContext backend"; class => (code)
           appendChild: -> @elems.push it
         SocialCalc.document.createElement = -> new Node it
     w._snapshot = snapshot
-    w.thread.eval bootSC
-    w.postMessage { type: \init, room, log, snapshot }
     w.on-snapshot = (newSnapshot) ->
       io.sockets.in "recalc.#room" .emit \data {
         type: \recalc
@@ -171,6 +169,15 @@ catch => console.log "Falling back to vm.CreateContext backend"; class => (code)
         window.ss.CreateSheetSave(), "csv"
       )
     """, (, csv) -> cb csv
+    # Create a new worker for each CSV conversion to avoid starvation
+    w.exportCSV = !(cb) ->
+      x = new Worker -> @onmessage = ({data: snapshot}) -> try
+        parts = SocialCalc.SpreadsheetControlDecodeSpreadsheetSave("", snapshot)
+        save = snapshot.substring parts.sheet.start, parts.sheet.end
+        post-message SocialCalc.ConvertSaveToOtherFormat(save, \csv)
+      catch e => post-message "ERROR: #{ e }"
+      x.onmessage = ({data}) -> x.thread.destroy!; cb data
+      x.thread.eval bootSC, -> x.post-message w._snapshot
     w.exportSave = (cb) -> w.thread.eval """
       window.ss.CreateSheetSave()
     """, (, save) -> cb save
@@ -182,5 +189,6 @@ catch => console.log "Falling back to vm.CreateContext backend"; class => (code)
     w.exportCells = (cb) -> w.thread.eval """
       JSON.stringify(window.ss.sheet.cells)
     """, (, cells) -> cb cells
+    w.thread.eval bootSC, ~> w.postMessage { type: \init, room, log, snapshot }
     return w
   return SC
