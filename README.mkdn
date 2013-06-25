@@ -20,6 +20,15 @@
     npm i -g ethercalc
     ethercalc
 
+Or install with our [Docker](http://www.docker.io/) image, which comes with
+built-in Redis server and webworker-threads support:
+
+    # Runs at port 6967 (default)
+    docker run audreyt/ethercalc
+
+    # Runs at another port, for example 8080
+    docker run -p 8080:6967 audreyt/ethercalc
+
 ## REST API
 
 Note that POST endpoints accept only `application/json` requests,
