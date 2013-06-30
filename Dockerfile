@@ -7,4 +7,4 @@ add     .  /app
 expose  6379
 expose  :6967
 env     PORT 6967
-cmd     ["sh", "-c", "/usr/bin/redis-server | node /app/app.js --cors"]
+cmd     ["sh", "-c", "sysctl vm.overcommit_memory=1 ; cd /redis ; /usr/bin/redis-server --logfile redis.log --dbfilename /redis/dump.rdb | (sleep 2 && node /app/app.js --cors)"]
