@@ -24,10 +24,13 @@ Or install with our [Docker](http://www.docker.io/) image, which comes with
 built-in Redis server and webworker-threads support:
 
     # Runs at port 6967 (default)
-    docker run audreyt/ethercalc
+    docker run -b /var/lib/redis:/redis:rw audreyt/ethercalc
 
     # Runs at another port, for example 8080
-    docker run -p 8080:6967 audreyt/ethercalc
+    docker run -p 8080:6967 -b /var/lib/redis:/redis:rw audreyt/ethercalc
+
+Note the use of `-b` flag to store the Redis database on `/var/lib/redis` in
+the host server; this option requires Docker version 0.4.7.
 
 ## REST API
 
