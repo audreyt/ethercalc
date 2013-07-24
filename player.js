@@ -8,7 +8,7 @@
           return location.reload();
         }
         doPlay = function(){
-          var ref$, endpoint, emit;
+          var ref$, endpoint, ref1$, emit;
           window.SocialCalc == null && (window.SocialCalc = {});
           SocialCalc._username = Math.random().toString();
           SocialCalc.isConnected = true;
@@ -18,7 +18,7 @@
           SocialCalc._view = SocialCalc._auth === '0';
           SocialCalc._room == null && (SocialCalc._room = window.location.hash.replace('#', ''));
           SocialCalc._room = (SocialCalc._room + "").replace(/^_+/, '').replace(/\?.*/, '');
-          endpoint = $('script[src*="./socket.io/socket.io.js"]').attr('src').replace(/.\/socket.io\/socket.io.js.*/, '');
+          endpoint = (ref$ = $('script[src*="/socket.io/socket.io.js"]')) != null ? (ref1$ = ref$.attr('src')) != null ? ref1$.replace(/\.?\/socket.io\/socket.io.js.*/, '') : void 8 : void 8;
           if (endpoint === '') {
             endpoint = location.pathname.replace(/\/(view|edit)$/, '');
             endpoint = endpoint.replace(RegExp('' + SocialCalc._room + '$'), '');
@@ -301,7 +301,7 @@
             });
           });
           return $(document).on('click', '#te_fullgrid tr:nth-child(2) td:first', function(){
-            return window.open("/" + SocialCalc._room + ".html");
+            return window.open("./" + SocialCalc._room + ".html");
           });
         };
         if ((ref$ = window.Document) != null && ref$.Parser) {

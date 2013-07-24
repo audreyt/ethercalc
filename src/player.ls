@@ -11,8 +11,7 @@
     SocialCalc._room ?= window.location.hash.replace \# ''
     SocialCalc._room = "#{SocialCalc._room}".replace /^_+/ '' .replace /\?.*/ ''
 
-    endpoint = $ 'script[src*="./socket.io/socket.io.js"]' .attr \src
-                  .replace /.\/socket.io\/socket.io.js.*/ ''
+    endpoint = $('script[src*="/socket.io/socket.io.js"]')?attr(\src)?replace(/\.?\/socket.io\/socket.io.js.*/ '')
     if endpoint is ''
       endpoint = location.pathname .replace // /(view|edit)$ // ''
       endpoint.=replace // #{ SocialCalc._room } $ // ''
