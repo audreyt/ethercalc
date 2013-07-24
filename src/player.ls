@@ -192,7 +192,7 @@ Check the activity stream to see the newly edited page!
     $ document .on \mouseover '#te_fullgrid tr:nth-child(2) td:first' ->
       $ @ .attr title: 'Export to HTML (.csv also works)'
     $ document .on \click '#te_fullgrid tr:nth-child(2) td:first' ->
-      window.open "/#{ SocialCalc._room }.html"
+      window.open "./#{ SocialCalc._room }.html"
 
   if window.Document?Parser
     SocialCalc.Callbacks.expand_wiki = (val) -> """
