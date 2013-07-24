@@ -18,6 +18,11 @@
           SocialCalc._view = SocialCalc._auth === '0';
           SocialCalc._room == null && (SocialCalc._room = window.location.hash.replace('#', ''));
           SocialCalc._room = (SocialCalc._room + "").replace(/^_+/, '').replace(/\?.*/, '');
+          endpoint = $('script[src*="./socket.io/socket.io.js"]').attr('src').replace(/.\/socket.io\/socket.io.js.*/, '');
+          if (endpoint === '') {
+            endpoint = location.pathname.replace(/\/(view|edit)$/, '');
+            endpoint = endpoint.replace(RegExp('' + SocialCalc._room + '$'), '');
+          }
           if ((ref$ = window.Drupal) != null && ref$.sheetnode) {
             if (/overlay=node\/\d+/.test(window.location.hash)) {
               SocialCalc._room = window.location.hash.match(/=node\/(\d+)/)[1];
@@ -40,12 +45,13 @@
               }
             } catch (e$) {}
           } else {
-            window.location = '/_start';
+            window.location = './_start';
             return;
           }
-          endpoint = $('script[src*="./socket.io/socket.io.js"]').attr('src');
           if (endpoint) {
-            this$.connect(endpoint.replace(/.\/socket.io\/socket.io.js.*/, ''));
+            this$.connect(null, {
+              resource: endpoint.replace(/\/?$/, '/socket.io').replace(/^\//, '')
+            });
           } else {
             this$.connect();
           }

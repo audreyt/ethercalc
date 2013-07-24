@@ -11,6 +11,12 @@
     SocialCalc._room ?= window.location.hash.replace \# ''
     SocialCalc._room = "#{SocialCalc._room}".replace /^_+/ '' .replace /\?.*/ ''
 
+    endpoint = $ 'script[src*="./socket.io/socket.io.js"]' .attr \src
+                  .replace /.\/socket.io\/socket.io.js.*/ ''
+    if endpoint is ''
+      endpoint = location.pathname .replace // /(view|edit)$ // ''
+      endpoint.=replace // #{ SocialCalc._room } $ // ''
+
     if window.Drupal?sheetnode
       if // overlay=node/\d+ //.test window.location.hash
         SocialCalc._room = window.location.hash.match // =node/(\d+) // .1
@@ -24,12 +30,11 @@
         | otherwise     => ''
       }" unless SocialCalc.CurrentSpreadsheetControlObject
     else
-      window.location = '/_start'
+      window.location = './_start'
       return
 
-    endpoint = $ 'script[src*="./socket.io/socket.io.js"]' .attr \src
     if endpoint
-      @connect(endpoint.replace /.\/socket.io\/socket.io.js.*/ '')
+      @connect null, resource: endpoint.replace(// /?$ // \/socket.io).replace(// ^/ // '')
     else => @connect!
 
     emit = (data) ~> @emit {data}
