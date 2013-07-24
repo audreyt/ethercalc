@@ -76,5 +76,7 @@ body:last-child .defaultPeer {
 
 #te_fullgrid td {
     overflow: hidden;
+    word-break: break-all;
+    word-wrap: break-word;
 }
 
