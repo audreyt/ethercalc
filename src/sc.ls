@@ -96,7 +96,7 @@ catch => console.log "Falling back to vm.CreateContext backend"; class => (code)
         ss._room = room
         parts = ss.DecodeSpreadsheetSave(snapshot) if snapshot
         ss.editor.StatusCallback.EtherCalc = func: (editor, status, arg) ->
-          return unless status is \doneposcalc and not ss.editor.busy
+          return unless status is \doneposcalc # and not ss.editor.busy
           newSnapshot = ss.CreateSpreadsheetSave!
           return if ss._snapshot is newSnapshot
           ss._snapshot = newSnapshot
@@ -171,13 +171,29 @@ catch => console.log "Falling back to vm.CreateContext backend"; class => (code)
     """, (, csv) -> cb csv
     # Create a new worker for each CSV conversion to avoid starvation
     w.exportCSV = !(cb) ->
-      x = new Worker -> @onmessage = ({data: snapshot}) -> try
+      x = new Worker -> @onmessage = ({data: { snapshot, log=[] }}) -> try
         parts = SocialCalc.SpreadsheetControlDecodeSpreadsheetSave("", snapshot)
         save = snapshot.substring parts.sheet.start, parts.sheet.end
-        post-message SocialCalc.ConvertSaveToOtherFormat(save, \csv)
+        if log?length
+          cmdstr = [ line for line in log
+               | not /^re(calc|display)$/.test(line) and line isnt "set sheet defaulttextvalueformat text-wiki"].join("\n")
+          cmdstr += "\n" if cmdstr.length
+          window.setTimeout = (cb, ms) -> thread.next-tick cb
+          window.clearTimeout = ->
+          window.ss = ss = new SocialCalc.SpreadsheetControl
+          ss.sheet.ResetSheet!
+          ss.ParseSheetSave save
+          ss.editor.StatusCallback.EtherCalc = func: (editor, status, arg) ->
+            return unless status is \doneposcalc
+            save = ss.CreateSheetSave!
+            post-message SocialCalc.ConvertSaveToOtherFormat(save, \csv)
+          ss.context.sheetobj.ScheduleSheetCommands cmdstr, false true
+        else
+          post-message SocialCalc.ConvertSaveToOtherFormat(save, \csv)
       catch e => post-message "ERROR: #{ e }"
       x.onmessage = ({data}) -> x.thread.destroy!; cb data
-      x.thread.eval bootSC, -> x.post-message w._snapshot
+      (, log) <~ DB.lrange "log-#room" 0 -1
+      x.thread.eval bootSC, -> x.post-message {snapshot: w._snapshot, log}
     w.exportSave = (cb) -> w.thread.eval """
       window.ss.CreateSheetSave()
     """, (, save) -> cb save

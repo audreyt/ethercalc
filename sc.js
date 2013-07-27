@@ -174,7 +174,7 @@
             ss.editor.StatusCallback.EtherCalc = {
               func: function(editor, status, arg){
                 var newSnapshot;
-                if (!(status === 'doneposcalc' && !ss.editor.busy)) {
+                if (status !== 'doneposcalc') {
                   return;
                 }
                 newSnapshot = ss.CreateSpreadsheetSave();
@@ -400,15 +400,51 @@
         });
       };
       w.exportCSV = function(cb){
-        var x;
+        var x, this$ = this;
         x = new Worker(function(){
           return this.onmessage = function(arg$){
-            var snapshot, parts, save, e;
-            snapshot = arg$.data;
+            var ref$, snapshot, log, ref1$, parts, save, cmdstr, line, ss, e;
+            ref$ = arg$.data, snapshot = ref$.snapshot, log = (ref1$ = ref$.log) != null
+              ? ref1$
+              : [];
             try {
               parts = SocialCalc.SpreadsheetControlDecodeSpreadsheetSave("", snapshot);
               save = snapshot.substring(parts.sheet.start, parts.sheet.end);
-              return postMessage(SocialCalc.ConvertSaveToOtherFormat(save, 'csv'));
+              if (log != null && log.length) {
+                cmdstr = (function(){
+                  var i$, ref$, len$, results$ = [];
+                  for (i$ = 0, len$ = (ref$ = log).length; i$ < len$; ++i$) {
+                    line = ref$[i$];
+                    if (!/^re(calc|display)$/.test(line) && line !== "set sheet defaulttextvalueformat text-wiki") {
+                      results$.push(line);
+                    }
+                  }
+                  return results$;
+                }()).join("\n");
+                if (cmdstr.length) {
+                  cmdstr += "\n";
+                }
+                window.setTimeout = function(cb, ms){
+                  return thread.nextTick(cb);
+                };
+                window.clearTimeout = function(){};
+                window.ss = ss = new SocialCalc.SpreadsheetControl;
+                ss.sheet.ResetSheet();
+                ss.ParseSheetSave(save);
+                ss.editor.StatusCallback.EtherCalc = {
+                  func: function(editor, status, arg){
+                    var save;
+                    if (status !== 'doneposcalc') {
+                      return;
+                    }
+                    save = ss.CreateSheetSave();
+                    return postMessage(SocialCalc.ConvertSaveToOtherFormat(save, 'csv'));
+                  }
+                };
+                return ss.context.sheetobj.ScheduleSheetCommands(cmdstr, false, true);
+              } else {
+                return postMessage(SocialCalc.ConvertSaveToOtherFormat(save, 'csv'));
+              }
             } catch (e$) {
               e = e$;
               return postMessage("ERROR: " + e);
@@ -421,8 +457,15 @@
           x.thread.destroy();
           return cb(data);
         };
-        x.thread.eval(bootSC, function(){
-          return x.postMessage(w._snapshot);
+        console.log("log-" + room);
+        DB.lrange("log-" + room, 0, -1, function(arg$, log){
+          console.log(log);
+          return x.thread.eval(bootSC, function(){
+            return x.postMessage({
+              snapshot: w._snapshot,
+              log: log
+            });
+          });
         });
       };
       w.exportSave = function(cb){
