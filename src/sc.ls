@@ -110,27 +110,6 @@ catch => console.log "Falling back to vm.CreateContext backend"; class => (code)
         ss.context.sheetobj.ScheduleSheetCommands "set sheet defaulttextvalueformat text-wiki\n#{
           cmdstr
         }recalc\n" false true
-        class Node
-          (@tag="div", @attrs={}, @style={}, @elems=[], @raw='')->
-          id:     ~(@attrs.id)->
-          width:    ~(@attrs.width)->
-          height:   ~(@attrs.height)->
-          className:  ~(@attrs.class)->
-          colSpan:  ~(@attrs.colspan)->
-          rowSpan:  ~(@attrs.rowspan)->
-          title:    ~(@attrs.title)->
-          innerHTML:  ~
-            (@raw)->
-            -> @raw or [e.outerHTML for e in @elems].join("\n")
-          outerHTML:  ~->
-            {tag, attrs, style} = @
-            css = style.cssText or [ "#k:#v" for k, v of style ].join(";")
-            if css then attrs.style = css else delete attrs.style
-            return "<#tag#{
-              [ " #k=\"#v\"" for k, v of attrs ].join('')
-            }>#{ @innerHTML }</#tag>"
-          appendChild: -> @elems.push it
-        SocialCalc.document.createElement = -> new Node it
     w._snapshot = snapshot
     w.on-snapshot = (newSnapshot) ->
       io.sockets.in "recalc.#room" .emit \data {
@@ -169,6 +148,51 @@ catch => console.log "Falling back to vm.CreateContext backend"; class => (code)
         window.ss.CreateSheetSave(), "csv"
       )
     """, (, csv) -> cb csv
+    # Create a new worker for each HTML conversion to avoid starvation
+    w.exportHTML = !(cb) ->
+      x = new Worker -> @onmessage = ({data: { snapshot, log=[] }}) -> try
+        parts = SocialCalc.SpreadsheetControlDecodeSpreadsheetSave("", snapshot)
+        save = snapshot.substring parts.sheet.start, parts.sheet.end
+        window.setTimeout = (cb, ms) -> thread.next-tick cb
+        window.clearTimeout = ->
+        window.ss = ss = new SocialCalc.SpreadsheetControl
+        class Node
+          (@tag="div", @attrs={}, @style={}, @elems=[], @raw='')->
+          id:     ~(@attrs.id)->
+          width:    ~(@attrs.width)->
+          height:   ~(@attrs.height)->
+          className:  ~(@attrs.class)->
+          colSpan:  ~(@attrs.colspan)->
+          rowSpan:  ~(@attrs.rowspan)->
+          title:    ~(@attrs.title)->
+          innerHTML:  ~
+            (@raw)->
+            -> @raw or [e.outerHTML for e in @elems].join("\n")
+          outerHTML:  ~->
+            {tag, attrs, style} = @
+            css = style.cssText or [ "#k:#v" for k, v of style ].join(";")
+            if css then attrs.style = css else delete attrs.style
+            return "<#tag#{
+              [ " #k=\"#v\"" for k, v of attrs ].join('')
+            }>#{ @innerHTML }</#tag>"
+          appendChild: -> @elems.push it
+        SocialCalc.document.createElement = -> new Node it
+        ss.sheet.ResetSheet!
+        ss.ParseSheetSave save
+        if log?length
+          cmdstr = [ line for line in log
+               | not /^re(calc|display)$/.test(line) and line isnt "set sheet defaulttextvalueformat text-wiki"].join("\n")
+          cmdstr += "\n" if cmdstr.length
+          ss.editor.StatusCallback.EtherCalc = func: (editor, status, arg) ->
+            return unless status is \doneposcalc
+            post-message ss.CreateSheetHTML!
+          ss.context.sheetobj.ScheduleSheetCommands cmdstr, false true
+        else
+          post-message ss.CreateSheetHTML!
+      catch e => post-message "ERROR: #{ e }"
+      x.onmessage = ({data}) -> x.thread.destroy!; cb data
+      (, log) <~ DB.lrange "log-#room" 0 -1
+      x.thread.eval bootSC, -> x.post-message {snapshot: w._snapshot, log}
     # Create a new worker for each CSV conversion to avoid starvation
     w.exportCSV = !(cb) ->
       x = new Worker -> @onmessage = ({data: { snapshot, log=[] }}) -> try
