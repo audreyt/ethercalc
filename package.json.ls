@@ -12,9 +12,8 @@ dependencies:
   optimist: \*
   zappajs: \0.4.x
   cors: \*
-optional-dependencies:
-  LiveScript: \1.2.x
   'webworker-threads': \0.4.x
+  LiveScript: \1.2.x
 directories:
   bin: \./bin
 subdomain: \ethercalc

@@ -12,11 +12,9 @@
     "uuid-pure": "*",
     "optimist": "*",
     "zappajs": "0.4.x",
-    "cors": "*"
-  },
-  "optionalDependencies": {
-    "LiveScript": "1.2.x",
-    "webworker-threads": "0.4.x"
+    "cors": "*",
+    "webworker-threads": "0.4.x",
+    "LiveScript": "1.2.x"
   },
   "directories": {
     "bin": "./bin"
