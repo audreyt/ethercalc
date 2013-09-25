@@ -20,57 +20,58 @@
       return require('webworker-threads').Worker;
     } catch (e$) {
       e = e$;
-      console.log("Falling back to vm.CreateContext backend");
-      return (function(){
-        var prototype = constructor.prototype;
-        function constructor(code){
-          var vm, cxt, sandbox, this$ = this;
-          vm = require('vm');
-          cxt = {
-            console: console,
-            self: {
-              onmessage: function(){}
-            }
-          };
-          cxt.window = {
-            setTimeout: function(cb, ms){
-              return process.nextTick(cb);
-            },
-            clearTimeout: function(){}
-          };
-          this.postMessage = function(data){
-            return sandbox.self.onmessage({
-              data: data
-            });
-          };
-          this.thread = cxt.thread = {
-            nextTick: function(cb){
-              return process.nextTick(cb);
-            },
-            eval: function(src, cb){
-              var rv, e;
-              try {
-                rv = vm.runInContext(src, sandbox);
-                return typeof cb === 'function' ? cb(null, rv) : void 8;
-              } catch (e$) {
-                e = e$;
-                return typeof cb === 'function' ? cb(e) : void 8;
-              }
-            }
-          };
-          this.terminate = function(){};
-          this.sandbox = sandbox = vm.createContext(cxt);
-          sandbox.postMessage = function(data){
-            return typeof this$.onmessage === 'function' ? this$.onmessage({
-              data: data
-            }) : void 8;
-          };
-          vm.runInContext("(" + code + ")()", sandbox);
-        }
-        return constructor;
-      }());
+      return console.log("Falling back to vm.CreateContext backend");
     }
   }());
+  Worker == null && (Worker = (function(){
+    Worker.displayName = 'Worker';
+    var prototype = Worker.prototype, constructor = Worker;
+    function Worker(code){
+      var cxt, sandbox, this$ = this;
+      cxt = {
+        console: console,
+        self: {
+          onmessage: function(){}
+        }
+      };
+      cxt.window = {
+        setTimeout: function(cb, ms){
+          return process.nextTick(cb);
+        },
+        clearTimeout: function(){}
+      };
+      this.postMessage = function(data){
+        return sandbox.self.onmessage({
+          data: data
+        });
+      };
+      this.thread = cxt.thread = {
+        nextTick: function(cb){
+          return process.nextTick(cb);
+        },
+        eval: function(src, cb){
+          var rv, e;
+          try {
+            rv = vm.runInContext(src, sandbox);
+            return typeof cb === 'function' ? cb(null, rv) : void 8;
+          } catch (e$) {
+            e = e$;
+            return typeof cb === 'function' ? cb(e) : void 8;
+          }
+        }
+      };
+      this.terminate = function(){};
+      this.sandbox = sandbox = vm.createContext(cxt);
+      sandbox.postMessage = function(data){
+        return typeof this$.onmessage === 'function' ? this$.onmessage({
+          data: data
+        }) : void 8;
+      };
+      vm.runInContext("(" + code + ")()", sandbox);
+      return this;
+    }
+    return Worker;
+  }()));
   this.include = function(){
     var DB;
     DB = this.include('db');

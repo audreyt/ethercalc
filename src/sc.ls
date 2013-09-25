@@ -1,6 +1,4 @@
-vm = require \vm
-fs = require \fs
-path = require \path
+require! <[ vm fs path ]>
 bootSC = fs.readFileSync "#{
   path.dirname fs.realpathSync __filename
 }/SocialCalcModule.js" \utf8
@@ -14,8 +12,10 @@ Worker = try
   throw \vm if argv.vm
   console.log "Starting backend using webworker-threads"
   (require \webworker-threads).Worker
-catch => console.log "Falling back to vm.CreateContext backend"; class => (code) ->
-  vm = require \vm
+catch
+  console.log "Falling back to vm.CreateContext backend"
+
+Worker ?= class => (code) ->
   cxt = { console, self: { onmessage: -> } }
   cxt.window =
     setTimeout: (cb, ms) -> process.nextTick cb
@@ -31,6 +31,7 @@ catch => console.log "Falling back to vm.CreateContext backend"; class => (code)
   @sandbox = sandbox = vm.createContext cxt
   sandbox.postMessage = (data) ~> @onmessage? {data}
   vm.runInContext "(#code)()", sandbox
+  return @
 ##################################
 
 @include = ->
