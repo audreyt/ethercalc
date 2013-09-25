@@ -4,7 +4,7 @@
     * English: https://gist.github.com/3978463
     * 中文版: https://gist.github.com/3985324
 * Language: [LiveScript](http://livescript.net/)
-* Runtime: [Node.js](http://nodejs.org/) (0.8+ preferred; compatible with 0.4)
+* Runtime: [Node.js](http://nodejs.org/) (0.8+ preferred)
 * Services: [Redis](http://redis.io) (2.4+; fall-back to on-disk JSON storage if not present)
     * Multi-server is supported _only_ when running with Redis
 * Browsers tested: Safari, Chrome, Firefox, IE.
