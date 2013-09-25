@@ -387,7 +387,7 @@
                       var ref$, results$ = [];
                       for (k in ref$ = style) {
                         v = ref$[k];
-                        results$.push(k + ":" + v);
+                        results$.push(k.replace(/[A-Z]/g, '-$&').toLowerCase() + ":" + v);
                       }
                       return results$;
                     }()).join(";");

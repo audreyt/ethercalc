@@ -170,7 +170,7 @@ catch => console.log "Falling back to vm.CreateContext backend"; class => (code)
             -> @raw or [e.outerHTML for e in @elems].join("\n")
           outerHTML:  ~->
             {tag, attrs, style} = @
-            css = style.cssText or [ "#k:#v" for k, v of style ].join(";")
+            css = style.cssText or [ "#{k.replace(/[A-Z]/g, '-$&').toLowerCase()}:#v" for k, v of style ].join(";")
             if css then attrs.style = css else delete attrs.style
             return "<#tag#{
               [ " #k=\"#v\"" for k, v of attrs ].join('')
