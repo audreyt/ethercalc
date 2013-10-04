@@ -73,8 +73,9 @@
     return Worker;
   }()));
   this.include = function(){
-    var DB;
+    var DB, EXPIRE;
     DB = this.include('db');
+    EXPIRE = this.EXPIRE;
     SC._get = function(room, io, cb){
       var ref$, this$ = this;
       if ((ref$ = SC[room]) != null && ref$._snapshot) {
@@ -85,6 +86,9 @@
       return DB.multi().get("snapshot-" + room).lrange("log-" + room, 0, -1).exec(function(arg$, arg1$){
         var snapshot, log;
         snapshot = arg1$[0], log = arg1$[1];
+        if (EXPIRE) {
+          DB.expire("snapshot-" + room, EXPIRE);
+        }
         if ((snapshot || log.length) && io) {
           SC[room] = SC._init(snapshot, log, DB, room, io);
         }
@@ -100,6 +104,9 @@
         return typeof cb === 'function' ? cb() : void 8;
       }
       return DB.multi().set("snapshot-" + room, snapshot).del(["log-" + room, "chat-" + room, "ecell-" + room, "audit-" + room]).bgsave().exec(function(){
+        if (EXPIRE) {
+          DB.expire("snapshot-" + room, EXPIRE);
+        }
         return typeof cb === 'function' ? cb() : void 8;
       });
     };
@@ -222,7 +229,10 @@
         });
         w._snapshot = newSnapshot;
         return DB.multi().set("snapshot-" + room, newSnapshot).del("log-" + room).bgsave().exec(function(){
-          return console.log("==> Regenerated snapshot for " + room);
+          console.log("==> Regenerated snapshot for " + room);
+          if (EXPIRE) {
+            return DB.expire("snapshot-" + room, EXPIRE);
+          }
         });
       };
       w.onerror = function(it){

@@ -10,7 +10,7 @@ This work is published from Taiwan.
 <http://creativecommons.org/publicdomain/zero/1.0>
 */
 (function(){
-  var slurp, argv, json, port, host, basepath, keyfile, certfile, key, polling, cors, transport, options, replace$ = ''.replace;
+  var slurp, argv, json, port, host, basepath, keyfile, certfile, key, polling, cors, expire, transport, options, replace$ = ''.replace;
   slurp = function(it){
     return require('fs').readFileSync(it, 'utf8');
   };
@@ -27,7 +27,7 @@ This work is published from Taiwan.
   port = Number(argv.port || (json != null ? json.PORT_NODEJS : void 8) || process.env.PORT || process.env.VCAP_APP_PORT || process.env.OPENSHIFT_INTERNAL_PORT) || 8000;
   host = argv.host || process.env.VCAP_APP_HOST || process.env.OPENSHIFT_INTERNAL_IP || '0.0.0.0';
   basepath = replace$.call(argv.basepath || "", /\/$/, '');
-  keyfile = argv.keyfile, certfile = argv.certfile, key = argv.key, polling = argv.polling, cors = argv.cors;
+  keyfile = argv.keyfile, certfile = argv.certfile, key = argv.key, polling = argv.polling, cors = argv.cors, expire = argv.expire;
   transport = 'http';
   if (keyfile != null && certfile != null) {
     options = {
@@ -44,6 +44,10 @@ This work is published from Taiwan.
     this.BASEPATH = basepath;
     this.POLLING = polling;
     this.CORS = cors;
+    this.EXPIRE = +expire;
+    if (isNaN(this.EXPIRE)) {
+      this.EXPIRE = 0;
+    }
     return this.include('main');
   });
 }).call(this);

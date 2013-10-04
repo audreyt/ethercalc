@@ -36,6 +36,7 @@ Worker ?= class => (code) ->
 
 @include = ->
   DB = @include \db
+  EXPIRE = @EXPIRE
 
   SC._get = (room, io, cb) ->
     return cb { snapshot: SC[room]._snapshot } if SC[room]?_snapshot
@@ -43,6 +44,7 @@ Worker ?= class => (code) ->
       .get "snapshot-#room"
       .lrange "log-#room" 0 -1
       .exec!
+    DB.expire "snapshot-#room", EXPIRE if EXPIRE
     if (snapshot or log.length) and io
       SC[room] = SC._init snapshot, log, DB, room, io
     cb {log, snapshot}
@@ -53,6 +55,7 @@ Worker ?= class => (code) ->
       .set "snapshot-#room", snapshot
       .del ["log-#room" "chat-#room" "ecell-#room" "audit-#room"]
       .bgsave!exec!
+    DB.expire "snapshot-#room", EXPIRE if EXPIRE
     cb?!
 
   SC._init = (snapshot, log=[], DB, room, io) ->
@@ -126,6 +129,7 @@ Worker ?= class => (code) ->
         .bgsave!
         .exec!
       console.log "==> Regenerated snapshot for #room"
+      DB.expire "snapshot-#room", EXPIRE if EXPIRE
     w.onerror = -> console.log it
     w.onmessage = ({ data: { type, snapshot, html, csv, ref, parts, save } }) -> switch type
     | \snapshot   => w.on-snapshot snapshot

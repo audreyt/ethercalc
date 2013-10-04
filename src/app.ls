@@ -16,7 +16,7 @@ port = Number(argv.port or json?PORT_NODEJS or process.env.PORT or process.env.V
 host = argv.host or process.env.VCAP_APP_HOST or process.env.OPENSHIFT_INTERNAL_IP or \0.0.0.0
 basepath = (argv.basepath or "") - //  /$  //
 
-{ keyfile, certfile, key, polling, cors } = argv
+{ keyfile, certfile, key, polling, cors, expire } = argv
 
 transport = \http
 if keyfile? and certfile?
@@ -34,4 +34,6 @@ console.log "Please connect to: #transport://#{
 @BASEPATH = basepath
 @POLLING = polling
 @CORS = cors
+@EXPIRE = +expire
+@EXPIRE = 0 if isNaN @EXPIRE
 @include \main

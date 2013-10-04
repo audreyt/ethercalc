@@ -13,6 +13,8 @@
 
   KEY = @KEY
   BASEPATH = @BASEPATH
+  EXPIRE = @EXPIRE
+  console.log "EXPIRE: #{@EXPIRE}"
 
   HMAC_CACHE = {}
   hmac = if !KEY then -> it else -> HMAC_CACHE[it] ||= do
@@ -140,6 +142,7 @@
   @on data: !->
     {room, msg, user, ecell, cmdstr, type, auth} = @data
     room = "#room" - /^_+/ # preceding underscore is reserved
+    DB.expire "snapshot-#room", EXPIRE if EXPIRE
     reply = (data) ~> @emit {data}
     broadcast = (data) ~>
       @socket.broadcast.to do

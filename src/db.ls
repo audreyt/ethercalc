@@ -1,6 +1,7 @@
 @__DB__ = null
 @include = ->
   return @__DB__ if @__DB__
+
   env = process.env
   [redisPort, redisHost, redisPass, dataDir] = env<[ REDIS_PORT REDIS_HOST REDIS_PASS OPENSHIFT_DATA_DIR ]>
 
@@ -49,6 +50,9 @@
     | otherwise
     console.log err
     console.log "==> Falling back to JSON storage: #{ dataDir }/dump.json"
+    if @EXPIRE
+      console.log "==> The --expire <seconds> option requires a Redis server; stopping!"
+      process.exit!
 
     fs = require \fs
     db.DB = {}

@@ -100,6 +100,10 @@ Runs a single-thread background loop with `vm.createContext` instead of `webwork
 
 Useful for running custom functions in server side that requires full VM access.
 
+### Expires inactive spreadsheets: `--expire 86400`
+
+Deletes a spreadsheet's content after N seconds of inactivity. Activities include accessing with REST API as well as Web UI, including moving the active cell cursor on an opened page.
+
 # Licensing
 
 ### Common Public Attribution License (Socialtext Inc.)

@@ -2,7 +2,7 @@
 (function(){
   var join$ = [].join;
   this.include = function(){
-    var DB, SC, KEY, BASEPATH, HMAC_CACHE, hmac, ref$, Text, Html, Csv, Json, RealBin, sendFile, IO, api, ExportCSV, ExportHTML;
+    var DB, SC, KEY, BASEPATH, EXPIRE, HMAC_CACHE, hmac, ref$, Text, Html, Csv, Json, RealBin, sendFile, IO, api, ExportCSV, ExportHTML;
     this.use('json', this.app.router, this.express['static'](__dirname));
     this.app.use('/edit', this.express['static'](__dirname));
     this.app.use('/view', this.express['static'](__dirname));
@@ -14,6 +14,8 @@
     SC = this.include('sc');
     KEY = this.KEY;
     BASEPATH = this.BASEPATH;
+    EXPIRE = this.EXPIRE;
+    console.log("EXPIRE: " + this.EXPIRE);
     HMAC_CACHE = {};
     hmac = !KEY
       ? function(it){
@@ -255,6 +257,9 @@
         var ref$, room, msg, user, ecell, cmdstr, type, auth, reply, broadcast, this$ = this;
         ref$ = this.data, room = ref$.room, msg = ref$.msg, user = ref$.user, ecell = ref$.ecell, cmdstr = ref$.cmdstr, type = ref$.type, auth = ref$.auth;
         room = (room + "").replace(/^_+/, '');
+        if (EXPIRE) {
+          DB.expire("snapshot-" + room, EXPIRE);
+        }
         reply = function(data){
           return this$.emit({
             data: data

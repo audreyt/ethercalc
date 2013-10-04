@@ -28,6 +28,10 @@ vm :: SocialCalcModule.js
 	env PATH="$$PATH:./node_modules/LiveScript/bin" livescript -c -o . src
 	node app.js --vm
 
+expire :: SocialCalcModule.js
+	env PATH="$$PATH:./node_modules/LiveScript/bin" livescript -c -o . src
+	node app.js --expire 10
+
 ./node_modules/streamline/bin/_node :
 	npm i --dev
 
