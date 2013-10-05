@@ -15,7 +15,6 @@
     KEY = this.KEY;
     BASEPATH = this.BASEPATH;
     EXPIRE = this.EXPIRE;
-    console.log("EXPIRE: " + this.EXPIRE);
     HMAC_CACHE = {};
     hmac = !KEY
       ? function(it){
@@ -181,9 +180,19 @@
           return buf += chunk;
         });
         return this.request.on('end', function(){
-          return SC._put(this$.params.room, buf, function(){
-            this$.response.type(Text);
-            return this$.response.send(201, 'OK');
+          var doPut;
+          doPut = function(it){
+            console.log(it);
+            return SC._put(this$.params.room, it, function(){
+              this$.response.type(Text);
+              return this$.response.send(201, 'OK');
+            });
+          };
+          if (!this$.request.is('text/csv')) {
+            return doPut(buf);
+          }
+          return SC.csvToSave(buf, function(save){
+            return doPut("socialcalc:version:1.0\nMIME-Version: 1.0\nContent-Type: multipart/mixed; boundary=SocialCalcSpreadsheetControlSave\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n# SocialCalc Spreadsheet Control Save\nversion:1.0\npart:sheet\npart:edit\npart:audit\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n" + save + "\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n--SocialCalcSpreadsheetControlSave--\n");
           });
         });
       }

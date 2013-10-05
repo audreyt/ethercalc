@@ -14,7 +14,6 @@
   KEY = @KEY
   BASEPATH = @BASEPATH
   EXPIRE = @EXPIRE
-  console.log "EXPIRE: #{@EXPIRE}"
 
   HMAC_CACHE = {}
   hmac = if !KEY then -> it else -> HMAC_CACHE[it] ||= do
@@ -100,9 +99,14 @@
     @request.setEncoding \utf8
     @request.on \data (chunk) ~> buf += chunk
     @request.on \end ~>
-      <~ SC._put @params.room, buf
-      @response.type Text
-      @response.send 201 \OK
+      do-put = ~>
+        console.log it
+        <~ SC._put @params.room, it
+        @response.type Text
+        @response.send 201 \OK
+      return do-put buf unless @request.is \text/csv
+      save <~ SC.csv-to-save buf
+      do-put """socialcalc:version:1.0\nMIME-Version: 1.0\nContent-Type: multipart/mixed; boundary=SocialCalcSpreadsheetControlSave\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n# SocialCalc Spreadsheet Control Save\nversion:1.0\npart:sheet\npart:edit\npart:audit\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n#save\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n--SocialCalcSpreadsheetControlSave--\n"""
 
   @post '/_/:room': ->
     {room} = @params

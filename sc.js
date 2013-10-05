@@ -177,7 +177,6 @@
         eval: function(src, cb){
           var rv, e;
           try {
-            console.log("woot " + src);
             rv = vm.runInContext(src, sandbox);
             console.log("rv " + rv);
             return typeof cb === 'function' ? cb(null, rv) : void 8;
@@ -195,7 +194,9 @@
           data: data
         }) : void 8;
       };
-      vm.runInContext("(" + code + ")()", sandbox);
+      if (code) {
+        vm.runInContext("(" + code + ")()", sandbox);
+      }
       return this;
     }
     return Worker;
@@ -204,6 +205,15 @@
     var DB, EXPIRE;
     DB = this.include('db');
     EXPIRE = this.EXPIRE;
+    SC.csvToSave = function(csv, cb){
+      var w;
+      w = new Worker;
+      return w.thread.eval(bootSC, function(){
+        return w.thread.eval("SocialCalc.ConvertOtherFormatToSave(" + JSON.stringify(csv) + ", 'csv')", function(arg$, rv){
+          return cb(rv);
+        });
+      });
+    };
     SC._get = function(room, io, cb){
       var ref$, this$ = this;
       if ((ref$ = SC[room]) != null && ref$._snapshot) {

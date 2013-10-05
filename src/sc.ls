@@ -51,7 +51,6 @@ Worker ||= class => (code) ->
   @thread = cxt.thread =
     nextTick: (cb) -> process.nextTick cb
     eval: (src, cb) -> try
-      console.log "woot #src"
       rv = vm.runInContext src, sandbox
       console.log "rv #rv"
       cb? null, rv
@@ -61,13 +60,19 @@ Worker ||= class => (code) ->
   @terminate = ->
   @sandbox = sandbox = vm.createContext cxt
   sandbox.postMessage = (data) ~> @onmessage? {data}
-  vm.runInContext "(#code)()", sandbox
+  vm.runInContext "(#code)()", sandbox if code
   return @
 ##################################
 
 @include = ->
   DB = @include \db
   EXPIRE = @EXPIRE
+
+  SC.csv-to-save = (csv, cb) ->
+    w = new Worker
+    <- w.thread.eval bootSC
+    (,rv) <- w.thread.eval "SocialCalc.ConvertOtherFormatToSave(#{ JSON.stringify csv }, 'csv')"
+    cb rv
 
   SC._get = (room, io, cb) ->
     return cb { snapshot: SC[room]._snapshot } if SC[room]?_snapshot

@@ -44,11 +44,16 @@ Fetch the page as a serialization in SocialCalc save format.
 ### PUT /_/page
 Replaces the page with a serialization in SocialCalc save format.
 
+Also takes a CSV structure that contains the new spreadsheet's content.
+
 ### POST /_
 
 Takes a JSON structure with `room` and `snapshot` fields.
 
 Replaces the page with a serialization in Socialtext save format.
+If `room` is not specified, returns a new page.
+
+Also takes a CSV structure that contains the new spreadsheet's content.
 
 ### POST /_/page
 
@@ -56,6 +61,8 @@ Takes a JSON structure with a `command` field (either as a string
 or an array of strings).
 
 Runs one or more commands specified in the `command` field.
+
+Also takes a CSV structure that contains fields to be appended.
 
 ### GET /_/page/cells
 Returns a JSON representation of all defined cells in the page.
