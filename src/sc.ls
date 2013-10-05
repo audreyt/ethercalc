@@ -2,20 +2,47 @@ require! <[ vm fs path ]>
 bootSC = fs.readFileSync "#{
   path.dirname fs.realpathSync __filename
 }/SocialCalcModule.js" \utf8
+
 global.SC ?= {}
 argv = (try require \optimist .boolean <[ vm polling ]> .argv) || {}
+
+bootSC += """;(#{->
+  class Node
+    (@tag="div", @attrs={}, @style={}, @elems=[], @raw='')->
+    id:     ~(@attrs.id)->
+    width:    ~(@attrs.width)->
+    height:   ~(@attrs.height)->
+    className:  ~(@attrs.class)->
+    colSpan:  ~(@attrs.colspan)->
+    rowSpan:  ~(@attrs.rowspan)->
+    title:    ~(@attrs.title)->
+    innerHTML:  ~
+      (@raw)->
+      -> @raw or [e.outerHTML for e in @elems].join("\n")
+    outerHTML:  ~->
+      {tag, attrs, style} = @
+      css = style.cssText or [ "#{k.replace(/[A-Z]/g, '-$&').toLowerCase()}:#v" for k, v of style ].join(";")
+      if css then attrs.style = css else delete attrs.style
+      return "<#tag#{
+        [ " #k=\"#v\"" for k, v of attrs ].join('')
+      }>#{ @innerHTML }</#tag>"
+    appendChild: -> @elems.push it
+  SocialCalc.document.createElement = -> new Node it
+})();"""
 
 ##################################
 ### WebWorker Threads Fallback ###
 ##################################
+IsThreaded = true
 Worker = try
   throw \vm if argv.vm
   console.log "Starting backend using webworker-threads"
   (require \webworker-threads).Worker
 catch
   console.log "Falling back to vm.CreateContext backend"
+  IsThreaded = false
 
-Worker ?= class => (code) ->
+Worker ||= class => (code) ->
   cxt = { console, self: { onmessage: -> } }
   cxt.window =
     setTimeout: (cb, ms) -> process.nextTick cb
@@ -24,9 +51,13 @@ Worker ?= class => (code) ->
   @thread = cxt.thread =
     nextTick: (cb) -> process.nextTick cb
     eval: (src, cb) -> try
+      console.log "woot #src"
       rv = vm.runInContext src, sandbox
+      console.log "rv #rv"
       cb? null, rv
-    catch e => cb? e
+    catch e
+      console.log "e #e"
+      cb? e
   @terminate = ->
   @sandbox = sandbox = vm.createContext cxt
   sandbox.postMessage = (data) ~> @onmessage? {data}
@@ -154,7 +185,7 @@ Worker ?= class => (code) ->
       )
     """, (, csv) -> cb csv
     # Create a new worker for each HTML conversion to avoid starvation
-    w.exportHTML = !(cb) ->
+    if IsThreaded => w.exportHTML = !(cb) ->
       x = new Worker -> @onmessage = ({data: { snapshot, log=[] }}) -> try
         parts = SocialCalc.SpreadsheetControlDecodeSpreadsheetSave("", snapshot)
         save = snapshot.substring parts.sheet.start, parts.sheet.end
@@ -199,7 +230,7 @@ Worker ?= class => (code) ->
       (, log) <~ DB.lrange "log-#room" 0 -1
       x.thread.eval bootSC, -> x.post-message {snapshot: w._snapshot, log}
     # Create a new worker for each CSV conversion to avoid starvation
-    w.exportCSV = !(cb) ->
+    if IsThreaded => w.exportCSV = !(cb) ->
       x = new Worker -> @onmessage = ({data: { snapshot, log=[] }}) -> try
         parts = SocialCalc.SpreadsheetControlDecodeSpreadsheetSave("", snapshot)
         save = snapshot.substring parts.sheet.start, parts.sheet.end
