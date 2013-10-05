@@ -96,17 +96,28 @@
   @get '/_/:room/csv': ExportCSV
   @get '/_/:room': api -> [Text, it]
 
+  request-to-command = (request, cb) ->
+    if request.is \application/json
+      command = request.body?command
+      return cb command if command
+    buf = ''; request.setEncoding \utf8; request.on \data (chunk) ~> buf += chunk
+    <~ request.on \end
+    cb buf unless request.is \text/csv
+    save <~ SC.csv-to-save buf
+    save.=replace /\\/g "\\b" if ~save.index-of "\\"
+    save.=replace /:/g  "\\c" if ~save.index-of ":"
+    save.=replace /\n/g "\\n" if ~save.index-of "\n"
+    cb "loadclipboard #save"
+
   request-to-save = (request, cb) ->
     if request.is \application/json
       snapshot = request.body?snapshot
       return cb snapshot if snapshot
-    buf = ''
-    request.setEncoding \utf8
-    request.on \data (chunk) ~> buf += chunk
-    request.on \end ~>
-      cb buf unless request.is \text/csv
-      save <~ SC.csv-to-save buf
-      cb """socialcalc:version:1.0\nMIME-Version: 1.0\nContent-Type: multipart/mixed; boundary=SocialCalcSpreadsheetControlSave\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n# SocialCalc Spreadsheet Control Save\nversion:1.0\npart:sheet\npart:edit\npart:audit\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n#save\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n--SocialCalcSpreadsheetControlSave--\n"""
+    buf = ''; request.setEncoding \utf8; request.on \data (chunk) ~> buf += chunk
+    <~ request.on \end
+    cb buf unless request.is \text/csv
+    save <~ SC.csv-to-save buf
+    cb """socialcalc:version:1.0\nMIME-Version: 1.0\nContent-Type: multipart/mixed; boundary=SocialCalcSpreadsheetControlSave\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n# SocialCalc Spreadsheet Control Save\nversion:1.0\npart:sheet\npart:edit\npart:audit\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n#save\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n--SocialCalcSpreadsheetControlSave--\n"""
 
   @put '/_/:room': ->
     snapshot <~ request-to-save @request
@@ -116,12 +127,17 @@
 
   @post '/_/:room': ->
     {room} = @params
-    command = @body?command
+    command <~ request-to-command @request
     unless command
       @response.type Text
       return @response.send 400 'Please send command'
-    command = [command] unless Array.isArray command
-    <~ SC._get room, IO
+    {snapshot} <~ SC._get room, IO
+    if command is /^loadclipboard\s*/
+      row = 1
+      row += Number(RegExp.$1) if snapshot is /\nsheet:c:\d+:r:(\d+):/
+      console.log command
+      command := [command, "paste A#row all"]
+    command := [command] unless Array.isArray command
     SC[room]?ExecuteCommand command * \\n
     IO.sockets.in "log-#room" .emit \data {
       type: \execute

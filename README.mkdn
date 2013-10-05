@@ -58,11 +58,12 @@ Also takes a CSV structure that contains the new spreadsheet's content.
 ### POST /_/page
 
 Takes a JSON structure with a `command` field (either as a string
-or an array of strings).
+or an array of strings), or a plain-text command string.
 
 Runs one or more commands specified in the `command` field.
 
-Also takes a CSV structure that contains fields to be appended.
+Also takes a CSV structure that contains fields to be appended to
+the first column after the last row.
 
 ### GET /_/page/cells
 Returns a JSON representation of all defined cells in the page.

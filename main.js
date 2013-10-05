@@ -2,7 +2,7 @@
 (function(){
   var join$ = [].join;
   this.include = function(){
-    var DB, SC, KEY, BASEPATH, EXPIRE, HMAC_CACHE, hmac, ref$, Text, Html, Csv, Json, RealBin, sendFile, newRoom, IO, api, ExportCSV, ExportHTML, requestToSave;
+    var DB, SC, KEY, BASEPATH, EXPIRE, HMAC_CACHE, hmac, ref$, Text, Html, Csv, Json, RealBin, sendFile, newRoom, IO, api, ExportCSV, ExportHTML, requestToCommand, requestToSave;
     this.use('json', this.app.router, this.express['static'](__dirname));
     this.app.use('/edit', this.express['static'](__dirname));
     this.app.use('/view', this.express['static'](__dirname));
@@ -174,6 +174,37 @@
         return [Text, it];
       })
     });
+    requestToCommand = function(request, cb){
+      var command, ref$, buf, this$ = this;
+      if (request.is('application/json')) {
+        command = (ref$ = request.body) != null ? ref$.command : void 8;
+        if (command) {
+          return cb(command);
+        }
+      }
+      buf = '';
+      request.setEncoding('utf8');
+      request.on('data', function(chunk){
+        return buf += chunk;
+      });
+      return request.on('end', function(){
+        if (!request.is('text/csv')) {
+          cb(buf);
+        }
+        return SC.csvToSave(buf, function(save){
+          if (~save.indexOf("\\")) {
+            save = save.replace(/\\/g, "\\b");
+          }
+          if (~save.indexOf(":")) {
+            save = save.replace(/:/g, "\\c");
+          }
+          if (~save.indexOf("\n")) {
+            save = save.replace(/\n/g, "\\n");
+          }
+          return cb("loadclipboard " + save);
+        });
+      });
+    };
     requestToSave = function(request, cb){
       var snapshot, ref$, buf, this$ = this;
       if (request.is('application/json')) {
@@ -209,28 +240,38 @@
     });
     this.post({
       '/_/:room': function(){
-        var room, command, ref$, this$ = this;
+        var room, this$ = this;
         room = this.params.room;
-        command = (ref$ = this.body) != null ? ref$.command : void 8;
-        if (!command) {
-          this.response.type(Text);
-          return this.response.send(400, 'Please send command');
-        }
-        if (!Array.isArray(command)) {
-          command = [command];
-        }
-        return SC._get(room, IO, function(){
-          var ref$;
-          if ((ref$ = SC[room]) != null) {
-            ref$.ExecuteCommand(join$.call(command, '\n'));
+        return requestToCommand(this.request, function(command){
+          if (!command) {
+            this$.response.type(Text);
+            return this$.response.send(400, 'Please send command');
           }
-          IO.sockets['in']("log-" + room).emit('data', {
-            type: 'execute',
-            cmdstr: join$.call(command, '\n'),
-            room: room
-          });
-          return this$.response.json(202, {
-            command: command
+          return SC._get(room, IO, function(arg$){
+            var snapshot, row, ref$;
+            snapshot = arg$.snapshot;
+            if (/^loadclipboard\s*/.exec(command)) {
+              row = 1;
+              if (/\nsheet:c:\d+:r:(\d+):/.exec(snapshot)) {
+                row += Number(RegExp.$1);
+              }
+              console.log(command);
+              command = [command, "paste A" + row + " all"];
+            }
+            if (!Array.isArray(command)) {
+              command = [command];
+            }
+            if ((ref$ = SC[room]) != null) {
+              ref$.ExecuteCommand(join$.call(command, '\n'));
+            }
+            IO.sockets['in']("log-" + room).emit('data', {
+              type: 'execute',
+              cmdstr: join$.call(command, '\n'),
+              room: room
+            });
+            return this$.response.json(202, {
+              command: command
+            });
           });
         });
       }
