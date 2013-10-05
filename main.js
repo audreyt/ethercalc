@@ -2,7 +2,7 @@
 (function(){
   var join$ = [].join;
   this.include = function(){
-    var DB, SC, KEY, BASEPATH, EXPIRE, HMAC_CACHE, hmac, ref$, Text, Html, Csv, Json, RealBin, sendFile, IO, api, ExportCSV, ExportHTML;
+    var DB, SC, KEY, BASEPATH, EXPIRE, HMAC_CACHE, hmac, ref$, Text, Html, Csv, Json, RealBin, sendFile, newRoom, IO, api, ExportCSV, ExportHTML, requestToSave;
     this.use('json', this.app.router, this.express['static'](__dirname));
     this.app.use('/edit', this.express['static'](__dirname));
     this.app.use('/view', this.express['static'](__dirname));
@@ -46,6 +46,9 @@
         return next();
       });
     }
+    newRoom = function(){
+      return require('uuid-pure').newId(10, 36).toLowerCase();
+    };
     this.get({
       '/': sendFile('index.html')
     });
@@ -57,7 +60,7 @@
     this.get({
       '/_new': function(){
         var room;
-        room = require('uuid-pure').newId(10, 36).toLowerCase();
+        room = newRoom();
         return this.response.redirect(KEY
           ? BASEPATH + "/" + room + "/edit"
           : BASEPATH + "/" + room);
@@ -171,28 +174,35 @@
         return [Text, it];
       })
     });
+    requestToSave = function(request, cb){
+      var snapshot, ref$, buf, this$ = this;
+      if (request.is('application/json')) {
+        snapshot = (ref$ = request.body) != null ? ref$.snapshot : void 8;
+        if (snapshot) {
+          return cb(snapshot);
+        }
+      }
+      buf = '';
+      request.setEncoding('utf8');
+      request.on('data', function(chunk){
+        return buf += chunk;
+      });
+      return request.on('end', function(){
+        if (!request.is('text/csv')) {
+          cb(buf);
+        }
+        return SC.csvToSave(buf, function(save){
+          return cb("socialcalc:version:1.0\nMIME-Version: 1.0\nContent-Type: multipart/mixed; boundary=SocialCalcSpreadsheetControlSave\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n# SocialCalc Spreadsheet Control Save\nversion:1.0\npart:sheet\npart:edit\npart:audit\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n" + save + "\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n--SocialCalcSpreadsheetControlSave--\n");
+        });
+      });
+    };
     this.put({
       '/_/:room': function(){
-        var buf, this$ = this;
-        buf = '';
-        this.request.setEncoding('utf8');
-        this.request.on('data', function(chunk){
-          return buf += chunk;
-        });
-        return this.request.on('end', function(){
-          var doPut;
-          doPut = function(it){
-            console.log(it);
-            return SC._put(this$.params.room, it, function(){
-              this$.response.type(Text);
-              return this$.response.send(201, 'OK');
-            });
-          };
-          if (!this$.request.is('text/csv')) {
-            return doPut(buf);
-          }
-          return SC.csvToSave(buf, function(save){
-            return doPut("socialcalc:version:1.0\nMIME-Version: 1.0\nContent-Type: multipart/mixed; boundary=SocialCalcSpreadsheetControlSave\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n# SocialCalc Spreadsheet Control Save\nversion:1.0\npart:sheet\npart:edit\npart:audit\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n" + save + "\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n--SocialCalcSpreadsheetControlSave--\n");
+        var this$ = this;
+        return requestToSave(this.request, function(snapshot){
+          return SC._put(this$.params.room, snapshot, function(){
+            this$.response.type(Text);
+            return this$.response.send(201, 'OK');
           });
         });
       }
@@ -227,16 +237,15 @@
     });
     this.post({
       '/_': function(){
-        var room, ref$, snapshot, this$ = this;
-        room = (ref$ = this.body) != null ? ref$.room : void 8;
-        snapshot = (ref$ = this.body) != null ? ref$.snapshot : void 8;
-        if (!(room && snapshot)) {
-          this.response.type(Text);
-          return this.response.send(400, 'Please send room and snapshot');
-        }
-        return SC._put(room, snapshot, function(){
-          this$.response.type(Text);
-          return this$.response.send(201, 'OK');
+        var this$ = this;
+        return requestToSave(this.request, function(snapshot){
+          var room, ref$;
+          room = ((ref$ = this$.body) != null ? ref$.room : void 8) || newRoom();
+          return SC._put(room, snapshot, function(){
+            this$.response.type(Text);
+            this$.response.location("/_/" + room);
+            return this$.response.send(201, "/" + room);
+          });
         });
       }
     });
