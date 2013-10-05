@@ -135,7 +135,6 @@
     if command is /^loadclipboard\s*/
       row = 1
       row += Number(RegExp.$1) if snapshot is /\nsheet:c:\d+:r:(\d+):/
-      console.log command
       command := [command, "paste A#row all"]
     command := [command] unless Array.isArray command
     SC[room]?ExecuteCommand command * \\n

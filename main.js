@@ -255,7 +255,6 @@
               if (/\nsheet:c:\d+:r:(\d+):/.exec(snapshot)) {
                 row += Number(RegExp.$1);
               }
-              console.log(command);
               command = [command, "paste A" + row + " all"];
             }
             if (!Array.isArray(command)) {
