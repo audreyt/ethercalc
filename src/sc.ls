@@ -197,27 +197,6 @@ Worker ||= class => (code) ->
         window.setTimeout = (cb, ms) -> thread.next-tick cb
         window.clearTimeout = ->
         window.ss = ss = new SocialCalc.SpreadsheetControl
-        class Node
-          (@tag="div", @attrs={}, @style={}, @elems=[], @raw='')->
-          id:     ~(@attrs.id)->
-          width:    ~(@attrs.width)->
-          height:   ~(@attrs.height)->
-          className:  ~(@attrs.class)->
-          colSpan:  ~(@attrs.colspan)->
-          rowSpan:  ~(@attrs.rowspan)->
-          title:    ~(@attrs.title)->
-          innerHTML:  ~
-            (@raw)->
-            -> @raw or [e.outerHTML for e in @elems].join("\n")
-          outerHTML:  ~->
-            {tag, attrs, style} = @
-            css = style.cssText or [ "#{k.replace(/[A-Z]/g, '-$&').toLowerCase()}:#v" for k, v of style ].join(";")
-            if css then attrs.style = css else delete attrs.style
-            return "<#tag#{
-              [ " #k=\"#v\"" for k, v of attrs ].join('')
-            }>#{ @innerHTML }</#tag>"
-          appendChild: -> @elems.push it
-        SocialCalc.document.createElement = -> new Node it
         ss.sheet.ResetSheet!
         ss.ParseSheetSave save
         if log?length

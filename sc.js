@@ -434,7 +434,7 @@
           var x, this$ = this;
           x = new Worker(function(){
             return this.onmessage = function(arg$){
-              var ref$, snapshot, log, ref1$, parts, save, ss, Node, cmdstr, line, e;
+              var ref$, snapshot, log, ref1$, parts, save, ss, cmdstr, line, e;
               ref$ = arg$.data, snapshot = ref$.snapshot, log = (ref1$ = ref$.log) != null
                 ? ref1$
                 : [];
@@ -446,126 +446,6 @@
                 };
                 window.clearTimeout = function(){};
                 window.ss = ss = new SocialCalc.SpreadsheetControl;
-                Node = (function(){
-                  Node.displayName = 'Node';
-                  var prototype = Node.prototype, constructor = Node;
-                  function Node(tag, attrs, style, elems, raw){
-                    this.tag = tag != null ? tag : "div";
-                    this.attrs = attrs != null
-                      ? attrs
-                      : {};
-                    this.style = style != null
-                      ? style
-                      : {};
-                    this.elems = elems != null
-                      ? elems
-                      : [];
-                    this.raw = raw != null ? raw : '';
-                  }
-                  Object.defineProperty(prototype, 'id', {
-                    set: function(id){
-                      this.attrs.id = id;
-                    },
-                    configurable: true,
-                    enumerable: true
-                  });
-                  Object.defineProperty(prototype, 'width', {
-                    set: function(width){
-                      this.attrs.width = width;
-                    },
-                    configurable: true,
-                    enumerable: true
-                  });
-                  Object.defineProperty(prototype, 'height', {
-                    set: function(height){
-                      this.attrs.height = height;
-                    },
-                    configurable: true,
-                    enumerable: true
-                  });
-                  Object.defineProperty(prototype, 'className', {
-                    set: function($class){
-                      this.attrs['class'] = $class;
-                    },
-                    configurable: true,
-                    enumerable: true
-                  });
-                  Object.defineProperty(prototype, 'colSpan', {
-                    set: function(colspan){
-                      this.attrs.colspan = colspan;
-                    },
-                    configurable: true,
-                    enumerable: true
-                  });
-                  Object.defineProperty(prototype, 'rowSpan', {
-                    set: function(rowspan){
-                      this.attrs.rowspan = rowspan;
-                    },
-                    configurable: true,
-                    enumerable: true
-                  });
-                  Object.defineProperty(prototype, 'title', {
-                    set: function(title){
-                      this.attrs.title = title;
-                    },
-                    configurable: true,
-                    enumerable: true
-                  });
-                  Object.defineProperty(prototype, 'innerHTML', {
-                    set: function(raw){
-                      this.raw = raw;
-                    },
-                    get: function(){
-                      var e;
-                      return this.raw || (function(){
-                        var i$, ref$, len$, results$ = [];
-                        for (i$ = 0, len$ = (ref$ = this.elems).length; i$ < len$; ++i$) {
-                          e = ref$[i$];
-                          results$.push(e.outerHTML);
-                        }
-                        return results$;
-                      }.call(this)).join("\n");
-                    },
-                    configurable: true,
-                    enumerable: true
-                  });
-                  Object.defineProperty(prototype, 'outerHTML', {
-                    get: function(){
-                      var tag, attrs, style, css, k, v;
-                      tag = this.tag, attrs = this.attrs, style = this.style;
-                      css = style.cssText || (function(){
-                        var ref$, results$ = [];
-                        for (k in ref$ = style) {
-                          v = ref$[k];
-                          results$.push(k.replace(/[A-Z]/g, '-$&').toLowerCase() + ":" + v);
-                        }
-                        return results$;
-                      }()).join(";");
-                      if (css) {
-                        attrs.style = css;
-                      } else {
-                        delete attrs.style;
-                      }
-                      return "<" + tag + (function(){
-                        var ref$, results$ = [];
-                        for (k in ref$ = attrs) {
-                          v = ref$[k];
-                          results$.push(" " + k + "=\"" + v + "\"");
-                        }
-                        return results$;
-                      }()).join('') + ">" + this.innerHTML + "</" + tag + ">";
-                    },
-                    configurable: true,
-                    enumerable: true
-                  });
-                  prototype.appendChild = function(it){
-                    return this.elems.push(it);
-                  };
-                  return Node;
-                }());
-                SocialCalc.document.createElement = function(it){
-                  return new Node(it);
-                };
                 ss.sheet.ResetSheet();
                 ss.ParseSheetSave(save);
                 if (log != null && log.length) {
