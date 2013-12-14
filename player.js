@@ -9,7 +9,7 @@
           return location.reload();
         }
         doPlay = function(){
-          var ref$, endpoint, ref1$, emit;
+          var ref$, endpoint, ref1$, options, emit;
           window.SocialCalc == null && (window.SocialCalc = {});
           SocialCalc._username = Math.random().toString();
           SocialCalc.isConnected = true;
@@ -49,13 +49,13 @@
             window.location = './_start';
             return;
           }
+          options = {
+            'connect timeout': 1500
+          };
           if (endpoint) {
-            this$.connect(null, {
-              resource: endpoint.replace(/\/?$/, '/socket.io').replace(/^\//, '')
-            });
-          } else {
-            this$.connect();
+            options.resource = endpoint.replace(/\/?$/, '/socket.io').replace(/^\//, '');
           }
+          this$.connect(null, options);
           emit = function(data){
             return this$.emit({
               data: data

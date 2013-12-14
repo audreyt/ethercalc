@@ -32,9 +32,9 @@
       window.location = './_start'
       return
 
-    if endpoint
-      @connect null, resource: endpoint.replace(// /?$ // \/socket.io).replace(// ^/ // '')
-    else => @connect!
+    options = { 'connect timeout': 1500ms }
+    options.resource = endpoint.replace(// /?$ // \/socket.io).replace(// ^/ // '') if endpoint
+    @connect null, options
 
     emit = (data) ~> @emit {data}
     SocialCalc.Callbacks.broadcast = (type, data={}) ~>
