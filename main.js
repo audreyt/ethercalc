@@ -58,6 +58,12 @@
       }
     });
     this.get({
+      '/manifest.appcache': function(){
+        this.response.type('text/cache-manifest');
+        return this.response.sendfile('manifest.appcache');
+      }
+    });
+    this.get({
       '/_new': function(){
         var room;
         room = newRoom();
