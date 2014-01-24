@@ -3,7 +3,7 @@
   var slice$ = [].slice;
   this.__DB__ = null;
   this.include = function(){
-    var env, ref$, redisPort, redisHost, redisPass, dataDir, services, name, items, ref1$, redis, makeClient, RedisStore, db, this$ = this;
+    var env, ref$, redisPort, redisHost, redisPass, dataDir, services, name, items, ref1$, redis, makeClient, RedisStore, db, EXPIRE, this$ = this;
     if (this.__DB__) {
       return this.__DB__;
     }
@@ -60,6 +60,7 @@
       db.DB = true;
       return console.log("Connected to Redis Server: " + redisHost + ":" + redisPort);
     });
+    EXPIRE = this.EXPIRE;
     db.on('error', function(err){
       var fs, Commands;
       switch (false) {
@@ -70,7 +71,7 @@
       }
       console.log(err);
       console.log("==> Falling back to JSON storage: " + dataDir + "/dump.json");
-      if (this.EXPIRE) {
+      if (EXPIRE) {
         console.log("==> The --expire <seconds> option requires a Redis server; stopping!");
         process.exit();
       }

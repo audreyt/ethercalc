@@ -42,6 +42,7 @@
     db.DB = true
     console.log "Connected to Redis Server: #redisHost:#redisPort"
 
+  EXPIRE = @EXPIRE
   db.on \error (err) ->
     | db.DB is true => return console.log """
       ==> Lost connection to Redis Server - attempting to reconnect...
@@ -50,7 +51,7 @@
     | otherwise
     console.log err
     console.log "==> Falling back to JSON storage: #{ dataDir }/dump.json"
-    if @EXPIRE
+    if EXPIRE
       console.log "==> The --expire <seconds> option requires a Redis server; stopping!"
       process.exit!
 
