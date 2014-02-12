@@ -189,9 +189,18 @@ Check the activity stream to see the newly edited page!
     ss.ExecuteCommand? \redisplay, ''
     ss.ExecuteCommand? 'set sheet defaulttextvalueformat text-wiki'
     $ document .on \mouseover '#te_fullgrid tr:nth-child(2) td:first' ->
-      $ @ .attr title: 'Export to HTML (.csv also works)'
+      $ @ .attr title: 'Export...'
     $ document .on \click '#te_fullgrid tr:nth-child(2) td:first' ->
-      window.open "./#{ SocialCalc._room }.html"
+      vex.defaultOptions.className = 'vex-theme-flat-attack'
+      vex.dialog.open do
+        message: 'Please choose an export format.'
+        buttons: [
+          $.extend {}, vex.dialog.buttons.YES, text: 'HTML', click: ->
+            window.open "./#{ SocialCalc._room }.html"
+          $.extend {}, vex.dialog.buttons.YES, text: 'CSV', click: ->
+            window.open "./#{ SocialCalc._room }.csv"
+          $.extend {}, vex.dialog.buttons.NO, text: 'Cancel'
+        ]
 
   if window.Document?Parser
     SocialCalc.Callbacks.expand_wiki = (val) -> """

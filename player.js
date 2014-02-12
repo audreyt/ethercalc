@@ -298,11 +298,29 @@
           }
           $(document).on('mouseover', '#te_fullgrid tr:nth-child(2) td:first', function(){
             return $(this).attr({
-              title: 'Export to HTML (.csv also works)'
+              title: 'Export...'
             });
           });
           return $(document).on('click', '#te_fullgrid tr:nth-child(2) td:first', function(){
-            return window.open("./" + SocialCalc._room + ".html");
+            vex.defaultOptions.className = 'vex-theme-flat-attack';
+            return vex.dialog.open({
+              message: 'Please choose an export format.',
+              buttons: [
+                $.extend({}, vex.dialog.buttons.YES, {
+                  text: 'HTML',
+                  click: function(){
+                    return window.open("./" + SocialCalc._room + ".html");
+                  }
+                }), $.extend({}, vex.dialog.buttons.YES, {
+                  text: 'CSV',
+                  click: function(){
+                    return window.open("./" + SocialCalc._room + ".csv");
+                  }
+                }), $.extend({}, vex.dialog.buttons.NO, {
+                  text: 'Cancel'
+                })
+              ]
+            });
           });
         };
         if ((ref$ = window.Document) != null && ref$.Parser) {

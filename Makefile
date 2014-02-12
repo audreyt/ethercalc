@@ -15,7 +15,8 @@ ETHERCALC_FILES=\
 	third-party/wikiwyg/lib/Document/Emitter/HTML.js \
 	third-party/wikiwyg/lib/Document/Parser.js \
 	third-party/wikiwyg/lib/Document/Parser/Wikitext.js \
-	static/jquery.js
+	static/jquery.js \
+	static/vex.combined.min.js
 
 JS_FILES=\
 	app.js dotcloud.js player.js main.js sc.js db.js

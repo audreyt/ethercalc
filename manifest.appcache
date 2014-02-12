@@ -1,5 +1,5 @@
 CACHE MANIFEST
-# Mon Dec 23 11:29:13 CST 2013
+# Wed Feb 12 15:30:50 CST 2014
 
 CACHE:
 
@@ -22,7 +22,7 @@ player/graph.js
 player/main.js
 static/socialcalc.css
 static/index.css
-static/gear.png
+static/share.png
 
 images/sc-1x1.gif
 images/sc-aligncenter.gif

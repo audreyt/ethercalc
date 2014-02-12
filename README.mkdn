@@ -132,6 +132,12 @@ Deletes a spreadsheet's content after N seconds of inactivity. Activities includ
 
 * static/jquery.js 
 
+### MIT License (HubSpot, Inc.)
+
+* static/vex-theme-flat-attack.css
+* static/vex.combined.min.js
+* static/vex.css
+
 ### CC0 Public Domain (唐鳳)
 
 * src/*.ls
