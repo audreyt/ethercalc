@@ -18,8 +18,15 @@
 
 ## Installation
 
+For global installation (may need root)
+
     npm i -g ethercalc
     ethercalc
+
+For local non-root installation 
+
+    npm i
+    make
 
 Or install with our [Docker](http://www.docker.io/) image, which comes with a
 built-in Redis server and webworker-threads support:
