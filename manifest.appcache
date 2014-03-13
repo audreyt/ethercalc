@@ -1,5 +1,5 @@
 CACHE MANIFEST
-# Tue Feb 25 18:40:08 CST 2014
+# Fri Mar 14 01:59:16 CST 2014
 
 CACHE:
 
@@ -12,6 +12,10 @@ static/img/davy/gfx/screenshot.png
 static/img/davy/gfx/home-logo2.png
 static/img/davy/btn/createpad-home.png
 static/img/right-graphite@2x.png
+static/jszip.js
+static/shim.js
+static/xlsx.js
+static/xlsxworker.js
 
 # pad page
 static/ethercalc.js

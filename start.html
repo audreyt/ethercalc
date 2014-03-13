@@ -33,5 +33,179 @@
       position: absolute; top: 0; right: 0; border: 0"
       src="./static/img/right-graphite@2x.png" alt="Fork me on GitHub"
       width="120" height="120"></a>
+  <script src="./static/jszip.js"></script>
+  <script src="./static/xlsx.js"></script>
+  <script src="./static/shim.js"></script>
+  <script src="./static/jquery.js"></script>
+  <div id="drop">Drop a CSV or an Excel XML (.xlsx) file here to import it</div>
+  <style>
+      #drop {
+          display: block;
+          clear: both;
+          margin-top: 40px;
+background: #eee;
+        border:2px dashed #bbb;
+        -moz-border-radius:5px;
+        -webkit-border-radius:5px;
+        border-radius:5px;
+        padding:20px;
+        text-align:center;
+        font:20pt bold,"Vollkorn";color:#bbb
+      }
+  </style>
+<script>
+var rABS = typeof FileReader !== "undefined" && typeof FileReader.prototype !== "undefined" && typeof FileReader.prototype.readAsBinaryString !== "undefined";
+function fixdata(data) {
+	var o = "", l = 0, w = 10240;
+	for(; l<data.byteLength/w; ++l)
+		o+=String.fromCharCode.apply(null,new Uint8Array(data.slice(l*w,l*w+w)));
+	o+=String.fromCharCode.apply(null, new Uint8Array(data.slice(o.length)));
+	return o;
+}
+
+function xlsxworker(data, cb) {
+	var worker = new Worker('./static/xlsxworker.js');
+	worker.onmessage = function(e) {
+		switch(e.data.t) {
+			case 'ready': break;
+			case 'e': console.error(e.data.d); break;
+			case 'xlsx': cb(JSON.parse(e.data.d)); break;
+		}
+	};
+	var arr = rABS ? data : btoa(fixdata(data));
+	worker.postMessage({d:arr,b:rABS});
+}
+
+function get_radio_value( radioName ) {
+	var radios = document.getElementsByName( radioName );
+	for( var i = 0; i < radios.length; i++ ) {
+		if( radios[i].checked ) {
+			return radios[i].value;
+		}
+	}
+}
+
+function to_json(workbook) {
+	var result = {};
+	workbook.SheetNames.forEach(function(sheetName) {
+		var roa = XLSX.utils.sheet_to_row_object_array(workbook.Sheets[sheetName]);
+		if(roa.length > 0){
+			result[sheetName] = roa;
+		}
+	});
+	return result;
+}
+
+function to_csv(workbook) {
+	var result = [];
+	workbook.SheetNames.forEach(function(sheetName) {
+		var csv = XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName]);
+		if(csv.length > 0){
+			result.push("SHEET: " + sheetName);
+			result.push("");
+                        result = [];
+			result.push(csv);
+		}
+	});
+	return result.join("\n").replace(/,+\n/g, '\n').replace(/[\s]+$/, '\n');
+}
+
+function to_formulae(workbook) {
+	var result = [];
+	workbook.SheetNames.forEach(function(sheetName) {
+		var formulae = XLSX.utils.get_formulae(workbook.Sheets[sheetName]);
+		if(formulae.length > 0){
+			result.push("SHEET: " + sheetName);
+			result.push("");
+			result.push(formulae.join("\n"));
+		}
+	});
+	return result.join("\n");
+}
+
+var tarea = document.getElementById('b64data');
+function b64it() {
+	var wb = XLSX.read(tarea.value, {type: 'base64'});
+	process_wb(wb);
+}
+
+function process_wb(wb) {
+	var output = "";
+        output = to_csv(wb);
+        post_csv(output);
+}
+
+function post_csv (csv) {
+        var id = newId(10, 36).toLowerCase();
+$.ajax({
+    url: '/_/' + id,
+    method: 'PUT',
+    contentType: 'text/csv',
+    processData: false,
+    data: csv,
+    success: function(data, msg, xhr) {
+        location.href = '/' + id
+    }
+});
+}
+
+var BASE64URICHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_'.split('');
+function newId (len, radix) {
+    var chars = BASE64URICHARS, newId = [], i=0;
+    radix = radix || chars.length;
+    len = len || 22;
+
+    for (i = 0; i < len; i++) newId[i] = chars[0 | Math.random()*radix];
+
+    return newId.join('');
+  };
+
+var drop = document.getElementById('drop');
+function handleDrop(e) {
+	e.stopPropagation();
+	e.preventDefault();
+        var toggle = function(){
+            $(drop).fadeOut('fast', function(){ $(drop).fadeIn('fast', toggle) });
+        }
+	var files = e.dataTransfer.files;
+	var i,f;
+	for (i = 0, f = files[i]; i != files.length; ++i) {
+		var reader = new FileReader();
+		var name = f.name;
+		reader.onload = function(e) {
+			var data = e.target.result;
+                        if (/^[^\n]+(?:,[^\n]+)*\n/.test(data)) {
+                            return post_csv(data);
+                        }
+			if(typeof Worker !== 'undefined') {
+				xlsxworker(data, process_wb);
+			} else {
+				var wb;
+				if(rABS) {
+					wb = XLSX.read(data, {type: 'binary'});
+				} else {
+				var arr = fixdata(data);
+					wb = XLSX.read(btoa(arr), {type: 'base64'});
+				}
+				process_wb(wb);
+			}
+		};
+		if(rABS) reader.readAsBinaryString(f);
+		else reader.readAsArrayBuffer(f);
+	}
+}
+
+function handleDragover(e) {
+	e.stopPropagation();
+	e.preventDefault();
+	e.dataTransfer.dropEffect = 'copy';
+}
+
+if(drop.addEventListener) {
+	drop.addEventListener('dragenter', handleDragover, false);
+	drop.addEventListener('dragover', handleDragover, false);
+	drop.addEventListener('drop', handleDrop, false);
+}
+</script>
 </body>
 </html>

@@ -145,6 +145,16 @@ Deletes a spreadsheet's content after N seconds of inactivity. Activities includ
 * static/vex.combined.min.js
 * static/vex.css
 
+### MIT License (Stuart Knightley, David Duponchel, Franz Buchinger, Ant'onio Afonso)
+
+* static/jszip.js
+
+### Apache License 2.0 (SheetJS)
+
+* static/shim.js
+* static/xlsx.js
+* static/xlsxworker.js
+
 ### CC0 Public Domain (唐鳳)
 
 * src/*.ls
