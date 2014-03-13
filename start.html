@@ -174,7 +174,7 @@ function handleDrop(e) {
 		var name = f.name;
 		reader.onload = function(e) {
 			var data = e.target.result;
-                        if (/^[^\n]+(?:,[^\n]+)*\n/.test(data)) {
+                        if (!/^PK\u0003\u0004/.test(data) && /^[^\n]+,(?:[^\n]+)*\n/.test(data)) {
                             return post_csv(data);
                         }
 			if(typeof Worker !== 'undefined') {
