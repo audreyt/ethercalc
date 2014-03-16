@@ -47,7 +47,7 @@
   @get '/favicon.ico': -> @response.send 404 ''
   @get '/manifest.appcache': ->
     @response.type \text/cache-manifest
-    @response.sendfile \manifest.appcache
+    @response.sendfile "#RealBin/manifest.appcache"
   @get '/_new': ->
     room = new-room!
     @response.redirect if KEY then "#BASEPATH/#room/edit" else "#BASEPATH/#room"

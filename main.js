@@ -60,7 +60,7 @@
     this.get({
       '/manifest.appcache': function(){
         this.response.type('text/cache-manifest');
-        return this.response.sendfile('manifest.appcache');
+        return this.response.sendfile(RealBin + "/manifest.appcache");
       }
     });
     this.get({
