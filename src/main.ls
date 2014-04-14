@@ -78,6 +78,13 @@
   @get '/:room.csv': ExportCSV
   @get '/:room.html': ExportHTML
 
+  @get '/_from/:template': ->
+    room = new-room!
+    template = @params.template
+    {snapshot} <~ SC._get template, IO
+    <~ SC._put room, snapshot
+    @response.redirect if KEY then "#BASEPATH/#room/edit" else "#BASEPATH/#room"
+
   @get '/:room':
     if KEY then ->
       | @query.auth?length  => sendFile \index.html .call @
