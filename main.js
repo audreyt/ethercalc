@@ -124,6 +124,22 @@
       '/:room.html': ExportHTML
     });
     this.get({
+      '/_from/:template': function(){
+        var room, template, this$ = this;
+        room = newRoom();
+        template = this.params.template;
+        return SC._get(template, IO, function(arg$){
+          var snapshot;
+          snapshot = arg$.snapshot;
+          return SC._put(room, snapshot, function(){
+            return this$.response.redirect(KEY
+              ? BASEPATH + "/" + room + "/edit"
+              : BASEPATH + "/" + room);
+          });
+        });
+      }
+    });
+    this.get({
       '/:room': KEY
         ? function(){
           var ref$;
