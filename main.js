@@ -242,7 +242,7 @@
       });
       return request.on('end', function(){
         if (!request.is('text/csv')) {
-          cb(buf);
+          return cb(buf);
         }
         return SC.csvToSave(buf, function(save){
           return cb("socialcalc:version:1.0\nMIME-Version: 1.0\nContent-Type: multipart/mixed; boundary=SocialCalcSpreadsheetControlSave\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n# SocialCalc Spreadsheet Control Save\nversion:1.0\npart:sheet\npart:edit\npart:audit\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n" + save + "\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n--SocialCalcSpreadsheetControlSave--\n");
@@ -252,9 +252,9 @@
     this.put({
       '/_/:room': function(){
         var this$ = this;
+        this.response.type(Text);
         return requestToSave(this.request, function(snapshot){
           return SC._put(this$.params.room, snapshot, function(){
-            this$.response.type(Text);
             return this$.response.send(201, 'OK');
           });
         });
@@ -264,9 +264,9 @@
       '/_/:room': function(){
         var room, this$ = this;
         room = this.params.room;
+        this.response.type(Text);
         return requestToCommand(this.request, function(command){
           if (!command) {
-            this$.response.type(Text);
             return this$.response.send(400, 'Please send command');
           }
           return SC._get(room, IO, function(arg$){
@@ -303,8 +303,8 @@
         return requestToSave(this.request, function(snapshot){
           var room, ref$;
           room = ((ref$ = this$.body) != null ? ref$.room : void 8) || newRoom();
+          this$.response.type(Text);
           return SC._put(room, snapshot, function(){
-            this$.response.type(Text);
             this$.response.location("/_/" + room);
             return this$.response.send(201, "/" + room);
           });
