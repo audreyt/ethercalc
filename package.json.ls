@@ -10,7 +10,7 @@ dependencies:
   redis: \0.8.2
   'uuid-pure': \*
   optimist: \*
-  zappajs: \0.4.x
+  zappajs: \http://audreyt.org/tmp/zappajs-0.4.22.tgz
   cors: \*
   LiveScript: \1.2.x
 optionalDependencies:

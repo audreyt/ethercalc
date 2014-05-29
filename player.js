@@ -58,7 +58,16 @@
           if (endpoint) {
             options.resource = endpoint.replace(/\/?$/, '/socket.io').replace(/^\//, '');
           }
-          this$.connect(null, options);
+          if ((ref$ = this$.connect(null, options)) != null) {
+            if ((ref1$ = ref$.io) != null) {
+              ref1$.on('reconnect', function(){
+                if (!((typeof SocialCalc != 'undefined' && SocialCalc !== null) && SocialCalc.isConnected)) {
+                  return;
+                }
+                return SocialCalc.Callbacks.broadcast('ask.log');
+              });
+            }
+          }
           emit = function(data){
             return this$.emit({
               data: data

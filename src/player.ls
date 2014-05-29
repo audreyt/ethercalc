@@ -34,7 +34,9 @@
 
     options = { 'connect timeout': 1500ms, +reconnect, 'reconnection delay': 500ms, 'max reconnection attempts': 1800 }
     options.resource = endpoint.replace(// /?$ // \/socket.io).replace(// ^/ // '') if endpoint
-    @connect null, options
+    @connect(null, options)?io?on \reconnect ->
+      return unless SocialCalc?isConnected
+      SocialCalc.Callbacks.broadcast \ask.log
 
     emit = (data) ~> @emit {data}
     SocialCalc.Callbacks.broadcast = (type, data={}) ~>
