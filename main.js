@@ -313,19 +313,38 @@
     });
     this.on({
       disconnect: function(){
-        var id, key, room, i$, ref$, len$, client;
+        var id, ref$, key, i$, len$, client, room, val, isConnected, ref1$;
         id = this.socket.id;
-        CleanRoom: for (key in IO.sockets.manager.roomClients[id]) {
-          if (/^\/log-/.exec(key)) {
-            room = key.substr(5);
-            for (i$ = 0, len$ = (ref$ = IO.sockets.clients(key.substr(1))).length; i$ < len$; ++i$) {
-              client = ref$[i$];
-              if (client.id !== id) {
+        if (((ref$ = IO.sockets.manager) != null ? ref$.roomClients : void 8) != null) {
+          CleanRoomLegacy: for (key in IO.sockets.manager.roomClients[id]) {
+            if (/^\/log-/.exec(key)) {
+              for (i$ = 0, len$ = (ref$ = IO.sockets.clients(key.substr(1))).length; i$ < len$; ++i$) {
+                client = ref$[i$];
+                if (client.id !== id) {
+                  continue CleanRoomLegacy;
+                }
+              }
+              room = key.substr(5);
+              if ((ref$ = SC[room]) != null) {
+                ref$.terminate();
+              }
+              delete SC[room];
+            }
+          }
+          return;
+        }
+        CleanRoom: for (key in ref$ = IO.sockets.adapter.rooms) {
+          val = ref$[key];
+          if (/^log-/.exec(key)) {
+            for (client in val) {
+              isConnected = val[client];
+              if (isConnected && client !== id) {
                 continue CleanRoom;
               }
             }
-            if ((ref$ = SC[room]) != null) {
-              ref$.terminate();
+            room = key.substr(4);
+            if ((ref1$ = SC[room]) != null) {
+              ref1$.terminate();
             }
             delete SC[room];
           }

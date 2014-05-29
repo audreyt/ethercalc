@@ -165,10 +165,19 @@
 
   @on disconnect: !->
     { id } = @socket
-    :CleanRoom for key of IO.sockets.manager.roomClients[id] when key is // ^/log- //
-      room = key.substr(5)
-      for client in IO.sockets.clients(key.substr(1))
-      | client.id isnt id => continue CleanRoom
+    if IO.sockets.manager?roomClients?
+      # socket.io 0.9.x
+      :CleanRoomLegacy for key of IO.sockets.manager.roomClients[id] when key is // ^/log- //
+        for client in IO.sockets.clients(key.substr(1))
+        | client.id isnt id => continue CleanRoomLegacy
+        room = key.substr(5)
+        SC[room]?terminate!
+        delete SC[room]
+      return
+    :CleanRoom for key, val of IO.sockets.adapter.rooms when key is // ^log- //
+      for client, isConnected of val | isConnected and client isnt id
+        continue CleanRoom
+      room = key.substr(4)
       SC[room]?terminate!
       delete SC[room]
 

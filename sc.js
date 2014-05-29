@@ -178,7 +178,6 @@
           var rv, e;
           try {
             rv = vm.runInContext(src, sandbox);
-            console.log("rv " + rv);
             return typeof cb === 'function' ? cb(null, rv) : void 8;
           } catch (e$) {
             e = e$;

@@ -52,7 +52,6 @@ Worker ||= class => (code) ->
     nextTick: (cb) -> process.nextTick cb
     eval: (src, cb) -> try
       rv = vm.runInContext src, sandbox
-      console.log "rv #rv"
       cb? null, rv
     catch e
       console.log "e #e"

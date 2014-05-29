@@ -50,7 +50,10 @@
             return;
           }
           options = {
-            'connect timeout': 1500
+            'connect timeout': 1500,
+            reconnect: true,
+            'reconnection delay': 500,
+            'max reconnection attempts': 1800
           };
           if (endpoint) {
             options.resource = endpoint.replace(/\/?$/, '/socket.io').replace(/^\//, '');

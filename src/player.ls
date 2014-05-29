@@ -32,7 +32,7 @@
       window.location = './_start'
       return
 
-    options = { 'connect timeout': 1500ms }
+    options = { 'connect timeout': 1500ms, +reconnect, 'reconnection delay': 500ms, 'max reconnection attempts': 1800 }
     options.resource = endpoint.replace(// /?$ // \/socket.io).replace(// ^/ // '') if endpoint
     @connect null, options
 
