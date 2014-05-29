@@ -1,7 +1,7 @@
 #!/usr/bin/env lsc -cj
 name: \ethercalc
 description: 'Multi-User Spreadsheet Server'
-version: \0.20140415.0
+version: \0.20140529.0
 homepage: 'http://ethercalc.net/'
 repository:
   type: 'git'
@@ -10,7 +10,7 @@ dependencies:
   redis: \0.8.2
   'uuid-pure': \*
   optimist: \*
-  zappajs: \http://audreyt.org/tmp/zappajs-0.4.22.tgz
+  zappajs: \http://audreyt.org/tmp/zappajs-0.4.22-socketio-1.0.tgz
   cors: \*
   LiveScript: \1.2.x
 optionalDependencies:

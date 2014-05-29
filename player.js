@@ -9,7 +9,7 @@
           return location.reload();
         }
         doPlay = function(){
-          var ref$, endpoint, ref1$, options, emit;
+          var ref$, endpoint, ref1$, options, x$, emit;
           window.SocialCalc == null && (window.SocialCalc = {});
           SocialCalc._username = Math.random().toString();
           SocialCalc.isConnected = true;
@@ -58,15 +58,37 @@
           if (endpoint) {
             options.resource = endpoint.replace(/\/?$/, '/socket.io').replace(/^\//, '');
           }
-          if ((ref$ = this$.connect(null, options)) != null) {
-            if ((ref1$ = ref$.io) != null) {
-              ref1$.on('reconnect', function(){
-                if (!((typeof SocialCalc != 'undefined' && SocialCalc !== null) && SocialCalc.isConnected)) {
-                  return;
-                }
-                return SocialCalc.Callbacks.broadcast('ask.log');
+          x$ = (ref$ = this$.connect(null, options)) != null ? ref$.io : void 8;
+          if (x$ != null) {
+            x$.on('reconnect', function(){
+              if (!((typeof SocialCalc != 'undefined' && SocialCalc !== null) && SocialCalc.isConnected)) {
+                return;
+              }
+              return SocialCalc.Callbacks.broadcast('ask.log');
+            });
+          }
+          if (x$ != null) {
+            x$.on('reconnect_error', function(){
+              if (!((typeof SocialCalc != 'undefined' && SocialCalc !== null) && SocialCalc.isConnected)) {
+                return;
+              }
+              vex.closeAll();
+              SocialCalc.hadSnapshot = false;
+              vex.defaultOptions.className = 'vex-theme-flat-attack';
+              return vex.dialog.open({
+                message: 'Disconnected from server. Reconnecting....',
+                buttons: []
               });
-            }
+            });
+          }
+          if (x$ != null) {
+            x$.on('connect_failed', function(){
+              vex.closeAll();
+              vex.defaultOptions.className = 'vex-theme-flat-attack';
+              return vex.dialog.open({
+                message: 'Reconnection Failed.'
+              });
+            });
           }
           emit = function(data){
             return this$.emit({
@@ -163,6 +185,7 @@
                 });
                 break;
               case 'log':
+                vex.closeAll();
                 if (SocialCalc.hadSnapshot) {
                   break;
                 }

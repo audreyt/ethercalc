@@ -34,9 +34,23 @@
 
     options = { 'connect timeout': 1500ms, +reconnect, 'reconnection delay': 500ms, 'max reconnection attempts': 1800 }
     options.resource = endpoint.replace(// /?$ // \/socket.io).replace(// ^/ // '') if endpoint
-    @connect(null, options)?io?on \reconnect ->
-      return unless SocialCalc?isConnected
-      SocialCalc.Callbacks.broadcast \ask.log
+    @connect(null, options)?io
+      ..?on \reconnect ->
+        return unless SocialCalc?isConnected
+        SocialCalc.Callbacks.broadcast \ask.log
+      ..?on \reconnect_error ->
+        return unless SocialCalc?isConnected
+        vex.closeAll!
+        SocialCalc.hadSnapshot = false
+        vex.defaultOptions.className = 'vex-theme-flat-attack'
+        vex.dialog.open do
+          message: 'Disconnected from server. Reconnecting....'
+          buttons: []
+      ..?on \connect_failed ->
+        vex.closeAll!
+        vex.defaultOptions.className = 'vex-theme-flat-attack'
+        vex.dialog.open do
+          message: 'Reconnection Failed.'
 
     emit = (data) ~> @emit {data}
     SocialCalc.Callbacks.broadcast = (type, data={}) ~>
@@ -90,6 +104,7 @@
           to: @data.user
           ecell: editor.ecell.coord
       | \log
+        vex.closeAll!
         break if SocialCalc.hadSnapshot
         SocialCalc.hadSnapshot = true
         if @data.snapshot
