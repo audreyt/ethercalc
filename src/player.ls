@@ -22,12 +22,14 @@
       else if // /node/\d+ //.test window.location.href
         SocialCalc._room = window.location.href.match // /node/(\d+) // .1
     else if SocialCalc._room
-      try window.history.pushState {} '' "./#{ SocialCalc._room }#{
-        switch
-        | SocialCalc._view  => '/view'
-        | SocialCalc._auth  => '/edit'
-        | otherwise     => ''
-      }" unless SocialCalc.CurrentSpreadsheetControlObject
+      unless SocialCalc.CurrentSpreadsheetControlObject
+        <- setTimeout _, 100ms
+        window.history.pushState {} '' "./#{ SocialCalc._room }#{
+          switch
+          | SocialCalc._view  => '/view'
+          | SocialCalc._auth  => '/edit'
+          | otherwise     => ''
+        }"
     else
       window.location = './_start'
       return
@@ -152,6 +154,15 @@ Check the activity stream to see the newly edited page!
         window.onunload = null
         window.onbeforeunload = null
         window.location = '/'
+      | \error
+        vex.closeAll!
+        vex.defaultOptions.className = 'vex-theme-flat-attack'
+        vex.dialog.open do
+          message: @data.message
+          buttons: [
+            $.extend {}, vex.dialog.buttons.YES, text: 'Return to ready-only mode', click: ->
+              location.href = "../#{ SocialCalc._room }"
+          ]
 
   window.doresize = !-> window.spreadsheet?DoOnResize!
   onReady = ->

@@ -200,7 +200,10 @@
     | \my.ecell
       DB.hset "ecell-#room", user, ecell
     | \execute
-      return if auth is \0 or KEY and hmac(room) isnt auth
+      return if auth is \0
+      if KEY and hmac(room) isnt auth
+        reply { type: \error, message: "Invalid session key. Modifications will not be saved." }
+        return
       <~ DB.multi!
         .rpush "log-#room" cmdstr
         .rpush "audit-#room" cmdstr

@@ -388,7 +388,14 @@
           DB.hset("ecell-" + room, user, ecell);
           break;
         case 'execute':
-          if (auth === '0' || KEY && hmac(room) !== auth) {
+          if (auth === '0') {
+            return;
+          }
+          if (KEY && hmac(room) !== auth) {
+            reply({
+              type: 'error',
+              message: "Invalid session key. Modifications will not be saved."
+            });
             return;
           }
           DB.multi().rpush("log-" + room, cmdstr).rpush("audit-" + room, cmdstr).bgsave().exec(function(){

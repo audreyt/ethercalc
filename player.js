@@ -31,9 +31,9 @@
               SocialCalc._room = window.location.href.match(/\/node\/(\d+)/)[1];
             }
           } else if (SocialCalc._room) {
-            try {
-              if (!SocialCalc.CurrentSpreadsheetControlObject) {
-                window.history.pushState({}, '', "./" + SocialCalc._room + (function(){
+            if (!SocialCalc.CurrentSpreadsheetControlObject) {
+              setTimeout(function(){
+                return window.history.pushState({}, '', "./" + SocialCalc._room + (function(){
                   switch (false) {
                   case !SocialCalc._view:
                     return '/view';
@@ -43,8 +43,8 @@
                     return '';
                   }
                 }()));
-              }
-            } catch (e$) {}
+              }, 100);
+            }
           } else {
             window.location = './_start';
             return;
@@ -248,6 +248,19 @@
                 window.onunload = null;
                 window.onbeforeunload = null;
                 window.location = '/';
+                break;
+              case 'error':
+                vex.closeAll();
+                vex.defaultOptions.className = 'vex-theme-flat-attack';
+                vex.dialog.open({
+                  message: this.data.message,
+                  buttons: [$.extend({}, vex.dialog.buttons.YES, {
+                    text: 'Return to ready-only mode',
+                    click: function(){
+                      return location.href = "../" + SocialCalc._room;
+                    }
+                  })]
+                });
               }
             }
           });
