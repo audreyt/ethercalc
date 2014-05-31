@@ -72,22 +72,30 @@
               if (!((typeof SocialCalc != 'undefined' && SocialCalc !== null) && SocialCalc.isConnected)) {
                 return;
               }
-              vex.closeAll();
+              if (typeof vex != 'undefined' && vex !== null) {
+                vex.closeAll();
+              }
               SocialCalc.hadSnapshot = false;
-              vex.defaultOptions.className = 'vex-theme-flat-attack';
-              return vex.dialog.open({
+              if (typeof vex != 'undefined' && vex !== null) {
+                vex.defaultOptions.className = 'vex-theme-flat-attack';
+              }
+              return typeof vex != 'undefined' && vex !== null ? vex.dialog.open({
                 message: 'Disconnected from server. Reconnecting....',
                 buttons: []
-              });
+              }) : void 8;
             });
           }
           if (x$ != null) {
             x$.on('connect_failed', function(){
-              vex.closeAll();
-              vex.defaultOptions.className = 'vex-theme-flat-attack';
-              return vex.dialog.open({
+              if (typeof vex != 'undefined' && vex !== null) {
+                vex.closeAll();
+              }
+              if (typeof vex != 'undefined' && vex !== null) {
+                vex.defaultOptions.className = 'vex-theme-flat-attack';
+              }
+              return typeof vex != 'undefined' && vex !== null ? vex.dialog.open({
                 message: 'Reconnection Failed.'
-              });
+              }) : void 8;
             });
           }
           emit = function(data){
@@ -185,7 +193,9 @@
                 });
                 break;
               case 'log':
-                vex.closeAll();
+                if (typeof vex != 'undefined' && vex !== null) {
+                  vex.closeAll();
+                }
                 if (SocialCalc.hadSnapshot) {
                   break;
                 }
@@ -250,17 +260,23 @@
                 window.location = '/';
                 break;
               case 'error':
-                vex.closeAll();
-                vex.defaultOptions.className = 'vex-theme-flat-attack';
-                vex.dialog.open({
-                  message: this.data.message,
-                  buttons: [$.extend({}, vex.dialog.buttons.YES, {
-                    text: 'Return to ready-only mode',
-                    click: function(){
-                      return location.href = "../" + SocialCalc._room;
-                    }
-                  })]
-                });
+                if (typeof vex != 'undefined' && vex !== null) {
+                  vex.closeAll();
+                }
+                if (typeof vex != 'undefined' && vex !== null) {
+                  vex.defaultOptions.className = 'vex-theme-flat-attack';
+                }
+                if (typeof vex != 'undefined' && vex !== null) {
+                  vex.dialog.open({
+                    message: this.data.message,
+                    buttons: [$.extend({}, typeof vex != 'undefined' && vex !== null ? vex.dialog.buttons.YES : void 8, {
+                      text: 'Return to ready-only mode',
+                      click: function(){
+                        return location.href = "../" + SocialCalc._room;
+                      }
+                    })]
+                  });
+                }
               }
             }
           });
@@ -350,25 +366,27 @@
             });
           });
           return $(document).on('click', '#te_fullgrid tr:nth-child(2) td:first', function(){
-            vex.defaultOptions.className = 'vex-theme-flat-attack';
-            return vex.dialog.open({
+            if (typeof vex != 'undefined' && vex !== null) {
+              vex.defaultOptions.className = 'vex-theme-flat-attack';
+            }
+            return typeof vex != 'undefined' && vex !== null ? vex.dialog.open({
               message: 'Please choose an export format.',
               buttons: [
-                $.extend({}, vex.dialog.buttons.YES, {
+                $.extend({}, typeof vex != 'undefined' && vex !== null ? vex.dialog.buttons.YES : void 8, {
                   text: 'HTML',
                   click: function(){
                     return window.open("./" + SocialCalc._room + ".html");
                   }
-                }), $.extend({}, vex.dialog.buttons.YES, {
+                }), $.extend({}, typeof vex != 'undefined' && vex !== null ? vex.dialog.buttons.YES : void 8, {
                   text: 'CSV',
                   click: function(){
                     return window.open("./" + SocialCalc._room + ".csv");
                   }
-                }), $.extend({}, vex.dialog.buttons.NO, {
+                }), $.extend({}, typeof vex != 'undefined' && vex !== null ? vex.dialog.buttons.NO : void 8, {
                   text: 'Cancel'
                 })
               ]
-            });
+            }) : void 8;
           });
         };
         if ((ref$ = window.Document) != null && ref$.Parser) {

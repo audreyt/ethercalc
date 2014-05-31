@@ -42,16 +42,16 @@
         SocialCalc.Callbacks.broadcast \ask.log
       ..?on \reconnect_error ->
         return unless SocialCalc?isConnected
-        vex.closeAll!
+        vex?closeAll!
         SocialCalc.hadSnapshot = false
-        vex.defaultOptions.className = 'vex-theme-flat-attack'
-        vex.dialog.open do
+        vex?defaultOptions.className = 'vex-theme-flat-attack'
+        vex?dialog.open do
           message: 'Disconnected from server. Reconnecting....'
           buttons: []
       ..?on \connect_failed ->
-        vex.closeAll!
-        vex.defaultOptions.className = 'vex-theme-flat-attack'
-        vex.dialog.open do
+        vex?closeAll!
+        vex?defaultOptions.className = 'vex-theme-flat-attack'
+        vex?dialog.open do
           message: 'Reconnection Failed.'
 
     emit = (data) ~> @emit {data}
@@ -106,7 +106,7 @@
           to: @data.user
           ecell: editor.ecell.coord
       | \log
-        vex.closeAll!
+        vex?closeAll!
         break if SocialCalc.hadSnapshot
         SocialCalc.hadSnapshot = true
         if @data.snapshot
@@ -155,12 +155,12 @@ Check the activity stream to see the newly edited page!
         window.onbeforeunload = null
         window.location = '/'
       | \error
-        vex.closeAll!
-        vex.defaultOptions.className = 'vex-theme-flat-attack'
-        vex.dialog.open do
+        vex?closeAll!
+        vex?defaultOptions.className = 'vex-theme-flat-attack'
+        vex?dialog.open do
           message: @data.message
           buttons: [
-            $.extend {}, vex.dialog.buttons.YES, text: 'Return to ready-only mode', click: ->
+            $.extend {}, vex?dialog.buttons.YES, text: 'Return to ready-only mode', click: ->
               location.href = "../#{ SocialCalc._room }"
           ]
 
@@ -219,15 +219,15 @@ Check the activity stream to see the newly edited page!
     $ document .on \mouseover '#te_fullgrid tr:nth-child(2) td:first' ->
       $ @ .attr title: 'Export...'
     $ document .on \click '#te_fullgrid tr:nth-child(2) td:first' ->
-      vex.defaultOptions.className = 'vex-theme-flat-attack'
-      vex.dialog.open do
+      vex?defaultOptions.className = 'vex-theme-flat-attack'
+      vex?dialog.open do
         message: 'Please choose an export format.'
         buttons: [
-          $.extend {}, vex.dialog.buttons.YES, text: 'HTML', click: ->
+          $.extend {}, vex?dialog.buttons.YES, text: 'HTML', click: ->
             window.open "./#{ SocialCalc._room }.html"
-          $.extend {}, vex.dialog.buttons.YES, text: 'CSV', click: ->
+          $.extend {}, vex?dialog.buttons.YES, text: 'CSV', click: ->
             window.open "./#{ SocialCalc._room }.csv"
-          $.extend {}, vex.dialog.buttons.NO, text: 'Cancel'
+          $.extend {}, vex?dialog.buttons.NO, text: 'Cancel'
         ]
 
   if window.Document?Parser
