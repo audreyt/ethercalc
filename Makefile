@@ -23,15 +23,15 @@ JS_FILES=\
 
 all :: SocialCalcModule.js
 	env PATH="$$PATH:./node_modules/LiveScript/bin" livescript -c -o . src
-	node app.js
+	node app.js $(ETHERCALC_ARGS)
 
 vm :: SocialCalcModule.js
 	env PATH="$$PATH:./node_modules/LiveScript/bin" livescript -c -o . src
-	node app.js --vm
+	node app.js --vm $(ETHERCALC_ARGS)
 
 expire :: SocialCalcModule.js
 	env PATH="$$PATH:./node_modules/LiveScript/bin" livescript -c -o . src
-	node app.js --expire 10
+	node app.js --expire 10 $(ETHERCALC_ARGS)
 
 ./node_modules/streamline/bin/_node :
 	npm i --dev
