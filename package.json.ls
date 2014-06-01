@@ -1,7 +1,7 @@
 #!/usr/bin/env lsc -cj
 name: \ethercalc
 description: 'Multi-User Spreadsheet Server'
-version: \0.20140530.0
+version: \0.20140601.0
 homepage: 'http://ethercalc.net/'
 repository:
   type: 'git'

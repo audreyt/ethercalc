@@ -9,7 +9,7 @@
           return location.reload();
         }
         doPlay = function(){
-          var ref$, endpoint, ref1$, options, x$, emit;
+          var ref$, endpoint, ref1$, options, showError, x$, emit;
           window.SocialCalc == null && (window.SocialCalc = {});
           SocialCalc._username = Math.random().toString();
           SocialCalc.isConnected = true;
@@ -58,6 +58,21 @@
           if (endpoint) {
             options.resource = endpoint.replace(/\/?$/, '/socket.io').replace(/^\//, '');
           }
+          showError = function(it){
+            if (typeof vex != 'undefined' && vex !== null) {
+              vex.closeAll();
+            }
+            if (typeof vex != 'undefined' && vex !== null) {
+              vex.defaultOptions.className = 'vex-theme-flat-attack';
+            }
+            return typeof vex != 'undefined' && vex !== null ? vex.dialog.open({
+              message: it,
+              buttons: []
+            }) : void 8;
+          };
+          window.addEventListener('offline', function(){
+            return showError('Disconnected from server. please check network connection and refresh.');
+          });
           x$ = (ref$ = this$.connect(null, options)) != null ? ref$.io : void 8;
           if (x$ != null) {
             x$.on('reconnect', function(){
@@ -68,34 +83,27 @@
             });
           }
           if (x$ != null) {
+            x$.on('connect_error', function(){
+              return showError('Connection error; please refresh to try again.');
+            });
+          }
+          if (x$ != null) {
+            x$.on('connect_timeout', function(){
+              return showError('Connection timeout; please refresh to try again.');
+            });
+          }
+          if (x$ != null) {
             x$.on('reconnect_error', function(){
               if (!((typeof SocialCalc != 'undefined' && SocialCalc !== null) && SocialCalc.isConnected)) {
                 return;
               }
-              if (typeof vex != 'undefined' && vex !== null) {
-                vex.closeAll();
-              }
               SocialCalc.hadSnapshot = false;
-              if (typeof vex != 'undefined' && vex !== null) {
-                vex.defaultOptions.className = 'vex-theme-flat-attack';
-              }
-              return typeof vex != 'undefined' && vex !== null ? vex.dialog.open({
-                message: 'Disconnected from server. Reconnecting....',
-                buttons: []
-              }) : void 8;
+              return showError('Disconnected from server. Reconnecting....');
             });
           }
           if (x$ != null) {
             x$.on('connect_failed', function(){
-              if (typeof vex != 'undefined' && vex !== null) {
-                vex.closeAll();
-              }
-              if (typeof vex != 'undefined' && vex !== null) {
-                vex.defaultOptions.className = 'vex-theme-flat-attack';
-              }
-              return typeof vex != 'undefined' && vex !== null ? vex.dialog.open({
-                message: 'Reconnection Failed.'
-              }) : void 8;
+              return showError('Reconnection Failed.');
             });
           }
           emit = function(data){
