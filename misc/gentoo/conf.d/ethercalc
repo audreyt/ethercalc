@@ -1,0 +1,4 @@
+ETHERPATH="/var/lib/ethercalc/"
+ARGS="node_modules/ethercalc/app.js --port 8000 --host 127.0.0.1 --expire 0"
+USER="ethercalc"
+PIDFILE="/run/ethercalc.pid"
