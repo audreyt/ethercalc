@@ -1,0 +1,23 @@
+#!/sbin/runscript
+# Copyright 1999-2014 Gentoo Foundation
+# Distributed under the terms of the GNU General Public License v2
+# $Header: $
+
+depend() {
+  need net redis
+  after apache2
+}
+
+start() {
+  ebegin "Starting ${RC_SVCNAME}"
+  start-stop-daemon -S -m --pidfile ${PIDFILE} -x /usr/bin/node -u ${USER} \
+    -d "${ETHERPATH}" -b -- ${ARGS}
+  eend $?
+}
+
+stop() {
+  ebegin "Stopping ${RC_SVCNAME}"
+  start-stop-daemon -K --pidfile ${PIDFILE} -x ${NODE} -u ${USER} -d "${ETHERPATH}"
+  eend $?
+}
+
