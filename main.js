@@ -252,9 +252,9 @@
     this.put({
       '/_/:room': function(){
         var this$ = this;
+        this.response.type(Text);
         return requestToSave(this.request, function(snapshot){
           return SC._put(this$.params.room, snapshot, function(){
-            this$.response.type(Text);
             return this$.response.send(201, 'OK');
           });
         });
