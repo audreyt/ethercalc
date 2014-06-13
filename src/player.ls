@@ -35,7 +35,7 @@
       return
 
     options = { 'connect timeout': 1500ms, +reconnect, 'reconnection delay': 500ms, 'max reconnection attempts': 1800 }
-    options.resource = endpoint.replace(// /?$ // \/socket.io).replace(// ^/ // '') if endpoint
+    options.path = endpoint.replace(// /?$ // \/socket.io) if endpoint
     showError = ->
       vex?closeAll!
       vex?defaultOptions.className = 'vex-theme-flat-attack'
@@ -46,7 +46,7 @@
     window.addEventListener \offline ->
       showError 'Disconnected from server. please check network connection and refresh.'
 
-    @connect(null, options)?io
+    @connect('/', options)?io
       ..?on \reconnect ->
         return unless SocialCalc?isConnected
         SocialCalc.Callbacks.broadcast \ask.log

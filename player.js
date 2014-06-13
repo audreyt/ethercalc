@@ -56,7 +56,7 @@
             'max reconnection attempts': 1800
           };
           if (endpoint) {
-            options.resource = endpoint.replace(/\/?$/, '/socket.io').replace(/^\//, '');
+            options.path = endpoint.replace(/\/?$/, '/socket.io');
           }
           showError = function(it){
             if (typeof vex != 'undefined' && vex !== null) {
@@ -73,7 +73,7 @@
           window.addEventListener('offline', function(){
             return showError('Disconnected from server. please check network connection and refresh.');
           });
-          x$ = (ref$ = this$.connect(null, options)) != null ? ref$.io : void 8;
+          x$ = (ref$ = this$.connect('/', options)) != null ? ref$.io : void 8;
           if (x$ != null) {
             x$.on('reconnect', function(){
               if (!((typeof SocialCalc != 'undefined' && SocialCalc !== null) && SocialCalc.isConnected)) {
