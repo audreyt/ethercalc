@@ -16,7 +16,7 @@ dependencies:
   cors: \*
   LiveScript: \1.2.x
 optionalDependencies:
-  'webworker-threads': \0.4.x
+  'webworker-threads': \0.5.x
 directories:
   bin: \./bin
 subdomain: \ethercalc
