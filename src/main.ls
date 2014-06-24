@@ -125,7 +125,7 @@
       return cb snapshot if snapshot
     buf = ''; request.setEncoding \utf8; request.on \data (chunk) ~> buf += chunk
     <~ request.on \end
-    cb buf unless request.is \text/csv
+    return cb buf unless request.is \text/csv
     save <~ SC.csv-to-save buf
     cb """socialcalc:version:1.0\nMIME-Version: 1.0\nContent-Type: multipart/mixed; boundary=SocialCalcSpreadsheetControlSave\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n# SocialCalc Spreadsheet Control Save\nversion:1.0\npart:sheet\npart:edit\npart:audit\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n#save\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n--SocialCalcSpreadsheetControlSave--\n"""
 
