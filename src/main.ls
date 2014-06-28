@@ -137,9 +137,9 @@
 
   @post '/_/:room': ->
     {room} = @params
+    @response.type Text
     command <~ request-to-command @request
     unless command
-      @response.type Text
       return @response.send 400 'Please send command'
     {snapshot} <~ SC._get room, IO
     if command is /^loadclipboard\s*/
@@ -158,8 +158,8 @@
   @post '/_': ->
     snapshot <~ request-to-save @request
     room = @body?room || new-room!
-    <~ SC._put room, snapshot
     @response.type Text
+    <~ SC._put room, snapshot
     @response.location "/_/#room"
     @response.send 201 "/#room"
 

@@ -264,9 +264,9 @@
       '/_/:room': function(){
         var room, this$ = this;
         room = this.params.room;
+        this.response.type(Text);
         return requestToCommand(this.request, function(command){
           if (!command) {
-            this$.response.type(Text);
             return this$.response.send(400, 'Please send command');
           }
           return SC._get(room, IO, function(arg$){
@@ -303,8 +303,8 @@
         return requestToSave(this.request, function(snapshot){
           var room, ref$;
           room = ((ref$ = this$.body) != null ? ref$.room : void 8) || newRoom();
+          this$.response.type(Text);
           return SC._put(room, snapshot, function(){
-            this$.response.type(Text);
             this$.response.location("/_/" + room);
             return this$.response.send(201, "/" + room);
           });
