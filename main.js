@@ -211,7 +211,7 @@
       });
       return request.on('end', function(){
         if (!request.is('text/csv')) {
-          cb(buf);
+          return cb(buf);
         }
         return SC.csvToSave(buf, function(save){
           if (~save.indexOf("\\")) {

@@ -112,7 +112,7 @@
       return cb command if command
     buf = ''; request.setEncoding \utf8; request.on \data (chunk) ~> buf += chunk
     <~ request.on \end
-    cb buf unless request.is \text/csv
+    return cb buf unless request.is \text/csv
     save <~ SC.csv-to-save buf
     save.=replace /\\/g "\\b" if ~save.index-of "\\"
     save.=replace /:/g  "\\c" if ~save.index-of ":"
