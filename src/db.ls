@@ -50,7 +50,7 @@
     | db.DB => return false
     | otherwise
     console.log err
-    console.log "==> Falling back to JSON storage: #{ dataDir }/dump.json"
+    console.log "==> Falling back to JSON storage: /var/dump.json"
     if EXPIRE
       console.log "==> The --expire <seconds> option requires a Redis server; stopping!"
       process.exit!
@@ -59,12 +59,12 @@
     db.DB = {}
     try
       db.DB = JSON.parse do
-        require \fs .readFileSync "#dataDir/dump.json" \utf8
+        require \fs .readFileSync "/var/dump.json" \utf8
       console.log "==> Restored previous session from JSON file"
     Commands =
       bgsave: (cb) ->
         fs.writeFileSync do
-          "#dataDir/dump.json"
+          "/var/dump.json"
           JSON.stringify db.DB
           \utf8
         cb?!
