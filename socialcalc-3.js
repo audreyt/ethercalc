@@ -1656,7 +1656,20 @@ SocialCalc.ScheduleSheetCommands = function(sheet, cmdstr, saveundo) {
       sci.sheetobj.changes.PushChange(""); // add a step to undo stack
       }
 
-   sci.timerobj = window.setTimeout(function() { SocialCalc.SheetCommandsTimerRoutine(sci); }, sci.firsttimerdelay);
+   if (SocialCalc.Callbacks.broadcast) {
+     /* In multi-user mode, sci.parseobj may mutate between actions,
+      * so we need to re-parse the cmdstr after a delay.
+      */
+      sci.timerobj = window.setTimeout(function() {
+         var prev_obj = sci.parseobj;
+         sci.parseobj = new SocialCalc.Parse(cmdstr);
+         SocialCalc.SheetCommandsTimerRoutine(sci);
+         sci.parseobj = prev_obj;
+      }, sci.firsttimerdelay);
+   }
+   else {
+      sci.timerobj = window.setTimeout(function() { SocialCalc.SheetCommandsTimerRoutine(sci); }, sci.firsttimerdelay);
+   }
 
    }
 
