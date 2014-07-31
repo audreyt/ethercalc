@@ -277,8 +277,8 @@
               if (/\nsheet:c:\d+:r:(\d+):/.exec(snapshot)) {
                 row += Number(RegExp.$1);
               }
-              if (this$.query.row) {
-                row = this$.query.row;
+              if (parseInt(this$.query.row)) {
+                row = parseInt(this$.query.row);
                 command = [command, "insertrow A" + row, "paste A" + row + " all"];
               } else {
                 command = [command, "paste A" + row + " all"];
@@ -398,6 +398,9 @@
           break;
         case 'execute':
           if (auth === '0') {
+            return;
+          }
+          if (/^set sheet defaulttextvalueformat text-wiki\s*$/.exec(cmdstr)) {
             return;
           }
           if (KEY && hmac(room) !== auth) {

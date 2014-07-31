@@ -145,8 +145,8 @@
     if command is /^loadclipboard\s*/
       row = 1
       row += Number(RegExp.$1) if snapshot is /\nsheet:c:\d+:r:(\d+):/
-      if @query.row
-        row = @query.row
+      if parseInt(@query.row)
+        row = parseInt(@query.row)
         command := [command, "insertrow A#row", "paste A#row all"]
       else
         command := [command, "paste A#row all"]
@@ -206,6 +206,7 @@
       DB.hset "ecell-#room", user, ecell
     | \execute
       return if auth is \0
+      return if cmdstr is /^set sheet defaulttextvalueformat text-wiki\s*$/
       if KEY and hmac(room) isnt auth
         reply { type: \error, message: "Invalid session key. Modifications will not be saved." }
         return
