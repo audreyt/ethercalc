@@ -151,12 +151,13 @@
       else
         command := [command, "paste A#row all"]
     command := [command] unless Array.isArray command
-    SC[room]?ExecuteCommand command * \\n
-    IO.sockets.in "log-#room" .emit \data {
-      type: \execute
-      cmdstr: command * \\n
-      room
-    }
+    cmdstr = command * \\n
+    <~ DB.multi!
+      .rpush "log-#room" cmdstr
+      .rpush "audit-#room" cmdstr
+      .bgsave!.exec!
+    SC[room]?ExecuteCommand cmdstr
+    IO.sockets.in "log-#room" .emit \data { cmdstr, room, type: \execute }
     @response.json 202 {command}
 
   @post '/_': ->

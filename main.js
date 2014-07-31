@@ -270,7 +270,7 @@
             return this$.response.send(400, 'Please send command');
           }
           return SC._get(room, IO, function(arg$){
-            var snapshot, row, ref$;
+            var snapshot, row, cmdstr;
             snapshot = arg$.snapshot;
             if (/^loadclipboard\s*/.exec(command)) {
               row = 1;
@@ -287,16 +287,20 @@
             if (!Array.isArray(command)) {
               command = [command];
             }
-            if ((ref$ = SC[room]) != null) {
-              ref$.ExecuteCommand(join$.call(command, '\n'));
-            }
-            IO.sockets['in']("log-" + room).emit('data', {
-              type: 'execute',
-              cmdstr: join$.call(command, '\n'),
-              room: room
-            });
-            return this$.response.json(202, {
-              command: command
+            cmdstr = join$.call(command, '\n');
+            return DB.multi().rpush("log-" + room, cmdstr).rpush("audit-" + room, cmdstr).bgsave().exec(function(){
+              var ref$;
+              if ((ref$ = SC[room]) != null) {
+                ref$.ExecuteCommand(cmdstr);
+              }
+              IO.sockets['in']("log-" + room).emit('data', {
+                cmdstr: cmdstr,
+                room: room,
+                type: 'execute'
+              });
+              return this$.response.json(202, {
+                command: command
+              });
             });
           });
         });
