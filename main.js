@@ -277,7 +277,12 @@
               if (/\nsheet:c:\d+:r:(\d+):/.exec(snapshot)) {
                 row += Number(RegExp.$1);
               }
-              command = [command, "paste A" + row + " all"];
+              if (this$.query.row) {
+                row = this$.query.row;
+                command = [command, "insertrow A" + row, "paste A" + row + " all"];
+              } else {
+                command = [command, "paste A" + row + " all"];
+              }
             }
             if (!Array.isArray(command)) {
               command = [command];

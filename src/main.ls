@@ -145,7 +145,11 @@
     if command is /^loadclipboard\s*/
       row = 1
       row += Number(RegExp.$1) if snapshot is /\nsheet:c:\d+:r:(\d+):/
-      command := [command, "paste A#row all"]
+      if @query.row
+        row = @query.row
+        command := [command, "insertrow A#row", "paste A#row all"]
+      else
+        command := [command, "paste A#row all"]
     command := [command] unless Array.isArray command
     SC[room]?ExecuteCommand command * \\n
     IO.sockets.in "log-#room" .emit \data {
