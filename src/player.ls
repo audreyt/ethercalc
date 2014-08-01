@@ -129,6 +129,15 @@
           ss.context.sheetobj.ScheduleSheetCommands "#cmdstr\n#refreshCmd\n", false, true
         else
           ss.context.sheetobj.ScheduleSheetCommands "recalc\n", false, true
+      | \snapshot
+        vex?closeAll!
+        SocialCalc.hadSnapshot = true
+        if @data.snapshot
+          parts = ss.DecodeSpreadsheetSave @data.snapshot
+        if parts?sheet
+          ss.sheet.ResetSheet!
+          ss.ParseSheetSave @data.snapshot.substring parts.sheet.start, parts.sheet.end
+          ss.context.sheetobj.ScheduleSheetCommands "recalc\n", false, true
       | \recalc
         if @data.force
           SocialCalc.Formula.SheetCache.sheets = {}

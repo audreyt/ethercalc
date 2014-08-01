@@ -131,12 +131,16 @@
 
   @put '/_/:room': ->
     @response.type Text
+    {room} = @params
     snapshot <~ request-to-save @request
-    <~ SC._put @params.room, snapshot
+    <~ SC._put room, snapshot
+    <~ DB.del "log-#room"
+    IO.sockets.in "log-#room" .emit \data { snapshot, type: \snapshot }
     @response.send 201 \OK
 
   @post '/_/:room': ->
     {room} = @params
+    return if room is \Kaohsiung-explode-20140801
     command <~ request-to-command @request
     unless command
       @response.type Text

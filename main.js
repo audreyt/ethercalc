@@ -251,11 +251,18 @@
     };
     this.put({
       '/_/:room': function(){
-        var this$ = this;
+        var room, this$ = this;
         this.response.type(Text);
+        room = this.params.room;
         return requestToSave(this.request, function(snapshot){
-          return SC._put(this$.params.room, snapshot, function(){
-            return this$.response.send(201, 'OK');
+          return SC._put(room, snapshot, function(){
+            return DB.del("log-" + room, function(){
+              IO.sockets['in']("log-" + room).emit('data', {
+                snapshot: snapshot,
+                type: 'snapshot'
+              });
+              return this$.response.send(201, 'OK');
+            });
           });
         });
       }
@@ -264,6 +271,9 @@
       '/_/:room': function(){
         var room, this$ = this;
         room = this.params.room;
+        if (room === 'Kaohsiung-explode-20140801') {
+          return;
+        }
         return requestToCommand(this.request, function(command){
           if (!command) {
             this$.response.type(Text);
