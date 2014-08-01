@@ -131,12 +131,16 @@
 
   @put '/_/:room': ->
     @response.type Text
+    {room} = @params
     snapshot <~ request-to-save @request
-    <~ SC._put @params.room, snapshot
+    <~ SC._put room, snapshot
+    <~ DB.del "log-#room"
+    IO.sockets.in "log-#room" .emit \data { snapshot, type: \snapshot }
     @response.send 201 \OK
 
   @post '/_/:room': ->
     {room} = @params
+    return if room is \Kaohsiung-explode-20140801
     command <~ request-to-command @request
     unless command
       @response.type Text
@@ -145,14 +149,19 @@
     if command is /^loadclipboard\s*/
       row = 1
       row += Number(RegExp.$1) if snapshot is /\nsheet:c:\d+:r:(\d+):/
-      command := [command, "paste A#row all"]
+      if parseInt(@query.row)
+        row = parseInt(@query.row)
+        command := [command, "insertrow A#row", "paste A#row all"]
+      else
+        command := [command, "paste A#row all"]
     command := [command] unless Array.isArray command
-    SC[room]?ExecuteCommand command * \\n
-    IO.sockets.in "log-#room" .emit \data {
-      type: \execute
-      cmdstr: command * \\n
-      room
-    }
+    cmdstr = command * \\n
+    <~ DB.multi!
+      .rpush "log-#room" cmdstr
+      .rpush "audit-#room" cmdstr
+      .bgsave!.exec!
+    SC[room]?ExecuteCommand cmdstr
+    IO.sockets.in "log-#room" .emit \data { cmdstr, room, type: \execute }
     @response.json 202 {command}
 
   @post '/_': ->
@@ -201,6 +210,7 @@
       DB.hset "ecell-#room", user, ecell
     | \execute
       return if auth is \0
+      return if cmdstr is /^set sheet defaulttextvalueformat text-wiki\s*$/
       if KEY and hmac(room) isnt auth
         reply { type: \error, message: "Invalid session key. Modifications will not be saved." }
         return
