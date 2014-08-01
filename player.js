@@ -235,6 +235,20 @@
                   ss.context.sheetobj.ScheduleSheetCommands("recalc\n", false, true);
                 }
                 break;
+              case 'snapshot':
+                if (typeof vex != 'undefined' && vex !== null) {
+                  vex.closeAll();
+                }
+                SocialCalc.hadSnapshot = true;
+                if (this.data.snapshot) {
+                  parts = ss.DecodeSpreadsheetSave(this.data.snapshot);
+                }
+                if (parts != null && parts.sheet) {
+                  ss.sheet.ResetSheet();
+                  ss.ParseSheetSave(this.data.snapshot.substring(parts.sheet.start, parts.sheet.end));
+                  ss.context.sheetobj.ScheduleSheetCommands("recalc\n", false, true);
+                }
+                break;
               case 'recalc':
                 if (this.data.force) {
                   SocialCalc.Formula.SheetCache.sheets = {};

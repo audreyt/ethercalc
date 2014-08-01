@@ -251,11 +251,18 @@
     };
     this.put({
       '/_/:room': function(){
-        var this$ = this;
+        var room, this$ = this;
         this.response.type(Text);
+        room = this.params.room;
         return requestToSave(this.request, function(snapshot){
-          return SC._put(this$.params.room, snapshot, function(){
-            return this$.response.send(201, 'OK');
+          return SC._put(room, snapshot, function(){
+            return DB.del("log-" + room, function(){
+              IO.sockets['in']("log-" + room).emit('data', {
+                snapshot: snapshot,
+                type: 'snapshot'
+              });
+              return this$.response.send(201, 'OK');
+            });
           });
         });
       }
@@ -264,34 +271,46 @@
       '/_/:room': function(){
         var room, this$ = this;
         room = this.params.room;
+        if (room === 'Kaohsiung-explode-20140801') {
+          return;
+        }
         return requestToCommand(this.request, function(command){
           if (!command) {
             this$.response.type(Text);
             return this$.response.send(400, 'Please send command');
           }
           return SC._get(room, IO, function(arg$){
-            var snapshot, row, ref$;
+            var snapshot, row, cmdstr;
             snapshot = arg$.snapshot;
             if (/^loadclipboard\s*/.exec(command)) {
               row = 1;
               if (/\nsheet:c:\d+:r:(\d+):/.exec(snapshot)) {
                 row += Number(RegExp.$1);
               }
-              command = [command, "paste A" + row + " all"];
+              if (parseInt(this$.query.row)) {
+                row = parseInt(this$.query.row);
+                command = [command, "insertrow A" + row, "paste A" + row + " all"];
+              } else {
+                command = [command, "paste A" + row + " all"];
+              }
             }
             if (!Array.isArray(command)) {
               command = [command];
             }
-            if ((ref$ = SC[room]) != null) {
-              ref$.ExecuteCommand(join$.call(command, '\n'));
-            }
-            IO.sockets['in']("log-" + room).emit('data', {
-              type: 'execute',
-              cmdstr: join$.call(command, '\n'),
-              room: room
-            });
-            return this$.response.json(202, {
-              command: command
+            cmdstr = join$.call(command, '\n');
+            return DB.multi().rpush("log-" + room, cmdstr).rpush("audit-" + room, cmdstr).bgsave().exec(function(){
+              var ref$;
+              if ((ref$ = SC[room]) != null) {
+                ref$.ExecuteCommand(cmdstr);
+              }
+              IO.sockets['in']("log-" + room).emit('data', {
+                cmdstr: cmdstr,
+                room: room,
+                type: 'execute'
+              });
+              return this$.response.json(202, {
+                command: command
+              });
             });
           });
         });
@@ -389,6 +408,9 @@
           break;
         case 'execute':
           if (auth === '0') {
+            return;
+          }
+          if (/^set sheet defaulttextvalueformat text-wiki\s*$/.exec(cmdstr)) {
             return;
           }
           if (KEY && hmac(room) !== auth) {
