@@ -155,6 +155,7 @@ Deletes a spreadsheet's content after N seconds of inactivity. Activities includ
 * static/shim.js
 * static/xlsx.js
 * static/xlsxworker.js
+* start.html (xlsx2socialcalc.js)
 
 ### CC0 Public Domain (唐鳳)
 

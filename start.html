@@ -86,17 +86,6 @@ function get_radio_value( radioName ) {
 	}
 }
 
-function to_json(workbook) {
-	var result = {};
-	workbook.SheetNames.forEach(function(sheetName) {
-		var roa = XLSX.utils.sheet_to_row_object_array(workbook.Sheets[sheetName]);
-		if(roa.length > 0){
-			result[sheetName] = roa;
-		}
-	});
-	return result;
-}
-
 function to_csv(workbook) {
 	var result = [];
 	workbook.SheetNames.forEach(function(sheetName) {
@@ -111,18 +100,70 @@ function to_csv(workbook) {
 	return result.join("\n").replace(/,+\n/g, '\n').replace(/[\s]+$/, '\n');
 }
 
-function to_formulae(workbook) {
-	var result = [];
-	workbook.SheetNames.forEach(function(sheetName) {
-		var formulae = XLSX.utils.get_formulae(workbook.Sheets[sheetName]);
-		if(formulae.length > 0){
-			result.push("SHEET: " + sheetName);
-			result.push("");
-			result.push(formulae.join("\n"));
-		}
-	});
-	return result.join("\n");
-}
+/* xlsx2socialcalc.js (C) 2014 SheetJS -- http://sheetjs.com */
+/* License: Apache 2.0 */
+/* vim: set ts=2: */
+var sheet_to_socialcalc = (function() {
+        var header = [
+                "socialcalc:version:1.5",
+                "MIME-Version: 1.0",
+                "Content-Type: multipart/mixed; boundary=SocialCalcSpreadsheetControlSave"
+        ].join("\n");
+
+        var sep = [
+                "--SocialCalcSpreadsheetControlSave",
+                "Content-type: text/plain; charset=UTF-8",
+                ""
+        ].join("\n");
+
+        /* TODO: the other parts */
+        var meta = [
+                "# SocialCalc Spreadsheet Control Save",
+                "part:sheet"
+        ].join("\n");
+
+        var end = "--SocialCalcSpreadsheetControlSave--";
+
+        var scencode = function(s) { return s.replace(/\\/g, "\\b").replace(/:/g, "\\c").replace(/\n/g,"\\n"); }
+
+        var scsave = function scsave(ws) {
+                if(!ws || !ws['!ref']) return "";
+                var o = [], oo = [], cell, coord;
+                var r = XLSX.utils.decode_range(ws['!ref']);
+                for(var R = r.s.r; R <= r.e.r; ++R) {
+                        for(var C = r.s.c; C <= r.e.c; ++C) {
+                                coord = XLSX.utils.encode_cell({r:R,c:C});
+                                if(!(cell = ws[coord]) || cell.v == null) continue;
+                                oo = ["cell", coord, 't'];
+                                switch(cell.t) {
+                                        case 's': case 'str': oo.push(scencode(cell.v)); break;
+                                        case 'n':
+                                                if(cell.f) {
+                                                        oo[2] = 'vtf';
+                                                        oo.push('n');
+                                                        oo.push(cell.v);
+                                                        oo.push(scencode(cell.f));
+                                                }
+                                                else {
+                                                        oo[2] = 'v';
+                                                        oo.push(cell.v);
+                                                } break;
+                                }
+                                o.push(oo.join(":"));
+                        }
+                }
+                o.push("sheet:c:" + (r.e.c - r.s.c + 1) + ":r:" + (r.e.r - r.s.r + 1) + ":tvf:1");
+                o.push("valueformat:1:text-wiki");
+                o.push("copiedfrom:" + ws['!ref']);
+                return o.join("\n");
+        };
+
+        return function socialcalcify(ws, opts) {
+                return [header, sep, meta, sep, scsave(ws), end].join("\n");
+                //return ["version:1.5", scsave(ws)].join("\n");
+        };
+})();
+
 
 var tarea = document.getElementById('b64data');
 function b64it() {
@@ -132,8 +173,18 @@ function b64it() {
 
 function process_wb(wb) {
 	var output = "";
-        output = to_csv(wb);
-        post_csv(output);
+        output = sheet_to_socialcalc(wb.Sheets[wb.SheetNames[0]]);
+        var id = newId(10, 36).toLowerCase();
+$.ajax({
+    url: '/_/' + id,
+    method: 'PUT',
+    contentType: 'text/x-socialcalc',
+    processData: false,
+    data: output,
+    success: function(data, msg, xhr) {
+        location.href = '/' + id
+    }
+});
 }
 
 function post_csv (csv) {

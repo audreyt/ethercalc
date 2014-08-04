@@ -80,3 +80,7 @@ body:last-child .defaultPeer {
     word-wrap: break-word;
 }
 
+#SocialCalc-settings-savecell, #SocialCalc-settings-savesheet {
+    background: #AEF;
+    font-weight: bold;
+}
