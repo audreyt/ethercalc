@@ -78,7 +78,11 @@
     IO = this.io;
     api = function(cb){
       return function(){
-        var this$ = this;
+        var ref$, this$ = this;
+        if ((ref$ = SC[room]) != null) {
+          ref$.terminate();
+        }
+        delete SC[room];
         return SC._get(this.params.room, IO, function(arg$){
           var snapshot, ref$, type, content;
           snapshot = arg$.snapshot;
@@ -128,6 +132,7 @@
         var room, template, this$ = this;
         room = newRoom();
         template = this.params.template;
+        delete SC[room];
         return SC._get(template, IO, function(arg$){
           var snapshot;
           snapshot = arg$.snapshot;
@@ -275,10 +280,15 @@
           return;
         }
         return requestToCommand(this.request, function(command){
+          var ref$;
           if (!command) {
             this$.response.type(Text);
             return this$.response.send(400, 'Please send command');
           }
+          if ((ref$ = SC[room]) != null) {
+            ref$.terminate();
+          }
+          delete SC[room];
           return SC._get(room, IO, function(arg$){
             var snapshot, row, cmdstr;
             snapshot = arg$.snapshot;
@@ -301,15 +311,18 @@
             return DB.multi().rpush("log-" + room, cmdstr).rpush("audit-" + room, cmdstr).bgsave().exec(function(){
               var ref$;
               if ((ref$ = SC[room]) != null) {
-                ref$.ExecuteCommand(cmdstr);
+                ref$.terminate();
               }
+              delete SC[room];
               IO.sockets['in']("log-" + room).emit('data', {
                 cmdstr: cmdstr,
                 room: room,
                 type: 'execute'
               });
-              return this$.response.json(202, {
-                command: command
+              return SC._get(room, IO, function(){
+                return this$.response.json(202, {
+                  command: command
+                });
               });
             });
           });
@@ -446,6 +459,10 @@
           break;
         case 'ask.recalc':
           this.socket.join("recalc." + room);
+          if ((ref$ = SC[room]) != null) {
+            ref$.terminate();
+          }
+          delete SC[room];
           SC._get(room, this.io, function(arg$){
             var log, snapshot;
             log = arg$.log, snapshot = arg$.snapshot;

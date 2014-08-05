@@ -55,6 +55,8 @@
 
   IO = @io
   api = (cb) -> ->
+    SC[room]?terminate!
+    delete SC[room]
     {snapshot} <~ SC._get @params.room, IO
     if snapshot
       [type, content] = cb.call @params, snapshot
@@ -81,6 +83,7 @@
   @get '/_from/:template': ->
     room = new-room!
     template = @params.template
+    delete SC[room]
     {snapshot} <~ SC._get template, IO
     <~ SC._put room, snapshot
     @response.redirect if KEY then "#BASEPATH/#room/edit" else "#BASEPATH/#room"
@@ -145,6 +148,8 @@
     unless command
       @response.type Text
       return @response.send 400 'Please send command'
+    SC[room]?terminate!
+    delete SC[room]
     {snapshot} <~ SC._get room, IO
     if command is /^loadclipboard\s*/
       row = 1
@@ -160,8 +165,10 @@
       .rpush "log-#room" cmdstr
       .rpush "audit-#room" cmdstr
       .bgsave!.exec!
-    SC[room]?ExecuteCommand cmdstr
+    SC[room]?terminate!
+    delete SC[room]
     IO.sockets.in "log-#room" .emit \data { cmdstr, room, type: \execute }
+    <~ SC._get room, IO
     @response.json 202 {command}
 
   @post '/_': ->
@@ -232,6 +239,8 @@
       reply { type: \log, room, log, chat, snapshot }
     | \ask.recalc
       @socket.join "recalc.#room"
+      SC[room]?terminate!
+      delete SC[room]
       {log, snapshot} <~ SC._get room, @io
       reply { type: \recalc, room, log, snapshot }
     | \stopHuddle
