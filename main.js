@@ -256,6 +256,11 @@
         this.response.type(Text);
         room = this.params.room;
         return requestToSave(this.request, function(snapshot){
+          var ref$;
+          if ((ref$ = SC[room]) != null) {
+            ref$.terminate();
+          }
+          delete SC[room];
           return SC._put(room, snapshot, function(){
             return DB.del("log-" + room, function(){
               IO.sockets['in']("log-" + room).emit('data', {
@@ -276,18 +281,13 @@
           return;
         }
         return requestToCommand(this.request, function(command){
-          var ref$;
           if (!command) {
             this$.response.type(Text);
             return this$.response.send(400, 'Please send command');
           }
-          if ((ref$ = SC[room]) != null) {
-            ref$.terminate();
-          }
-          delete SC[room];
           return SC._get(room, IO, function(arg$){
-            var snapshot, row, cmdstr;
-            snapshot = arg$.snapshot;
+            var log, snapshot, row, cmdstr;
+            log = arg$.log, snapshot = arg$.snapshot;
             if (/^loadclipboard\s*/.exec(command)) {
               row = 1;
               if (/\nsheet:c:\d+:r:(\d+):/.exec(snapshot)) {
@@ -307,18 +307,15 @@
             return DB.multi().rpush("log-" + room, cmdstr).rpush("audit-" + room, cmdstr).bgsave().exec(function(){
               var ref$;
               if ((ref$ = SC[room]) != null) {
-                ref$.terminate();
+                ref$.ExecuteCommand(cmdstr);
               }
-              delete SC[room];
               IO.sockets['in']("log-" + room).emit('data', {
                 cmdstr: cmdstr,
                 room: room,
                 type: 'execute'
               });
-              return SC._get(room, IO, function(){
-                return this$.response.json(202, {
-                  command: command
-                });
+              return this$.response.json(202, {
+                command: command
               });
             });
           });
