@@ -55,8 +55,6 @@
 
   IO = @io
   api = (cb) -> ->
-    SC[@params.room]?terminate!
-    delete SC[@params.room]
     {snapshot} <~ SC._get @params.room, IO
     if snapshot
       [type, content] = cb.call @params, snapshot

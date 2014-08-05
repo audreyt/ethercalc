@@ -78,11 +78,7 @@
     IO = this.io;
     api = function(cb){
       return function(){
-        var ref$, this$ = this;
-        if ((ref$ = SC[this.params.room]) != null) {
-          ref$.terminate();
-        }
-        delete SC[this.params.room];
+        var this$ = this;
         return SC._get(this.params.room, IO, function(arg$){
           var snapshot, ref$, type, content;
           snapshot = arg$.snapshot;
