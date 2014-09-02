@@ -37,8 +37,15 @@ This work is published from Taiwan.
       }
     };
     transport = 'https';
+  } else {
+    options = {};
   }
   console.log("Please connect to: " + transport + "://" + (host === '0.0.0.0' ? require('os').hostname() : host) + ":" + port + "/");
+  if (cors) {
+    options.io = {
+      origin: '*'
+    };
+  }
   require('zappajs')(port, host, options, function(){
     this.KEY = key;
     this.BASEPATH = basepath;
