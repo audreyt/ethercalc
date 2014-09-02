@@ -18387,6 +18387,7 @@ SocialCalc.Formula.FunctionList["ROWS"] = [SocialCalc.Formula.ColumnsRowsFunctio
 # PI()
 # TODAY()
 # TRUE()
+# RAND()
 #
 */
 
@@ -18439,6 +18440,12 @@ SocialCalc.Formula.ZeroArgFunctions = function(fname, operand, foperand, sheet) 
          result.value = 1;
          break;
 
+      case "RAND":
+         result.type = "n";
+         result.value = Math.random();
+         SocialCalc.Formula.FreshnessInfo.volatile.RAND = true; // remember
+         break;
+
       }
 
    operand.push(result);
@@ -18451,6 +18458,7 @@ SocialCalc.Formula.ZeroArgFunctions = function(fname, operand, foperand, sheet) 
 SocialCalc.Formula.FunctionList["FALSE"] = [SocialCalc.Formula.ZeroArgFunctions, 0, "", "", "test"];
 SocialCalc.Formula.FunctionList["NA"] = [SocialCalc.Formula.ZeroArgFunctions, 0, "", "", "test"];
 SocialCalc.Formula.FunctionList["NOW"] = [SocialCalc.Formula.ZeroArgFunctions, 0, "", "", "datetime"];
+SocialCalc.Formula.FunctionList["RAND"] = [SocialCalc.Formula.ZeroArgFunctions, 0, "", "", "math"];
 SocialCalc.Formula.FunctionList["PI"] = [SocialCalc.Formula.ZeroArgFunctions, 0, "", "", "math"];
 SocialCalc.Formula.FunctionList["TODAY"] = [SocialCalc.Formula.ZeroArgFunctions, 0, "", "", "datetime"];
 SocialCalc.Formula.FunctionList["TRUE"] = [SocialCalc.Formula.ZeroArgFunctions, 0, "", "", "test"];
