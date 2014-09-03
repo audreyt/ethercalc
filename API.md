@@ -5,33 +5,50 @@ HOST: https://www.ethercalc.org/
 
 API for real-time collaborative spreadsheets.
 
-* Introduction:
-    * English: https://gist.github.com/3978463
-    * 中文版: https://gist.github.com/3985324
-* Overview:
-    * English: http://ethercalc.net/
-    * 中文版: http://ethercalc.tw/
+* Overview: http://ethercalc.net/
+* 中文版: http://ethercalc.tw/
 
 # Index [/_]
 
 ## Create Page [POST]
 
+Takes a JSON structure with `room` and `snapshot` fields.
+
+Replaces the page with a serialization in Socialtext save format.
+If `room` is not specified, returns a new page.
+
 + Request (application/json)
+
+    ```json
+    { "room": "test"
+    , "snapshot": "..."
+    }
+    ```
+
 + Response 201
+    + Headers
+
+        ```
+        Location: /_/test
+        ```
 
 ## Create from CSV [POST]
+
+Takes a CSV structure that contains the new spreadsheet's content.
 
 + Request (text/csv)
 + Response 201
 
 ## Create from SocialCalc [POST]
 
+Takes a SocialCalc serialization format that contains the new spreadsheet's content.
+
 + Request (text/x-socialcalc)
 + Response 201
 
 # Page [/_/{id}]
 
-## GET
+## Page Content [GET]
 
 Fetch the page as a serialization in SocialCalc save format.
 
@@ -81,19 +98,31 @@ Takes a CSV structure that contains fields to be appended to the first column af
 # Page Cells [/_/{id}/cells]
 
 ## GET
+
+Returns a JSON representation of all defined cells in the page.
+
 + Response 200 (application/json)
 
 # Cell Value [/_/{id}/cells/{coord}]
 
 ## GET
+
+Returns a JSON representation of a single cell in the page.
+
 + Response 200 (application/json)
 
 # HTML Export [/_/{id}.html]
 
 ## GET
+
+Returns a HTML rendering of the page. (GET `/_/{id}/html` also works.)
+
 + Response 200 (text/html)
 
 # CSV Export [/_/{id}.csv]
 
 ## GET
+
+Returns a CSV rendering of the page. (GET `/_/{id}/csv` also works.)
+
 + Response 200 (text/csv)

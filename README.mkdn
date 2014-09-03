@@ -1,8 +1,9 @@
 # EtherCalc
 
-* Introduction:
-    * English: https://gist.github.com/3978463
-    * 中文版: https://gist.github.com/3985324
+* Overview: http://ethercalc.net/
+* 中文版: http://ethercalc.tw/
+* REST API: http://docs.ethercalc.apiary.io/
+
 * Language: [LiveScript](http://livescript.net/)
 * Runtime: [Node.js](http://nodejs.org/) (0.8+ preferred)
 * Services: [Redis](http://redis.io) (2.4+; fall-back to on-disk JSON storage if not present)
@@ -12,9 +13,6 @@
 * Integrated with content management systems:
     * [Socialtext](http://www.socialtext.com/)
     * [Drupal](https://drupal.org/project/sheetnode)
-* Overview:
-    * English: http://ethercalc.net/
-    * 中文版: http://ethercalc.tw/
 
 ## Installation
 
@@ -42,54 +40,10 @@ the host server. In Docker versions 0.4.x, the flag was called `-b` instead.
 
 ## REST API
 
-Note that POST endpoints accept only `application/json` requests,
-and will reject regular form posts.
+Please see [API.md](https://github.com/audreyt/ethercalc/blob/master/API.md)
+for the API Blueprint, or http://docs.ethercalc.apiary.io/ for the online version.
 
-### GET /_/page
-Fetch the page as a serialization in SocialCalc save format.
-
-### PUT /_/page
-Replaces the page with a serialization in SocialCalc save format.
-
-Also takes a CSV structure that contains the new spreadsheet's content.
-
-### POST /_
-
-Takes a JSON structure with `room` and `snapshot` fields.
-
-Replaces the page with a serialization in Socialtext save format.
-If `room` is not specified, returns a new page.
-
-Also takes a CSV structure that contains the new spreadsheet's content.
-
-### POST /_/page
-
-Takes a JSON structure with a `command` field (either as a string
-or an array of strings), or a plain-text command string.
-
-Runs one or more commands specified in the `command` field.
-
-To find out which command corresponds to which spreadsheet actions,
-perform the actions on the web interface and check the _Audit_ tab
-for the recorded commands.
-
-Also takes a CSV structure that contains fields to be appended to
-the first column after the last row. If the `row` query parameter
-is given, insert and paste on the specified row instead.
-
-### GET /_/page/cells
-Returns a JSON representation of all defined cells in the page.
-
-### GET /_/page/cells/A1
-Returns a JSON representation of a single cell in the page.
-
-### GET /_/page/html
-Returns a HTML rendering of the page. (GET /page.html also works.)
-
-### GET /_/page/csv
-Returns a CSV rendering of the page. (GET /page.csv also works.)
-
-## Flags
+## Runtime Flags
 
 ### Using SSL: `--keyfile` / `--certfile`
 
