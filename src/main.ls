@@ -81,6 +81,7 @@
   @get '/_from/:template': ->
     room = new-room!
     template = @params.template
+    delete SC[room]
     {snapshot} <~ SC._get template, IO
     <~ SC._put room, snapshot
     @response.redirect if KEY then "#BASEPATH/#room/edit" else "#BASEPATH/#room"
@@ -133,6 +134,8 @@
     @response.type Text
     {room} = @params
     snapshot <~ request-to-save @request
+    SC[room]?terminate!
+    delete SC[room]
     <~ SC._put room, snapshot
     <~ DB.del "log-#room"
     IO.sockets.in "log-#room" .emit \data { snapshot, type: \snapshot }
@@ -145,10 +148,11 @@
     unless command
       @response.type Text
       return @response.send 400 'Please send command'
-    {snapshot} <~ SC._get room, IO
+    {log, snapshot} <~ SC._get room, IO
     if command is /^loadclipboard\s*/
       row = 1
-      row += Number(RegExp.$1) if snapshot is /\nsheet:c:\d+:r:(\d+):/
+      if snapshot is /\nsheet:c:\d+:r:(\d+):/
+        row += Number(RegExp.$1)
       if parseInt(@query.row)
         row = parseInt(@query.row)
         command := [command, "insertrow A#row", "paste A#row all"]
@@ -232,6 +236,8 @@
       reply { type: \log, room, log, chat, snapshot }
     | \ask.recalc
       @socket.join "recalc.#room"
+      SC[room]?terminate!
+      delete SC[room]
       {log, snapshot} <~ SC._get room, @io
       reply { type: \recalc, room, log, snapshot }
     | \stopHuddle

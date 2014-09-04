@@ -24,10 +24,13 @@ if keyfile? and certfile?
     key: slurp keyfile
     cert: slurp certfile
   transport = \https
+else options = {}
 
 console.log "Please connect to: #transport://#{
   if host is \0.0.0.0 then require \os .hostname! else host
 }:#port/"
+
+options.io = { origin: '*' } if cors
 
 <- (require \zappajs) port, host, options
 @KEY = key

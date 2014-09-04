@@ -3,7 +3,7 @@
 exec "perl -pi -e 's/# [A-Z].*\\n/# @{[`date`]}/m' manifest.appcache"
 name: \ethercalc
 description: 'Multi-User Spreadsheet Server'
-version: \0.20140804.1
+version: \0.20140902.0
 homepage: 'http://ethercalc.net/'
 repository:
   type: 'git'
@@ -12,7 +12,7 @@ dependencies:
   redis: \0.8.2
   'uuid-pure': \*
   optimist: \*
-  zappajs: \http://audreyt.org/tmp/zappajs-0.4.22-socketio-1.0.tgz
+  zappajs: \0.5.x
   cors: \*
   LiveScript: \1.2.x
 optionalDependencies:

@@ -128,6 +128,7 @@
         var room, template, this$ = this;
         room = newRoom();
         template = this.params.template;
+        delete SC[room];
         return SC._get(template, IO, function(arg$){
           var snapshot;
           snapshot = arg$.snapshot;
@@ -255,6 +256,11 @@
         this.response.type(Text);
         room = this.params.room;
         return requestToSave(this.request, function(snapshot){
+          var ref$;
+          if ((ref$ = SC[room]) != null) {
+            ref$.terminate();
+          }
+          delete SC[room];
           return SC._put(room, snapshot, function(){
             return DB.del("log-" + room, function(){
               IO.sockets['in']("log-" + room).emit('data', {
@@ -280,8 +286,8 @@
             return this$.response.send(400, 'Please send command');
           }
           return SC._get(room, IO, function(arg$){
-            var snapshot, row, cmdstr;
-            snapshot = arg$.snapshot;
+            var log, snapshot, row, cmdstr;
+            log = arg$.log, snapshot = arg$.snapshot;
             if (/^loadclipboard\s*/.exec(command)) {
               row = 1;
               if (/\nsheet:c:\d+:r:(\d+):/.exec(snapshot)) {
@@ -446,6 +452,10 @@
           break;
         case 'ask.recalc':
           this.socket.join("recalc." + room);
+          if ((ref$ = SC[room]) != null) {
+            ref$.terminate();
+          }
+          delete SC[room];
           SC._get(room, this.io, function(arg$){
             var log, snapshot;
             log = arg$.log, snapshot = arg$.snapshot;
