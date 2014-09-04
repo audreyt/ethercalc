@@ -17,12 +17,12 @@ const pkgdef :Spk.PackageDefinition = (
     # This manifest is included in your app package to tell Sandstorm
     # about your app.
 
-    appVersion = 0,  # Increment this for every release.
+    appVersion = 1,  # Increment this for every release.
 
     actions = [
       # Define your "new document" handlers here.
       ( title = (defaultText = "New EtherCalc Spreadsheet"),
-        command = .myCommand
+        command = .myContinueCommand
         # The command to run when starting for the first time. (".myCommand"
         # is just a constant defined at the bottom of the file.)
       )
@@ -61,15 +61,6 @@ const pkgdef :Spk.PackageDefinition = (
   # Use this to force-include stuff that you know you need but which may
   # not have been detected as a dependency during `spk dev`. If you list
   # a directory here, its entire contents will be included recursively.
-);
-
-const myCommand :Spk.Manifest.Command = (
-  # Here we define the command used to start up your server.
-  argv = ["/sandstorm-http-bridge", "33411", "--", "./install_grain.sh"],
-  environ = [
-    # Note that this defines the *entire* environment seen by your app.
-    (key = "PATH", value = "/usr/local/bin:/usr/bin:/bin")
-  ]
 );
 
 const myContinueCommand :Spk.Manifest.Command = (
