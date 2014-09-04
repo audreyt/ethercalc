@@ -70,7 +70,7 @@
         return false;
       }
       console.log(err);
-      console.log("==> Falling back to JSON storage: " + dataDir + "/dump.json");
+      console.log("==> Falling back to JSON storage: /var/dump.json");
       if (EXPIRE) {
         console.log("==> The --expire <seconds> option requires a Redis server; stopping!");
         process.exit();
@@ -78,12 +78,12 @@
       fs = require('fs');
       db.DB = {};
       try {
-        db.DB = JSON.parse(require('fs').readFileSync(dataDir + "/dump.json", 'utf8'));
+        db.DB = JSON.parse(require('fs').readFileSync("/var/dump.json", 'utf8'));
         console.log("==> Restored previous session from JSON file");
       } catch (e$) {}
       Commands = {
         bgsave: function(cb){
-          fs.writeFileSync(dataDir + "/dump.json", JSON.stringify(db.DB), 'utf8');
+          fs.writeFileSync("/var/dump.json", JSON.stringify(db.DB), 'utf8');
           return typeof cb === 'function' ? cb() : void 8;
         },
         get: function(key, cb){

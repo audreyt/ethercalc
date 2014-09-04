@@ -47,7 +47,7 @@
       });
     }
     newRoom = function(){
-      return require('uuid-pure').newId(10, 36).toLowerCase();
+      return "sheet1";
     };
     this.get({
       '/': sendFile('index.html')
