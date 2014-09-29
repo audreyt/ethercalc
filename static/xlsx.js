@@ -2943,6 +2943,7 @@ return function parse_ws_xml_data(sdata, s, opts, guess) {
 	var tag;
 	var sstr;
 	var fmtid = 0, fillid = 0, do_format = Array.isArray(styles.CellXf), cf;
+	var implicit_row = -1;
 	for(var marr = sdata.split(rowregex), mt = 0, marrlen = marr.length; mt != marrlen; ++mt) {
 		x = marr[mt].trim();
 		var xlen = x.length;
@@ -2951,16 +2952,19 @@ return function parse_ws_xml_data(sdata, s, opts, guess) {
 		/* 18.3.1.73 row CT_Row */
 		for(ri = 0; ri < xlen; ++ri) if(x.charCodeAt(ri) === 62) break; ++ri;
 		tag = parsexmltag(x.substr(0,ri), true);
-		var tagr = parseInt(tag.r, 10);
+		++implicit_row;
+		var tagr = parseInt(tag.r, 10) || implicit_row;
 		if(opts.sheetRows && opts.sheetRows < tagr) continue;
 		if(guess.s.r > tagr - 1) guess.s.r = tagr - 1;
 		if(guess.e.r < tagr - 1) guess.e.r = tagr - 1;
 
 		/* 18.3.1.4 c CT_Cell */
 		cells = x.substr(ri).split(cellregex);
+		var implicit_col = -1;
 		for(ri = 1, cellen = cells.length; ri != cellen; ++ri) {
 			x = cells[ri].trim();
 			if(x.length === 0) continue;
+			++implicit_col;
 			cref = x.match(rregex); idx = ri; i=0; cc=0;
 			x = "<c " + x;
 			if(cref !== null && cref.length === 2) {
@@ -3021,7 +3025,7 @@ return function parse_ws_xml_data(sdata, s, opts, guess) {
 				}
 			}
 			safe_format(p, fmtid, fillid, opts);
-			s[tag.r] = p;
+			s[tag.r || encode_cell({ r: implicit_row, c: implicit_col })] = p;
 		}
 	}
 }; })();
