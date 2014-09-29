@@ -25,6 +25,9 @@ all :: SocialCalcModule.js
 	env PATH="$$PATH:./node_modules/LiveScript/bin" livescript -c -o . src
 	node app.js $(ETHERCALC_ARGS)
 
+manifest ::
+	perl -pi -e 's/# [A-Z].*\n/# @{[`date`]}/m' manifest.appcache
+
 vm :: SocialCalcModule.js
 	env PATH="$$PATH:./node_modules/LiveScript/bin" livescript -c -o . src
 	node app.js --vm $(ETHERCALC_ARGS)

@@ -220,6 +220,7 @@ function handleDrop(e) {
         }
 	var files = e.dataTransfer.files;
 	var i,f;
+        $(drop).text('Working...');
 	for (i = 0, f = files[i]; i != files.length; ++i) {
 		var reader = new FileReader();
 		var name = f.name;
