@@ -2710,6 +2710,86 @@ SocialCalc.Formula.FunctionList["SUMIF"] = [SocialCalc.Formula.CountifSumifFunct
 
 /*
 #
+# SUMIFS(c1:c2, c3:c4,"criteria", [c5:c6,"criteria", ...])
+#
+*/
+
+SocialCalc.Formula.SumifsFunction = function(fname, operand, foperand, sheet) {
+   var range, criteria, sumrange, f2operand, result, resulttype, value1, value2;
+   var sum = 0;
+   var resulttypesum = "";
+   var count = 0;
+
+   var scf = SocialCalc.Formula;
+   var operand_value_and_type = scf.OperandValueAndType;
+   var lookup_result_type = scf.LookupResultType;
+   var typelookupplus = scf.TypeLookupTable.plus;
+
+   var PushOperand = function(t, v) {operand.push({type: t, value: v});};
+
+   sumrange = scf.TopOfStackValueAndType(sheet, foperand);
+   if (sumrange.type != "coord" && sumrange.type != "range") {
+      scf.FunctionArgsError(fname, operand);
+      return 0;
+      }
+
+   var ranges = [], criterias = [];
+   while (foperand.length) {
+      range = scf.TopOfStackValueAndType(sheet, foperand); // get range or coord
+      criteria = scf.OperandAsText(sheet, foperand); // get criteria
+      if (criteria.type.charAt(0) == "n") {
+         criteria.value = criteria.value + ""; // make text
+         }
+      else if (criteria.type.charAt(0) == "e") { // error
+         criteria.value = null;
+         }
+      else if (criteria.type.charAt(0) == "b") { // blank here is undefined
+         criteria.value = null;
+         }
+      if (range.type != "coord" && range.type != "range") {
+         scf.FunctionArgsError(fname, operand);
+         return 0;
+         }
+      ranges.push([range]);
+      criterias.push(criteria);
+      }
+
+      f2operand = [];
+      f2operand.push(sumrange);
+
+   while (f2operand.length) {
+      value2 = operand_value_and_type(sheet, f2operand);
+
+      var all_good = true;
+      for (var i=0; i < ranges.length; i++) {
+         value1 = operand_value_and_type(sheet, ranges[i]);
+         if (!scf.TestCriteria(value1.value, value1.type, criterias[i].value)) {
+            all_good = false;
+            break;
+            }
+         }
+      if (!all_good) { continue; }
+
+      if (value2.type.charAt(0) == "n") {
+         sum += value2.value-0;
+         resulttypesum = lookup_result_type(value2.type, resulttypesum || value2.type, typelookupplus);
+         }
+      else if (value2.type.charAt(0) == "e" && resulttypesum.charAt(0) != "e") {
+         resulttypesum = value2.type;
+         }
+      }
+
+   resulttypesum = resulttypesum || "n";
+   PushOperand(resulttypesum, sum);
+   return;
+
+   }
+
+
+SocialCalc.Formula.FunctionList["SUMIFS"] = [SocialCalc.Formula.SumifsFunction, -3, "sumifs", "", "stat"];
+
+/*
+#
 # IF(cond,truevalue,falsevalue)
 #
 */
