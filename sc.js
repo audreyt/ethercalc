@@ -564,13 +564,21 @@
           });
         };
       }
-      w.exportSave = function(cb){
-        return w.thread.eval("window.ss.CreateSheetSave()", function(arg$, save){
-          return cb(save);
+      w._eval = function(code, cb){
+        return w.thread.eval(code, function(arg$, rv){
+          if (rv != null) {
+            return cb(rv);
+          }
+          return w.thread.eval(code, function(arg$, rv){
+            return cb(rv);
+          });
         });
       };
+      w.exportSave = function(cb){
+        return w._eval("window.ss.CreateSheetSave()", cb);
+      };
       w.exportCell = function(coord, cb){
-        return w.thread.eval("JSON.stringify(window.ss.sheet.cells[" + (replace$.call(JSON.stringify(coord), /\s/g, '')) + "])", function(arg$, cell){
+        return w._eval("JSON.stringify(window.ss.sheet.cells[" + (replace$.call(JSON.stringify(coord), /\s/g, '')) + "])", function(cell){
           if (cell === 'undefined') {
             return cb('null');
           } else {
@@ -579,9 +587,7 @@
         });
       };
       w.exportCells = function(cb){
-        return w.thread.eval("JSON.stringify(window.ss.sheet.cells)", function(arg$, cells){
-          return cb(cells);
-        });
+        return w._eval("JSON.stringify(window.ss.sheet.cells)", cb);
       };
       w.thread.eval(bootSC, function(){
         return w.postMessage({

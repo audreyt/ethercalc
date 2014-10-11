@@ -237,17 +237,19 @@ Worker ||= class => (code) ->
       x.onmessage = ({data}) -> x.thread.destroy!; cb data
       (, log) <~ DB.lrange "log-#room" 0 -1
       x.thread.eval bootSC, -> x.post-message {snapshot: w._snapshot, log}
-    w.exportSave = (cb) -> w.thread.eval """
-      window.ss.CreateSheetSave()
-    """, (, save) -> cb save
-    w.exportCell = (coord, cb) -> w.thread.eval """
+    w._eval = (code, cb) ->
+      (, rv) <- w.thread.eval code
+      return cb rv if rv?
+      # Maybe thread is not yet initialized - retry at most once
+      (, rv) <- w.thread.eval code
+      return cb rv
+    w.exportSave = (cb) -> w._eval "window.ss.CreateSheetSave()", cb
+    w.exportCell = (coord, cb) -> w._eval """
       JSON.stringify(window.ss.sheet.cells[#{
-      JSON.stringify(coord) - /\s/g
+        JSON.stringify(coord) - /\s/g
       }])
-    """, (, cell) -> if cell is \undefined then cb 'null' else cb cell
-    w.exportCells = (cb) -> w.thread.eval """
-      JSON.stringify(window.ss.sheet.cells)
-    """, (, cells) -> cb cells
+    """, (cell) -> if cell is \undefined then cb 'null' else cb cell
+    w.exportCells = (cb) -> w._eval "JSON.stringify(window.ss.sheet.cells)", cb
     w.thread.eval bootSC, ~> w.postMessage { type: \init, room, log, snapshot }
     return w
   return SC
