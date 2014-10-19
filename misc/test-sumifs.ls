@@ -1,7 +1,8 @@
+#!/usr/bin/env lsc
 require! <[ vm fs path ]>
 bootSC = fs.readFileSync "#{
   path.dirname fs.realpathSync __filename
-}/SocialCalcModule.js" \utf8
+}/../SocialCalcModule.js" \utf8
 
 global.SC ?= {}
 argv = (try require \optimist .boolean <[ vm polling ]> .argv) || {}
@@ -63,10 +64,7 @@ Worker ||= class => (code) ->
   return @
 ##################################
 
-@include = ->
-  DB = @include \db
-  EXPIRE = @EXPIRE
-
+do ->
   SC.csv-to-save = (csv, cb) ->
     w = new Worker
     <- w.thread.eval bootSC
@@ -190,28 +188,6 @@ Worker ||= class => (code) ->
     """, (, csv) -> cb csv
     # Create a new worker for each HTML conversion to avoid starvation
     if IsThreaded => w.exportHTML = !(cb) ->
-      x = new Worker -> @onmessage = ({data: { snapshot, log=[] }}) -> try
-        parts = SocialCalc.SpreadsheetControlDecodeSpreadsheetSave("", snapshot)
-        save = snapshot.substring parts.sheet.start, parts.sheet.end
-        window.setTimeout = (cb, ms) -> thread.next-tick cb
-        window.clearTimeout = ->
-        window.ss = ss = new SocialCalc.SpreadsheetControl
-        ss.sheet.ResetSheet!
-        ss.ParseSheetSave save
-        if log?length
-          cmdstr = [ line for line in log
-               | not /^re(calc|display)$/.test(line) and line isnt "set sheet defaulttextvalueformat text-wiki"].join("\n")
-          cmdstr += "\n" if cmdstr.length
-          ss.editor.StatusCallback.EtherCalc = func: (editor, status, arg) ->
-            return unless status is \doneposcalc
-            post-message ss.CreateSheetHTML!
-          ss.context.sheetobj.ScheduleSheetCommands cmdstr, false true
-        else
-          post-message ss.CreateSheetHTML!
-      catch e => post-message "ERROR: #{ e }"
-      x.onmessage = ({data}) -> x.thread.destroy!; cb data
-      (, log) <~ DB.lrange "log-#room" 0 -1
-      x.thread.eval bootSC, -> x.post-message {snapshot: w._snapshot, log}
     # Create a new worker for each CSV conversion to avoid starvation
     if IsThreaded => w.exportCSV = !(cb) ->
       x = new Worker -> @onmessage = ({data: { snapshot, log=[] }}) -> try
@@ -235,45 +211,41 @@ Worker ||= class => (code) ->
           post-message SocialCalc.ConvertSaveToOtherFormat(save, \csv)
       catch e => post-message "ERROR: #{ e }"
       x.onmessage = ({data}) -> x.thread.destroy!; cb data
-      (, log) <~ DB.lrange "log-#room" 0 -1
+      log = []
       x.thread.eval bootSC, -> x.post-message {snapshot: w._snapshot, log}
-    w._eval = (code, cb) ->
-      (, rv) <- w.thread.eval code
-      return cb rv if rv?
-      # Maybe thread is not yet initialized - retry at most once
-      (, rv) <- w.thread.eval code
-      return cb rv
-    if IsThreaded => w._eval = (code, cb) ->
-      x = new Worker -> @onmessage = ({data: { snapshot, log=[], code }}) -> try
-        parts = SocialCalc.SpreadsheetControlDecodeSpreadsheetSave("", snapshot)
-        save = snapshot.substring parts.sheet.start, parts.sheet.end
-        window.setTimeout = (cb, ms) -> thread.next-tick cb
-        window.clearTimeout = ->
-        window.ss = ss = new SocialCalc.SpreadsheetControl
-        ss.sheet.ResetSheet!
-        ss.ParseSheetSave save
-        if log?length
-          cmdstr = [ line for line in log
-               | not /^re(calc|display)$/.test(line) and line isnt "set sheet defaulttextvalueformat text-wiki"].join("\n")
-          # TODO: Validate cmdstr!
-          cmdstr += "\n" if cmdstr.length
-          ss.editor.StatusCallback.EtherCalc = func: (editor, status, arg) ->
-            return unless status is \doneposcalc
-            post-message eval code
-          ss.context.sheetobj.ScheduleSheetCommands cmdstr, false true
-        else
-          post-message eval code
-      catch e => post-message "ERROR: #{ e }"
-      x.onmessage = ({data}) -> x.thread.destroy!; cb data
-      (, log) <~ DB.lrange "log-#room" 0 -1
-      x.thread.eval bootSC, -> x.post-message {snapshot: w._snapshot, log, code}
-    w.exportSave = (cb) -> w._eval "window.ss.CreateSheetSave()", cb
-    w.exportCell = (coord, cb) -> w._eval """
+    w.exportSave = (cb) -> w.thread.eval """
+      window.ss.CreateSheetSave()
+    """, (, save) -> cb save
+    w.exportCell = (coord, cb) -> w.thread.eval """
       JSON.stringify(window.ss.sheet.cells[#{
-        JSON.stringify(coord) - /\s/g
+      JSON.stringify(coord) - /\s/g
       }])
-    """, (cell) -> if cell is \undefined then cb 'null' else cb cell
-    w.exportCells = (cb) -> w._eval "JSON.stringify(window.ss.sheet.cells)", cb
+    """, (, cell) -> if cell is \undefined then cb 'null' else cb cell
+    w.exportCells = (cb) -> w.thread.eval """
+      JSON.stringify(window.ss.sheet.cells)
+    """, (, cells) -> cb cells
     w.thread.eval bootSC, ~> w.postMessage { type: \init, room, log, snapshot }
     return w
   return SC
+
+snapshot = "socialcalc:version:1.0\nMIME-Version: 1.0\nContent-Type: multipart/mixed; boundary=SocialCalcSpreadsheetControlSave\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n# SocialCalc Spreadsheet Control Save\nversion:1.0\npart:sheet\npart:edit\npart:audit\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\nversion:1.5\ncell:A1:t:Quantity Sold\ncell:B1:t:Product\ncell:C1:t:Salesperson\ncell:A2:v:5\ncell:B2:t:Apples\ncell:C2:v:1\ncell:A3:v:4\ncell:B3:t:Apples\ncell:C3:v:2\ncell:A4:v:15\ncell:B4:t:Artichokes\ncell:C4:v:1\ncell:A5:v:3\ncell:B5:t:Artichokes\ncell:C5:v:2\ncell:A6:v:22\ncell:B6:t:Bananas\ncell:C6:v:1\ncell:A7:v:12\ncell:B7:t:Bananas\ncell:C7:v:2\ncell:A8:v:10\ncell:B8:t:Carrots\ncell:C8:v:1\ncell:A9:v:33\ncell:B9:t:Carrots\ncell:C9:v:2\ncell:A10:t:Formula\ncell:A11:vtf:n::SUMIF(B2\\cB9, \"=Bananas\", A2\\cA9)\ncell:A12:vtf:n::SUMIFS(A2\\cA9, B2\\cB9, \"=Bananas\", C2\\cC9, 1)\ncol:A:w:286\nsheet:c:3:r:12:tvf:1\nvalueformat:1:text-wiki\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n--SocialCalcSpreadsheetControlSave--\n"
+
+x = new Worker -> @onmessage = ({data: { snapshot, log=[] }}) -> try
+  parts = SocialCalc.SpreadsheetControlDecodeSpreadsheetSave("", snapshot)
+  save = snapshot.substring parts.sheet.start, parts.sheet.end
+  window.setTimeout = (cb, ms) -> thread.next-tick cb
+  window.clearTimeout = ->
+  window.ss = ss = new SocialCalc.SpreadsheetControl
+  ss.sheet.ResetSheet!
+  ss.ParseSheetSave save
+  ss.editor.StatusCallback.EtherCalc = func: (editor, status, arg) ->
+    return unless status is \doneposcalc
+    save = ss.CreateSheetSave!
+    console.log SocialCalc.ConvertSaveToOtherFormat(save, \csv)
+    console.log "^^ the last number should be 22"
+    post-message \gone
+  ss.context.sheetobj.ScheduleSheetCommands "recalc"
+catch e => console.log "ERROR: #{ e }"
+x.onmessage = ({data}) -> x.thread.destroy!
+log = []
+x.thread.eval bootSC, -> x.post-message {snapshot, log}

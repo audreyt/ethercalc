@@ -8,6 +8,13 @@ API for real-time collaborative spreadsheets.
 * Overview: http://ethercalc.net/
 * 中文版: http://ethercalc.tw/
 
+Note: When using `curl`, please make sure to `--data-binary` instead of `--data`. For example:
+
+```bash
+curl -X PUT -H 'Content-Type: text/x-socialcalc' \
+     --data-binary @example.sc http://127.0.0.1:8000/_/example
+```
+
 # Index [/_]
 
 ## Create Page [POST]

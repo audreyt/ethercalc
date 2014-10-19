@@ -1,5 +1,5 @@
 CACHE MANIFEST
-# Tue Sep  2 13:47:22 CST 2014
+# Sun Oct 19 12:48:30 CST 2014
 
 CACHE:
 
@@ -17,6 +17,7 @@ static/shim.js
 static/xlsx.js
 static/xlsxworker.js
 static/jquery.js
+static/dist/ods.js
 
 # pad page
 static/ethercalc.js
