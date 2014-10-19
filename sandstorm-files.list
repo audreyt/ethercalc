@@ -463,8 +463,10 @@ src/player.ls
 src/sc.ls
 stackato.yml
 start.html
+static/dist/ods.js
 static/ethercalc.js
 static/export.png
+static/gear.png
 static/img/davy/bg/home2.png
 static/img/davy/bg/product.png
 static/img/davy/btn/createpad-home.png
@@ -474,10 +476,13 @@ static/img/right-graphite@2x.png
 static/index.css
 static/jquery.js
 static/jszip.js
+static/md5.js
 static/shim.js
 static/socialcalc.css
 static/start.css
+static/start.sass
 static/vex-theme-flat-attack.css
+static/vex.combined.min.js
 static/vex.css
 static/xlsx.js
 static/xlsxworker.js
