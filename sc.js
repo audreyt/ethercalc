@@ -574,6 +574,74 @@
           });
         });
       };
+      if (IsThreaded) {
+        w._eval = function(code, cb){
+          var x, this$ = this;
+          x = new Worker(function(){
+            return this.onmessage = function(arg$){
+              var ref$, snapshot, log, ref1$, code, parts, save, ss, cmdstr, line, e;
+              ref$ = arg$.data, snapshot = ref$.snapshot, log = (ref1$ = ref$.log) != null
+                ? ref1$
+                : [], code = ref$.code;
+              try {
+                parts = SocialCalc.SpreadsheetControlDecodeSpreadsheetSave("", snapshot);
+                save = snapshot.substring(parts.sheet.start, parts.sheet.end);
+                window.setTimeout = function(cb, ms){
+                  return thread.nextTick(cb);
+                };
+                window.clearTimeout = function(){};
+                window.ss = ss = new SocialCalc.SpreadsheetControl;
+                ss.sheet.ResetSheet();
+                ss.ParseSheetSave(save);
+                if (log != null && log.length) {
+                  cmdstr = (function(){
+                    var i$, ref$, len$, results$ = [];
+                    for (i$ = 0, len$ = (ref$ = log).length; i$ < len$; ++i$) {
+                      line = ref$[i$];
+                      if (!/^re(calc|display)$/.test(line) && line !== "set sheet defaulttextvalueformat text-wiki") {
+                        results$.push(line);
+                      }
+                    }
+                    return results$;
+                  }()).join("\n");
+                  if (cmdstr.length) {
+                    cmdstr += "\n";
+                  }
+                  ss.editor.StatusCallback.EtherCalc = {
+                    func: function(editor, status, arg){
+                      if (status !== 'doneposcalc') {
+                        return;
+                      }
+                      return postMessage(eval(code));
+                    }
+                  };
+                  return ss.context.sheetobj.ScheduleSheetCommands(cmdstr, false, true);
+                } else {
+                  return postMessage(eval(code));
+                }
+              } catch (e$) {
+                e = e$;
+                return postMessage("ERROR: " + e);
+              }
+            };
+          });
+          x.onmessage = function(arg$){
+            var data;
+            data = arg$.data;
+            x.thread.destroy();
+            return cb(data);
+          };
+          return DB.lrange("log-" + room, 0, -1, function(arg$, log){
+            return x.thread.eval(bootSC, function(){
+              return x.postMessage({
+                snapshot: w._snapshot,
+                log: log,
+                code: code
+              });
+            });
+          });
+        };
+      }
       w.exportSave = function(cb){
         return w._eval("window.ss.CreateSheetSave()", cb);
       };

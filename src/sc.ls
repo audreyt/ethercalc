@@ -243,6 +243,30 @@ Worker ||= class => (code) ->
       # Maybe thread is not yet initialized - retry at most once
       (, rv) <- w.thread.eval code
       return cb rv
+    if IsThreaded => w._eval = (code, cb) ->
+      x = new Worker -> @onmessage = ({data: { snapshot, log=[], code }}) -> try
+        parts = SocialCalc.SpreadsheetControlDecodeSpreadsheetSave("", snapshot)
+        save = snapshot.substring parts.sheet.start, parts.sheet.end
+        window.setTimeout = (cb, ms) -> thread.next-tick cb
+        window.clearTimeout = ->
+        window.ss = ss = new SocialCalc.SpreadsheetControl
+        ss.sheet.ResetSheet!
+        ss.ParseSheetSave save
+        if log?length
+          cmdstr = [ line for line in log
+               | not /^re(calc|display)$/.test(line) and line isnt "set sheet defaulttextvalueformat text-wiki"].join("\n")
+          # TODO: Validate cmdstr!
+          cmdstr += "\n" if cmdstr.length
+          ss.editor.StatusCallback.EtherCalc = func: (editor, status, arg) ->
+            return unless status is \doneposcalc
+            post-message eval code
+          ss.context.sheetobj.ScheduleSheetCommands cmdstr, false true
+        else
+          post-message eval code
+      catch e => post-message "ERROR: #{ e }"
+      x.onmessage = ({data}) -> x.thread.destroy!; cb data
+      (, log) <~ DB.lrange "log-#room" 0 -1
+      x.thread.eval bootSC, -> x.post-message {snapshot: w._snapshot, log, code}
     w.exportSave = (cb) -> w._eval "window.ss.CreateSheetSave()", cb
     w.exportCell = (coord, cb) -> w._eval """
       JSON.stringify(window.ss.sheet.cells[#{
