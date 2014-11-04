@@ -45,6 +45,12 @@ for the API Blueprint, or http://docs.ethercalc.apiary.io/ for the online versio
 
 ## Runtime Flags
 
+### Listening Interface: `--host` / `--port`
+
+Specify a specific host and/or a different port for the service.
+
+By default EtherCalc listens at `0.0.0.0:8000` (all IPv4 interfaces).
+
 ### Using SSL: `--keyfile` / `--certfile`
 
     openssl genrsa -out ethercalc-key.pem 1024
