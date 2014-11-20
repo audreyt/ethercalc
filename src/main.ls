@@ -222,6 +222,10 @@
         .rpush "log-#room" cmdstr
         .rpush "audit-#room" cmdstr
         .bgsave!.exec!
+      unless SC[room]?
+        console.log "SC[#room] went away. Reloading..."
+        _, [snapshot, log] <~ DB.multi!get("snapshot-#room").lrange("log-#room", 0, -1).exec
+        SC[room] = SC._init snapshot, log, DB, room, @io
       SC[room]?ExecuteCommand cmdstr
       broadcast @data
     | \ask.log
