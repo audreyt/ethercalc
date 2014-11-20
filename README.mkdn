@@ -27,16 +27,16 @@ For local non-root installation
     make
 
 Or install with our [Docker](http://www.docker.io/) image, which comes with a
-built-in Redis server and webworker-threads support:
+webworker-threads support:
 
-    # Runs at port 6967
-    sudo docker run -d -p 6967:6967 -v /var/lib/redis:/redis:rw audreyt/ethercalc
+    # Run a redis Docker using the official redis Docker image with persistant database in <host-directory>
+    sudo docker run --name redis -d -v <host-directory>:/data redis:latest
 
-    # Runs at another port, for example 8080
-    sudo docker run -d -p 8080:6967 -v /var/lib/redis:/redis:rw audreyt/ethercalc
+    # Run ethercalc on default port 8000
+    sudo docker run -d -p 8000:8000 --link redis:redis audreyt/ethercalc
 
-Note the use of `-v` flag to store the Redis database in `/var/lib/redis` on
-the host server. In Docker versions 0.4.x, the flag was called `-b` instead.
+    # Run ethercalc on custom port 8000
+    sudo docker run -d -p 80:8000 --link redis:redis audreyt/ethercalc
 
 ## REST API
 
