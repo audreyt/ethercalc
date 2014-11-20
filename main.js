@@ -428,6 +428,14 @@
           }
           DB.multi().rpush("log-" + room, cmdstr).rpush("audit-" + room, cmdstr).bgsave().exec(function(){
             var ref$;
+            if (SC[room] == null) {
+              console.log("SC[" + room + "] went away. Reloading...");
+              DB.multi().get("snapshot-" + room).lrange("log-" + room, 0, -1).exec(function(_, arg$){
+                var snapshot, log;
+                snapshot = arg$[0], log = arg$[1];
+                return SC[room] = SC._init(snapshot, log, DB, room, this$.io);
+              });
+            }
             if ((ref$ = SC[room]) != null) {
               ref$.ExecuteCommand(cmdstr);
             }
