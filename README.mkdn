@@ -35,7 +35,7 @@ webworker-threads support:
     # Run ethercalc on default port 8000
     sudo docker run -d -p 8000:8000 --link redis:redis audreyt/ethercalc
 
-    # Run ethercalc on custom port 8000
+    # Run ethercalc on custom port 80
     sudo docker run -d -p 80:8000 --link redis:redis audreyt/ethercalc
 
 ## REST API
