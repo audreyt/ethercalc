@@ -102,69 +102,57 @@ Worker ||= class => (code) ->
       SC[room]._doClearCache!
       return SC[room]
     w = new Worker ->
-      self.onmessage = ({ data: { type, ref, snapshot, command, room, log=[] } }) ->  
-        # console.log "==> type "+type        
-        switch type
-        | \cmd
-          console.log "===> cmd "+command
-          commandParameters = command.split(" ")
-          if commandParameters[0] is \sendemail
-            console.log "------ commandParameters --------"
-            console.log commandParameters[1]+commandParameters[2]+commandParameters[3]             
-            sendemail.sendTestEmail commandParameters[1].replace(/%20/,' '), commandParameters[2].replace(/%20/,' '), commandParameters[3].replace(/%20/,' ')     
-          window.ss.ExecuteCommand command
-        | \recalc
-          SocialCalc.RecalcLoadedSheet ref, snapshot, true
-        | \clearCache
-          SocialCalc.Formula.SheetCache.sheets = {}
-        | \exportSave
-          postMessage { type: \save, save: window.ss.CreateSheetSave! }
-        | \exportHTML
-          postMessage { type: \html, html: window.ss.CreateSheetHTML! }
-        | \exportCSV
-          csv = window.ss.SocialCalc.ConvertSaveToOtherFormat(
-            window.ss.CreateSheetSave!
-            \csv
-          )
-          postMessage { type: \csv, csv }
-        | \exportCells
-          postMessage { type: \cells, cells: window.ss.cells }
-        | \init
-          #console.log "------ SocialCalc --------"
-          #console.log SocialCalc                    
-          console.log "------ window --------"
-          console.log window            
-          SocialCalc.SaveEditorSettings = -> ""
-          SocialCalc.CreateAuditString = -> ""
-          SocialCalc.CalculateEditorPositions = ->
-          SocialCalc.Popup.Types.List.Create = ->
-          SocialCalc.Popup.Types.ColorChooser.Create = ->
-          SocialCalc.Popup.Initialize = ->
-          SocialCalc.RecalcInfo.LoadSheet = (ref) ->
-            ref = "#ref".replace(/[^a-zA-Z0-9]+/g '')toLowerCase!
-            postMessage { type: \load-sheet, ref }
-            return true
-          window.setTimeout = (cb, ms) -> thread.next-tick cb
-          window.clearTimeout = ->
-          window.ss = ss = new SocialCalc.SpreadsheetControl
-          ss.SocialCalc = SocialCalc
-          ss._room = room
-          parts = ss.DecodeSpreadsheetSave(snapshot) if snapshot
-          ss.editor.StatusCallback.EtherCalc = func: (editor, status, arg) ->
-            return unless status is \doneposcalc # and not ss.editor.busy
-            newSnapshot = ss.CreateSpreadsheetSave!
-            return if ss._snapshot is newSnapshot
-            ss._snapshot = newSnapshot
-            postMessage { type: \snapshot, snapshot: newSnapshot }
-          if parts?sheet
-            ss.sheet.ResetSheet!
-            ss.ParseSheetSave snapshot.substring parts.sheet.start, parts.sheet.end
-          cmdstr = [ line for line in log
-               | not /^re(calc|display)$/.test(line) ].join("\n")
-          cmdstr += "\n" if cmdstr.length
-          ss.context.sheetobj.ScheduleSheetCommands "set sheet defaulttextvalueformat text-wiki\n#{
-            cmdstr
-          }recalc\n" false true
+      self.onmessage = ({ data: { type, ref, snapshot, command, room, log=[] } }) -> switch type
+      | \cmd
+        window.ss.ExecuteCommand command
+      | \recalc
+        SocialCalc.RecalcLoadedSheet ref, snapshot, true
+      | \clearCache
+        SocialCalc.Formula.SheetCache.sheets = {}
+      | \exportSave
+        postMessage { type: \save, save: window.ss.CreateSheetSave! }
+      | \exportHTML
+        postMessage { type: \html, html: window.ss.CreateSheetHTML! }
+      | \exportCSV
+        csv = window.ss.SocialCalc.ConvertSaveToOtherFormat(
+          window.ss.CreateSheetSave!
+          \csv
+        )
+        postMessage { type: \csv, csv }
+      | \exportCells
+        postMessage { type: \cells, cells: window.ss.cells }
+      | \init
+        SocialCalc.SaveEditorSettings = -> ""
+        SocialCalc.CreateAuditString = -> ""
+        SocialCalc.CalculateEditorPositions = ->
+        SocialCalc.Popup.Types.List.Create = ->
+        SocialCalc.Popup.Types.ColorChooser.Create = ->
+        SocialCalc.Popup.Initialize = ->
+        SocialCalc.RecalcInfo.LoadSheet = (ref) ->
+          ref = "#ref".replace(/[^a-zA-Z0-9]+/g '')toLowerCase!
+          postMessage { type: \load-sheet, ref }
+          return true
+        window.setTimeout = (cb, ms) -> thread.next-tick cb
+        window.clearTimeout = ->
+        window.ss = ss = new SocialCalc.SpreadsheetControl
+        ss.SocialCalc = SocialCalc
+        ss._room = room
+        parts = ss.DecodeSpreadsheetSave(snapshot) if snapshot
+        ss.editor.StatusCallback.EtherCalc = func: (editor, status, arg) ->
+          return unless status is \doneposcalc # and not ss.editor.busy
+          newSnapshot = ss.CreateSpreadsheetSave!
+          return if ss._snapshot is newSnapshot
+          ss._snapshot = newSnapshot
+          postMessage { type: \snapshot, snapshot: newSnapshot }
+        if parts?sheet
+          ss.sheet.ResetSheet!
+          ss.ParseSheetSave snapshot.substring parts.sheet.start, parts.sheet.end
+        cmdstr = [ line for line in log
+             | not /^re(calc|display)$/.test(line) ].join("\n")
+        cmdstr += "\n" if cmdstr.length
+        ss.context.sheetobj.ScheduleSheetCommands "set sheet defaulttextvalueformat text-wiki\n#{
+          cmdstr
+        }recalc\n" false true
     w._snapshot = snapshot
     w.on-snapshot = (newSnapshot) ->
       io.sockets.in "recalc.#room" .emit \data {
