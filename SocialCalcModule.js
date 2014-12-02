@@ -8139,8 +8139,21 @@ SocialCalc.ProcessEditorMouseDown = function(e) {
       if (e.shiftKey)
          editor.RangeAnchor();
       }
-
    coord = editor.MoveECell(result.coord);
+   // eddy ProcessEditorMouseDown {
+//   SocialCalc.GetSpreadsheetControlObject().debug.push({ProcessEditorMouseDown:true});
+   var clickedCell = editor.context.sheetobj.cells[coord];
+   if(clickedCell) {
+	 //SocialCalc.GetSpreadsheetControlObject().debug.push({clickedCell:clickedCell});
+     if(clickedCell.valuetype.charAt(1) == 'i') { // IF cell contains ioWidget
+        var formula_name= clickedCell.valuetype.substring(2);	 
+	    var cell_widget=document.getElementById(formula_name+'_'+coord);
+		SocialCalc.CmdGotFocus(cell_widget); // cell widgets need to keep focus 
+		// SocialCalc.Keyboard.FocusWidget = coord;
+		return; // let ioWidget keep the focus 
+		}
+	 }
+   // }
 
    if (range.hasrange) {
       if (e.shiftKey)
@@ -9394,6 +9407,8 @@ SocialCalc.MoveECell = function(editor, newcell) {
    editor.ecell = SocialCalc.coordToCr(newcell);
    editor.ecell.coord = newcell;
    cell=SocialCalc.GetEditorCellElement(editor, editor.ecell.row, editor.ecell.col);
+   // eddy MoveECell {
+   // }
    highlights[newcell] = "cursor";
 
    for (f in editor.MoveECellCallback) { // let others know
@@ -21207,6 +21222,11 @@ SocialCalc.SpreadsheetControl = function(idPrefix) {
 
    // Initialization Code:
 
+   // eddy Initialization {
+   if(typeof this.debug === 'undefined') this.debug = [];
+   this.debug.test2 = "---------";
+   // }   
+   
    this.sheet = new SocialCalc.Sheet();
    this.context = new SocialCalc.RenderContext(this.sheet);
    this.context.showGrid=true;
@@ -21767,6 +21787,55 @@ SocialCalc.SpreadsheetControl = function(idPrefix) {
                   str += SocialCalc.special_chars(stack[i].command[j]) + "<br>";
                   }
                }
+			// --------------------------------------------   
+ 		    // eddy log {
+
+			// --------------------------------------------   
+			var ObjToSource = function(o){
+				if (typeof(o) == "string") return o;
+				if (!o) return 'null';
+				if (typeof(o) == "object") {
+					if (!ObjToSource.check) ObjToSource.check = new Array();
+					for (var i=0, k=ObjToSource.check.length ; i<k ; ++i) {
+						if (ObjToSource.check[i] == o) {return '{}';}
+					}
+					ObjToSource.check.push(o);
+				}
+				var k="",na=typeof(o.length)=="undefined"?1:0,str="";
+				for(var p in o){
+					if (na) k = "'"+p+ "':";
+					if (typeof o[p] == "string") str += k + "'" + o[p]+"',";
+					else if (typeof o[p] == "object") str += k + ObjToSource(o[p])+",";
+					else str += k + o[p] + ",";
+				}
+				if (typeof(o) == "object") ObjToSource.check.pop();
+				if (na) return "{"+str.slice(0,-1)+"}";
+				else return "["+str.slice(0,-1)+"]";
+			}
+/*			
+				if(typeof o == 'string') return o;
+				var str='';				
+				for(var p in o){
+					if(typeof o[p] == 'string'){
+						str+= p + ': ' + o[p]+'; </br>';
+					}else{
+						str+= p + ': { </br>' + objToString(o[p]) + '}';
+					}
+				}
+
+				return str;
+			}
+			*/
+			// --------------------------------------------   
+			
+		    if(typeof s.debug != 'undefined') {
+				for(var index in s.debug) { 
+					str += ObjToSource(s.debug[index]) + "<br>";
+				}
+			}
+		    // }   
+			// --------------------------------------------   
+			   
             s.views.audit.element.innerHTML = str+"</td></tr></table>";
             SocialCalc.CmdGotFocus(true);
             },
@@ -21867,6 +21936,7 @@ SocialCalc.SpreadsheetControl = function(idPrefix) {
 
    }
 
+   
 // Methods:
 
 SocialCalc.SpreadsheetControl.prototype.InitializeSpreadsheetControl =

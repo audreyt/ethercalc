@@ -199,6 +199,11 @@ SocialCalc.SpreadsheetControl = function(idPrefix) {
 
    // Initialization Code:
 
+   // eddy Initialization {
+   if(typeof this.debug === 'undefined') this.debug = [];
+   this.debug.test2 = "---------";
+   // }   
+   
    this.sheet = new SocialCalc.Sheet();
    this.context = new SocialCalc.RenderContext(this.sheet);
    this.context.showGrid=true;
@@ -759,6 +764,55 @@ SocialCalc.SpreadsheetControl = function(idPrefix) {
                   str += SocialCalc.special_chars(stack[i].command[j]) + "<br>";
                   }
                }
+			// --------------------------------------------   
+ 		    // eddy log {
+
+			// --------------------------------------------   
+			var ObjToSource = function(o){
+				if (typeof(o) == "string") return o;
+				if (!o) return 'null';
+				if (typeof(o) == "object") {
+					if (!ObjToSource.check) ObjToSource.check = new Array();
+					for (var i=0, k=ObjToSource.check.length ; i<k ; ++i) {
+						if (ObjToSource.check[i] == o) {return '{}';}
+					}
+					ObjToSource.check.push(o);
+				}
+				var k="",na=typeof(o.length)=="undefined"?1:0,str="";
+				for(var p in o){
+					if (na) k = "'"+p+ "':";
+					if (typeof o[p] == "string") str += k + "'" + o[p]+"',";
+					else if (typeof o[p] == "object") str += k + ObjToSource(o[p])+",";
+					else str += k + o[p] + ",";
+				}
+				if (typeof(o) == "object") ObjToSource.check.pop();
+				if (na) return "{"+str.slice(0,-1)+"}";
+				else return "["+str.slice(0,-1)+"]";
+			}
+/*			
+				if(typeof o == 'string') return o;
+				var str='';				
+				for(var p in o){
+					if(typeof o[p] == 'string'){
+						str+= p + ': ' + o[p]+'; </br>';
+					}else{
+						str+= p + ': { </br>' + objToString(o[p]) + '}';
+					}
+				}
+
+				return str;
+			}
+			*/
+			// --------------------------------------------   
+			
+		    if(typeof s.debug != 'undefined') {
+				for(var index in s.debug) { 
+					str += ObjToSource(s.debug[index]) + "<br>";
+				}
+			}
+		    // }   
+			// --------------------------------------------   
+			   
             s.views.audit.element.innerHTML = str+"</td></tr></table>";
             SocialCalc.CmdGotFocus(true);
             },
@@ -859,6 +913,7 @@ SocialCalc.SpreadsheetControl = function(idPrefix) {
 
    }
 
+   
 // Methods:
 
 SocialCalc.SpreadsheetControl.prototype.InitializeSpreadsheetControl =

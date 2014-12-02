@@ -1189,8 +1189,21 @@ SocialCalc.ProcessEditorMouseDown = function(e) {
       if (e.shiftKey)
          editor.RangeAnchor();
       }
-
    coord = editor.MoveECell(result.coord);
+   // eddy ProcessEditorMouseDown {
+//   SocialCalc.GetSpreadsheetControlObject().debug.push({ProcessEditorMouseDown:true});
+   var clickedCell = editor.context.sheetobj.cells[coord];
+   if(clickedCell) {
+	 //SocialCalc.GetSpreadsheetControlObject().debug.push({clickedCell:clickedCell});
+     if(clickedCell.valuetype.charAt(1) == 'i') { // IF cell contains ioWidget
+        var formula_name= clickedCell.valuetype.substring(2);	 
+	    var cell_widget=document.getElementById(formula_name+'_'+coord);
+		SocialCalc.CmdGotFocus(cell_widget); // cell widgets need to keep focus 
+		// SocialCalc.Keyboard.FocusWidget = coord;
+		return; // let ioWidget keep the focus 
+		}
+	 }
+   // }
 
    if (range.hasrange) {
       if (e.shiftKey)
@@ -2444,6 +2457,8 @@ SocialCalc.MoveECell = function(editor, newcell) {
    editor.ecell = SocialCalc.coordToCr(newcell);
    editor.ecell.coord = newcell;
    cell=SocialCalc.GetEditorCellElement(editor, editor.ecell.row, editor.ecell.col);
+   // eddy MoveECell {
+   // }
    highlights[newcell] = "cursor";
 
    for (f in editor.MoveECellCallback) { // let others know
