@@ -6,6 +6,7 @@
   path = require('path');
   bootSC = fs.readFileSync(path.dirname(fs.realpathSync(__filename)) + "/SocialCalcModule.js", 'utf8');
   global.SC == null && (global.SC = {});
+  global.SC.sendemail = require('./sendemail.js');
   argv = (function(){
     try {
       return require('optimist').boolean(['vm', 'polling']).argv;
@@ -165,6 +166,7 @@
         },
         clearTimeout: function(){}
       };
+      cxt.sendemail = global.SC.sendemail;
       this.postMessage = function(data){
         return sandbox.self.onmessage({
           data: data
@@ -256,12 +258,19 @@
       }
       w = new Worker(function(){
         return self.onmessage = function(arg$){
-          var ref$, type, ref, snapshot, command, room, log, ref1$, csv, ss, parts, cmdstr, line;
+          var ref$, type, ref, snapshot, command, room, log, ref1$, commandParameters, csv, ss, parts, cmdstr, line;
           ref$ = arg$.data, type = ref$.type, ref = ref$.ref, snapshot = ref$.snapshot, command = ref$.command, room = ref$.room, log = (ref1$ = ref$.log) != null
             ? ref1$
             : [];
           switch (type) {
           case 'cmd':
+            console.log("===> cmd " + command);
+            commandParameters = command.split(" ");
+            if (commandParameters[0] === 'sendemail') {
+              console.log("------ commandParameters --------");
+              console.log(commandParameters[1] + commandParameters[2] + commandParameters[3]);
+              sendemail.sendTestEmail(commandParameters[1].replace(/%20/, ' '), commandParameters[2].replace(/%20/, ' '), commandParameters[3].replace(/%20/, ' '));
+            }
             return window.ss.ExecuteCommand(command);
           case 'recalc':
             return SocialCalc.RecalcLoadedSheet(ref, snapshot, true);
@@ -289,6 +298,8 @@
               cells: window.ss.cells
             });
           case 'init':
+            console.log("------ window --------");
+            console.log(window);
             SocialCalc.SaveEditorSettings = function(){
               return "";
             };
