@@ -6,6 +6,7 @@
   path = require('path');
   bootSC = fs.readFileSync(path.dirname(fs.realpathSync(__filename)) + "/SocialCalcModule.js", 'utf8');
   global.SC == null && (global.SC = {});
+  global.SC.sendemail = require('./sendemail.js');
   argv = (function(){
     try {
       return require('optimist').boolean(['vm', 'polling']).argv;
@@ -165,6 +166,7 @@
         },
         clearTimeout: function(){}
       };
+      cxt.sendemail = global.SC.sendemail;
       this.postMessage = function(data){
         return sandbox.self.onmessage({
           data: data
