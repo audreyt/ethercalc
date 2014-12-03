@@ -4,7 +4,7 @@ bootSC = fs.readFileSync "#{
 }/SocialCalcModule.js" \utf8
 
 global.SC ?= {}
-global.SC.sendemail = require './sendemail.js'
+#global.SC.sendemail = require './sendemail.js'
 
 
 argv = (try require \optimist .boolean <[ vm polling ]> .argv) || {}
@@ -50,7 +50,7 @@ Worker ||= class => (code) ->
   cxt.window =
     setTimeout: (cb, ms) -> process.nextTick cb
     clearTimeout: ->
-  cxt.sendemail = global.SC.sendemail
+  #cxt.sendemail = global.SC.sendemail
   @postMessage = (data) -> sandbox.self.onmessage {data}
   @thread = cxt.thread =
     nextTick: (cb) -> process.nextTick cb
