@@ -375,7 +375,7 @@
         });
         w._snapshot = newSnapshot;
         return DB.multi().set("snapshot-" + room, newSnapshot).del("log-" + room).bgsave().exec(function(){
-          console.log("==> Regenerated snapshot for " + room);
+          console.log("==> Regenerated snapshot for: " + room);
           if (EXPIRE) {
             return DB.expire("snapshot-" + room, EXPIRE);
           }
