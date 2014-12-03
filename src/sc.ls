@@ -4,7 +4,8 @@ bootSC = fs.readFileSync "#{
 }/SocialCalcModule.js" \utf8
 
 global.SC ?= {}
-global.SC.sendemail = require './sendemail.js'
+console.log "===> global.SC.sendemail "
+#global.SC.sendemail = require './sendemail.js'
 
 
 argv = (try require \optimist .boolean <[ vm polling ]> .argv) || {}
@@ -50,7 +51,8 @@ Worker ||= class => (code) ->
   cxt.window =
     setTimeout: (cb, ms) -> process.nextTick cb
     clearTimeout: ->
-  cxt.sendemail = global.SC.sendemail
+  console.log "===> cxt.sendemail "
+  #cxt.sendemail = global.SC.sendemail
   @postMessage = (data) -> sandbox.self.onmessage {data}
   @thread = cxt.thread =
     nextTick: (cb) -> process.nextTick cb
@@ -112,7 +114,7 @@ Worker ||= class => (code) ->
           if commandParameters[0] is \sendemail
             console.log "------ commandParameters --------"
             console.log commandParameters[1]+commandParameters[2]+commandParameters[3]             
-            sendemail.sendTestEmail commandParameters[1].replace(/%20/,' '), commandParameters[2].replace(/%20/,' '), commandParameters[3].replace(/%20/,' ')     
+            #sendemail.sendTestEmail commandParameters[1].replace(/%20/,' '), commandParameters[2].replace(/%20/,' '), commandParameters[3].replace(/%20/,' ')     
           window.ss.ExecuteCommand command
         | \recalc
           SocialCalc.RecalcLoadedSheet ref, snapshot, true

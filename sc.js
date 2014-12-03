@@ -6,7 +6,7 @@
   path = require('path');
   bootSC = fs.readFileSync(path.dirname(fs.realpathSync(__filename)) + "/SocialCalcModule.js", 'utf8');
   global.SC == null && (global.SC = {});
-  global.SC.sendemail = require('./sendemail.js');
+  console.log("===> global.SC.sendemail ");
   argv = (function(){
     try {
       return require('optimist').boolean(['vm', 'polling']).argv;
@@ -166,7 +166,7 @@
         },
         clearTimeout: function(){}
       };
-      cxt.sendemail = global.SC.sendemail;
+      console.log("===> cxt.sendemail ");
       this.postMessage = function(data){
         return sandbox.self.onmessage({
           data: data
@@ -271,7 +271,6 @@
             if (commandParameters[0] === 'sendemail') {
               console.log("------ commandParameters --------");
               console.log(commandParameters[1] + commandParameters[2] + commandParameters[3]);
-              sendemail.sendTestEmail(commandParameters[1].replace(/%20/, ' '), commandParameters[2].replace(/%20/, ' '), commandParameters[3].replace(/%20/, ' '));
             }
             return window.ss.ExecuteCommand(command);
           case 'recalc':
