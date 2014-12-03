@@ -256,12 +256,14 @@
         SC[room]._doClearCache();
         return SC[room];
       }
+      console.log("==> new Worker");
       w = new Worker(function(){
         return self.onmessage = function(arg$){
           var ref$, type, ref, snapshot, command, room, log, ref1$, commandParameters, csv, ss, parts, cmdstr, line;
           ref$ = arg$.data, type = ref$.type, ref = ref$.ref, snapshot = ref$.snapshot, command = ref$.command, room = ref$.room, log = (ref1$ = ref$.log) != null
             ? ref1$
             : [];
+          console.log("==> type " + type);
           switch (type) {
           case 'cmd':
             console.log("===> cmd " + command);
