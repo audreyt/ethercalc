@@ -182,7 +182,7 @@ Worker ||= class => (code) ->
         .del "log-#room"
         .bgsave!
         .exec!
-      console.log "==> Regenerated snapshot for: #room"
+      console.log "==> Regenerated snapshot for- #room"
       DB.expire "snapshot-#room", EXPIRE if EXPIRE
     w.onerror = -> console.log it
     w.onmessage = ({ data: { type, snapshot, html, csv, ref, parts, save } }) -> switch type
