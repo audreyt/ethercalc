@@ -132,8 +132,8 @@ Worker ||= class => (code) ->
         | \init
           #console.log "------ SocialCalc --------"
           #console.log SocialCalc                    
-          console.log "------ window --------"
-          console.log window            
+          #console.log "------ window --------"
+          #console.log window            
           SocialCalc.SaveEditorSettings = -> ""
           SocialCalc.CreateAuditString = -> ""
           SocialCalc.CalculateEditorPositions = ->

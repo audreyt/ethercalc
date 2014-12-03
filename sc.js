@@ -296,8 +296,6 @@
               cells: window.ss.cells
             });
           case 'init':
-            console.log("------ window --------");
-            console.log(window);
             SocialCalc.SaveEditorSettings = function(){
               return "";
             };
