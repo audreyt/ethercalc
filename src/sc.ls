@@ -113,10 +113,9 @@ Worker ||= class =>
       SC[room]._doClearCache!
       return SC[room]
     console.log "==> new Worker()"  
-    w = new Worker -> 
-      console.log "==> new Worker.onmessage()"       
+    w = new Worker ->        
       self.onmessage = ({ data: { type, ref, snapshot, command, room, log=[] } }) ->  
-        console.log "==> type #type"       
+        console.log "==> Worker.onmessage #type"       
         switch type
         | \cmd
           console.log "===> cmd "+command
