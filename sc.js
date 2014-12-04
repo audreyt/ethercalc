@@ -5,9 +5,10 @@
   fs = require('fs');
   path = require('path');
   bootSC = fs.readFileSync(path.dirname(fs.realpathSync(__filename)) + "/SocialCalcModule.js", 'utf8');
-  global.SC == null && (global.SC = {});
+  global.SC == null && (global.SC = {
+    console: console
+  });
   console.log("===> global.SC.sendemail ");
-  global.SC.console = console;
   argv = (function(){
     try {
       return require('optimist').boolean(['vm', 'polling']).argv;

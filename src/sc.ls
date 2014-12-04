@@ -3,10 +3,10 @@ bootSC = fs.readFileSync "#{
   path.dirname fs.realpathSync __filename
 }/SocialCalcModule.js" \utf8
 
-global.SC ?= {}
+global.SC ?= {console}
 console.log "===> global.SC.sendemail "
 #global.SC.sendemail = require './sendemail.js'
-global.SC.console = console 
+#global.SC.console =  
 
 
 argv = (try require \optimist .boolean <[ vm polling ]> .argv) || {}
