@@ -376,7 +376,6 @@
         };
       });
       console.dir(w);
-      w.importScripts('./sendemail.js');
       console.log("==> Worker ._snapshot");
       w._snapshot = snapshot;
       console.log("==> Worker .on-snapshot");

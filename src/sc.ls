@@ -178,7 +178,7 @@ Worker ||= class =>
             cmdstr
           }recalc\n" false true
     console.dir w 
-    w.importScripts './sendemail.js'
+    #w.importScripts './sendemail.js'
     console.log "==> Worker ._snapshot"      
     w._snapshot = snapshot
     console.log "==> Worker .on-snapshot"      
