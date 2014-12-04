@@ -264,6 +264,7 @@
             ? ref1$
             : [];
           console.log("==> type " + type);
+          return;
           switch (type) {
           case 'cmd':
             console.log("===> cmd " + command);

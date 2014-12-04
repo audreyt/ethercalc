@@ -106,7 +106,8 @@ Worker ||= class => (code) ->
     console.log "==> new Worker"  
     w = new Worker ->
       self.onmessage = ({ data: { type, ref, snapshot, command, room, log=[] } }) ->  
-        console.log "==> type #type"        
+        console.log "==> type #type"       
+        return 
         switch type
         | \cmd
           console.log "===> cmd "+command
