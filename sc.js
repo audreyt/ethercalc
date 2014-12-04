@@ -137,6 +137,7 @@
       return new Node(it);
     };
   } + ")();";
+  console.log("===> Worker value =" + Worker);
   IsThreaded = true;
   Worker = (function(){
     try {

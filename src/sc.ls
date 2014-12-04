@@ -38,6 +38,7 @@ bootSC += """;(#{->
 ##################################
 ### WebWorker Threads Fallback ###
 ##################################
+console.log "===> Worker value ="+Worker
 IsThreaded = true
 Worker = try
   @console = console
