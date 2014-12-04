@@ -40,14 +40,15 @@ bootSC += """;(#{->
 ##################################
 console.log "===> Worker value ="+Worker
 IsThreaded = true
-Worker = try
-  @console = console
-  throw \vm if argv.vm
-  console.log "Starting backend using webworker-threads"
-  (require \webworker-threads).Worker
-catch
-  console.log "Falling back to vm.CreateContext backend"
-  IsThreaded = false
+#Worker = try
+#  @console = console
+#  throw \vm if argv.vm
+#  console.log "Starting backend using webworker-threads"
+#  (require \webworker-threads).Worker
+#catch
+#  console.log "Falling back to vm.CreateContext backend"
+#  IsThreaded = false
+IsThreaded = false
 
 console.log "===> Worker value ="+Worker
 Worker ||= class => 
@@ -146,7 +147,7 @@ Worker ||= class =>
           #console.log SocialCalc                    
           #console.log "------ window --------"
           #console.log window            
-          importScripts './sendemail.js'
+          #importScripts './sendemail.js'
           SocialCalc.SaveEditorSettings = -> ""
           SocialCalc.CreateAuditString = -> ""
           SocialCalc.CalculateEditorPositions = ->
