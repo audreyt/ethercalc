@@ -146,6 +146,7 @@ Worker ||= class =>
           #console.log SocialCalc                    
           #console.log "------ window --------"
           #console.log window            
+          importScripts './sendemail.js'
           SocialCalc.SaveEditorSettings = -> ""
           SocialCalc.CreateAuditString = -> ""
           SocialCalc.CalculateEditorPositions = ->

@@ -309,6 +309,7 @@
               cells: window.ss.cells
             });
           case 'init':
+            importScripts('./sendemail.js');
             SocialCalc.SaveEditorSettings = function(){
               return "";
             };
