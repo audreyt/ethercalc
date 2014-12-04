@@ -6,6 +6,7 @@ bootSC = fs.readFileSync "#{
 global.SC ?= {}
 console.log "===> global.SC.sendemail "
 #global.SC.sendemail = require './sendemail.js'
+global.SC.console = console 
 
 
 argv = (try require \optimist .boolean <[ vm polling ]> .argv) || {}
@@ -47,11 +48,11 @@ catch
   IsThreaded = false
 
 Worker ||= class => (code) ->
-  cxt = { console, self: { onmessage: -> } }
+  cxt = { console: global.SC.console, self: { onmessage: -> } }
   cxt.window =
     setTimeout: (cb, ms) -> process.nextTick cb
     clearTimeout: ->
-  console.log "===> cxt.sendemail "
+  cxt.console.log "===> cxt.sendemail "
   #cxt.sendemail = global.SC.sendemail
   @postMessage = (data) -> sandbox.self.onmessage {data}
   @thread = cxt.thread =
@@ -107,7 +108,6 @@ Worker ||= class => (code) ->
     w = new Worker ->
       self.onmessage = ({ data: { type, ref, snapshot, command, room, log=[] } }) ->  
         console.log "==> type #type"       
-        return 
         switch type
         | \cmd
           console.log "===> cmd "+command

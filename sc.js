@@ -7,6 +7,7 @@
   bootSC = fs.readFileSync(path.dirname(fs.realpathSync(__filename)) + "/SocialCalcModule.js", 'utf8');
   global.SC == null && (global.SC = {});
   console.log("===> global.SC.sendemail ");
+  global.SC.console = console;
   argv = (function(){
     try {
       return require('optimist').boolean(['vm', 'polling']).argv;
@@ -155,7 +156,7 @@
     function Worker(code){
       var cxt, sandbox, this$ = this;
       cxt = {
-        console: console,
+        console: global.SC.console,
         self: {
           onmessage: function(){}
         }
@@ -166,7 +167,7 @@
         },
         clearTimeout: function(){}
       };
-      console.log("===> cxt.sendemail ");
+      cxt.console.log("===> cxt.sendemail ");
       this.postMessage = function(data){
         return sandbox.self.onmessage({
           data: data
@@ -264,7 +265,6 @@
             ? ref1$
             : [];
           console.log("==> type " + type);
-          return;
           switch (type) {
           case 'cmd':
             console.log("===> cmd " + command);
