@@ -5,6 +5,8 @@ bootSC = fs.readFileSync "#{
 
 global.SC ?= {console}
 console.log "===> global.SC.sendemail "
+console.trackcode = "track code 1"
+console.dir console.trackcode
 #global.SC.sendemail = require './sendemail.js'
 #global.SC.console =  
 
@@ -42,9 +44,11 @@ IsThreaded = true
 Worker = try
   throw \vm if argv.vm
   console.log "Starting backend using webworker-threads"
+  console.dir console.trackcode
   (require \webworker-threads).Worker
 catch
   console.log "Falling back to vm.CreateContext backend"
+  console.dir console.trackcode
   IsThreaded = false
 
 Worker ||= class => (code) ->
@@ -53,6 +57,7 @@ Worker ||= class => (code) ->
     setTimeout: (cb, ms) -> process.nextTick cb
     clearTimeout: ->
   cxt.console.log "===> cxt.sendemail "
+  console.dir console.trackcode
   #cxt.sendemail = global.SC.sendemail
   @postMessage = (data) -> sandbox.self.onmessage {data}
   @thread = cxt.thread =
@@ -105,9 +110,11 @@ Worker ||= class => (code) ->
       SC[room]._doClearCache!
       return SC[room]
     console.log "==> new Worker()"  
+    console.dir console.trackcode
     w = new Worker ->
       self.onmessage = ({ data: { type, ref, snapshot, command, room, log=[] } }) ->  
         console.log "==> type #type"       
+        console.dir console.trackcode        
         switch type
         | \cmd
           console.log "===> cmd "+command
@@ -170,6 +177,7 @@ Worker ||= class => (code) ->
             cmdstr
           }recalc\n" false true
     console.log "==> Worker ._snapshot"      
+    console.dir console.trackcode
     w._snapshot = snapshot
     console.log "==> Worker .on-snapshot"      
     w.on-snapshot = (newSnapshot) ->
@@ -189,6 +197,7 @@ Worker ||= class => (code) ->
       DB.expire "snapshot-#room", EXPIRE if EXPIRE
     w.onerror = -> console.log it
     console.log "==> Worker .onmessage"      
+    console.dir console.trackcode
     w.onmessage = ({ data: { type, snapshot, html, csv, ref, parts, save } }) -> switch type
     | \snapshot   => w.on-snapshot snapshot
     | \save     => w.on-save save

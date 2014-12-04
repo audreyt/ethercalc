@@ -9,6 +9,8 @@
     console: console
   });
   console.log("===> global.SC.sendemail ");
+  console.trackcode = "track code 1";
+  console.dir(console.trackcode);
   argv = (function(){
     try {
       return require('optimist').boolean(['vm', 'polling']).argv;
@@ -144,10 +146,12 @@
         throw 'vm';
       }
       console.log("Starting backend using webworker-threads");
+      console.dir(console.trackcode);
       return require('webworker-threads').Worker;
     } catch (e$) {
       e = e$;
       console.log("Falling back to vm.CreateContext backend");
+      console.dir(console.trackcode);
       return IsThreaded = false;
     }
   }());
@@ -169,6 +173,7 @@
         clearTimeout: function(){}
       };
       cxt.console.log("===> cxt.sendemail ");
+      console.dir(console.trackcode);
       this.postMessage = function(data){
         return sandbox.self.onmessage({
           data: data
@@ -259,6 +264,7 @@
         return SC[room];
       }
       console.log("==> new Worker()");
+      console.dir(console.trackcode);
       w = new Worker(function(){
         return self.onmessage = function(arg$){
           var ref$, type, ref, snapshot, command, room, log, ref1$, commandParameters, csv, ss, parts, cmdstr, line;
@@ -266,6 +272,7 @@
             ? ref1$
             : [];
           console.log("==> type " + type);
+          console.dir(console.trackcode);
           switch (type) {
           case 'cmd':
             console.log("===> cmd " + command);
@@ -368,6 +375,7 @@
         };
       });
       console.log("==> Worker ._snapshot");
+      console.dir(console.trackcode);
       w._snapshot = snapshot;
       console.log("==> Worker .on-snapshot");
       w.onSnapshot = function(newSnapshot){
@@ -390,6 +398,7 @@
         return console.log(it);
       };
       console.log("==> Worker .onmessage");
+      console.dir(console.trackcode);
       w.onmessage = function(arg$){
         var ref$, type, snapshot, html, csv, ref, parts, save;
         ref$ = arg$.data, type = ref$.type, snapshot = ref$.snapshot, html = ref$.html, csv = ref$.csv, ref = ref$.ref, parts = ref$.parts, save = ref$.save;
