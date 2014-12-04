@@ -140,6 +140,7 @@
   IsThreaded = true;
   Worker = (function(){
     try {
+      this.console = console;
       if (argv.vm) {
         throw 'vm';
       }
@@ -150,7 +151,8 @@
       console.log("Falling back to vm.CreateContext backend");
       return IsThreaded = false;
     }
-  }());
+  }.call(this));
+  console.log("===> Worker value =" + Worker);
   Worker || (Worker = (function(){
     Worker.displayName = 'Worker';
     var prototype = Worker.prototype, constructor = Worker;

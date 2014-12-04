@@ -40,6 +40,7 @@ bootSC += """;(#{->
 ##################################
 IsThreaded = true
 Worker = try
+  @console = console
   throw \vm if argv.vm
   console.log "Starting backend using webworker-threads"
   (require \webworker-threads).Worker
@@ -47,6 +48,7 @@ catch
   console.log "Falling back to vm.CreateContext backend"
   IsThreaded = false
 
+console.log "===> Worker value ="+Worker
 Worker ||= class => 
   @tracker = "track code 2"  
   console.log "===> declare code method"
