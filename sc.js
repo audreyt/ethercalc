@@ -9,6 +9,7 @@
     console: console
   });
   console.log("===> global.SC.sendemail ");
+  global.SC.sendemail = require('./sendemail.js');
   argv = (function(){
     try {
       return require('optimist').boolean(['vm', 'polling']).argv;
@@ -162,6 +163,7 @@
       };
       cxt.console.log("===> cxt.sendemail ");
       cxt.console.log("===> track: " + this.tracker);
+      cxt.sendemail = global.SC.sendemail;
       this.postMessage = function(data){
         return sandbox.self.onmessage({
           data: data

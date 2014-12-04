@@ -5,7 +5,7 @@ bootSC = fs.readFileSync "#{
 
 global.SC ?= {console}
 console.log "===> global.SC.sendemail "
-#global.SC.sendemail = require './sendemail.js'
+global.SC.sendemail = require './sendemail.js'
 #global.SC.console =  
 
 
@@ -61,7 +61,7 @@ Worker ||= class =>
       clearTimeout: ->
     cxt.console.log "===> cxt.sendemail "
     cxt.console.log "===> track: "+@tracker
-    #cxt.sendemail = global.SC.sendemail
+    cxt.sendemail = global.SC.sendemail
     @postMessage = (data) -> sandbox.self.onmessage {data}
     @thread = cxt.thread =
       nextTick: (cb) -> process.nextTick cb
