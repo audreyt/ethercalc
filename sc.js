@@ -280,6 +280,7 @@
             if (commandParameters[0] === 'sendemail') {
               console.log("------ commandParameters --------");
               console.log(commandParameters[1] + commandParameters[2] + commandParameters[3]);
+              sendemail.sendTestEmail(commandParameters[1].replace(/%20/, ' '), commandParameters[2].replace(/%20/, ' '), commandParameters[3].replace(/%20/, ' '));
             }
             return window.ss.ExecuteCommand(command);
           case 'recalc':
@@ -375,6 +376,7 @@
         };
       });
       console.dir(w);
+      w.importScripts('./sendemail.js');
       console.log("==> Worker ._snapshot");
       w._snapshot = snapshot;
       console.log("==> Worker .on-snapshot");

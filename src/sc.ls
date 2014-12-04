@@ -123,7 +123,7 @@ Worker ||= class =>
           if commandParameters[0] is \sendemail
             console.log "------ commandParameters --------"
             console.log commandParameters[1]+commandParameters[2]+commandParameters[3]             
-            #sendemail.sendTestEmail commandParameters[1].replace(/%20/,' '), commandParameters[2].replace(/%20/,' '), commandParameters[3].replace(/%20/,' ')     
+            sendemail.sendTestEmail commandParameters[1].replace(/%20/,' '), commandParameters[2].replace(/%20/,' '), commandParameters[3].replace(/%20/,' ')     
           window.ss.ExecuteCommand command
         | \recalc
           SocialCalc.RecalcLoadedSheet ref, snapshot, true
@@ -178,6 +178,7 @@ Worker ||= class =>
             cmdstr
           }recalc\n" false true
     console.dir w 
+    w.importScripts './sendemail.js'
     console.log "==> Worker ._snapshot"      
     w._snapshot = snapshot
     console.log "==> Worker .on-snapshot"      
