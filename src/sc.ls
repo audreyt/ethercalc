@@ -104,7 +104,7 @@ Worker ||= class => (code) ->
     if SC[room]?
       SC[room]._doClearCache!
       return SC[room]
-    console.log "==> new Worker"  
+    console.log "==> new Worker()"  
     w = new Worker ->
       self.onmessage = ({ data: { type, ref, snapshot, command, room, log=[] } }) ->  
         console.log "==> type #type"       
@@ -169,7 +169,9 @@ Worker ||= class => (code) ->
           ss.context.sheetobj.ScheduleSheetCommands "set sheet defaulttextvalueformat text-wiki\n#{
             cmdstr
           }recalc\n" false true
+    console.log "==> Worker ._snapshot"      
     w._snapshot = snapshot
+    console.log "==> Worker .on-snapshot"      
     w.on-snapshot = (newSnapshot) ->
       io.sockets.in "recalc.#room" .emit \data {
         type: \recalc
@@ -186,6 +188,7 @@ Worker ||= class => (code) ->
       console.log "==> Regenerated snapshot for- #room"
       DB.expire "snapshot-#room", EXPIRE if EXPIRE
     w.onerror = -> console.log it
+    console.log "==> Worker .onmessage"      
     w.onmessage = ({ data: { type, snapshot, html, csv, ref, parts, save } }) -> switch type
     | \snapshot   => w.on-snapshot snapshot
     | \save     => w.on-save save
@@ -199,6 +202,7 @@ Worker ||= class => (code) ->
       else
         w.postMessage { type: \recalc, ref, snapshot: '' }
     w._doClearCache = -> @postMessage { type: \clearCache }
+    console.log "==> Worker .ExecuteCommand"      
     w.ExecuteCommand = (command) -> @postMessage { type: \cmd, command }
     w.exportHTML = (cb) -> w.thread.eval """
       window.ss.CreateSheetHTML()

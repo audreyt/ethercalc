@@ -257,7 +257,7 @@
         SC[room]._doClearCache();
         return SC[room];
       }
-      console.log("==> new Worker");
+      console.log("==> new Worker()");
       w = new Worker(function(){
         return self.onmessage = function(arg$){
           var ref$, type, ref, snapshot, command, room, log, ref1$, commandParameters, csv, ss, parts, cmdstr, line;
@@ -366,7 +366,9 @@
           }
         };
       });
+      console.log("==> Worker ._snapshot");
       w._snapshot = snapshot;
+      console.log("==> Worker .on-snapshot");
       w.onSnapshot = function(newSnapshot){
         var this$ = this;
         io.sockets['in']("recalc." + room).emit('data', {
@@ -386,6 +388,7 @@
       w.onerror = function(it){
         return console.log(it);
       };
+      console.log("==> Worker .onmessage");
       w.onmessage = function(arg$){
         var ref$, type, snapshot, html, csv, ref, parts, save;
         ref$ = arg$.data, type = ref$.type, snapshot = ref$.snapshot, html = ref$.html, csv = ref$.csv, ref = ref$.ref, parts = ref$.parts, save = ref$.save;
@@ -423,6 +426,7 @@
           type: 'clearCache'
         });
       };
+      console.log("==> Worker .ExecuteCommand");
       w.ExecuteCommand = function(command){
         return this.postMessage({
           type: 'cmd',
