@@ -47,28 +47,31 @@ catch
   console.log "Falling back to vm.CreateContext backend"
   IsThreaded = false
 
-Worker ||= class => (code) ->
-  cxt = { console: global.SC.console, self: { onmessage: -> } }
-  cxt.window =
-    setTimeout: (cb, ms) -> process.nextTick cb
-    clearTimeout: ->
-  cxt.console.log "===> cxt.sendemail "
-  #cxt.sendemail = global.SC.sendemail
-  @tracker = "track code 2"
-  @postMessage = (data) -> sandbox.self.onmessage {data}
-  @thread = cxt.thread =
-    nextTick: (cb) -> process.nextTick cb
-    eval: (src, cb) -> try
-      rv = vm.runInContext src, sandbox
-      cb? null, rv
-    catch e
-      console.log "e #e"
-      cb? e
-  @terminate = ->
-  @sandbox = sandbox = vm.createContext cxt
-  sandbox.postMessage = (data) ~> @onmessage? {data}
-  vm.runInContext "(#code)()", sandbox if code
-  return @
+Worker ||= class => 
+  @tracker = "track code 2"  
+  console.log "===> declare code method"
+  (code) ->
+    cxt = { console: global.SC.console, self: { onmessage: -> } }
+    cxt.window =
+      setTimeout: (cb, ms) -> process.nextTick cb
+      clearTimeout: ->
+    cxt.console.log "===> cxt.sendemail "
+    cxt.console.log "===> track: "+@tracker
+    #cxt.sendemail = global.SC.sendemail
+    @postMessage = (data) -> sandbox.self.onmessage {data}
+    @thread = cxt.thread =
+      nextTick: (cb) -> process.nextTick cb
+      eval: (src, cb) -> try
+        rv = vm.runInContext src, sandbox
+        cb? null, rv
+      catch e
+        console.log "e #e"
+        cb? e
+    @terminate = ->
+    @sandbox = sandbox = vm.createContext cxt
+    sandbox.postMessage = (data) ~> @onmessage? {data}
+    vm.runInContext "(#code)()", sandbox if code
+    return @
 ##################################
 
 @include = ->

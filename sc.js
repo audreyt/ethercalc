@@ -154,6 +154,8 @@
   Worker || (Worker = (function(){
     Worker.displayName = 'Worker';
     var prototype = Worker.prototype, constructor = Worker;
+    Worker.tracker = "track code 2";
+    console.log("===> declare code method");
     function Worker(code){
       var cxt, sandbox, this$ = this;
       cxt = {
@@ -169,7 +171,7 @@
         clearTimeout: function(){}
       };
       cxt.console.log("===> cxt.sendemail ");
-      this.tracker = "track code 2";
+      cxt.console.log("===> track: " + this.tracker);
       this.postMessage = function(data){
         return sandbox.self.onmessage({
           data: data
