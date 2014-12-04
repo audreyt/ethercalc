@@ -261,6 +261,7 @@
             ? ref1$
             : [];
           console.log("==> Worker.onmessage " + type);
+          console.dir(this);
           switch (type) {
           case 'cmd':
             console.log("===> cmd " + command);
@@ -297,6 +298,7 @@
               cells: window.ss.cells
             });
           case 'init':
+            console.log("------ SocialCalc --------");
             SocialCalc.SaveEditorSettings = function(){
               return "";
             };
@@ -359,6 +361,7 @@
             if (cmdstr.length) {
               cmdstr += "\n";
             }
+            console.log("------ SocialCalc2 --------");
             return ss.context.sheetobj.ScheduleSheetCommands("set sheet defaulttextvalueformat text-wiki\n" + cmdstr + "recalc\n", false, true);
           }
         };

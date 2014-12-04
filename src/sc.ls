@@ -116,6 +116,7 @@ Worker ||= class =>
     w = new Worker ->        
       self.onmessage = ({ data: { type, ref, snapshot, command, room, log=[] } }) ->  
         console.log "==> Worker.onmessage #type"       
+        console.dir @       
         switch type
         | \cmd
           console.log "===> cmd "+command
@@ -142,11 +143,7 @@ Worker ||= class =>
         | \exportCells
           postMessage { type: \cells, cells: window.ss.cells }
         | \init
-          #console.log "------ SocialCalc --------"
-          #console.log SocialCalc                    
-          #console.log "------ window --------"
-          #console.log window            
-          #importScripts './sendemail.js'
+          console.log "------ SocialCalc --------"
           SocialCalc.SaveEditorSettings = -> ""
           SocialCalc.CreateAuditString = -> ""
           SocialCalc.CalculateEditorPositions = ->
@@ -175,6 +172,7 @@ Worker ||= class =>
           cmdstr = [ line for line in log
                | not /^re(calc|display)$/.test(line) ].join("\n")
           cmdstr += "\n" if cmdstr.length
+          console.log "------ SocialCalc2 --------"
           ss.context.sheetobj.ScheduleSheetCommands "set sheet defaulttextvalueformat text-wiki\n#{
             cmdstr
           }recalc\n" false true

@@ -14,6 +14,8 @@ dependencies:
   optimist: \*
   zappajs: \0.5.x
   cors: \*
+  nodemailer: \*
+  xoauth2: \*
   LiveScript: \1.3.x
 optionalDependencies:
   'webworker-threads': \0.5.x
