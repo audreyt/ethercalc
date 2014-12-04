@@ -266,6 +266,7 @@
       }
       console.log("==> new Worker()");
       w = new Worker(function(){
+        console.log("==> new Worker.onmessage()");
         return self.onmessage = function(arg$){
           var ref$, type, ref, snapshot, command, room, log, ref1$, commandParameters, csv, ss, parts, cmdstr, line;
           ref$ = arg$.data, type = ref$.type, ref = ref$.ref, snapshot = ref$.snapshot, command = ref$.command, room = ref$.room, log = (ref1$ = ref$.log) != null

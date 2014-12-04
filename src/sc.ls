@@ -113,6 +113,7 @@ Worker ||= class =>
       return SC[room]
     console.log "==> new Worker()"  
     w = new Worker ->
+      console.log "==> new Worker.onmessage()"       
       self.onmessage = ({ data: { type, ref, snapshot, command, room, log=[] } }) ->  
         console.log "==> type #type"       
         switch type
