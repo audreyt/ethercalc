@@ -112,7 +112,7 @@ Worker ||= class =>
       SC[room]._doClearCache!
       return SC[room]
     console.log "==> new Worker()"  
-    w = new Worker ->
+    w = new Worker -> 
       console.log "==> new Worker.onmessage()"       
       self.onmessage = ({ data: { type, ref, snapshot, command, room, log=[] } }) ->  
         console.log "==> type #type"       
@@ -177,6 +177,7 @@ Worker ||= class =>
           ss.context.sheetobj.ScheduleSheetCommands "set sheet defaulttextvalueformat text-wiki\n#{
             cmdstr
           }recalc\n" false true
+    console.dir w 
     console.log "==> Worker ._snapshot"      
     w._snapshot = snapshot
     console.log "==> Worker .on-snapshot"      
