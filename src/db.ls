@@ -61,6 +61,7 @@
       db.DB = JSON.parse do
         require \fs .readFileSync "#dataDir/dump.json" \utf8
       console.log "==> Restored previous session from JSON file"
+      db.DB = {} if db.DB is true
     Commands =
       bgsave: (cb) ->
         fs.writeFileSync do

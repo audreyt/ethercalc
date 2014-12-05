@@ -80,6 +80,9 @@
       try {
         db.DB = JSON.parse(require('fs').readFileSync(dataDir + "/dump.json", 'utf8'));
         console.log("==> Restored previous session from JSON file");
+        if (db.DB === true) {
+          db.DB = {};
+        }
       } catch (e$) {}
       Commands = {
         bgsave: function(cb){

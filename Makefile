@@ -9,7 +9,6 @@ SOCIALCALC_FILES=\
 	socialcalcviewer.js
 
 ETHERCALC_FILES=\
-	$(SOCIALCALC_FILES) \
 	third-party/class-js/lib/Class.js \
 	third-party/wikiwyg/lib/Document/Emitter.js \
 	third-party/wikiwyg/lib/Document/Emitter/HTML.js \
@@ -23,7 +22,7 @@ JS_FILES=\
 
 all :: SocialCalcModule.js
 	env PATH="$$PATH:./node_modules/LiveScript/bin" lsc -c -o . src
-	node app.js $(ETHERCALC_ARGS)
+	node app.js $(ETHERCALC_ARGS) --vm
 
 manifest ::
 	perl -pi -e 's/# [A-Z].*\n/# @{[`date`]}/m' manifest.appcache
@@ -46,8 +45,8 @@ SocialCalcModule.js :: $(SOCIALCALC_FILES) exports.js
 	#@perl -e 'system(join(" ", "closure-compiler" => map { ("--js", $$_) } @ARGV). " > $@")' $(SOCIALCALC_FILES) exports.js
 
 static/ethercalc.js :: $(ETHERCALC_FILES)
-	@echo "// Auto-generated from "make depends"; all changes here will be lost." > $@
-	@perl -e 'system(join(" ", "closure-compiler" => "--language_in=ES5" => map { ("--js", $$_) } @ARGV). " >> $@")' $(ETHERCALC_FILES) 
+	@echo "//# sourceMappingURL=/static/ethercalc.js.map" > $@
+	@perl -e 'system(join(" ", "closure-compiler" => "-O WHITESPACE_ONLY --language_in=ES5" => map { ("--js", $$_) } @ARGV). " --create_source_map $@.map >> $@")' $(ETHERCALC_FILES)
 
 .coffee.js:
 	coffee -c $<

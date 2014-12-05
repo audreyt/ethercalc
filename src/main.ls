@@ -48,6 +48,14 @@
   @get '/manifest.appcache': ->
     @response.type \text/cache-manifest
     @response.sendfile "#RealBin/manifest.appcache"
+  @get '/static/socialcalc:part.js': ->
+    part = @params.part
+    @response.type \application/javascript
+    @response.sendfile "#RealBin/socialcalc#part.js"
+  @get '/static/form:part.js': ->
+    part = @params.part
+    @response.type \application/javascript
+    @response.sendfile "#RealBin/form#part.js"
   @get '/_new': ->
     room = new-room!
     @response.redirect if KEY then "#BASEPATH/#room/edit" else "#BASEPATH/#room"

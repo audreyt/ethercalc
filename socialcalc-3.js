@@ -3568,7 +3568,7 @@ SocialCalc.RecalcTimerRoutine = function() {
    if (!sheet) {
       return;
       }
-   var recalcdata = sheet.recalcdata;
+   var recalcdata = sheet.recalcdata || (sheet.recalcdata = {});
 
    var do_statuscallback = function(status, arg) { // routine to do callback if required
       if (sheet.statuscallback) {

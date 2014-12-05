@@ -64,6 +64,22 @@
       }
     });
     this.get({
+      '/static/socialcalc:part.js': function(){
+        var part;
+        part = this.params.part;
+        this.response.type('application/javascript');
+        return this.response.sendfile(RealBin + "/socialcalc" + part + ".js");
+      }
+    });
+    this.get({
+      '/static/form:part.js': function(){
+        var part;
+        part = this.params.part;
+        this.response.type('application/javascript');
+        return this.response.sendfile(RealBin + "/form" + part + ".js");
+      }
+    });
+    this.get({
       '/_new': function(){
         var room;
         room = newRoom();
