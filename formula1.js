@@ -4877,8 +4877,8 @@ SocialCalc.TriggerIoAction.Button = function(triggerCellId) {
 	
 	switch(parameters.function_name) {
 	  case "COPYVALUE" :
-	  
-	    // e.g. set D3 text t push me
+	    //
+	    // e.g. set D3 text t push me 
 	    // e.g. set D3 value v 10		
 		//      set D5 constant n% 0.1 10%
 		//      set D6 constant nd 41922 10/10/2014
