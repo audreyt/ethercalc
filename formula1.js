@@ -4727,12 +4727,12 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
 
    var argList = {
 				 BUTTON: [1]
-   				,EMAIL: [4, 4, 4, 2]
-				,EMAILIF: [4, 4, 4, 4, 2]
-				,EMAILONEDIT: [3, 4, 4, 4, 2]
-				,EMAILAT: [4, 4, 4, 4, 2]
-				,EMAILONEDITIF: [2, 0, 1, 1, 1, 2]
-				,EMAILATIF: [2, 0, 1, 1, 1, 2]
+   				,EMAIL: [4, 4, 4, 4]
+				,EMAILIF: [4, 4, 4, 4, 4]
+				,EMAILONEDIT: [3, 4, 4, 4, 4]
+				,EMAILAT: [4, 4, 4, 4, 4]
+				,EMAILONEDITIF: [2, 4, 4, 4, 4, 4]
+				,EMAILATIF: [2, 4, 4, 4, 4, 4]
 				,TEXTBOX: [1]
 				,CHECKBOX: [-1]
 				,COPYVALUE: [2, -1, 3]

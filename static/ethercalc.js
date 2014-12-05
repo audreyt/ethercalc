@@ -7307,7 +7307,7 @@ SocialCalc.Formula.IRRFunction = function(a, b, c, d) {
 };
 SocialCalc.Formula.FunctionList.IRR = [SocialCalc.Formula.IRRFunction, -1, "irr", "", "financial"];
 SocialCalc.Formula.IoFunctions = function(a, b, c, d) {
-  var e, f, g = SocialCalc.Formula, l = 0, h = "e#VALUE!", n = c.length, q = {BUTTON:[1], EMAIL:[4, 4, 4, 2], EMAILIF:[4, 4, 4, 4, 2], EMAILONEDIT:[3, 4, 4, 4, 2], EMAILAT:[4, 4, 4, 4, 2], EMAILONEDITIF:[2, 0, 1, 1, 1, 2], EMAILATIF:[2, 0, 1, 1, 1, 2], TEXTBOX:[1], CHECKBOX:[-1], COPYVALUE:[2, -1, 3], COPYFORMULA:[2, -1, 3]}[a], s = [], r = [];
+  var e, f, g = SocialCalc.Formula, l = 0, h = "e#VALUE!", n = c.length, q = {BUTTON:[1], EMAIL:[4, 4, 4, 4], EMAILIF:[4, 4, 4, 4, 4], EMAILONEDIT:[3, 4, 4, 4, 4], EMAILAT:[4, 4, 4, 4, 4], EMAILONEDITIF:[2, 4, 4, 4, 4, 4], EMAILATIF:[2, 4, 4, 4, 4, 4], TEXTBOX:[1], CHECKBOX:[-1], COPYVALUE:[2, -1, 3], COPYFORMULA:[2, -1, 3]}[a], s = [], r = [];
   for (e = 1;e <= n;e++) {
     if (e > q.length) {
       g.FunctionArgsError(a, b);
