@@ -1,3 +1,3 @@
 #!/bin/bash
 export PORT=33411
-make
+make ETHERCALC_ARGS=--vm
