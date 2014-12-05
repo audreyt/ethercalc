@@ -4,9 +4,8 @@ bootSC = fs.readFileSync "#{
 }/SocialCalcModule.js" \utf8
 
 global.SC ?= {console}
-console.log "===> global.SC.sendemail "
+#console.log "===> global.SC.sendemail "
 global.SC.sendemail = require './sendemail.js'
-#global.SC.console =  
 
 
 argv = (try require \optimist .boolean <[ vm polling ]> .argv) || {}
@@ -38,8 +37,7 @@ bootSC += """;(#{->
 ##################################
 ### WebWorker Threads Fallback ###
 ##################################
-console.log "===> Worker value ="+Worker
-IsThreaded = true
+#IsThreaded = true
 #Worker = try
 #  @console = console
 #  throw \vm if argv.vm
@@ -50,17 +48,13 @@ IsThreaded = true
 #  IsThreaded = false
 IsThreaded = false
 
-console.log "===> Worker value ="+Worker
 Worker ||= class => 
-  @tracker = "track code 2"  
-  console.log "===> declare code method"
   (code) ->
     cxt = { console: global.SC.console, self: { onmessage: -> } }
     cxt.window =
       setTimeout: (cb, ms) -> process.nextTick cb
       clearTimeout: ->
-    cxt.console.log "===> cxt.sendemail "
-    cxt.console.log "===> track: "+@tracker
+#    cxt.console.log "===> cxt.sendemail "
     cxt.sendemail = global.SC.sendemail
     @postMessage = (data) -> sandbox.self.onmessage {data}
     @thread = cxt.thread =
@@ -112,17 +106,17 @@ Worker ||= class =>
     if SC[room]?
       SC[room]._doClearCache!
       return SC[room]
-    console.log "==> new Worker()"  
+    #console.log "==> new Worker()"  
     w = new Worker ->        
       self.onmessage = ({ data: { type, ref, snapshot, command, room, log=[] } }) ->  
-        console.log "==> Worker.onmessage #type"       
+        #console.log "==> Worker.onmessage #type"       
         console.dir @       
         switch type
         | \cmd
           console.log "===> cmd "+command
           commandParameters = command.split(" ")
           if commandParameters[0] is \sendemail
-            console.log "------ commandParameters --------"
+            #console.log "------ commandParameters --------"
             console.log commandParameters[1]+commandParameters[2]+commandParameters[3]             
             sendemail.sendTestEmail commandParameters[1].replace(/%20/,' '), commandParameters[2].replace(/%20/,' '), commandParameters[3].replace(/%20/,' ')     
           window.ss.ExecuteCommand command
@@ -143,7 +137,7 @@ Worker ||= class =>
         | \exportCells
           postMessage { type: \cells, cells: window.ss.cells }
         | \init
-          console.log "------ SocialCalc --------"
+          #console.log "------ SocialCalc --------"
           SocialCalc.SaveEditorSettings = -> ""
           SocialCalc.CreateAuditString = -> ""
           SocialCalc.CalculateEditorPositions = ->
@@ -172,15 +166,10 @@ Worker ||= class =>
           cmdstr = [ line for line in log
                | not /^re(calc|display)$/.test(line) ].join("\n")
           cmdstr += "\n" if cmdstr.length
-          console.log "------ SocialCalc2 --------"
           ss.context.sheetobj.ScheduleSheetCommands "set sheet defaulttextvalueformat text-wiki\n#{
             cmdstr
           }recalc\n" false true
-    console.dir w 
-    #w.importScripts './sendemail.js'
-    console.log "==> Worker ._snapshot"      
     w._snapshot = snapshot
-    console.log "==> Worker .on-snapshot"      
     w.on-snapshot = (newSnapshot) ->
       io.sockets.in "recalc.#room" .emit \data {
         type: \recalc
@@ -194,10 +183,9 @@ Worker ||= class =>
         .del "log-#room"
         .bgsave!
         .exec!
-      console.log "==> Regenerated snapshot for- #room"
+      console.log "==> Regenerated snapshot for #room"
       DB.expire "snapshot-#room", EXPIRE if EXPIRE
     w.onerror = -> console.log it
-    console.log "==> Worker .onmessage"      
     w.onmessage = ({ data: { type, snapshot, html, csv, ref, parts, save } }) -> switch type
     | \snapshot   => w.on-snapshot snapshot
     | \save     => w.on-save save
@@ -211,8 +199,6 @@ Worker ||= class =>
       else
         w.postMessage { type: \recalc, ref, snapshot: '' }
     w._doClearCache = -> @postMessage { type: \clearCache }
-    console.log "==> Worker .ExecuteCommand"      
-    console.log "track:" + w.tracker
     w.ExecuteCommand = (command) -> @postMessage { type: \cmd, command }
     w.exportHTML = (cb) -> w.thread.eval """
       window.ss.CreateSheetHTML()

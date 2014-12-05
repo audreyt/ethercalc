@@ -8,7 +8,6 @@
   global.SC == null && (global.SC = {
     console: console
   });
-  console.log("===> global.SC.sendemail ");
   global.SC.sendemail = require('./sendemail.js');
   argv = (function(){
     try {
@@ -138,15 +137,10 @@
       return new Node(it);
     };
   } + ")();";
-  console.log("===> Worker value =" + Worker);
-  IsThreaded = true;
   IsThreaded = false;
-  console.log("===> Worker value =" + Worker);
   Worker || (Worker = (function(){
     Worker.displayName = 'Worker';
     var prototype = Worker.prototype, constructor = Worker;
-    Worker.tracker = "track code 2";
-    console.log("===> declare code method");
     function Worker(code){
       var cxt, sandbox, this$ = this;
       cxt = {
@@ -161,8 +155,6 @@
         },
         clearTimeout: function(){}
       };
-      cxt.console.log("===> cxt.sendemail ");
-      cxt.console.log("===> track: " + this.tracker);
       cxt.sendemail = global.SC.sendemail;
       this.postMessage = function(data){
         return sandbox.self.onmessage({
@@ -253,21 +245,18 @@
         SC[room]._doClearCache();
         return SC[room];
       }
-      console.log("==> new Worker()");
       w = new Worker(function(){
         return self.onmessage = function(arg$){
           var ref$, type, ref, snapshot, command, room, log, ref1$, commandParameters, csv, ss, parts, cmdstr, line;
           ref$ = arg$.data, type = ref$.type, ref = ref$.ref, snapshot = ref$.snapshot, command = ref$.command, room = ref$.room, log = (ref1$ = ref$.log) != null
             ? ref1$
             : [];
-          console.log("==> Worker.onmessage " + type);
           console.dir(this);
           switch (type) {
           case 'cmd':
             console.log("===> cmd " + command);
             commandParameters = command.split(" ");
             if (commandParameters[0] === 'sendemail') {
-              console.log("------ commandParameters --------");
               console.log(commandParameters[1] + commandParameters[2] + commandParameters[3]);
               sendemail.sendTestEmail(commandParameters[1].replace(/%20/, ' '), commandParameters[2].replace(/%20/, ' '), commandParameters[3].replace(/%20/, ' '));
             }
@@ -298,7 +287,6 @@
               cells: window.ss.cells
             });
           case 'init':
-            console.log("------ SocialCalc --------");
             SocialCalc.SaveEditorSettings = function(){
               return "";
             };
@@ -361,15 +349,11 @@
             if (cmdstr.length) {
               cmdstr += "\n";
             }
-            console.log("------ SocialCalc2 --------");
             return ss.context.sheetobj.ScheduleSheetCommands("set sheet defaulttextvalueformat text-wiki\n" + cmdstr + "recalc\n", false, true);
           }
         };
       });
-      console.dir(w);
-      console.log("==> Worker ._snapshot");
       w._snapshot = snapshot;
-      console.log("==> Worker .on-snapshot");
       w.onSnapshot = function(newSnapshot){
         var this$ = this;
         io.sockets['in']("recalc." + room).emit('data', {
@@ -380,7 +364,7 @@
         });
         w._snapshot = newSnapshot;
         return DB.multi().set("snapshot-" + room, newSnapshot).del("log-" + room).bgsave().exec(function(){
-          console.log("==> Regenerated snapshot for- " + room);
+          console.log("==> Regenerated snapshot for " + room);
           if (EXPIRE) {
             return DB.expire("snapshot-" + room, EXPIRE);
           }
@@ -389,7 +373,6 @@
       w.onerror = function(it){
         return console.log(it);
       };
-      console.log("==> Worker .onmessage");
       w.onmessage = function(arg$){
         var ref$, type, snapshot, html, csv, ref, parts, save;
         ref$ = arg$.data, type = ref$.type, snapshot = ref$.snapshot, html = ref$.html, csv = ref$.csv, ref = ref$.ref, parts = ref$.parts, save = ref$.save;
@@ -427,8 +410,6 @@
           type: 'clearCache'
         });
       };
-      console.log("==> Worker .ExecuteCommand");
-      console.log("track:" + w.tracker);
       w.ExecuteCommand = function(command){
         return this.postMessage({
           type: 'cmd',
