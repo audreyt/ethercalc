@@ -19247,15 +19247,8 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
       case "EMAILAT":
       case "EMAILONEDITIF":
       case "EMAILATIF":
-    	   if(operand_type[2].charAt(0) == 't') {
-  			 result = (operand_value[2].toUpperCase() == 'TRUE') ? 1 : 0;
-  		   } else {
-  			 result = (operand_value[2] == 0) ? 0 : 1;
-  	       }    	  
-          result = operand_value[2];
-          if (resulttype.charAt(0) == "e") {
-        	  resulttype = "t"; // (t)ext value
-          }
+          resulttype = "ti"+fname; // (t)ext value with (i)nterface (BUTTON,TEXTBOX,) 
+          result = "Send Now";
           break;
 		 
       case "CHECKBOX":
@@ -19289,12 +19282,12 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
    }
 
 SocialCalc.Formula.FunctionList["BUTTON"] = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "trigger", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Button('<%=cell_reference%>');\"><%=formated_value%></button>" ];
-SocialCalc.Formula.FunctionList["EMAIL"] = [SocialCalc.Formula.IoFunctions, 3, "to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>" ];
-SocialCalc.Formula.FunctionList["EMAILIF"] = [SocialCalc.Formula.IoFunctions, 4, "condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>" ];
-SocialCalc.Formula.FunctionList["EMAILONEDIT"] = [SocialCalc.Formula.IoFunctions, 3, "editRange, to, subject, body, [replacewith]", "", "action"];
-SocialCalc.Formula.FunctionList["EMAILAT"] = [SocialCalc.Formula.IoFunctions, 4, "datetime, to, subject, body, [replacewith]", "", "action" ];
-SocialCalc.Formula.FunctionList["EMAILONEDITIF"] = [SocialCalc.Formula.IoFunctions, 3, "editRange, condition, to, subject, body, [replacewith]", "", "action" ];
-SocialCalc.Formula.FunctionList["EMAILATIF"] = [SocialCalc.Formula.IoFunctions, 3, "datetime, condition, to, subject, body, [replacewith]", "", "action" ];
+SocialCalc.Formula.FunctionList["EMAIL"] = [SocialCalc.Formula.IoFunctions, -3, "to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>" ];
+SocialCalc.Formula.FunctionList["EMAILIF"] = [SocialCalc.Formula.IoFunctions, -4, "condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>" ];
+SocialCalc.Formula.FunctionList["EMAILONEDIT"] = [SocialCalc.Formula.IoFunctions, -4, "editRange, to, subject, body, [replacewith]", "", "action"];
+SocialCalc.Formula.FunctionList["EMAILAT"] = [SocialCalc.Formula.IoFunctions, -4, "datetime, to, subject, body, [replacewith]", "", "action" ];
+SocialCalc.Formula.FunctionList["EMAILONEDITIF"] = [SocialCalc.Formula.IoFunctions, -5, "editRange, condition, to, subject, body, [replacewith]", "", "action" ];
+SocialCalc.Formula.FunctionList["EMAILATIF"] = [SocialCalc.Formula.IoFunctions, -5, "datetime, condition, to, subject, body, [replacewith]", "", "action" ];
 SocialCalc.Formula.FunctionList["TEXTBOX"] = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "action", "<input type='text' id='TEXTBOX_<%=cell_reference%>' onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.TextBox('<%=cell_reference%>')\" value='<%=display_value%>' >" ];
 SocialCalc.Formula.FunctionList["CHECKBOX"] = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "action", "<input type='checkbox' id='CHECKBOX_<%=cell_reference%>' <%=checked%> onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.CheckBox('<%=cell_reference%>')\" >" ];
 
