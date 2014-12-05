@@ -257,7 +257,7 @@
             commandParameters = command.split(" ");
             if (commandParameters[0] === 'sendemail') {
               console.log(commandParameters[1] + commandParameters[2] + commandParameters[3]);
-              sendemail.sendTestEmail(commandParameters[1].replace(/%20/, ' '), commandParameters[2].replace(/%20/, ' '), commandParameters[3].replace(/%20/, ' '));
+              sendemail.sendTestEmail(commandParameters[1].replace(/%20/g, ' '), commandParameters[2].replace(/%20/g, ' '), commandParameters[3].replace(/%20/g, ' '));
             }
             return window.ss.ExecuteCommand(command);
           case 'recalc':

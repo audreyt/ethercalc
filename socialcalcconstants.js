@@ -785,6 +785,8 @@ SocialCalc.Constants = {
    s_fclass_test: "Test",
    s_fclass_math: "Math",
    s_fclass_text: "Text",
+   s_fclass_action: "Email & Trigger",
+   s_fclass_trigger: "Button",
 
    lastone: null
 

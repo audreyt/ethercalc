@@ -785,6 +785,8 @@ SocialCalc.Constants = {
    s_fclass_test: "Test",
    s_fclass_math: "Math",
    s_fclass_text: "Text",
+   s_fclass_action: "Email & Trigger",
+   s_fclass_trigger: "Button",
 
    lastone: null
 
@@ -19212,7 +19214,7 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
 	    	  if(foperand[foperand.length -1].type == 'range') {
 	    	         value = scf.OperandAsRange(sheet, foperand);
 	    			 value.value = value.value.replace(/\$/g,'');    		  
-	    	         value.value = sheet.cells[value.value.split('|')[0]].datavalue
+	    	         // value.value = sheet.cells[value.value.split('|')[0]].datavalue
 	    	  } else {
 	    	         value = scf.OperandAsText(sheet, foperand);
 	    	  }
@@ -19239,6 +19241,8 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
       case "EMAIL":
       case "EMAILIF":
           resulttype = "ti"+fname; // (t)ext value with (i)nterface (BUTTON,TEXTBOX,) 
+          result = "Send";
+          break;
       case "EMAILONEDIT":
       case "EMAILAT":
       case "EMAILONEDITIF":
@@ -19284,7 +19288,7 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
 
    }
 
-SocialCalc.Formula.FunctionList["BUTTON"] = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Button('<%=cell_reference%>');\"><%=formated_value%></button>" ];
+SocialCalc.Formula.FunctionList["BUTTON"] = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "trigger", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Button('<%=cell_reference%>');\"><%=formated_value%></button>" ];
 SocialCalc.Formula.FunctionList["EMAIL"] = [SocialCalc.Formula.IoFunctions, 3, "to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>" ];
 SocialCalc.Formula.FunctionList["EMAILIF"] = [SocialCalc.Formula.IoFunctions, 4, "condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>" ];
 SocialCalc.Formula.FunctionList["EMAILONEDIT"] = [SocialCalc.Formula.IoFunctions, 3, "editRange, to, subject, body, [replacewith]", "", "action"];
@@ -19360,6 +19364,7 @@ SocialCalc.TriggerIoAction.Button = function(triggerCellId) {
 
 //onClick=EMAIL 
 SocialCalc.TriggerIoAction.Email = function(emailButtonCellId) {
+	 var scf = SocialCalc.Formula;	
 	 var spreadsheet =  SocialCalc.GetSpreadsheetControlObject();
 	 var sheet = spreadsheet.sheet;
 	 var cell = sheet.cells[emailButtonCellId];
@@ -19369,11 +19374,43 @@ SocialCalc.TriggerIoAction.Email = function(emailButtonCellId) {
 	 var parameters = sheet.ioParameterList[emailButtonCellId];
 	 
 	 //spreadsheet.editor.EditorScheduleSheetCommands('sendemail to eddy.nihon',  false, false); 
+	 // grab array for TO, SUBJECT and BODY 
+	 var parameterValues = [];
+	 var maxRangeSize = 1;
+	 for(var index=0; index < 3; index ++) {
+		 if(parameters[index].type.charAt(0) == 't') {
+			 parameterValues[index] = [parameters[index].value.replace(/ /g, "%20")];
+		 }
+		 if(parameters[index].type == 'coord') {
+			 parameterValues[index] = [sheet.GetAssuredCell(parameters[index].value).datavalue.replace(/ /g, "%20")];
+		 }
+		 if(parameters[index].type == 'range') {
+		      var rangeinfo = scf.DecodeRangeParts(sheet, parameters[index].value);
+		      parameterValues[index] = [];
+		      var rangeSizeCounter = 0;
+		      for (var i=0; i<rangeinfo.ncols; i++) {
+		         for (var j=0; j<rangeinfo.nrows; j++) {
+
+		            var cellcr = SocialCalc.crToCoord(rangeinfo.col1num + i, rangeinfo.row1num + j);
+		            var cell = rangeinfo.sheetdata.GetAssuredCell(cellcr);
+		            parameterValues[index].push(cell.datavalue.toString().replace(/ /g, "%20"));
+		            rangeSizeCounter++;
+		         }
+		      }
+		      if(rangeSizeCounter > maxRangeSize) maxRangeSize = rangeSizeCounter;			 
+		 }
+	 }
 	 
-	 // send: to, subject, body to server 
-	 emailContents = parameters[0].value.replace(/ /g,"%20")+' '+parameters[1].value.replace(/ /g,"%20")+' '+parameters[2].value.replace(/ /g,"%20");
+	 for(var rangeIndex = maxRangeSize -1; rangeIndex > -1; rangeIndex-- ) { 
+		 // send: to, subject, body to server 
+		 var toaddressRangeIndex = (rangeIndex >= parameterValues[0].length) ? 0 : rangeIndex;
+		 var subjectsRangeIndex = (rangeIndex >= parameterValues[1].length) ? 0 : rangeIndex;
+		 var bodyRangeIndex = (rangeIndex >= parameterValues[2].length) ? 0 : rangeIndex;
+		 
+		 var emailContents = parameterValues[0][toaddressRangeIndex]+' '+parameterValues[1][subjectsRangeIndex]+' '+parameterValues[2][bodyRangeIndex];
 	 
-	 spreadsheet.editor.EditorScheduleSheetCommands('sendemail '+emailContents,  false, false); 
+		 spreadsheet.editor.EditorScheduleSheetCommands('sendemail '+emailContents,  false, false); 
+	 }
 }
 
 

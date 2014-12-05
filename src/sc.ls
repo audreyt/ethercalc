@@ -117,7 +117,7 @@ Worker ||= class =>
           if commandParameters[0] is \sendemail
             #console.log "------ commandParameters --------"
             console.log commandParameters[1]+commandParameters[2]+commandParameters[3]             
-            sendemail.sendTestEmail commandParameters[1].replace(/%20/,' '), commandParameters[2].replace(/%20/,' '), commandParameters[3].replace(/%20/,' ')     
+            sendemail.sendTestEmail commandParameters[1].replace(/%20/g,' '), commandParameters[2].replace(/%20/g,' '), commandParameters[3].replace(/%20/g,' ')     
           window.ss.ExecuteCommand command
         | \recalc
           SocialCalc.RecalcLoadedSheet ref, snapshot, true

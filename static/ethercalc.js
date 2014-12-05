@@ -58,7 +58,7 @@ s_fdef_YEAR:"Returns the year part of a date value. ", s_fdef_SUMPRODUCT:"Sums t
 s_farg_v:"value", s_farg_vn:"value1, value2, ...", s_farg_xy:"valueX, valueY", s_farg_choose:"index, value1, value2, ...", s_farg_range:"range", s_farg_rangec:"range, criteria", s_farg_date:"year, month, day", s_farg_dfunc:"databaserange, fieldname, criteriarange", s_farg_ddb:"cost, salvage, lifetime, period, [factor]", s_farg_find:"string1, string2, [start]", s_farg_fv:"rate, n, payment, [pv, [paytype]]", s_farg_hlookup:"value, range, row, [rangelookup]", s_farg_iffunc:"logical-expression, true-value, [false-value]", 
 s_farg_index:"range, rownum, colnum", s_farg_irr:"range, [guess]", s_farg_tc:"text, count", s_farg_log:"value, base", s_farg_match:"value, range, [rangelookup]", s_farg_mid:"text, start, length", s_farg_nper:"rate, payment, pv, [fv, [paytype]]", s_farg_npv:"rate, value1, value2, ...", s_farg_pmt:"rate, n, pv, [fv, [paytype]]", s_farg_pv:"rate, n, payment, [fv, [paytype]]", s_farg_rate:"n, payment, pv, [fv, [paytype, [guess]]]", s_farg_replace:"text1, start, length, text2", s_farg_vp:"value, [precision]", 
 s_farg_valpre:"value, precision", s_farg_csl:"cost, salvage, lifetime", s_farg_cslp:"cost, salvage, lifetime, period", s_farg_subs:"text1, oldtext, newtext, [occurrence]", s_farg_sumif:"range1, criteria, [range2]", s_farg_hms:"hour, minute, second", s_farg_txt:"text", s_farg_vlookup:"value, range, col, [rangelookup]", s_farg_weekday:"date, [type]", s_farg_dt:"date", s_farg_rangen:"range1, range2, ...", s_farg_vsig:"value, [significance]", function_classlist:"all stat lookup datetime financial test math text action trigger".split(" "), 
-s_fclass_all:"All", s_fclass_stat:"Statistics", s_fclass_lookup:"Lookup", s_fclass_datetime:"Date & Time", s_fclass_financial:"Financial", s_fclass_test:"Test", s_fclass_math:"Math", s_fclass_text:"Text", lastone:null};
+s_fclass_all:"All", s_fclass_stat:"Statistics", s_fclass_lookup:"Lookup", s_fclass_datetime:"Date & Time", s_fclass_financial:"Financial", s_fclass_test:"Test", s_fclass_math:"Math", s_fclass_text:"Text", s_fclass_action:"Email & Trigger", s_fclass_trigger:"Button", lastone:null};
 SocialCalc.ConstantsDefaultClasses = {defaultComment:"", defaultCommentNoGrid:"", defaultHighlightTypeCursor:"", defaultHighlightTypeRange:"", defaultColname:"", defaultSelectedColname:"", defaultRowname:"", defaultSelectedRowname:"", defaultUpperLeft:"", defaultSkippedCell:"", defaultPaneDivider:"", cteGriddiv:"", defaultInputEcho:{classname:"", style:"filter:alpha(opacity=90);opacity:.9;"}, TCmain:"", TCendcap:"", TCpaneslider:"", TClessbutton:"", TCmorebutton:"", TCscrollarea:"", TCthumb:"", TCPStrackingline:"", 
 TCTDFSthumbstatus:"", TDpopupElement:""};
 SocialCalc.ConstantsSetClasses = function(a) {
@@ -761,16 +761,16 @@ SocialCalc.ResumeFromCmdExtension = function(a) {
   SocialCalc.SheetCommandsTimerRoutine(a);
 };
 SocialCalc.ExecuteSheetCommand = function(a, b, c) {
-  var d, e, f, g, l, h, n, q, s, r, p, t, u, v, z, w, A, y, B, D, H, N, Q, J, O, C, G = a.attribs;
-  C = a.changes;
+  var d, e, f, g, l, h, n, q, s, r, p, t, u, v, z, w, A, y, C, G, H, M, Q, J, N, E, B = a.attribs;
+  E = a.changes;
   H = SocialCalc.CellProperties;
   z = SocialCalc.Constants;
   r = function() {
     var a = SocialCalc.ParseRange(g);
     q = a.cr1;
     s = a.cr2;
-    s.col > G.lastcol && (G.lastcol = s.col);
-    s.row > G.lastrow && (G.lastrow = s.row);
+    s.col > B.lastcol && (B.lastcol = s.col);
+    s.row > B.lastrow && (B.lastrow = s.row);
   };
   n = "";
   d = b.RestOfStringNoMove();
@@ -785,35 +785,35 @@ SocialCalc.ExecuteSheetCommand = function(a, b, c) {
       if ("sheet" == g) {
         switch(a.renderneeded = !0, l) {
           case "defaultcolwidth":
-            c && C.AddUndo(b, G[l]);
-            G[l] = f;
+            c && E.AddUndo(b, B[l]);
+            B[l] = f;
             break;
           case "defaultcolor":
           ;
           case "defaultbgcolor":
-            c && C.AddUndo(b, a.GetStyleString("color", G[l]));
-            G[l] = a.GetStyleNum("color", f);
+            c && E.AddUndo(b, a.GetStyleString("color", B[l]));
+            B[l] = a.GetStyleNum("color", f);
             break;
           case "defaultlayout":
-            c && C.AddUndo(b, a.GetStyleString("layout", G[l]));
-            G[l] = a.GetStyleNum("layout", f);
+            c && E.AddUndo(b, a.GetStyleString("layout", B[l]));
+            B[l] = a.GetStyleNum("layout", f);
             break;
           case "defaultfont":
-            c && C.AddUndo(b, a.GetStyleString("font", G[l]));
+            c && E.AddUndo(b, a.GetStyleString("font", B[l]));
             "* * *" == f && (f = "");
-            G[l] = a.GetStyleNum("font", f);
+            B[l] = a.GetStyleNum("font", f);
             break;
           case "defaulttextformat":
           ;
           case "defaultnontextformat":
-            c && C.AddUndo(b, a.GetStyleString("cellformat", G[l]));
-            G[l] = a.GetStyleNum("cellformat", f);
+            c && E.AddUndo(b, a.GetStyleString("cellformat", B[l]));
+            B[l] = a.GetStyleNum("cellformat", f);
             break;
           case "defaulttextvalueformat":
           ;
           case "defaultnontextvalueformat":
-            c && C.AddUndo(b, a.GetStyleString("valueformat", G[l]));
-            G[l] = a.GetStyleNum("valueformat", f);
+            c && E.AddUndo(b, a.GetStyleString("valueformat", B[l]));
+            B[l] = a.GetStyleNum("valueformat", f);
             for (h in a.cells) {
               delete a.cells[h].displaystring;
             }
@@ -821,20 +821,20 @@ SocialCalc.ExecuteSheetCommand = function(a, b, c) {
           case "lastcol":
           ;
           case "lastrow":
-            c && C.AddUndo(b, G[l] - 0);
+            c && E.AddUndo(b, B[l] - 0);
             a = f - 0;
-            "number" == typeof a && (G[l] = 0 < a ? a : 1);
+            "number" == typeof a && (B[l] = 0 < a ? a : 1);
             break;
           case "recalc":
-            c && C.AddUndo(b, G[l]);
-            "off" == f ? G.recalc = f : delete G.recalc;
+            c && E.AddUndo(b, B[l]);
+            "off" == f ? B.recalc = f : delete B.recalc;
             break;
           case "usermaxcol":
           ;
           case "usermaxrow":
-            c && C.AddUndo(b, G[l] - 0);
+            c && E.AddUndo(b, B[l] - 0);
             a = f - 0;
-            "number" == typeof a && (G[l] = 0 < a ? a : 0);
+            "number" == typeof a && (B[l] = 0 < a ? a : 0);
             break;
           default:
             n = z.s_escUnknownSheetCmd + d;
@@ -842,20 +842,20 @@ SocialCalc.ExecuteSheetCommand = function(a, b, c) {
       } else {
         if (/^[a-z]{1,2}(:[a-z]{1,2})?$/i.test(g)) {
           for (a.renderneeded = !0, g = g.toUpperCase(), h = g.indexOf(":"), 0 <= h ? (q = SocialCalc.coordToCr(g.substring(0, h) + "1"), s = SocialCalc.coordToCr(g.substring(h + 1) + "1")) : s = q = SocialCalc.coordToCr(g + "1"), b = q.col;b <= s.col;b++) {
-            "width" == l ? (h = SocialCalc.rcColname(b), c && C.AddUndo("set " + h + " width", a.colattribs.width[h]), 0 < f.length ? a.colattribs.width[h] = f : delete a.colattribs.width[h]) : "hide" == l && (a.hiddencolrow = "col", h = SocialCalc.rcColname(b), c && C.AddUndo("set " + h + " hide", a.colattribs.hide[h]), 0 < f.length ? a.colattribs.hide[h] = f : delete a.colattribs.hide[h]);
+            "width" == l ? (h = SocialCalc.rcColname(b), c && E.AddUndo("set " + h + " width", a.colattribs.width[h]), 0 < f.length ? a.colattribs.width[h] = f : delete a.colattribs.width[h]) : "hide" == l && (a.hiddencolrow = "col", h = SocialCalc.rcColname(b), c && E.AddUndo("set " + h + " hide", a.colattribs.hide[h]), 0 < f.length ? a.colattribs.hide[h] = f : delete a.colattribs.hide[h]);
           }
         } else {
           if (/^\d+(:\d+)?$/i.test(g)) {
             for (a.renderneeded = !0, g = g.toUpperCase(), h = g.indexOf(":"), 0 <= h ? (q = SocialCalc.coordToCr("A" + g.substring(0, h)), s = SocialCalc.coordToCr("A" + g.substring(h + 1))) : s = q = SocialCalc.coordToCr("A" + g), r = q.row;r <= s.row;r++) {
-              "height" == l ? (c && C.AddUndo("set " + r + " height", a.rowattribs.height[r]), 0 < f.length ? a.rowattribs.height[r] = f : delete a.rowattribs.height[r]) : "hide" == l && (a.hiddencolrow = "row", c && C.AddUndo("set " + r + " hide", a.rowattribs.hide[r]), 0 < f.length ? a.rowattribs.hide[r] = f : delete a.rowattribs.hide[r]);
+              "height" == l ? (c && E.AddUndo("set " + r + " height", a.rowattribs.height[r]), 0 < f.length ? a.rowattribs.height[r] = f : delete a.rowattribs.height[r]) : "hide" == l && (a.hiddencolrow = "row", c && E.AddUndo("set " + r + " hide", a.rowattribs.hide[r]), 0 < f.length ? a.rowattribs.hide[r] = f : delete a.rowattribs.hide[r]);
             }
           } else {
             if (/^[a-z]{1,2}\d+(:[a-z]{1,2}\d+)?$/i.test(g)) {
               for (r(), q.row != s.row || q.col != s.col || a.celldisplayneeded || a.renderneeded ? (a.renderneeded = !0, a.celldisplayneeded = "") : a.celldisplayneeded = SocialCalc.crToCoord(q.col, q.row), r = q.row;r <= s.row;r++) {
                 for (b = q.col;b <= s.col;b++) {
-                  h = SocialCalc.crToCoord(b, r), p = a.GetAssuredCell(h), p.readonly && "readonly" != l || (c && C.AddUndo("set " + h + " all", a.CellToString(p)), "value" == l ? (h = f.indexOf(" "), p.datavalue = f.substring(h + 1) - 0, delete p.errors, p.datatype = "v", p.valuetype = f.substring(0, h), delete p.displaystring, delete p.parseinfo, G.needsrecalc = "yes") : "text" == l ? (h = f.indexOf(" "), p.datavalue = SocialCalc.decodeFromSave(f.substring(h + 1)), delete p.errors, p.datatype = 
-                  "t", p.valuetype = f.substring(0, h), delete p.displaystring, delete p.parseinfo, G.needsrecalc = "yes") : "formula" == l ? (p.datavalue = 0, delete p.errors, p.datatype = "f", p.valuetype = "e#N/A", p.formula = f, delete p.displaystring, delete p.parseinfo, G.needsrecalc = "yes") : "constant" == l ? (h = f.indexOf(" "), e = f.substring(h + 1).indexOf(" "), p.datavalue = f.substring(h + 1, h + 1 + e) - 0, p.valuetype = f.substring(0, h), "e" == p.valuetype.charAt(0) ? p.errors = 
-                  p.valuetype.substring(1) : delete p.errors, p.datatype = "c", p.formula = f.substring(h + e + 2), delete p.displaystring, delete p.parseinfo, G.needsrecalc = "yes") : "empty" == l ? (p.datavalue = "", delete p.errors, p.datatype = null, p.formula = "", p.valuetype = "b", delete p.displaystring, delete p.parseinfo, G.needsrecalc = "yes") : "all" == l ? (0 < f.length ? (p = new SocialCalc.Cell(h), a.CellFromStringParts(p, f.split(":"), 1), a.cells[h] = p) : delete a.cells[h], G.needsrecalc = 
+                  h = SocialCalc.crToCoord(b, r), p = a.GetAssuredCell(h), p.readonly && "readonly" != l || (c && E.AddUndo("set " + h + " all", a.CellToString(p)), "value" == l ? (h = f.indexOf(" "), p.datavalue = f.substring(h + 1) - 0, delete p.errors, p.datatype = "v", p.valuetype = f.substring(0, h), delete p.displaystring, delete p.parseinfo, B.needsrecalc = "yes") : "text" == l ? (h = f.indexOf(" "), p.datavalue = SocialCalc.decodeFromSave(f.substring(h + 1)), delete p.errors, p.datatype = 
+                  "t", p.valuetype = f.substring(0, h), delete p.displaystring, delete p.parseinfo, B.needsrecalc = "yes") : "formula" == l ? (p.datavalue = 0, delete p.errors, p.datatype = "f", p.valuetype = "e#N/A", p.formula = f, delete p.displaystring, delete p.parseinfo, B.needsrecalc = "yes") : "constant" == l ? (h = f.indexOf(" "), e = f.substring(h + 1).indexOf(" "), p.datavalue = f.substring(h + 1, h + 1 + e) - 0, p.valuetype = f.substring(0, h), "e" == p.valuetype.charAt(0) ? p.errors = 
+                  p.valuetype.substring(1) : delete p.errors, p.datatype = "c", p.formula = f.substring(h + e + 2), delete p.displaystring, delete p.parseinfo, B.needsrecalc = "yes") : "empty" == l ? (p.datavalue = "", delete p.errors, p.datatype = null, p.formula = "", p.valuetype = "b", delete p.displaystring, delete p.parseinfo, B.needsrecalc = "yes") : "all" == l ? (0 < f.length ? (p = new SocialCalc.Cell(h), a.CellFromStringParts(p, f.split(":"), 1), a.cells[h] = p) : delete a.cells[h], B.needsrecalc = 
                   "yes") : /^b[trbl]$/.test(l) ? (p[l] = a.GetStyleNum("borderstyle", f), a.renderneeded = !0) : "color" == l || "bgcolor" == l ? p[l] = a.GetStyleNum("color", f) : "layout" == l || "cellformat" == l ? p[l] = a.GetStyleNum(l, f) : "font" == l ? ("* * *" == f && (f = ""), p[l] = a.GetStyleNum("font", f)) : "textvalueformat" == l || "nontextvalueformat" == l ? (p[l] = a.GetStyleNum("valueformat", f), delete p.displaystring) : "cssc" == l ? (f = f.replace(/[^a-zA-Z0-9\-]/g, ""), p.cssc = 
                   f) : "csss" == l ? (f = f.replace(/\n/g, ""), p.csss = f) : "mod" == l ? (f = f.replace(/[^yY]/g, "").toLowerCase(), p.mod = f) : "comment" == l ? p.comment = SocialCalc.decodeFromSave(f) : "readonly" == l ? p.readonly = "yes" == f.toLowerCase() : n = z.s_escUnknownSetCoordCmd + d);
                 }
@@ -874,7 +874,7 @@ SocialCalc.ExecuteSheetCommand = function(a, b, c) {
       if (p.readonly) {
         break;
       }
-      c && C.AddUndo("unmerge " + q.coord);
+      c && E.AddUndo("unmerge " + q.coord);
       s.col > q.col ? p.colspan = s.col - q.col + 1 : delete p.colspan;
       s.row > q.row ? p.rowspan = s.row - q.row + 1 : delete p.rowspan;
       a.changedrendervalues = !0;
@@ -888,7 +888,7 @@ SocialCalc.ExecuteSheetCommand = function(a, b, c) {
       if (p.readonly) {
         break;
       }
-      c && C.AddUndo("merge " + q.coord + ":" + SocialCalc.crToCoord(q.col + (p.colspan || 1) - 1, q.row + (p.rowspan || 1) - 1));
+      c && E.AddUndo("merge " + q.coord + ":" + SocialCalc.crToCoord(q.col + (p.colspan || 1) - 1, q.row + (p.rowspan || 1) - 1));
       delete p.colspan;
       delete p.rowspan;
       a.changedrendervalues = !0;
@@ -901,22 +901,22 @@ SocialCalc.ExecuteSheetCommand = function(a, b, c) {
       g = b.NextToken();
       f = b.RestOfString();
       r();
-      c && C.AddUndo("changedrendervalues");
-      "cut" == e && (c && C.AddUndo("loadclipboard", SocialCalc.encodeForSave(SocialCalc.Clipboard.clipboard)), SocialCalc.Clipboard.clipboard = SocialCalc.CreateSheetSave(a, g));
+      c && E.AddUndo("changedrendervalues");
+      "cut" == e && (c && E.AddUndo("loadclipboard", SocialCalc.encodeForSave(SocialCalc.Clipboard.clipboard)), SocialCalc.Clipboard.clipboard = SocialCalc.CreateSheetSave(a, g));
       for (r = q.row;r <= s.row;r++) {
         for (b = q.col;b <= s.col;b++) {
-          h = SocialCalc.crToCoord(b, r), p = a.GetAssuredCell(h), p.readonly || (c && C.AddUndo("set " + h + " all", a.CellToString(p)), "all" == f ? delete a.cells[h] : "formulas" == f ? (p.datavalue = "", p.datatype = null, p.formula = "", p.valuetype = "b", delete p.errors, delete p.displaystring, delete p.parseinfo, p.comment && delete p.comment) : "formats" == f && (l = new SocialCalc.Cell(h), l.datavalue = p.datavalue, l.datatype = p.datatype, l.formula = p.formula, l.valuetype = p.valuetype, 
+          h = SocialCalc.crToCoord(b, r), p = a.GetAssuredCell(h), p.readonly || (c && E.AddUndo("set " + h + " all", a.CellToString(p)), "all" == f ? delete a.cells[h] : "formulas" == f ? (p.datavalue = "", p.datatype = null, p.formula = "", p.valuetype = "b", delete p.errors, delete p.displaystring, delete p.parseinfo, p.comment && delete p.comment) : "formats" == f && (l = new SocialCalc.Cell(h), l.datavalue = p.datavalue, l.datatype = p.datatype, l.formula = p.formula, l.valuetype = p.valuetype, 
           p.comment && (l.comment = p.comment), a.cells[h] = l));
         }
       }
-      G.needsrecalc = "yes";
+      B.needsrecalc = "yes";
       break;
     case "fillright":
     ;
     case "filldown":
       a.renderneeded = !0;
       a.changedrendervalues = !0;
-      c && C.AddUndo("changedrendervalues");
+      c && E.AddUndo("changedrendervalues");
       g = b.NextToken();
       f = b.RestOfString();
       r();
@@ -924,7 +924,7 @@ SocialCalc.ExecuteSheetCommand = function(a, b, c) {
       for (r = t;r <= s.row;r++) {
         for (b = u;b <= s.col;b++) {
           if (h = SocialCalc.crToCoord(b, r), p = a.GetAssuredCell(h), !p.readonly) {
-            c && C.AddUndo("set " + h + " all", a.CellToString(p));
+            c && E.AddUndo("set " + h + " all", a.CellToString(p));
             e ? (v = SocialCalc.crToCoord(q.col, r), z = b - u + 1, d = 0) : (v = SocialCalc.crToCoord(b, q.row), z = 0, d = r - t + 1);
             w = a.GetAssuredCell(v);
             if ("all" == f || "formats" == f) {
@@ -939,27 +939,27 @@ SocialCalc.ExecuteSheetCommand = function(a, b, c) {
           }
         }
       }
-      G.needsrecalc = "yes";
+      B.needsrecalc = "yes";
       break;
     case "copy":
       g = b.NextToken();
       f = b.RestOfString();
-      c && C.AddUndo("loadclipboard", SocialCalc.encodeForSave(SocialCalc.Clipboard.clipboard));
+      c && E.AddUndo("loadclipboard", SocialCalc.encodeForSave(SocialCalc.Clipboard.clipboard));
       SocialCalc.Clipboard.clipboard = SocialCalc.CreateSheetSave(a, g);
       break;
     case "loadclipboard":
       f = b.RestOfString();
-      c && C.AddUndo("loadclipboard", SocialCalc.encodeForSave(SocialCalc.Clipboard.clipboard));
+      c && E.AddUndo("loadclipboard", SocialCalc.encodeForSave(SocialCalc.Clipboard.clipboard));
       SocialCalc.Clipboard.clipboard = SocialCalc.decodeFromSave(f);
       break;
     case "clearclipboard":
-      c && C.AddUndo("loadclipboard", SocialCalc.encodeForSave(SocialCalc.Clipboard.clipboard));
+      c && E.AddUndo("loadclipboard", SocialCalc.encodeForSave(SocialCalc.Clipboard.clipboard));
       SocialCalc.Clipboard.clipboard = "";
       break;
     case "paste":
       a.renderneeded = !0;
       a.changedrendervalues = !0;
-      c && C.AddUndo("changedrendervalues");
+      c && E.AddUndo("changedrendervalues");
       g = b.NextToken();
       f = b.RestOfString();
       r();
@@ -972,13 +972,13 @@ SocialCalc.ExecuteSheetCommand = function(a, b, c) {
       z = q.col - A.cr1.col;
       d = q.row - A.cr1.row;
       y = Math.max(s.col - q.col + 1, A.cr2.col - A.cr1.col + 1);
-      B = Math.max(s.row - q.row + 1, A.cr2.row - A.cr1.row + 1);
-      q.col + y - 1 > G.lastcol && (G.lastcol = q.col + y - 1);
-      q.row + B - 1 > G.lastrow && (G.lastrow = q.row + B - 1);
-      for (r = q.row;r < q.row + B;r++) {
+      C = Math.max(s.row - q.row + 1, A.cr2.row - A.cr1.row + 1);
+      q.col + y - 1 > B.lastcol && (B.lastcol = q.col + y - 1);
+      q.row + C - 1 > B.lastrow && (B.lastrow = q.row + C - 1);
+      for (r = q.row;r < q.row + C;r++) {
         for (b = q.col;b < q.col + y;b++) {
           if (h = SocialCalc.crToCoord(b, r), p = a.GetAssuredCell(h), !p.readonly) {
-            c && C.AddUndo("set " + h + " all", a.CellToString(p));
+            c && E.AddUndo("set " + h + " all", a.CellToString(p));
             v = SocialCalc.crToCoord(A.cr1.col + (b - q.col) % (A.cr2.col - A.cr1.col + 1), A.cr1.row + (r - q.row) % (A.cr2.row - A.cr1.row + 1));
             w = e.GetAssuredCell(v);
             if ("all" == f || "formats" == f) {
@@ -993,40 +993,40 @@ SocialCalc.ExecuteSheetCommand = function(a, b, c) {
           }
         }
       }
-      G.needsrecalc = "yes";
+      B.needsrecalc = "yes";
       break;
     case "sort":
       a.renderneeded = !0;
       a.changedrendervalues = !0;
-      c && C.AddUndo("changedrendervalues");
+      c && E.AddUndo("changedrendervalues");
       g = b.NextToken();
       r();
       d = [];
-      N = [];
+      M = [];
       for (z = Q = 0;3 >= z;z++) {
-        d[z] = b.NextToken(), N[z] = b.NextToken(), d[z] && (Q = z);
+        d[z] = b.NextToken(), M[z] = b.NextToken(), d[z] && (Q = z);
       }
       e = {};
       l = [];
       J = [];
-      O = [];
+      N = [];
       for (r = q.row;r <= s.row;r++) {
         for (b = q.col;b <= s.col;b++) {
-          h = SocialCalc.crToCoord(b, r), (p = a.cells[h]) ? (e[h] = a.CellToString(p), c && C.AddUndo("set " + h + " all", e[h])) : c && C.AddUndo("set " + h + " all");
+          h = SocialCalc.crToCoord(b, r), (p = a.cells[h]) ? (e[h] = a.CellToString(p), c && E.AddUndo("set " + h + " all", e[h])) : c && E.AddUndo("set " + h + " all");
         }
         l.push(l.length);
         J.push([]);
-        O.push([]);
-        slast = O.length - 1;
+        N.push([]);
+        slast = N.length - 1;
         for (z = 0;z <= Q;z++) {
-          h = d[z] + r, p = a.GetAssuredCell(h), h = p.datavalue, b = p.valuetype.charAt(0) || "b", "t" == b && (h = h.toLowerCase()), J[slast].push(h), O[slast].push(b);
+          h = d[z] + r, p = a.GetAssuredCell(h), h = p.datavalue, b = p.valuetype.charAt(0) || "b", "t" == b && (h = h.toLowerCase()), J[slast].push(h), N[slast].push(b);
         }
       }
       c = function(a, c) {
         var b, d, e, f, g;
         for (b = 0;b <= Q;b++) {
-          if ("up" == N[b] ? (d = a, e = c) : (d = c, e = a), f = O[d][b], tb = O[e][b], "t" == f ? "t" == tb ? (d = J[d][b], e = J[e][b], g = d > e ? 1 : d < e ? -1 : 0) : "n" == tb ? g = 1 : "b" == tb ? g = "up" == N[b] ? -1 : 1 : "e" == tb && (g = -1) : "n" == f ? "t" == tb ? g = -1 : "n" == tb ? (d = J[d][b] - 0, e = J[e][b] - 0, g = d > e ? 1 : d < e ? -1 : 0) : "b" == tb ? g = "up" == N[b] ? -1 : 1 : "e" == tb && (g = -1) : "e" == f ? "e" == tb ? (d = J[d][b], e = J[e][b], g = d > e ? 1 : d < 
-          e ? -1 : 0) : g = "b" == tb ? "up" == N[b] ? -1 : 1 : 1 : "b" == f && (g = "b" == tb ? 0 : "up" == N[b] ? 1 : -1), g) {
+          if ("up" == M[b] ? (d = a, e = c) : (d = c, e = a), f = N[d][b], tb = N[e][b], "t" == f ? "t" == tb ? (d = J[d][b], e = J[e][b], g = d > e ? 1 : d < e ? -1 : 0) : "n" == tb ? g = 1 : "b" == tb ? g = "up" == M[b] ? -1 : 1 : "e" == tb && (g = -1) : "n" == f ? "t" == tb ? g = -1 : "n" == tb ? (d = J[d][b] - 0, e = J[e][b] - 0, g = d > e ? 1 : d < e ? -1 : 0) : "b" == tb ? g = "up" == M[b] ? -1 : 1 : "e" == tb && (g = -1) : "e" == f ? "e" == tb ? (d = J[d][b], e = J[e][b], g = d > e ? 1 : d < 
+          e ? -1 : 0) : g = "b" == tb ? "up" == M[b] ? -1 : 1 : 1 : "b" == f && (g = "b" == tb ? 0 : "up" == M[b] ? 1 : -1), g) {
             return g;
           }
         }
@@ -1035,10 +1035,10 @@ SocialCalc.ExecuteSheetCommand = function(a, b, c) {
       l.sort(c);
       for (r = q.row;r <= s.row;r++) {
         for (c = l[r - q.row], b = q.col;b <= s.col;b++) {
-          h = SocialCalc.crToCoord(b, r), C = SocialCalc.crToCoord(b, c + q.row), e[C] ? (p = new SocialCalc.Cell(h), a.CellFromStringParts(p, e[C].split(":"), 1), "f" == p.datatype && (p.formula = SocialCalc.OffsetFormulaCoords(p.formula, 0, r - q.row - c)), a.cells[h] = p) : delete a.cells[h];
+          h = SocialCalc.crToCoord(b, r), E = SocialCalc.crToCoord(b, c + q.row), e[E] ? (p = new SocialCalc.Cell(h), a.CellFromStringParts(p, e[E].split(":"), 1), "f" == p.datatype && (p.formula = SocialCalc.OffsetFormulaCoords(p.formula, 0, r - q.row - c)), a.cells[h] = p) : delete a.cells[h];
         }
       }
-      G.needsrecalc = "yes";
+      B.needsrecalc = "yes";
       break;
     case "insertcol":
     ;
@@ -1048,14 +1048,14 @@ SocialCalc.ExecuteSheetCommand = function(a, b, c) {
       g = b.NextToken();
       f = b.RestOfString();
       r();
-      "insertcol" == e ? (z = 1, f = q.col, d = 0, u = 1, D = t = q.col, p = 1, y = G.lastrow, c && C.AddUndo("deletecol " + q.coord)) : (z = 0, d = f = 1, u = q.row, t = 1, D = G.lastcol, y = p = q.row, c && C.AddUndo("deleterow " + q.coord));
-      for (r = G.lastrow;r >= u;r--) {
-        for (b = G.lastcol;b >= f;b--) {
+      "insertcol" == e ? (z = 1, f = q.col, d = 0, u = 1, G = t = q.col, p = 1, y = B.lastrow, c && E.AddUndo("deletecol " + q.coord)) : (z = 0, d = f = 1, u = q.row, t = 1, G = B.lastcol, y = p = q.row, c && E.AddUndo("deleterow " + q.coord));
+      for (r = B.lastrow;r >= u;r--) {
+        for (b = B.lastcol;b >= f;b--) {
           v = SocialCalc.crToCoord(b, r), h = SocialCalc.crToCoord(b + z, r + d), a.cells[v] ? a.cells[h] = a.cells[v] : delete a.cells[h];
         }
       }
       for (r = p;r <= y;r++) {
-        for (b = t;b <= D;b++) {
+        for (b = t;b <= G;b++) {
           for (l in h = SocialCalc.crToCoord(b, r), p = new SocialCalc.Cell(h), a.cells[h] = p, v = SocialCalc.crToCoord(b - z, r - d), w = a.GetAssuredCell(v), H) {
             2 == H[l] && (p[l] = w[l]);
           }
@@ -1067,19 +1067,19 @@ SocialCalc.ExecuteSheetCommand = function(a, b, c) {
       for (A in a.names) {
         a.names[A] && (b = a.names[A].definition, h = "", "=" == b.charAt(0) && (h = "=", b = b.substring(1)), a.names[A].definition = h + SocialCalc.AdjustFormulaCoords(b, q.col, z, q.row, d));
       }
-      for (r = G.lastrow;r >= u && "insertrow" == e;r--) {
+      for (r = B.lastrow;r >= u && "insertrow" == e;r--) {
         for (l in c = r + d, a.rowattribs) {
           h = a.rowattribs[l][r], a.rowattribs[l][c] != h && (h ? a.rowattribs[l][c] = h : delete a.rowattribs[l][c]);
         }
       }
-      for (b = G.lastcol;b >= f && "insertcol" == e;b--) {
+      for (b = B.lastcol;b >= f && "insertcol" == e;b--) {
         for (l in r = SocialCalc.rcColname(b), c = SocialCalc.rcColname(b + z), a.colattribs) {
           h = a.colattribs[l][r], a.colattribs[l][c] != h && (h ? a.colattribs[l][c] = h : delete a.colattribs[l][c]);
         }
       }
-      G.lastcol += z;
-      G.lastrow += d;
-      G.needsrecalc = "yes";
+      B.lastcol += z;
+      B.lastrow += d;
+      B.needsrecalc = "yes";
       break;
     case "deletecol":
     ;
@@ -1088,8 +1088,8 @@ SocialCalc.ExecuteSheetCommand = function(a, b, c) {
       a.changedrendervalues = !0;
       g = b.NextToken();
       f = b.RestOfString();
-      f = G.lastcol;
-      H = G.lastrow;
+      f = B.lastcol;
+      H = B.lastrow;
       r();
       "deletecol" == e ? (z = q.col - s.col - 1, d = 0, u = s.col + 1, t = 1) : (z = 0, d = q.row - s.row - 1, u = 1, t = s.row + 1);
       for (r = t;r <= H - d;r++) {
@@ -1101,12 +1101,12 @@ SocialCalc.ExecuteSheetCommand = function(a, b, c) {
       }
       for (r = t;r <= H - d;r++) {
         for (b = u;b <= f - z;b++) {
-          h = SocialCalc.crToCoord(b + z, r + d), c && (r < t - d || b < u - z) && ((p = a.cells[h]) ? C.AddUndo("set " + h + " all", a.CellToString(p)) : C.AddUndo("erase " + h + " all")), v = SocialCalc.crToCoord(b, r), (p = a.cells[v]) ? a.cells[h] = p : delete a.cells[h];
+          h = SocialCalc.crToCoord(b + z, r + d), c && (r < t - d || b < u - z) && ((p = a.cells[h]) ? E.AddUndo("set " + h + " all", a.CellToString(p)) : E.AddUndo("erase " + h + " all")), v = SocialCalc.crToCoord(b, r), (p = a.cells[v]) ? a.cells[h] = p : delete a.cells[h];
         }
       }
       for (h in a.cells) {
         if (p = a.cells[h]) {
-          "f" == p.datatype ? (r = p.formula, p.formula = SocialCalc.AdjustFormulaCoords(r, q.col, z, q.row, d), p.formula != r && (delete p.parseinfo, c && -1 != p.formula.indexOf("#REF!") && (b = SocialCalc.coordToCr(h), C.AddUndo("set " + SocialCalc.rcColname(b.col - z) + (b.row - d) + " formula " + r)))) : delete p.parseinfo;
+          "f" == p.datatype ? (r = p.formula, p.formula = SocialCalc.AdjustFormulaCoords(r, q.col, z, q.row, d), p.formula != r && (delete p.parseinfo, c && -1 != p.formula.indexOf("#REF!") && (b = SocialCalc.coordToCr(h), E.AddUndo("set " + SocialCalc.rcColname(b.col - z) + (b.row - d) + " formula " + r)))) : delete p.parseinfo;
         }
       }
       for (A in a.names) {
@@ -1114,27 +1114,27 @@ SocialCalc.ExecuteSheetCommand = function(a, b, c) {
       }
       for (r = t;r <= H - d && "deleterow" == e;r++) {
         for (l in b = r + d, a.rowattribs) {
-          h = a.rowattribs[l][r], a.rowattribs[l][b] != h && (c && C.AddUndo("set " + b + " " + l, a.rowattribs[l][b]), h ? a.rowattribs[l][b] = h : delete a.rowattribs[l][b]);
+          h = a.rowattribs[l][r], a.rowattribs[l][b] != h && (c && E.AddUndo("set " + b + " " + l, a.rowattribs[l][b]), h ? a.rowattribs[l][b] = h : delete a.rowattribs[l][b]);
         }
       }
       for (b = u;b <= f - z && "deletecol" == e;b++) {
         for (l in r = SocialCalc.rcColname(b), p = SocialCalc.rcColname(b + z), a.colattribs) {
-          h = a.colattribs[l][r], a.colattribs[l][p] != h && (c && C.AddUndo("set " + p + " " + l, a.colattribs[l][p]), h ? a.colattribs[l][p] = h : delete a.colattribs[l][p]);
+          h = a.colattribs[l][r], a.colattribs[l][p] != h && (c && E.AddUndo("set " + p + " " + l, a.colattribs[l][p]), h ? a.colattribs[l][p] = h : delete a.colattribs[l][p]);
         }
       }
       if (c) {
         if ("deletecol" == e) {
           for (b = q.col;b <= s.col;b++) {
-            C.AddUndo("insertcol " + SocialCalc.rcColname(b));
+            E.AddUndo("insertcol " + SocialCalc.rcColname(b));
           }
         } else {
           for (r = q.row;r <= s.row;r++) {
-            C.AddUndo("insertrow " + r);
+            E.AddUndo("insertrow " + r);
           }
         }
       }
-      "deletecol" == e ? q.col <= f && (G.lastcol = s.col <= f ? G.lastcol + z : q.col - 1) : q.row <= H && (G.lastrow = s.row <= H ? G.lastrow + d : q.row - 1);
-      G.needsrecalc = "yes";
+      "deletecol" == e ? q.col <= f && (B.lastcol = s.col <= f ? B.lastcol + z : q.col - 1) : q.row <= H && (B.lastrow = s.row <= H ? B.lastrow + d : q.row - 1);
+      B.needsrecalc = "yes";
       break;
     case "movepaste":
     ;
@@ -1142,7 +1142,7 @@ SocialCalc.ExecuteSheetCommand = function(a, b, c) {
       var Y, I;
       a.renderneeded = !0;
       a.changedrendervalues = !0;
-      c && C.AddUndo("changedrendervalues");
+      c && E.AddUndo("changedrendervalues");
       g = b.NextToken();
       p = b.NextToken();
       f = b.RestOfString();
@@ -1152,11 +1152,11 @@ SocialCalc.ExecuteSheetCommand = function(a, b, c) {
       z = I.col - q.col;
       d = I.row - q.row;
       y = s.col - q.col + 1;
-      B = s.row - q.row + 1;
+      C = s.row - q.row + 1;
       Y = {};
       for (r = q.row;r <= s.row;r++) {
         for (b = q.col;b <= s.col;b++) {
-          if (h = SocialCalc.crToCoord(b, r), p = a.GetAssuredCell(h), !p.readonly && (c && C.AddUndo("set " + h + " all", a.CellToString(p)), a.cells[h])) {
+          if (h = SocialCalc.crToCoord(b, r), p = a.GetAssuredCell(h), !p.readonly && (c && E.AddUndo("set " + h + " all", a.CellToString(p)), a.cells[h])) {
             Y[h] = new SocialCalc.Cell(h);
             for (l in H) {
               void 0 !== typeof p[l] && (Y[h][l] = p[l], "all" == f && delete p[l], "formulas" == f && (1 != H[l] && 3 != H[l] || delete p[l]), "formats" == f && 2 == H[l] && delete p[l]);
@@ -1166,14 +1166,14 @@ SocialCalc.ExecuteSheetCommand = function(a, b, c) {
           }
         }
       }
-      "moveinsert" == e && (t = u = !1, 0 == d && (I.col < q.col || I.col > s.col) ? I.col < q.col ? (D = q.col - I.col, u = -1) : (I.col -= 1, z = I.col - s.col, D = I.col - s.col, u = 1) : 0 == z && (I.row < q.row || I.row > s.row) ? I.row < q.row ? (D = q.row - I.row, t = -1) : (I.row -= 1, d = I.row - s.row, D = I.row - s.row, t = 1) : e = "movepaste");
+      "moveinsert" == e && (t = u = !1, 0 == d && (I.col < q.col || I.col > s.col) ? I.col < q.col ? (G = q.col - I.col, u = -1) : (I.col -= 1, z = I.col - s.col, G = I.col - s.col, u = 1) : 0 == z && (I.row < q.row || I.row > s.row) ? I.row < q.row ? (G = q.row - I.row, t = -1) : (I.row -= 1, d = I.row - s.row, G = I.row - s.row, t = 1) : e = "movepaste");
       e = {};
       if (t) {
-        for (r = 0;r < D;r++) {
+        for (r = 0;r < G;r++) {
           for (b = q.col;b <= s.col;b++) {
-            0 > t ? (v = SocialCalc.crToCoord(b, I.row + D - r - 1), h = SocialCalc.crToCoord(b, s.row - r)) : (v = SocialCalc.crToCoord(b, I.row - D + r + 1), h = SocialCalc.crToCoord(b, q.row + r));
+            0 > t ? (v = SocialCalc.crToCoord(b, I.row + G - r - 1), h = SocialCalc.crToCoord(b, s.row - r)) : (v = SocialCalc.crToCoord(b, I.row - G + r + 1), h = SocialCalc.crToCoord(b, q.row + r));
             w = a.GetAssuredCell(v);
-            c && C.AddUndo("set " + v + " all", a.CellToString(w));
+            c && E.AddUndo("set " + v + " all", a.CellToString(w));
             p = a.GetAssuredCell(h);
             if ("all" == f || "formats" == f) {
               for (l in H) {
@@ -1189,11 +1189,11 @@ SocialCalc.ExecuteSheetCommand = function(a, b, c) {
         }
       }
       if (u) {
-        for (b = 0;b < D;b++) {
+        for (b = 0;b < G;b++) {
           for (r = q.row;r <= s.row;r++) {
-            0 > u ? (v = SocialCalc.crToCoord(I.col + D - b - 1, r), h = SocialCalc.crToCoord(s.col - b, r)) : (v = SocialCalc.crToCoord(I.col - D + b + 1, r), h = SocialCalc.crToCoord(q.col + b, r));
+            0 > u ? (v = SocialCalc.crToCoord(I.col + G - b - 1, r), h = SocialCalc.crToCoord(s.col - b, r)) : (v = SocialCalc.crToCoord(I.col - G + b + 1, r), h = SocialCalc.crToCoord(q.col + b, r));
             w = a.GetAssuredCell(v);
-            c && C.AddUndo("set " + v + " all", a.CellToString(w));
+            c && E.AddUndo("set " + v + " all", a.CellToString(w));
             p = a.GetAssuredCell(h);
             if ("all" == f || "formats" == f) {
               for (l in H) {
@@ -1208,12 +1208,12 @@ SocialCalc.ExecuteSheetCommand = function(a, b, c) {
           }
         }
       }
-      I.col + y - 1 > G.lastcol && (G.lastcol = I.col + y - 1);
-      I.row + B - 1 > G.lastrow && (G.lastrow = I.row + B - 1);
-      for (r = q.row;r < q.row + B;r++) {
+      I.col + y - 1 > B.lastcol && (B.lastcol = I.col + y - 1);
+      I.row + C - 1 > B.lastrow && (B.lastrow = I.row + C - 1);
+      for (r = q.row;r < q.row + C;r++) {
         for (b = q.col;b < q.col + y;b++) {
           if (h = SocialCalc.crToCoord(b + z, r + d), p = a.GetAssuredCell(h), !p.readonly) {
-            if (c && C.AddUndo("set " + h + " all", a.CellToString(p)), v = SocialCalc.crToCoord(b, r), e[v] = h, "all" != f || Y[v]) {
+            if (c && E.AddUndo("set " + h + " all", a.CellToString(p)), v = SocialCalc.crToCoord(b, r), e[v] = h, "all" != f || Y[v]) {
               (w = Y[v]) || (w = a.GetAssuredCell(v));
               if ("all" == f || "formats" == f) {
                 for (l in H) {
@@ -1232,13 +1232,13 @@ SocialCalc.ExecuteSheetCommand = function(a, b, c) {
       }
       for (h in a.cells) {
         if (p = a.cells[h]) {
-          "f" == p.datatype ? (r = p.formula, p.formula = SocialCalc.ReplaceFormulaCoords(r, e), p.formula != r && (delete p.parseinfo, c && !e[h] && C.AddUndo("set " + h + " formula " + r))) : delete p.parseinfo;
+          "f" == p.datatype ? (r = p.formula, p.formula = SocialCalc.ReplaceFormulaCoords(r, e), p.formula != r && (delete p.parseinfo, c && !e[h] && E.AddUndo("set " + h + " formula " + r))) : delete p.parseinfo;
         }
       }
       for (A in a.names) {
-        a.names[A] && (r = b = a.names[A].definition, h = "", "=" == b.charAt(0) && (h = "=", b = b.substring(1)), a.names[A].definition = h + SocialCalc.ReplaceFormulaCoords(b, e), c && a.names[A].definition != r && C.AddUndo("name define " + A + " " + r));
+        a.names[A] && (r = b = a.names[A].definition, h = "", "=" == b.charAt(0) && (h = "=", b = b.substring(1)), a.names[A].definition = h + SocialCalc.ReplaceFormulaCoords(b, e), c && a.names[A].definition != r && E.AddUndo("name define " + A + " " + r));
       }
-      G.needsrecalc = "yes";
+      B.needsrecalc = "yes";
       break;
     case "name":
       g = b.NextToken();
@@ -1252,14 +1252,14 @@ SocialCalc.ExecuteSheetCommand = function(a, b, c) {
         if ("" == f) {
           break;
         }
-        a.names[A] ? (c && C.AddUndo("name define " + A + " " + a.names[A].definition), a.names[A].definition = f) : (c && C.AddUndo("name delete " + A), a.names[A] = {definition:f, desc:""});
+        a.names[A] ? (c && E.AddUndo("name define " + A + " " + a.names[A].definition), a.names[A].definition = f) : (c && E.AddUndo("name delete " + A), a.names[A] = {definition:f, desc:""});
       } else {
-        "desc" == g ? a.names[A] && (c && C.AddUndo("name desc " + A + " " + a.names[A].desc), a.names[A].desc = f) : "delete" == g && (c && (a.names[A].desc && C.AddUndo("name desc " + A + " " + a.names[A].desc), C.AddUndo("name define " + A + " " + a.names[A].definition)), delete a.names[A]);
+        "desc" == g ? a.names[A] && (c && E.AddUndo("name desc " + A + " " + a.names[A].desc), a.names[A].desc = f) : "delete" == g && (c && (a.names[A].desc && E.AddUndo("name desc " + A + " " + a.names[A].desc), E.AddUndo("name define " + A + " " + a.names[A].definition)), delete a.names[A]);
       }
-      G.needsrecalc = "yes";
+      B.needsrecalc = "yes";
       break;
     case "recalc":
-      G.needsrecalc = "yes";
+      B.needsrecalc = "yes";
       a.recalconce = !0;
       break;
     case "redisplay":
@@ -1270,7 +1270,7 @@ SocialCalc.ExecuteSheetCommand = function(a, b, c) {
       break;
     case "startcmdextension":
       A = b.NextToken();
-      (C = a.sci.CmdExtensionCallbacks[A]) && C.func(A, C.data, a, b, c);
+      (E = a.sci.CmdExtensionCallbacks[A]) && E.func(A, E.data, a, b, c);
       break;
     case "sendemail":
       break;
@@ -5114,7 +5114,7 @@ SocialCalc.FormatNumber.commands = {copy:1, color:2, integer_placeholder:3, frac
 SocialCalc.FormatNumber.datevalues = {julian_offset:2415019, seconds_in_a_day:86400, seconds_in_an_hour:3600};
 SocialCalc.FormatNumber.formatNumberWithFormat = function(a, b, c) {
   c = SocialCalc.Constants;
-  var d = SocialCalc.FormatNumber, e, f, g, l, h, n, q, s, r, p, t, u = "", v, z, w, A, y, B, D, H, N, Q, J;
+  var d = SocialCalc.FormatNumber, e, f, g, l, h, n, q, s, r, p, t, u = "", v, z, w, A, y, C, G, H, M, Q, J;
   if ("string" == typeof a && !a.length) {
     return "";
   }
@@ -5123,8 +5123,8 @@ SocialCalc.FormatNumber.formatNumberWithFormat = function(a, b, c) {
     return "string" == typeof a ? d.formatTextWithFormat(a, b) : "NaN";
   }
   a = J;
-  var O = 0 > J ? 1 : 0;
-  O && (J = -J);
+  var N = 0 > J ? 1 : 0;
+  N && (J = -J);
   w = 0 == J ? 1 : 0;
   d.parse_format_string(d.format_definitions, b);
   b = d.format_definitions[b];
@@ -5161,10 +5161,10 @@ SocialCalc.FormatNumber.formatNumberWithFormat = function(a, b, c) {
   } else {
     if (0 < v) {
       if (1 == v) {
-        O ? (O = 0, v = 1) : v = 0;
+        N ? (N = 0, v = 1) : v = 0;
       } else {
         if (2 == v || 3 == v) {
-          O ? (O = 0, v = 1) : v = w ? 2 : 0;
+          N ? (N = 0, v = 1) : v = w ? 2 : 0;
         }
       }
     }
@@ -5190,7 +5190,7 @@ SocialCalc.FormatNumber.formatNumberWithFormat = function(a, b, c) {
     return "NaN";
   }
   f = w + "";
-  0 == w && (v.fractiondigits || v.integerdigits) && (O = 0);
+  0 == w && (v.fractiondigits || v.integerdigits) && (N = 0);
   if (0 <= f.indexOf("e")) {
     return a + "";
   }
@@ -5248,10 +5248,10 @@ SocialCalc.FormatNumber.formatNumberWithFormat = function(a, b, c) {
       e == d.commands.date ? (!t || "m" != f && "mm" != f || (b.operands[mspos] += "in"), t = "ss" == f ? 1 : 0) : e != d.commands.copy && (t = 0);
     }
   }
-  B = y = A = 0;
-  H = D = "";
-  N = c.FormatNumber_separatorchar;
-  0 <= N.indexOf(" ") && (N = N.replace(/ /g, "&nbsp;"));
+  C = y = A = 0;
+  H = G = "";
+  M = c.FormatNumber_separatorchar;
+  0 <= M.indexOf(" ") && (M = M.replace(/ /g, "&nbsp;"));
   Q = c.FormatNumber_decimalchar;
   0 <= Q.indexOf(" ") && (Q = Q.replace(/ /g, "&nbsp;"));
   for (t = v.sectionstart;e = b.operators[t];) {
@@ -5259,48 +5259,48 @@ SocialCalc.FormatNumber.formatNumberWithFormat = function(a, b, c) {
       u += f;
     } else {
       if (e == d.commands.color) {
-        D = f;
+        G = f;
       } else {
         if (e == d.commands.style) {
           H = f;
         } else {
           if (e == d.commands.integer_placeholder) {
-            O && (u += "-", O = 0);
+            N && (u += "-", N = 0);
             A++;
             if (1 == A && w.length > v.integerdigits) {
               for (;y < w.length - v.integerdigits;y++) {
-                u += w.charAt(y), v.thousandssep && (e = w.length - y - 1, 2 < e && 0 == e % 3 && (u += N));
+                u += w.charAt(y), v.thousandssep && (e = w.length - y - 1, 2 < e && 0 == e % 3 && (u += M));
               }
             }
             if (w.length < v.integerdigits && A <= v.integerdigits - w.length) {
               if ("0" == f || "?" == f) {
-                u += "0" == f ? "0" : "&nbsp;", v.thousandssep && (e = v.integerdigits - A, 2 < e && 0 == e % 3 && (u += N));
+                u += "0" == f ? "0" : "&nbsp;", v.thousandssep && (e = v.integerdigits - A, 2 < e && 0 == e % 3 && (u += M));
               }
             } else {
-              u += w.charAt(y), v.thousandssep && (e = w.length - y - 1, 2 < e && 0 == e % 3 && (u += N)), y++;
+              u += w.charAt(y), v.thousandssep && (e = w.length - y - 1, 2 < e && 0 == e % 3 && (u += M)), y++;
             }
           } else {
             if (e == d.commands.fraction_placeholder) {
-              if (B >= z.length) {
+              if (C >= z.length) {
                 if ("0" == f || "?" == f) {
                   u += "0" == f ? "0" : "&nbsp;";
                 }
               } else {
-                u += z.charAt(B);
+                u += z.charAt(C);
               }
-              B++;
+              C++;
             } else {
               if (e == d.commands.decimal) {
-                O && (u += "-", O = 0), u += Q;
+                N && (u += "-", N = 0), u += Q;
               } else {
                 if (e == d.commands.currency) {
-                  O && (u += "-", O = 0), u += f;
+                  N && (u += "-", N = 0), u += f;
                 } else {
                   if (e == d.commands.general) {
                     if (0 != J && (f = Math.floor(Math.LOG10E * Math.log(J)), f = Math.pow(10, 13 - f), J = Math.floor(f * J + 0.5) / f, !isFinite(J))) {
                       return "NaN";
                     }
-                    O && (u += "-");
+                    N && (u += "-");
                     f = J + "";
                     if (0 <= f.indexOf("e")) {
                       u += f;
@@ -5308,17 +5308,17 @@ SocialCalc.FormatNumber.formatNumberWithFormat = function(a, b, c) {
                       f = f.match(/^\+{0,1}(\d*)(?:\.(\d*)){0,1}$/);
                       (w = f[1]) && "0" != w || (w = "");
                       (z = f[2]) || (z = "");
-                      B = y = 0;
+                      C = y = 0;
                       if (w.length) {
                         for (;y < w.length;y++) {
-                          u += w.charAt(y), v.thousandssep && (e = w.length - y - 1, 2 < e && 0 == e % 3 && (u += N));
+                          u += w.charAt(y), v.thousandssep && (e = w.length - y - 1, 2 < e && 0 == e % 3 && (u += M));
                         }
                       } else {
                         u += "0";
                       }
                       if (z.length) {
-                        for (u += Q;B < z.length;B++) {
-                          u += z.charAt(B);
+                        for (u += Q;C < z.length;C++) {
+                          u += z.charAt(C);
                         }
                       }
                     }
@@ -5343,7 +5343,7 @@ SocialCalc.FormatNumber.formatNumberWithFormat = function(a, b, c) {
       }
     }
   }
-  D && (u = '<span style="color:' + D + ';">' + u + "</span>");
+  G && (u = '<span style="color:' + G + ';">' + u + "</span>");
   H && (u = '<span style="' + H + ';">' + u + "</span>");
   return u;
 };
@@ -5574,28 +5574,28 @@ SocialCalc.Formula.EvaluatePolish = function(a, b, c, d) {
     return a + "";
   }, t = "", u = {value:"", type:"e#VALUE!", error:f.s_parseerrmissingoperand}, v = [], z = function(a, b) {
     v.push({type:a, value:b});
-  }, w, A, y, B, D, H;
+  }, w, A, y, C, G, H;
   if (!(a.length && b instanceof Array)) {
     return{value:"", type:"e#VALUE!", error:"string" == typeof b ? b : ""};
   }
   w = SocialCalc.GetSpreadsheetControlObject();
   "undefined" === typeof w.debug && (w.debug = []);
   w.debug.push({revpolish:b});
-  var N = [];
+  var M = [];
   for (w = 0;w < b.length;w++) {
     if (A = b[w], -1 == A) {
       z("start", 0);
     } else {
-      if (y = a[A], B = y.type, A = y.text, N.push(y), B == g.num) {
+      if (y = a[A], C = y.type, A = y.text, M.push(y), C == g.num) {
         z("n", A - 0);
       } else {
-        if (B == g.coord) {
+        if (C == g.coord) {
           z("coord", A);
         } else {
-          if (B == g.string) {
+          if (C == g.string) {
             z("t", A);
           } else {
-            if (B == g.op) {
+            if (C == g.op) {
               if (0 >= v.length) {
                 return u;
               }
@@ -5612,10 +5612,10 @@ SocialCalc.Formula.EvaluatePolish = function(a, b, c, d) {
                       if (1 >= v.length) {
                         return u;
                       }
-                      B = q(c, v);
+                      C = q(c, v);
                       y = q(c, v);
                       A = l(y.type, y.type, h.concat);
-                      z(A, y.value + B.value);
+                      z(A, y.value + C.value);
                     } else {
                       if (":" == A) {
                         if (1 >= v.length) {
@@ -5638,19 +5638,19 @@ SocialCalc.Formula.EvaluatePolish = function(a, b, c, d) {
                               t = f.s_parseerrmissingoperand;
                               break;
                             }
-                            B = s(c, v);
+                            C = s(c, v);
                             y = s(c, v);
-                            "n" == y.type.charAt(0) && "n" == B.type.charAt(0) ? (D = 0, "<" == A ? D = y.value < B.value ? 1 : 0 : "L" == A ? D = y.value <= B.value ? 1 : 0 : "=" == A ? D = y.value == B.value ? 1 : 0 : "G" == A ? D = y.value >= B.value ? 1 : 0 : ">" == A ? D = y.value > B.value ? 1 : 0 : "N" == A && (D = y.value != B.value ? 1 : 0), z("nl", D)) : "e" == y.type.charAt(0) ? z(y.type, 0) : "e" == B.type.charAt(0) ? z(B.type, 0) : (D = y.type.charAt(0), H = B.type.charAt(0), "n" == 
-                            D ? y.value = p(y.value, "n", "") : "b" == D && (y.value = ""), "n" == H ? B.value = p(B.value, "n", "") : "b" == H && (B.value = ""), D = 0, y.value = y.value.toLowerCase(), B.value = B.value.toLowerCase(), "<" == A ? D = y.value < B.value ? 1 : 0 : "L" == A ? D = y.value <= B.value ? 1 : 0 : "=" == A ? D = y.value == B.value ? 1 : 0 : "G" == A ? D = y.value >= B.value ? 1 : 0 : ">" == A ? D = y.value > B.value ? 1 : 0 : "N" == A && (D = y.value != B.value ? 1 : 0), z("nl", 
-                            D));
+                            "n" == y.type.charAt(0) && "n" == C.type.charAt(0) ? (G = 0, "<" == A ? G = y.value < C.value ? 1 : 0 : "L" == A ? G = y.value <= C.value ? 1 : 0 : "=" == A ? G = y.value == C.value ? 1 : 0 : "G" == A ? G = y.value >= C.value ? 1 : 0 : ">" == A ? G = y.value > C.value ? 1 : 0 : "N" == A && (G = y.value != C.value ? 1 : 0), z("nl", G)) : "e" == y.type.charAt(0) ? z(y.type, 0) : "e" == C.type.charAt(0) ? z(C.type, 0) : (G = y.type.charAt(0), H = C.type.charAt(0), "n" == 
+                            G ? y.value = p(y.value, "n", "") : "b" == G && (y.value = ""), "n" == H ? C.value = p(C.value, "n", "") : "b" == H && (C.value = ""), G = 0, y.value = y.value.toLowerCase(), C.value = C.value.toLowerCase(), "<" == A ? G = y.value < C.value ? 1 : 0 : "L" == A ? G = y.value <= C.value ? 1 : 0 : "=" == A ? G = y.value == C.value ? 1 : 0 : "G" == A ? G = y.value >= C.value ? 1 : 0 : ">" == A ? G = y.value > C.value ? 1 : 0 : "N" == A && (G = y.value != C.value ? 1 : 0), z("nl", 
+                            G));
                           } else {
                             if (1 >= v.length) {
                               t = f.s_parseerrmissingoperand;
                               break;
                             }
-                            B = n(c, v);
+                            C = n(c, v);
                             y = n(c, v);
-                            "+" == A ? (A = l(y.type, B.type, h.plus), z(A, y.value + B.value)) : "-" == A ? (A = l(y.type, B.type, h.plus), z(A, y.value - B.value)) : "*" == A ? (A = l(y.type, B.type, h.plus), z(A, y.value * B.value)) : "/" == A ? 0 != B.value ? z("n", y.value / B.value) : z("e#DIV/0!", 0) : "^" == A && (y.value = Math.pow(y.value, B.value), y.type = "n", isNaN(y.value) && (y.value = 0, y.type = "e#NUM!"), z(y.type, y.value));
+                            "+" == A ? (A = l(y.type, C.type, h.plus), z(A, y.value + C.value)) : "-" == A ? (A = l(y.type, C.type, h.plus), z(A, y.value - C.value)) : "*" == A ? (A = l(y.type, C.type, h.plus), z(A, y.value * C.value)) : "/" == A ? 0 != C.value ? z("n", y.value / C.value) : z("e#DIV/0!", 0) : "^" == A && (y.value = Math.pow(y.value, C.value), y.type = "n", isNaN(y.value) && (y.value = 0, y.type = "e#NUM!"), z(y.type, y.value));
                           }
                         }
                       }
@@ -5659,12 +5659,12 @@ SocialCalc.Formula.EvaluatePolish = function(a, b, c, d) {
                 }
               }
             } else {
-              if (B == g.name) {
+              if (C == g.name) {
                 if (t = e.CalculateFunction(A, v, c, a.coord)) {
                   break;
                 }
               } else {
-                t = f.s_InternalError + "Unknown token " + B + " (" + A + "). ";
+                t = f.s_InternalError + "Unknown token " + C + " (" + A + "). ";
                 break;
               }
             }
@@ -5674,12 +5674,12 @@ SocialCalc.Formula.EvaluatePolish = function(a, b, c, d) {
     }
   }
   value = v[0] ? v[0].value : "";
-  D = v[0] ? v[0].type : "";
-  "name" == D && (y = SocialCalc.Formula.LookupName(c, value), value = y.value, D = y.type, t = t || y.error);
-  "coord" == D && (y = s(c, v), value = y.value, D = y.type, "b" == D && (D = "n", value = 0));
+  G = v[0] ? v[0].type : "";
+  "name" == G && (y = SocialCalc.Formula.LookupName(c, value), value = y.value, G = y.type, t = t || y.error);
+  "coord" == G && (y = s(c, v), value = y.value, G = y.type, "b" == G && (G = "n", value = 0));
   1 < v.length && !t && (t += f.s_parseerrerrorinformula);
-  a = D;
-  "e" == D.charAt(0) ? t = t || D.substring(1) || f.s_calcerrerrorvalueinformula : "range" == D && (b = value.match(/^(.*)\|(.*)\|/), c = b[1].indexOf("!"), b[1] = 0 <= c ? b[1].substring(c + 1) + "!" + b[1].substring(0, c).toUpperCase() : b[1].toUpperCase(), value = b[1] + ":" + b[2].toUpperCase(), d || (t = f.s_formularangeresult + " " + value));
+  a = G;
+  "e" == G.charAt(0) ? t = t || G.substring(1) || f.s_calcerrerrorvalueinformula : "range" == G && (b = value.match(/^(.*)\|(.*)\|/), c = b[1].indexOf("!"), b[1] = 0 <= c ? b[1].substring(c + 1) + "!" + b[1].substring(0, c).toUpperCase() : b[1].toUpperCase(), value = b[1] + ":" + b[2].toUpperCase(), d || (t = f.s_formularangeresult + " " + value));
   t && "e" != a.charAt(0) && (value = t, a = "e");
   "n" != a.charAt(0) || !isNaN(value) && isFinite(value) || (value = 0, a = "e#NUM!", t = isNaN(value) ? f.s_calcerrnumericnan : f.s_calcerrnumericoverflow);
   return{value:value, type:a, error:t};
@@ -6014,8 +6014,8 @@ SocialCalc.Formula.SeriesFunctions = function(a, b, c, d) {
   e = SocialCalc.Formula;
   for (var g = e.OperandValueAndType, l = e.LookupResultType, h = e.TypeLookupTable.plus, n = function(a, c) {
     b.push({type:a, value:c});
-  }, q = 0, s = "", r = 0, p = 0, t = 0, u = 1, v, z, w, A, y, B;0 < c.length;) {
-    e = g(d, c), f = e.type.charAt(0), "n" == f && (r += 1), "b" != f && (p += 1), "b" == f && (t += 1), "n" == f ? (f = e.value - 0, q += f, u *= f, v = void 0 != v ? f > v ? f : v : f, z = void 0 != z ? f < z ? f : z : f, 1 == r ? (y = f, B = 0) : (w = y + (f - y) / r, B = A = B + (f - y) * (f - w), y = w), s = l(e.type, s || e.type, h)) : "e" == f && "e" != s.charAt(0) && (s = e.type);
+  }, q = 0, s = "", r = 0, p = 0, t = 0, u = 1, v, z, w, A, y, C;0 < c.length;) {
+    e = g(d, c), f = e.type.charAt(0), "n" == f && (r += 1), "b" != f && (p += 1), "b" == f && (t += 1), "n" == f ? (f = e.value - 0, q += f, u *= f, v = void 0 != v ? f > v ? f : v : f, z = void 0 != z ? f < z ? f : z : f, 1 == r ? (y = f, C = 0) : (w = y + (f - y) / r, C = A = C + (f - y) * (f - w), y = w), s = l(e.type, s || e.type, h)) : "e" == f && "e" != s.charAt(0) && (s = e.type);
   }
   s = s || "n";
   switch(a) {
@@ -6112,7 +6112,7 @@ SocialCalc.Formula.DSeriesFunctions = function(a, b, c, d) {
     b.push({type:a, value:c});
   };
   f = e = void 0;
-  var v = 0, z = "", w = 0, A = 0, y = 1, B, D, H, N, Q;
+  var v = 0, z = "", w = 0, A = 0, y = 1, C, G, H, M, Q;
   g = r.TopOfStackValueAndType(d, c);
   l = r.OperandValueAndType(d, c);
   h = r.TopOfStackValueAndType(d, c);
@@ -6150,7 +6150,7 @@ SocialCalc.Formula.DSeriesFunctions = function(a, b, c, d) {
         q = !0;
         break a;
       }
-      q && (e = SocialCalc.crToCoord(l, c.row1num + g), n = c.sheetdata.GetAssuredCell(e), e = n.datavalue, f = n.valuetype, q = f.charAt(0), "n" == q && (w += 1), "b" != q && (A += 1), "n" == q ? (v1 = e - 0, v += v1, y *= v1, B = void 0 != B ? v1 > B ? v1 : B : v1, D = void 0 != D ? v1 < D ? v1 : D : v1, 1 == w ? (N = v1, Q = 0) : (e = N + (v1 - N) / w, Q = H = Q + (v1 - N) * (v1 - e), N = e), z = p(f, z || f, t)) : "e" == q && "e" != z.charAt(0) && (z = f));
+      q && (e = SocialCalc.crToCoord(l, c.row1num + g), n = c.sheetdata.GetAssuredCell(e), e = n.datavalue, f = n.valuetype, q = f.charAt(0), "n" == q && (w += 1), "b" != q && (A += 1), "n" == q ? (v1 = e - 0, v += v1, y *= v1, C = void 0 != C ? v1 > C ? v1 : C : v1, G = void 0 != G ? v1 < G ? v1 : G : v1, 1 == w ? (M = v1, Q = 0) : (e = M + (v1 - M) / w, Q = H = Q + (v1 - M) * (v1 - e), M = e), z = p(f, z || f, t)) : "e" == q && "e" != z.charAt(0) && (z = f));
     }
     z = z || "n";
     switch(a) {
@@ -6161,10 +6161,10 @@ SocialCalc.Formula.DSeriesFunctions = function(a, b, c, d) {
         u(z, y);
         break;
       case "DMIN":
-        u(z, D || 0);
+        u(z, G || 0);
         break;
       case "DMAX":
-        u(z, B || 0);
+        u(z, C || 0);
         break;
       case "DCOUNT":
         u("n", w);
@@ -7313,7 +7313,7 @@ SocialCalc.Formula.IoFunctions = function(a, b, c, d) {
       g.FunctionArgsError(a, b);
       return;
     }
-    0 == q[e - 1] ? f = g.OperandAsNumber(d, c) : 1 == q[e - 1] ? f = g.OperandAsText(d, c) : 2 == q[e - 1] ? (f = g.OperandAsCoord(d, c), f.value = f.value.replace(/\$/g, "")) : 3 == q[e - 1] ? f = g.OperandValueAndType(d, c) : 4 == q[e - 1] ? "range" == c[c.length - 1].type ? (f = g.OperandAsRange(d, c), f.value = f.value.replace(/\$/g, ""), f.value = d.cells[f.value.split("|")[0]].datavalue) : f = g.OperandAsText(d, c) : -1 == q[e - 1] && (f = g.OperandValueAndType(d, c));
+    0 == q[e - 1] ? f = g.OperandAsNumber(d, c) : 1 == q[e - 1] ? f = g.OperandAsText(d, c) : 2 == q[e - 1] ? (f = g.OperandAsCoord(d, c), f.value = f.value.replace(/\$/g, "")) : 3 == q[e - 1] ? f = g.OperandValueAndType(d, c) : 4 == q[e - 1] ? "range" == c[c.length - 1].type ? (f = g.OperandAsRange(d, c), f.value = f.value.replace(/\$/g, "")) : f = g.OperandAsText(d, c) : -1 == q[e - 1] && (f = g.OperandValueAndType(d, c));
     s[e] = f.value;
     r[e] = f.type;
     if ("e" == f.type.charAt(0)) {
@@ -7332,6 +7332,8 @@ SocialCalc.Formula.IoFunctions = function(a, b, c, d) {
     ;
     case "EMAILIF":
       h = "ti" + a;
+      l = "Send";
+      break;
     case "EMAILONEDIT":
     ;
     case "EMAILAT":
@@ -7356,7 +7358,7 @@ SocialCalc.Formula.IoFunctions = function(a, b, c, d) {
   }
   g.PushOperand(b, h, l);
 };
-SocialCalc.Formula.FunctionList.BUTTON = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Button('<%=cell_reference%>');\"><%=formated_value%></button>"];
+SocialCalc.Formula.FunctionList.BUTTON = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "trigger", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Button('<%=cell_reference%>');\"><%=formated_value%></button>"];
 SocialCalc.Formula.FunctionList.EMAIL = [SocialCalc.Formula.IoFunctions, 3, "to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>"];
 SocialCalc.Formula.FunctionList.EMAILIF = [SocialCalc.Formula.IoFunctions, 4, "condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>"];
 SocialCalc.Formula.FunctionList.EMAILONEDIT = [SocialCalc.Formula.IoFunctions, 3, "editRange, to, subject, body, [replacewith]", "", "action"];
@@ -7385,8 +7387,26 @@ SocialCalc.TriggerIoAction.Button = function(a) {
   }
 };
 SocialCalc.TriggerIoAction.Email = function(a) {
-  var b = SocialCalc.GetSpreadsheetControlObject(), c = b.sheet;
-  "undefined" !== typeof c.ioParameterList && (a = c.ioParameterList[a], emailContents = a[0].value.replace(/ /g, "%20") + " " + a[1].value.replace(/ /g, "%20") + " " + a[2].value.replace(/ /g, "%20"), b.editor.EditorScheduleSheetCommands("sendemail " + emailContents, !1, !1));
+  var b = SocialCalc.Formula, c = SocialCalc.GetSpreadsheetControlObject(), d = c.sheet, e = d.cells[a];
+  if ("undefined" !== typeof d.ioParameterList) {
+    var f = d.ioParameterList[a];
+    a = [];
+    for (var g = 1, l = 0;3 > l;l++) {
+      if ("t" == f[l].type.charAt(0) && (a[l] = [f[l].value.replace(/ /g, "%20")]), "coord" == f[l].type && (a[l] = [d.GetAssuredCell(f[l].value).datavalue.replace(/ /g, "%20")]), "range" == f[l].type) {
+        var h = b.DecodeRangeParts(d, f[l].value);
+        a[l] = [];
+        for (var n = 0, q = 0;q < h.ncols;q++) {
+          for (var s = 0;s < h.nrows;s++) {
+            e = SocialCalc.crToCoord(h.col1num + q, h.row1num + s), e = h.sheetdata.GetAssuredCell(e), a[l].push(e.datavalue.toString().replace(/ /g, "%20")), n++;
+          }
+        }
+        n > g && (g = n);
+      }
+    }
+    for (b = g - 1;-1 < b;b--) {
+      c.editor.EditorScheduleSheetCommands("sendemail " + (a[0][b >= a[0].length ? 0 : b] + " " + a[1][b >= a[1].length ? 0 : b] + " " + a[2][b >= a[2].length ? 0 : b]), !1, !1);
+    }
+  }
 };
 SocialCalc.TriggerIoAction.TextBox = function(a) {
   var b = SocialCalc.GetSpreadsheetControlObject(), c = b.sheet.cells[a];
@@ -9892,10 +9912,10 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     }), b;
   }
   function g() {
-    E.addEventListener ? (E.removeEventListener("DOMContentLoaded", l, !1), a.removeEventListener("load", l, !1)) : (E.detachEvent("onreadystatechange", l), a.detachEvent("onload", l));
+    D.addEventListener ? (D.removeEventListener("DOMContentLoaded", l, !1), a.removeEventListener("load", l, !1)) : (D.detachEvent("onreadystatechange", l), a.detachEvent("onload", l));
   }
   function l() {
-    (E.addEventListener || "load" === event.type || "complete" === E.readyState) && (g(), m.ready());
+    (D.addEventListener || "load" === event.type || "complete" === D.readyState) && (g(), m.ready());
   }
   function h(a, b, c) {
     if (void 0 === c && 1 === a.nodeType) {
@@ -9953,7 +9973,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
   }
   function t() {
     try {
-      return E.activeElement;
+      return D.activeElement;
     } catch (a) {
     }
   }
@@ -9989,12 +10009,12 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     var b = Kb.exec(a.type);
     return b ? a.type = b[1] : a.removeAttribute("type"), a;
   }
-  function B(a, b) {
+  function C(a, b) {
     for (var c, d = 0;null != (c = a[d]);d++) {
       m._data(c, "globalEval", !b || m._data(b[d], "globalEval"));
     }
   }
-  function D(a, b) {
+  function G(a, b) {
     if (1 === b.nodeType && m.hasData(a)) {
       var c, d, e;
       d = m._data(a);
@@ -10013,8 +10033,8 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     var d = m(c.createElement(b)).appendTo(c.body), e = a.getDefaultComputedStyle ? a.getDefaultComputedStyle(d[0]).display : m.css(d[0], "display");
     return d.detach(), e;
   }
-  function N(a) {
-    var b = E, c = db[a];
+  function M(a) {
+    var b = D, c = db[a];
     return c || (c = H(a, b), "none" !== c && c || (ra = (ra || m("<iframe frameborder='0' width='0' height='0'/>")).appendTo(b.documentElement), b = (ra[0].contentWindow || ra[0].contentDocument).document, b.write(), b.close(), c = H(a, b), ra.detach()), db[a] = c), c;
   }
   function Q(a, b) {
@@ -10036,19 +10056,19 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     }
     return d;
   }
-  function O(a, b) {
+  function N(a, b) {
     for (var c, d, e, f = [], g = 0, l = a.length;l > g;g++) {
-      d = a[g], d.style && (f[g] = m._data(d, "olddisplay"), c = d.style.display, b ? (f[g] || "none" !== c || (d.style.display = ""), "" === d.style.display && sa(d) && (f[g] = m._data(d, "olddisplay", N(d.nodeName)))) : f[g] || (e = sa(d), (c && "none" !== c || !e) && m._data(d, "olddisplay", e ? c : m.css(d, "display"))));
+      d = a[g], d.style && (f[g] = m._data(d, "olddisplay"), c = d.style.display, b ? (f[g] || "none" !== c || (d.style.display = ""), "" === d.style.display && sa(d) && (f[g] = m._data(d, "olddisplay", M(d.nodeName)))) : f[g] || (e = sa(d), (c && "none" !== c || !e) && m._data(d, "olddisplay", e ? c : m.css(d, "display"))));
     }
     for (g = 0;l > g;g++) {
       d = a[g], d.style && (b && "none" !== d.style.display && "" !== d.style.display || (d.style.display = b ? f[g] || "" : "none"));
     }
     return a;
   }
-  function C(a, b, c) {
+  function E(a, b, c) {
     return(a = Lb.exec(b)) ? Math.max(0, a[1] - (c || 0)) + (a[2] || "px") : b;
   }
-  function G(a, b, c, d, e) {
+  function B(a, b, c, d, e) {
     b = c === (d ? "border" : "content") ? 4 : "width" === b ? 1 : 0;
     for (var f = 0;4 > b;b += 2) {
       "margin" === c && (f += m.css(a, c + ja[b], !0, e)), d ? ("content" === c && (f -= m.css(a, "padding" + ja[b], !0, e)), "margin" !== c && (f -= m.css(a, "border" + ja[b] + "Width", !0, e))) : (f += m.css(a, "padding" + ja[b], !0, e), "padding" !== c && (f += m.css(a, "border" + ja[b] + "Width", !0, e)));
@@ -10064,7 +10084,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
       d = g && (x.boxSizingReliable() || e === a.style[b]);
       e = parseFloat(e) || 0;
     }
-    return e + G(a, b, c || (g ? "border" : "content"), d, f) + "px";
+    return e + B(a, b, c || (g ? "border" : "content"), d, f) + "px";
   }
   function I(a, b, c, d, e) {
     return new I.prototype.init(a, b, c, d, e);
@@ -10370,7 +10390,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
       if (1 !== (h = c.nodeType) && 9 !== h) {
         return[];
       }
-      if (O && !e) {
+      if (N && !e) {
         if (f = xa.exec(a)) {
           if (F = f[1]) {
             if (9 === h) {
@@ -10415,32 +10435,32 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
           }
         }
       }
-      var M;
+      var L;
       a: {
         a = a.replace(aa, "$1");
-        var L, P;
+        var K, P;
         g = p(a);
         if (!e && 1 === g.length) {
-          if (M = g[0] = g[0].slice(0), 2 < M.length && "ID" === (L = M[0]).type && y.getById && 9 === c.nodeType && O && x.relative[M[1].type]) {
-            if (c = (x.find.ID(L.matches[0].replace(na, oa), c) || [])[0], !c) {
-              M = d;
+          if (L = g[0] = g[0].slice(0), 2 < L.length && "ID" === (K = L[0]).type && y.getById && 9 === c.nodeType && N && x.relative[L[1].type]) {
+            if (c = (x.find.ID(K.matches[0].replace(na, oa), c) || [])[0], !c) {
+              L = d;
               break a;
             }
-            a = a.slice(M.shift().value.length);
+            a = a.slice(L.shift().value.length);
           }
-          for (h = fa.needsContext.test(a) ? 0 : M.length;h-- && (L = M[h], !x.relative[f = L.type]);) {
-            if ((P = x.find[f]) && (e = P(L.matches[0].replace(na, oa), la.test(M[0].type) && n(c.parentNode) || c))) {
-              if (M.splice(h, 1), a = e.length && r(M), !a) {
-                M = (ma.apply(d, e), d);
+          for (h = fa.needsContext.test(a) ? 0 : L.length;h-- && (K = L[h], !x.relative[f = K.type]);) {
+            if ((P = x.find[f]) && (e = P(K.matches[0].replace(na, oa), la.test(L[0].type) && n(c.parentNode) || c))) {
+              if (L.splice(h, 1), a = e.length && r(L), !a) {
+                L = (ma.apply(d, e), d);
                 break a;
               }
               break;
             }
           }
         }
-        M = (E(a, g)(e, c, !O, d, la.test(a) && n(c.parentNode) || c), d);
+        L = (D(a, g)(e, c, !N, d, la.test(a) && n(c.parentNode) || c), d);
       }
-      return M;
+      return L;
     }
     function c() {
       function a(c, d) {
@@ -10580,19 +10600,19 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     }
     function v(a, c, e, f, g, F) {
       return f && !f[R] && (f = v(f)), g && !g[R] && (g = v(g, F)), d(function(d, F, h, l) {
-        var m, L, n = [], P = [], q = F.length, K;
-        if (!(K = d)) {
-          K = c || "*";
+        var m, K, n = [], P = [], q = F.length, O;
+        if (!(O = d)) {
+          O = c || "*";
           for (var p = h.nodeType ? [h] : h, za = [], va = 0, r = p.length;r > va;va++) {
-            b(K, p[va], za);
+            b(O, p[va], za);
           }
-          K = za;
+          O = za;
         }
-        K = !a || !d && c ? K : t(K, n, a, h, l);
-        p = e ? g || (d ? a : q || f) ? [] : F : K;
-        if (e && e(K, p, h, l), f) {
+        O = !a || !d && c ? O : t(O, n, a, h, l);
+        p = e ? g || (d ? a : q || f) ? [] : F : O;
+        if (e && e(O, p, h, l), f) {
           for (m = t(p, P), f(m, [], h, l), h = m.length;h--;) {
-            (L = m[h]) && (p[P[h]] = !(K[P[h]] = L));
+            (K = m[h]) && (p[P[h]] = !(O[P[h]] = K));
           }
         }
         if (d) {
@@ -10600,12 +10620,12 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
             if (g) {
               m = [];
               for (h = p.length;h--;) {
-                (L = p[h]) && m.push(K[h] = L);
+                (K = p[h]) && m.push(O[h] = K);
               }
               g(null, p = [], m, l);
             }
             for (h = p.length;h--;) {
-              (L = p[h]) && -1 < (m = g ? U.call(d, L) : n[h]) && (d[m] = !(F[m] = L));
+              (K = p[h]) && -1 < (m = g ? U.call(d, K) : n[h]) && (d[m] = !(F[m] = K));
             }
           }
         } else {
@@ -10621,7 +10641,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
       }, c, !0), h = s(function(a) {
         return-1 < U.call(b, a);
       }, c, !0), l = [function(a, c, d) {
-        return!f && (d || c !== C) || ((b = c).nodeType ? F(a, c, d) : h(a, c, d));
+        return!f && (d || c !== E) || ((b = c).nodeType ? F(a, c, d) : h(a, c, d));
       }];e > g;g++) {
         if (c = x.relative[a[g].type]) {
           l = [s(u(l), c)];
@@ -10638,10 +10658,10 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     }
     function z(a, c) {
       var e = 0 < c.length, f = 0 < a.length, g = function(d, g, F, h, l) {
-        var m, L, n, P = 0, K = "0", q = d && [], p = [], za = C, va = d || f && x.find.TAG("*", l), r = ca += null == za ? 1 : Math.random() || 0.1, s = va.length;
-        for (l && (C = g !== J && g);K !== s && null != (m = va[K]);K++) {
+        var m, K, n, P = 0, q = "0", O = d && [], p = [], za = E, va = d || f && x.find.TAG("*", l), r = ca += null == za ? 1 : Math.random() || 0.1, s = va.length;
+        for (l && (E = g !== J && g);q !== s && null != (m = va[q]);q++) {
           if (f && m) {
-            for (L = 0;n = a[L++];) {
+            for (K = 0;n = a[K++];) {
               if (n(m, g, F)) {
                 h.push(m);
                 break;
@@ -10649,16 +10669,16 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
             }
             l && (ca = r);
           }
-          e && ((m = !n && m) && P--, d && q.push(m));
+          e && ((m = !n && m) && P--, d && O.push(m));
         }
-        if (P += K, e && K !== P) {
-          for (L = 0;n = c[L++];) {
-            n(q, p, g, F);
+        if (P += q, e && q !== P) {
+          for (K = 0;n = c[K++];) {
+            n(O, p, g, F);
           }
           if (d) {
             if (0 < P) {
-              for (;K--;) {
-                q[K] || p[K] || (p[K] = ja.call(h));
+              for (;q--;) {
+                O[q] || p[q] || (p[q] = ja.call(h));
               }
             }
             p = t(p);
@@ -10666,11 +10686,11 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
           ma.apply(h, p);
           l && !d && 0 < p.length && 1 < P + c.length && b.uniqueSort(h);
         }
-        return l && (ca = r, C = za), q;
+        return l && (ca = r, E = za), O;
       };
       return e ? d(g) : g;
     }
-    var A, y, x, B, G, E, C, D, H, I, J, N, O, X, Q, Da, Aa, R = "sizzle" + -new Date, ba = a.document, ca = 0, Tb = 0, V = c(), W = c(), Z = c(), Y = function(a, b) {
+    var A, y, x, C, B, D, E, G, H, I, J, M, N, X, Q, Da, Aa, R = "sizzle" + -new Date, ba = a.document, ca = 0, Tb = 0, V = c(), W = c(), Z = c(), Y = function(a, b) {
       return a === b && (H = !0), 0;
     }, T = "undefined", $ = -2147483648, ga = {}.hasOwnProperty, S = [], ja = S.pop, ka = S.push, ma = S.push, da = S.slice, U = S.indexOf || function(a) {
       for (var b = 0, c = this.length;c > b;b++) {
@@ -10698,13 +10718,13 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
       }};
     }
     y = b.support = {};
-    G = b.isXML = function(a) {
+    B = b.isXML = function(a) {
       return(a = a && (a.ownerDocument || a).documentElement) ? "HTML" !== a.nodeName : !1;
     };
     I = b.setDocument = function(a) {
       var b, c = a ? a.ownerDocument || a : ba;
       a = c.defaultView;
-      return c !== J && 9 === c.nodeType && c.documentElement ? (J = c, N = c.documentElement, O = !G(c), a && a !== a.top && (a.addEventListener ? a.addEventListener("unload", function() {
+      return c !== J && 9 === c.nodeType && c.documentElement ? (J = c, M = c.documentElement, N = !B(c), a && a !== a.top && (a.addEventListener ? a.addEventListener("unload", function() {
         I();
       }, !1) : a.attachEvent && a.attachEvent("onunload", function() {
         I();
@@ -10715,9 +10735,9 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
       }), y.getElementsByClassName = Ba.test(c.getElementsByClassName) && e(function(a) {
         return a.innerHTML = "<div class='a'></div><div class='a i'></div>", a.firstChild.className = "i", 2 === a.getElementsByClassName("i").length;
       }), y.getById = e(function(a) {
-        return N.appendChild(a).id = R, !c.getElementsByName || !c.getElementsByName(R).length;
+        return M.appendChild(a).id = R, !c.getElementsByName || !c.getElementsByName(R).length;
       }), y.getById ? (x.find.ID = function(a, b) {
-        if (typeof b.getElementById !== T && O) {
+        if (typeof b.getElementById !== T && N) {
           var c = b.getElementById(a);
           return c && c.parentNode ? [c] : [];
         }
@@ -10743,7 +10763,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         }
         return f;
       }, x.find.CLASS = y.getElementsByClassName && function(a, b) {
-        return typeof b.getElementsByClassName !== T && O ? b.getElementsByClassName(a) : void 0;
+        return typeof b.getElementsByClassName !== T && N ? b.getElementsByClassName(a) : void 0;
       }, Q = [], X = [], (y.qsa = Ba.test(c.querySelectorAll)) && (e(function(a) {
         a.innerHTML = "<select t=''><option selected=''></option></select>";
         a.querySelectorAll("[t^='']").length && X.push("[*^$]=[\\x20\\t\\r\\n\\f]*(?:''|\"\")");
@@ -10757,11 +10777,11 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         a.querySelectorAll(":enabled").length || X.push(":enabled", ":disabled");
         a.querySelectorAll("*,:x");
         X.push(",.*:");
-      })), (y.matchesSelector = Ba.test(Da = N.webkitMatchesSelector || N.mozMatchesSelector || N.oMatchesSelector || N.msMatchesSelector)) && e(function(a) {
+      })), (y.matchesSelector = Ba.test(Da = M.webkitMatchesSelector || M.mozMatchesSelector || M.oMatchesSelector || M.msMatchesSelector)) && e(function(a) {
         y.disconnectedMatch = Da.call(a, "div");
         Da.call(a, "[s!='']:x");
         Q.push("!=", ea);
-      }), X = X.length && RegExp(X.join("|")), Q = Q.length && RegExp(Q.join("|")), b = Ba.test(N.compareDocumentPosition), Aa = b || Ba.test(N.contains) ? function(a, b) {
+      }), X = X.length && RegExp(X.join("|")), Q = Q.length && RegExp(Q.join("|")), b = Ba.test(M.compareDocumentPosition), Aa = b || Ba.test(M.contains) ? function(a, b) {
         var c = 9 === a.nodeType ? a.documentElement : a, d = b && b.parentNode;
         return a === d || !(!d || 1 !== d.nodeType || !(c.contains ? c.contains(d) : a.compareDocumentPosition && 16 & a.compareDocumentPosition(d)));
       } : function(a, b) {
@@ -10778,7 +10798,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
           return H = !0, 0;
         }
         var d = !a.compareDocumentPosition - !b.compareDocumentPosition;
-        return d ? d : (d = (a.ownerDocument || a) === (b.ownerDocument || b) ? a.compareDocumentPosition(b) : 1, 1 & d || !y.sortDetached && b.compareDocumentPosition(a) === d ? a === c || a.ownerDocument === ba && Aa(ba, a) ? -1 : b === c || b.ownerDocument === ba && Aa(ba, b) ? 1 : D ? U.call(D, a) - U.call(D, b) : 0 : 4 & d ? -1 : 1);
+        return d ? d : (d = (a.ownerDocument || a) === (b.ownerDocument || b) ? a.compareDocumentPosition(b) : 1, 1 & d || !y.sortDetached && b.compareDocumentPosition(a) === d ? a === c || a.ownerDocument === ba && Aa(ba, a) ? -1 : b === c || b.ownerDocument === ba && Aa(ba, b) ? 1 : G ? U.call(G, a) - U.call(G, b) : 0 : 4 & d ? -1 : 1);
       } : function(a, b) {
         if (a === b) {
           return H = !0, 0;
@@ -10787,7 +10807,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         d = a.parentNode;
         var f = b.parentNode, F = [a], h = [b];
         if (!d || !f) {
-          return a === c ? -1 : b === c ? 1 : d ? -1 : f ? 1 : D ? U.call(D, a) - U.call(D, b) : 0;
+          return a === c ? -1 : b === c ? 1 : d ? -1 : f ? 1 : G ? U.call(G, a) - U.call(G, b) : 0;
         }
         if (d === f) {
           return g(a, b);
@@ -10808,7 +10828,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
       return b(a, null, null, c);
     };
     b.matchesSelector = function(a, c) {
-      if ((a.ownerDocument || a) !== J && I(a), c = c.replace(ra, "='$1']"), y.matchesSelector && O && !(Q && Q.test(c) || X && X.test(c))) {
+      if ((a.ownerDocument || a) !== J && I(a), c = c.replace(ra, "='$1']"), y.matchesSelector && N && !(Q && Q.test(c) || X && X.test(c))) {
         try {
           var d = Da.call(a, c);
           if (d || y.disconnectedMatch || a.document && 11 !== a.document.nodeType) {
@@ -10824,15 +10844,15 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     };
     b.attr = function(a, b) {
       (a.ownerDocument || a) !== J && I(a);
-      var c = x.attrHandle[b.toLowerCase()], c = c && ga.call(x.attrHandle, b.toLowerCase()) ? c(a, b, !O) : void 0;
-      return void 0 !== c ? c : y.attributes || !O ? a.getAttribute(b) : (c = a.getAttributeNode(b)) && c.specified ? c.value : null;
+      var c = x.attrHandle[b.toLowerCase()], c = c && ga.call(x.attrHandle, b.toLowerCase()) ? c(a, b, !N) : void 0;
+      return void 0 !== c ? c : y.attributes || !N ? a.getAttribute(b) : (c = a.getAttributeNode(b)) && c.specified ? c.value : null;
     };
     b.error = function(a) {
       throw Error("Syntax error, unrecognized expression: " + a);
     };
     b.uniqueSort = function(a) {
       var b, c = [], d = 0, e = 0;
-      if (H = !y.detectDuplicates, D = !y.sortStable && a.slice(0), a.sort(Y), H) {
+      if (H = !y.detectDuplicates, G = !y.sortStable && a.slice(0), a.sort(Y), H) {
         for (;b = a[e++];) {
           b === a[e] && (d = c.push(e));
         }
@@ -10840,9 +10860,9 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
           a.splice(c[d], 1);
         }
       }
-      return D = null, a;
+      return G = null, a;
     };
-    B = b.getText = function(a) {
+    C = b.getText = function(a) {
       var b, c = "", d = 0;
       if (b = a.nodeType) {
         if (1 === b || 9 === b || 11 === b) {
@@ -10850,7 +10870,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
             return a.textContent;
           }
           for (a = a.firstChild;a;a = a.nextSibling) {
-            c += B(a);
+            c += C(a);
           }
         } else {
           if (3 === b || 4 === b) {
@@ -10859,7 +10879,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         }
       } else {
         for (;b = a[d++];) {
-          c += B(b);
+          c += C(b);
         }
       }
       return c;
@@ -10893,15 +10913,15 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
       return 1 === d && 0 === e ? function(a) {
         return!!a.parentNode;
       } : function(b, c, h) {
-        var l, m, M, L, n;
+        var l, m, L, K, n;
         c = f !== g ? "nextSibling" : "previousSibling";
-        var P = b.parentNode, K = F && b.nodeName.toLowerCase();
+        var P = b.parentNode, q = F && b.nodeName.toLowerCase();
         h = !h && !F;
         if (P) {
           if (f) {
             for (;c;) {
               for (m = b;m = m[c];) {
-                if (F ? m.nodeName.toLowerCase() === K : 1 === m.nodeType) {
+                if (F ? m.nodeName.toLowerCase() === q : 1 === m.nodeType) {
                   return!1;
                 }
               }
@@ -10910,21 +10930,21 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
             return!0;
           }
           if (n = [g ? P.firstChild : P.lastChild], g && h) {
-            for (h = P[R] || (P[R] = {}), l = h[a] || [], L = l[0] === ca && l[1], M = l[0] === ca && l[2], m = L && P.childNodes[L];m = ++L && m && m[c] || (M = L = 0) || n.pop();) {
-              if (1 === m.nodeType && ++M && m === b) {
-                h[a] = [ca, L, M];
+            for (h = P[R] || (P[R] = {}), l = h[a] || [], K = l[0] === ca && l[1], L = l[0] === ca && l[2], m = K && P.childNodes[K];m = ++K && m && m[c] || (L = K = 0) || n.pop();) {
+              if (1 === m.nodeType && ++L && m === b) {
+                h[a] = [ca, K, L];
                 break;
               }
             }
           } else {
             if (h && (l = (b[R] || (b[R] = {}))[a]) && l[0] === ca) {
-              M = l[1];
+              L = l[1];
             } else {
-              for (;(m = ++L && m && m[c] || (M = L = 0) || n.pop()) && ((F ? m.nodeName.toLowerCase() !== K : 1 !== m.nodeType) || !++M || (h && ((m[R] || (m[R] = {}))[a] = [ca, M]), m !== b));) {
+              for (;(m = ++K && m && m[c] || (L = K = 0) || n.pop()) && ((F ? m.nodeName.toLowerCase() !== q : 1 !== m.nodeType) || !++L || (h && ((m[R] || (m[R] = {}))[a] = [ca, L]), m !== b));) {
               }
             }
           }
-          return M -= e, M === d || 0 === M % d && 0 <= M / d;
+          return L -= e, L === d || 0 === L % d && 0 <= L / d;
         }
       };
     }, PSEUDO:function(a, c) {
@@ -10937,7 +10957,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         return f(a, 0, e);
       }) : f;
     }}, pseudos:{not:d(function(a) {
-      var b = [], c = [], e = E(a.replace(aa, "$1"));
+      var b = [], c = [], e = D(a.replace(aa, "$1"));
       return e[R] ? d(function(a, b, c, d) {
         var f;
         c = e(a, null, d, []);
@@ -10953,13 +10973,13 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
       };
     }), contains:d(function(a) {
       return function(b) {
-        return-1 < (b.textContent || b.innerText || B(b)).indexOf(a);
+        return-1 < (b.textContent || b.innerText || C(b)).indexOf(a);
       };
     }), lang:d(function(a) {
       return ta.test(a || "") || b.error("unsupported lang: " + a), a = a.replace(na, oa).toLowerCase(), function(b) {
         var c;
         do {
-          if (c = O ? b.lang : b.getAttribute("xml:lang") || b.getAttribute("lang")) {
+          if (c = N ? b.lang : b.getAttribute("xml:lang") || b.getAttribute("lang")) {
             return c = c.toLowerCase(), c === a || 0 === c.indexOf(a + "-");
           }
         } while ((b = b.parentNode) && 1 === b.nodeType);
@@ -10969,7 +10989,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
       var c = a.location && a.location.hash;
       return c && c.slice(1) === b.id;
     }, root:function(a) {
-      return a === N;
+      return a === M;
     }, focus:function(a) {
       return a === J.activeElement && (!J.hasFocus || J.hasFocus()) && !!(a.type || a.href || ~a.tabIndex);
     }, enabled:function(a) {
@@ -11036,7 +11056,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     }
     q.prototype = x.filters = x.pseudos;
     x.setFilters = new q;
-    E = b.compile = function(a, b) {
+    D = b.compile = function(a, b) {
       var c, d = [], e = [], f = Z[a + " "];
       if (!f) {
         b || (b = p(a));
@@ -11100,7 +11120,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
   }, is:function(a) {
     return!!d(this, "string" == typeof a && jb.test(a) ? m(a) : a || [], !1).length;
   }});
-  var fa, E = a.document, Ub = /^(?:\s*(<[\w\W]+>)[^>]*|#([\w-]*))$/;
+  var fa, D = a.document, Ub = /^(?:\s*(<[\w\W]+>)[^>]*|#([\w-]*))$/;
   (m.fn.init = function(a, b) {
     var c, d;
     if (!a) {
@@ -11111,25 +11131,25 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         return!b || b.jquery ? (b || fa).find(a) : this.constructor(b).find(a);
       }
       if (c[1]) {
-        if (b = b instanceof m ? b[0] : b, m.merge(this, m.parseHTML(c[1], b && b.nodeType ? b.ownerDocument || b : E, !0)), kb.test(c[1]) && m.isPlainObject(b)) {
+        if (b = b instanceof m ? b[0] : b, m.merge(this, m.parseHTML(c[1], b && b.nodeType ? b.ownerDocument || b : D, !0)), kb.test(c[1]) && m.isPlainObject(b)) {
           for (c in b) {
             m.isFunction(this[c]) ? this[c](b[c]) : this.attr(c, b[c]);
           }
         }
         return this;
       }
-      if (d = E.getElementById(c[2]), d && d.parentNode) {
+      if (d = D.getElementById(c[2]), d && d.parentNode) {
         if (d.id !== c[2]) {
           return fa.find(a);
         }
         this.length = 1;
         this[0] = d;
       }
-      return this.context = E, this.selector = a, this;
+      return this.context = D, this.selector = a, this;
     }
     return a.nodeType ? (this.context = this[0] = a, this.length = 1, this) : m.isFunction(a) ? "undefined" != typeof fa.ready ? fa.ready(a) : a(m) : (void 0 !== a.selector && (this.selector = a.selector, this.context = a.context), m.makeArray(a, this));
   }).prototype = m.fn;
-  fa = m(E);
+  fa = m(D);
   var Vb = /^(?:parents|prev(?:Until|All))/, Wb = {children:!0, contents:!0, next:!0, prev:!0};
   m.extend({dir:function(a, b, c) {
     var d = [];
@@ -11202,7 +11222,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
   var Z = /\S+/g, bb = {};
   m.Callbacks = function(a) {
     a = "string" == typeof a ? bb[a] || f(a) : m.extend({}, a);
-    var b, c, d, e, g, h, l = [], n = !a.once && [], p = function(f) {
+    var b, c, d, e, g, h, l = [], n = !a.once && [], q = function(f) {
       c = a.memory && f;
       d = !0;
       g = h || 0;
@@ -11215,17 +11235,17 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         }
       }
       b = !1;
-      l && (n ? n.length && p(n.shift()) : c ? l = [] : q.disable());
-    }, q = {add:function() {
+      l && (n ? n.length && q(n.shift()) : c ? l = [] : p.disable());
+    }, p = {add:function() {
       if (l) {
         var d = l.length;
         !function Sb(b) {
           m.each(b, function(b, c) {
             var d = m.type(c);
-            "function" === d ? a.unique && q.has(c) || l.push(c) : c && c.length && "string" !== d && Sb(c);
+            "function" === d ? a.unique && p.has(c) || l.push(c) : c && c.length && "string" !== d && Sb(c);
           });
         }(arguments);
-        b ? e = l.length : c && (h = d, p(c));
+        b ? e = l.length : c && (h = d, q(c));
       }
       return this;
     }, remove:function() {
@@ -11243,17 +11263,17 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     }, disabled:function() {
       return!l;
     }, lock:function() {
-      return n = void 0, c || q.disable(), this;
+      return n = void 0, c || p.disable(), this;
     }, locked:function() {
       return!n;
     }, fireWith:function(a, c) {
-      return!l || d && !n || (c = c || [], c = [a, c.slice ? c.slice() : c], b ? n.push(c) : p(c)), this;
+      return!l || d && !n || (c = c || [], c = [a, c.slice ? c.slice() : c], b ? n.push(c) : q(c)), this;
     }, fire:function() {
-      return q.fireWith(this, arguments), this;
+      return p.fireWith(this, arguments), this;
     }, fired:function() {
       return!!d;
     }};
-    return q;
+    return p;
   };
   m.extend({Deferred:function(a) {
     var b = [["resolve", "done", m.Callbacks("once memory"), "resolved"], ["reject", "fail", m.Callbacks("once memory"), "rejected"], ["notify", "progress", m.Callbacks("memory")]], c = "pending", d = {state:function() {
@@ -11309,34 +11329,34 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     a ? m.readyWait++ : m.ready(!0);
   }, ready:function(a) {
     if (!0 === a ? !--m.readyWait : !m.isReady) {
-      if (!E.body) {
+      if (!D.body) {
         return setTimeout(m.ready);
       }
       m.isReady = !0;
-      !0 !== a && 0 < --m.readyWait || (ya.resolveWith(E, [m]), m.fn.trigger && m(E).trigger("ready").off("ready"));
+      !0 !== a && 0 < --m.readyWait || (ya.resolveWith(D, [m]), m.fn.trigger && m(D).trigger("ready").off("ready"));
     }
   }});
   m.ready.promise = function(b) {
     if (!ya) {
-      if (ya = m.Deferred(), "complete" === E.readyState) {
+      if (ya = m.Deferred(), "complete" === D.readyState) {
         setTimeout(m.ready);
       } else {
-        if (E.addEventListener) {
-          E.addEventListener("DOMContentLoaded", l, !1), a.addEventListener("load", l, !1);
+        if (D.addEventListener) {
+          D.addEventListener("DOMContentLoaded", l, !1), a.addEventListener("load", l, !1);
         } else {
-          E.attachEvent("onreadystatechange", l);
+          D.attachEvent("onreadystatechange", l);
           a.attachEvent("onload", l);
           var c = !1;
           try {
-            c = null == a.frameElement && E.documentElement;
+            c = null == a.frameElement && D.documentElement;
           } catch (d) {
           }
-          c && c.doScroll && !function K() {
+          c && c.doScroll && !function O() {
             if (!m.isReady) {
               try {
                 c.doScroll("left");
               } catch (a) {
-                return setTimeout(K, 50);
+                return setTimeout(O, 50);
               }
               g();
               m.ready();
@@ -11354,11 +11374,11 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
   x.ownLast = "0" !== lb;
   x.inlineBlockNeedsLayout = !1;
   m(function() {
-    var a, b, c = E.getElementsByTagName("body")[0];
-    c && (a = E.createElement("div"), a.style.cssText = "border:0;width:0;height:0;position:absolute;top:0;left:-9999px;margin-top:1px", b = E.createElement("div"), c.appendChild(a).appendChild(b), typeof b.style.zoom !== W && (b.style.cssText = "border:0;margin:0;width:1px;padding:1px;display:inline;zoom:1", (x.inlineBlockNeedsLayout = 3 === b.offsetWidth) && (c.style.zoom = 1)), c.removeChild(a));
+    var a, b, c = D.getElementsByTagName("body")[0];
+    c && (a = D.createElement("div"), a.style.cssText = "border:0;width:0;height:0;position:absolute;top:0;left:-9999px;margin-top:1px", b = D.createElement("div"), c.appendChild(a).appendChild(b), typeof b.style.zoom !== W && (b.style.cssText = "border:0;margin:0;width:1px;padding:1px;display:inline;zoom:1", (x.inlineBlockNeedsLayout = 3 === b.offsetWidth) && (c.style.zoom = 1)), c.removeChild(a));
   });
   (function() {
-    var a = E.createElement("div");
+    var a = D.createElement("div");
     if (null == x.deleteExpando) {
       x.deleteExpando = !0;
       try {
@@ -11466,8 +11486,8 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     return e ? a : n ? b.call(a) : l ? b(a[0], c) : f;
   }, Ia = /^(?:checkbox|radio)$/i;
   !function() {
-    var a = E.createDocumentFragment(), b = E.createElement("div"), c = E.createElement("input");
-    if (b.setAttribute("className", "t"), b.innerHTML = "  <link/><table></table><a href='/a'>a</a>", x.leadingWhitespace = 3 === b.firstChild.nodeType, x.tbody = !b.getElementsByTagName("tbody").length, x.htmlSerialize = !!b.getElementsByTagName("link").length, x.html5Clone = "<:nav></:nav>" !== E.createElement("nav").cloneNode(!0).outerHTML, c.type = "checkbox", c.checked = !0, a.appendChild(c), x.appendChecked = c.checked, b.innerHTML = "<textarea>x</textarea>", x.noCloneChecked = !!b.cloneNode(!0).lastChild.defaultValue, 
+    var a = D.createDocumentFragment(), b = D.createElement("div"), c = D.createElement("input");
+    if (b.setAttribute("className", "t"), b.innerHTML = "  <link/><table></table><a href='/a'>a</a>", x.leadingWhitespace = 3 === b.firstChild.nodeType, x.tbody = !b.getElementsByTagName("tbody").length, x.htmlSerialize = !!b.getElementsByTagName("link").length, x.html5Clone = "<:nav></:nav>" !== D.createElement("nav").cloneNode(!0).outerHTML, c.type = "checkbox", c.checked = !0, a.appendChild(c), x.appendChecked = c.checked, b.innerHTML = "<textarea>x</textarea>", x.noCloneChecked = !!b.cloneNode(!0).lastChild.defaultValue, 
     a.appendChild(b), b.innerHTML = "<input type='radio' checked='checked' name='t'/>", x.checkClone = b.cloneNode(!0).cloneNode(!0).lastChild.checked, x.noCloneEvent = !0, b.attachEvent && (b.attachEvent("onclick", function() {
       x.noCloneEvent = !1;
     }), b.cloneNode(!0).click()), null == x.deleteExpando) {
@@ -11481,61 +11501,61 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     a = b = c = null;
   }();
   (function() {
-    var b, c, d = E.createElement("div");
+    var b, c, d = D.createElement("div");
     for (b in{submit:!0, change:!0, focusin:!0}) {
       c = "on" + b, (x[b + "Bubbles"] = c in a) || (d.setAttribute(c, "t"), x[b + "Bubbles"] = !1 === d.attributes[c].expando);
     }
   })();
   var Oa = /^(?:input|select|textarea)$/i, Xb = /^key/, Yb = /^(?:mouse|contextmenu)|click/, mb = /^(?:focusinfocus|focusoutblur)$/, nb = /^([^.]*)(?:\.(.+)|)$/;
   m.event = {global:{}, add:function(a, b, c, d, e) {
-    var f, g, h, l, n, p, q, r, s, u;
+    var f, g, h, l, n, q, p, r, s, u;
     if (h = m._data(a)) {
       c.handler && (l = c, c = l.handler, e = l.selector);
       c.guid || (c.guid = m.guid++);
       (g = h.events) || (g = h.events = {});
-      (p = h.handle) || (p = h.handle = function(a) {
-        return typeof m === W || a && m.event.triggered === a.type ? void 0 : m.event.dispatch.apply(p.elem, arguments);
-      }, p.elem = a);
+      (q = h.handle) || (q = h.handle = function(a) {
+        return typeof m === W || a && m.event.triggered === a.type ? void 0 : m.event.dispatch.apply(q.elem, arguments);
+      }, q.elem = a);
       b = (b || "").match(Z) || [""];
       for (h = b.length;h--;) {
-        f = nb.exec(b[h]) || [], s = u = f[1], f = (f[2] || "").split(".").sort(), s && (n = m.event.special[s] || {}, s = (e ? n.delegateType : n.bindType) || s, n = m.event.special[s] || {}, q = m.extend({type:s, origType:u, data:d, handler:c, guid:c.guid, selector:e, needsContext:e && m.expr.match.needsContext.test(e), namespace:f.join(".")}, l), (r = g[s]) || (r = g[s] = [], r.delegateCount = 0, n.setup && !1 !== n.setup.call(a, d, f, p) || (a.addEventListener ? a.addEventListener(s, p, !1) : 
-        a.attachEvent && a.attachEvent("on" + s, p))), n.add && (n.add.call(a, q), q.handler.guid || (q.handler.guid = c.guid)), e ? r.splice(r.delegateCount++, 0, q) : r.push(q), m.event.global[s] = !0);
+        f = nb.exec(b[h]) || [], s = u = f[1], f = (f[2] || "").split(".").sort(), s && (n = m.event.special[s] || {}, s = (e ? n.delegateType : n.bindType) || s, n = m.event.special[s] || {}, p = m.extend({type:s, origType:u, data:d, handler:c, guid:c.guid, selector:e, needsContext:e && m.expr.match.needsContext.test(e), namespace:f.join(".")}, l), (r = g[s]) || (r = g[s] = [], r.delegateCount = 0, n.setup && !1 !== n.setup.call(a, d, f, q) || (a.addEventListener ? a.addEventListener(s, q, !1) : 
+        a.attachEvent && a.attachEvent("on" + s, q))), n.add && (n.add.call(a, p), p.handler.guid || (p.handler.guid = c.guid)), e ? r.splice(r.delegateCount++, 0, p) : r.push(p), m.event.global[s] = !0);
       }
       a = null;
     }
   }, remove:function(a, b, c, d, e) {
-    var f, g, h, l, n, p, q, r, s, u, t, v = m.hasData(a) && m._data(a);
-    if (v && (p = v.events)) {
+    var f, g, h, l, n, q, p, r, s, u, t, v = m.hasData(a) && m._data(a);
+    if (v && (q = v.events)) {
       b = (b || "").match(Z) || [""];
       for (n = b.length;n--;) {
         if (h = nb.exec(b[n]) || [], s = t = h[1], u = (h[2] || "").split(".").sort(), s) {
-          q = m.event.special[s] || {};
-          s = (d ? q.delegateType : q.bindType) || s;
-          r = p[s] || [];
+          p = m.event.special[s] || {};
+          s = (d ? p.delegateType : p.bindType) || s;
+          r = q[s] || [];
           h = h[2] && RegExp("(^|\\.)" + u.join("\\.(?:.*\\.|)") + "(\\.|$)");
           for (l = f = r.length;f--;) {
-            g = r[f], !e && t !== g.origType || c && c.guid !== g.guid || h && !h.test(g.namespace) || d && d !== g.selector && ("**" !== d || !g.selector) || (r.splice(f, 1), g.selector && r.delegateCount--, q.remove && q.remove.call(a, g));
+            g = r[f], !e && t !== g.origType || c && c.guid !== g.guid || h && !h.test(g.namespace) || d && d !== g.selector && ("**" !== d || !g.selector) || (r.splice(f, 1), g.selector && r.delegateCount--, p.remove && p.remove.call(a, g));
           }
-          l && !r.length && (q.teardown && !1 !== q.teardown.call(a, u, v.handle) || m.removeEvent(a, s, v.handle), delete p[s]);
+          l && !r.length && (p.teardown && !1 !== p.teardown.call(a, u, v.handle) || m.removeEvent(a, s, v.handle), delete q[s]);
         } else {
-          for (s in p) {
+          for (s in q) {
             m.event.remove(a, s + b[n], c, d, !0);
           }
         }
       }
-      m.isEmptyObject(p) && (delete v.handle, m._removeData(a, "events"));
+      m.isEmptyObject(q) && (delete v.handle, m._removeData(a, "events"));
     }
   }, trigger:function(b, c, d, e) {
-    var f, g, h, l, n, q, p = [d || E], r = aa.call(b, "type") ? b.type : b;
+    var f, g, h, l, n, q, p = [d || D], r = aa.call(b, "type") ? b.type : b;
     q = aa.call(b, "namespace") ? b.namespace.split(".") : [];
-    if (h = f = d = d || E, 3 !== d.nodeType && 8 !== d.nodeType && !mb.test(r + m.event.triggered) && (0 <= r.indexOf(".") && (q = r.split("."), r = q.shift(), q.sort()), g = 0 > r.indexOf(":") && "on" + r, b = b[m.expando] ? b : new m.Event(r, "object" == typeof b && b), b.isTrigger = e ? 2 : 3, b.namespace = q.join("."), b.namespace_re = b.namespace ? RegExp("(^|\\.)" + q.join("\\.(?:.*\\.|)") + "(\\.|$)") : null, b.result = void 0, b.target || (b.target = d), c = null == c ? [b] : m.makeArray(c, 
+    if (h = f = d = d || D, 3 !== d.nodeType && 8 !== d.nodeType && !mb.test(r + m.event.triggered) && (0 <= r.indexOf(".") && (q = r.split("."), r = q.shift(), q.sort()), g = 0 > r.indexOf(":") && "on" + r, b = b[m.expando] ? b : new m.Event(r, "object" == typeof b && b), b.isTrigger = e ? 2 : 3, b.namespace = q.join("."), b.namespace_re = b.namespace ? RegExp("(^|\\.)" + q.join("\\.(?:.*\\.|)") + "(\\.|$)") : null, b.result = void 0, b.target || (b.target = d), c = null == c ? [b] : m.makeArray(c, 
     [b]), n = m.event.special[r] || {}, e || !n.trigger || !1 !== n.trigger.apply(d, c))) {
       if (!e && !n.noBubble && !m.isWindow(d)) {
         l = n.delegateType || r;
         for (mb.test(l + r) || (h = h.parentNode);h;h = h.parentNode) {
           p.push(h), f = h;
         }
-        f === (d.ownerDocument || E) && p.push(f.defaultView || f.parentWindow || a);
+        f === (d.ownerDocument || D) && p.push(f.defaultView || f.parentWindow || a);
       }
       for (q = 0;(h = p[q++]) && !b.isPropagationStopped();) {
         b.type = 1 < q ? l : n.bindType || r, (f = (m._data(h, "events") || {})[b.type] && m._data(h, "handle")) && f.apply(h, c), (f = g && h[g]) && f.apply && m.acceptData(h) && (b.result = f.apply(h, c), !1 === b.result && b.preventDefault());
@@ -11593,12 +11613,12 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     for (b = d.length;b--;) {
       c = d[b], a[c] = e[c];
     }
-    return a.target || (a.target = e.srcElement || E), 3 === a.target.nodeType && (a.target = a.target.parentNode), a.metaKey = !!a.metaKey, f.filter ? f.filter(a, e) : a;
+    return a.target || (a.target = e.srcElement || D), 3 === a.target.nodeType && (a.target = a.target.parentNode), a.metaKey = !!a.metaKey, f.filter ? f.filter(a, e) : a;
   }, props:"altKey bubbles cancelable ctrlKey currentTarget eventPhase metaKey relatedTarget shiftKey target timeStamp view which".split(" "), fixHooks:{}, keyHooks:{props:["char", "charCode", "key", "keyCode"], filter:function(a, b) {
     return null == a.which && (a.which = null != b.charCode ? b.charCode : b.keyCode), a;
   }}, mouseHooks:{props:"button buttons clientX clientY fromElement offsetX offsetY pageX pageY screenX screenY toElement".split(" "), filter:function(a, b) {
     var c, d, e, f = b.button, g = b.fromElement;
-    return null == a.pageX && null != b.clientX && (d = a.target.ownerDocument || E, e = d.documentElement, c = d.body, a.pageX = b.clientX + (e && e.scrollLeft || c && c.scrollLeft || 0) - (e && e.clientLeft || c && c.clientLeft || 0), a.pageY = b.clientY + (e && e.scrollTop || c && c.scrollTop || 0) - (e && e.clientTop || c && c.clientTop || 0)), !a.relatedTarget && g && (a.relatedTarget = g === a.target ? b.toElement : g), a.which || void 0 === f || (a.which = 1 & f ? 1 : 2 & f ? 3 : 4 & f ? 2 : 
+    return null == a.pageX && null != b.clientX && (d = a.target.ownerDocument || D, e = d.documentElement, c = d.body, a.pageX = b.clientX + (e && e.scrollLeft || c && c.scrollLeft || 0) - (e && e.clientLeft || c && c.clientLeft || 0), a.pageY = b.clientY + (e && e.scrollTop || c && c.scrollTop || 0) - (e && e.clientTop || c && c.clientTop || 0)), !a.relatedTarget && g && (a.relatedTarget = g === a.target ? b.toElement : g), a.which || void 0 === f || (a.which = 1 & f ? 1 : 2 & f ? 3 : 4 & f ? 2 : 
     0), a;
   }}, special:{load:{noBubble:!0}, focus:{trigger:function() {
     if (this !== t() && this.focus) {
@@ -11620,7 +11640,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     d ? m.event.trigger(a, null, b) : m.event.dispatch.call(b, a);
     a.isDefaultPrevented() && c.preventDefault();
   }};
-  m.removeEvent = E.removeEventListener ? function(a, b, c) {
+  m.removeEvent = D.removeEventListener ? function(a, b, c) {
     a.removeEventListener && a.removeEventListener(b, c, !1);
   } : function(a, b, c) {
     b = "on" + b;
@@ -11737,7 +11757,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
   }});
   var cb = "abbr|article|aside|audio|bdi|canvas|data|datalist|details|figcaption|figure|footer|header|hgroup|mark|meter|nav|output|progress|section|summary|time|video", Zb = / jQuery\d+="(?:null|\d+)"/g, ob = RegExp("<(?:" + cb + ")[\\s/>]", "i"), Pa = /^\s+/, pb = /<(?!area|br|col|embed|hr|img|input|link|meta|param)(([\w:]+)[^>]*)\/>/gi, qb = /<([\w:]+)/, rb = /<tbody/i, $b = /<|&#?\w+;/, ac = /<(?:script|style|link)/i, bc = /checked\s*(?:[^=]|=\s*.checked.)/i, sb = /^$|\/(?:java|ecma)script/i, 
   Kb = /^true\/(.*)/, cc = /^\s*<!(?:\[CDATA\[|--)|(?:\]\]|--)>\s*$/g, V = {option:[1, "<select multiple='multiple'>", "</select>"], legend:[1, "<fieldset>", "</fieldset>"], area:[1, "<map>", "</map>"], param:[1, "<object>", "</object>"], thead:[1, "<table>", "</table>"], tr:[2, "<table><tbody>", "</tbody></table>"], col:[2, "<table><tbody></tbody><colgroup>", "</colgroup></table>"], td:[3, "<table><tbody><tr>", "</tr></tbody></table>"], _default:x.htmlSerialize ? [0, "", ""] : [1, "X<div>", "</div>"]}, 
-  Qa = u(E).appendChild(E.createElement("div"));
+  Qa = u(D).appendChild(D.createElement("div"));
   V.optgroup = V.option;
   V.tbody = V.tfoot = V.colgroup = V.caption = V.thead;
   V.th = V.td;
@@ -11763,13 +11783,13 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     if (b) {
       if (c) {
         for (h = h || v(a), d = d || v(f), g = 0;null != (e = h[g]);g++) {
-          D(e, d[g]);
+          G(e, d[g]);
         }
       } else {
-        D(a, f);
+        G(a, f);
       }
     }
-    return d = v(f, "script"), 0 < d.length && B(d, !l && v(a, "script")), f;
+    return d = v(f, "script"), 0 < d.length && C(d, !l && v(a, "script")), f;
   }, buildFragment:function(a, b, c, d) {
     for (var e, f, g, h, l, n, q, p = a.length, r = u(b), s = [], t = 0;p > t;t++) {
       if (f = a[t], f || 0 === f) {
@@ -11803,7 +11823,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     h && r.removeChild(h);
     x.appendChecked || m.grep(v(s, "input"), z);
     for (t = 0;f = s[t++];) {
-      if ((!d || -1 === m.inArray(f, d)) && (g = m.contains(f.ownerDocument, f), h = v(r.appendChild(f), "script"), g && B(h), c)) {
+      if ((!d || -1 === m.inArray(f, d)) && (g = m.contains(f.ownerDocument, f), h = v(r.appendChild(f), "script"), g && C(h), c)) {
         for (e = 0;f = h[e++];) {
           sb.test(f.type || "") && c.push(f);
         }
@@ -11824,7 +11844,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
   }});
   m.fn.extend({text:function(a) {
     return U(this, function(a) {
-      return void 0 === a ? m.text(this) : this.empty().append((this[0] && this[0].ownerDocument || E).createTextNode(a));
+      return void 0 === a ? m.text(this) : this.empty().append((this[0] && this[0].ownerDocument || D).createTextNode(a));
     }, null, a, arguments.length);
   }, append:function() {
     return this.domManip(arguments, function(a) {
@@ -11847,7 +11867,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     });
   }, remove:function(a, b) {
     for (var c, d = a ? m.filter(a, this) : this, e = 0;null != (c = d[e]);e++) {
-      b || 1 !== c.nodeType || m.cleanData(v(c)), c.parentNode && (b && m.contains(c.ownerDocument, c) && B(v(c, "script")), c.parentNode.removeChild(c));
+      b || 1 !== c.nodeType || m.cleanData(v(c)), c.parentNode && (b && m.contains(c.ownerDocument, c) && C(v(c, "script")), c.parentNode.removeChild(c));
     }
     return this;
   }, empty:function() {
@@ -11923,7 +11943,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
   });
   var ra, db = {};
   !function() {
-    var a, b, c = E.createElement("div");
+    var a, b, c = D.createElement("div");
     c.innerHTML = "  <link/><table></table><a href='/a'>a</a><input type='checkbox'/>";
     a = c.getElementsByTagName("a")[0];
     a.style.cssText = "float:left;opacity:.5";
@@ -11936,11 +11956,11 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     x.shrinkWrapBlocks = function() {
       var a, c, d;
       if (null == b) {
-        if (a = E.getElementsByTagName("body")[0], !a) {
+        if (a = D.getElementsByTagName("body")[0], !a) {
           return;
         }
-        c = E.createElement("div");
-        d = E.createElement("div");
+        c = D.createElement("div");
+        d = D.createElement("div");
         a.appendChild(c).appendChild(d);
         b = !1;
         typeof d.style.zoom !== W && (d.style.cssText = "-webkit-box-sizing:content-box;-moz-box-sizing:content-box;box-sizing:content-box;display:block;padding:0;margin:0;border:0;width:1px;padding:1px;zoom:1", d.innerHTML = "<div></div>", d.firstChild.style.width = "5px", b = 3 !== d.offsetWidth);
@@ -11955,7 +11975,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
   }, da = function(a, b, c) {
     var d, e, f, g, h = a.style;
     return c = c || ka(a), g = c ? c.getPropertyValue(b) || c[b] : void 0, c && ("" !== g || m.contains(a.ownerDocument, a) || (g = m.style(a, b)), wa.test(g) && ub.test(b) && (d = h.width, e = h.minWidth, f = h.maxWidth, h.minWidth = h.maxWidth = h.width = g, g = c.width, h.width = d, h.minWidth = e, h.maxWidth = f)), void 0 === g ? g : g + "";
-  }) : E.documentElement.currentStyle && (ka = function(a) {
+  }) : D.documentElement.currentStyle && (ka = function(a) {
     return a.currentStyle;
   }, da = function(a, b, c) {
     var d, e, f, g, h = a.style;
@@ -11963,12 +11983,12 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
   });
   !function() {
     function b() {
-      var c, d, l = E.getElementsByTagName("body")[0];
-      l && (c = E.createElement("div"), d = E.createElement("div"), c.style.cssText = n, l.appendChild(c).appendChild(d), d.style.cssText = "-webkit-box-sizing:border-box;-moz-box-sizing:border-box;box-sizing:border-box;position:absolute;display:block;padding:1px;border:1px;width:4px;margin-top:1%;top:1%", m.swap(l, null != l.style.zoom ? {zoom:1} : {}, function() {
+      var c, d, l = D.getElementsByTagName("body")[0];
+      l && (c = D.createElement("div"), d = D.createElement("div"), c.style.cssText = n, l.appendChild(c).appendChild(d), d.style.cssText = "-webkit-box-sizing:border-box;-moz-box-sizing:border-box;box-sizing:border-box;position:absolute;display:block;padding:1px;border:1px;width:4px;margin-top:1%;top:1%", m.swap(l, null != l.style.zoom ? {zoom:1} : {}, function() {
         e = 4 === d.offsetWidth;
       }), f = !0, g = !1, h = !0, a.getComputedStyle && (g = "1%" !== (a.getComputedStyle(d, null) || {}).top, f = "4px" === (a.getComputedStyle(d, null) || {width:"4px"}).width), l.removeChild(c), d = l = null);
     }
-    var c, d, e, f, g, h, l = E.createElement("div"), n = "border:0;width:0;height:0;position:absolute;top:0;left:-9999px";
+    var c, d, e, f, g, h, l = D.createElement("div"), n = "border:0;width:0;height:0;position:absolute;top:0;left:-9999px";
     l.innerHTML = "  <link/><table></table><a href='/a'>a</a><input type='checkbox'/>";
     c = l.getElementsByTagName("a")[0];
     c.style.cssText = "float:left;opacity:.5";
@@ -11982,9 +12002,9 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
       if (null != d) {
         return d;
       }
-      var a, b, c, e = E.createElement("div"), f = E.getElementsByTagName("body")[0];
+      var a, b, c, e = D.createElement("div"), f = D.getElementsByTagName("body")[0];
       if (f) {
-        return e.setAttribute("className", "t"), e.innerHTML = "  <link/><table></table><a href='/a'>a</a><input type='checkbox'/>", a = E.createElement("div"), a.style.cssText = n, f.appendChild(a).appendChild(e), e.innerHTML = "<table><tr><td></td><td>t</td></tr></table>", b = e.getElementsByTagName("td"), b[0].style.cssText = "padding:0;margin:0;border:0;display:none", c = 0 === b[0].offsetHeight, b[0].style.display = "", b[1].style.display = "none", d = c && 0 === b[0].offsetHeight, f.removeChild(a), 
+        return e.setAttribute("className", "t"), e.innerHTML = "  <link/><table></table><a href='/a'>a</a><input type='checkbox'/>", a = D.createElement("div"), a.style.cssText = n, f.appendChild(a).appendChild(e), e.innerHTML = "<table><tr><td></td><td>t</td></tr></table>", b = e.getElementsByTagName("td"), b[0].style.cssText = "padding:0;margin:0;border:0;display:none", c = 0 === b[0].offsetHeight, b[0].style.display = "", b[1].style.display = "none", d = c && 0 === b[0].offsetHeight, f.removeChild(a), 
         d;
       }
     }, boxSizing:function() {
@@ -11996,14 +12016,14 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     }, reliableMarginRight:function() {
       var b, c, d, e;
       if (null == h && a.getComputedStyle) {
-        if (b = E.getElementsByTagName("body")[0], !b) {
+        if (b = D.getElementsByTagName("body")[0], !b) {
           return;
         }
-        c = E.createElement("div");
-        d = E.createElement("div");
+        c = D.createElement("div");
+        d = D.createElement("div");
         c.style.cssText = n;
         b.appendChild(c).appendChild(d);
-        e = d.appendChild(E.createElement("div"));
+        e = d.appendChild(D.createElement("div"));
         e.style.cssText = d.style.cssText = "-webkit-box-sizing:content-box;-moz-box-sizing:content-box;box-sizing:content-box;display:block;padding:0;margin:0;border:0";
         e.style.marginRight = e.style.width = "0";
         d.style.width = "1px";
@@ -12054,7 +12074,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
       }) : Y(a, b, d) : void 0;
     }, set:function(a, c, d) {
       var e = d && ka(a);
-      return C(a, c, d ? G(a, b, d, x.boxSizing() && "border-box" === m.css(a, "boxSizing", !1, e), e) : 0);
+      return E(a, c, d ? B(a, b, d, x.boxSizing() && "border-box" === m.css(a, "boxSizing", !1, e), e) : 0);
     }};
   });
   x.opacity || (m.cssHooks.opacity = {get:function(a, b) {
@@ -12075,7 +12095,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
       }
       return e;
     }};
-    ub.test(a) || (m.cssHooks[a + b].set = C);
+    ub.test(a) || (m.cssHooks[a + b].set = E);
   });
   m.fn.extend({css:function(a, b) {
     return U(this, function(a, b, c) {
@@ -12090,9 +12110,9 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
       return void 0 !== c ? m.style(a, b, c) : m.css(a, b);
     }, a, b, 1 < arguments.length);
   }, show:function() {
-    return O(this, !0);
+    return N(this, !0);
   }, hide:function() {
-    return O(this);
+    return N(this);
   }, toggle:function(a) {
     return "boolean" == typeof a ? a ? this.show() : this.hide() : this.each(function() {
       sa(this) ? m(this).show() : m(this).hide();
@@ -12141,7 +12161,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         m.queue(a, "fx").length || g.empty.fire();
       });
     }));
-    1 === a.nodeType && ("height" in b || "width" in b) && (c.overflow = [r.overflow, r.overflowX, r.overflowY], l = m.css(a, "display"), n = N(a.nodeName), "none" === l && (l = n), "inline" === l && "none" === m.css(a, "float") && (x.inlineBlockNeedsLayout && "inline" !== n ? r.zoom = 1 : r.display = "inline-block"));
+    1 === a.nodeType && ("height" in b || "width" in b) && (c.overflow = [r.overflow, r.overflowX, r.overflowY], l = m.css(a, "display"), n = M(a.nodeName), "none" === l && (l = n), "inline" === l && "none" === m.css(a, "float") && (x.inlineBlockNeedsLayout && "inline" !== n ? r.zoom = 1 : r.display = "inline-block"));
     c.overflow && (r.overflow = "hidden", x.shrinkWrapBlocks() || q.always(function() {
       r.overflow = c.overflow[0];
       r.overflowX = c.overflow[1];
@@ -12286,12 +12306,12 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     });
   };
   (function() {
-    var a, b, c, d, e = E.createElement("div");
+    var a, b, c, d, e = D.createElement("div");
     e.setAttribute("className", "t");
     e.innerHTML = "  <link/><table></table><a href='/a'>a</a><input type='checkbox'/>";
     a = e.getElementsByTagName("a")[0];
-    c = E.createElement("select");
-    d = c.appendChild(E.createElement("option"));
+    c = D.createElement("select");
+    d = c.appendChild(D.createElement("option"));
     b = e.getElementsByTagName("input")[0];
     a.style.cssText = "top:1px";
     x.getSetAttribute = "t" !== e.className;
@@ -12299,10 +12319,10 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     x.hrefNormalized = "/a" === a.getAttribute("href");
     x.checkOn = !!b.value;
     x.optSelected = d.selected;
-    x.enctype = !!E.createElement("form").enctype;
+    x.enctype = !!D.createElement("form").enctype;
     c.disabled = !0;
     x.optDisabled = !d.disabled;
-    b = E.createElement("input");
+    b = D.createElement("input");
     b.setAttribute("value", "");
     x.input = "" === b.getAttribute("value");
     b.value = "t";
@@ -12561,7 +12581,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
   try {
     S = location.href;
   } catch (yc) {
-    S = E.createElement("a"), S.href = "", S = S.href;
+    S = D.createElement("a"), S.href = "", S = S.href;
   }
   ia = zb.exec(S.toLowerCase()) || [];
   m.extend({active:0, lastModified:{}, etag:{}, ajaxSettings:{url:S, type:"GET", isLocal:/^(?:about|app|app-storage|.+-extension|file|res|widget):$/.test(ia[1]), global:!0, processData:!0, async:!0, contentType:"application/x-www-form-urlencoded; charset=UTF-8", accepts:{"*":Bb, text:"text/plain", html:"text/html", xml:"application/xml, text/xml", json:"application/json, text/javascript"}, contents:{xml:/xml/, html:/html/, json:/json/}, responseFields:{xml:"responseXML", text:"responseText", json:"responseJSON"}, 
@@ -12569,7 +12589,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     return b ? Ka(Ka(a, m.ajaxSettings), b) : Ka(m.ajaxSettings, a);
   }, ajaxPrefilter:$a(Ab), ajaxTransport:$a(Ja), ajax:function(a, b) {
     function c(a, b, d, e) {
-      var q, F, w, y, M = b;
+      var q, F, w, y, L = b;
       if (2 !== z) {
         z = 2;
         h && clearTimeout(h);
@@ -12579,13 +12599,13 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         e = 200 <= a && 300 > a || 304 === a;
         if (d) {
           w = p;
-          for (var A = x, L, B, P, K, G = w.contents, D = w.dataTypes;"*" === D[0];) {
-            D.shift(), void 0 === B && (B = w.mimeType || A.getResponseHeader("Content-Type"));
+          for (var A = x, K, C, P, B, G = w.contents, D = w.dataTypes;"*" === D[0];) {
+            D.shift(), void 0 === C && (C = w.mimeType || A.getResponseHeader("Content-Type"));
           }
-          if (B) {
-            for (K in G) {
-              if (G[K] && G[K].test(B)) {
-                D.unshift(K);
+          if (C) {
+            for (B in G) {
+              if (G[B] && G[B].test(C)) {
+                D.unshift(B);
                 break;
               }
             }
@@ -12593,53 +12613,53 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
           if (D[0] in d) {
             P = D[0];
           } else {
-            for (K in d) {
-              if (!D[0] || w.converters[K + " " + D[0]]) {
-                P = K;
+            for (B in d) {
+              if (!D[0] || w.converters[B + " " + D[0]]) {
+                P = B;
                 break;
               }
-              L || (L = K);
+              K || (K = B);
             }
-            P = P || L;
+            P = P || K;
           }
           w = P ? (P !== D[0] && D.unshift(P), d[P]) : void 0;
         }
         var E;
         a: {
           d = p;
-          L = w;
-          B = x;
+          K = w;
+          C = x;
           P = e;
-          var C, H, I;
+          var O, H, I;
           w = {};
           A = d.dataTypes.slice();
           if (A[1]) {
-            for (C in d.converters) {
-              w[C.toLowerCase()] = d.converters[C];
+            for (O in d.converters) {
+              w[O.toLowerCase()] = d.converters[O];
             }
           }
-          for (K = A.shift();K;) {
-            if (d.responseFields[K] && (B[d.responseFields[K]] = L), !I && P && d.dataFilter && (L = d.dataFilter(L, d.dataType)), I = K, K = A.shift()) {
-              if ("*" === K) {
-                K = I;
+          for (B = A.shift();B;) {
+            if (d.responseFields[B] && (C[d.responseFields[B]] = K), !I && P && d.dataFilter && (K = d.dataFilter(K, d.dataType)), I = B, B = A.shift()) {
+              if ("*" === B) {
+                B = I;
               } else {
-                if ("*" !== I && I !== K) {
-                  if (C = w[I + " " + K] || w["* " + K], !C) {
+                if ("*" !== I && I !== B) {
+                  if (O = w[I + " " + B] || w["* " + B], !O) {
                     for (E in w) {
-                      if (H = E.split(" "), H[1] === K && (C = w[I + " " + H[0]] || w["* " + H[0]])) {
-                        !0 === C ? C = w[E] : !0 !== w[E] && (K = H[0], A.unshift(H[1]));
+                      if (H = E.split(" "), H[1] === B && (O = w[I + " " + H[0]] || w["* " + H[0]])) {
+                        !0 === O ? O = w[E] : !0 !== w[E] && (B = H[0], A.unshift(H[1]));
                         break;
                       }
                     }
                   }
-                  if (!0 !== C) {
-                    if (C && d["throws"]) {
-                      L = C(L);
+                  if (!0 !== O) {
+                    if (O && d["throws"]) {
+                      K = O(K);
                     } else {
                       try {
-                        L = C(L);
+                        K = O(K);
                       } catch (J) {
-                        E = {state:"parsererror", error:C ? J : "No conversion from " + I + " to " + K};
+                        E = {state:"parsererror", error:O ? J : "No conversion from " + I + " to " + B};
                         break a;
                       }
                     }
@@ -12648,17 +12668,17 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
               }
             }
           }
-          E = {state:"success", data:L};
+          E = {state:"success", data:K};
         }
         w = E;
-        e ? (p.ifModified && (y = x.getResponseHeader("Last-Modified"), y && (m.lastModified[f] = y), y = x.getResponseHeader("etag"), y && (m.etag[f] = y)), 204 === a || "HEAD" === p.type ? M = "nocontent" : 304 === a ? M = "notmodified" : (M = w.state, q = w.data, F = w.error, e = !F)) : (F = M, (a || !M) && (M = "error", 0 > a && (a = 0)));
+        e ? (p.ifModified && (y = x.getResponseHeader("Last-Modified"), y && (m.lastModified[f] = y), y = x.getResponseHeader("etag"), y && (m.etag[f] = y)), 204 === a || "HEAD" === p.type ? L = "nocontent" : 304 === a ? L = "notmodified" : (L = w.state, q = w.data, F = w.error, e = !F)) : (F = L, (a || !L) && (L = "error", 0 > a && (a = 0)));
         x.status = a;
-        x.statusText = (b || M) + "";
-        e ? t.resolveWith(r, [q, M, x]) : t.rejectWith(r, [x, M, F]);
+        x.statusText = (b || L) + "";
+        e ? t.resolveWith(r, [q, L, x]) : t.rejectWith(r, [x, L, F]);
         x.statusCode(v);
         v = void 0;
         l && s.trigger(e ? "ajaxSuccess" : "ajaxError", [x, p, e ? q : F]);
-        u.fireWith(r, [x, M]);
+        u.fireWith(r, [x, L]);
         l && (s.trigger("ajaxComplete", [x, p]), --m.active || m.event.trigger("ajaxStop"));
       }
     }
@@ -12728,11 +12748,11 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
       }, p.timeout));
       try {
         z = 1, n.send(w, c);
-      } catch (B) {
+      } catch (C) {
         if (!(2 > z)) {
-          throw B;
+          throw C;
         }
-        c(-1, B);
+        c(-1, C);
       }
     } else {
       c(-1, "No Transport");
@@ -12900,9 +12920,9 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
   });
   m.ajaxTransport("script", function(a) {
     if (a.crossDomain) {
-      var b, c = E.head || m("head")[0] || E.documentElement;
+      var b, c = D.head || m("head")[0] || D.documentElement;
       return{send:function(d, e) {
-        b = E.createElement("script");
+        b = D.createElement("script");
         b.async = !0;
         a.scriptCharset && (b.charset = a.scriptCharset);
         b.src = a.url;
@@ -12938,7 +12958,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
       return null;
     }
     "boolean" == typeof b && (c = b, b = !1);
-    b = b || E;
+    b = b || D;
     var d = kb.exec(a);
     c = !c && [];
     return d ? [b.createElement(d[1])] : (d = m.buildFragment([a], b, c), c && c.length && m(c).remove(), m.merge([], d.childNodes));
