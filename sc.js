@@ -251,7 +251,6 @@
           ref$ = arg$.data, type = ref$.type, ref = ref$.ref, snapshot = ref$.snapshot, command = ref$.command, room = ref$.room, log = (ref1$ = ref$.log) != null
             ? ref1$
             : [];
-          console.dir(this);
           switch (type) {
           case 'cmd':
             console.log("===> cmd " + command);

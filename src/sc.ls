@@ -54,7 +54,7 @@ Worker ||= class =>
     cxt.window =
       setTimeout: (cb, ms) -> process.nextTick cb
       clearTimeout: ->
-#    cxt.console.log "===> cxt.sendemail "
+    #cxt.console.log "===> cxt.sendemail "
     cxt.sendemail = global.SC.sendemail
     @postMessage = (data) -> sandbox.self.onmessage {data}
     @thread = cxt.thread =
@@ -110,7 +110,6 @@ Worker ||= class =>
     w = new Worker ->        
       self.onmessage = ({ data: { type, ref, snapshot, command, room, log=[] } }) ->  
         #console.log "==> Worker.onmessage #type"       
-        console.dir @       
         switch type
         | \cmd
           console.log "===> cmd "+command
