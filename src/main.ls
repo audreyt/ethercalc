@@ -56,6 +56,9 @@
     part = @params.part
     @response.type \application/javascript
     @response.sendfile "#RealBin/form#part.js"
+  @get '/=_new': ->
+    room = new-room!
+    @response.redirect if KEY then "#BASEPATH/=#room/edit" else "#BASEPATH/=#room"
   @get '/_new': ->
     room = new-room!
     @response.redirect if KEY then "#BASEPATH/#room/edit" else "#BASEPATH/#room"
@@ -95,10 +98,11 @@
     @response.redirect if KEY then "#BASEPATH/#room/edit" else "#BASEPATH/#room"
 
   @get '/:room':
+    ui-file = if room is /^=/ then \multi/multi.html else \index.html
     if KEY then ->
-      | @query.auth?length  => sendFile \index.html .call @
+      | @query.auth?length  => sendFile(ui-file).call @
       | otherwise       => @response.redirect "#BASEPATH/#{ @params.room }?auth=0"
-    else sendFile \index.html
+    else sendFile ui-file
   @get '/:room/edit': ->
     room = @params.room
     @response.redirect "#BASEPATH/#room?auth=#{ hmac room }"

@@ -2,7 +2,7 @@
 (function(){
   var join$ = [].join;
   this.include = function(){
-    var DB, SC, KEY, BASEPATH, EXPIRE, HMAC_CACHE, hmac, ref$, Text, Html, Csv, Json, RealBin, sendFile, newRoom, IO, api, ExportCSV, ExportHTML, requestToCommand, requestToSave;
+    var DB, SC, KEY, BASEPATH, EXPIRE, HMAC_CACHE, hmac, ref$, Text, Html, Csv, Json, RealBin, sendFile, newRoom, IO, api, ExportCSV, ExportHTML, uiFile, requestToCommand, requestToSave;
     this.use('json', this.app.router, this.express['static'](__dirname));
     this.app.use('/edit', this.express['static'](__dirname));
     this.app.use('/view', this.express['static'](__dirname));
@@ -77,6 +77,15 @@
         part = this.params.part;
         this.response.type('application/javascript');
         return this.response.sendfile(RealBin + "/form" + part + ".js");
+      }
+    });
+    this.get({
+      '/=_new': function(){
+        var room;
+        room = newRoom();
+        return this.response.redirect(KEY
+          ? BASEPATH + "/=" + room + "/edit"
+          : BASEPATH + "/=" + room);
       }
     });
     this.get({
@@ -157,17 +166,19 @@
       }
     });
     this.get({
-      '/:room': KEY
-        ? function(){
-          var ref$;
-          switch (false) {
-          case !((ref$ = this.query.auth) != null && ref$.length):
-            return sendFile('index.html').call(this);
-          default:
-            return this.response.redirect(BASEPATH + "/" + this.params.room + "?auth=0");
+      '/:room': [
+        uiFile = /^=/.exec(room) ? 'multi.html' : 'index.html', KEY
+          ? function(){
+            var ref$;
+            switch (false) {
+            case !((ref$ = this.query.auth) != null && ref$.length):
+              return sendFile(uiFile).call(this);
+            default:
+              return this.response.redirect(BASEPATH + "/" + this.params.room + "?auth=0");
+            }
           }
-        }
-        : sendFile('index.html')
+          : sendFile(uiFile)
+      ]
     });
     this.get({
       '/:room/edit': function(){
