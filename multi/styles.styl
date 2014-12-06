@@ -1,24 +1,46 @@
 body
   margin 0
   padding 0
+  overflow hidden
 
-nav
+nav, .buttons
   background #eee
   font-family Helvetica, sans-serif
+  border-top 1px solid black
   position absolute !important
   font-size 16px
-  width 100%
-  bottom 5px
   height 22px
+  bottom 5px
+
+nav
+  right 200px
   left 0px
   padding-left 8px
-  border-top 1px solid black
+
+.buttons
+  width 200px
+  right 0px
+  padding-right 8px
+  text-align right
+  button
+    font-family Helvetica, sans-serif
+    background #eee
+    font-size 14px
+    height 22px
+    border-radius 3px
+    border 1px solid #eee
+    margin-left 2px
+    cursor pointer
+    &:hover
+      border 1px solid #ccc
+      background #fff
 
 .basic-tabs-item
   display block !important
-  visibility: hidden
+  visibility hidden
   &.active
-    visibility: visible
+    font-family Helvetica, sans-serif
+    visibility visible
 
 .basic-tabs-item-title
   &:hover
