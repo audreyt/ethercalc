@@ -24,6 +24,9 @@ devDependencies:
   'webpack': '^1.4.13'
   'webpack-dev-server': '^1.6.6'
   'react-basic-tabs': '^1.0.2'
+  'css-loader': '^0.9.0'
+  'style-loader': '^0.8.2'
+  'stylus-loader': '^0.4.0'
 subdomain: \ethercalc
 bin:
   ethercalc: \./bin/ethercalc

@@ -1,20 +1,20 @@
 require \./styles.styl
 React = require \react
 TabPanel = require \react-basic-tabs
+BasePath = \http://127.0.0.1:8000/
 
-{div} = React.DOM
+{div, iframe} = React.DOM
 
 createClass = React.createFactory << React.createClass
 App = React.createClass do
-  getInitialState: -> activeIndex: 1
+  getInitialState: -> activeIndex: 0
   onChange: -> @setState activeIndex: it
   render: ->
+    Sheets = <[ Sheet1 Sheet2 Sheet3 Sheet4 Sheet5 ]>
     TabPanel { activeIndex: @state.activeIndex, @~onChange, tabVerticalPosition: \bottom },
-      div { title: \One }   \First
-      div { title: \Two }   \Second
-      div { title: \Three } \Third
-      div { title: \Four }  \Fourth
-      div { title: \Five }  \Fifth
+      ...for title in Sheets
+        div { title, className: \wrapper },
+          iframe { src: "#BasePath#{ encodeURIComponent title }" }
 
 <-(window.init=)
 React.render App(), document.body

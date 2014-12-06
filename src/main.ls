@@ -97,12 +97,13 @@
     <~ SC._put room, snapshot
     @response.redirect if KEY then "#BASEPATH/#room/edit" else "#BASEPATH/#room"
 
-  @get '/:room':
-    ui-file = if room is /^=/ then \multi/multi.html else \index.html
-    if KEY then ->
-      | @query.auth?length  => sendFile(ui-file).call @
-      | otherwise       => @response.redirect "#BASEPATH/#{ @params.room }?auth=0"
-    else sendFile ui-file
+  @get '/:room': ->
+    ui-file = if @params.room is /^=/ then \multi/index.html else \index.html
+    if KEY then
+      if @query.auth?length
+        sendFile(ui-file).call @
+      else @response.redirect "#BASEPATH/#{ @params.room }?auth=0"
+    else sendFile(ui-file).call @
   @get '/:room/edit': ->
     room = @params.room
     @response.redirect "#BASEPATH/#room?auth=#{ hmac room }"

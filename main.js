@@ -2,7 +2,7 @@
 (function(){
   var join$ = [].join;
   this.include = function(){
-    var DB, SC, KEY, BASEPATH, EXPIRE, HMAC_CACHE, hmac, ref$, Text, Html, Csv, Json, RealBin, sendFile, newRoom, IO, api, ExportCSV, ExportHTML, uiFile, requestToCommand, requestToSave;
+    var DB, SC, KEY, BASEPATH, EXPIRE, HMAC_CACHE, hmac, ref$, Text, Html, Csv, Json, RealBin, sendFile, newRoom, IO, api, ExportCSV, ExportHTML, requestToCommand, requestToSave;
     this.use('json', this.app.router, this.express['static'](__dirname));
     this.app.use('/edit', this.express['static'](__dirname));
     this.app.use('/view', this.express['static'](__dirname));
@@ -166,19 +166,19 @@
       }
     });
     this.get({
-      '/:room': [
-        uiFile = /^=/.exec(room) ? 'multi.html' : 'index.html', KEY
-          ? function(){
-            var ref$;
-            switch (false) {
-            case !((ref$ = this.query.auth) != null && ref$.length):
-              return sendFile(uiFile).call(this);
-            default:
-              return this.response.redirect(BASEPATH + "/" + this.params.room + "?auth=0");
-            }
+      '/:room': function(){
+        var uiFile, ref$;
+        uiFile = /^=/.exec(this.params.room) ? 'multi/index.html' : 'index.html';
+        if (KEY) {
+          if ((ref$ = this.query.auth) != null && ref$.length) {
+            return sendFile(uiFile).call(this);
+          } else {
+            return this.response.redirect(BASEPATH + "/" + this.params.room + "?auth=0");
           }
-          : sendFile(uiFile)
-      ]
+        } else {
+          return sendFile(uiFile).call(this);
+        }
+      }
     });
     this.get({
       '/:room/edit': function(){

@@ -833,3 +833,8 @@ body.vex-open {
   height: 4em;
   width: 4em;
 }
+
+body, body #tableeditor {
+    margin-top: 0;
+    padding: 0;
+}
