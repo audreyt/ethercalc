@@ -1,0 +1,43 @@
+{
+  "name": "ethercalc",
+  "description": "Multi-User Spreadsheet Server",
+  "version": "0.20141121.0",
+  "homepage": "http://ethercalc.net/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/audreyt/ethercalc"
+  },
+  "dependencies": {
+    "redis": "0.8.2",
+    "uuid-pure": "*",
+    "optimist": "*",
+    "zappajs": "0.5.x",
+    "cors": "*",
+    "LiveScript": "1.3.x"
+  },
+  "optionalDependencies": {
+    "webworker-threads": "0.5.x"
+  },
+  "devDependencies": {
+    "react": "^0.12.1",
+    "livescript-loader": "^0.1.2",
+    "react-hot-loader": "^0.5.0",
+    "webpack": "^1.4.13",
+    "webpack-dev-server": "^1.6.6",
+    "react-basic-tabs": "^1.0.2",
+    "css-loader": "^0.9.0",
+    "style-loader": "^0.8.2",
+    "stylus-loader": "^0.4.0"
+  },
+  "subdomain": "ethercalc",
+  "bin": {
+    "ethercalc": "./bin/ethercalc"
+  },
+  "scripts": {
+    "start": "node app.js",
+    "prepublish": "node node_modules/LiveScript/bin/lsc -c package.json.ls || lsc -c package.json.ls || echo"
+  },
+  "engines": {
+    "node": ">= 0.8.x"
+  }
+}
