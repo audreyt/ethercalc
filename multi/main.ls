@@ -19,7 +19,7 @@ App = createClass do
   onChange: -> @setProps activeIndex: it
   on-add: ->
     { Sheets } = @props
-    next-sheet = Sheets.length
+    next-sheet = Sheets.length + 1
     while "Sheet#next-sheet" in Sheets
       ++next-sheet
     @setProps Sheets: (Sheets ++ "Sheet#next-sheet")
