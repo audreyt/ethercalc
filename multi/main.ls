@@ -47,7 +47,7 @@ Nav = createClass do
   render: ->
     TabPanel { activeIndex: @props.activeIndex, @~onChange, tabVerticalPosition: \bottom },
       ...for title in @props.Sheets
-        div { title, className: \wrapper },
+        div { key: title, title, className: \wrapper },
           iframe { src: "#BasePath#{ encodeURIComponent title }" }
 
 <-(window.init=)
