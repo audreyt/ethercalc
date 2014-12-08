@@ -133,3 +133,11 @@ Returns a HTML rendering of the page. (GET `/_/{id}/html` also works.)
 Returns a CSV rendering of the page. (GET `/_/{id}/csv` also works.)
 
 + Response 200 (text/csv)
+
+# JSON Export [/_/{id}.csv.json]
+
+## GET
+
+Returns a JSON array-of-array rendering of the page. (GET `/_/{id}/csv.json` also works.)
+
++ Response 200 (text/csv)

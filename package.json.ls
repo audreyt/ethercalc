@@ -15,6 +15,7 @@ dependencies:
   zappajs: \0.5.x
   cors: \*
   LiveScript: \1.3.x
+  'csv-parse': '^0.0.6'
 optionalDependencies:
   'webworker-threads': \0.5.x
 devDependencies:
