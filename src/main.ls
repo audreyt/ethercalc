@@ -73,9 +73,16 @@
       @response.type Text
       @response.send 404 ''
 
+  ExportCSV-JSON = api -> [Json, (sc, cb) ->
+    csv-parse = require \csv-parse
+    csv <- sc.exportCSV
+    _, body <- csv-parse(csv, delimiter: \,)
+    cb body
+  ]
   ExportCSV = api -> [Csv, (sc, cb) -> sc.exportCSV cb ]
   ExportHTML = api -> [Html, (sc, cb) -> sc.exportHTML cb ]
   @get '/:room.csv': ExportCSV
+  @get '/:room.csv.json': ExportCSV-JSON
   @get '/:room.html': ExportHTML
 
   @get '/_from/:template': ->
@@ -105,6 +112,7 @@
   ]
   @get '/_/:room/html': ExportHTML
   @get '/_/:room/csv': ExportCSV
+  @get '/_/:room/csv.json': ExportCSV-JSON
   @get '/_/:room': api -> [Text, it]
 
   request-to-command = (request, cb) ->
