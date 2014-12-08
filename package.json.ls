@@ -18,15 +18,15 @@ dependencies:
 optionalDependencies:
   'webworker-threads': \0.5.x
 devDependencies:
-  'react': '^0.12.1'
-  'livescript-loader': '^0.1.2'
-  'react-hot-loader': '^0.5.0'
-  'webpack': '^1.4.13'
-  'webpack-dev-server': '^1.6.6'
-  'react-basic-tabs': '^1.0.2'
   'css-loader': '^0.9.0'
+  'livescript-loader': '^0.1.2'
+  'react': '^0.12.1'
+  'react-basic-tabs': '^1.0.2'
+  'react-hot-loader': '^0.5.0'
   'style-loader': '^0.8.2'
   'stylus-loader': '^0.4.0'
+  'webpack': '^1.4.13'
+  'webpack-dev-server': '^1.6.6'
 subdomain: \ethercalc
 bin:
   ethercalc: \./bin/ethercalc
