@@ -1620,7 +1620,6 @@ SocialCalc.DecodeSheetAttributes = function(sheet, newattribs) {
 SocialCalc.SheetCommandInfo = function(sheetobj) {
 
    this.sheetobj = sheetobj; // sheet being operated on
-   this.parseobj = null; // SocialCalc.Parse object with the command string, etc.
    this.timerobj = null; // used for timeslicing
    this.firsttimerdelay = 50; // wait before starting cmds (for Chrome - to give time to update)
    this.timerdelay = 1; // wait between slices
@@ -1628,7 +1627,6 @@ SocialCalc.SheetCommandInfo = function(sheetobj) {
    this.saveundo = false; // arg for ExecuteSheetCommand
 
    this.CmdExtensionCallbacks = {}; // for startcmdextension, in form: cmdname, {func:function(cmdname, data, sheet, SocialCalc.Parse object, saveundo), data:whatever}
-   this.cmdextensionbusy = ""; // if length>0, command loop waits for SocialCalc.ResumeFromCmdExtension()
 
 //   statuscallback: null, // called during execution - obsolete: use sheet obj's
 //   statuscallbackparams: null
@@ -1645,57 +1643,40 @@ SocialCalc.ScheduleSheetCommands = function(sheet, cmdstr, saveundo) {
 
    var sci = sheet.sci;
 
-   sci.parseobj = new SocialCalc.Parse(cmdstr);
-   sci.saveundo = saveundo;
+   var parseobj = new SocialCalc.Parse(cmdstr);
 
    if (sci.sheetobj.statuscallback) { // notify others if requested
       sheet.statuscallback(sci, "cmdstart", "", sci.sheetobj.statuscallbackparams);
       }
 
-   if (sci.saveundo) {
+   if (saveundo) {
       sci.sheetobj.changes.PushChange(""); // add a step to undo stack
       }
 
-   if (SocialCalc.Callbacks.broadcast) {
-     /* In multi-user mode, sci.parseobj may mutate between actions,
-      * so we need to re-parse the cmdstr after a delay.
-      */
-      sci.timerobj = window.setTimeout(function() {
-         var prev_obj = sci.parseobj;
-         sci.parseobj = new SocialCalc.Parse(cmdstr);
-         SocialCalc.SheetCommandsTimerRoutine(sci);
-         sci.parseobj = prev_obj;
-      }, sci.firsttimerdelay);
-   }
-   else {
-      sci.timerobj = window.setTimeout(function() { SocialCalc.SheetCommandsTimerRoutine(sci); }, sci.firsttimerdelay);
-   }
+   sci.timerobj = window.setTimeout(function() {
+      SocialCalc.SheetCommandsTimerRoutine(sci, parseobj, saveundo);
+   }, sci.firsttimerdelay);
 
    }
 
-SocialCalc.SheetCommandsTimerRoutine = function(sci) {
+SocialCalc.SheetCommandsTimerRoutine = function(sci, parseobj, saveundo) {
 
    var errortext;
    var starttime = new Date();
 
    sci.timerobj = null;
 
-   while (!sci.parseobj.EOF()) { // go through all commands (separated by newlines)
+   while (!parseobj.EOF()) { // go through all commands (separated by newlines)
 
-      errortext = SocialCalc.ExecuteSheetCommand(sci.sheetobj, sci.parseobj, sci.saveundo);
+      errortext = SocialCalc.ExecuteSheetCommand(sci.sheetobj, parseobj, saveundo);
       if (errortext) alert(errortext);
 
-      sci.parseobj.NextLine();
-
-      if (sci.cmdextensionbusy.length > 0) { // forced wait
-         if (sci.sheetobj.statuscallback) { // notify others if requested
-            sci.sheetobj.statuscallback(sci, "cmdextension", sci.cmdextensionbusy, sci.sheetobj.statuscallbackparams);
-            }
-         return;
-         }
+      parseobj.NextLine();
 
       if (((new Date()) - starttime) >= sci.maxtimeslice) { // if taking too long, give up CPU for a while
-         sci.timerobj = window.setTimeout(function() { SocialCalc.SheetCommandsTimerRoutine(sci); }, sci.timerdelay);
+         sci.timerobj = window.setTimeout(function() {
+            SocialCalc.SheetCommandsTimerRoutine(sci, parseobj, saveundo);
+         }, sci.timerdelay);
          return;
          }
       }
@@ -1705,14 +1686,6 @@ SocialCalc.SheetCommandsTimerRoutine = function(sci) {
       }
 
    }
-
-SocialCalc.ResumeFromCmdExtension = function(sci) {
-
-   sci.cmdextensionbusy = "";
-
-   SocialCalc.SheetCommandsTimerRoutine(sci);
-
-}
 
 //
 // errortext = SocialCalc.ExecuteSheetCommand(sheet, cmd, saveundo)
