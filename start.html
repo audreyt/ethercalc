@@ -176,13 +176,13 @@ function process_wb(wb) {
         output = sheet_to_socialcalc(wb.Sheets[wb.SheetNames[0]]);
         var id = newId(10, 36).toLowerCase();
 $.ajax({
-    url: '/_/' + id,
+    url: './_/' + id,
     method: 'PUT',
     contentType: 'text/x-socialcalc',
     processData: false,
     data: output,
     success: function(data, msg, xhr) {
-        location.href = '/' + id
+        location.href = './' + id
     }
 });
 }
@@ -190,13 +190,13 @@ $.ajax({
 function post_csv (csv) {
         var id = newId(10, 36).toLowerCase();
 $.ajax({
-    url: '/_/' + id,
+    url: './_/' + id,
     method: 'PUT',
     contentType: 'text/csv',
     processData: false,
     data: csv,
     success: function(data, msg, xhr) {
-        location.href = '/' + id
+        location.href = './' + id
     }
 });
 }

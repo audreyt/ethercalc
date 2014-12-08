@@ -7,7 +7,7 @@ step = ->
   k = ks.shift!
   file = encodeURIComponent k
   _, v <- r.get k
-  return step! if v.length is 593
+  return step! if v.length is 593 # empty spreadsheet
   _, orig <- fs.readFile "raw/#file.txt" \utf-8
   return step! if orig is v
   console.log file

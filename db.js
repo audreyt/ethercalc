@@ -83,7 +83,7 @@
       } catch (e$) {}
       Commands = {
         bgsave: function(cb){
-          fs.writeFileSync("/var/dump.json", JSON.stringify(db.DB), 'utf8');
+          fs.writeFileSync("/var/dump.json", JSON.stringify(db.DB, void 8, 2), 'utf8');
           return typeof cb == 'function' ? cb() : void 8;
         },
         get: function(key, cb){
@@ -120,15 +120,14 @@
             : ref$[key] = {}) : void 8;
         },
         del: function(keys, cb){
-          var i$, len$, yet$, key;
+          var i$, len$, key;
           if (Array.isArray(keys)) {
-            for (yet$ = true, i$ = 0, len$ = keys.length; i$ < len$; ++i$) {
+            for (i$ = 0, len$ = keys.length; i$ < len$; ++i$) {
               key = keys[i$];
-              yet$ = false;
               delete db.DB[key];
-            } if (yet$) {
-              delete db.DB[keys];
             }
+          } else {
+            delete db.DB[keys];
           }
           return typeof cb == 'function' ? cb() : void 8;
         }

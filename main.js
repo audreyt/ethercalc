@@ -2,7 +2,7 @@
 (function(){
   var join$ = [].join;
   this.include = function(){
-    var DB, SC, KEY, BASEPATH, EXPIRE, HMAC_CACHE, hmac, ref$, Text, Html, Csv, Json, RealBin, sendFile, newRoom, IO, api, ExportCSV, ExportHTML, requestToCommand, requestToSave;
+    var DB, SC, KEY, BASEPATH, EXPIRE, HMAC_CACHE, hmac, ref$, Text, Html, Csv, Json, RealBin, sendFile, newRoom, IO, api, ExportCSVJSON, ExportCSV, ExportHTML, requestToCommand, requestToSave;
     this.use('json', this.app.router, this.express['static'](__dirname));
     this.app.use('/edit', this.express['static'](__dirname));
     this.app.use('/view', this.express['static'](__dirname));
@@ -103,6 +103,21 @@
         });
       };
     };
+    ExportCSVJSON = api(function(){
+      return [
+        Json, function(sc, cb){
+          var csvParse;
+          csvParse = require('csv-parse');
+          return sc.exportCSV(function(csv){
+            return csvParse(csv, {
+              delimiter: ','
+            }, function(_, body){
+              return cb(body);
+            });
+          });
+        }
+      ];
+    });
     ExportCSV = api(function(){
       return [
         Csv, function(sc, cb){
@@ -119,6 +134,9 @@
     });
     this.get({
       '/:room.csv': ExportCSV
+    });
+    this.get({
+      '/:room.csv.json': ExportCSVJSON
     });
     this.get({
       '/:room.html': ExportHTML
@@ -191,6 +209,9 @@
     });
     this.get({
       '/_/:room/csv': ExportCSV
+    });
+    this.get({
+      '/_/:room/csv.json': ExportCSVJSON
     });
     this.get({
       '/_/:room': api(function(it){
