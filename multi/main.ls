@@ -2,36 +2,45 @@ require \./styles.styl
 React = require \react
 TabPanel = require \react-basic-tabs
 BasePath = \http://127.0.0.1:8000/
+Index = \test
 
 {div, iframe, input, button} = React.DOM
 
 createClass = React.createFactory << React.createClass
 App = createClass do
   getDefaultProps: ->
-    Sheets: <[ Sheet1 Sheet2 Sheet3 Sheet4 Sheet5 ]>
+    Sheets: [ { row: 1, title: \Sheet1 }, { title: \Sheet2 } ]
     activeIndex: 0
   render: ->
+    can-delete = @props.Sheets.length > 1
     div { className: \nav },
       Nav { Sheets: @props.Sheets, activeIndex: @get-idx!, @~onChange }
-      Buttons { @~on-add, @~on-rename, @~on-delete }
+      Buttons { can-delete, @~on-add, @~on-rename, @~on-delete }
   get-idx: -> @props.activeIndex <? @props.Sheets.length-1
   get-sheet: -> @props.Sheets[@get-idx!]
   onChange: -> @setProps activeIndex: it
   on-add: ->
     { Sheets } = @props
+    prefix = \Sheet
     next-sheet = Sheets.length + 1
-    while "Sheet#next-sheet" in Sheets
+    if Sheets[*-1]?title is /^([_a-zA-Z]+)(\d+)$/
+      prefix = RegExp.$1
+      next-sheet = parseInt RegExp.$2
+    while "#prefix#next-sheet" in [ title for {title} in Sheets ]
       ++next-sheet
-    @setProps Sheets: (Sheets ++ "Sheet#next-sheet")
+    @setProps do
+      Sheets: Sheets ++ { title: "#prefix#next-sheet" }
+      activeIndex: Sheets.length
   on-rename: ->
     { Sheets } = @props
-    s = prompt("Rename Sheet", @get-sheet!)
-    return if not s? or s in Sheets
+    t = prompt("Rename Sheet", @get-sheet!)
+    return if not t? or t in [ title for {title} in Sheets ]
     # TODO: Carry over the data if non-empty
-    Sheets[@get-idx!] = s
+    Sheets[@get-idx!] = { title: s }
     @setProps { Sheets }
   on-delete: ->
     { Sheets } = @props
+    return unless Sheets.length > 1 # Cannot delete the last sheet
     Sheets.splice @get-idx!, 1
     @setProps { Sheets }
 
@@ -40,13 +49,12 @@ Buttons = createClass do
     div { className: \buttons },
       button { onClick: @props.on-add }, \Add
       button { onClick: @props.on-rename }, \Rename...
-      button { onClick: @props.on-delete }, \Delete
-
+      button { onClick: @props.on-delete, disabled: !@props.can-delete }, \Delete
 Nav = createClass do
   onChange: -> @props.onChange it
   render: ->
     TabPanel { activeIndex: @props.activeIndex, @~onChange, tabVerticalPosition: \bottom },
-      ...for title in @props.Sheets
+      ...for { title } in @props.Sheets
         div { key: title, title, className: \wrapper },
           iframe { src: "#BasePath#{ encodeURIComponent title }" }
 
