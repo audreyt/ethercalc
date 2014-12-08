@@ -17,6 +17,8 @@ ETHERCALC_FILES=\
 	static/jquery.js \
 	static/vex.combined.min.js
 
+CLOSURE_COMPILER=closure-compiler
+
 JS_FILES=\
 	app.js dotcloud.js player.js main.js sc.js db.js
 
@@ -47,9 +49,9 @@ SocialCalcModule.js :: $(SOCIALCALC_FILES) exports.js
 	cat $(SOCIALCALC_FILES) exports.js > $@
 	#@perl -e 'system(join(" ", "closure-compiler" => map { ("--js", $$_) } @ARGV). " > $@")' $(SOCIALCALC_FILES) exports.js
 
-static/ethercalc.js :: $(ETHERCALC_FILES)
-	@echo "//# sourceMappingURL=/static/ethercalc.js.map" > $@
-	@perl -e 'system(join(" ", "closure-compiler" => "-O WHITESPACE_ONLY --language_in=ES5" => map { ("--js", $$_) } @ARGV). " --create_source_map $@.map >> $@")' $(ETHERCALC_FILES)
+static/ethercalc.js: $(ETHERCALC_FILES)
+	@echo '// Auto-generated from "make depends"; all changes here will be lost.' > $@
+	$(CLOSURE_COMPILER) --language_in=ES5 $(CLOSURE_ARGS) --js $(ETHERCALC_FILES) >> $@
 
 .coffee.js:
 	coffee -c $<
