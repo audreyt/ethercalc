@@ -65,7 +65,7 @@
       bgsave: (cb) ->
         fs.writeFileSync do
           "#dataDir/dump.json"
-          JSON.stringify db.DB
+          JSON.stringify db.DB,,2
           \utf8
         cb?!
       get: (key, cb) -> cb?(null, db.DB[key])
@@ -75,8 +75,10 @@
       hset: (key, idx, val) -> (db.DB[key] ?= [])[idx] = val; cb?!
       hgetall: (key, cb) -> cb?(null, db.DB[key] ?= {})
       del: (keys, cb) ->
-        if Array.isArray keys   => for key in keys => delete db.DB[key]
-        else          => delete db.DB[keys]
+        if Array.isArray keys
+          for key in keys => delete! db.DB[key]
+        else
+          delete db.DB[keys]
         cb?!
     db <<<< Commands
     db.multi = (...cmds) ->
