@@ -58,5 +58,6 @@ Nav = createClass do
           iframe { src: "#BasePath#{ encodeURIComponent title }" }
 
 <-(window.init=)
-foldr = new HackFoldr { base: BasePath, id: Index }
+foldr = new HackFoldr BasePath
+<-foldr.fetch Index
 React.render App({ foldr }), document.body
