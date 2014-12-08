@@ -3,46 +3,45 @@ React = require \react
 TabPanel = require \react-basic-tabs
 BasePath = \http://127.0.0.1:8000/
 Index = \test
+HackFoldr = require(\./foldr.ls).HackFoldr
 
 {div, iframe, input, button} = React.DOM
 
 createClass = React.createFactory << React.createClass
 App = createClass do
-  getDefaultProps: ->
-    Sheets: [ { row: 1, title: \Sheet1 }, { title: \Sheet2 } ]
-    activeIndex: 0
+  propTypes: { foldr: React.PropTypes.any.isRequired }
+  getDefaultProps: -> activeIndex: 0
   render: ->
-    can-delete = @props.Sheets.length > 1
+    can-delete = @props.foldr.size! > 1
     div { className: \nav },
-      Nav { Sheets: @props.Sheets, activeIndex: @get-idx!, @~onChange }
+      Nav { titles: @props.foldr.titles!, activeIndex: @get-idx!, @~onChange }
       Buttons { can-delete, @~on-add, @~on-rename, @~on-delete }
-  get-idx: -> @props.activeIndex <? @props.Sheets.length-1
-  get-sheet: -> @props.Sheets[@get-idx!]
+  get-idx: -> @props.activeIndex <? @props.foldr.lastIndex!
+  get-sheet: -> @props.foldr.at(@get-idx!)
   onChange: -> @setProps activeIndex: it
   on-add: ->
-    { Sheets } = @props
+    { foldr } = @props
     prefix = \Sheet
-    next-sheet = Sheets.length + 1
-    if Sheets[*-1]?title is /^([_a-zA-Z]+)(\d+)$/
+    next-sheet = foldr.size! + 1
+    if foldr.lastRow!title is /^([_a-zA-Z]+)(\d+)$/
       prefix = RegExp.$1
       next-sheet = parseInt RegExp.$2
-    while "#prefix#next-sheet" in [ title for {title} in Sheets ]
+    while "#prefix#next-sheet" in foldr.titles!
       ++next-sheet
-    @setProps do
-      Sheets: Sheets ++ { title: "#prefix#next-sheet" }
-      activeIndex: Sheets.length
+    activeIndex = foldr.size!
+    foldr.=push { title: "#prefix#next-sheet" }
+    @setProps { foldr, activeIndex }
   on-rename: ->
-    { Sheets } = @props
-    t = prompt("Rename Sheet", @get-sheet!)
-    return if not t? or t in [ title for {title} in Sheets ]
+    { foldr } = @props
+    title = prompt("Rename Sheet", @get-sheet!title)
+    return if not title? or title in foldr.titles!
     # TODO: Carry over the data if non-empty
-    Sheets[@get-idx!] = { title: s }
-    @setProps { Sheets }
+    foldr.set-at @get-idx!, { title }
+    @setProps { foldr }
   on-delete: ->
-    { Sheets } = @props
-    return unless Sheets.length > 1 # Cannot delete the last sheet
-    Sheets.splice @get-idx!, 1
-    @setProps { Sheets }
+    { foldr } = @props
+    foldr.delete-at @get-idx!
+    @setProps { foldr }
 
 Buttons = createClass do
   render: ->
@@ -54,9 +53,10 @@ Nav = createClass do
   onChange: -> @props.onChange it
   render: ->
     TabPanel { activeIndex: @props.activeIndex, @~onChange, tabVerticalPosition: \bottom },
-      ...for { title } in @props.Sheets
+      ...for title in @props.titles
         div { key: title, title, className: \wrapper },
           iframe { src: "#BasePath#{ encodeURIComponent title }" }
 
 <-(window.init=)
-React.render App(), document.body
+foldr = new HackFoldr "#BasePath/#Index"
+React.render App({ foldr }), document.body

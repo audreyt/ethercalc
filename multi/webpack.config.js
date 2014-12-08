@@ -19,7 +19,7 @@ module.exports = {
     ],
     module: {
         loaders: [
-            { test: /main\.ls$/, loaders: [ 'react-hot', 'livescript' ] },
+            { test: /\.ls$/, loaders: [ 'react-hot', 'livescript' ] },
             { test: /\.styl$/, loader: 'style!css!stylus' },
         ]
     },
