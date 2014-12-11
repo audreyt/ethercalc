@@ -1,7 +1,7 @@
 require \./styles.styl
 React = require \react
 TabPanel = require \react-basic-tabs
-BasePath = \http://127.0.0.1:8000/
+BasePath = \http://127.0.0.1:8000
 Index = \test
 HackFoldr = require(\./foldr.ls).HackFoldr
 
@@ -14,7 +14,7 @@ App = createClass do
   render: ->
     can-delete = @props.foldr.size! > 1
     div { className: \nav },
-      Nav { titles: @props.foldr.titles!, activeIndex: @get-idx!, @~onChange }
+      Nav { rows: @props.foldr.rows, activeIndex: @get-idx!, @~onChange }
       Buttons { can-delete, @~on-add, @~on-rename, @~on-delete }
   get-idx: -> @props.activeIndex <? @props.foldr.lastIndex!
   get-sheet: -> @props.foldr.at(@get-idx!)
@@ -23,13 +23,16 @@ App = createClass do
     { foldr } = @props
     prefix = \Sheet
     next-sheet = foldr.size! + 1
+    link-prefix = "/Sheet"
     if foldr.lastRow!title is /^([_a-zA-Z]+)(\d+)$/
       prefix = RegExp.$1
       next-sheet = parseInt RegExp.$2
+      if foldr.lastRow!link is /^(\/[^=]+=[_a-zA-Z]+)/
+        link-prefix = RegExp.$1
     while "#prefix#next-sheet" in foldr.titles!
       ++next-sheet
     activeIndex = foldr.size!
-    foldr.=push { title: "#prefix#next-sheet" }
+    foldr.=push { link: "#link-prefix#next-sheet", title: "#prefix#next-sheet" }
     @setProps { foldr, activeIndex }
   on-rename: ->
     { foldr } = @props
@@ -53,9 +56,13 @@ Nav = createClass do
   onChange: -> @props.onChange it
   render: ->
     TabPanel { activeIndex: @props.activeIndex, @~onChange, tabVerticalPosition: \bottom },
-      ...for title in @props.titles
+      ...for { title, link="/#{ encodeURIComponent title }" } in @props.rows
         div { key: title, title, className: \wrapper },
-          iframe { src: "#BasePath#{ encodeURIComponent title }" }
+          Frame { src: "#BasePath#link" }
+
+Frame = createClass do
+  shouldComponentUpdate: -> @props.src isnt it.src
+  render: -> iframe { key: @props.src, src: @props.src }
 
 <-(window.init=)
 foldr = new HackFoldr BasePath

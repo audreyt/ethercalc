@@ -4,6 +4,8 @@ export class HackFoldr
   (@base) -> @base -= /\/+$/
   fetch: (@id, cb) ->
     res <~ $.get "#{ @base }/_/#{ @id }/csv.json"
+    if !res.body
+      return cb @rows = [ { row: 2, link: "/#{ @id }=Sheet1", title: \Sheet1 } ]
     res.body.shift! # header
     cb @rows = [ { link, title, row: idx+2 } for [link, title], idx in res.body | link or title ]
   size: -> @rows.length
@@ -12,6 +14,7 @@ export class HackFoldr
   links: -> [ link for {link} in @rows ]
   titles: -> [ title for {title} in @rows ]
   at: (idx) -> @rows[idx] ? {}
+
   push: (row) -> @rows.push(row); @
   set-at: (idx, patch) -> @rows[idx] <<< patch; @
   delete-at: (idx) -> @rows.splice idx, 1; @
