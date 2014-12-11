@@ -24,7 +24,7 @@ JS_FILES=\
 
 all :: SocialCalcModule.js
 	env PATH="$$PATH:./node_modules/LiveScript/bin" lsc -c -o . src
-	node app.js $(ETHERCALC_ARGS) --vm
+	node app.js $(ETHERCALC_ARGS) --vm --cors
 
 manifest ::
 	perl -pi -e 's/# [A-Z].*\n/# @{[`date`]}/m' manifest.appcache
