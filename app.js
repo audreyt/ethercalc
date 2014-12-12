@@ -40,6 +40,22 @@ This work is published from Taiwan.
   } else {
     options = {};
   }
+ 
+  
+  
+ //For specific times, use a chron job
+  var fifteenSeconsAfterMinute = function() {
+    console.log("Another 10 mins is gone forever. Hopefully, you made the most of it...");
+  }
+  var CronJob = require('cron').CronJob;
+  new CronJob({
+    cronTime: "0 * * * * *",//10 min 
+    onTick: fifteenSeconsAfterMinute,
+    start: true,
+    timeZone: "America/Los_Angeles"
+  });
+
+  
   console.log("Please connect to: " + transport + "://" + (host === '0.0.0.0' ? require('os').hostname() : host) + ":" + port + "/");
   if (cors) {
     options.io = {
