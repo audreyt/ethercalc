@@ -7390,7 +7390,7 @@ SocialCalc.TriggerIoAction.Email = function(a) {
   if ("undefined" !== typeof d.ioParameterList) {
     var f = d.ioParameterList[a];
     a = [];
-    for (var g = 1, l = 0;3 > l;l++) {
+    for (var g = 1, l = 0;l < f.length;l++) {
       if ("t" == f[l].type.charAt(0) && (a[l] = [f[l].value.replace(/ /g, "%20")]), "coord" == f[l].type && (a[l] = [d.GetAssuredCell(f[l].value).datavalue.replace(/ /g, "%20")]), "range" == f[l].type) {
         var h = b.DecodeRangeParts(d, f[l].value);
         a[l] = [];
@@ -7402,8 +7402,23 @@ SocialCalc.TriggerIoAction.Email = function(a) {
         n > g && (g = n);
       }
     }
-    for (b = g - 1;-1 < b;b--) {
-      c.editor.EditorScheduleSheetCommands("sendemail " + (a[0][b >= a[0].length ? 0 : b] + " " + a[1][b >= a[1].length ? 0 : b] + " " + a[2][b >= a[2].length ? 0 : b]), !1, !1);
+    b = -1;
+    d = 0;
+    switch(f.function_name) {
+      case "EMAILIF":
+        b = 0;
+      case "EMAILAT":
+      ;
+      case "EMAILONEDIT":
+        d = 1;
+        break;
+      case "EMAILONEDITIF":
+      ;
+      case "EMAILATIF":
+        b = 1, d = 2;
+    }
+    for (f = g - 1;-1 < f;f--) {
+      -1 != b && !1 == a[b][f >= a[b].length ? 0 : f] || c.editor.EditorScheduleSheetCommands("sendemail " + (a[d][f >= a[d].length ? 0 : f] + " " + a[d + 1][f >= a[d + 1].length ? 0 : f] + " " + a[d + 2][f >= a[d + 2].length ? 0 : f]), !1, !1);
     }
   }
 };

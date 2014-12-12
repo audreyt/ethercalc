@@ -19370,7 +19370,7 @@ SocialCalc.TriggerIoAction.Email = function(emailButtonCellId) {
 	 // grab array for TO, SUBJECT and BODY 
 	 var parameterValues = [];
 	 var maxRangeSize = 1;
-	 for(var index=0; index < 3; index ++) {
+	 for(var index=0; index < parameters.length; index ++) {
 		 if(parameters[index].type.charAt(0) == 't') {
 			 parameterValues[index] = [parameters[index].value.replace(/ /g, "%20")];
 		 }
@@ -19394,13 +19394,40 @@ SocialCalc.TriggerIoAction.Email = function(emailButtonCellId) {
 		 }
 	 }
 	 
-	 for(var rangeIndex = maxRangeSize -1; rangeIndex > -1; rangeIndex-- ) { 
-		 // send: to, subject, body to server 
-		 var toaddressRangeIndex = (rangeIndex >= parameterValues[0].length) ? 0 : rangeIndex;
-		 var subjectsRangeIndex = (rangeIndex >= parameterValues[1].length) ? 0 : rangeIndex;
-		 var bodyRangeIndex = (rangeIndex >= parameterValues[2].length) ? 0 : rangeIndex;
+    var conditionIndex = -1; // check if email formula is conditional, -1 = not conditional 
+    var toAddressParamOffset = 0;
+    switch (parameters.function_name) {
+
+      case "EMAILIF":
+    	  conditionIndex = 0;
+      case "EMAILAT":
+      case "EMAILONEDIT":
+    	  toAddressParamOffset = 1;
+    	  break;
+      case "EMAILONEDITIF":
+      case "EMAILATIF":
+       	  conditionIndex = 1;
+    	  toAddressParamOffset = 2;
+    	  break;
+    	  
+      case "EMAIL":
+    	  break;
+    }	 
+    
+	 for(var rangeIndex = maxRangeSize -1; rangeIndex > -1; rangeIndex-- ) {
 		 
-		 var emailContents = parameterValues[0][toaddressRangeIndex]+' '+parameterValues[1][subjectsRangeIndex]+' '+parameterValues[2][bodyRangeIndex];
+		 // if email formula is conditional && condition is false then skip 
+		 if(conditionIndex != -1) {
+			 var conditionRangeIndex = (rangeIndex >= parameterValues[conditionIndex].length) ? 0 : rangeIndex;
+			 if(parameterValues[conditionIndex][conditionRangeIndex] == false) continue;			 
+		 }
+		 
+		 // send: to, subject, body to server 		 
+		 var toaddressRangeIndex = (rangeIndex >= parameterValues[toAddressParamOffset].length) ? 0 : rangeIndex;
+		 var subjectsRangeIndex = (rangeIndex >= parameterValues[toAddressParamOffset+1].length) ? 0 : rangeIndex;
+		 var bodyRangeIndex = (rangeIndex >= parameterValues[toAddressParamOffset+2].length) ? 0 : rangeIndex;
+		 
+		 var emailContents = parameterValues[toAddressParamOffset][toaddressRangeIndex]+' '+parameterValues[toAddressParamOffset+1][subjectsRangeIndex]+' '+parameterValues[toAddressParamOffset+2][bodyRangeIndex];
 	 
 		 spreadsheet.editor.EditorScheduleSheetCommands('sendemail '+emailContents,  false, false); 
 	 }

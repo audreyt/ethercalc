@@ -15,7 +15,9 @@
     "cors": "*",
     "nodemailer": "*",
     "xoauth2": "*",
-    "LiveScript": "1.3.x"
+    "LiveScript": "1.3.x",
+    "cron": "^1.0.5",
+    "time": "^0.11.0"
   },
   "optionalDependencies": {
     "webworker-threads": "0.5.x"

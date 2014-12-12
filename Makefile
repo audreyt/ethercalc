@@ -6,7 +6,7 @@ SOCIALCALC_FILES=\
 	formula1.js \
 	socialcalcpopup.js \
 	socialcalcspreadsheetcontrol.js \
-	socialcalcviewer.js
+	socialcalcviewer.js 
 
 ETHERCALC_FILES=\
 	$(SOCIALCALC_FILES) \
@@ -40,7 +40,8 @@ depends :: app.js static/ethercalc.js static/start.css
 
 SocialCalcModule.js :: $(SOCIALCALC_FILES) exports.js
 	cat $(SOCIALCALC_FILES) exports.js > $@
-	@cp $(SOCIALCALC_FILES) C:/Users/Eddy/Dropbox/ethercalc
+	@cp $(SOCIALCALC_FILES) sendemail.js /cygdrive/c/Users/eddy/Dropbox/ethercalc/
+	@cp src/*.ls /cygdrive/c/Users/eddy/Dropbox/ethercalc/src/
 	#@perl -e 'system(join(" ", "closure-compiler" => map { ("--js", $$_) } @ARGV). " > $@")' $(SOCIALCALC_FILES) exports.js
 
 static/ethercalc.js :: $(ETHERCALC_FILES)
