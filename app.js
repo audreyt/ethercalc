@@ -49,7 +49,7 @@ This work is published from Taiwan.
   }
   var CronJob = require('cron').CronJob;
   new CronJob({
-    cronTime: "0 * * * * *",//10 min 
+    cronTime: "0 0,30 * * * *",//30 min 
     onTick: fifteenSeconsAfterMinute,
     start: true,
     timeZone: "America/Los_Angeles"
