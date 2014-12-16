@@ -157,12 +157,14 @@
         console: console,
         self: {
           onmessage: function(){}
-        }
+        },
+        alert: function(){}
       };
       cxt.window = {
         setTimeout: function(cb, ms){
           return process.nextTick(cb);
         },
+        alert: function(){},
         clearTimeout: function(){}
       };
       this.postMessage = function(data){
@@ -256,7 +258,7 @@
       }
       w = new Worker(function(){
         return self.onmessage = function(arg$){
-          var ref$, type, ref, snapshot, command, room, log, ref1$, csv, ss, parts, cmdstr, line;
+          var ref$, type, ref, snapshot, command, room, log, ref1$, csv, alert, ss, parts, cmdstr, line;
           ref$ = arg$.data, type = ref$.type, ref = ref$.ref, snapshot = ref$.snapshot, command = ref$.command, room = ref$.room, log = (ref1$ = ref$.log) != null
             ? ref1$
             : [];
@@ -311,6 +313,7 @@
               return thread.nextTick(cb);
             };
             window.clearTimeout = function(){};
+            window.alert = alert = function(){};
             window.ss = ss = new SocialCalc.SpreadsheetControl;
             ss.SocialCalc = SocialCalc;
             ss._room = room;

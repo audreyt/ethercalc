@@ -43,9 +43,10 @@ catch
   IsThreaded = false
 
 Worker ||= class => (code) ->
-  cxt = { console, self: { onmessage: -> } }
+  cxt = { console, self: { onmessage: -> }, alert: -> }
   cxt.window =
     setTimeout: (cb, ms) -> process.nextTick cb
+    alert: ->
     clearTimeout: ->
   @postMessage = (data) -> sandbox.self.onmessage {data}
   @thread = cxt.thread =
@@ -130,6 +131,7 @@ Worker ||= class => (code) ->
           return true
         window.setTimeout = (cb, ms) -> thread.next-tick cb
         window.clearTimeout = ->
+        window.alert = alert = ->
         window.ss = ss = new SocialCalc.SpreadsheetControl
         ss.SocialCalc = SocialCalc
         ss._room = room
