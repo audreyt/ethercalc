@@ -23,13 +23,13 @@ App = createClass do
     { foldr } = @props
     prefix = \Sheet
     next-sheet = foldr.size! + 1
-    link-prefix = "/Sheet"
+    link-prefix = "/#Index."
     if foldr.lastRow!title is /^([_a-zA-Z]+)(\d+)$/
       prefix = RegExp.$1
       next-sheet = parseInt RegExp.$2
-      if foldr.lastRow!link is /^(\/[^=]+=[_a-zA-Z]+)/
-        link-prefix = RegExp.$1
-    while "#prefix#next-sheet" in foldr.titles!
+    if foldr.lastRow!link is /^(\/[^=]+\.)/
+      link-prefix = RegExp.$1
+    while "#prefix#next-sheet" in foldr.titles! or "#link-prefix#next-sheet" in foldr.links!
       ++next-sheet
     activeIndex = foldr.size!
     foldr.=push { link: "#link-prefix#next-sheet", title: "#prefix#next-sheet" }
@@ -43,6 +43,7 @@ App = createClass do
     @setProps { foldr }
   on-delete: ->
     { foldr } = @props
+    return unless confirm("Really delete?\n#{ @get-sheet!title }")
     foldr.delete-at @get-idx!
     @setProps { foldr }
 
