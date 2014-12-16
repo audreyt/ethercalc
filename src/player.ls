@@ -71,6 +71,7 @@
       emit data
 
     SocialCalc.isConnected = true
+    SocialCalc.RecalcInfo.LoadSheetCache = {}
     SocialCalc.RecalcInfo.LoadSheet = (ref) ->
       return if ref is /[^.a-zA-Z0-9]/
       ref.=toLowerCase!
@@ -145,12 +146,15 @@
           ss?sheet.recalconce = true
         parts = ss.DecodeSpreadsheetSave @data.snapshot if @data.snapshot
         if parts?sheet
+          sheetdata = @data.snapshot.substring(parts.sheet.start, parts.sheet.end)
           SocialCalc.RecalcLoadedSheet(
             @data.room,
-            @data.snapshot.substring(parts.sheet.start, parts.sheet.end),
+            sheetdata,
             true # recalc
           )
-          ss.context.sheetobj.ScheduleSheetCommands "recalc\n", false, true
+          if SocialCalc.RecalcInfo.LoadSheetCache[@data.room] isnt sheetdata
+            SocialCalc.RecalcInfo.LoadSheetCache[@data.room] = sheetdata
+            ss.context.sheetobj.ScheduleSheetCommands "recalc\n", false, true
         else
           SocialCalc.RecalcLoadedSheet @data.room, '', true
       | \execute

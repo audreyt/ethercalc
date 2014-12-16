@@ -125,6 +125,7 @@
             return emit(data);
           };
           SocialCalc.isConnected = true;
+          SocialCalc.RecalcInfo.LoadSheetCache = {};
           SocialCalc.RecalcInfo.LoadSheet = function(ref){
             if (/[^.a-zA-Z0-9]/.exec(ref)) {
               return;
@@ -138,7 +139,7 @@
           };
           return this$.on({
             data: function(){
-              var ss, editor, user, ref$, ecell, peerClass, find, cr, cell, origCR, origCell, parts, cmdstr, line, refreshCmd, ref1$;
+              var ss, editor, user, ref$, ecell, peerClass, find, cr, cell, origCR, origCell, parts, cmdstr, line, refreshCmd, sheetdata, ref1$;
               if (!((typeof SocialCalc != 'undefined' && SocialCalc !== null) && SocialCalc.isConnected)) {
                 return;
               }
@@ -263,8 +264,12 @@
                   parts = ss.DecodeSpreadsheetSave(this.data.snapshot);
                 }
                 if (parts != null && parts.sheet) {
-                  SocialCalc.RecalcLoadedSheet(this.data.room, this.data.snapshot.substring(parts.sheet.start, parts.sheet.end), true);
-                  ss.context.sheetobj.ScheduleSheetCommands("recalc\n", false, true);
+                  sheetdata = this.data.snapshot.substring(parts.sheet.start, parts.sheet.end);
+                  SocialCalc.RecalcLoadedSheet(this.data.room, sheetdata, true);
+                  if (SocialCalc.RecalcInfo.LoadSheetCache[this.data.room] !== sheetdata) {
+                    SocialCalc.RecalcInfo.LoadSheetCache[this.data.room] = sheetdata;
+                    ss.context.sheetobj.ScheduleSheetCommands("recalc\n", false, true);
+                  }
                 } else {
                   SocialCalc.RecalcLoadedSheet(this.data.room, '', true);
                 }
