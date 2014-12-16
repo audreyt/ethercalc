@@ -22,7 +22,9 @@ App = createClass do
   componentDidUpdate: ->
     for node in document.getElementsByTagName('iframe')
       renderFrameContent node, @props.foldr.rows
-  onChange: -> @setProps activeIndex: it
+  onChange: ->
+    @setProps activeIndex: it
+    document.getElementsByTagName('iframe')[it].contentWindow.focus!
   on-add: ->
     { foldr } = @props
     prefix = \Sheet
@@ -72,8 +74,10 @@ Frame = createClass do
   componentDidMount: -> renderFrameContent @getDOMNode!, @props.rows
   componentDidUpdate: -> renderFrameContent @getDOMNode!, @props.rows
 
+isFirstTime = yes
 renderFrameContent = (node, rows) ->
   doc = node.contentDocument
+  return unless doc?
   return setTimeout((-> renderFrameContent node, rows), 1ms) unless doc.readyState is \complete
   <~ setTimeout _, 100ms
   node.contentWindow.postMessage JSON.stringify({
@@ -81,6 +85,9 @@ renderFrameContent = (node, rows) ->
     rows: rows
     index: Index
   },,2), \*
+  if isFirstTime and node is document.getElementsByTagName('iframe')[0]
+    node.contentWindow.focus!
+    isFirstTime = no
 
 <-(window.init=)
 foldr = new HackFoldr BasePath
