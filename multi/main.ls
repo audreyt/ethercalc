@@ -2,7 +2,8 @@ require \./styles.styl
 React = require \react
 TabPanel = require \react-basic-tabs
 BasePath = \http://127.0.0.1:8000
-Index = \test
+Index = \foobar
+Index = RegExp.$1 if window.location.href is /\/=([^_][^\/]*)$/
 HackFoldr = require(\./foldr.ls).HackFoldr
 
 {div, iframe, input, button} = React.DOM
@@ -18,6 +19,9 @@ App = createClass do
       Buttons { can-delete, @~on-add, @~on-rename, @~on-delete }
   get-idx: -> @props.activeIndex <? @props.foldr.lastIndex!
   get-sheet: -> @props.foldr.at(@get-idx!)
+  componentDidUpdate: ->
+    for node in document.getElementsByTagName('iframe')
+      renderFrameContent node, @props.foldr.rows
   onChange: -> @setProps activeIndex: it
   on-add: ->
     { foldr } = @props
@@ -37,7 +41,7 @@ App = createClass do
   on-rename: ->
     { foldr } = @props
     title = prompt("Rename Sheet", @get-sheet!title)
-    return if not title? or title in foldr.titles!
+    return if not title? or title.toLowerCase! in [ t.toLowerCase! for t in foldr.titles! ]
     # TODO: Carry over the data if non-empty
     foldr.set-at @get-idx!, { title }
     @setProps { foldr }
@@ -53,17 +57,30 @@ Buttons = createClass do
       button { onClick: @props.on-add }, \Add
       button { onClick: @props.on-rename }, \Rename...
       button { onClick: @props.on-delete, disabled: !@props.can-delete }, \Delete
+
 Nav = createClass do
   onChange: -> @props.onChange it
   render: ->
     TabPanel { activeIndex: @props.activeIndex, @~onChange, tabVerticalPosition: \bottom },
       ...for { title, link="/#{ encodeURIComponent title }" } in @props.rows
         div { key: title, title, className: \wrapper },
-          Frame { src: "#BasePath#link" }
+          Frame { src: "#BasePath#link", rows: @props.rows }
 
 Frame = createClass do
   shouldComponentUpdate: -> @props.src isnt it.src
   render: -> iframe { key: @props.src, src: @props.src }
+  componentDidMount: -> renderFrameContent @getDOMNode!, @props.rows
+  componentDidUpdate: -> renderFrameContent @getDOMNode!, @props.rows
+
+renderFrameContent = (node, rows) ->
+  doc = node.contentDocument
+  return setTimeout((-> renderFrameContent node, rows), 1ms) unless doc.readyState is \complete
+  <~ setTimeout _, 100ms
+  node.contentWindow.postMessage JSON.stringify({
+    type: "multi"
+    rows: rows
+    index: Index
+  },,2), \*
 
 <-(window.init=)
 foldr = new HackFoldr BasePath

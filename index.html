@@ -13,6 +13,11 @@ if (!(window.location.hash.replace('#', ''))) {
         window.location = './_start';
     }
 }
+window.addEventListener("message", function(it){
+    if (/"type"\s*:\s*"multi"/.test(it.data)) {
+        window.__MULTI__ = (function(){ try { return JSON.parse(it.data); } catch (e$) {} }());
+    }
+}, false);
 </script>
 <script src="./static/socialcalcconstants.js"></script>
 <script src="./static/socialcalc-3.js"></script>
