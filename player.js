@@ -126,7 +126,10 @@
           };
           SocialCalc.isConnected = true;
           SocialCalc.RecalcInfo.LoadSheet = function(ref){
-            ref = ref.replace(/[^a-zA-Z0-9]+/g, '').toLowerCase();
+            if (/[^.a-zA-Z0-9]/.exec(ref)) {
+              return;
+            }
+            ref = ref.toLowerCase();
             return emit({
               type: 'ask.recalc',
               user: SocialCalc._username,

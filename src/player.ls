@@ -72,7 +72,8 @@
 
     SocialCalc.isConnected = true
     SocialCalc.RecalcInfo.LoadSheet = (ref) ->
-      ref = ref.replace /[^a-zA-Z0-9]+/g '' .toLowerCase!
+      return if ref is /[^.a-zA-Z0-9]/
+      ref.=toLowerCase!
       emit type: \ask.recalc, user: SocialCalc._username, room: ref
 
     @on data: !->

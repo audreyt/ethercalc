@@ -302,7 +302,10 @@
             SocialCalc.Popup.Types.ColorChooser.Create = function(){};
             SocialCalc.Popup.Initialize = function(){};
             SocialCalc.RecalcInfo.LoadSheet = function(ref){
-              ref = (ref + "").replace(/[^a-zA-Z0-9]+/g, '').toLowerCase();
+              if (/[^.a-zA-Z0-9]/.exec(ref)) {
+                return;
+              }
+              ref = ref.toLowerCase();
               postMessage({
                 type: 'load-sheet',
                 ref: ref
