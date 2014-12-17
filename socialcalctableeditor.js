@@ -137,6 +137,7 @@ SocialCalc.TableEditor = function(context) {
    this.busy = false; // true when executing command, calculating, etc.
    this.ensureecell = false; // if true, ensure ecell is visible after timeout
    this.deferredCommands = []; // commands to execute after busy, in form: {cmdstr: "cmds", saveundo: t/f}
+   this.deferredEmailCommands = []; // Email commands to execute after busy, in form: {cmdstr: "cmds", saveundo: t/f}
 
    this.gridposition = null; // screen coords of full grid
    this.headposition = null; // screen coords of upper left of grid within header rows
@@ -751,7 +752,10 @@ SocialCalc.EditorScheduleSheetCommands = function(editor, cmdstr, saveundo, igno
       return;
       }
 
-   switch (cmdstr) {
+   // eddy ExecuteSheetCommand {
+   var cmdTokens = cmdstr.split(" ");
+
+   switch (cmdTokens[0]) {
       case "recalc":
       case "redisplay":
          editor.context.sheetobj.ScheduleSheetCommands(cmdstr, false);
@@ -764,7 +768,12 @@ SocialCalc.EditorScheduleSheetCommands = function(editor, cmdstr, saveundo, igno
       case "redo":
          editor.SheetRedo();
          break;
-
+         
+      case "setemailparameters":    	  
+		  SocialCalc.TriggerIoAction.Email(cmdTokens[1], cmdTokens[2]);
+    	  break;
+         
+         
       default:
          editor.context.sheetobj.ScheduleSheetCommands(cmdstr, saveundo);
          break;
@@ -818,13 +827,11 @@ SocialCalc.EditorSheetStatusCallback = function(recalcdata, status, arg, editor)
             cell = SocialCalc.GetEditorCellElement(editor, cr.row, cr.col);
             editor.ReplaceCell(cell, cr.row, cr.col);
             }
-
          if (editor.deferredCommands.length) {
             dcmd = editor.deferredCommands.shift();
             editor.EditorScheduleSheetCommands(dcmd.cmdstr, dcmd.saveundo, true);
             return;
             }
-
          if (sheetobj.attribs.needsrecalc &&
                (sheetobj.attribs.recalc!="off" || sheetobj.recalconce)
                && editor.recalcFunction) {
@@ -898,6 +905,14 @@ SocialCalc.EditorSheetStatusCallback = function(recalcdata, status, arg, editor)
          break;
 
       case "doneposcalc":
+          if (editor.deferredEmailCommands.length) {
+              signalstatus(status);
+              var emailcmd = editor.deferredEmailCommands.shift();
+              editor.EditorScheduleSheetCommands(emailcmd.cmdstr, emailcmd.saveundo, true);
+              return;
+              }
+    	  
+    	  
          if (editor.deferredCommands.length) {
             signalstatus(status);
             dcmd = editor.deferredCommands.shift();
@@ -2121,10 +2136,48 @@ SocialCalc.EditorSaveEdit = function(editor, text) {
 
    cmdline = "set "+wval.ecoord+" "+type+" "+value;
    editor.EditorScheduleSheetCommands(cmdline, true, false);
+   // eddy EditorSaveEdit {
+   if(typeof sheetobj.ioEventTree === 'undefined') return;	
+   if(typeof sheetobj.ioParameterList === 'undefined') return;
+   if(typeof sheetobj.ioEventTree[wval.ecoord] !== 'undefined') {
+	   SocialCalc.EditedTriggerCell(sheetobj.ioEventTree[wval.ecoord], wval.ecoord, editor, sheetobj);   		
+   }
+   		
+   // }
 
    return;
 
    }
+
+
+// Eddy EditedTriggerCell {
+
+
+SocialCalc.EditedTriggerCell  = function(actionFormulaCells, editedCellRef, editor, sheet) {
+ 
+	 for(var actionCellId in actionFormulaCells) {
+		 
+			var parameters = sheet.ioParameterList[actionCellId];
+            if(typeof parameters === 'undefined') continue;	
+			
+			switch(parameters.function_name) {
+				  case "EMAILONEDIT" :
+				  case "EMAILONEDITIF" :
+					  cmdline = "setemailparameters "+actionCellId+ " " + editedCellRef;
+					// hold off on commands until recalc done
+				      editor.deferredEmailCommands.push({cmdstr: cmdline, saveundo: false});
+//					  editor.EditorScheduleSheetCommands(cmdline, false, false);
+					  break;
+			}
+	 }
+	
+}	
+// } Eddy EditedTriggerCell
+
+
+
+
+
 
 //
 // SocialCalc.EditorApplySetCommandsToRange(editor, cmd)

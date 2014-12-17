@@ -1,7 +1,7 @@
 /*
 CC0 1.0 Universal
 
-To the extent possible under law, 唐鳳 has waived all copyright and
+To the extent possible under law, Audrey has waived all copyright and
 related or neighboring rights to EtherCalc.
 
 This work is published from Taiwan.
@@ -26,9 +26,22 @@ if keyfile? and certfile?
   transport = \https
 else options = {}
 
+# For specific times, use a chron job
+#everyThirtyMins = -> console.log "Another 30 mins is gone forever. Hopefully, you made the most of it..."
+
+#CronJob =  require 'cron' .CronJob
+#cronParameters = 
+#  cronTime: "0 0,30 * * * *"   
+#  onTick: everyThirtyMins
+#  start: true
+#  timeZone: "America/Los_Angeles"  
+#new CronJob cronParameters
+
+
 console.log "Please connect to: #transport://#{
   if host is \0.0.0.0 then require \os .hostname! else host
 }:#port/"
+
 
 options.io = { origin: '*' } if cors
 

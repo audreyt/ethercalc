@@ -50,19 +50,21 @@ exports.sendTestEmail = function (emailTo, emailSubject, emailBody) {
 	    //html: '<b>Hello world </b>' // html body
 	};
 	
-	
+	var mailResponse;
 	smtpTransport.sendMail(mailOptions, function(error, info) {
+      mailResponse = info;
 	  if (error) {
 	    console.log(error);
 	    console.dir(info);
 	  } else {
         console.log('Message sent: ');
-        console.dir(info);
-        console.log('Env:'+process.env.i3pqpufosc_refreshToken);	    
+        //console.log('Env:'+process.env.i3pqpufosc_refreshToken);	    
         //console.dir(process.env);	    
 	  }
 	  smtpTransport.close();
 	});
+    console.dir(mailResponse);
+	
 	
 }
 

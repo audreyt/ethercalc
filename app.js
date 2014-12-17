@@ -2,7 +2,7 @@
 /*
 CC0 1.0 Universal
 
-To the extent possible under law, 唐鳳 has waived all copyright and
+To the extent possible under law, Audrey has waived all copyright and
 related or neighboring rights to EtherCalc.
 
 This work is published from Taiwan.
@@ -40,22 +40,6 @@ This work is published from Taiwan.
   } else {
     options = {};
   }
- 
-  
-  
- //For specific times, use a chron job
-  var fifteenSeconsAfterMinute = function() {
-    console.log("Another 10 mins is gone forever. Hopefully, you made the most of it...");
-  }
-  var CronJob = require('cron').CronJob;
-  new CronJob({
-    cronTime: "0 0,30 * * * *",//30 min 
-    onTick: fifteenSeconsAfterMinute,
-    start: true,
-    timeZone: "America/Los_Angeles"
-  });
-
-  
   console.log("Please connect to: " + transport + "://" + (host === '0.0.0.0' ? require('os').hostname() : host) + ":" + port + "/");
   if (cors) {
     options.io = {

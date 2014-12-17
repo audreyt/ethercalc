@@ -775,7 +775,7 @@ SocialCalc.Constants = {
    s_farg_rangen: "range1, range2, ...",
    s_farg_vsig: 'value, [significance]',
 
-   function_classlist: ["all", "stat", "lookup", "datetime", "financial", "test", "math", "text", "action", "trigger"], // order of function classes
+   function_classlist: ["all", "stat", "lookup", "datetime", "financial", "test", "math", "text", "gui", "action"], // order of function classes
 
    s_fclass_all: "All",
    s_fclass_stat: "Statistics",
@@ -785,8 +785,8 @@ SocialCalc.Constants = {
    s_fclass_test: "Test",
    s_fclass_math: "Math",
    s_fclass_text: "Text",
-   s_fclass_action: "Email & Trigger",
-   s_fclass_trigger: "Button",
+   s_fclass_action: "Email & Copy",
+   s_fclass_gui: "Button & Input",
 
    lastone: null
 

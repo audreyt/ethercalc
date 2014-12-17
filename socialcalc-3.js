@@ -3059,9 +3059,15 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
             }
          break;
 
-      case "sendemail":    	  
+         // eddy ExecuteSheetCommand {
+//      case "setemailparameters":    	  
+//    	  break;
+    	  
+      case "sendemail":    
+    	  // email sent by server, so ignore here
     	  break;
-         
+         // } eddy ExecuteSheetCommand 
+    	  
       default:
          errortext = scc.s_escUnknownCmd+cmdstr;
          break;

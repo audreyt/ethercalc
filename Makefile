@@ -38,7 +38,7 @@ expire :: SocialCalcModule.js
 
 depends :: app.js static/ethercalc.js static/start.css
 
-SocialCalcModule.js :: $(SOCIALCALC_FILES) exports.js
+SocialCalcModule.js :: $(SOCIALCALC_FILES) exports.js 
 	cat $(SOCIALCALC_FILES) exports.js > $@
 	@cp $(SOCIALCALC_FILES) sendemail.js /cygdrive/c/Users/eddy/Dropbox/ethercalc/
 	@cp src/*.ls /cygdrive/c/Users/eddy/Dropbox/ethercalc/src/

@@ -57,8 +57,8 @@ s_fdef_VAR:"Returns the sample variance of the numeric values. ", s_fdef_VARP:"R
 s_fdef_YEAR:"Returns the year part of a date value. ", s_fdef_SUMPRODUCT:"Sums the pairwise products of 2 or more ranges. The ranges must be of equal length.", s_fdef_CEILING:"Rounds the given number up to the nearest integer or multiple of significance. Significance is the value to whose multiple of ten the value is to be rounded up (.01, .1, 1, 10, etc.)", s_fdef_FLOOR:"Rounds the given number down to the nearest multiple of significance. Significance is the value to whose multiple of ten the number is to be rounded down (.01, .1, 1, 10, etc.)", 
 s_farg_v:"value", s_farg_vn:"value1, value2, ...", s_farg_xy:"valueX, valueY", s_farg_choose:"index, value1, value2, ...", s_farg_range:"range", s_farg_rangec:"range, criteria", s_farg_date:"year, month, day", s_farg_dfunc:"databaserange, fieldname, criteriarange", s_farg_ddb:"cost, salvage, lifetime, period, [factor]", s_farg_find:"string1, string2, [start]", s_farg_fv:"rate, n, payment, [pv, [paytype]]", s_farg_hlookup:"value, range, row, [rangelookup]", s_farg_iffunc:"logical-expression, true-value, [false-value]", 
 s_farg_index:"range, rownum, colnum", s_farg_irr:"range, [guess]", s_farg_tc:"text, count", s_farg_log:"value, base", s_farg_match:"value, range, [rangelookup]", s_farg_mid:"text, start, length", s_farg_nper:"rate, payment, pv, [fv, [paytype]]", s_farg_npv:"rate, value1, value2, ...", s_farg_pmt:"rate, n, pv, [fv, [paytype]]", s_farg_pv:"rate, n, payment, [fv, [paytype]]", s_farg_rate:"n, payment, pv, [fv, [paytype, [guess]]]", s_farg_replace:"text1, start, length, text2", s_farg_vp:"value, [precision]", 
-s_farg_valpre:"value, precision", s_farg_csl:"cost, salvage, lifetime", s_farg_cslp:"cost, salvage, lifetime, period", s_farg_subs:"text1, oldtext, newtext, [occurrence]", s_farg_sumif:"range1, criteria, [range2]", s_farg_hms:"hour, minute, second", s_farg_txt:"text", s_farg_vlookup:"value, range, col, [rangelookup]", s_farg_weekday:"date, [type]", s_farg_dt:"date", s_farg_rangen:"range1, range2, ...", s_farg_vsig:"value, [significance]", function_classlist:"all stat lookup datetime financial test math text action trigger".split(" "), 
-s_fclass_all:"All", s_fclass_stat:"Statistics", s_fclass_lookup:"Lookup", s_fclass_datetime:"Date & Time", s_fclass_financial:"Financial", s_fclass_test:"Test", s_fclass_math:"Math", s_fclass_text:"Text", s_fclass_action:"Email & Trigger", s_fclass_trigger:"Button", lastone:null};
+s_farg_valpre:"value, precision", s_farg_csl:"cost, salvage, lifetime", s_farg_cslp:"cost, salvage, lifetime, period", s_farg_subs:"text1, oldtext, newtext, [occurrence]", s_farg_sumif:"range1, criteria, [range2]", s_farg_hms:"hour, minute, second", s_farg_txt:"text", s_farg_vlookup:"value, range, col, [rangelookup]", s_farg_weekday:"date, [type]", s_farg_dt:"date", s_farg_rangen:"range1, range2, ...", s_farg_vsig:"value, [significance]", function_classlist:"all stat lookup datetime financial test math text gui action".split(" "), 
+s_fclass_all:"All", s_fclass_stat:"Statistics", s_fclass_lookup:"Lookup", s_fclass_datetime:"Date & Time", s_fclass_financial:"Financial", s_fclass_test:"Test", s_fclass_math:"Math", s_fclass_text:"Text", s_fclass_action:"Email & Copy", s_fclass_gui:"Button & Input", lastone:null};
 SocialCalc.ConstantsDefaultClasses = {defaultComment:"", defaultCommentNoGrid:"", defaultHighlightTypeCursor:"", defaultHighlightTypeRange:"", defaultColname:"", defaultSelectedColname:"", defaultRowname:"", defaultSelectedRowname:"", defaultUpperLeft:"", defaultSkippedCell:"", defaultPaneDivider:"", cteGriddiv:"", defaultInputEcho:{classname:"", style:"filter:alpha(opacity=90);opacity:.9;"}, TCmain:"", TCendcap:"", TCpaneslider:"", TClessbutton:"", TCmorebutton:"", TCscrollarea:"", TCthumb:"", TCPStrackingline:"", 
 TCTDFSthumbstatus:"", TDpopupElement:""};
 SocialCalc.ConstantsSetClasses = function(a) {
@@ -761,7 +761,7 @@ SocialCalc.ResumeFromCmdExtension = function(a) {
   SocialCalc.SheetCommandsTimerRoutine(a);
 };
 SocialCalc.ExecuteSheetCommand = function(a, b, c) {
-  var d, e, f, g, l, h, n, q, s, r, p, t, u, v, z, w, A, y, C, G, H, M, Q, J, N, E, B = a.attribs;
+  var d, e, f, g, l, h, n, q, s, r, p, t, u, v, z, w, A, y, C, G, H, M, Q, J, O, E, B = a.attribs;
   E = a.changes;
   H = SocialCalc.CellProperties;
   z = SocialCalc.Constants;
@@ -1009,23 +1009,23 @@ SocialCalc.ExecuteSheetCommand = function(a, b, c) {
       e = {};
       l = [];
       J = [];
-      N = [];
+      O = [];
       for (r = q.row;r <= s.row;r++) {
         for (b = q.col;b <= s.col;b++) {
           h = SocialCalc.crToCoord(b, r), (p = a.cells[h]) ? (e[h] = a.CellToString(p), c && E.AddUndo("set " + h + " all", e[h])) : c && E.AddUndo("set " + h + " all");
         }
         l.push(l.length);
         J.push([]);
-        N.push([]);
-        slast = N.length - 1;
+        O.push([]);
+        slast = O.length - 1;
         for (z = 0;z <= Q;z++) {
-          h = d[z] + r, p = a.GetAssuredCell(h), h = p.datavalue, b = p.valuetype.charAt(0) || "b", "t" == b && (h = h.toLowerCase()), J[slast].push(h), N[slast].push(b);
+          h = d[z] + r, p = a.GetAssuredCell(h), h = p.datavalue, b = p.valuetype.charAt(0) || "b", "t" == b && (h = h.toLowerCase()), J[slast].push(h), O[slast].push(b);
         }
       }
       c = function(a, c) {
         var b, d, e, f, g;
         for (b = 0;b <= Q;b++) {
-          if ("up" == M[b] ? (d = a, e = c) : (d = c, e = a), f = N[d][b], tb = N[e][b], "t" == f ? "t" == tb ? (d = J[d][b], e = J[e][b], g = d > e ? 1 : d < e ? -1 : 0) : "n" == tb ? g = 1 : "b" == tb ? g = "up" == M[b] ? -1 : 1 : "e" == tb && (g = -1) : "n" == f ? "t" == tb ? g = -1 : "n" == tb ? (d = J[d][b] - 0, e = J[e][b] - 0, g = d > e ? 1 : d < e ? -1 : 0) : "b" == tb ? g = "up" == M[b] ? -1 : 1 : "e" == tb && (g = -1) : "e" == f ? "e" == tb ? (d = J[d][b], e = J[e][b], g = d > e ? 1 : d < 
+          if ("up" == M[b] ? (d = a, e = c) : (d = c, e = a), f = O[d][b], tb = O[e][b], "t" == f ? "t" == tb ? (d = J[d][b], e = J[e][b], g = d > e ? 1 : d < e ? -1 : 0) : "n" == tb ? g = 1 : "b" == tb ? g = "up" == M[b] ? -1 : 1 : "e" == tb && (g = -1) : "n" == f ? "t" == tb ? g = -1 : "n" == tb ? (d = J[d][b] - 0, e = J[e][b] - 0, g = d > e ? 1 : d < e ? -1 : 0) : "b" == tb ? g = "up" == M[b] ? -1 : 1 : "e" == tb && (g = -1) : "e" == f ? "e" == tb ? (d = J[d][b], e = J[e][b], g = d > e ? 1 : d < 
           e ? -1 : 0) : g = "b" == tb ? "up" == M[b] ? -1 : 1 : 1 : "b" == f && (g = "b" == tb ? 0 : "up" == M[b] ? 1 : -1), g) {
             return g;
           }
@@ -2376,6 +2376,7 @@ SocialCalc.TableEditor = function(a) {
   this.timeout = this.cellhandles = this.logo = this.horizontaltablecontrol = this.verticaltablecontrol = this.inputEcho = this.inputBox = this.tableheight = this.height = this.tablewidth = this.width = null;
   this.ensureecell = this.busy = !1;
   this.deferredCommands = [];
+  this.deferredEmailCommands = [];
   this.lastvisiblecol = this.lastnonscrollingcol = this.firstscrollingcolleft = this.firstscrollingcol = this.lastvisiblerow = this.lastnonscrollingrow = this.firstscrollingrowtop = this.firstscrollingrow = this.headposition = this.gridposition = null;
   this.rowpositions = [];
   this.colpositions = [];
@@ -2780,7 +2781,7 @@ SocialCalc.EditorScheduleSheetCommands = function(a, b, c, d) {
     if (a.busy && !d) {
       a.deferredCommands.push({cmdstr:b, saveundo:c});
     } else {
-      switch(b) {
+      switch(d = b.split(" "), d[0]) {
         case "recalc":
         ;
         case "redisplay":
@@ -2791,6 +2792,9 @@ SocialCalc.EditorScheduleSheetCommands = function(a, b, c, d) {
           break;
         case "redo":
           a.SheetRedo();
+          break;
+        case "setemailparameters":
+          SocialCalc.TriggerIoAction.Email(d[1], d[2]);
           break;
         default:
           a.context.sheetobj.ScheduleSheetCommands(b, c);
@@ -2868,6 +2872,12 @@ SocialCalc.EditorSheetStatusCallback = function(a, b, c, d) {
       d.busy = !0;
       break;
     case "doneposcalc":
+      if (d.deferredEmailCommands.length) {
+        f(b);
+        a = d.deferredEmailCommands.shift();
+        d.EditorScheduleSheetCommands(a.cmdstr, a.saveundo, !0);
+        return;
+      }
       d.deferredCommands.length ? (f(b), a = d.deferredCommands.shift(), d.EditorScheduleSheetCommands(a.cmdstr, a.saveundo, !0)) : (d.busy = !1, f(b), "start" == d.state && d.DisplayCellContents());
       return;
     default:
@@ -3325,13 +3335,23 @@ SocialCalc.EditorDisplayCellContents = function(a) {
   a.inputBox && a.inputBox.DisplayCellContents();
 };
 SocialCalc.EditorSaveEdit = function(a, b) {
-  var c, d, e;
-  c = a.context.sheetobj;
-  var f = a.workingvalues;
+  var c, d, e, f = a.context.sheetobj, g = a.workingvalues;
   e = "string" == typeof b ? b : a.inputBox.GetText();
-  c = SocialCalc.GetCellContents(c, f.ecoord) + "";
+  c = SocialCalc.GetCellContents(f, g.ecoord) + "";
   e != c && (c = e.charAt(0), "=" == c && -1 == e.indexOf("\n") ? (d = "formula", e = e.substring(1)) : "'" == c ? (d = "text t", e = e.substring(1), c = SocialCalc.DetermineValueType(e), "t" == c.type.charAt(0) && (d = "text " + c.type)) : 0 == e.length ? d = "empty" : (c = SocialCalc.DetermineValueType(e), d = "n" == c.type && e == c.value + "" ? "value n" : "t" == c.type.charAt(0) ? "text " + c.type : "" == c.type ? "text t" : "constant " + c.type + " " + c.value), "t" == d.charAt(0) && (e = SocialCalc.encodeForSave(e)), 
-  e = "set " + f.ecoord + " " + d + " " + e, a.EditorScheduleSheetCommands(e, !0, !1));
+  e = "set " + g.ecoord + " " + d + " " + e, a.EditorScheduleSheetCommands(e, !0, !1), "undefined" !== typeof f.ioEventTree && "undefined" !== typeof f.ioParameterList && "undefined" !== typeof f.ioEventTree[g.ecoord] && SocialCalc.EditedTriggerCell(f.ioEventTree[g.ecoord], g.ecoord, a, f));
+};
+SocialCalc.EditedTriggerCell = function(a, b, c, d) {
+  for (var e in a) {
+    if (a = d.ioParameterList[e], "undefined" !== typeof a) {
+      switch(a.function_name) {
+        case "EMAILONEDIT":
+        ;
+        case "EMAILONEDITIF":
+          cmdline = "setemailparameters " + e + " " + b, c.deferredEmailCommands.push({cmdstr:cmdline, saveundo:!1});
+      }
+    }
+  }
 };
 SocialCalc.EditorApplySetCommandsToRange = function(a, b) {
   var c;
@@ -5123,8 +5143,8 @@ SocialCalc.FormatNumber.formatNumberWithFormat = function(a, b, c) {
     return "string" == typeof a ? d.formatTextWithFormat(a, b) : "NaN";
   }
   a = J;
-  var N = 0 > J ? 1 : 0;
-  N && (J = -J);
+  var O = 0 > J ? 1 : 0;
+  O && (J = -J);
   w = 0 == J ? 1 : 0;
   d.parse_format_string(d.format_definitions, b);
   b = d.format_definitions[b];
@@ -5161,10 +5181,10 @@ SocialCalc.FormatNumber.formatNumberWithFormat = function(a, b, c) {
   } else {
     if (0 < v) {
       if (1 == v) {
-        N ? (N = 0, v = 1) : v = 0;
+        O ? (O = 0, v = 1) : v = 0;
       } else {
         if (2 == v || 3 == v) {
-          N ? (N = 0, v = 1) : v = w ? 2 : 0;
+          O ? (O = 0, v = 1) : v = w ? 2 : 0;
         }
       }
     }
@@ -5190,7 +5210,7 @@ SocialCalc.FormatNumber.formatNumberWithFormat = function(a, b, c) {
     return "NaN";
   }
   f = w + "";
-  0 == w && (v.fractiondigits || v.integerdigits) && (N = 0);
+  0 == w && (v.fractiondigits || v.integerdigits) && (O = 0);
   if (0 <= f.indexOf("e")) {
     return a + "";
   }
@@ -5265,7 +5285,7 @@ SocialCalc.FormatNumber.formatNumberWithFormat = function(a, b, c) {
           H = f;
         } else {
           if (e == d.commands.integer_placeholder) {
-            N && (u += "-", N = 0);
+            O && (u += "-", O = 0);
             A++;
             if (1 == A && w.length > v.integerdigits) {
               for (;y < w.length - v.integerdigits;y++) {
@@ -5291,16 +5311,16 @@ SocialCalc.FormatNumber.formatNumberWithFormat = function(a, b, c) {
               C++;
             } else {
               if (e == d.commands.decimal) {
-                N && (u += "-", N = 0), u += Q;
+                O && (u += "-", O = 0), u += Q;
               } else {
                 if (e == d.commands.currency) {
-                  N && (u += "-", N = 0), u += f;
+                  O && (u += "-", O = 0), u += f;
                 } else {
                   if (e == d.commands.general) {
                     if (0 != J && (f = Math.floor(Math.LOG10E * Math.log(J)), f = Math.pow(10, 13 - f), J = Math.floor(f * J + 0.5) / f, !isFinite(J))) {
                       return "NaN";
                     }
-                    N && (u += "-");
+                    O && (u += "-");
                     f = J + "";
                     if (0 <= f.indexOf("e")) {
                       u += f;
@@ -5902,12 +5922,38 @@ SocialCalc.Formula.DecodeRangeParts = function(a, b) {
 SocialCalc.Formula.FunctionList || (SocialCalc.Formula.FunctionList = {});
 SocialCalc.Formula.FunctionClasses = null;
 SocialCalc.Formula.FunctionArgDefs = {};
-SocialCalc.Formula.StoreIoEventFormula = function(a, b, c, d) {
-  var e = [];
-  SocialCalc.Formula.Clone(e, c);
-  e.reverse();
-  0 != e.length && ("RADIOBUTTON" == a && "undefined" === typeof d.ioEventTree && (d.ioEventTree = {}), "undefined" === typeof d.ioEventTree && (d.ioEventTree = {}), "undefined" === typeof d.ioParameterList && (d.ioParameterList = {}), "coord" == e[0].type && (triggerCellId = e[0].value.replace(/\$/g, ""), "undefined" === typeof d.ioEventTree[triggerCellId] && (d.ioEventTree[triggerCellId] = {}), d.ioEventTree[triggerCellId][b] = b), "undefined" === typeof d.ioParameterList[b] && (d.ioParameterList[b] = 
-  {}), d.ioParameterList[b] = e, d.ioParameterList[b].function_name = a, a = SocialCalc.GetSpreadsheetControlObject(), "undefined" === typeof a.debug && (a.debug = []), a.debug.push({ioEventTree:d.ioEventTree}), a.debug.push({ioParameterList:d.ioParameterList}));
+SocialCalc.Formula.StoreIoEventFormula = function(a, b, c, d, e) {
+  var f = [];
+  SocialCalc.Formula.Clone(f, c);
+  f.reverse();
+  if (0 != f.length) {
+    "RADIOBUTTON" == a && "undefined" === typeof d.ioEventTree && (d.ioEventTree = {});
+    "undefined" === typeof d.ioEventTree && (d.ioEventTree = {});
+    "undefined" === typeof d.ioParameterList && (d.ioParameterList = {});
+    if ("EventTree" == e && ("coord" == f[0].type || "range" == f[0].type)) {
+      c = f[0].value.replace(/\$/g, "");
+      e = function(a, b, c) {
+        "undefined" === typeof a[b] && (a[b] = {});
+        a[b][c] = c;
+      };
+      if ("range" == f[0].type) {
+        for (var g = SocialCalc.Formula.DecodeRangeParts(d, c), l = 0;l < g.ncols;l++) {
+          for (var h = 0;h < g.nrows;h++) {
+            var n = SocialCalc.crToCoord(g.col1num + l, g.row1num + h);
+            e(d.ioEventTree, n, b);
+          }
+        }
+      }
+      "coord" == f[0].type && e(d.ioEventTree, c, b);
+    }
+    "undefined" === typeof d.ioParameterList[b] && (d.ioParameterList[b] = {});
+    d.ioParameterList[b] = f;
+    d.ioParameterList[b].function_name = a;
+    a = SocialCalc.GetSpreadsheetControlObject();
+    "undefined" === typeof a.debug && (a.debug = []);
+    a.debug.push({ioEventTree:d.ioEventTree});
+    a.debug.push({ioParameterList:d.ioParameterList});
+  }
 };
 SocialCalc.Formula.Clone = function(a, b) {
   for (var c in b) {
@@ -5922,7 +5968,12 @@ SocialCalc.Formula.CalculateFunction = function(a, b, c, d) {
     g = e[0];
     l = e[1];
     h.CopyFunctionArgs(b, f);
-    "action" == e[4] && (e = SocialCalc.GetSpreadsheetControlObject(), "undefined" === typeof e.debug && (e.debug = {}), e.debug.push("action:" + a), h.StoreIoEventFormula(a, d, f, c));
+    if (e[6] && "" != e[6]) {
+      var n = SocialCalc.GetSpreadsheetControlObject();
+      "undefined" === typeof n.debug && (n.debug = {});
+      n.debug.push("action:" + a);
+      h.StoreIoEventFormula(a, d, f, c, e[6]);
+    }
     if (100 != l) {
       if (0 > l) {
         if (f.length < -l) {
@@ -7307,7 +7358,7 @@ SocialCalc.Formula.IRRFunction = function(a, b, c, d) {
 };
 SocialCalc.Formula.FunctionList.IRR = [SocialCalc.Formula.IRRFunction, -1, "irr", "", "financial"];
 SocialCalc.Formula.IoFunctions = function(a, b, c, d) {
-  var e, f, g = SocialCalc.Formula, l = 0, h = "e#VALUE!", n = c.length, q = {BUTTON:[1], EMAIL:[4, 4, 4, 4], EMAILIF:[4, 4, 4, 4, 4], EMAILONEDIT:[3, 4, 4, 4, 4], EMAILAT:[4, 4, 4, 4, 4], EMAILONEDITIF:[2, 4, 4, 4, 4, 4], EMAILATIF:[2, 4, 4, 4, 4, 4], TEXTBOX:[1], CHECKBOX:[-1], COPYVALUE:[2, -1, 3], COPYFORMULA:[2, -1, 3]}[a], s = [], r = [];
+  var e, f, g = SocialCalc.Formula, l = 0, h = "e#VALUE!", n = c.length, q = {BUTTON:[1], EMAIL:[4, 4, 4, 4], EMAILIF:[4, 4, 4, 4, 4], EMAILONEDIT:[4, 4, 4, 4, 4], EMAILAT:[4, 4, 4, 4, 4], EMAILONEDITIF:[4, 4, 4, 4, 4, 4], EMAILATIF:[4, 4, 4, 4, 4, 4], TEXTBOX:[1], CHECKBOX:[-1], COPYVALUE:[2, -1, 3], COPYFORMULA:[2, -1, 3]}[a], s = [], r = [];
   for (e = 1;e <= n;e++) {
     if (e > q.length) {
       g.FunctionArgsError(a, b);
@@ -7336,9 +7387,9 @@ SocialCalc.Formula.IoFunctions = function(a, b, c, d) {
       break;
     case "EMAILONEDIT":
     ;
-    case "EMAILAT":
-    ;
     case "EMAILONEDITIF":
+    ;
+    case "EMAILAT":
     ;
     case "EMAILATIF":
       h = "ti" + a;
@@ -7357,17 +7408,17 @@ SocialCalc.Formula.IoFunctions = function(a, b, c, d) {
   }
   g.PushOperand(b, h, l);
 };
-SocialCalc.Formula.FunctionList.BUTTON = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "trigger", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Button('<%=cell_reference%>');\"><%=formated_value%></button>"];
-SocialCalc.Formula.FunctionList.EMAIL = [SocialCalc.Formula.IoFunctions, -3, "to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>"];
-SocialCalc.Formula.FunctionList.EMAILIF = [SocialCalc.Formula.IoFunctions, -4, "condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>"];
-SocialCalc.Formula.FunctionList.EMAILONEDIT = [SocialCalc.Formula.IoFunctions, -4, "editRange, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>"];
-SocialCalc.Formula.FunctionList.EMAILAT = [SocialCalc.Formula.IoFunctions, -4, "datetime, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>"];
-SocialCalc.Formula.FunctionList.EMAILONEDITIF = [SocialCalc.Formula.IoFunctions, -5, "editRange, condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>"];
-SocialCalc.Formula.FunctionList.EMAILATIF = [SocialCalc.Formula.IoFunctions, -5, "datetime, condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>"];
-SocialCalc.Formula.FunctionList.TEXTBOX = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "action", "<input type='text' id='TEXTBOX_<%=cell_reference%>' onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.TextBox('<%=cell_reference%>')\" value='<%=display_value%>' >"];
-SocialCalc.Formula.FunctionList.CHECKBOX = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "action", "<input type='checkbox' id='CHECKBOX_<%=cell_reference%>' <%=checked%> onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.CheckBox('<%=cell_reference%>')\" >"];
-SocialCalc.Formula.FunctionList.COPYVALUE = [SocialCalc.Formula.IoFunctions, 3, "txt", "", "action"];
-SocialCalc.Formula.FunctionList.COPYFORMULA = [SocialCalc.Formula.IoFunctions, 3, "txt", "", "action"];
+SocialCalc.Formula.FunctionList.BUTTON = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "gui", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Button('<%=cell_reference%>');\"><%=formated_value%></button>"];
+SocialCalc.Formula.FunctionList.EMAIL = [SocialCalc.Formula.IoFunctions, -3, "to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList"];
+SocialCalc.Formula.FunctionList.EMAILIF = [SocialCalc.Formula.IoFunctions, -4, "condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList"];
+SocialCalc.Formula.FunctionList.EMAILONEDIT = [SocialCalc.Formula.IoFunctions, -4, "editRange, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "EventTree"];
+SocialCalc.Formula.FunctionList.EMAILAT = [SocialCalc.Formula.IoFunctions, -4, "datetime, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList"];
+SocialCalc.Formula.FunctionList.EMAILONEDITIF = [SocialCalc.Formula.IoFunctions, -5, "editRange, condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "EventTree"];
+SocialCalc.Formula.FunctionList.EMAILATIF = [SocialCalc.Formula.IoFunctions, -5, "datetime, condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList"];
+SocialCalc.Formula.FunctionList.TEXTBOX = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "gui", "<input type='text' id='TEXTBOX_<%=cell_reference%>' onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.TextBox('<%=cell_reference%>')\" value='<%=display_value%>' >"];
+SocialCalc.Formula.FunctionList.CHECKBOX = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "gui", "<input type='checkbox' id='CHECKBOX_<%=cell_reference%>' <%=checked%> onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.CheckBox('<%=cell_reference%>')\" >"];
+SocialCalc.Formula.FunctionList.COPYVALUE = [SocialCalc.Formula.IoFunctions, 3, "txt", "", "action", "", "EventTree"];
+SocialCalc.Formula.FunctionList.COPYFORMULA = [SocialCalc.Formula.IoFunctions, 3, "txt", "", "action", "", "EventTree"];
 SocialCalc.TriggerIoAction.Button = function(a) {
   var b = SocialCalc.GetSpreadsheetControlObject(), c = b.sheet;
   if ("undefined" !== typeof c.ioEventTree && "undefined" !== typeof c.ioParameterList && "undefined" !== c.ioEventTree[a]) {
@@ -7385,40 +7436,54 @@ SocialCalc.TriggerIoAction.Button = function(a) {
     }
   }
 };
-SocialCalc.TriggerIoAction.Email = function(a) {
-  var b = SocialCalc.Formula, c = SocialCalc.GetSpreadsheetControlObject(), d = c.sheet, e = d.cells[a];
+SocialCalc.TriggerIoAction.Email = function(a, b) {
+  b = "undefined" !== typeof b ? b : null;
+  var c = SocialCalc.Formula, d = SocialCalc.GetSpreadsheetControlObject().sheet, e = d.cells[a];
   if ("undefined" !== typeof d.ioParameterList) {
-    var f = d.ioParameterList[a];
-    a = [];
-    for (var g = 1, l = 0;l < f.length;l++) {
-      if ("t" == f[l].type.charAt(0) && (a[l] = [f[l].value.replace(/ /g, "%20")]), "coord" == f[l].type && (a[l] = [d.GetAssuredCell(f[l].value).datavalue.replace(/ /g, "%20")]), "range" == f[l].type) {
-        var h = b.DecodeRangeParts(d, f[l].value);
-        a[l] = [];
-        for (var n = 0, q = 0;q < h.ncols;q++) {
-          for (var s = 0;s < h.nrows;s++) {
-            e = SocialCalc.crToCoord(h.col1num + q, h.row1num + s), e = h.sheetdata.GetAssuredCell(e), a[l].push(e.datavalue.toString().replace(/ /g, "%20")), n++;
+    for (var f = d.ioParameterList[a], g = [], l = [], h = 1, n = 0;n < f.length;n++) {
+      if ("t" == f[n].type.charAt(0) && (g[n] = [f[n].value.replace(/ /g, "%20")]), "coord" == f[n].type && (g[n] = [d.GetAssuredCell(f[n].value).datavalue.replace(/ /g, "%20")]), "range" == f[n].type) {
+        var q = c.DecodeRangeParts(d, f[n].value);
+        g[n] = [];
+        l[n] = [];
+        for (var s = 0, r = 0;r < q.ncols;r++) {
+          for (var p = 0;p < q.nrows;p++) {
+            var t = SocialCalc.crToCoord(q.col1num + r, q.row1num + p), e = q.sheetdata.GetAssuredCell(t);
+            g[n].push(e.datavalue.toString().replace(/ /g, "%20"));
+            l[n].push(t);
+            s++;
           }
         }
-        n > g && (g = n);
+        s > h && (h = s);
       }
     }
-    b = -1;
-    d = 0;
+    c = -1;
+    e = 0;
     switch(f.function_name) {
       case "EMAILIF":
-        b = 0;
+        c = 0;
       case "EMAILAT":
       ;
       case "EMAILONEDIT":
-        d = 1;
+        e = 1;
         break;
       case "EMAILONEDITIF":
       ;
       case "EMAILATIF":
-        b = 1, d = 2;
+        c = 1, e = 2;
     }
-    for (f = g - 1;-1 < f;f--) {
-      -1 != b && !1 == a[b][f >= a[b].length ? 0 : f] || c.editor.EditorScheduleSheetCommands("sendemail " + (a[d][f >= a[d].length ? 0 : f] + " " + a[d + 1][f >= a[d + 1].length ? 0 : f] + " " + a[d + 2][f >= a[d + 2].length ? 0 : f]), !1, !1);
+    switch(f.function_name) {
+      case "EMAILONEDIT":
+      ;
+      case "EMAILONEDITIF":
+        b && "coord" == f[0].type && f[0].value == b && (b = null);
+        break;
+      default:
+        b = null;
+    }
+    for (f = h - 1;-1 < f;f--) {
+      if (-1 == c || !1 != g[c][f >= g[c].length ? 0 : f]) {
+        b && b != l[0][f] || d.ScheduleSheetCommands("sendemail " + (g[e][f >= g[e].length ? 0 : f] + " " + g[e + 1][f >= g[e + 1].length ? 0 : f] + " " + g[e + 2][f >= g[e + 2].length ? 0 : f]), !1);
+      }
     }
   }
 };
@@ -10070,7 +10135,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     }
     return d;
   }
-  function N(a, b) {
+  function O(a, b) {
     for (var c, d, e, f = [], g = 0, l = a.length;l > g;g++) {
       d = a[g], d.style && (f[g] = m._data(d, "olddisplay"), c = d.style.display, b ? (f[g] || "none" !== c || (d.style.display = ""), "" === d.style.display && sa(d) && (f[g] = m._data(d, "olddisplay", M(d.nodeName)))) : f[g] || (e = sa(d), (c && "none" !== c || !e) && m._data(d, "olddisplay", e ? c : m.css(d, "display"))));
     }
@@ -10404,7 +10469,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
       if (1 !== (h = c.nodeType) && 9 !== h) {
         return[];
       }
-      if (N && !e) {
+      if (O && !e) {
         if (f = xa.exec(a)) {
           if (F = f[1]) {
             if (9 === h) {
@@ -10455,7 +10520,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         var K, P;
         g = p(a);
         if (!e && 1 === g.length) {
-          if (L = g[0] = g[0].slice(0), 2 < L.length && "ID" === (K = L[0]).type && y.getById && 9 === c.nodeType && N && x.relative[L[1].type]) {
+          if (L = g[0] = g[0].slice(0), 2 < L.length && "ID" === (K = L[0]).type && y.getById && 9 === c.nodeType && O && x.relative[L[1].type]) {
             if (c = (x.find.ID(K.matches[0].replace(na, oa), c) || [])[0], !c) {
               L = d;
               break a;
@@ -10472,7 +10537,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
             }
           }
         }
-        L = (D(a, g)(e, c, !N, d, la.test(a) && n(c.parentNode) || c), d);
+        L = (D(a, g)(e, c, !O, d, la.test(a) && n(c.parentNode) || c), d);
       }
       return L;
     }
@@ -10596,7 +10661,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         }
       };
     }
-    function u(a) {
+    function t(a) {
       return 1 < a.length ? function(b, c, d) {
         for (var e = a.length;e--;) {
           if (!a[e](b, c, d)) {
@@ -10606,7 +10671,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         return!0;
       } : a[0];
     }
-    function t(a, b, c, d, e) {
+    function u(a, b, c, d, e) {
       for (var f, g = [], F = 0, h = a.length, l = null != b;h > F;F++) {
         (f = a[F]) && (!c || c(f, d, e)) && (g.push(f), l && b.push(F));
       }
@@ -10614,19 +10679,19 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     }
     function v(a, c, e, f, g, F) {
       return f && !f[R] && (f = v(f)), g && !g[R] && (g = v(g, F)), d(function(d, F, h, l) {
-        var m, K, n = [], P = [], q = F.length, O;
-        if (!(O = d)) {
-          O = c || "*";
+        var m, K, n = [], P = [], q = F.length, N;
+        if (!(N = d)) {
+          N = c || "*";
           for (var p = h.nodeType ? [h] : h, za = [], va = 0, r = p.length;r > va;va++) {
-            b(O, p[va], za);
+            b(N, p[va], za);
           }
-          O = za;
+          N = za;
         }
-        O = !a || !d && c ? O : t(O, n, a, h, l);
-        p = e ? g || (d ? a : q || f) ? [] : F : O;
-        if (e && e(O, p, h, l), f) {
-          for (m = t(p, P), f(m, [], h, l), h = m.length;h--;) {
-            (K = m[h]) && (p[P[h]] = !(O[P[h]] = K));
+        N = !a || !d && c ? N : u(N, n, a, h, l);
+        p = e ? g || (d ? a : q || f) ? [] : F : N;
+        if (e && e(N, p, h, l), f) {
+          for (m = u(p, P), f(m, [], h, l), h = m.length;h--;) {
+            (K = m[h]) && (p[P[h]] = !(N[P[h]] = K));
           }
         }
         if (d) {
@@ -10634,7 +10699,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
             if (g) {
               m = [];
               for (h = p.length;h--;) {
-                (K = p[h]) && m.push(O[h] = K);
+                (K = p[h]) && m.push(N[h] = K);
               }
               g(null, p = [], m, l);
             }
@@ -10643,7 +10708,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
             }
           }
         } else {
-          p = t(p === F ? p.splice(q, p.length) : p), g ? g(null, F, p, l) : ma.apply(F, p);
+          p = u(p === F ? p.splice(q, p.length) : p), g ? g(null, F, p, l) : ma.apply(F, p);
         }
       });
     }
@@ -10658,21 +10723,21 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         return!f && (d || c !== E) || ((b = c).nodeType ? F(a, c, d) : h(a, c, d));
       }];e > g;g++) {
         if (c = x.relative[a[g].type]) {
-          l = [s(u(l), c)];
+          l = [s(t(l), c)];
         } else {
           if (c = x.filter[a[g].type].apply(null, a[g].matches), c[R]) {
             for (d = ++g;e > d && !x.relative[a[d].type];d++) {
             }
-            return v(1 < g && u(l), 1 < g && r(a.slice(0, g - 1).concat({value:" " === a[g - 2].type ? "*" : ""})).replace(aa, "$1"), c, d > g && w(a.slice(g, d)), e > d && w(a = a.slice(d)), e > d && r(a));
+            return v(1 < g && t(l), 1 < g && r(a.slice(0, g - 1).concat({value:" " === a[g - 2].type ? "*" : ""})).replace(aa, "$1"), c, d > g && w(a.slice(g, d)), e > d && w(a = a.slice(d)), e > d && r(a));
           }
           l.push(c);
         }
       }
-      return u(l);
+      return t(l);
     }
     function z(a, c) {
       var e = 0 < c.length, f = 0 < a.length, g = function(d, g, F, h, l) {
-        var m, K, n, P = 0, q = "0", O = d && [], p = [], za = E, va = d || f && x.find.TAG("*", l), r = ca += null == za ? 1 : Math.random() || 0.1, s = va.length;
+        var m, K, n, P = 0, q = "0", p = d && [], N = [], za = E, va = d || f && x.find.TAG("*", l), r = ca += null == za ? 1 : Math.random() || 0.1, s = va.length;
         for (l && (E = g !== J && g);q !== s && null != (m = va[q]);q++) {
           if (f && m) {
             for (K = 0;n = a[K++];) {
@@ -10683,28 +10748,28 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
             }
             l && (ca = r);
           }
-          e && ((m = !n && m) && P--, d && O.push(m));
+          e && ((m = !n && m) && P--, d && p.push(m));
         }
         if (P += q, e && q !== P) {
           for (K = 0;n = c[K++];) {
-            n(O, p, g, F);
+            n(p, N, g, F);
           }
           if (d) {
             if (0 < P) {
               for (;q--;) {
-                O[q] || p[q] || (p[q] = ja.call(h));
+                p[q] || N[q] || (N[q] = ja.call(h));
               }
             }
-            p = t(p);
+            N = u(N);
           }
-          ma.apply(h, p);
-          l && !d && 0 < p.length && 1 < P + c.length && b.uniqueSort(h);
+          ma.apply(h, N);
+          l && !d && 0 < N.length && 1 < P + c.length && b.uniqueSort(h);
         }
-        return l && (ca = r, E = za), O;
+        return l && (ca = r, E = za), p;
       };
       return e ? d(g) : g;
     }
-    var A, y, x, C, B, D, E, G, H, I, J, M, N, X, Q, Da, Aa, R = "sizzle" + -new Date, ba = a.document, ca = 0, Tb = 0, V = c(), W = c(), Z = c(), Y = function(a, b) {
+    var A, y, x, C, B, D, E, G, H, I, J, M, O, X, Q, Da, Aa, R = "sizzle" + -new Date, ba = a.document, ca = 0, Tb = 0, V = c(), W = c(), Z = c(), Y = function(a, b) {
       return a === b && (H = !0), 0;
     }, T = "undefined", $ = -2147483648, ga = {}.hasOwnProperty, S = [], ja = S.pop, ka = S.push, ma = S.push, da = S.slice, U = S.indexOf || function(a) {
       for (var b = 0, c = this.length;c > b;b++) {
@@ -10738,7 +10803,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     I = b.setDocument = function(a) {
       var b, c = a ? a.ownerDocument || a : ba;
       a = c.defaultView;
-      return c !== J && 9 === c.nodeType && c.documentElement ? (J = c, M = c.documentElement, N = !B(c), a && a !== a.top && (a.addEventListener ? a.addEventListener("unload", function() {
+      return c !== J && 9 === c.nodeType && c.documentElement ? (J = c, M = c.documentElement, O = !B(c), a && a !== a.top && (a.addEventListener ? a.addEventListener("unload", function() {
         I();
       }, !1) : a.attachEvent && a.attachEvent("onunload", function() {
         I();
@@ -10751,7 +10816,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
       }), y.getById = e(function(a) {
         return M.appendChild(a).id = R, !c.getElementsByName || !c.getElementsByName(R).length;
       }), y.getById ? (x.find.ID = function(a, b) {
-        if (typeof b.getElementById !== T && N) {
+        if (typeof b.getElementById !== T && O) {
           var c = b.getElementById(a);
           return c && c.parentNode ? [c] : [];
         }
@@ -10777,7 +10842,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         }
         return f;
       }, x.find.CLASS = y.getElementsByClassName && function(a, b) {
-        return typeof b.getElementsByClassName !== T && N ? b.getElementsByClassName(a) : void 0;
+        return typeof b.getElementsByClassName !== T && O ? b.getElementsByClassName(a) : void 0;
       }, Q = [], X = [], (y.qsa = Ba.test(c.querySelectorAll)) && (e(function(a) {
         a.innerHTML = "<select t=''><option selected=''></option></select>";
         a.querySelectorAll("[t^='']").length && X.push("[*^$]=[\\x20\\t\\r\\n\\f]*(?:''|\"\")");
@@ -10842,7 +10907,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
       return b(a, null, null, c);
     };
     b.matchesSelector = function(a, c) {
-      if ((a.ownerDocument || a) !== J && I(a), c = c.replace(ra, "='$1']"), y.matchesSelector && N && !(Q && Q.test(c) || X && X.test(c))) {
+      if ((a.ownerDocument || a) !== J && I(a), c = c.replace(ra, "='$1']"), y.matchesSelector && O && !(Q && Q.test(c) || X && X.test(c))) {
         try {
           var d = Da.call(a, c);
           if (d || y.disconnectedMatch || a.document && 11 !== a.document.nodeType) {
@@ -10858,8 +10923,8 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     };
     b.attr = function(a, b) {
       (a.ownerDocument || a) !== J && I(a);
-      var c = x.attrHandle[b.toLowerCase()], c = c && ga.call(x.attrHandle, b.toLowerCase()) ? c(a, b, !N) : void 0;
-      return void 0 !== c ? c : y.attributes || !N ? a.getAttribute(b) : (c = a.getAttributeNode(b)) && c.specified ? c.value : null;
+      var c = x.attrHandle[b.toLowerCase()], c = c && ga.call(x.attrHandle, b.toLowerCase()) ? c(a, b, !O) : void 0;
+      return void 0 !== c ? c : y.attributes || !O ? a.getAttribute(b) : (c = a.getAttributeNode(b)) && c.specified ? c.value : null;
     };
     b.error = function(a) {
       throw Error("Syntax error, unrecognized expression: " + a);
@@ -10993,7 +11058,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
       return ta.test(a || "") || b.error("unsupported lang: " + a), a = a.replace(na, oa).toLowerCase(), function(b) {
         var c;
         do {
-          if (c = N ? b.lang : b.getAttribute("xml:lang") || b.getAttribute("lang")) {
+          if (c = O ? b.lang : b.getAttribute("xml:lang") || b.getAttribute("lang")) {
             return c = c.toLowerCase(), c === a || 0 === c.indexOf(a + "-");
           }
         } while ((b = b.parentNode) && 1 === b.nodeType);
@@ -11365,12 +11430,12 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
             c = null == a.frameElement && D.documentElement;
           } catch (d) {
           }
-          c && c.doScroll && !function O() {
+          c && c.doScroll && !function N() {
             if (!m.isReady) {
               try {
                 c.doScroll("left");
               } catch (a) {
-                return setTimeout(O, 50);
+                return setTimeout(N, 50);
               }
               g();
               m.ready();
@@ -12124,9 +12189,9 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
       return void 0 !== c ? m.style(a, b, c) : m.css(a, b);
     }, a, b, 1 < arguments.length);
   }, show:function() {
-    return N(this, !0);
+    return O(this, !0);
   }, hide:function() {
-    return N(this);
+    return O(this);
   }, toggle:function(a) {
     return "boolean" == typeof a ? a ? this.show() : this.hide() : this.each(function() {
       sa(this) ? m(this).show() : m(this).hide();
@@ -12644,12 +12709,12 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
           K = w;
           C = x;
           P = e;
-          var O, H, I;
+          var N, H, I;
           w = {};
           A = d.dataTypes.slice();
           if (A[1]) {
-            for (O in d.converters) {
-              w[O.toLowerCase()] = d.converters[O];
+            for (N in d.converters) {
+              w[N.toLowerCase()] = d.converters[N];
             }
           }
           for (B = A.shift();B;) {
@@ -12658,22 +12723,22 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
                 B = I;
               } else {
                 if ("*" !== I && I !== B) {
-                  if (O = w[I + " " + B] || w["* " + B], !O) {
+                  if (N = w[I + " " + B] || w["* " + B], !N) {
                     for (E in w) {
-                      if (H = E.split(" "), H[1] === B && (O = w[I + " " + H[0]] || w["* " + H[0]])) {
-                        !0 === O ? O = w[E] : !0 !== w[E] && (B = H[0], A.unshift(H[1]));
+                      if (H = E.split(" "), H[1] === B && (N = w[I + " " + H[0]] || w["* " + H[0]])) {
+                        !0 === N ? N = w[E] : !0 !== w[E] && (B = H[0], A.unshift(H[1]));
                         break;
                       }
                     }
                   }
-                  if (!0 !== O) {
-                    if (O && d["throws"]) {
-                      K = O(K);
+                  if (!0 !== N) {
+                    if (N && d["throws"]) {
+                      K = N(K);
                     } else {
                       try {
-                        K = O(K);
+                        K = N(K);
                       } catch (J) {
-                        E = {state:"parsererror", error:O ? J : "No conversion from " + I + " to " + B};
+                        E = {state:"parsererror", error:N ? J : "No conversion from " + I + " to " + B};
                         break a;
                       }
                     }

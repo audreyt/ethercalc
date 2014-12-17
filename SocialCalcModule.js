@@ -775,7 +775,7 @@ SocialCalc.Constants = {
    s_farg_rangen: "range1, range2, ...",
    s_farg_vsig: 'value, [significance]',
 
-   function_classlist: ["all", "stat", "lookup", "datetime", "financial", "test", "math", "text", "action", "trigger"], // order of function classes
+   function_classlist: ["all", "stat", "lookup", "datetime", "financial", "test", "math", "text", "gui", "action"], // order of function classes
 
    s_fclass_all: "All",
    s_fclass_stat: "Statistics",
@@ -785,8 +785,8 @@ SocialCalc.Constants = {
    s_fclass_test: "Test",
    s_fclass_math: "Math",
    s_fclass_text: "Text",
-   s_fclass_action: "Email & Trigger",
-   s_fclass_trigger: "Button",
+   s_fclass_action: "Email & Copy",
+   s_fclass_gui: "Button & Input",
 
    lastone: null
 
@@ -3931,9 +3931,15 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
             }
          break;
 
-      case "sendemail":    	  
+         // eddy ExecuteSheetCommand {
+//      case "setemailparameters":    	  
+//    	  break;
+    	  
+      case "sendemail":    
+    	  // email sent by server, so ignore here
     	  break;
-         
+         // } eddy ExecuteSheetCommand 
+    	  
       default:
          errortext = scc.s_escUnknownCmd+cmdstr;
          break;
@@ -7131,6 +7137,7 @@ SocialCalc.TableEditor = function(context) {
    this.busy = false; // true when executing command, calculating, etc.
    this.ensureecell = false; // if true, ensure ecell is visible after timeout
    this.deferredCommands = []; // commands to execute after busy, in form: {cmdstr: "cmds", saveundo: t/f}
+   this.deferredEmailCommands = []; // Email commands to execute after busy, in form: {cmdstr: "cmds", saveundo: t/f}
 
    this.gridposition = null; // screen coords of full grid
    this.headposition = null; // screen coords of upper left of grid within header rows
@@ -7745,7 +7752,10 @@ SocialCalc.EditorScheduleSheetCommands = function(editor, cmdstr, saveundo, igno
       return;
       }
 
-   switch (cmdstr) {
+   // eddy ExecuteSheetCommand {
+   var cmdTokens = cmdstr.split(" ");
+
+   switch (cmdTokens[0]) {
       case "recalc":
       case "redisplay":
          editor.context.sheetobj.ScheduleSheetCommands(cmdstr, false);
@@ -7758,7 +7768,12 @@ SocialCalc.EditorScheduleSheetCommands = function(editor, cmdstr, saveundo, igno
       case "redo":
          editor.SheetRedo();
          break;
-
+         
+      case "setemailparameters":    	  
+		  SocialCalc.TriggerIoAction.Email(cmdTokens[1], cmdTokens[2]);
+    	  break;
+         
+         
       default:
          editor.context.sheetobj.ScheduleSheetCommands(cmdstr, saveundo);
          break;
@@ -7812,13 +7827,11 @@ SocialCalc.EditorSheetStatusCallback = function(recalcdata, status, arg, editor)
             cell = SocialCalc.GetEditorCellElement(editor, cr.row, cr.col);
             editor.ReplaceCell(cell, cr.row, cr.col);
             }
-
          if (editor.deferredCommands.length) {
             dcmd = editor.deferredCommands.shift();
             editor.EditorScheduleSheetCommands(dcmd.cmdstr, dcmd.saveundo, true);
             return;
             }
-
          if (sheetobj.attribs.needsrecalc &&
                (sheetobj.attribs.recalc!="off" || sheetobj.recalconce)
                && editor.recalcFunction) {
@@ -7892,6 +7905,14 @@ SocialCalc.EditorSheetStatusCallback = function(recalcdata, status, arg, editor)
          break;
 
       case "doneposcalc":
+          if (editor.deferredEmailCommands.length) {
+              signalstatus(status);
+              var emailcmd = editor.deferredEmailCommands.shift();
+              editor.EditorScheduleSheetCommands(emailcmd.cmdstr, emailcmd.saveundo, true);
+              return;
+              }
+    	  
+    	  
          if (editor.deferredCommands.length) {
             signalstatus(status);
             dcmd = editor.deferredCommands.shift();
@@ -9115,10 +9136,48 @@ SocialCalc.EditorSaveEdit = function(editor, text) {
 
    cmdline = "set "+wval.ecoord+" "+type+" "+value;
    editor.EditorScheduleSheetCommands(cmdline, true, false);
+   // eddy EditorSaveEdit {
+   if(typeof sheetobj.ioEventTree === 'undefined') return;	
+   if(typeof sheetobj.ioParameterList === 'undefined') return;
+   if(typeof sheetobj.ioEventTree[wval.ecoord] !== 'undefined') {
+	   SocialCalc.EditedTriggerCell(sheetobj.ioEventTree[wval.ecoord], wval.ecoord, editor, sheetobj);   		
+   }
+   		
+   // }
 
    return;
 
    }
+
+
+// Eddy EditedTriggerCell {
+
+
+SocialCalc.EditedTriggerCell  = function(actionFormulaCells, editedCellRef, editor, sheet) {
+ 
+	 for(var actionCellId in actionFormulaCells) {
+		 
+			var parameters = sheet.ioParameterList[actionCellId];
+            if(typeof parameters === 'undefined') continue;	
+			
+			switch(parameters.function_name) {
+				  case "EMAILONEDIT" :
+				  case "EMAILONEDITIF" :
+					  cmdline = "setemailparameters "+actionCellId+ " " + editedCellRef;
+					// hold off on commands until recalc done
+				      editor.deferredEmailCommands.push({cmdstr: cmdline, saveundo: false});
+//					  editor.EditorScheduleSheetCommands(cmdline, false, false);
+					  break;
+			}
+	 }
+	
+}	
+// } Eddy EditedTriggerCell
+
+
+
+
+
 
 //
 // SocialCalc.EditorApplySetCommandsToRange(editor, cmd)
@@ -15999,6 +16058,7 @@ SocialCalc.Formula.DecodeRangeParts = function(sheetdata, range) {
    }
 
 
+
 //*********************
 //
 // Function Handling
@@ -16007,7 +16067,7 @@ SocialCalc.Formula.DecodeRangeParts = function(sheetdata, range) {
 
 // List of functions -- Define after functions are defined
 //
-// SocialCalc.Formula.FunctionList["function_name"] = [function_subroutine, number_of_arguments, arg_def, func_def, func_class, cell_html]
+// SocialCalc.Formula.FunctionList["function_name"] = [function_subroutine, number_of_arguments, arg_def, func_def, func_class, cell_html, io_parameters]
 //   function_subroutine takes arguments (fname, operand, foperand, sheet), returns
 //      errortext or null, pushing result on operand stack.
 //   number_of_arguments is:
@@ -16020,6 +16080,7 @@ SocialCalc.Formula.DecodeRangeParts = function(sheetdata, range) {
 //   func_def, if present, is a string explaining the function. If not, looked up in SocialCalc.Constants.
 //   func_class, if present, is the comma-separated names of the elements in SocialCalc.Formula.FunctionClasses.
 //   cell_html, if present, is the HTML to display in the cell. will find and replace these <%=cell_reference%>, <%=displayvalue%> see SocialCalc.FormatValueForDisplay
+//   io_parameters, if present, "ParameterList" is used with =CopyValue() etc, used to collect parameters for use trigger/action formulas, "EventTree" is used with =Button() etc, used to store trigger cell lookup table
 //
 // To add a function, just add it to this object.
 
@@ -16042,14 +16103,16 @@ SocialCalc.Formula.DecodeRangeParts = function(sheetdata, range) {
 
 /*
 #
-# SocialCalc.Formula.StoreIoEventFormula(coord, operand_reverse, sheet)
+# SocialCalc.Formula.StoreIoEventFormula(coord, operand_reverse, sheet, io_parameters)
+# 
+# store forumla parameters of io event formulas
 #
 # enable lookup of ioForumalas when a trigger formula is activated 
 # store formula details in sheet.ioEventTree  and sheet.ioParameterList 
 #
 */
 // eddy StoreIoEventFormula
-SocialCalc.Formula.StoreIoEventFormula = function(function_name, coord, operand_reverse, sheet) {
+SocialCalc.Formula.StoreIoEventFormula = function(function_name, coord, operand_reverse, sheet, io_parameters) {
 	var operand = [];
 	SocialCalc.Formula.Clone(operand,operand_reverse);
     operand.reverse(); // normal parameter order
@@ -16065,13 +16128,38 @@ SocialCalc.Formula.StoreIoEventFormula = function(function_name, coord, operand_
 	if(typeof sheet.ioEventTree === 'undefined') sheet.ioEventTree = {};	
 	if(typeof sheet.ioParameterList === 'undefined') sheet.ioParameterList = {};
 
-    if(	operand[0].type == "coord") { // trigger cell exists   
+	
+	
+    if(io_parameters == "EventTree"	&& (operand[0].type == "coord" || operand[0].type == "range")) { // trigger cell exists   
     	// create a list of action formulas for each trigger cell  
-    	triggerCellId = operand[0].value.replace(/\$/g,''); // strip 
-    	if(typeof sheet.ioEventTree[triggerCellId] === 'undefined') sheet.ioEventTree[triggerCellId] = {};
-    	sheet.ioEventTree[triggerCellId][coord] = coord;
+        var triggerCellId = operand[0].value.replace(/\$/g,''); // strip dollar signs
+        var PushTriggerCord = function(list, index, v) {
+            if(typeof list[index] === 'undefined') list[index] = {};
+            list[index][v] = v;
+        };
+
+
+        if(operand[0].type == "range" )  {      
+   		      var rangeinfo = SocialCalc.Formula.DecodeRangeParts(sheet, triggerCellId);
+ 		      for (var i=0; i<rangeinfo.ncols; i++) {
+		         for (var j=0; j<rangeinfo.nrows; j++) {
+		            var cellcr = SocialCalc.crToCoord(rangeinfo.col1num + i, rangeinfo.row1num + j);
+		                          PushTriggerCord(sheet.ioEventTree, cellcr, coord); 
+		                          
+		         }
+		      }
+        }
+        if(operand[0].type == "coord" ) {
+            PushTriggerCord(sheet.ioEventTree, triggerCellId, coord); 
+        }
+        
+        
+//    	if(typeof sheet.ioEventTree[triggerCellId] === 'undefined') sheet.ioEventTree[triggerCellId] = {};
+//    	sheet.ioEventTree[triggerCellId][coord] = coord;
     }
+
     
+        
 	// store parameters of each action formulas 
 	if(typeof sheet.ioParameterList[coord] === 'undefined') sheet.ioParameterList[coord] = {};
 	sheet.ioParameterList[coord] = operand;
@@ -16125,13 +16213,13 @@ SocialCalc.Formula.CalculateFunction = function(fname, operand, sheet, coord) {
       scf.CopyFunctionArgs(operand, foperand);
 
 	  // eddy CalculateFunction {
-	  if(fobj[4] == "action") {
+      if(fobj[6] && fobj[6] != "") {
 	  
 	    var s = SocialCalc.GetSpreadsheetControlObject();
 		if(typeof s.debug === 'undefined') s.debug = {};
 		s.debug.push("action:"+fname);
 		
-		scf.StoreIoEventFormula(fname, coord, foperand, sheet);
+		scf.StoreIoEventFormula(fname, coord, foperand, sheet, fobj[6]);
 		
 	  }
 	  // }
@@ -16520,6 +16608,12 @@ SocialCalc.Formula.SeriesFunctions = function(fname, operand, foperand, sheet) {
 
    }
 
+//*********************
+//
+// Docs see - Function Handling - ~line 1560
+// 
+//*********************
+
 // Add to function list
 SocialCalc.Formula.FunctionList["AVERAGE"] = [SocialCalc.Formula.SeriesFunctions, -1, "vn", null, "stat"];
 SocialCalc.Formula.FunctionList["COUNT"] = [SocialCalc.Formula.SeriesFunctions, -1, "vn", null, "stat"];
@@ -16808,6 +16902,12 @@ CRITERIAROW:
    return;
 
    }
+
+//*********************
+//
+// Docs see - Function Handling - ~line 1560
+// 
+//*********************
 
 SocialCalc.Formula.FunctionList["DAVERAGE"] = [SocialCalc.Formula.DSeriesFunctions, 3, "dfunc", "", "stat"];
 SocialCalc.Formula.FunctionList["DCOUNT"] = [SocialCalc.Formula.DSeriesFunctions, 3, "dfunc", "", "stat"];
@@ -19172,10 +19272,10 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
 				 BUTTON: [1]
    				,EMAIL: [4, 4, 4, 4]
 				,EMAILIF: [4, 4, 4, 4, 4]
-				,EMAILONEDIT: [3, 4, 4, 4, 4]
+				,EMAILONEDIT: [4, 4, 4, 4, 4]
 				,EMAILAT: [4, 4, 4, 4, 4]
-				,EMAILONEDITIF: [2, 4, 4, 4, 4, 4]
-				,EMAILATIF: [2, 4, 4, 4, 4, 4]
+				,EMAILONEDITIF: [4, 4, 4, 4, 4, 4]
+				,EMAILATIF: [4, 4, 4, 4, 4, 4]
 				,TEXTBOX: [1]
 				,CHECKBOX: [-1]
 				,COPYVALUE: [2, -1, 3]
@@ -19222,7 +19322,9 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
       else if (argdef[i-1] == -1) {
          value = scf.OperandValueAndType(sheet, foperand);
          }
+      // value or range, e.g. "C9|C11"
       operand_value[i] = value.value;
+      // type e.g. "t", "range"
       operand_type[i] = value.type;
       if (value.type.charAt(0) == "e") {
          scf.PushOperand(operand, value.type, result);
@@ -19244,8 +19346,12 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
           result = "Send";
           break;
       case "EMAILONEDIT":
-      case "EMAILAT":
       case "EMAILONEDITIF":
+//    	  sheet.editEventCells === 'undefined') return;	
+//    	  if(typeof sheet.ioParameterList === 'undefined') return;
+
+    	  
+      case "EMAILAT":
       case "EMAILATIF":
           resulttype = "ti"+fname; // (t)ext value with (i)nterface (BUTTON,TEXTBOX,) 
           result = "Send Now";
@@ -19281,18 +19387,26 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
 
    }
 
-SocialCalc.Formula.FunctionList["BUTTON"] = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "trigger", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Button('<%=cell_reference%>');\"><%=formated_value%></button>" ];
-SocialCalc.Formula.FunctionList["EMAIL"] = [SocialCalc.Formula.IoFunctions, -3, "to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>" ];
-SocialCalc.Formula.FunctionList["EMAILIF"] = [SocialCalc.Formula.IoFunctions, -4, "condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>" ];
-SocialCalc.Formula.FunctionList["EMAILONEDIT"] = [SocialCalc.Formula.IoFunctions, -4, "editRange, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>"];
-SocialCalc.Formula.FunctionList["EMAILAT"] = [SocialCalc.Formula.IoFunctions, -4, "datetime, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>" ];
-SocialCalc.Formula.FunctionList["EMAILONEDITIF"] = [SocialCalc.Formula.IoFunctions, -5, "editRange, condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>" ];
-SocialCalc.Formula.FunctionList["EMAILATIF"] = [SocialCalc.Formula.IoFunctions, -5, "datetime, condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>" ];
-SocialCalc.Formula.FunctionList["TEXTBOX"] = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "action", "<input type='text' id='TEXTBOX_<%=cell_reference%>' onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.TextBox('<%=cell_reference%>')\" value='<%=display_value%>' >" ];
-SocialCalc.Formula.FunctionList["CHECKBOX"] = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "action", "<input type='checkbox' id='CHECKBOX_<%=cell_reference%>' <%=checked%> onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.CheckBox('<%=cell_reference%>')\" >" ];
+//*********************
+//
+// Docs see - Function Handling - ~line 1560
+// 
+//*********************
 
-SocialCalc.Formula.FunctionList["COPYVALUE"] = [SocialCalc.Formula.IoFunctions, 3, "txt", "", "action"];
-SocialCalc.Formula.FunctionList["COPYFORMULA"] = [SocialCalc.Formula.IoFunctions, 3, "txt", "", "action"];
+
+
+SocialCalc.Formula.FunctionList["BUTTON"] = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "gui", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Button('<%=cell_reference%>');\"><%=formated_value%></button>" ];
+SocialCalc.Formula.FunctionList["EMAIL"] = [SocialCalc.Formula.IoFunctions, -3, "to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList" ];
+SocialCalc.Formula.FunctionList["EMAILIF"] = [SocialCalc.Formula.IoFunctions, -4, "condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList" ];
+SocialCalc.Formula.FunctionList["EMAILONEDIT"] = [SocialCalc.Formula.IoFunctions, -4, "editRange, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "EventTree"];
+SocialCalc.Formula.FunctionList["EMAILAT"] = [SocialCalc.Formula.IoFunctions, -4, "datetime, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList" ];
+SocialCalc.Formula.FunctionList["EMAILONEDITIF"] = [SocialCalc.Formula.IoFunctions, -5, "editRange, condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "EventTree" ];
+SocialCalc.Formula.FunctionList["EMAILATIF"] = [SocialCalc.Formula.IoFunctions, -5, "datetime, condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList" ];
+SocialCalc.Formula.FunctionList["TEXTBOX"] = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "gui", "<input type='text' id='TEXTBOX_<%=cell_reference%>' onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.TextBox('<%=cell_reference%>')\" value='<%=display_value%>' >" ];
+SocialCalc.Formula.FunctionList["CHECKBOX"] = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "gui", "<input type='checkbox' id='CHECKBOX_<%=cell_reference%>' <%=checked%> onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.CheckBox('<%=cell_reference%>')\" >" ];
+
+SocialCalc.Formula.FunctionList["COPYVALUE"] = [SocialCalc.Formula.IoFunctions, 3, "txt", "", "action", "", "EventTree"];
+SocialCalc.Formula.FunctionList["COPYFORMULA"] = [SocialCalc.Formula.IoFunctions, 3, "txt", "", "action", "", "EventTree"];
   
 
 // -----------------------------------------
@@ -19354,21 +19468,23 @@ SocialCalc.TriggerIoAction.Button = function(triggerCellId) {
 
 }
 
-
+// optionalTriggerCellId - edited cell - used by EMAILONEDIT and EMAILONEDITIF
 //onClick=EMAIL 
-SocialCalc.TriggerIoAction.Email = function(emailButtonCellId) {
+SocialCalc.TriggerIoAction.Email = function(emailFormulaCellId, optionalTriggerCellId) {
+     optionalTriggerCellId = typeof optionalTriggerCellId !== 'undefined' ? optionalTriggerCellId : null;
 	 var scf = SocialCalc.Formula;	
 	 var spreadsheet =  SocialCalc.GetSpreadsheetControlObject();
 	 var sheet = spreadsheet.sheet;
-	 var cell = sheet.cells[emailButtonCellId];
+	 var cell = sheet.cells[emailFormulaCellId];
 	 
 	 if(typeof sheet.ioParameterList === 'undefined') return;
 	 
-	 var parameters = sheet.ioParameterList[emailButtonCellId];
+	 var parameters = sheet.ioParameterList[emailFormulaCellId];
 	 
 	 //spreadsheet.editor.EditorScheduleSheetCommands('sendemail to eddy.nihon',  false, false); 
 	 // grab array for TO, SUBJECT and BODY 
 	 var parameterValues = [];
+	 var parameterCellRefs = []; // OnEdit uses to workout what row/col was edited
 	 var maxRangeSize = 1;
 	 for(var index=0; index < parameters.length; index ++) {
 		 if(parameters[index].type.charAt(0) == 't') {
@@ -19380,6 +19496,7 @@ SocialCalc.TriggerIoAction.Email = function(emailButtonCellId) {
 		 if(parameters[index].type == 'range') {
 		      var rangeinfo = scf.DecodeRangeParts(sheet, parameters[index].value);
 		      parameterValues[index] = [];
+		      parameterCellRefs[index] = [];
 		      var rangeSizeCounter = 0;
 		      for (var i=0; i<rangeinfo.ncols; i++) {
 		         for (var j=0; j<rangeinfo.nrows; j++) {
@@ -19387,6 +19504,7 @@ SocialCalc.TriggerIoAction.Email = function(emailButtonCellId) {
 		            var cellcr = SocialCalc.crToCoord(rangeinfo.col1num + i, rangeinfo.row1num + j);
 		            var cell = rangeinfo.sheetdata.GetAssuredCell(cellcr);
 		            parameterValues[index].push(cell.datavalue.toString().replace(/ /g, "%20"));
+		            parameterCellRefs[index].push(cellcr);
 		            rangeSizeCounter++;
 		         }
 		      }
@@ -19414,6 +19532,16 @@ SocialCalc.TriggerIoAction.Email = function(emailButtonCellId) {
     	  break;
     }	 
     
+    switch (parameters.function_name) {
+        case "EMAILONEDIT":
+        case "EMAILONEDITIF":
+	       if(optionalTriggerCellId && parameters[0].type == 'coord' && parameters[0].value == optionalTriggerCellId ) optionalTriggerCellId = null;
+	       break;
+	   default :
+		   optionalTriggerCellId = null;
+    }
+
+    
 	 for(var rangeIndex = maxRangeSize -1; rangeIndex > -1; rangeIndex-- ) {
 		 
 		 // if email formula is conditional && condition is false then skip 
@@ -19421,7 +19549,8 @@ SocialCalc.TriggerIoAction.Email = function(emailButtonCellId) {
 			 var conditionRangeIndex = (rangeIndex >= parameterValues[conditionIndex].length) ? 0 : rangeIndex;
 			 if(parameterValues[conditionIndex][conditionRangeIndex] == false) continue;			 
 		 }
-		 
+
+		 if(optionalTriggerCellId && optionalTriggerCellId != parameterCellRefs[0][rangeIndex]) continue;
 		 // send: to, subject, body to server 		 
 		 var toaddressRangeIndex = (rangeIndex >= parameterValues[toAddressParamOffset].length) ? 0 : rangeIndex;
 		 var subjectsRangeIndex = (rangeIndex >= parameterValues[toAddressParamOffset+1].length) ? 0 : rangeIndex;
@@ -19429,7 +19558,9 @@ SocialCalc.TriggerIoAction.Email = function(emailButtonCellId) {
 		 
 		 var emailContents = parameterValues[toAddressParamOffset][toaddressRangeIndex]+' '+parameterValues[toAddressParamOffset+1][subjectsRangeIndex]+' '+parameterValues[toAddressParamOffset+2][bodyRangeIndex];
 	 
-		 spreadsheet.editor.EditorScheduleSheetCommands('sendemail '+emailContents,  false, false); 
+//		 spreadsheet.editor.EditorScheduleSheetCommands('sendemail '+emailContents,  false, false); 
+		 sheet.ScheduleSheetCommands('sendemail '+emailContents,  false); 
+		 
 	 }
 }
 
@@ -25887,3 +26018,86 @@ SocialCalc.DoPositionCalculations = function (editor) {
         null, "doneposcalc", null, editor
     );
 }
+/**
+ * 
+ */
+
+var Emailer;
+if (!Emailer) Emailer = {};
+
+Emailer.log = function() {
+	console.log("tester");
+};
+
+Emailer.sendEmail = function (emailTo, emailSubject, emailBody) { 
+	
+	var nodemailer = require("nodemailer");
+	
+	var generator = require('xoauth2').createXOAuth2Generator({
+		
+		// **********************************
+		//  Please add OAuth2 values 
+		//   from OAuth playground: https://developers.google.com/oauthplayground/
+		//   to node environment vars (process.env.)
+		// **********************************
+		
+		
+	    user: process.env.i3pqpufosc_user, // Your gmail address.
+	    
+	    clientId: process.env.i3pqpufosc_clientId,
+	    clientSecret: process.env.i3pqpufosc_clientSecret,
+	    	    	
+	    refreshToken: process.env.i3pqpufosc_refreshToken 
+	});
+	
+	
+	
+	// listen for token updates
+	// you probably want to store these to a db
+	generator.on('token', function(token){
+	    console.log('New token for %s: %s', token.user, token.accessToken);
+	});
+	
+	
+	// login
+	var smtpTransport = nodemailer.createTransport({
+	    service: 'gmail',
+	    auth: {
+	        xoauth2: generator
+	    }
+	});
+	
+	
+	var mailOptions = {
+	//	    from: "eddyparkinson@cellmaster.com.au",
+	    from: process.env.i3pqpufosc_user,
+	    to: emailTo,
+	    subject: emailSubject, // Subject line
+	    text: emailBody, // plaintext body
+	    html: emailBody // html body
+	    //to: "eddyparkinsoncity@yahoo.co.uk",
+	    //subject: 'Hello ', // Subject line
+	    //text: 'Hello world ', // plaintext body
+	    //html: '<b>Hello world </b>' // html body
+	};
+	
+	var mailResponse;
+	smtpTransport.sendMail(mailOptions, function(error, info) {
+      mailResponse = info;
+	  if (error) {
+	    console.log(error);
+	    console.dir(info);
+	  } else {
+        console.log('Message sent: ');
+        //console.log('Env:'+process.env.i3pqpufosc_refreshToken);	    
+        //console.dir(process.env);	    
+	  }
+	  smtpTransport.close();
+	});
+    console.dir(mailResponse);
+	
+	
+}
+
+// sendTestEmail();
+
