@@ -24,7 +24,7 @@ exports.sendTestEmail = function (emailTo, emailSubject, emailBody) {
 	// listen for token updates
 	// you probably want to store these to a db
 	generator.on('token', function(token){
-	    console.log('New token for %s: %s', token.user, token.accessToken);
+	    // console.log('New token for %s: %s', token.user, token.accessToken);
 	});
 	
 	
@@ -38,32 +38,24 @@ exports.sendTestEmail = function (emailTo, emailSubject, emailBody) {
 	
 	
 	var mailOptions = {
-	//	    from: "eddyparkinson@cellmaster.com.au",
 	    from: process.env.i3pqpufosc_user,
 	    to: emailTo,
 	    subject: emailSubject, // Subject line
 	    text: emailBody, // plaintext body
 	    html: emailBody // html body
-	    //to: "eddyparkinsoncity@yahoo.co.uk",
-	    //subject: 'Hello ', // Subject line
-	    //text: 'Hello world ', // plaintext body
 	    //html: '<b>Hello world </b>' // html body
 	};
 	
-	var mailResponse;
 	smtpTransport.sendMail(mailOptions, function(error, info) {
-      mailResponse = info;
 	  if (error) {
 	    console.log(error);
 	    console.dir(info);
 	  } else {
-        console.log('Message sent: ');
-        //console.log('Env:'+process.env.i3pqpufosc_refreshToken);	    
-        //console.dir(process.env);	    
+        console.log('Message sent to:'+(info.accepted));
+	    //console.dir(info);
 	  }
 	  smtpTransport.close();
 	});
-    console.dir(mailResponse);
 	
 	
 }

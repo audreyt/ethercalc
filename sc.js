@@ -256,9 +256,16 @@
             console.log("===> cmd " + command);
             commandParameters = command.split(" ");
             if (commandParameters[0] === 'sendemail') {
-              console.log("------ snapshot --------");
+              console.log("------ send email --------");
               console.log(" to:" + commandParameters[1] + " subject:" + commandParameters[2] + " body:" + commandParameters[3]);
-              sendemail.sendTestEmail(commandParameters[1].replace(/%20/g, ' '), commandParameters[2].replace(/%20/g, ' '), commandParameters[3].replace(/%20/g, ' '));
+              postMessage({
+                type: 'sendemailout',
+                emaildata: {
+                  to: commandParameters[1].replace(/%20/g, ' '),
+                  subject: commandParameters[2].replace(/%20/g, ' '),
+                  body: commandParameters[3].replace(/%20/g, ' ')
+                }
+              });
             }
             return window.ss.ExecuteCommand(command);
           case 'recalc':
@@ -375,8 +382,8 @@
         return console.log(it);
       };
       w.onmessage = function(arg$){
-        var ref$, type, snapshot, html, csv, ref, parts, save;
-        ref$ = arg$.data, type = ref$.type, snapshot = ref$.snapshot, html = ref$.html, csv = ref$.csv, ref = ref$.ref, parts = ref$.parts, save = ref$.save;
+        var ref$, type, snapshot, html, csv, ref, parts, save, emaildata;
+        ref$ = arg$.data, type = ref$.type, snapshot = ref$.snapshot, html = ref$.html, csv = ref$.csv, ref = ref$.ref, parts = ref$.parts, save = ref$.save, emaildata = ref$.emaildata;
         switch (type) {
         case 'snapshot':
           return w.onSnapshot(snapshot);
@@ -386,6 +393,8 @@
           return w.onHtml(html);
         case 'csv':
           return w.onCsv(csv);
+        case 'sendemailout':
+          return global.SC.sendemail.sendTestEmail(emaildata.to, emaildata.subject, emaildata.body);
         case 'load-sheet':
           return SC._get(ref, io, function(){
             if (SC[ref]) {

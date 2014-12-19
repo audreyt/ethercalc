@@ -7,6 +7,9 @@ global.SC ?= {console}
 #console.log "===> global.SC.sendemail "
 global.SC.sendemail = require './sendemail.js'
 
+#emailer = @include \emailer
+#emailer.log!
+
 
 argv = (try require \optimist .boolean <[ vm polling ]> .argv) || {}
 
@@ -115,10 +118,10 @@ Worker ||= class =>
           console.log "===> cmd "+command
           commandParameters = command.split(" ")
           if commandParameters[0] is \sendemail
-            console.log "------ snapshot --------"
+            console.log "------ send email --------"
             console.log " to:"+commandParameters[1]+" subject:"+commandParameters[2]+" body:"+commandParameters[3]             
-            sendemail.sendTestEmail commandParameters[1].replace(/%20/g,' '), commandParameters[2].replace(/%20/g,' '), commandParameters[3].replace(/%20/g,' ')     
-            #Emailer.sendEmail 
+            #commandParameters[1].replace(/%20/g,' '), commandParameters[2].replace(/%20/g,' '), commandParameters[3].replace(/%20/g,' ')     
+            postMessage { type: \sendemailout, emaildata: { to: commandParameters[1].replace(/%20/g,' '), subject: commandParameters[2].replace(/%20/g,' '), body:commandParameters[3].replace(/%20/g,' ')  } }
           window.ss.ExecuteCommand command
         | \recalc
           SocialCalc.RecalcLoadedSheet ref, snapshot, true
@@ -187,11 +190,12 @@ Worker ||= class =>
       console.log "==> Regenerated snapshot for #room"
       DB.expire "snapshot-#room", EXPIRE if EXPIRE
     w.onerror = -> console.log it
-    w.onmessage = ({ data: { type, snapshot, html, csv, ref, parts, save } }) -> switch type
+    w.onmessage = ({ data: { type, snapshot, html, csv, ref, parts, save, emaildata } }) -> switch type
     | \snapshot   => w.on-snapshot snapshot
     | \save     => w.on-save save
     | \html     => w.on-html html
     | \csv    => w.on-csv csv
+    | \sendemailout => global.SC.sendemail.sendTestEmail emaildata.to, emaildata.subject, emaildata.body
     | \load-sheet
       <- SC._get ref, io
       if SC[ref]
