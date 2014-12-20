@@ -4938,23 +4938,29 @@ SocialCalc.TriggerIoAction.Button = function(triggerCellId) {
 		//      set D5 constant n% 0.1 10%
 		//      set D6 constant nd 41922 10/10/2014
     	var cell = sheet.cells[SocialCalc.Formula.PlainCoord(parameters[1].value)];		
-		var cellDataType = cell.datatype;
-		var cellFormula = cell.formula;
-		var sheetCommand = ""; 
-
-		if(cellDataType == 'f') {
-			sheetCommand = 'set '+parameters[2].value+ ' ' + SocialCalc.Constants.cellDataType[cell.valuetype.charAt(0)] + ' ' +cell.valuetype + ' '+ SocialCalc.encodeForSave(cell.datavalue);
-		} else {
-			sheetCommand = 'set '+parameters[2].value+ ' ' + SocialCalc.Constants.cellDataType[cell.datatype] + ' ' +cell.valuetype + ' '+ SocialCalc.encodeForSave(cell.datavalue) + ' ' + SocialCalc.encodeForSave(cell.formula);
-		}
-		//spreadsheet.debug.push({ SheetCommand: 'set '+parameters[2].value+ ' ' + SocialCalc.Constants.cellDataType[cell.datatype] + ' ' +cell.valuetype + ' '+ cell.datavalue + ' ' + cell.formula});
+		var sheetCommand; 
+    	if (typeof cell !== 'undefined' && cell.valuetype != 'b') { // if not blank get cell data
+    		var cellDataType = cell.datatype;
+    		var cellValueType = cell.valuetype; 		
+    		var cellDataValue = cell.datavalue;		
+    		var cellFormula = cell.formula;
+    		
+    		if(cellDataType != 'f') {
+    			sheetCommand = 'set '+parameters[2].value+ ' ' + SocialCalc.Constants.cellDataType[cellValueType.charAt(0)] + ' ' +cellValueType + ' '+ SocialCalc.encodeForSave(cellDataValue);
+    		} else {
+    			sheetCommand = 'set '+parameters[2].value+ ' ' + SocialCalc.Constants.cellDataType[cellDataType] + ' ' +cellValueType + ' '+ SocialCalc.encodeForSave(cellDataValue) + ' ' + SocialCalc.encodeForSave(cellFormula);
+    		}
+    		
+    	} else { 
+			sheetCommand = 'set '+parameters[2].value+ ' empty';    		
+    	}
 	    spreadsheet.editor.EditorScheduleSheetCommands(sheetCommand.trim(),  true, false);
 	    break;
 	  case "COPYFORMULA" : 
         var cell = sheet.cells[SocialCalc.Formula.PlainCoord(parameters[1].value)];
 	    var result = "";
         var resulttype = "b";
-        if (cell) {
+        if (typeof cell !== 'undefined' && cell.valuetype != 'b') {
             resulttype = cell.valuetype; // get type of value in the cell it points to
             result = cell.datavalue;
             }
@@ -5055,7 +5061,7 @@ SocialCalc.TriggerIoAction.Email = function(emailFormulaCellId, optionalTriggerC
 		 var bodyRangeIndex = (rangeIndex >= parameterValues[toAddressParamOffset+2].length) ? 0 : rangeIndex;
 		 
 		 var emailContents = parameterValues[toAddressParamOffset][toaddressRangeIndex]+' '+parameterValues[toAddressParamOffset+1][subjectsRangeIndex]+' '+parameterValues[toAddressParamOffset+2][bodyRangeIndex];
-	 
+		 SocialCalc.EditorSheetStatusCallback(null, "emailing", null, spreadsheet.editor);	 
 //		 spreadsheet.editor.EditorScheduleSheetCommands('sendemail '+emailContents,  false, false); 
 		 sheet.ScheduleSheetCommands('sendemail '+emailContents,  false); 
 		 

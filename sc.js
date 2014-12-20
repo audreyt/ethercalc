@@ -192,9 +192,10 @@
     return Worker;
   }()));
   this.include = function(){
-    var DB, EXPIRE;
+    var DB, EXPIRE, emailer;
     DB = this.include('db');
     EXPIRE = this.EXPIRE;
+    emailer = this.include('emailer');
     SC.csvToSave = function(csv, cb){
       var w;
       w = new Worker;
@@ -394,7 +395,7 @@
         case 'csv':
           return w.onCsv(csv);
         case 'sendemailout':
-          return global.SC.sendemail.sendTestEmail(emaildata.to, emaildata.subject, emaildata.body);
+          return emailer.sendemail(emaildata.to, emaildata.subject, emaildata.body);
         case 'load-sheet':
           return SC._get(ref, io, function(){
             if (SC[ref]) {

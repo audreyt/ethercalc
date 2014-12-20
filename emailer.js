@@ -2,13 +2,48 @@
 (function(){
   this.__emailer__ = null;
   this.include = function(){
-    var emailer;
+    var emailer, nodemailer, generator, smtpTransport, none;
     if (this.__emailer__) {
       return this.__emailer__;
     }
     emailer = {};
     emailer.log = function(){
       return console.log("email tester");
+    };
+    nodemailer = require('nodemailer');
+    generator = require('xoauth2').createXOAuth2Generator({
+      user: process.env.i3pqpufosc_user,
+      clientId: process.env.i3pqpufosc_clientId,
+      clientSecret: process.env.i3pqpufosc_clientSecret,
+      refreshToken: process.env.i3pqpufosc_refreshToken
+    });
+    generator.on('token', function(token){});
+    smtpTransport = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        xoauth2: generator
+      }
+    });
+    emailer.sendemail = function(emailTo, emailSubject, emailBody){};
+    none = function(emailTo, emailSubject, emailBody){
+      var mailOptions;
+      mailOptions = {
+        from: process.env.i3pqpufosc_user,
+        to: emailTo,
+        subject: emailSubject,
+        text: emailBody,
+        html: emailBody
+      };
+      smtpTransport.sendMail(mailOptions, function(error, info){
+        if (error) {
+          console.log(error);
+          console.dir(info);
+        } else {
+          console.log('Message sent to:' + info.accepted);
+          return info.accepted;
+        }
+        smtpTransport.close();
+      });
     };
     return this.__emailer__ = emailer;
   };

@@ -7,9 +7,6 @@ global.SC ?= {console}
 #console.log "===> global.SC.sendemail "
 global.SC.sendemail = require './sendemail.js'
 
-#emailer = @include \emailer
-#emailer.log!
-
 
 argv = (try require \optimist .boolean <[ vm polling ]> .argv) || {}
 
@@ -78,6 +75,8 @@ Worker ||= class =>
 @include = ->
   DB = @include \db
   EXPIRE = @EXPIRE
+  emailer = @include \emailer
+  #emailer.log!
 
   SC.csv-to-save = (csv, cb) ->
     w = new Worker
@@ -195,7 +194,7 @@ Worker ||= class =>
     | \save     => w.on-save save
     | \html     => w.on-html html
     | \csv    => w.on-csv csv
-    | \sendemailout => global.SC.sendemail.sendTestEmail emaildata.to, emaildata.subject, emaildata.body
+    | \sendemailout => emailer.sendemail emaildata.to, emaildata.subject, emaildata.body
     | \load-sheet
       <- SC._get ref, io
       if SC[ref]

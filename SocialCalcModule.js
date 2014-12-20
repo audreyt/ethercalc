@@ -232,6 +232,7 @@ SocialCalc.Constants = {
    s_statusline_sum: "SUM",
    s_statusline_recalcneeded: '<span style="color:#999;">(Recalc needed)</span>',
    s_statusline_circref: '<span style="color:red;">Circular reference: ',
+   s_statusline_sendemail: "Send Email ",  // eddy
 
    //** SocialCalc.InputBoxDisplayCellContents
 
@@ -7756,6 +7757,7 @@ SocialCalc.EditorScheduleSheetCommands = function(editor, cmdstr, saveundo, igno
    var cmdTokens = cmdstr.split(" ");
 
    switch (cmdTokens[0]) {
+	   // } eddy ExecuteSheetCommand 
       case "recalc":
       case "redisplay":
          editor.context.sheetobj.ScheduleSheetCommands(cmdstr, false);
@@ -7924,9 +7926,12 @@ SocialCalc.EditorSheetStatusCallback = function(recalcdata, status, arg, editor)
             if (editor.state=="start") editor.DisplayCellContents(); // make sure up to date
             }
          return;
-
+      case "emailing":
+        signalstatus(status);
+        break;
+         
       default:
-addmsg("Unknown status: "+status);
+    	 alert("Unknown status: "+status);
          break;
 
       }
@@ -7983,6 +7988,12 @@ SocialCalc.EditorGetStatuslineString = function(editor, status, arg, params) {
       case "doneposcalc":
          document.body.style.cursor = "default";
          editor.griddiv.style.cursor = "default";
+         // eddy EditorGetStatuslineString {
+         if(params.emailing === true) {
+        	 progress = scc.s_statusline_sendemail;
+        	 params.emailing = false;
+         }
+         // } eddy EditorGetStatuslineString 
          break;
       case "calcorder":
          progress = scc.s_statusline_ordering+Math.floor(100*arg.count/(arg.total||1))+"%";
@@ -8007,11 +8018,21 @@ SocialCalc.EditorGetStatuslineString = function(editor, status, arg, params) {
       case "calcfinished":
          params.calculating = false;
          break;
+      // eddy EditorGetStatuslineString {
+      case "emailing":
+    	 params.emailing = true;
+         break;
+      // } eddy EditorGetStatuslineString 
+         
       default:
          progress = status;
          break;
       }
 
+   // eddy EditorGetStatuslineString {
+   if(params.emailing === true) progress += scc.s_statusline_sendemail;
+   // } eddy EditorGetStatuslineString 
+   
    if (!progress && params.calculating) {
       progress = scc.s_statusline_calculating;
       }
@@ -8048,7 +8069,9 @@ SocialCalc.EditorGetStatuslineString = function(editor, status, arg, params) {
       circ = circ.replace(/\|/, " referenced by ");
       sstr += ' &nbsp; '+scc.s_statusline_circref + circ + '</span>';
       }
-
+   // eddy EditorGetStatuslineString {
+   sstr += "";
+   // } eddy EditorGetStatuslineString 
    return sstr;
 
    }
@@ -19440,23 +19463,29 @@ SocialCalc.TriggerIoAction.Button = function(triggerCellId) {
 		//      set D5 constant n% 0.1 10%
 		//      set D6 constant nd 41922 10/10/2014
     	var cell = sheet.cells[SocialCalc.Formula.PlainCoord(parameters[1].value)];		
-		var cellDataType = cell.datatype;
-		var cellFormula = cell.formula;
-		var sheetCommand = ""; 
-
-		if(cellDataType == 'f') {
-			sheetCommand = 'set '+parameters[2].value+ ' ' + SocialCalc.Constants.cellDataType[cell.valuetype.charAt(0)] + ' ' +cell.valuetype + ' '+ SocialCalc.encodeForSave(cell.datavalue);
-		} else {
-			sheetCommand = 'set '+parameters[2].value+ ' ' + SocialCalc.Constants.cellDataType[cell.datatype] + ' ' +cell.valuetype + ' '+ SocialCalc.encodeForSave(cell.datavalue) + ' ' + SocialCalc.encodeForSave(cell.formula);
-		}
-		//spreadsheet.debug.push({ SheetCommand: 'set '+parameters[2].value+ ' ' + SocialCalc.Constants.cellDataType[cell.datatype] + ' ' +cell.valuetype + ' '+ cell.datavalue + ' ' + cell.formula});
+		var sheetCommand; 
+    	if (typeof cell !== 'undefined' && cell.valuetype != 'b') { // if not blank get cell data
+    		var cellDataType = cell.datatype;
+    		var cellValueType = cell.valuetype; 		
+    		var cellDataValue = cell.datavalue;		
+    		var cellFormula = cell.formula;
+    		
+    		if(cellDataType != 'f') {
+    			sheetCommand = 'set '+parameters[2].value+ ' ' + SocialCalc.Constants.cellDataType[cellValueType.charAt(0)] + ' ' +cellValueType + ' '+ SocialCalc.encodeForSave(cellDataValue);
+    		} else {
+    			sheetCommand = 'set '+parameters[2].value+ ' ' + SocialCalc.Constants.cellDataType[cellDataType] + ' ' +cellValueType + ' '+ SocialCalc.encodeForSave(cellDataValue) + ' ' + SocialCalc.encodeForSave(cellFormula);
+    		}
+    		
+    	} else { 
+			sheetCommand = 'set '+parameters[2].value+ ' empty';    		
+    	}
 	    spreadsheet.editor.EditorScheduleSheetCommands(sheetCommand.trim(),  true, false);
 	    break;
 	  case "COPYFORMULA" : 
         var cell = sheet.cells[SocialCalc.Formula.PlainCoord(parameters[1].value)];
 	    var result = "";
         var resulttype = "b";
-        if (cell) {
+        if (typeof cell !== 'undefined' && cell.valuetype != 'b') {
             resulttype = cell.valuetype; // get type of value in the cell it points to
             result = cell.datavalue;
             }
@@ -19557,7 +19586,7 @@ SocialCalc.TriggerIoAction.Email = function(emailFormulaCellId, optionalTriggerC
 		 var bodyRangeIndex = (rangeIndex >= parameterValues[toAddressParamOffset+2].length) ? 0 : rangeIndex;
 		 
 		 var emailContents = parameterValues[toAddressParamOffset][toaddressRangeIndex]+' '+parameterValues[toAddressParamOffset+1][subjectsRangeIndex]+' '+parameterValues[toAddressParamOffset+2][bodyRangeIndex];
-	 
+		 SocialCalc.EditorSheetStatusCallback(null, "emailing", null, spreadsheet.editor);	 
 //		 spreadsheet.editor.EditorScheduleSheetCommands('sendemail '+emailContents,  false, false); 
 		 sheet.ScheduleSheetCommands('sendemail '+emailContents,  false); 
 		 
@@ -26018,86 +26047,3 @@ SocialCalc.DoPositionCalculations = function (editor) {
         null, "doneposcalc", null, editor
     );
 }
-/**
- * 
- */
-
-var Emailer;
-if (!Emailer) Emailer = {};
-
-Emailer.log = function() {
-	console.log("tester");
-};
-
-Emailer.sendEmail = function (emailTo, emailSubject, emailBody) { 
-	
-	var nodemailer = require("nodemailer");
-	
-	var generator = require('xoauth2').createXOAuth2Generator({
-		
-		// **********************************
-		//  Please add OAuth2 values 
-		//   from OAuth playground: https://developers.google.com/oauthplayground/
-		//   to node environment vars (process.env.)
-		// **********************************
-		
-		
-	    user: process.env.i3pqpufosc_user, // Your gmail address.
-	    
-	    clientId: process.env.i3pqpufosc_clientId,
-	    clientSecret: process.env.i3pqpufosc_clientSecret,
-	    	    	
-	    refreshToken: process.env.i3pqpufosc_refreshToken 
-	});
-	
-	
-	
-	// listen for token updates
-	// you probably want to store these to a db
-	generator.on('token', function(token){
-	    console.log('New token for %s: %s', token.user, token.accessToken);
-	});
-	
-	
-	// login
-	var smtpTransport = nodemailer.createTransport({
-	    service: 'gmail',
-	    auth: {
-	        xoauth2: generator
-	    }
-	});
-	
-	
-	var mailOptions = {
-	//	    from: "eddyparkinson@cellmaster.com.au",
-	    from: process.env.i3pqpufosc_user,
-	    to: emailTo,
-	    subject: emailSubject, // Subject line
-	    text: emailBody, // plaintext body
-	    html: emailBody // html body
-	    //to: "eddyparkinsoncity@yahoo.co.uk",
-	    //subject: 'Hello ', // Subject line
-	    //text: 'Hello world ', // plaintext body
-	    //html: '<b>Hello world </b>' // html body
-	};
-	
-	var mailResponse;
-	smtpTransport.sendMail(mailOptions, function(error, info) {
-      mailResponse = info;
-	  if (error) {
-	    console.log(error);
-	    console.dir(info);
-	  } else {
-        console.log('Message sent: ');
-        //console.log('Env:'+process.env.i3pqpufosc_refreshToken);	    
-        //console.dir(process.env);	    
-	  }
-	  smtpTransport.close();
-	});
-    console.dir(mailResponse);
-	
-	
-}
-
-// sendTestEmail();
-

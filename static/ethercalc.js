@@ -9,13 +9,14 @@ defaultSelectedRownameStyle:"font-size:small;text-align:right;color:#FFFFFF;back
 defaultUnhideRightClass:"", defaultUnhideRightStyle:"float:left;width:9px;height:12px;cursor:pointer;background-image:url(images/sc-unhideright.gif);padding:0;", defaultUnhideTopClass:"", defaultUnhideTopStyle:"float:left;position:absolute;bottom:-4px;width:12px;height:9px;cursor:pointer;background-image:url(images/sc-unhidetop.gif);padding:0;", defaultUnhideBottomClass:"", defaultUnhideBottomStyle:"float:left;width:12px;height:9px;cursor:pointer;background-image:url(images/sc-unhidebottom.gif);padding:0;", 
 s_rcMissingSheet:"Render Context must have a sheet object", defaultLinkFormatString:'<span style="font-size:smaller;text-decoration:none !important;background-color:#66B;color:#FFF;">Link</span>', defaultPageLinkFormatString:'<span style="font-size:smaller;text-decoration:none !important;background-color:#66B;color:#FFF;">Page</span>', defaultFormatp:"#,##0.0%", defaultFormatc:"[$$]#,##0.00", defaultFormatdt:"d-mmm-yyyy h:mm:ss", defaultFormatd:"d-mmm-yyyy", defaultFormatt:"[h]:mm:ss", defaultDisplayTRUE:"TRUE", 
 defaultDisplayFALSE:"FALSE", defaultImagePrefix:"images/sc-", defaultTableEditorIDPrefix:"te_", defaultPageUpDnAmount:15, AllowCtrlS:!0, defaultTableControlThickness:20, cteGriddivClass:"", s_statusline_executing:"Executing...", s_statusline_displaying:"Displaying...", s_statusline_ordering:"Ordering...", s_statusline_calculating:"Calculating...", s_statusline_calculatingls:"Calculating... Loading Sheet...", s_statusline_doingserverfunc:"doing server function ", s_statusline_incell:" in cell ", s_statusline_calcstart:"Calculation start...", 
-s_statusline_sum:"SUM", s_statusline_recalcneeded:'<span style="color:#999;">(Recalc needed)</span>', s_statusline_circref:'<span style="color:red;">Circular reference: ', s_inputboxdisplaymultilinetext:"[Multi-line text: Click icon on right to edit]", defaultInputEchoClass:"", defaultInputEchoStyle:"filter:alpha(opacity=90);opacity:.9;backgroundColor:#FFD;border:1px solid #884;fontSize:small;padding:2px 10px 1px 2px;cursor:default;", defaultInputEchoPromptClass:"", defaultInputEchoPromptStyle:"filter:alpha(opacity=90);opacity:.9;backgroundColor:#FFD;borderLeft:1px solid #884;borderRight:1px solid #884;borderBottom:1px solid #884;fontSize:small;fontStyle:italic;padding:2px 10px 1px 2px;cursor:default;", 
-ietUnknownFunction:"Unknown function ", CH_radius1:29, CH_radius2:41, s_CHfillAllTooltip:"Fill Contents and Formats Down/Right", s_CHfillContentsTooltip:"Fill Contents Only Down/Right", s_CHmovePasteAllTooltip:"Move Contents and Formats", s_CHmovePasteContentsTooltip:"Move Contents Only", s_CHmoveInsertAllTooltip:"Slide Contents and Formats within Row/Col", s_CHmoveInsertContentsTooltip:"Slide Contents within Row/Col", s_CHindicatorOperationLookup:{Fill:"Fill", FillC:"Fill Contents", Move:"Move", 
-MoveI:"Slide", MoveC:"Move Contents", MoveIC:"Slide Contents"}, s_CHindicatorDirectionLookup:{Down:" Down", Right:" Right", Horizontal:" Horizontal", Vertical:" Vertical"}, defaultTCSliderThickness:9, defaultTCButtonThickness:20, defaultTCThumbThickness:15, TCmainStyle:"backgroundColor:#EEE;", TCmainClass:"", TCendcapStyle:"backgroundColor:#FFF;", TCendcapClass:"", TCpanesliderStyle:"backgroundColor:#CCC;", TCpanesliderClass:"", s_panesliderTooltiph:"Drag to lock pane vertically", s_panesliderTooltipv:"Drag to lock pane horizontally", 
-TClessbuttonStyle:"backgroundColor:#AAA;", TClessbuttonClass:"", TClessbuttonRepeatWait:300, TClessbuttonRepeatInterval:20, TCmorebuttonStyle:"backgroundColor:#AAA;", TCmorebuttonClass:"", TCmorebuttonRepeatWait:300, TCmorebuttonRepeatInterval:20, TCscrollareaStyle:"backgroundColor:#DDD;", TCscrollareaClass:"", TCscrollareaRepeatWait:500, TCscrollareaRepeatInterval:100, TCthumbClass:"", TCthumbStyle:"backgroundColor:#CCC;", TCPStrackinglineClass:"", TCPStrackinglineStyle:"overflow:hidden;position:absolute;zIndex:100;", 
-TCPStrackinglineThickness:"2px", TCTDFSthumbstatusvClass:"", TCTDFSthumbstatusvStyle:"height:20px;width:auto;border:3px solid #808080;overflow:hidden;backgroundColor:#FFF;fontSize:small;position:absolute;zIndex:100;", TCTDFSthumbstatushClass:"", TCTDFSthumbstatushStyle:"height:20px;width:auto;border:1px solid black;padding:2px;backgroundColor:#FFF;fontSize:small;position:absolute;zIndex:100;", TCTDFSthumbstatusrownumClass:"", TCTDFSthumbstatusrownumStyle:"color:#FFF;background-color:#808080;font-size:small;white-space:nowrap;padding:3px;", 
-TCTDFStopOffsetv:0, TCTDFSleftOffsetv:-80, s_TCTDFthumbstatusPrefixv:"Row ", TCTDFStopOffseth:-30, TCTDFSleftOffseth:0, s_TCTDFthumbstatusPrefixh:"Col ", TooltipOffsetX:2, TooltipOffsetY:10, TDpopupElementClass:"", TDpopupElementStyle:"border:1px solid black;padding:1px 2px 2px 2px;textAlign:center;backgroundColor:#FFF;fontSize:7pt;fontFamily:Verdana,Arial,Helvetica,sans-serif;position:absolute;width:auto;zIndex:110;", SCToolbarbackground:"background-color:#404040;", SCTabbackground:"background-color:#CCC;", 
-SCTabselectedCSS:"font-size:small;padding:6px 30px 6px 8px;color:#FFF;background-color:#404040;cursor:default;border-right:1px solid #CCC;", SCTabplainCSS:"font-size:small;padding:6px 30px 6px 8px;color:#FFF;background-color:#808080;cursor:default;border-right:1px solid #CCC;", SCToolbartext:"font-size:x-small;font-weight:bold;color:#FFF;padding-bottom:4px;", SCFormulabarheight:30, SCStatuslineheight:20, SCStatuslineCSS:"font-size:10px;padding:3px 0px;", SCFormatNumberFormats:"[cancel]:|[break]:|%loc!Default!:|[custom]:|%loc!Automatic!:general|%loc!Auto w/ commas!:[,]General|[break]:|00:00|000:000|0000:0000|00000:00000|[break]:|%loc!Formula!:formula|%loc!Hidden!:hidden|[newcol]:1234:0|1,234:#,##0|1,234.5:#,##0.0|1,234.56:#,##0.00|1,234.567:#,##0.000|1,234.5678:#,##0.0000|[break]:|1,234%:#,##0%|1,234.5%:#,##0.0%|1,234.56%:#,##0.00%|[newcol]:|$1,234:$#,##0|$1,234.5:$#,##0.0|$1,234.56:$#,##0.00|[break]:|(1,234):#,##0_);(#,##0)|(1,234.5):#,##0.0_);(#,##0.0)|(1,234.56):#,##0.00_);(#,##0.00)|[break]:|($1,234):#,##0_);($#,##0)|($1,234.5):$#,##0.0_);($#,##0.0)|($1,234.56):$#,##0.00_);($#,##0.00)|[newcol]:|1/4/06:m/d/yy|01/04/2006:mm/dd/yyyy|2006-01-04:yyyy-mm-dd|4-Jan-06:d-mmm-yy|04-Jan-2006:dd-mmm-yyyy|January 4, 2006:mmmm d, yyyy|[break]:|1\\c23:h:mm|1\\c23 PM:h:mm AM/PM|1\\c23\\c45:h:mm:ss|01\\c23\\c45:hh:mm:ss|26\\c23 (h\\cm):[hh]:mm|69\\c45 (m\\cs):[mm]:ss|69 (s):[ss]|[newcol]:|2006-01-04 01\\c23\\c45:yyyy-mm-dd hh:mm:ss|January 4, 2006:mmmm d, yyyy hh:mm:ss|Wed:ddd|Wednesday:dddd|", 
+s_statusline_sum:"SUM", s_statusline_recalcneeded:'<span style="color:#999;">(Recalc needed)</span>', s_statusline_circref:'<span style="color:red;">Circular reference: ', s_statusline_sendemail:"Send Email ", s_inputboxdisplaymultilinetext:"[Multi-line text: Click icon on right to edit]", defaultInputEchoClass:"", defaultInputEchoStyle:"filter:alpha(opacity=90);opacity:.9;backgroundColor:#FFD;border:1px solid #884;fontSize:small;padding:2px 10px 1px 2px;cursor:default;", defaultInputEchoPromptClass:"", 
+defaultInputEchoPromptStyle:"filter:alpha(opacity=90);opacity:.9;backgroundColor:#FFD;borderLeft:1px solid #884;borderRight:1px solid #884;borderBottom:1px solid #884;fontSize:small;fontStyle:italic;padding:2px 10px 1px 2px;cursor:default;", ietUnknownFunction:"Unknown function ", CH_radius1:29, CH_radius2:41, s_CHfillAllTooltip:"Fill Contents and Formats Down/Right", s_CHfillContentsTooltip:"Fill Contents Only Down/Right", s_CHmovePasteAllTooltip:"Move Contents and Formats", s_CHmovePasteContentsTooltip:"Move Contents Only", 
+s_CHmoveInsertAllTooltip:"Slide Contents and Formats within Row/Col", s_CHmoveInsertContentsTooltip:"Slide Contents within Row/Col", s_CHindicatorOperationLookup:{Fill:"Fill", FillC:"Fill Contents", Move:"Move", MoveI:"Slide", MoveC:"Move Contents", MoveIC:"Slide Contents"}, s_CHindicatorDirectionLookup:{Down:" Down", Right:" Right", Horizontal:" Horizontal", Vertical:" Vertical"}, defaultTCSliderThickness:9, defaultTCButtonThickness:20, defaultTCThumbThickness:15, TCmainStyle:"backgroundColor:#EEE;", 
+TCmainClass:"", TCendcapStyle:"backgroundColor:#FFF;", TCendcapClass:"", TCpanesliderStyle:"backgroundColor:#CCC;", TCpanesliderClass:"", s_panesliderTooltiph:"Drag to lock pane vertically", s_panesliderTooltipv:"Drag to lock pane horizontally", TClessbuttonStyle:"backgroundColor:#AAA;", TClessbuttonClass:"", TClessbuttonRepeatWait:300, TClessbuttonRepeatInterval:20, TCmorebuttonStyle:"backgroundColor:#AAA;", TCmorebuttonClass:"", TCmorebuttonRepeatWait:300, TCmorebuttonRepeatInterval:20, TCscrollareaStyle:"backgroundColor:#DDD;", 
+TCscrollareaClass:"", TCscrollareaRepeatWait:500, TCscrollareaRepeatInterval:100, TCthumbClass:"", TCthumbStyle:"backgroundColor:#CCC;", TCPStrackinglineClass:"", TCPStrackinglineStyle:"overflow:hidden;position:absolute;zIndex:100;", TCPStrackinglineThickness:"2px", TCTDFSthumbstatusvClass:"", TCTDFSthumbstatusvStyle:"height:20px;width:auto;border:3px solid #808080;overflow:hidden;backgroundColor:#FFF;fontSize:small;position:absolute;zIndex:100;", TCTDFSthumbstatushClass:"", TCTDFSthumbstatushStyle:"height:20px;width:auto;border:1px solid black;padding:2px;backgroundColor:#FFF;fontSize:small;position:absolute;zIndex:100;", 
+TCTDFSthumbstatusrownumClass:"", TCTDFSthumbstatusrownumStyle:"color:#FFF;background-color:#808080;font-size:small;white-space:nowrap;padding:3px;", TCTDFStopOffsetv:0, TCTDFSleftOffsetv:-80, s_TCTDFthumbstatusPrefixv:"Row ", TCTDFStopOffseth:-30, TCTDFSleftOffseth:0, s_TCTDFthumbstatusPrefixh:"Col ", TooltipOffsetX:2, TooltipOffsetY:10, TDpopupElementClass:"", TDpopupElementStyle:"border:1px solid black;padding:1px 2px 2px 2px;textAlign:center;backgroundColor:#FFF;fontSize:7pt;fontFamily:Verdana,Arial,Helvetica,sans-serif;position:absolute;width:auto;zIndex:110;", 
+SCToolbarbackground:"background-color:#404040;", SCTabbackground:"background-color:#CCC;", SCTabselectedCSS:"font-size:small;padding:6px 30px 6px 8px;color:#FFF;background-color:#404040;cursor:default;border-right:1px solid #CCC;", SCTabplainCSS:"font-size:small;padding:6px 30px 6px 8px;color:#FFF;background-color:#808080;cursor:default;border-right:1px solid #CCC;", SCToolbartext:"font-size:x-small;font-weight:bold;color:#FFF;padding-bottom:4px;", SCFormulabarheight:30, SCStatuslineheight:20, SCStatuslineCSS:"font-size:10px;padding:3px 0px;", 
+SCFormatNumberFormats:"[cancel]:|[break]:|%loc!Default!:|[custom]:|%loc!Automatic!:general|%loc!Auto w/ commas!:[,]General|[break]:|00:00|000:000|0000:0000|00000:00000|[break]:|%loc!Formula!:formula|%loc!Hidden!:hidden|[newcol]:1234:0|1,234:#,##0|1,234.5:#,##0.0|1,234.56:#,##0.00|1,234.567:#,##0.000|1,234.5678:#,##0.0000|[break]:|1,234%:#,##0%|1,234.5%:#,##0.0%|1,234.56%:#,##0.00%|[newcol]:|$1,234:$#,##0|$1,234.5:$#,##0.0|$1,234.56:$#,##0.00|[break]:|(1,234):#,##0_);(#,##0)|(1,234.5):#,##0.0_);(#,##0.0)|(1,234.56):#,##0.00_);(#,##0.00)|[break]:|($1,234):#,##0_);($#,##0)|($1,234.5):$#,##0.0_);($#,##0.0)|($1,234.56):$#,##0.00_);($#,##0.00)|[newcol]:|1/4/06:m/d/yy|01/04/2006:mm/dd/yyyy|2006-01-04:yyyy-mm-dd|4-Jan-06:d-mmm-yy|04-Jan-2006:dd-mmm-yyyy|January 4, 2006:mmmm d, yyyy|[break]:|1\\c23:h:mm|1\\c23 PM:h:mm AM/PM|1\\c23\\c45:h:mm:ss|01\\c23\\c45:hh:mm:ss|26\\c23 (h\\cm):[hh]:mm|69\\c45 (m\\cs):[mm]:ss|69 (s):[ss]|[newcol]:|2006-01-04 01\\c23\\c45:yyyy-mm-dd hh:mm:ss|January 4, 2006:mmmm d, yyyy hh:mm:ss|Wed:ddd|Wednesday:dddd|", 
 SCFormatTextFormats:"[cancel]:|[break]:|%loc!Default!:|[custom]:|%loc!Automatic!:general|%loc!Plain Text!:text-plain|HTML:text-html|%loc!Wikitext!:text-wiki|%loc!Link!:text-link|%loc!Formula!:formula|%loc!Hidden!:hidden|", SCFormatPadsizes:"[cancel]:|[break]:|%loc!Default!:|[custom]:|%loc!No padding!:0px|[newcol]:|1 pixel:1px|2 pixels:2px|3 pixels:3px|4 pixels:4px|5 pixels:5px|6 pixels:6px|7 pixels:7px|8 pixels:8px|[newcol]:|9 pixels:9px|10 pixels:10px|11 pixels:11px|12 pixels:12px|13 pixels:13px|14 pixels:14px|16 pixels:16px|18 pixels:18px|[newcol]:|20 pixels:20px|22 pixels:22px|24 pixels:24px|28 pixels:28px|36 pixels:36px|", 
 SCFormatFontsizes:"[cancel]:|[break]:|%loc!Default!:|[custom]:|X-Small:x-small|Small:small|Medium:medium|Large:large|X-Large:x-large|[newcol]:|6pt:6pt|7pt:7pt|8pt:8pt|9pt:9pt|10pt:10pt|11pt:11pt|12pt:12pt|14pt:14pt|16pt:16pt|[newcol]:|18pt:18pt|20pt:20pt|22pt:22pt|24pt:24pt|28pt:28pt|36pt:36pt|48pt:48pt|72pt:72pt|[newcol]:|8 pixels:8px|9 pixels:9px|10 pixels:10px|11 pixels:11px|12 pixels:12px|13 pixels:13px|14 pixels:14px|[newcol]:|16 pixels:16px|18 pixels:18px|20 pixels:20px|22 pixels:22px|24 pixels:24px|28 pixels:28px|36 pixels:36px|", 
 SCFormatFontfamilies:"[cancel]:|[break]:|%loc!Default!:|[custom]:|Verdana:Verdana,Arial,Helvetica,sans-serif|Arial:arial,helvetica,sans-serif|Courier:'Courier New',Courier,monospace|", SCFormatFontlook:"[cancel]:|[break]:|%loc!Default!:|%loc!Normal!:normal normal|%loc!Bold!:normal bold|%loc!Italic!:italic normal|%loc!Bold Italic!:italic bold", SCFormatTextAlignhoriz:"[cancel]:|[break]:|%loc!Default!:|%loc!Left!:left|%loc!Center!:center|%loc!Right!:right|", SCFormatNumberAlignhoriz:"[cancel]:|[break]:|%loc!Default!:|%loc!Left!:left|%loc!Center!:center|%loc!Right!:right|", 
@@ -2880,8 +2881,11 @@ SocialCalc.EditorSheetStatusCallback = function(a, b, c, d) {
       }
       d.deferredCommands.length ? (f(b), a = d.deferredCommands.shift(), d.EditorScheduleSheetCommands(a.cmdstr, a.saveundo, !0)) : (d.busy = !1, f(b), "start" == d.state && d.DisplayCellContents());
       return;
+    case "emailing":
+      f(b);
+      break;
     default:
-      addmsg("Unknown status: " + b);
+      alert("Unknown status: " + b);
   }
   f(b);
 };
@@ -2921,6 +2925,7 @@ SocialCalc.EditorGetStatuslineString = function(a, b, c, d) {
     case "doneposcalc":
       document.body.style.cursor = "default";
       a.griddiv.style.cursor = "default";
+      !0 === d.emailing && (f = e.s_statusline_sendemail, d.emailing = !1);
       break;
     case "calcorder":
       f = e.s_statusline_ordering + Math.floor(100 * c.count / (c.total || 1)) + "%";
@@ -2945,9 +2950,13 @@ SocialCalc.EditorGetStatuslineString = function(a, b, c, d) {
     case "calcfinished":
       d.calculating = !1;
       break;
+    case "emailing":
+      d.emailing = !0;
+      break;
     default:
       f = b;
   }
+  !0 === d.emailing && (f += e.s_statusline_sendemail);
   !f && d.calculating && (f = e.s_statusline_calculating);
   if (!(d.calculating || d.command || f || !a.range.hasrange || a.range.left == a.range.right && a.range.top == a.range.bottom)) {
     b = 0;
@@ -2965,7 +2974,7 @@ SocialCalc.EditorGetStatuslineString = function(a, b, c, d) {
   if (a = a.context.sheetobj.attribs.circularreferencecell) {
     a = a.replace(/\|/, " referenced by "), f += " &nbsp; " + e.s_statusline_circref + a + "</span>";
   }
-  return f;
+  return f + "";
 };
 SocialCalc.EditorMouseInfo = {registeredElements:[], editor:null, element:null, ignore:!1, mousedowncoord:"", mouselastcoord:"", mouseresizecol:"", mouseresizeclientx:null, mouseresizedisplay:null};
 SocialCalc.EditorMouseRegister = function(a) {
@@ -7425,64 +7434,68 @@ SocialCalc.TriggerIoAction.Button = function(a) {
     for (var d in c.ioEventTree[a]) {
       switch(a = c.ioParameterList[d], a.function_name) {
         case "COPYVALUE":
-          var e = c.cells[SocialCalc.Formula.PlainCoord(a[1].value)], f = "", f = "f" == e.datatype ? "set " + a[2].value + " " + SocialCalc.Constants.cellDataType[e.valuetype.charAt(0)] + " " + e.valuetype + " " + SocialCalc.encodeForSave(e.datavalue) : "set " + a[2].value + " " + SocialCalc.Constants.cellDataType[e.datatype] + " " + e.valuetype + " " + SocialCalc.encodeForSave(e.datavalue) + " " + SocialCalc.encodeForSave(e.formula);
-          b.editor.EditorScheduleSheetCommands(f.trim(), !0, !1);
+          var e = c.cells[SocialCalc.Formula.PlainCoord(a[1].value)];
+          if ("undefined" !== typeof e && "b" != e.valuetype) {
+            var f = e.datatype, g = e.valuetype, l = e.datavalue, e = e.formula;
+            a = "f" != f ? "set " + a[2].value + " " + SocialCalc.Constants.cellDataType[g.charAt(0)] + " " + g + " " + SocialCalc.encodeForSave(l) : "set " + a[2].value + " " + SocialCalc.Constants.cellDataType[f] + " " + g + " " + SocialCalc.encodeForSave(l) + " " + SocialCalc.encodeForSave(e);
+          } else {
+            a = "set " + a[2].value + " empty";
+          }
+          b.editor.EditorScheduleSheetCommands(a.trim(), !0, !1);
           break;
         case "COPYFORMULA":
-          var e = c.cells[SocialCalc.Formula.PlainCoord(a[1].value)], f = "", g = "b";
-          e && (g = e.valuetype, f = e.datavalue);
-          b.editor.EditorScheduleSheetCommands("set " + a[2].value + " value " + g + " " + f + "", !0, !1);
+          e = c.cells[SocialCalc.Formula.PlainCoord(a[1].value)], f = "", g = "b", "undefined" !== typeof e && "b" != e.valuetype && (g = e.valuetype, f = e.datavalue), b.editor.EditorScheduleSheetCommands("set " + a[2].value + " value " + g + " " + f + "", !0, !1);
       }
     }
   }
 };
 SocialCalc.TriggerIoAction.Email = function(a, b) {
   b = "undefined" !== typeof b ? b : null;
-  var c = SocialCalc.Formula, d = SocialCalc.GetSpreadsheetControlObject().sheet, e = d.cells[a];
-  if ("undefined" !== typeof d.ioParameterList) {
-    for (var f = d.ioParameterList[a], g = [], l = [], h = 1, n = 0;n < f.length;n++) {
-      if ("t" == f[n].type.charAt(0) && (g[n] = [f[n].value.replace(/ /g, "%20")]), "coord" == f[n].type && (g[n] = [d.GetAssuredCell(f[n].value).datavalue.replace(/ /g, "%20")]), "range" == f[n].type) {
-        var q = c.DecodeRangeParts(d, f[n].value);
-        g[n] = [];
-        l[n] = [];
-        for (var s = 0, r = 0;r < q.ncols;r++) {
-          for (var p = 0;p < q.nrows;p++) {
-            var t = SocialCalc.crToCoord(q.col1num + r, q.row1num + p), e = q.sheetdata.GetAssuredCell(t);
-            g[n].push(e.datavalue.toString().replace(/ /g, "%20"));
-            l[n].push(t);
-            s++;
+  var c = SocialCalc.Formula, d = SocialCalc.GetSpreadsheetControlObject(), e = d.sheet, f = e.cells[a];
+  if ("undefined" !== typeof e.ioParameterList) {
+    for (var g = e.ioParameterList[a], l = [], h = [], n = 1, q = 0;q < g.length;q++) {
+      if ("t" == g[q].type.charAt(0) && (l[q] = [g[q].value.replace(/ /g, "%20")]), "coord" == g[q].type && (l[q] = [e.GetAssuredCell(g[q].value).datavalue.replace(/ /g, "%20")]), "range" == g[q].type) {
+        var s = c.DecodeRangeParts(e, g[q].value);
+        l[q] = [];
+        h[q] = [];
+        for (var r = 0, p = 0;p < s.ncols;p++) {
+          for (var t = 0;t < s.nrows;t++) {
+            var u = SocialCalc.crToCoord(s.col1num + p, s.row1num + t), f = s.sheetdata.GetAssuredCell(u);
+            l[q].push(f.datavalue.toString().replace(/ /g, "%20"));
+            h[q].push(u);
+            r++;
           }
         }
-        s > h && (h = s);
+        r > n && (n = r);
       }
     }
     c = -1;
-    e = 0;
-    switch(f.function_name) {
+    f = 0;
+    switch(g.function_name) {
       case "EMAILIF":
         c = 0;
       case "EMAILAT":
       ;
       case "EMAILONEDIT":
-        e = 1;
+        f = 1;
         break;
       case "EMAILONEDITIF":
       ;
       case "EMAILATIF":
-        c = 1, e = 2;
+        c = 1, f = 2;
     }
-    switch(f.function_name) {
+    switch(g.function_name) {
       case "EMAILONEDIT":
       ;
       case "EMAILONEDITIF":
-        b && "coord" == f[0].type && f[0].value == b && (b = null);
+        b && "coord" == g[0].type && g[0].value == b && (b = null);
         break;
       default:
         b = null;
     }
-    for (f = h - 1;-1 < f;f--) {
-      if (-1 == c || !1 != g[c][f >= g[c].length ? 0 : f]) {
-        b && b != l[0][f] || d.ScheduleSheetCommands("sendemail " + (g[e][f >= g[e].length ? 0 : f] + " " + g[e + 1][f >= g[e + 1].length ? 0 : f] + " " + g[e + 2][f >= g[e + 2].length ? 0 : f]), !1);
+    for (g = n - 1;-1 < g;g--) {
+      if (-1 == c || !1 != l[c][g >= l[c].length ? 0 : g]) {
+        b && b != h[0][g] || (n = l[f][g >= l[f].length ? 0 : g] + " " + l[f + 1][g >= l[f + 1].length ? 0 : g] + " " + l[f + 2][g >= l[f + 2].length ? 0 : g], SocialCalc.EditorSheetStatusCallback(null, "emailing", null, d.editor), e.ScheduleSheetCommands("sendemail " + n, !1));
       }
     }
   }
@@ -10661,7 +10674,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         }
       };
     }
-    function t(a) {
+    function u(a) {
       return 1 < a.length ? function(b, c, d) {
         for (var e = a.length;e--;) {
           if (!a[e](b, c, d)) {
@@ -10671,7 +10684,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         return!0;
       } : a[0];
     }
-    function u(a, b, c, d, e) {
+    function t(a, b, c, d, e) {
       for (var f, g = [], F = 0, h = a.length, l = null != b;h > F;F++) {
         (f = a[F]) && (!c || c(f, d, e)) && (g.push(f), l && b.push(F));
       }
@@ -10687,10 +10700,10 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
           }
           N = za;
         }
-        N = !a || !d && c ? N : u(N, n, a, h, l);
+        N = !a || !d && c ? N : t(N, n, a, h, l);
         p = e ? g || (d ? a : q || f) ? [] : F : N;
         if (e && e(N, p, h, l), f) {
-          for (m = u(p, P), f(m, [], h, l), h = m.length;h--;) {
+          for (m = t(p, P), f(m, [], h, l), h = m.length;h--;) {
             (K = m[h]) && (p[P[h]] = !(N[P[h]] = K));
           }
         }
@@ -10708,7 +10721,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
             }
           }
         } else {
-          p = u(p === F ? p.splice(q, p.length) : p), g ? g(null, F, p, l) : ma.apply(F, p);
+          p = t(p === F ? p.splice(q, p.length) : p), g ? g(null, F, p, l) : ma.apply(F, p);
         }
       });
     }
@@ -10723,17 +10736,17 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         return!f && (d || c !== E) || ((b = c).nodeType ? F(a, c, d) : h(a, c, d));
       }];e > g;g++) {
         if (c = x.relative[a[g].type]) {
-          l = [s(t(l), c)];
+          l = [s(u(l), c)];
         } else {
           if (c = x.filter[a[g].type].apply(null, a[g].matches), c[R]) {
             for (d = ++g;e > d && !x.relative[a[d].type];d++) {
             }
-            return v(1 < g && t(l), 1 < g && r(a.slice(0, g - 1).concat({value:" " === a[g - 2].type ? "*" : ""})).replace(aa, "$1"), c, d > g && w(a.slice(g, d)), e > d && w(a = a.slice(d)), e > d && r(a));
+            return v(1 < g && u(l), 1 < g && r(a.slice(0, g - 1).concat({value:" " === a[g - 2].type ? "*" : ""})).replace(aa, "$1"), c, d > g && w(a.slice(g, d)), e > d && w(a = a.slice(d)), e > d && r(a));
           }
           l.push(c);
         }
       }
-      return t(l);
+      return u(l);
     }
     function z(a, c) {
       var e = 0 < c.length, f = 0 < a.length, g = function(d, g, F, h, l) {
@@ -10760,7 +10773,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
                 p[q] || N[q] || (N[q] = ja.call(h));
               }
             }
-            N = u(N);
+            N = t(N);
           }
           ma.apply(h, N);
           l && !d && 0 < N.length && 1 < P + c.length && b.uniqueSort(h);

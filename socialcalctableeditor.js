@@ -756,6 +756,7 @@ SocialCalc.EditorScheduleSheetCommands = function(editor, cmdstr, saveundo, igno
    var cmdTokens = cmdstr.split(" ");
 
    switch (cmdTokens[0]) {
+	   // } eddy ExecuteSheetCommand 
       case "recalc":
       case "redisplay":
          editor.context.sheetobj.ScheduleSheetCommands(cmdstr, false);
@@ -924,9 +925,12 @@ SocialCalc.EditorSheetStatusCallback = function(recalcdata, status, arg, editor)
             if (editor.state=="start") editor.DisplayCellContents(); // make sure up to date
             }
          return;
-
+      case "emailing":
+        signalstatus(status);
+        break;
+         
       default:
-addmsg("Unknown status: "+status);
+    	 alert("Unknown status: "+status);
          break;
 
       }
@@ -983,6 +987,12 @@ SocialCalc.EditorGetStatuslineString = function(editor, status, arg, params) {
       case "doneposcalc":
          document.body.style.cursor = "default";
          editor.griddiv.style.cursor = "default";
+         // eddy EditorGetStatuslineString {
+         if(params.emailing === true) {
+        	 progress = scc.s_statusline_sendemail;
+        	 params.emailing = false;
+         }
+         // } eddy EditorGetStatuslineString 
          break;
       case "calcorder":
          progress = scc.s_statusline_ordering+Math.floor(100*arg.count/(arg.total||1))+"%";
@@ -1007,11 +1017,21 @@ SocialCalc.EditorGetStatuslineString = function(editor, status, arg, params) {
       case "calcfinished":
          params.calculating = false;
          break;
+      // eddy EditorGetStatuslineString {
+      case "emailing":
+    	 params.emailing = true;
+         break;
+      // } eddy EditorGetStatuslineString 
+         
       default:
          progress = status;
          break;
       }
 
+   // eddy EditorGetStatuslineString {
+   if(params.emailing === true) progress += scc.s_statusline_sendemail;
+   // } eddy EditorGetStatuslineString 
+   
    if (!progress && params.calculating) {
       progress = scc.s_statusline_calculating;
       }
@@ -1048,7 +1068,9 @@ SocialCalc.EditorGetStatuslineString = function(editor, status, arg, params) {
       circ = circ.replace(/\|/, " referenced by ");
       sstr += ' &nbsp; '+scc.s_statusline_circref + circ + '</span>';
       }
-
+   // eddy EditorGetStatuslineString {
+   sstr += "";
+   // } eddy EditorGetStatuslineString 
    return sstr;
 
    }
