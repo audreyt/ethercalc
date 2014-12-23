@@ -395,7 +395,12 @@
         case 'csv':
           return w.onCsv(csv);
         case 'sendemailout':
-          return emailer.sendemail(emaildata.to, emaildata.subject, emaildata.body);
+          return emailer.sendemail(emaildata.to, emaildata.subject, emaildata.body, function(message){
+            return io.sockets['in']("log-" + room).emit('data', {
+              type: 'confirmemailsent',
+              message: message
+            });
+          });
         case 'load-sheet':
           return SC._get(ref, io, function(){
             if (SC[ref]) {

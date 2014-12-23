@@ -9,7 +9,7 @@ defaultSelectedRownameStyle:"font-size:small;text-align:right;color:#FFFFFF;back
 defaultUnhideRightClass:"", defaultUnhideRightStyle:"float:left;width:9px;height:12px;cursor:pointer;background-image:url(images/sc-unhideright.gif);padding:0;", defaultUnhideTopClass:"", defaultUnhideTopStyle:"float:left;position:absolute;bottom:-4px;width:12px;height:9px;cursor:pointer;background-image:url(images/sc-unhidetop.gif);padding:0;", defaultUnhideBottomClass:"", defaultUnhideBottomStyle:"float:left;width:12px;height:9px;cursor:pointer;background-image:url(images/sc-unhidebottom.gif);padding:0;", 
 s_rcMissingSheet:"Render Context must have a sheet object", defaultLinkFormatString:'<span style="font-size:smaller;text-decoration:none !important;background-color:#66B;color:#FFF;">Link</span>', defaultPageLinkFormatString:'<span style="font-size:smaller;text-decoration:none !important;background-color:#66B;color:#FFF;">Page</span>', defaultFormatp:"#,##0.0%", defaultFormatc:"[$$]#,##0.00", defaultFormatdt:"d-mmm-yyyy h:mm:ss", defaultFormatd:"d-mmm-yyyy", defaultFormatt:"[h]:mm:ss", defaultDisplayTRUE:"TRUE", 
 defaultDisplayFALSE:"FALSE", defaultImagePrefix:"images/sc-", defaultTableEditorIDPrefix:"te_", defaultPageUpDnAmount:15, AllowCtrlS:!0, defaultTableControlThickness:20, cteGriddivClass:"", s_statusline_executing:"Executing...", s_statusline_displaying:"Displaying...", s_statusline_ordering:"Ordering...", s_statusline_calculating:"Calculating...", s_statusline_calculatingls:"Calculating... Loading Sheet...", s_statusline_doingserverfunc:"doing server function ", s_statusline_incell:" in cell ", s_statusline_calcstart:"Calculation start...", 
-s_statusline_sum:"SUM", s_statusline_recalcneeded:'<span style="color:#999;">(Recalc needed)</span>', s_statusline_circref:'<span style="color:red;">Circular reference: ', s_statusline_sendemail:"Send Email ", s_inputboxdisplaymultilinetext:"[Multi-line text: Click icon on right to edit]", defaultInputEchoClass:"", defaultInputEchoStyle:"filter:alpha(opacity=90);opacity:.9;backgroundColor:#FFD;border:1px solid #884;fontSize:small;padding:2px 10px 1px 2px;cursor:default;", defaultInputEchoPromptClass:"", 
+s_statusline_sum:"SUM", s_statusline_recalcneeded:'<span style="color:#999;">(Recalc needed)</span>', s_statusline_circref:'<span style="color:red;">Circular reference: ', s_statusline_sendemail:"Sending Email ", s_inputboxdisplaymultilinetext:"[Multi-line text: Click icon on right to edit]", defaultInputEchoClass:"", defaultInputEchoStyle:"filter:alpha(opacity=90);opacity:.9;backgroundColor:#FFD;border:1px solid #884;fontSize:small;padding:2px 10px 1px 2px;cursor:default;", defaultInputEchoPromptClass:"", 
 defaultInputEchoPromptStyle:"filter:alpha(opacity=90);opacity:.9;backgroundColor:#FFD;borderLeft:1px solid #884;borderRight:1px solid #884;borderBottom:1px solid #884;fontSize:small;fontStyle:italic;padding:2px 10px 1px 2px;cursor:default;", ietUnknownFunction:"Unknown function ", CH_radius1:29, CH_radius2:41, s_CHfillAllTooltip:"Fill Contents and Formats Down/Right", s_CHfillContentsTooltip:"Fill Contents Only Down/Right", s_CHmovePasteAllTooltip:"Move Contents and Formats", s_CHmovePasteContentsTooltip:"Move Contents Only", 
 s_CHmoveInsertAllTooltip:"Slide Contents and Formats within Row/Col", s_CHmoveInsertContentsTooltip:"Slide Contents within Row/Col", s_CHindicatorOperationLookup:{Fill:"Fill", FillC:"Fill Contents", Move:"Move", MoveI:"Slide", MoveC:"Move Contents", MoveIC:"Slide Contents"}, s_CHindicatorDirectionLookup:{Down:" Down", Right:" Right", Horizontal:" Horizontal", Vertical:" Vertical"}, defaultTCSliderThickness:9, defaultTCButtonThickness:20, defaultTCThumbThickness:15, TCmainStyle:"backgroundColor:#EEE;", 
 TCmainClass:"", TCendcapStyle:"backgroundColor:#FFF;", TCendcapClass:"", TCpanesliderStyle:"backgroundColor:#CCC;", TCpanesliderClass:"", s_panesliderTooltiph:"Drag to lock pane vertically", s_panesliderTooltipv:"Drag to lock pane horizontally", TClessbuttonStyle:"backgroundColor:#AAA;", TClessbuttonClass:"", TClessbuttonRepeatWait:300, TClessbuttonRepeatInterval:20, TCmorebuttonStyle:"backgroundColor:#AAA;", TCmorebuttonClass:"", TCmorebuttonRepeatWait:300, TCmorebuttonRepeatInterval:20, TCscrollareaStyle:"backgroundColor:#DDD;", 
@@ -2882,7 +2882,8 @@ SocialCalc.EditorSheetStatusCallback = function(a, b, c, d) {
       d.deferredCommands.length ? (f(b), a = d.deferredCommands.shift(), d.EditorScheduleSheetCommands(a.cmdstr, a.saveundo, !0)) : (d.busy = !1, f(b), "start" == d.state && d.DisplayCellContents());
       return;
     case "emailing":
-      f(b);
+    ;
+    case "confirmemailsent":
       break;
     default:
       alert("Unknown status: " + b);
@@ -2925,7 +2926,7 @@ SocialCalc.EditorGetStatuslineString = function(a, b, c, d) {
     case "doneposcalc":
       document.body.style.cursor = "default";
       a.griddiv.style.cursor = "default";
-      !0 === d.emailing && (f = e.s_statusline_sendemail, d.emailing = !1);
+      "sent" == d.emailing && (f = d.emailreponse, d.emailreponse = "", d.emailing = "done");
       break;
     case "calcorder":
       f = e.s_statusline_ordering + Math.floor(100 * c.count / (c.total || 1)) + "%";
@@ -2951,12 +2952,19 @@ SocialCalc.EditorGetStatuslineString = function(a, b, c, d) {
       d.calculating = !1;
       break;
     case "emailing":
-      d.emailing = !0;
+      d.emailing = "sending";
+      d.emailreponse = "";
+      break;
+    case "confirmemailsent":
+      d.emailing = "sent";
+      "undefined" === typeof d.emailreponse && (d.emailreponse = "");
+      d.emailreponse += c;
       break;
     default:
       f = b;
   }
-  !0 === d.emailing && (f += e.s_statusline_sendemail);
+  "sending" == d.emailing && (f += e.s_statusline_sendemail);
+  "sent" == d.emailing && (f += d.emailreponse);
   !f && d.calculating && (f = e.s_statusline_calculating);
   if (!(d.calculating || d.command || f || !a.range.hasrange || a.range.left == a.range.right && a.range.top == a.range.bottom)) {
     b = 0;
@@ -7493,11 +7501,13 @@ SocialCalc.TriggerIoAction.Email = function(a, b) {
       default:
         b = null;
     }
-    for (g = n - 1;-1 < g;g--) {
-      if (-1 == c || !1 != l[c][g >= l[c].length ? 0 : g]) {
-        b && b != h[0][g] || (n = l[f][g >= l[f].length ? 0 : g] + " " + l[f + 1][g >= l[f + 1].length ? 0 : g] + " " + l[f + 2][g >= l[f + 2].length ? 0 : g], SocialCalc.EditorSheetStatusCallback(null, "emailing", null, d.editor), e.ScheduleSheetCommands("sendemail " + n, !1));
+    g = !1;
+    for (n -= 1;-1 < n;n--) {
+      if (-1 == c || !1 != l[c][n >= l[c].length ? 0 : n]) {
+        b && b != h[0][n] || (q = l[f][n >= l[f].length ? 0 : n] + " " + l[f + 1][n >= l[f + 1].length ? 0 : n] + " " + l[f + 2][n >= l[f + 2].length ? 0 : n], g = !0, e.ScheduleSheetCommands("sendemail " + q, !1));
       }
     }
+    g && SocialCalc.EditorSheetStatusCallback(null, "emailing", null, d.editor);
   }
 };
 SocialCalc.TriggerIoAction.TextBox = function(a) {

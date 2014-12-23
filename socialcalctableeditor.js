@@ -925,9 +925,11 @@ SocialCalc.EditorSheetStatusCallback = function(recalcdata, status, arg, editor)
             if (editor.state=="start") editor.DisplayCellContents(); // make sure up to date
             }
          return;
+      // eddy EditorSheetStatusCallback {
       case "emailing":
-        signalstatus(status);
+      case "confirmemailsent":
         break;
+      // } EditorSheetStatusCallback eddy 
          
       default:
     	 alert("Unknown status: "+status);
@@ -988,12 +990,15 @@ SocialCalc.EditorGetStatuslineString = function(editor, status, arg, params) {
          document.body.style.cursor = "default";
          editor.griddiv.style.cursor = "default";
          // eddy EditorGetStatuslineString {
-         if(params.emailing === true) {
-        	 progress = scc.s_statusline_sendemail;
-        	 params.emailing = false;
+         // all updates done, So let future event clear the "sent" message in the status bar
+         if(params.emailing == "sent") {
+        	 progress = params.emailreponse;
+        	 params.emailreponse = "";
+        	 params.emailing = "done";
          }
          // } eddy EditorGetStatuslineString 
          break;
+         
       case "calcorder":
          progress = scc.s_statusline_ordering+Math.floor(100*arg.count/(arg.total||1))+"%";
          break;
@@ -1019,8 +1024,14 @@ SocialCalc.EditorGetStatuslineString = function(editor, status, arg, params) {
          break;
       // eddy EditorGetStatuslineString {
       case "emailing":
-    	 params.emailing = true;
+    	 params.emailing = "sending";
+    	 params.emailreponse ="";
          break;
+      case "confirmemailsent":
+     	 params.emailing = "sent";
+     	 if(typeof params.emailreponse === 'undefined') params.emailreponse ="";
+     	 params.emailreponse += arg;
+         break;    	  
       // } eddy EditorGetStatuslineString 
          
       default:
@@ -1029,7 +1040,13 @@ SocialCalc.EditorGetStatuslineString = function(editor, status, arg, params) {
       }
 
    // eddy EditorGetStatuslineString {
-   if(params.emailing === true) progress += scc.s_statusline_sendemail;
+   // if send email then update status bar with "sending" and then "sent"
+   if(params.emailing == "sending") {
+  	 progress += scc.s_statusline_sendemail;
+   }
+   if(params.emailing == "sent") {
+  	 progress += params.emailreponse;
+   }   
    // } eddy EditorGetStatuslineString 
    
    if (!progress && params.calculating) {

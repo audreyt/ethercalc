@@ -232,8 +232,7 @@ SocialCalc.Constants = {
    s_statusline_sum: "SUM",
    s_statusline_recalcneeded: '<span style="color:#999;">(Recalc needed)</span>',
    s_statusline_circref: '<span style="color:red;">Circular reference: ',
-   s_statusline_sendemail: "Send Email ",  // eddy
-
+   s_statusline_sendemail: "Sending Email ",  // eddy
    //** SocialCalc.InputBoxDisplayCellContents
 
    s_inputboxdisplaymultilinetext: "[Multi-line text: Click icon on right to edit]",

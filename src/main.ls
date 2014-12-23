@@ -108,6 +108,7 @@
   @get '/_/:room': api -> [Text, it]
 
   request-to-command = (request, cb) ->
+    #console.log "request-to-command"
     if request.is \application/json
       command = request.body?command
       return cb command if command
@@ -121,6 +122,7 @@
     cb "loadclipboard #save"
 
   request-to-save = (request, cb) ->
+    #console.log "request-to-save"
     if request.is \application/json
       snapshot = request.body?snapshot
       return cb snapshot if snapshot
@@ -131,6 +133,7 @@
     cb """socialcalc:version:1.0\nMIME-Version: 1.0\nContent-Type: multipart/mixed; boundary=SocialCalcSpreadsheetControlSave\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n# SocialCalc Spreadsheet Control Save\nversion:1.0\npart:sheet\npart:edit\npart:audit\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n#save\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n--SocialCalcSpreadsheetControlSave--\n"""
 
   @put '/_/:room': ->
+    #console.log "put /_/:room"
     @response.type Text
     {room} = @params
     snapshot <~ request-to-save @request
@@ -142,6 +145,7 @@
     @response.send 201 \OK
 
   @post '/_/:room': ->
+    #console.log "post /_/:room"
     {room} = @params
     return if room is \Kaohsiung-explode-20140801
     command <~ request-to-command @request
@@ -169,6 +173,7 @@
     @response.json 202 {command}
 
   @post '/_': ->
+    #console.log "post /_/:room"
     snapshot <~ request-to-save @request
     room = @body?room || new-room!
     <~ SC._put room, snapshot
@@ -177,6 +182,7 @@
     @response.send 201 "/#room"
 
   @on disconnect: !->
+    console.log "on disconnect"
     { id } = @socket
     if IO.sockets.manager?roomClients?
       # socket.io 0.9.x
@@ -196,6 +202,7 @@
 
   @on data: !->
     {room, msg, user, ecell, cmdstr, type, auth} = @data
+    #console.log "on data:"+type
     room = "#room" - /^_+/ # preceding underscore is reserved
     DB.expire "snapshot-#room", EXPIRE if EXPIRE
     reply = (data) ~> @emit {data}
@@ -229,6 +236,13 @@
       SC[room]?ExecuteCommand cmdstr
       broadcast @data
     | \ask.log
+      # eddy @on data {
+      #ignore requests for log if startup up database
+      if typeof DB.DB == 'undefined'
+        console.log "ignore connection request, no database yet!"      
+        reply { type: \ignore }
+        return
+      # } eddy @on data         
       @socket.join "log-#room"
       @socket.join "user-#user"
       _, [snapshot, log, chat] <~ DB.multi!

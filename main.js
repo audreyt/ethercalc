@@ -339,6 +339,7 @@
     this.on({
       disconnect: function(){
         var id, ref$, key, i$, len$, client, room, val, isConnected, ref1$;
+        console.log("on disconnect");
         id = this.socket.id;
         if (((ref$ = IO.sockets.manager) != null ? ref$.roomClients : void 8) != null) {
           CleanRoomLegacy: for (key in IO.sockets.manager.roomClients[id]) {
@@ -443,6 +444,13 @@
           });
           break;
         case 'ask.log':
+          if (typeof DB.DB === 'undefined') {
+            console.log("ignore connection request, no database yet!");
+            reply({
+              type: 'ignore'
+            });
+            return;
+          }
           this.socket.join("log-" + room);
           this.socket.join("user-" + user);
           DB.multi().get("snapshot-" + room).lrange("log-" + room, 0, -1).lrange("chat-" + room, 0, -1).exec(function(_, arg$){

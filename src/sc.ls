@@ -194,7 +194,12 @@ Worker ||= class =>
     | \save     => w.on-save save
     | \html     => w.on-html html
     | \csv    => w.on-csv csv
-    | \sendemailout => emailer.sendemail emaildata.to, emaildata.subject, emaildata.body
+    | \sendemailout 
+      emailer.sendemail emaildata.to, emaildata.subject, emaildata.body,  (message) ->
+        io.sockets.in "log-#room" .emit \data {
+          type: \confirmemailsent
+          message
+        }
     | \load-sheet
       <- SC._get ref, io
       if SC[ref]

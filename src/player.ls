@@ -85,6 +85,7 @@
       return unless ss
       editor = ss.editor
       switch @data.type
+      | \confirmemailsent => SocialCalc.EditorSheetStatusCallback(null, "confirmemailsent", @data.message, editor);
       | \chat   => window.addmsg? @data.msg
       | \ecells   => for user, ecell of @data.ecells
         continue if user is SocialCalc._username

@@ -28,9 +28,10 @@
     auth: 
       xoauth2: generator
 
-  emailer.sendemail = (emailTo, emailSubject, emailBody) -> 
+  emailer.sendemail_ignore = (emailTo, emailSubject, emailBody, callback) ->
+    callback " [E-mail Sent]" 
     #debug return before sending
-  none = (emailTo, emailSubject, emailBody) !->
+  emailer.sendemail = (emailTo, emailSubject, emailBody, callback) !->
     mailOptions = 
       from: process.env.i3pqpufosc_user
       to: emailTo               #// to address
@@ -42,9 +43,11 @@
       if error
         console.log error
         console.dir info
+        callback " EMAIL ERROR - "+error        
       else
         console.log 'Message sent to:'+(info.accepted)
         #//console.dir(info);
+        callback " [E-mail Sent]" 
         return info.accepted
       smtpTransport.close();
   

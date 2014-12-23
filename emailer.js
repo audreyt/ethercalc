@@ -2,7 +2,7 @@
 (function(){
   this.__emailer__ = null;
   this.include = function(){
-    var emailer, nodemailer, generator, smtpTransport, none;
+    var emailer, nodemailer, generator, smtpTransport;
     if (this.__emailer__) {
       return this.__emailer__;
     }
@@ -24,8 +24,10 @@
         xoauth2: generator
       }
     });
-    emailer.sendemail = function(emailTo, emailSubject, emailBody){};
-    none = function(emailTo, emailSubject, emailBody){
+    emailer.sendemail_ignore = function(emailTo, emailSubject, emailBody, callback){
+      return callback(" [E-mail Sent]");
+    };
+    emailer.sendemail = function(emailTo, emailSubject, emailBody, callback){
       var mailOptions;
       mailOptions = {
         from: process.env.i3pqpufosc_user,
@@ -38,8 +40,10 @@
         if (error) {
           console.log(error);
           console.dir(info);
+          callback(" EMAIL ERROR - " + error);
         } else {
           console.log('Message sent to:' + info.accepted);
+          callback(" [E-mail Sent]");
           return info.accepted;
         }
         smtpTransport.close();

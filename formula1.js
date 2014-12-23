@@ -5045,7 +5045,7 @@ SocialCalc.TriggerIoAction.Email = function(emailFormulaCellId, optionalTriggerC
 		   optionalTriggerCellId = null;
     }
 
-    
+     var setStatusBarMessage = false;
 	 for(var rangeIndex = maxRangeSize -1; rangeIndex > -1; rangeIndex-- ) {
 		 
 		 // if email formula is conditional && condition is false then skip 
@@ -5061,11 +5061,13 @@ SocialCalc.TriggerIoAction.Email = function(emailFormulaCellId, optionalTriggerC
 		 var bodyRangeIndex = (rangeIndex >= parameterValues[toAddressParamOffset+2].length) ? 0 : rangeIndex;
 		 
 		 var emailContents = parameterValues[toAddressParamOffset][toaddressRangeIndex]+' '+parameterValues[toAddressParamOffset+1][subjectsRangeIndex]+' '+parameterValues[toAddressParamOffset+2][bodyRangeIndex];
-		 SocialCalc.EditorSheetStatusCallback(null, "emailing", null, spreadsheet.editor);	 
+		 setStatusBarMessage = true;
 //		 spreadsheet.editor.EditorScheduleSheetCommands('sendemail '+emailContents,  false, false); 
 		 sheet.ScheduleSheetCommands('sendemail '+emailContents,  false); 
 		 
 	 }
+	 // update status bar to indicate email is being sent
+	 if(setStatusBarMessage) SocialCalc.EditorSheetStatusCallback(null, "emailing", null, spreadsheet.editor);	 
 }
 
 
