@@ -103,8 +103,9 @@
     IO = this.io;
     api = function(cb){
       return function(){
-        var this$ = this;
-        return SC._get(this.params.room, IO, function(arg$){
+        var room, this$ = this;
+        room = encodeURIComponent(this.params.room);
+        return SC._get(room, IO, function(arg$){
           var snapshot, ref$, type, content;
           snapshot = arg$.snapshot;
           if (snapshot) {
@@ -113,7 +114,7 @@
               this$.response.set('Content-Disposition', "attachment; filename=\"" + this$.params.room + ".csv\"");
             }
             if (content instanceof Function) {
-              return content(SC[this$.params.room], function(rv){
+              return content(SC[room], function(rv){
                 this$.response.type(type);
                 return this$.response.send(200, rv);
               });
