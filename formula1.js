@@ -35,7 +35,7 @@
                                      // In any case, requires SocialCalc.Constants.
 
 SocialCalc.Formula = {};
-SocialCalc.TriggerIoAction = {};
+SocialCalc.TriggerIoAction = {}; // eddy
 
 //
 // Formula constants for parsing:
@@ -578,6 +578,15 @@ SocialCalc.Formula.ConvertInfixToPolish = function(parseinfo) {
    }
 
 
+// DebugLog
+// display logged objects in the audit tab of the spreadsheet control
+if(typeof SocialCalc.debug_log === 'undefined') SocialCalc.debug_log = [];
+
+SocialCalc.DebugLog = function(logObject) {	
+	SocialCalc.debug_log.push(logObject);
+}
+
+
 //
 // result = SocialCalc.Formula.EvaluatePolish(parseinfo, revpolish, sheet, allowrangereturn)
 //
@@ -620,13 +629,8 @@ SocialCalc.Formula.EvaluatePolish = function(parseinfo, revpolish, sheet, allowr
 
 	  
 	  // eddy EvaluatePolish { 
-		
-	    var s = SocialCalc.GetSpreadsheetControlObject();
-		if(typeof s.debug === 'undefined') s.debug = [];
-		//s.debug.push({ parseinfo: parseinfo});
-		s.debug.push({ revpolish: revpolish});
-		//s.debug.push({ operand: operand});
-	  
+        SocialCalc.DebugLog({ revpolish: revpolish});
+        SocialCalc.DebugLog({ revpolish: revpolish});
 	  // }
 
 	// eddy EvaluatePolish {
@@ -1663,10 +1667,8 @@ SocialCalc.Formula.StoreIoEventFormula = function(function_name, coord, operand_
 	sheet.ioParameterList[coord] = operand;
 	sheet.ioParameterList[coord].function_name = function_name;
 
-	    var s = SocialCalc.GetSpreadsheetControlObject();
-		if(typeof s.debug === 'undefined') s.debug = [];
-		s.debug.push({ ioEventTree: sheet.ioEventTree});
-		s.debug.push({ ioParameterList: sheet.ioParameterList});
+	SocialCalc.DebugLog({ ioEventTree: sheet.ioEventTree});
+	SocialCalc.DebugLog({ ioParameterList: sheet.ioParameterList});
 
 
 
@@ -1713,9 +1715,7 @@ SocialCalc.Formula.CalculateFunction = function(fname, operand, sheet, coord) {
 	  // eddy CalculateFunction {
       if(fobj[6] && fobj[6] != "") {
 	  
-	    var s = SocialCalc.GetSpreadsheetControlObject();
-		if(typeof s.debug === 'undefined') s.debug = {};
-		s.debug.push("action:"+fname);
+		SocialCalc.DebugLog("action:"+fname);
 		
 		scf.StoreIoEventFormula(fname, coord, foperand, sheet, fobj[6]);
 		
@@ -4916,7 +4916,7 @@ SocialCalc.Formula.FunctionList["COPYFORMULA"] = [SocialCalc.Formula.IoFunctions
 // Event triggered, e.g. button clicked. - call linked action formulas 
 // eddy TriggerIoAction {
 SocialCalc.TriggerIoAction.Button = function(triggerCellId) {
- var spreadsheet =  SocialCalc.GetSpreadsheetControlObject();
+ var spreadsheet =  window.spreadsheet;
  var sheet = spreadsheet.sheet;
  //spreadsheet.editor.EditorScheduleSheetCommands('set A2 value n 10',  true, false);
  
@@ -4977,7 +4977,7 @@ SocialCalc.TriggerIoAction.Button = function(triggerCellId) {
 SocialCalc.TriggerIoAction.Email = function(emailFormulaCellId, optionalTriggerCellId) {
      optionalTriggerCellId = typeof optionalTriggerCellId !== 'undefined' ? optionalTriggerCellId : null;
 	 var scf = SocialCalc.Formula;	
-	 var spreadsheet =  SocialCalc.GetSpreadsheetControlObject();
+	 var spreadsheet =  window.spreadsheet;
 	 var sheet = spreadsheet.sheet;
 	 var cell = sheet.cells[emailFormulaCellId];
 	 
@@ -5073,7 +5073,7 @@ SocialCalc.TriggerIoAction.Email = function(emailFormulaCellId, optionalTriggerC
 
 // onKeyUp=TextBox 
 SocialCalc.TriggerIoAction.TextBox = function(textBoxCellId) {
- var spreadsheet =  SocialCalc.GetSpreadsheetControlObject();
+ var spreadsheet =  window.spreadsheet;
  var sheet = spreadsheet.sheet;
  var cell = sheet.cells[textBoxCellId];
 
@@ -5090,7 +5090,7 @@ SocialCalc.TriggerIoAction.TextBox = function(textBoxCellId) {
 
 // onKeyUp=TextBox 
 SocialCalc.TriggerIoAction.CheckBox = function(textBoxCellId) {
- var spreadsheet =  SocialCalc.GetSpreadsheetControlObject();
+ var spreadsheet =  window.spreadsheet;
  var sheet = spreadsheet.sheet;
  var cell = sheet.cells[textBoxCellId];
 

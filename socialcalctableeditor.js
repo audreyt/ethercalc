@@ -1245,10 +1245,8 @@ SocialCalc.ProcessEditorMouseDown = function(e) {
       }
    coord = editor.MoveECell(result.coord);
    // eddy ProcessEditorMouseDown {
-//   SocialCalc.GetSpreadsheetControlObject().debug.push({ProcessEditorMouseDown:true});
    var clickedCell = editor.context.sheetobj.cells[coord];
    if(clickedCell) {
-	 //SocialCalc.GetSpreadsheetControlObject().debug.push({clickedCell:clickedCell});
      if(clickedCell.valuetype.charAt(1) == 'i') { // IF cell contains ioWidget
         var formula_name= clickedCell.valuetype.substring(2);	 
 	    var cell_widget=document.getElementById(formula_name+'_'+coord);

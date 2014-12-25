@@ -4395,7 +4395,7 @@ SocialCalc.RecalcClearTimeout = function() {
 
    }
 
-
+  
 //
 // SocialCalc.RecalcLoadedSheet(sheetname, str, recalcneeded, live)
 //
@@ -6266,15 +6266,12 @@ SocialCalc.FormatValueForDisplay = function(sheetobj, value, cr, linkstyle) {
       displayvalue = "&nbsp;";
       }
 
-  // eddy HTML {
-  //if(valueinputwidget=="i")  SocialCalc.GetSpreadsheetControlObject().debug.push({html_display_value:html_display_value});
-  //if(valueinputwidget=="i")  SocialCalc.GetSpreadsheetControlObject().debug.push({html_formated_value:html_formated_value});
 
    // eddy display cell HTML {      
    if(valueinputwidget=="i" && html_display_value!=null && html_formated_value!=null) {
 	 var formula_details = SocialCalc.Formula.FunctionList[formula_name]; 
 //	 var ecell = SocialCalc.GetSpreadsheetControlObject().editor.ecell; // check if widget has focus
-	 SocialCalc.GetSpreadsheetControlObject().debug.push({formula_name:formula_name});
+//	 SocialCalc.GetSpreadsheetControlObject().debug.push({formula_name:formula_name});
 		 if( formula_details) {
 			 var cell_html = formula_details[5];
 			 // var cell_html = "<button type='button' onclick=\"SocialCalc.TriggerIoAction('<%=cell_reference%>');\"><%=display_value%></button>";
@@ -8245,10 +8242,8 @@ SocialCalc.ProcessEditorMouseDown = function(e) {
       }
    coord = editor.MoveECell(result.coord);
    // eddy ProcessEditorMouseDown {
-//   SocialCalc.GetSpreadsheetControlObject().debug.push({ProcessEditorMouseDown:true});
    var clickedCell = editor.context.sheetobj.cells[coord];
    if(clickedCell) {
-	 //SocialCalc.GetSpreadsheetControlObject().debug.push({clickedCell:clickedCell});
      if(clickedCell.valuetype.charAt(1) == 'i') { // IF cell contains ioWidget
         var formula_name= clickedCell.valuetype.substring(2);	 
 	    var cell_widget=document.getElementById(formula_name+'_'+coord);
@@ -14576,7 +14571,7 @@ SocialCalc.intFunc = function(n) {
                                      // In any case, requires SocialCalc.Constants.
 
 SocialCalc.Formula = {};
-SocialCalc.TriggerIoAction = {};
+SocialCalc.TriggerIoAction = {}; // eddy
 
 //
 // Formula constants for parsing:
@@ -15119,6 +15114,15 @@ SocialCalc.Formula.ConvertInfixToPolish = function(parseinfo) {
    }
 
 
+// DebugLog
+// display logged objects in the audit tab of the spreadsheet control
+if(typeof SocialCalc.debug_log === 'undefined') SocialCalc.debug_log = [];
+
+SocialCalc.DebugLog = function(logObject) {	
+	SocialCalc.debug_log.push(logObject);
+}
+
+
 //
 // result = SocialCalc.Formula.EvaluatePolish(parseinfo, revpolish, sheet, allowrangereturn)
 //
@@ -15161,13 +15165,8 @@ SocialCalc.Formula.EvaluatePolish = function(parseinfo, revpolish, sheet, allowr
 
 	  
 	  // eddy EvaluatePolish { 
-		
-	    var s = SocialCalc.GetSpreadsheetControlObject();
-		if(typeof s.debug === 'undefined') s.debug = [];
-		//s.debug.push({ parseinfo: parseinfo});
-		s.debug.push({ revpolish: revpolish});
-		//s.debug.push({ operand: operand});
-	  
+        SocialCalc.DebugLog({ revpolish: revpolish});
+        SocialCalc.DebugLog({ revpolish: revpolish});
 	  // }
 
 	// eddy EvaluatePolish {
@@ -16204,10 +16203,8 @@ SocialCalc.Formula.StoreIoEventFormula = function(function_name, coord, operand_
 	sheet.ioParameterList[coord] = operand;
 	sheet.ioParameterList[coord].function_name = function_name;
 
-	    var s = SocialCalc.GetSpreadsheetControlObject();
-		if(typeof s.debug === 'undefined') s.debug = [];
-		s.debug.push({ ioEventTree: sheet.ioEventTree});
-		s.debug.push({ ioParameterList: sheet.ioParameterList});
+	SocialCalc.DebugLog({ ioEventTree: sheet.ioEventTree});
+	SocialCalc.DebugLog({ ioParameterList: sheet.ioParameterList});
 
 
 
@@ -16254,9 +16251,7 @@ SocialCalc.Formula.CalculateFunction = function(fname, operand, sheet, coord) {
 	  // eddy CalculateFunction {
       if(fobj[6] && fobj[6] != "") {
 	  
-	    var s = SocialCalc.GetSpreadsheetControlObject();
-		if(typeof s.debug === 'undefined') s.debug = {};
-		s.debug.push("action:"+fname);
+		SocialCalc.DebugLog("action:"+fname);
 		
 		scf.StoreIoEventFormula(fname, coord, foperand, sheet, fobj[6]);
 		
@@ -19457,7 +19452,7 @@ SocialCalc.Formula.FunctionList["COPYFORMULA"] = [SocialCalc.Formula.IoFunctions
 // Event triggered, e.g. button clicked. - call linked action formulas 
 // eddy TriggerIoAction {
 SocialCalc.TriggerIoAction.Button = function(triggerCellId) {
- var spreadsheet =  SocialCalc.GetSpreadsheetControlObject();
+ var spreadsheet =  window.spreadsheet;
  var sheet = spreadsheet.sheet;
  //spreadsheet.editor.EditorScheduleSheetCommands('set A2 value n 10',  true, false);
  
@@ -19518,7 +19513,7 @@ SocialCalc.TriggerIoAction.Button = function(triggerCellId) {
 SocialCalc.TriggerIoAction.Email = function(emailFormulaCellId, optionalTriggerCellId) {
      optionalTriggerCellId = typeof optionalTriggerCellId !== 'undefined' ? optionalTriggerCellId : null;
 	 var scf = SocialCalc.Formula;	
-	 var spreadsheet =  SocialCalc.GetSpreadsheetControlObject();
+	 var spreadsheet =  window.spreadsheet;
 	 var sheet = spreadsheet.sheet;
 	 var cell = sheet.cells[emailFormulaCellId];
 	 
@@ -19614,7 +19609,7 @@ SocialCalc.TriggerIoAction.Email = function(emailFormulaCellId, optionalTriggerC
 
 // onKeyUp=TextBox 
 SocialCalc.TriggerIoAction.TextBox = function(textBoxCellId) {
- var spreadsheet =  SocialCalc.GetSpreadsheetControlObject();
+ var spreadsheet =  window.spreadsheet;
  var sheet = spreadsheet.sheet;
  var cell = sheet.cells[textBoxCellId];
 
@@ -19631,7 +19626,7 @@ SocialCalc.TriggerIoAction.TextBox = function(textBoxCellId) {
 
 // onKeyUp=TextBox 
 SocialCalc.TriggerIoAction.CheckBox = function(textBoxCellId) {
- var spreadsheet =  SocialCalc.GetSpreadsheetControlObject();
+ var spreadsheet =  window.spreadsheet;
  var sheet = spreadsheet.sheet;
  var cell = sheet.cells[textBoxCellId];
 
@@ -21833,8 +21828,7 @@ SocialCalc.SpreadsheetControl = function(idPrefix) {
    // Initialization Code:
 
    // eddy Initialization {
-   if(typeof this.debug === 'undefined') this.debug = [];
-   this.debug.test2 = "---------";
+   if(typeof SocialCalc.debug_log === 'undefined') SocialCalc.debug_log = [];   
    // }   
    
    this.sheet = new SocialCalc.Sheet();
@@ -22422,25 +22416,12 @@ SocialCalc.SpreadsheetControl = function(idPrefix) {
 				if (na) return "{"+str.slice(0,-1)+"}";
 				else return "["+str.slice(0,-1)+"]";
 			}
-/*			
-				if(typeof o == 'string') return o;
-				var str='';				
-				for(var p in o){
-					if(typeof o[p] == 'string'){
-						str+= p + ': ' + o[p]+'; </br>';
-					}else{
-						str+= p + ': { </br>' + objToString(o[p]) + '}';
-					}
-				}
-
-				return str;
-			}
-			*/
+			
 			// --------------------------------------------   
 			
-		    if(typeof s.debug != 'undefined') {
-				for(var index in s.debug) { 
-					str += ObjToSource(s.debug[index]) + "<br>";
+		    if(typeof SocialCalc.debug_log != 'undefined') {
+				for(var index in SocialCalc.debug_log) { 
+					str += ObjToSource(SocialCalc.debug_log[index]) + "<br>";
 				}
 			}
 		    // }   

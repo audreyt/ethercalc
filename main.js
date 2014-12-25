@@ -381,6 +381,7 @@
       data: function(){
         var ref$, room, msg, user, ecell, cmdstr, type, auth, reply, broadcast, this$ = this;
         ref$ = this.data, room = ref$.room, msg = ref$.msg, user = ref$.user, ecell = ref$.ecell, cmdstr = ref$.cmdstr, type = ref$.type, auth = ref$.auth;
+        console.log("on data:" + type);
         room = (room + "").replace(/^_+/, '');
         if (EXPIRE) {
           DB.expire("snapshot-" + room, EXPIRE);
@@ -414,21 +415,16 @@
           DB.hset("ecell-" + room, user, ecell);
           break;
         case 'execute':
-          if (auth === '0') {
-            return;
-          }
+          console.log("execute:" + 1);
+          console.log("execute:" + 2);
           if (/^set sheet defaulttextvalueformat text-wiki\s*$/.exec(cmdstr)) {
             return;
           }
-          if (KEY && hmac(room) !== auth) {
-            reply({
-              type: 'error',
-              message: "Invalid session key. Modifications will not be saved."
-            });
-            return;
-          }
+          console.log("execute:" + 3);
+          console.log("execute:" + 4);
           DB.multi().rpush("log-" + room, cmdstr).rpush("audit-" + room, cmdstr).bgsave().exec(function(){
             var ref$;
+            console.log("execute:" + 5);
             if (SC[room] == null) {
               console.log("SC[" + room + "] went away. Reloading...");
               DB.multi().get("snapshot-" + room).lrange("log-" + room, 0, -1).exec(function(_, arg$){
@@ -437,9 +433,11 @@
                 return SC[room] = SC._init(snapshot, log, DB, room, this$.io);
               });
             }
+            console.log("execute:" + 6);
             if ((ref$ = SC[room]) != null) {
               ref$.ExecuteCommand(cmdstr);
             }
+            console.log("execute:" + 7);
             return broadcast(this$.data);
           });
           break;

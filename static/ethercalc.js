@@ -2221,7 +2221,7 @@ SocialCalc.FormatValueForDisplay = function(a, b, c, d) {
       l = "&nbsp;";
     }
   }
-  return "i" == valueinputwidget && null != b && null != e ? (a = SocialCalc.Formula.FunctionList[q], SocialCalc.GetSpreadsheetControlObject().debug.push({formula_name:q}), a ? (a = a[5], a = a.replace(/<%=checked%>/g, 0 == b ? "" : "checked"), a = a.replace(/<%=formated_value%>/g, e), a = a.replace(/<%=display_value%>/g, b), a.replace(/<%=cell_reference%>/g, c)) : "error:Widget HTML missing") : l;
+  return "i" == valueinputwidget && null != b && null != e ? (a = SocialCalc.Formula.FunctionList[q]) ? (a = a[5], a = a.replace(/<%=checked%>/g, 0 == b ? "" : "checked"), a = a.replace(/<%=formated_value%>/g, e), a = a.replace(/<%=display_value%>/g, b), a.replace(/<%=cell_reference%>/g, c)) : "error:Widget HTML missing" : l;
 };
 SocialCalc.format_text_for_display = function(a, b, c, d, e, f) {
   var g, l, h;
@@ -5606,6 +5606,10 @@ SocialCalc.Formula.ConvertInfixToPolish = function(a) {
   }
   return g ? g : e;
 };
+"undefined" === typeof SocialCalc.debug_log && (SocialCalc.debug_log = []);
+SocialCalc.DebugLog = function(a) {
+  SocialCalc.debug_log.push(a);
+};
 SocialCalc.Formula.EvaluatePolish = function(a, b, c, d) {
   var e = SocialCalc.Formula, f = SocialCalc.Constants, g = e.TokenType, l = e.LookupResultType, h = e.TypeLookupTable, n = e.OperandAsNumber, q = e.OperandAsText, s = e.OperandValueAndType, r = e.OperandsAsCoordOnSheet, p = SocialCalc.format_number_for_display || function(a, b, c) {
     return a + "";
@@ -5615,9 +5619,8 @@ SocialCalc.Formula.EvaluatePolish = function(a, b, c, d) {
   if (!(a.length && b instanceof Array)) {
     return{value:"", type:"e#VALUE!", error:"string" == typeof b ? b : ""};
   }
-  w = SocialCalc.GetSpreadsheetControlObject();
-  "undefined" === typeof w.debug && (w.debug = []);
-  w.debug.push({revpolish:b});
+  SocialCalc.DebugLog({revpolish:b});
+  SocialCalc.DebugLog({revpolish:b});
   var M = [];
   for (w = 0;w < b.length;w++) {
     if (A = b[w], -1 == A) {
@@ -5966,10 +5969,8 @@ SocialCalc.Formula.StoreIoEventFormula = function(a, b, c, d, e) {
     "undefined" === typeof d.ioParameterList[b] && (d.ioParameterList[b] = {});
     d.ioParameterList[b] = f;
     d.ioParameterList[b].function_name = a;
-    a = SocialCalc.GetSpreadsheetControlObject();
-    "undefined" === typeof a.debug && (a.debug = []);
-    a.debug.push({ioEventTree:d.ioEventTree});
-    a.debug.push({ioParameterList:d.ioParameterList});
+    SocialCalc.DebugLog({ioEventTree:d.ioEventTree});
+    SocialCalc.DebugLog({ioParameterList:d.ioParameterList});
   }
 };
 SocialCalc.Formula.Clone = function(a, b) {
@@ -5985,12 +5986,7 @@ SocialCalc.Formula.CalculateFunction = function(a, b, c, d) {
     g = e[0];
     l = e[1];
     h.CopyFunctionArgs(b, f);
-    if (e[6] && "" != e[6]) {
-      var n = SocialCalc.GetSpreadsheetControlObject();
-      "undefined" === typeof n.debug && (n.debug = {});
-      n.debug.push("action:" + a);
-      h.StoreIoEventFormula(a, d, f, c, e[6]);
-    }
+    e[6] && "" != e[6] && (SocialCalc.DebugLog("action:" + a), h.StoreIoEventFormula(a, d, f, c, e[6]));
     if (100 != l) {
       if (0 > l) {
         if (f.length < -l) {
@@ -7437,7 +7433,7 @@ SocialCalc.Formula.FunctionList.CHECKBOX = [SocialCalc.Formula.IoFunctions, 1, "
 SocialCalc.Formula.FunctionList.COPYVALUE = [SocialCalc.Formula.IoFunctions, 3, "txt", "", "action", "", "EventTree"];
 SocialCalc.Formula.FunctionList.COPYFORMULA = [SocialCalc.Formula.IoFunctions, 3, "txt", "", "action", "", "EventTree"];
 SocialCalc.TriggerIoAction.Button = function(a) {
-  var b = SocialCalc.GetSpreadsheetControlObject(), c = b.sheet;
+  var b = window.spreadsheet, c = b.sheet;
   if ("undefined" !== typeof c.ioEventTree && "undefined" !== typeof c.ioParameterList && "undefined" !== c.ioEventTree[a]) {
     for (var d in c.ioEventTree[a]) {
       switch(a = c.ioParameterList[d], a.function_name) {
@@ -7459,7 +7455,7 @@ SocialCalc.TriggerIoAction.Button = function(a) {
 };
 SocialCalc.TriggerIoAction.Email = function(a, b) {
   b = "undefined" !== typeof b ? b : null;
-  var c = SocialCalc.Formula, d = SocialCalc.GetSpreadsheetControlObject(), e = d.sheet, f = e.cells[a];
+  var c = SocialCalc.Formula, d = window.spreadsheet, e = d.sheet, f = e.cells[a];
   if ("undefined" !== typeof e.ioParameterList) {
     for (var g = e.ioParameterList[a], l = [], h = [], n = 1, q = 0;q < g.length;q++) {
       if ("t" == g[q].type.charAt(0) && (l[q] = [g[q].value.replace(/ /g, "%20")]), "coord" == g[q].type && (l[q] = [e.GetAssuredCell(g[q].value).datavalue.replace(/ /g, "%20")]), "range" == g[q].type) {
@@ -7511,13 +7507,13 @@ SocialCalc.TriggerIoAction.Email = function(a, b) {
   }
 };
 SocialCalc.TriggerIoAction.TextBox = function(a) {
-  var b = SocialCalc.GetSpreadsheetControlObject(), c = b.sheet.cells[a];
+  var b = window.spreadsheet, c = b.sheet.cells[a];
   a = document.getElementById("TEXTBOX_" + a);
   c = "set " + c.coord + ' formula TEXTBOX("' + SocialCalc.encodeForSave(a.value) + '")';
   b.editor.EditorScheduleSheetCommands(c, !0, !1);
 };
 SocialCalc.TriggerIoAction.CheckBox = function(a) {
-  var b = SocialCalc.GetSpreadsheetControlObject(), c = b.sheet.cells[a];
+  var b = window.spreadsheet, c = b.sheet.cells[a];
   a = document.getElementById("CHECKBOX_" + a);
   c = "set " + c.coord + ' formula CHECKBOX("' + SocialCalc.encodeForSave(a.checked ? "TRUE" : "FALSE") + '")';
   b.editor.EditorScheduleSheetCommands(c, !0, !1);
@@ -8192,8 +8188,7 @@ SocialCalc.SpreadsheetControl = function(a) {
   this.statuslineheight = b.SCStatuslineheight;
   this.statuslineCSS = b.SCStatuslineCSS;
   this.ExportCallback = null;
-  "undefined" === typeof this.debug && (this.debug = []);
-  this.debug.test2 = "---------";
+  "undefined" === typeof SocialCalc.debug_log && (SocialCalc.debug_log = []);
   this.sheet = new SocialCalc.Sheet;
   this.context = new SocialCalc.RenderContext(this.sheet);
   this.context.showGrid = !0;
@@ -8275,9 +8270,9 @@ SocialCalc.SpreadsheetControl = function(a) {
       "object" == typeof a && q.check.pop();
       return b ? "{" + d.slice(0, -1) + "}" : "[" + d.slice(0, -1) + "]";
     };
-    if ("undefined" != typeof a.debug) {
-      for (var s in a.debug) {
-        l += q(a.debug[s]) + "<br>";
+    if ("undefined" != typeof SocialCalc.debug_log) {
+      for (var s in SocialCalc.debug_log) {
+        l += q(SocialCalc.debug_log[s]) + "<br>";
       }
     }
     a.views.audit.element.innerHTML = l + "</td></tr></table>";

@@ -97,6 +97,7 @@
   @get '/:room/view': ->
     room = @params.room
     @response.redirect "#BASEPATH/#room?auth=0"
+    #@response.redirect "#BASEPATH/#room?auth=#{ hmac room }"
   @get '/_/:room/cells/:cell': api -> [Json
     (sc, cb) ~> sc.exportCell @cell, cb
   ]
@@ -202,7 +203,8 @@
 
   @on data: !->
     {room, msg, user, ecell, cmdstr, type, auth} = @data
-    #console.log "on data:"+type
+    # eddy
+    console.log "on data:"+type
     room = "#room" - /^_+/ # preceding underscore is reserved
     DB.expire "snapshot-#room", EXPIRE if EXPIRE
     reply = (data) ~> @emit {data}
@@ -220,20 +222,27 @@
     | \my.ecell
       DB.hset "ecell-#room", user, ecell
     | \execute
-      return if auth is \0
+      console.log "execute:"+1
+      #return if auth is \0
+      console.log "execute:"+2
       return if cmdstr is /^set sheet defaulttextvalueformat text-wiki\s*$/
-      if KEY and hmac(room) isnt auth
-        reply { type: \error, message: "Invalid session key. Modifications will not be saved." }
-        return
+      console.log "execute:"+3
+      #if KEY and hmac(room) isnt auth
+      #  reply { type: \error, message: "Invalid session key. Modifications will not be saved." }
+      #  return
+      console.log "execute:"+4
       <~ DB.multi!
         .rpush "log-#room" cmdstr
         .rpush "audit-#room" cmdstr
         .bgsave!.exec!
+      console.log "execute:"+5
       unless SC[room]?
         console.log "SC[#room] went away. Reloading..."
         _, [snapshot, log] <~ DB.multi!get("snapshot-#room").lrange("log-#room", 0, -1).exec
         SC[room] = SC._init snapshot, log, DB, room, @io
+      console.log "execute:"+6
       SC[room]?ExecuteCommand cmdstr
+      console.log "execute:"+7
       broadcast @data
     | \ask.log
       # eddy @on data {

@@ -200,8 +200,7 @@ SocialCalc.SpreadsheetControl = function(idPrefix) {
    // Initialization Code:
 
    // eddy Initialization {
-   if(typeof this.debug === 'undefined') this.debug = [];
-   this.debug.test2 = "---------";
+   if(typeof SocialCalc.debug_log === 'undefined') SocialCalc.debug_log = [];   
    // }   
    
    this.sheet = new SocialCalc.Sheet();
@@ -789,25 +788,12 @@ SocialCalc.SpreadsheetControl = function(idPrefix) {
 				if (na) return "{"+str.slice(0,-1)+"}";
 				else return "["+str.slice(0,-1)+"]";
 			}
-/*			
-				if(typeof o == 'string') return o;
-				var str='';				
-				for(var p in o){
-					if(typeof o[p] == 'string'){
-						str+= p + ': ' + o[p]+'; </br>';
-					}else{
-						str+= p + ': { </br>' + objToString(o[p]) + '}';
-					}
-				}
-
-				return str;
-			}
-			*/
+			
 			// --------------------------------------------   
 			
-		    if(typeof s.debug != 'undefined') {
-				for(var index in s.debug) { 
-					str += ObjToSource(s.debug[index]) + "<br>";
+		    if(typeof SocialCalc.debug_log != 'undefined') {
+				for(var index in SocialCalc.debug_log) { 
+					str += ObjToSource(SocialCalc.debug_log[index]) + "<br>";
 				}
 			}
 		    // }   

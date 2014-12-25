@@ -8,7 +8,6 @@
   global.SC == null && (global.SC = {
     console: console
   });
-  global.SC.sendemail = require('./sendemail.js');
   argv = (function(){
     try {
       return require('optimist').boolean(['vm', 'polling']).argv;
@@ -155,7 +154,6 @@
         },
         clearTimeout: function(){}
       };
-      cxt.sendemail = global.SC.sendemail;
       this.postMessage = function(data){
         return sandbox.self.onmessage({
           data: data
@@ -252,6 +250,7 @@
           ref$ = arg$.data, type = ref$.type, ref = ref$.ref, snapshot = ref$.snapshot, command = ref$.command, room = ref$.room, log = (ref1$ = ref$.log) != null
             ? ref1$
             : [];
+          console.log("==> Worker.onmessage " + type);
           switch (type) {
           case 'cmd':
             console.log("===> cmd " + command);
@@ -395,6 +394,7 @@
         case 'csv':
           return w.onCsv(csv);
         case 'sendemailout':
+          console.log("onmessage " + emaildata.to);
           return emailer.sendemail(emaildata.to, emaildata.subject, emaildata.body, function(message){
             return io.sockets['in']("log-" + room).emit('data', {
               type: 'confirmemailsent',

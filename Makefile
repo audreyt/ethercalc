@@ -40,7 +40,7 @@ depends :: app.js static/ethercalc.js static/start.css
 
 SocialCalcModule.js :: $(SOCIALCALC_FILES) exports.js 
 	cat $(SOCIALCALC_FILES) exports.js > $@
-	@cp $(SOCIALCALC_FILES) sendemail.js /cygdrive/c/Users/eddy/Dropbox/ethercalc/
+	@cp $(SOCIALCALC_FILES) /cygdrive/c/Users/eddy/Dropbox/ethercalc/
 	@cp src/*.ls /cygdrive/c/Users/eddy/Dropbox/ethercalc/src/
 	#@perl -e 'system(join(" ", "closure-compiler" => map { ("--js", $$_) } @ARGV). " > $@")' $(SOCIALCALC_FILES) exports.js
 
@@ -50,7 +50,8 @@ static/ethercalc.js :: $(ETHERCALC_FILES)
 	#@java -jar ../closure-compiler/compiler.jar --js $(ETHERCALC_FILES) --warning_level QUIET >> $@
 	#@cat $(ETHERCALC_FILES) >> $@
 	#@perl -e 'system(join(" ", "closure-compiler" => "--language_in=ES5" => map { ("--js", $$_) } @ARGV). " >> $@")' $(ETHERCALC_FILES) 
-
+	@sed -i "s/Updated.*/Updated $(shell date)/" manifest.appcache
+ 
 .coffee.js:
 	coffee -c $<
 

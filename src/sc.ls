@@ -5,7 +5,7 @@ bootSC = fs.readFileSync "#{
 
 global.SC ?= {console}
 #console.log "===> global.SC.sendemail "
-global.SC.sendemail = require './sendemail.js'
+#global.SC.sendemail = require './sendemail.js'
 
 
 argv = (try require \optimist .boolean <[ vm polling ]> .argv) || {}
@@ -55,7 +55,7 @@ Worker ||= class =>
       setTimeout: (cb, ms) -> process.nextTick cb
       clearTimeout: ->
     #cxt.console.log "===> cxt.sendemail "
-    cxt.sendemail = global.SC.sendemail
+    #cxt.sendemail = global.SC.sendemail
     @postMessage = (data) -> sandbox.self.onmessage {data}
     @thread = cxt.thread =
       nextTick: (cb) -> process.nextTick cb
@@ -111,7 +111,7 @@ Worker ||= class =>
     #console.log "==> new Worker()"  
     w = new Worker ->        
       self.onmessage = ({ data: { type, ref, snapshot, command, room, log=[] } }) ->  
-        #console.log "==> Worker.onmessage #type"       
+        console.log "==> Worker.onmessage #type"       
         switch type
         | \cmd
           console.log "===> cmd "+command
@@ -119,7 +119,6 @@ Worker ||= class =>
           if commandParameters[0] is \sendemail
             console.log "------ send email --------"
             console.log " to:"+commandParameters[1]+" subject:"+commandParameters[2]+" body:"+commandParameters[3]             
-            #commandParameters[1].replace(/%20/g,' '), commandParameters[2].replace(/%20/g,' '), commandParameters[3].replace(/%20/g,' ')     
             postMessage { type: \sendemailout, emaildata: { to: commandParameters[1].replace(/%20/g,' '), subject: commandParameters[2].replace(/%20/g,' '), body:commandParameters[3].replace(/%20/g,' ')  } }
           window.ss.ExecuteCommand command
         | \recalc
@@ -195,6 +194,7 @@ Worker ||= class =>
     | \html     => w.on-html html
     | \csv    => w.on-csv csv
     | \sendemailout 
+      console.log "onmessage "+emaildata.to
       emailer.sendemail emaildata.to, emaildata.subject, emaildata.body,  (message) ->
         io.sockets.in "log-#room" .emit \data {
           type: \confirmemailsent

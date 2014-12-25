@@ -80,7 +80,6 @@
       return if @data.user == SocialCalc._username
       return if @data.to and @data.to != SocialCalc._username
       return if @data.room and @data.room != SocialCalc._room and @data.type != "recalc"
-
       ss = window.spreadsheet
       return unless ss
       editor = ss.editor

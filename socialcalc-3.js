@@ -3523,7 +3523,7 @@ SocialCalc.RecalcClearTimeout = function() {
 
    }
 
-
+  
 //
 // SocialCalc.RecalcLoadedSheet(sheetname, str, recalcneeded, live)
 //
@@ -5394,15 +5394,12 @@ SocialCalc.FormatValueForDisplay = function(sheetobj, value, cr, linkstyle) {
       displayvalue = "&nbsp;";
       }
 
-  // eddy HTML {
-  //if(valueinputwidget=="i")  SocialCalc.GetSpreadsheetControlObject().debug.push({html_display_value:html_display_value});
-  //if(valueinputwidget=="i")  SocialCalc.GetSpreadsheetControlObject().debug.push({html_formated_value:html_formated_value});
 
    // eddy display cell HTML {      
    if(valueinputwidget=="i" && html_display_value!=null && html_formated_value!=null) {
 	 var formula_details = SocialCalc.Formula.FunctionList[formula_name]; 
 //	 var ecell = SocialCalc.GetSpreadsheetControlObject().editor.ecell; // check if widget has focus
-	 SocialCalc.GetSpreadsheetControlObject().debug.push({formula_name:formula_name});
+//	 SocialCalc.GetSpreadsheetControlObject().debug.push({formula_name:formula_name});
 		 if( formula_details) {
 			 var cell_html = formula_details[5];
 			 // var cell_html = "<button type='button' onclick=\"SocialCalc.TriggerIoAction('<%=cell_reference%>');\"><%=display_value%></button>";
