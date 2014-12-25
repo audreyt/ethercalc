@@ -55,7 +55,8 @@
 
   IO = @io
   api = (cb) -> ->
-    {snapshot} <~ SC._get @params.room, IO
+    room = encodeURIComponent @params.room
+    {snapshot} <~ SC._get room, IO
     if snapshot
       [type, content] = cb.call @params, snapshot
       if type is Csv
@@ -63,7 +64,7 @@
           attachment; filename="#{ @params.room }.csv"
         """
       if content instanceof Function
-        rv <~ content SC[@params.room]
+        rv <~ content SC[room]
         @response.type type
         @response.send 200 rv
       else
