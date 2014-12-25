@@ -20,6 +20,29 @@ if (!(window.location.hash.replace('#', ''))) {
 <script src="./player/broadcast.js"></script>
 <script src="./player/graph.js"></script>
 <script src="./player/main.js"></script>
+<script>
+l10n_zh_TW = {
+  "s_BrowserNotSupported": "瀏覽器不支援",
+  "s_loc_down": "下",
+  "s_loc_edit": "編輯",
+  "s_loc_font": "字體",
+  "s_loc_format": "格式",
+  "s_loc_formula": "公式",
+  "s_loc_function_list": "函式表",
+  "s_loc_functions": "函式",
+  "s_loc_grid": "格",
+  "s_loc_horizontal": "水平",
+  "s_loc_insert_column": "置入一欄",
+  "s_loc_insert_row": "置入一列",
+  "s_loc_italic": "斜體",
+  "s_loc_left": "左"
+}
+if (navigator.language === 'zh-TW') {
+    for (var k in l10n_zh_TW) {
+        SocialCalc.Constants[k] = l10n_zh_TW[k]
+    }
+}
+</script>
 
 <link rel="stylesheet" type="text/css" href="./static/socialcalc.css">
 <link rel="stylesheet" type="text/css" href="./static/index.css">
