@@ -13,6 +13,7 @@
     "optimist": "*",
     "zappajs": "0.5.x",
     "cors": "*",
+    "j": "^0.4.3",
     "LiveScript": "1.3.x",
     "csv-parse": "^0.0.6"
   },
