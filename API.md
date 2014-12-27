@@ -53,6 +53,13 @@ Takes a SocialCalc serialization format that contains the new spreadsheet's cont
 + Request (text/x-socialcalc)
 + Response 201
 
+## Create from Excel XML [POST]
+
+Takes a Excel XML file that contains the new spreadsheet's content.
+
++ Request (application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)
++ Response 201
+
 # Page [/_/{id}]
 
 ## Page Content [GET]
@@ -73,6 +80,13 @@ Replace the page with a serialization in CSV format.
 Replace the page with a serialization in SocialCalc save format.
 
 + Request (text/x-socialcalc)
++ Response 200
+
+## Overwrite with Excel XML [PUT]
+
+Replace the page with a serialization in Excel XML format.
+
++ Request (application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)
 + Response 200
 
 ## Post Commands [POST]
