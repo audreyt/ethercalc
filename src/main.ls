@@ -82,9 +82,24 @@
   ]
   ExportCSV = api -> [Csv, (sc, cb) -> sc.exportCSV cb ]
   ExportHTML = api -> [Html, (sc, cb) -> sc.exportHTML cb ]
+
+  J-TypeMap =
+    md: \text/x-markdown
+    xlsx: \application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+  Export-J = (type) -> api ->
+    J = require \j
+    rv = J.utils["to_#type"](J.read it)
+    rv = rv.Sheet1 if rv?Sheet1?
+    [J-TypeMap[type], rv]
+
+  ExportExcelXML = api ->
+
   @get '/:room.csv': ExportCSV
   @get '/:room.csv.json': ExportCSV-JSON
   @get '/:room.html': ExportHTML
+  @get '/:room.xlsx': Export-J \xlsx
+  @get '/:room.md': Export-J \md
+
 
   @get '/_from/:template': ->
     room = new-room!
@@ -114,6 +129,8 @@
   @get '/_/:room/html': ExportHTML
   @get '/_/:room/csv': ExportCSV
   @get '/_/:room/csv.json': ExportCSV-JSON
+  @get '/_/:room/xlsx': Export-J \xlsx
+  @get '/_/:room/md': Export-J \md
   @get '/_/:room': api -> [Text, it]
 
   request-to-command = (request, cb) ->

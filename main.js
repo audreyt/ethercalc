@@ -2,7 +2,7 @@
 (function(){
   var join$ = [].join;
   this.include = function(){
-    var DB, SC, KEY, BASEPATH, EXPIRE, HMAC_CACHE, hmac, ref$, Text, Html, Csv, Json, RealBin, sendFile, newRoom, IO, api, ExportCSVJSON, ExportCSV, ExportHTML, requestToCommand, requestToSave;
+    var DB, SC, KEY, BASEPATH, EXPIRE, HMAC_CACHE, hmac, ref$, Text, Html, Csv, Json, RealBin, sendFile, newRoom, IO, api, ExportCSVJSON, ExportCSV, ExportHTML, JTypeMap, ExportJ, ExportExcelXML, requestToCommand, requestToSave;
     this.use('json', this.app.router, this.express['static'](__dirname));
     this.app.use('/edit', this.express['static'](__dirname));
     this.app.use('/view', this.express['static'](__dirname));
@@ -133,6 +133,22 @@
         }
       ];
     });
+    JTypeMap = {
+      md: 'text/x-markdown',
+      xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    };
+    ExportJ = function(type){
+      return api(function(it){
+        var J, rv;
+        J = require('j');
+        rv = J.utils["to_" + type](J.read(it));
+        if ((rv != null ? rv.Sheet1 : void 8) != null) {
+          rv = rv.Sheet1;
+        }
+        return [JTypeMap[type], rv];
+      });
+    };
+    ExportExcelXML = api(function(){});
     this.get({
       '/:room.csv': ExportCSV
     });
@@ -141,6 +157,12 @@
     });
     this.get({
       '/:room.html': ExportHTML
+    });
+    this.get({
+      '/:room.xlsx': ExportJ('xlsx')
+    });
+    this.get({
+      '/:room.md': ExportJ('md')
     });
     this.get({
       '/_from/:template': function(){
@@ -213,6 +235,12 @@
     });
     this.get({
       '/_/:room/csv.json': ExportCSVJSON
+    });
+    this.get({
+      '/_/:room/xlsx': ExportJ('xlsx')
+    });
+    this.get({
+      '/_/:room/md': ExportJ('md')
     });
     this.get({
       '/_/:room': api(function(it){
