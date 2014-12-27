@@ -137,24 +137,30 @@
     if request.is \application/json
       command = request.body?command
       return cb command if command
-    buf = ''; request.setEncoding \utf8; request.on \data (chunk) ~> buf += chunk
+    cs = []; request.on \data (chunk) ~> cs ++= chunk
     <~ request.on \end
-    return cb buf unless request.is \text/csv
-    save <~ SC.csv-to-save buf
-    save.=replace /\\/g "\\b" if ~save.index-of "\\"
-    save.=replace /:/g  "\\c" if ~save.index-of ":"
-    save.=replace /\n/g "\\n" if ~save.index-of "\n"
-    cb "loadclipboard #save"
+    buf = Buffer.concat cs
+    return cb buf.toString(\utf8) if request.is \text/x-socialcalc
+    J = require \j
+    # TODO: Move to thread
+    for k, save of (J.utils.to_socialcalc(J.read buf) || {'': ''})
+      save.=replace /\\/g "\\b" if ~save.index-of "\\"
+      save.=replace /:/g  "\\c" if ~save.index-of ":"
+      save.=replace /\n/g "\\n" if ~save.index-of "\n"
+      return cb "loadclipboard #save"
 
   request-to-save = (request, cb) ->
     if request.is \application/json
       snapshot = request.body?snapshot
       return cb snapshot if snapshot
-    buf = ''; request.setEncoding \utf8; request.on \data (chunk) ~> buf += chunk
+    cs = []; request.on \data (chunk) ~> cs ++= chunk
     <~ request.on \end
-    return cb buf unless request.is \text/csv
-    save <~ SC.csv-to-save buf
-    cb """socialcalc:version:1.0\nMIME-Version: 1.0\nContent-Type: multipart/mixed; boundary=SocialCalcSpreadsheetControlSave\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n# SocialCalc Spreadsheet Control Save\nversion:1.0\npart:sheet\npart:edit\npart:audit\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n#save\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n--SocialCalcSpreadsheetControlSave--\n"""
+    buf = Buffer.concat cs
+    return cb buf.toString(\utf8) if request.is \text/x-socialcalc
+    J = require \j
+    # TODO: Move to thread
+    for k, save of (J.utils.to_socialcalc(J.read buf) || {'': ''})
+      return cb save
 
   @put '/_/:room': ->
     @response.type Text

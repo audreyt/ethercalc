@@ -248,23 +248,28 @@
       })
     });
     requestToCommand = function(request, cb){
-      var command, ref$, buf, this$ = this;
+      var command, ref$, cs, this$ = this;
       if (request.is('application/json')) {
         command = (ref$ = request.body) != null ? ref$.command : void 8;
         if (command) {
           return cb(command);
         }
       }
-      buf = '';
-      request.setEncoding('utf8');
+      cs = [];
       request.on('data', function(chunk){
-        return buf += chunk;
+        return cs = cs.concat(chunk);
       });
       return request.on('end', function(){
-        if (!request.is('text/csv')) {
-          return cb(buf);
+        var buf, J, k, ref$, save;
+        buf = Buffer.concat(cs);
+        if (request.is('text/x-socialcalc')) {
+          return cb(buf.toString('utf8'));
         }
-        return SC.csvToSave(buf, function(save){
+        J = require('j');
+        for (k in ref$ = J.utils.to_socialcalc(J.read(buf)) || {
+          '': ''
+        }) {
+          save = ref$[k];
           if (~save.indexOf("\\")) {
             save = save.replace(/\\/g, "\\b");
           }
@@ -275,29 +280,34 @@
             save = save.replace(/\n/g, "\\n");
           }
           return cb("loadclipboard " + save);
-        });
+        }
       });
     };
     requestToSave = function(request, cb){
-      var snapshot, ref$, buf, this$ = this;
+      var snapshot, ref$, cs, this$ = this;
       if (request.is('application/json')) {
         snapshot = (ref$ = request.body) != null ? ref$.snapshot : void 8;
         if (snapshot) {
           return cb(snapshot);
         }
       }
-      buf = '';
-      request.setEncoding('utf8');
+      cs = [];
       request.on('data', function(chunk){
-        return buf += chunk;
+        return cs = cs.concat(chunk);
       });
       return request.on('end', function(){
-        if (!request.is('text/csv')) {
-          return cb(buf);
+        var buf, J, k, ref$, save;
+        buf = Buffer.concat(cs);
+        if (request.is('text/x-socialcalc')) {
+          return cb(buf.toString('utf8'));
         }
-        return SC.csvToSave(buf, function(save){
-          return cb("socialcalc:version:1.0\nMIME-Version: 1.0\nContent-Type: multipart/mixed; boundary=SocialCalcSpreadsheetControlSave\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n# SocialCalc Spreadsheet Control Save\nversion:1.0\npart:sheet\npart:edit\npart:audit\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n" + save + "\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n--SocialCalcSpreadsheetControlSave--\n");
-        });
+        J = require('j');
+        for (k in ref$ = J.utils.to_socialcalc(J.read(buf)) || {
+          '': ''
+        }) {
+          save = ref$[k];
+          return cb(save);
+        }
       });
     };
     this.put({
