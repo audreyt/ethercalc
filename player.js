@@ -412,6 +412,11 @@
                   click: function(){
                     return window.open("./" + SocialCalc._room + ".csv");
                   }
+                }), $.extend({}, typeof vex != 'undefined' && vex !== null ? vex.dialog.buttons.YES : void 8, {
+                  text: 'Excel',
+                  click: function(){
+                    return window.open("./" + SocialCalc._room + ".xlsx");
+                  }
                 }), $.extend({}, typeof vex != 'undefined' && vex !== null ? vex.dialog.buttons.NO : void 8, {
                   text: 'Cancel'
                 })

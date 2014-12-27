@@ -248,6 +248,8 @@ Check the activity stream to see the newly edited page!
             window.open "./#{ SocialCalc._room }.html"
           $.extend {}, vex?dialog.buttons.YES, text: 'CSV', click: ->
             window.open "./#{ SocialCalc._room }.csv"
+          $.extend {}, vex?dialog.buttons.YES, text: 'Excel', click: ->
+            window.open "./#{ SocialCalc._room }.xlsx"
           $.extend {}, vex?dialog.buttons.NO, text: 'Cancel'
         ]
 

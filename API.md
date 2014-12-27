@@ -140,4 +140,20 @@ Returns a CSV rendering of the page. (GET `/_/{id}/csv` also works.)
 
 Returns a JSON array-of-array rendering of the page. (GET `/_/{id}/csv.json` also works.)
 
-+ Response 200 (text/csv)
++ Response 200 (application/json)
+
+# Excel XML Export [/_/{id}.xlsx]
+
+## GET
+
+Returns a Excel XML rendering of the page. (GET `/_/{id}/xlsx` also works.)
+
++ Response 200 (application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)
+
+# Markdown Export [/_/{id}.md]
+
+## GET
+
+Returns a Excel XML rendering of the page. (GET `/_/{id}/md` also works.)
+
++ Response 200 (text/x-markdown)
