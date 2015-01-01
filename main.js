@@ -265,11 +265,16 @@
         if (request.is('text/x-socialcalc')) {
           return cb(buf.toString('utf8'));
         }
+        if (request.is('text/plain')) {
+          return cb(buf.toString('utf8'));
+        }
         J = require('j');
         for (k in ref$ = J.utils.to_socialcalc(J.read(buf)) || {
           '': ''
         }) {
           save = ref$[k];
+          save = save.replace(/[\d\D]*\ncell:/, 'cell:');
+          save = save.replace(/\s--SocialCalcSpreadsheetControlSave--[\d\D]*/, '\n');
           if (~save.indexOf("\\")) {
             save = save.replace(/\\/g, "\\b");
           }
