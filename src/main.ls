@@ -184,8 +184,11 @@
     <~ request.on \end
     buf = Buffer.concat cs
     return cb buf.toString(\utf8) if request.is \text/x-socialcalc
+    return cb buf.toString(\utf8) if request.is \text/plain
     # TODO: Move to thread
     for k, save of (J.utils.to_socialcalc(J.read buf) || {'': ''})
+      save.=replace /[\d\D]*\ncell:/ 'cell:'
+      save.=replace /\s--SocialCalcSpreadsheetControlSave--[\d\D]*/ '\n'
       save.=replace /\\/g "\\b" if ~save.index-of "\\"
       save.=replace /:/g  "\\c" if ~save.index-of ":"
       save.=replace /\n/g "\\n" if ~save.index-of "\n"

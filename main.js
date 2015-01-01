@@ -136,7 +136,6 @@
                 return todo.exec(function(_, saves){
                   var ref$, type, content;
                   ref$ = cbMultiple.call(this$.params, names, saves), type = ref$[0], content = ref$[1];
-                  console.log(content);
                   this$.response.type(type);
                   return this$.response.send(200, content);
                 });
@@ -346,10 +345,15 @@
         if (request.is('text/x-socialcalc')) {
           return cb(buf.toString('utf8'));
         }
+        if (request.is('text/plain')) {
+          return cb(buf.toString('utf8'));
+        }
         for (k in ref$ = J.utils.to_socialcalc(J.read(buf)) || {
           '': ''
         }) {
           save = ref$[k];
+          save = save.replace(/[\d\D]*\ncell:/, 'cell:');
+          save = save.replace(/\s--SocialCalcSpreadsheetControlSave--[\d\D]*/, '\n');
           if (~save.indexOf("\\")) {
             save = save.replace(/\\/g, "\\b");
           }
