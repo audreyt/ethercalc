@@ -36,7 +36,7 @@ export class HackFoldr
     @rows.splice idx, 1; @
 
   send-cmd: (cmd, cb=->) ->
-    @init ~> $.post "#{ @base }/_/#{ @id }", cmd, ->
+    @init ~> $.post("#{ @base }/_/#{ @id }").type(\text/plain).send(cmd).end ->
 
   init: (cb) ->
     if @was-non-existent
