@@ -2,7 +2,7 @@
 (function(){
   var join$ = [].join;
   this.include = function(){
-    var DB, SC, KEY, BASEPATH, EXPIRE, HMAC_CACHE, hmac, ref$, Text, Html, Csv, Json, RealBin, sendFile, newRoom, IO, api, ExportCSVJSON, ExportCSV, ExportHTML, JTypeMap, ExportJ, ExportExcelXML, requestToCommand, requestToSave;
+    var J, csvParse, DB, SC, KEY, BASEPATH, EXPIRE, HMAC_CACHE, hmac, ref$, Text, Html, Csv, Json, RealBin, sendFile, newRoom, IO, api, ExportCSVJSON, ExportCSV, ExportHTML, JTypeMap, ExportJ, ExportExcelXML, requestToCommand, requestToSave;
     this.use('json', this.app.router, this.express['static'](__dirname));
     this.app.use('/edit', this.express['static'](__dirname));
     this.app.use('/view', this.express['static'](__dirname));
@@ -10,6 +10,8 @@
     this.include('player-broadcast');
     this.include('player-graph');
     this.include('player');
+    J = require('j');
+    csvParse = require('csv-parse');
     DB = this.include('db');
     SC = this.include('sc');
     KEY = this.KEY;
@@ -101,39 +103,75 @@
       '/_start': sendFile('start.html')
     });
     IO = this.io;
-    api = function(cb){
+    api = function(cb, cbMultiple){
       return function(){
         var room, this$ = this;
         room = encodeURIComponent(this.params.room);
-        return SC._get(room, IO, function(arg$){
-          var snapshot, ref$, type, content;
-          snapshot = arg$.snapshot;
-          if (snapshot) {
-            ref$ = cb.call(this$.params, snapshot), type = ref$[0], content = ref$[1];
-            if (type === Csv) {
-              this$.response.set('Content-Disposition', "attachment; filename=\"" + this$.params.room + ".csv\"");
+        if (/^%3D/.exec(room) && cbMultiple) {
+          room = room.slice(3);
+          return SC._get(room, IO, function(arg$){
+            var snapshot;
+            snapshot = arg$.snapshot;
+            if (!snapshot) {
+              this$.response.type(Text);
+              this$.response.send(404, '');
+              return;
             }
-            if (content instanceof Function) {
-              return content(SC[room], function(rv){
-                this$.response.type(type);
-                return this$.response.send(200, rv);
+            return SC[room].exportCSV(function(csv){
+              return csvParse(csv, {
+                delimiter: ','
+              }, function(_, body){
+                var todo, names, i$, len$, idx, ref$, link, title;
+                body.shift();
+                todo = DB.multi();
+                names = [];
+                for (i$ = 0, len$ = body.length; i$ < len$; ++i$) {
+                  idx = i$;
+                  ref$ = body[i$], link = ref$[0], title = ref$[1];
+                  if (link && title && /^\//.exec(link)) {
+                    names = names.concat(title);
+                    todo = todo.get("snapshot-" + link.slice(1));
+                  }
+                }
+                return todo.exec(function(_, saves){
+                  var ref$, type, content;
+                  ref$ = cbMultiple.call(this$.params, names, saves), type = ref$[0], content = ref$[1];
+                  console.log(content);
+                  this$.response.type(type);
+                  return this$.response.send(200, content);
+                });
               });
+            });
+          });
+        } else {
+          return SC._get(room, IO, function(arg$){
+            var snapshot, ref$, type, content;
+            snapshot = arg$.snapshot;
+            if (snapshot) {
+              ref$ = cb.call(this$.params, snapshot), type = ref$[0], content = ref$[1];
+              if (type === Csv) {
+                this$.response.set('Content-Disposition', "attachment; filename=\"" + this$.params.room + ".csv\"");
+              }
+              if (content instanceof Function) {
+                return content(SC[room], function(rv){
+                  this$.response.type(type);
+                  return this$.response.send(200, rv);
+                });
+              } else {
+                this$.response.type(type);
+                return this$.response.send(200, content);
+              }
             } else {
-              this$.response.type(type);
-              return this$.response.send(200, content);
+              this$.response.type(Text);
+              return this$.response.send(404, '');
             }
-          } else {
-            this$.response.type(Text);
-            return this$.response.send(404, '');
-          }
-        });
+          });
+        }
       };
     };
     ExportCSVJSON = api(function(){
       return [
         Json, function(sc, cb){
-          var csvParse;
-          csvParse = require('csv-parse');
           return sc.exportCSV(function(csv){
             return csvParse(csv, {
               delimiter: ','
@@ -164,12 +202,28 @@
     };
     ExportJ = function(type){
       return api(function(it){
-        var J, rv;
-        J = require('j');
+        var rv;
         rv = J.utils["to_" + type](J.read(it));
         if ((rv != null ? rv.Sheet1 : void 8) != null) {
           rv = rv.Sheet1;
         }
+        return [JTypeMap[type], rv];
+      }, function(names, saves){
+        var input, i$, len$, idx, save, ref$, harb, Sheet1, rv;
+        input = [
+          null, {
+            SheetNames: names,
+            Sheets: {}
+          }
+        ];
+        for (i$ = 0, len$ = saves.length; i$ < len$; ++i$) {
+          idx = i$;
+          save = saves[i$];
+          ref$ = J.read(save), harb = ref$[0], Sheet1 = ref$[1].Sheets.Sheet1;
+          input[0] || (input[0] = harb);
+          input[1].Sheets[names[idx]] = Sheet1;
+        }
+        rv = J.utils["to_" + type](input);
         return [JTypeMap[type], rv];
       });
     };
@@ -287,12 +341,11 @@
         return cs = cs.concat(chunk);
       });
       return request.on('end', function(){
-        var buf, J, k, ref$, save;
+        var buf, k, ref$, save;
         buf = Buffer.concat(cs);
         if (request.is('text/x-socialcalc')) {
           return cb(buf.toString('utf8'));
         }
-        J = require('j');
         for (k in ref$ = J.utils.to_socialcalc(J.read(buf)) || {
           '': ''
         }) {
@@ -323,12 +376,11 @@
         return cs = cs.concat(chunk);
       });
       return request.on('end', function(){
-        var buf, J, k, ref$, save;
+        var buf, k, ref$, save;
         buf = Buffer.concat(cs);
         if (request.is('text/x-socialcalc')) {
           return cb(buf.toString('utf8'));
         }
-        J = require('j');
         for (k in ref$ = J.utils.to_socialcalc(J.read(buf)) || {
           '': ''
         }) {

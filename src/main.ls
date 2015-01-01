@@ -8,6 +8,9 @@
   @include \player-graph
   @include \player
 
+  J = require \j
+  csv-parse = require \csv-parse
+
   DB = @include \db
   SC = @include \sc
 
@@ -65,28 +68,47 @@
   @get '/_start': sendFile \start.html
 
   IO = @io
-  api = (cb) -> ->
+  api = (cb, cb-multiple) -> ->
     room = encodeURIComponent @params.room
-    {snapshot} <~ SC._get room, IO
-    if snapshot
-      [type, content] = cb.call @params, snapshot
-      if type is Csv
-        @response.set \Content-Disposition """
-          attachment; filename="#{ @params.room }.csv"
-        """
-      if content instanceof Function
-        rv <~ content SC[room]
-        @response.type type
-        @response.send 200 rv
-      else
-        @response.type type
-        @response.send 200 content
+    if room is /^%3D/ and cb-multiple
+      room.=slice 3
+      {snapshot} <~ SC._get room, IO
+      unless snapshot
+        @response.type Text
+        @response.send 404 ''
+        return
+      csv <~ SC[room].exportCSV
+      _, body <~ csv-parse(csv, delimiter: \,)
+      body.shift! # header
+      todo = DB.multi!
+      names = []
+      for [link, title], idx in body | link and title and link is /^\//
+        names ++= title
+        todo.=get "snapshot-#{ link.slice(1) }"
+      _, saves <~ todo.exec!
+      [type, content] = cb-multiple.call @params, names, saves
+      @response.type type
+      @response.send 200 content
     else
-      @response.type Text
-      @response.send 404 ''
+      {snapshot} <~ SC._get room, IO
+      if snapshot
+        [type, content] = cb.call @params, snapshot
+        if type is Csv
+          @response.set \Content-Disposition """
+            attachment; filename="#{ @params.room }.csv"
+          """
+        if content instanceof Function
+          rv <~ content SC[room]
+          @response.type type
+          @response.send 200 rv
+        else
+          @response.type type
+          @response.send 200 content
+      else
+        @response.type Text
+        @response.send 404 ''
 
   ExportCSV-JSON = api -> [Json, (sc, cb) ->
-    csv-parse = require \csv-parse
     csv <- sc.exportCSV
     _, body <- csv-parse(csv, delimiter: \,)
     cb body
@@ -97,11 +119,19 @@
   J-TypeMap =
     md: \text/x-markdown
     xlsx: \application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
-  Export-J = (type) -> api ->
-    J = require \j
+  Export-J = (type) -> api (-> # single
     rv = J.utils["to_#type"](J.read it)
     rv = rv.Sheet1 if rv?Sheet1?
     [J-TypeMap[type], rv]
+  ), ((names, saves) -> # multi
+    input = [ null, { SheetNames: names, Sheets: {} } ]
+    for save, idx in saves
+      [harb, { Sheets: { Sheet1 } }] = J.read save
+      input.0 ||= harb
+      input.1.Sheets[names[idx]] = Sheet1
+    rv = J.utils["to_#type"](input)
+    [J-TypeMap[type], rv]
+  )
 
   ExportExcelXML = api ->
 
@@ -154,7 +184,6 @@
     <~ request.on \end
     buf = Buffer.concat cs
     return cb buf.toString(\utf8) if request.is \text/x-socialcalc
-    J = require \j
     # TODO: Move to thread
     for k, save of (J.utils.to_socialcalc(J.read buf) || {'': ''})
       save.=replace /\\/g "\\b" if ~save.index-of "\\"
@@ -170,7 +199,6 @@
     <~ request.on \end
     buf = Buffer.concat cs
     return cb buf.toString(\utf8) if request.is \text/x-socialcalc
-    J = require \j
     # TODO: Move to thread
     for k, save of (J.utils.to_socialcalc(J.read buf) || {'': ''})
       return cb save
