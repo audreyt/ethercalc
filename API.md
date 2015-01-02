@@ -132,7 +132,7 @@ Returns a JSON representation of a single cell in the page.
 
 + Response 200 (application/json)
 
-# HTML Export [/_/{id}.html]
+# HTML Export [/{id}.html]
 
 ## GET
 
@@ -140,7 +140,7 @@ Returns a HTML rendering of the page. (GET `/_/{id}/html` also works.)
 
 + Response 200 (text/html)
 
-# CSV Export [/_/{id}.csv]
+# CSV Export [/{id}.csv]
 
 ## GET
 
@@ -148,7 +148,7 @@ Returns a CSV rendering of the page. (GET `/_/{id}/csv` also works.)
 
 + Response 200 (text/csv)
 
-# JSON Export [/_/{id}.csv.json]
+# JSON Export [/{id}.csv.json]
 
 ## GET
 
@@ -156,7 +156,7 @@ Returns a JSON array-of-array rendering of the page. (GET `/_/{id}/csv.json` als
 
 + Response 200 (application/json)
 
-# Excel XML Export [/_/{id}.xlsx]
+# Excel XML Export [/{id}.xlsx]
 
 ## GET
 
@@ -164,10 +164,25 @@ Returns a Excel XML rendering of the page. (GET `/_/{id}/xlsx` also works.)
 
 + Response 200 (application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)
 
-# Markdown Export [/_/{id}.md]
+# Markdown Export [/{id}.md]
 
 ## GET
 
 Returns a Excel XML rendering of the page. (GET `/_/{id}/md` also works.)
 
 + Response 200 (text/x-markdown)
+
+# Multi-sheet Excel XML [/={id}.xlsx]
+
+## Export [GET]
+
+Fetch the sheet collection in Excel XML format.  (GET `/_/{id}/xlsx` also works.)
+
++ Response 200 (application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)
+
+## Import [PUT]
+
+Replace the page with a serialization in Excel XML format.
+
++ Request (application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)
++ Response 200

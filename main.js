@@ -2,7 +2,7 @@
 (function(){
   var join$ = [].join;
   this.include = function(){
-    var J, csvParse, DB, SC, KEY, BASEPATH, EXPIRE, HMAC_CACHE, hmac, ref$, Text, Html, Csv, Json, RealBin, sendFile, newRoom, IO, api, ExportCSVJSON, ExportCSV, ExportHTML, JTypeMap, ExportJ, ExportExcelXML, requestToCommand, requestToSave;
+    var J, csvParse, DB, SC, KEY, BASEPATH, EXPIRE, HMAC_CACHE, hmac, ref$, Text, Html, Csv, Json, RealBin, sendFile, newRoom, IO, api, ExportCSVJSON, ExportCSV, ExportHTML, JTypeMap, ExportJ, ExportExcelXML, requestToCommand, requestToSave, i$, len$, route, ref1$;
     this.use('json', this.app.router, this.express['static'](__dirname));
     this.app.use('/edit', this.express['static'](__dirname));
     this.app.use('/view', this.express['static'](__dirname));
@@ -197,7 +197,8 @@
     });
     JTypeMap = {
       md: 'text/x-markdown',
-      xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      ods: 'application/vnd.oasis.opendocument.spreadsheet'
     };
     ExportJ = function(type){
       return api(function(it){
@@ -393,6 +394,10 @@
         }
       });
     };
+    for (i$ = 0, len$ = (ref$ = ['/=:room.xlsx', '/_/=:room/xlsx']).length; i$ < len$; ++i$) {
+      route = ref$[i$];
+      this.put((ref1$ = {}, ref1$[route + ""] = fn$, ref1$));
+    }
     this.put({
       '/_/:room': function(){
         var room, this$ = this;
@@ -644,5 +649,36 @@
         }
       }
     });
+    function fn$(){
+      var room, cs, this$ = this;
+      room = encodeURIComponent(this.params.room);
+      cs = [];
+      this.request.on('data', function(chunk){
+        return cs = cs.concat(chunk);
+      });
+      return this.request.on('end', function(){
+        var buf, idx, toc, parsed, sheetsToIdx, k, Sheet1, todo, save;
+        buf = Buffer.concat(cs);
+        idx = 0;
+        toc = '#url,#title\n';
+        parsed = J.utils.to_socialcalc(J.read(buf));
+        sheetsToIdx = {};
+        for (k in parsed) {
+          idx++;
+          sheetsToIdx[k] = idx;
+          toc += "\"/" + this$.params.room.replace(/"/g, '""') + "." + idx + "\",";
+          toc += "\"" + k.replace(/"/g, '""') + "\"\n";
+        }
+        Sheet1 = J.utils.to_socialcalc(J.read(toc)).Sheet1;
+        todo = DB.multi().set("snapshot-" + room, Sheet1);
+        for (k in parsed) {
+          save = parsed[k];
+          idx = sheetsToIdx[k];
+          todo = todo.set("snapshot-" + room + "." + idx, save);
+        }
+        todo.bgsave().exec();
+        return this$.response.send(201, 'OK');
+      });
+    }
   };
 }).call(this);

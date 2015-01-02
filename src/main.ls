@@ -119,6 +119,7 @@
   J-TypeMap =
     md: \text/x-markdown
     xlsx: \application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+    ods: \application/vnd.oasis.opendocument.spreadsheet
   Export-J = (type) -> api (-> # single
     rv = J.utils["to_#type"](J.read it)
     rv = rv.Sheet1 if rv?Sheet1?
@@ -138,6 +139,7 @@
   @get '/:room.csv': ExportCSV
   @get '/:room.csv.json': ExportCSV-JSON
   @get '/:room.html': ExportHTML
+  #@get '/:room.ods': Export-J \ods
   @get '/:room.xlsx': Export-J \xlsx
   @get '/:room.md': Export-J \md
 
@@ -172,6 +174,7 @@
   @get '/_/:room/html': ExportHTML
   @get '/_/:room/csv': ExportCSV
   @get '/_/:room/csv.json': ExportCSV-JSON
+  #@get '/_/:room/ods': Export-J \ods
   @get '/_/:room/xlsx': Export-J \xlsx
   @get '/_/:room/md': Export-J \md
   @get '/_/:room': api -> [Text, it]
@@ -205,6 +208,29 @@
     # TODO: Move to thread
     for k, save of (J.utils.to_socialcalc(J.read buf) || {'': ''})
       return cb save
+
+  for route in <[ /=:room.xlsx /_/=:room/xlsx ]> => @put "#route": ->
+    room = encodeURIComponent @params.room
+    cs = []; @request.on \data (chunk) ~> cs ++= chunk
+    <~ @request.on \end
+    buf = Buffer.concat cs
+    idx = 0
+    toc = '#url,#title\n'
+    parsed = J.utils.to_socialcalc J.read buf
+    sheets-to-idx = {}
+    for k of parsed
+      idx++
+      sheets-to-idx[k] = idx
+      toc += "\"/#{ @params.room.replace(/"/g, '""') }.#idx\","
+      toc += "\"#{ k.replace(/"/g, '""') }\"\n"
+    { Sheet1 } = J.utils.to_socialcalc J.read toc
+    todo = DB.multi!set("snapshot-#room", Sheet1)
+    for k, save of parsed
+      idx = sheets-to-idx[k]
+      # TODO: Replace save 'name'!coord to 'room.idx'!coord
+      todo.=set("snapshot-#room.#idx", save)
+    todo.bgsave!.exec!
+    @response.send 201 \OK
 
   @put '/_/:room': ->
     @response.type Text
