@@ -261,6 +261,9 @@ Check the activity stream to see the newly edited page!
           $.extend {}, vex?dialog.buttons.NO, text: 'Cancel'
         ]
 
+      # In-situ import courtesy of
+      # SocialCalc.CurrentSpreadsheetControlObject.tabs[6] ("Clipboard")
+
   if window.Document?Parser
     SocialCalc.Callbacks.expand_wiki = (val) -> """
       <div class="wiki">#{

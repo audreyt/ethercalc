@@ -184,7 +184,7 @@ function process_wb(wb) {
                     output = sheet_to_socialcalc(wb.Sheets[k]);
                     toc += '"/' + id + '.' + idx + '",';
                     toc += '"' + k.replace(/"/g, '""') + '"\n';
-                    // TODO: Replace save 'name'!coord to 'room.idx'!coord
+                    // TODO Replace save 'name'!coord to 'room.idx'!coord
                     $.ajax({
                         url: './_/' + id + '.' + idx,
                         method: 'PUT',

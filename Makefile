@@ -24,7 +24,7 @@ JS_FILES=\
 
 all :: SocialCalcModule.js
 	env PATH="$$PATH:./node_modules/LiveScript/bin" lsc -c -o . src
-	node app.js $(ETHERCALC_ARGS) --vm --cors
+	node app.js $(ETHERCALC_ARGS) --cors
 
 manifest ::
 	perl -pi -e 's/# [A-Z].*\n/# @{[`date`]}/m' manifest.appcache
@@ -51,7 +51,7 @@ SocialCalcModule.js :: $(SOCIALCALC_FILES) exports.js
 
 static/ethercalc.js: $(ETHERCALC_FILES)
 	@echo '// Auto-generated from "make depends"; all changes here will be lost.' > $@
-	$(CLOSURE_COMPILER) --language_in=ES5 $(CLOSURE_ARGS) --js $(ETHERCALC_FILES) >> $@
+	$(CLOSURE_COMPILER) --language_in=ES5 $(CLOSURE_ARGS) --js $(SOCIALCALC_FILES) $(ETHERCALC_FILES) >> $@
 
 .coffee.js:
 	coffee -c $<

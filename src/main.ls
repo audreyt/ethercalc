@@ -230,7 +230,7 @@
     todo = DB.multi!set("snapshot-#room", Sheet1)
     for k, save of parsed
       idx = sheets-to-idx[k]
-      # TODO: Replace save 'name'!coord to 'room.idx'!coord
+      # TODO Replace save 'name'!coord to 'room.idx'!coord
       todo.=set("snapshot-#room.#idx", save)
     todo.bgsave!.exec!
     @response.send 201 \OK
