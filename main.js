@@ -137,6 +137,7 @@
                   var ref$, type, content;
                   ref$ = cbMultiple.call(this$.params, names, saves), type = ref$[0], content = ref$[1];
                   this$.response.type(type);
+                  this$.response.set('Content-Disposition', "attachment; filename=\"" + room + ".xlsx\"");
                   return this$.response.send(200, content);
                 });
               });

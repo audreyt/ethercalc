@@ -88,6 +88,9 @@
       _, saves <~ todo.exec!
       [type, content] = cb-multiple.call @params, names, saves
       @response.type type
+      @response.set \Content-Disposition """
+        attachment; filename="#room.xlsx"
+      """
       @response.send 200 content
     else
       {snapshot} <~ SC._get room, IO

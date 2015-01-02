@@ -396,16 +396,28 @@
             });
           });
           return $(document).on('click', '#te_fullgrid tr:nth-child(2) td:first', function(){
+            var isMultiple;
+            if ((typeof vex != 'undefined' && vex !== null) && vex.dialog.open) {
+              SocialCalc.Keyboard.passThru = true;
+            }
+            isMultiple = /\.[1-9]\d*$/.exec(SocialCalc._room);
             if (typeof vex != 'undefined' && vex !== null) {
               vex.defaultOptions.className = 'vex-theme-flat-attack';
             }
             return typeof vex != 'undefined' && vex !== null ? vex.dialog.open({
-              message: 'Please choose an export format.',
+              message: "Please choose an export format." + (isMultiple ? "<br><small>(EXCEL supports multiple sheets.)</small>" : ""),
+              callback: function(){
+                return SocialCalc.Keyboard.passThru = false;
+              },
               buttons: [
                 $.extend({}, typeof vex != 'undefined' && vex !== null ? vex.dialog.buttons.YES : void 8, {
-                  text: 'HTML',
+                  text: 'Excel',
                   click: function(){
-                    return window.open("./" + SocialCalc._room + ".html");
+                    if (isMultiple) {
+                      return window.open("./=" + SocialCalc._room.replace(/\.[1-9]\d*$/, '') + ".xlsx");
+                    } else {
+                      return window.open("./" + SocialCalc._room + ".xlsx");
+                    }
                   }
                 }), $.extend({}, typeof vex != 'undefined' && vex !== null ? vex.dialog.buttons.YES : void 8, {
                   text: 'CSV',
@@ -413,9 +425,9 @@
                     return window.open("./" + SocialCalc._room + ".csv");
                   }
                 }), $.extend({}, typeof vex != 'undefined' && vex !== null ? vex.dialog.buttons.YES : void 8, {
-                  text: 'Excel',
+                  text: 'HTML',
                   click: function(){
-                    return window.open("./" + SocialCalc._room + ".xlsx");
+                    return window.open("./" + SocialCalc._room + ".html");
                   }
                 }), $.extend({}, typeof vex != 'undefined' && vex !== null ? vex.dialog.buttons.NO : void 8, {
                   text: 'Cancel'

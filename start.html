@@ -172,12 +172,51 @@ function b64it() {
 
 function process_wb(wb) {
 	var output = "";
-        output = sheet_to_socialcalc(wb.Sheets[wb.SheetNames[0]]);
         var id = newId(10, 36).toLowerCase();
+        if (wb.SheetNames.length > 1) {
+            var toc = '"#url","#title"\n';
+            var names = [].concat(wb.SheetNames);
+            var idx = 0;
+            var step = function(){
+                if (names.length) {
+                    idx++;
+                    var k = names.shift();
+                    output = sheet_to_socialcalc(wb.Sheets[k]);
+                    toc += '"/' + id + '.' + idx + '",';
+                    toc += '"' + k.replace(/"/g, '""') + '"\n';
+                    // TODO: Replace save 'name'!coord to 'room.idx'!coord
+                    $.ajax({
+                        url: './_/' + id + '.' + idx,
+                        method: 'PUT',
+                        contentType: 'text/x-socialcalc; charset=utf-8',
+                        processData: false,
+                        data: output,
+                        success: function(data, msg, xhr) {
+                            step();
+                        }
+                    });
+                }
+                else {
+                    $.ajax({
+                        url: './_/' + id,
+                        method: 'PUT',
+                        contentType: 'text/csv; charset=utf-8',
+                        processData: false,
+                        data: toc,
+                        success: function(data, msg, xhr) {
+                            location.href = './=' + id
+                        }
+                    });
+                }
+            };
+            step();
+            return;
+        }
+        output = sheet_to_socialcalc(wb.Sheets[wb.SheetNames[0]]);
 $.ajax({
     url: './_/' + id,
     method: 'PUT',
-    contentType: 'text/x-socialcalc',
+    contentType: 'text/x-socialcalc; charset=utf-8',
     processData: false,
     data: output,
     success: function(data, msg, xhr) {
