@@ -354,7 +354,7 @@
           '': ''
         }) {
           save = ref$[k];
-          save = save.replace(/[\d\D]*\ncell:/, 'cell:');
+          save = save.replace(/[\d\D]*?\ncell:/, 'cell:');
           save = save.replace(/\s--SocialCalcSpreadsheetControlSave--[\d\D]*/, '\n');
           if (~save.indexOf("\\")) {
             save = save.replace(/\\/g, "\\b");
