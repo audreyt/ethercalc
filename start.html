@@ -177,6 +177,12 @@ function process_wb(wb) {
             var toc = '"#url","#title"\n';
             var names = [].concat(wb.SheetNames);
             var idx = 0;
+            var res = [];
+            var sheetsToIdx = {}
+            for (var i = 0; i < names.length; i++) {
+                sheetsToIdx[names[i]] = i+1;
+                res.push(names[i].replace(/'/g, "''").replace(/(\W)/g, '\\$1'));
+            }
             var step = function(){
                 if (names.length) {
                     idx++;
@@ -184,7 +190,10 @@ function process_wb(wb) {
                     output = sheet_to_socialcalc(wb.Sheets[k]);
                     toc += '"/' + id + '.' + idx + '",';
                     toc += '"' + k.replace(/"/g, '""') + '"\n';
-                    // TODO Replace save 'name'!coord to 'room.idx'!coord
+                    output = output.replace(
+                        RegExp('(\'?)\\b(' + res.join('|') + ')\\1!', 'g'),
+                        function(_0, _1, ref){ return "'" + id + "." + sheetsToIdx[ref.replace(/''/g, "'")] + "'!"; }
+                    );
                     $.ajax({
                         url: './_/' + id + '.' + idx,
                         method: 'PUT',

@@ -221,16 +221,20 @@
     toc = '#url,#title\n'
     parsed = J.utils.to_socialcalc J.read buf
     sheets-to-idx = {}
+    res = []
     for k of parsed
       idx++
       sheets-to-idx[k] = idx
       toc += "\"/#{ @params.room.replace(/"/g, '""') }.#idx\","
       toc += "\"#{ k.replace(/"/g, '""') }\"\n"
+      res.push k.replace(/'/g, "''").replace(/(\W)/g, '\\$1')
     { Sheet1 } = J.utils.to_socialcalc J.read toc
     todo = DB.multi!set("snapshot-#room", Sheet1)
     for k, save of parsed
       idx = sheets-to-idx[k]
-      # TODO Replace save 'name'!coord to 'room.idx'!coord
+      save.=replace //('?)\b(#{ res.join('|') })\1!//g, (,, ref) ~>
+        "'#{ @params.room.replace(/'/g, "''") }.#{
+          sheets-to-idx[ref.replace(/''/g, "'")] }'!"
       todo.=set("snapshot-#room.#idx", save)
     todo.bgsave!.exec!
     @response.send 201 \OK
