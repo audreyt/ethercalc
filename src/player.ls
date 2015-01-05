@@ -212,6 +212,16 @@ Check the activity stream to see the newly edited page!
     ss.ExportCallback = (s) ->
       alert SocialCalc.ConvertSaveToOtherFormat(SocialCalc.Clipboard.clipboard, "csv")
 
+    for tab in (ss.tabs ? []) | tab.name is \clipboard
+      tab.html.=replace /&nbsp;/ """<br>
+        <!-- TODO: Maybe replace with a drop area? -->
+        <form enctype="multipart/form-data" method="post" action="/_/=#{
+          encodeURIComponent SocialCalc._room
+        }/xlsx" style="display: block">
+        <b>Import file:</b> <input name="file" type="file"/> <input value="Replace The Current Sheet With This" type="submit" />
+      """
+      console.log tab.html
+
     ss.tabnums.graph = ss.tabs.length if ss.tabs
     ss.tabs?push do
       name: \graph

@@ -398,6 +398,36 @@
     for (i$ = 0, len$ = (ref$ = ['/=:room.xlsx', '/_/=:room/xlsx']).length; i$ < len$; ++i$) {
       route = ref$[i$];
       this.put((ref1$ = {}, ref1$[route + ""] = fn$, ref1$));
+      this.post((ref1$ = {}, ref1$[route + ""] = fn1$, ref1$));
+    }
+    function postOrPutXlsx(room, buf, cb){
+      var idx, toc, parsed, sheetsToIdx, res, k, Sheet1, todo, save, this$ = this;
+      room = encodeURIComponent(room);
+      idx = 0;
+      toc = '#url,#title\n';
+      parsed = J.utils.to_socialcalc(J.read(buf));
+      sheetsToIdx = {};
+      res = [];
+      for (k in parsed) {
+        idx++;
+        sheetsToIdx[k] = idx;
+        toc += "\"/" + room.replace(/"/g, '""') + "." + idx + "\",";
+        toc += "\"" + k.replace(/"/g, '""') + "\"\n";
+        res.push(k.replace(/'/g, "''").replace(/(\W)/g, '\\$1'));
+      }
+      Sheet1 = J.utils.to_socialcalc(J.read(toc)).Sheet1;
+      todo = DB.multi().set("snapshot-" + room, Sheet1);
+      for (k in parsed) {
+        save = parsed[k];
+        idx = sheetsToIdx[k];
+        save = save.replace(RegExp('(\'?)\\b(' + res.join('|') + ')\\1!', 'g'), fn$);
+        todo = todo.set("snapshot-" + room + "." + idx, save);
+      }
+      todo.bgsave().exec();
+      return cb();
+      function fn$(arg$, arg1$, ref){
+        return "'" + room.replace(/'/g, "''") + "." + sheetsToIdx[ref.replace(/''/g, "'")] + "'!";
+      }
     }
     this.put({
       '/_/:room': function(){
@@ -426,9 +456,6 @@
       '/_/:room': function(){
         var room, this$ = this;
         room = this.params.room;
-        if (room === 'Kaohsiung-explode-20140801') {
-          return;
-        }
         return requestToCommand(this.request, function(command){
           if (!command) {
             this$.response.type(Text);
@@ -651,41 +678,21 @@
       }
     });
     function fn$(){
-      var room, cs, this$ = this;
-      room = encodeURIComponent(this.params.room);
+      var cs, this$ = this;
       cs = [];
       this.request.on('data', function(chunk){
         return cs = cs.concat(chunk);
       });
       return this.request.on('end', function(){
-        var buf, idx, toc, parsed, sheetsToIdx, res, k, Sheet1, todo, save;
+        var buf;
         buf = Buffer.concat(cs);
-        idx = 0;
-        toc = '#url,#title\n';
-        parsed = J.utils.to_socialcalc(J.read(buf));
-        sheetsToIdx = {};
-        res = [];
-        for (k in parsed) {
-          idx++;
-          sheetsToIdx[k] = idx;
-          toc += "\"/" + this$.params.room.replace(/"/g, '""') + "." + idx + "\",";
-          toc += "\"" + k.replace(/"/g, '""') + "\"\n";
-          res.push(k.replace(/'/g, "''").replace(/(\W)/g, '\\$1'));
-        }
-        Sheet1 = J.utils.to_socialcalc(J.read(toc)).Sheet1;
-        todo = DB.multi().set("snapshot-" + room, Sheet1);
-        for (k in parsed) {
-          save = parsed[k];
-          idx = sheetsToIdx[k];
-          save = save.replace(RegExp('(\'?)\\b(' + res.join('|') + ')\\1!', 'g'), fn$);
-          todo = todo.set("snapshot-" + room + "." + idx, save);
-        }
-        todo.bgsave().exec();
-        return this$.response.send(201, 'OK');
-        function fn$(arg$, arg1$, ref){
-          return "'" + this$.params.room.replace(/'/g, "''") + "." + sheetsToIdx[ref.replace(/''/g, "'")] + "'!";
-        }
+        return postOrPutXlsx(this$.params.room, buf, function(){
+          return this$.response.send(201, 'OK');
+        });
       });
+    }
+    function fn1$(){
+      return console.log(this.request);
     }
   };
 }).call(this);

@@ -212,11 +212,18 @@
     for k, save of (J.utils.to_socialcalc(J.read buf) || {'': ''})
       return cb save
 
-  for route in <[ /=:room.xlsx /_/=:room/xlsx ]> => @put "#route": ->
-    room = encodeURIComponent @params.room
-    cs = []; @request.on \data (chunk) ~> cs ++= chunk
-    <~ @request.on \end
-    buf = Buffer.concat cs
+  for route in <[ /=:room.xlsx /_/=:room/xlsx ]>
+    @put "#route": ->
+      cs = []; @request.on \data (chunk) ~> cs ++= chunk
+      <~ @request.on \end
+      buf = Buffer.concat cs
+      <~ post-or-put-xlsx @params.room, buf
+      @response.send 201 \OK
+    @post "#route": ->
+      console.log @request
+
+  function post-or-put-xlsx (room, buf, cb)
+    room = encodeURIComponent room
     idx = 0
     toc = '#url,#title\n'
     parsed = J.utils.to_socialcalc J.read buf
@@ -225,7 +232,7 @@
     for k of parsed
       idx++
       sheets-to-idx[k] = idx
-      toc += "\"/#{ @params.room.replace(/"/g, '""') }.#idx\","
+      toc += "\"/#{ room.replace(/"/g, '""') }.#idx\","
       toc += "\"#{ k.replace(/"/g, '""') }\"\n"
       res.push k.replace(/'/g, "''").replace(/(\W)/g, '\\$1')
     { Sheet1 } = J.utils.to_socialcalc J.read toc
@@ -233,11 +240,11 @@
     for k, save of parsed
       idx = sheets-to-idx[k]
       save.=replace //('?)\b(#{ res.join('|') })\1!//g, (,, ref) ~>
-        "'#{ @params.room.replace(/'/g, "''") }.#{
+        "'#{ room.replace(/'/g, "''") }.#{
           sheets-to-idx[ref.replace(/''/g, "'")] }'!"
       todo.=set("snapshot-#room.#idx", save)
     todo.bgsave!.exec!
-    @response.send 201 \OK
+    cb!
 
   @put '/_/:room': ->
     @response.type Text
@@ -252,7 +259,6 @@
 
   @post '/_/:room': ->
     {room} = @params
-    return if room is \Kaohsiung-explode-20140801
     command <~ request-to-command @request
     unless command
       @response.type Text

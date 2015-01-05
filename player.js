@@ -339,7 +339,7 @@
           return setTimeout(onReady, 1);
         });
         onLoad = function(ssInstance){
-          var ss, ref$, ref1$, ref2$;
+          var ss, i$, ref$, ref1$, len$, tab, ref2$;
           ssInstance == null && (ssInstance = SocialCalc.CurrentSpreadsheetControlObject);
           window.spreadsheet = ss = ssInstance || (SocialCalc._view
             ? new SocialCalc.SpreadsheetViewer()
@@ -351,6 +351,15 @@
           ss.ExportCallback = function(s){
             return alert(SocialCalc.ConvertSaveToOtherFormat(SocialCalc.Clipboard.clipboard, "csv"));
           };
+          for (i$ = 0, len$ = (ref$ = (ref1$ = ss.tabs) != null
+            ? ref1$
+            : []).length; i$ < len$; ++i$) {
+            tab = ref$[i$];
+            if (tab.name === 'clipboard') {
+              tab.html = tab.html.replace(/&nbsp;/, "<br>\n<form enctype=\"multipart/form-data\" method=\"post\" action=\"/_/=" + encodeURIComponent(SocialCalc._room) + "/xlsx\" style=\"display: block\">\n<b>Import file:</b> <input name=\"file\" type=\"file\"/> <input value=\"Replace The Current Sheet With This\" type=\"submit\" />");
+              console.log(tab.html);
+            }
+          }
           if (ss.tabs) {
             ss.tabnums.graph = ss.tabs.length;
           }
