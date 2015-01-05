@@ -732,9 +732,10 @@ SocialCalc.EditorRenderSheet = function(editor) {
    if (editor.ecell) editor.SetECellHeaders("selected");
 
    SocialCalc.AssignID(editor, editor.fullgrid, "fullgrid"); // give it an id
-
-   editor.EditorMouseRegister();
-
+   // eddy EditorRenderSheet {
+   if(editor.context.showRCHeaders === true) editor.EditorMouseRegister();
+   // } EditorRenderSheet
+   
    }
 
 //
@@ -2641,6 +2642,9 @@ SocialCalc.UpdateCellCSS = function(editor, cell, row, col) {
 
 SocialCalc.SetECellHeaders = function(editor, selected) {
 
+   // eddy SetECellHeaders {
+   if(editor.context.showRCHeaders === false) return;
+   // } SetECellHeaders
    var ecell = editor.ecell;
    var context = editor.context;
 
@@ -3166,8 +3170,11 @@ SocialCalc.CalculateRowPositions = function(editor, panenum, positions, sizes) {
 
    var tbodyobj;
 
-   if (!context.showRCHeaders) throw("Needs showRCHeaders=true");
-
+   // eddy CalculateRowPositions {
+//   if (!context.showRCHeaders) throw("Needs showRCHeaders=true");
+   if (!context.showRCHeaders) return;
+   // } CalculateRowPositions
+   
    tbodyobj=editor.fullgrid.lastChild;
 
    // Calculate start of this pane as row in this table:
@@ -3206,7 +3213,10 @@ SocialCalc.CalculateColPositions = function(editor, panenum, positions, sizes) {
 
    var tbodyobj;
 
-   if (!context.showRCHeaders) throw("Needs showRCHeaders=true");
+   // eddy CalculateColPositions {
+   // if (!context.showRCHeaders) throw("Needs showRCHeaders=true");
+   if (!context.showRCHeaders) return;
+   // } CalculateColPositions
 
    tbodyobj=editor.fullgrid.lastChild;
 

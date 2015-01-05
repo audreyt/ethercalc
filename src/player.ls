@@ -5,9 +5,11 @@
     window.SocialCalc ?= {}
     SocialCalc._username = Math.random!toString!
     SocialCalc.isConnected = true
-    if /\?auth=/.test window.location.search
-      SocialCalc._auth = window.location.search?replace /\??auth=/ ''
-    SocialCalc._view = SocialCalc._auth is \0
+    requestParams = SocialCalc.requestParams
+    SocialCalc._auth = requestParams[\auth] if requestParams[\auth]?
+    SocialCalc._app = true if requestParams[\app]?    
+    SocialCalc._view = true if requestParams[\view]?
+    #SocialCalc._view = SocialCalc._auth is \0     
     SocialCalc._room ?= window.location.hash.replace \# ''
     SocialCalc._room = "#{SocialCalc._room}".replace /^_+/ '' .replace /\?.*/ ''
 
@@ -26,6 +28,7 @@
         <- setTimeout _, 100ms
         window.history.pushState {} '' "./#{ SocialCalc._room }#{
           switch
+          | SocialCalc._app  => '/app'
           | SocialCalc._view  => '/view'
           | SocialCalc._auth  => '/edit'
           | otherwise     => ''
@@ -86,14 +89,16 @@
       switch @data.type
       | \confirmemailsent => SocialCalc.EditorSheetStatusCallback(null, "confirmemailsent", @data.message, editor);
       | \chat   => window.addmsg? @data.msg
-      | \ecells   => for user, ecell of @data.ecells
-        continue if user is SocialCalc._username
-        peerClass = " #user defaultPeer"
-        find = new RegExp peerClass, \g
-        cr   = SocialCalc.coordToCr ecell
-        cell = SocialCalc.GetEditorCellElement editor, cr.row, cr.col
-        if cell?element.className.search(find) == -1
-          cell.element.className += peerClass
+      | \ecells   
+        # break if SocialCalc._app 
+        do => for user, ecell of @data.ecells
+          continue if user is SocialCalc._username
+          peerClass = " #user defaultPeer"
+          find = new RegExp peerClass, \g
+          cr   = SocialCalc.coordToCr ecell
+          cell = SocialCalc.GetEditorCellElement editor, cr.row, cr.col
+          if cell?element.className.search(find) == -1
+            cell.element.className += peerClass
       | \ecell
         peerClass = " #{@data.user} defaultPeer"
         find = new RegExp peerClass, \g
@@ -105,6 +110,7 @@
             SocialCalc.Callbacks.broadcast \ecell,
               to: @data.user
               ecell: editor.ecell.coord
+        # break if SocialCalc._app 
         cr = SocialCalc.coordToCr @data.ecell
         cell = SocialCalc.GetEditorCellElement editor, cr.row, cr.col
         cell.element.className += peerClass if cell?element?className.search(find) == -1
@@ -121,14 +127,21 @@
         if parts?sheet
           ss.sheet.ResetSheet!
           ss.ParseSheetSave @data.snapshot.substring parts.sheet.start, parts.sheet.end
+          # eddy 
+          #ss.formDataViewer._room = SocialCalc._room + "formdata"
+          #SocialCalc.RecalcInfo.LoadSheet ss.formDataViewer._room
         window.addmsg? @data.chat.join(\\n), true
         cmdstr = [ line for line in @data.log
              | not /^re(calc|display)$/.test(line) ].join \\n
         if cmdstr.length
           refreshCmd = \recalc
           ss.context.sheetobj.ScheduleSheetCommands "#cmdstr\n#refreshCmd\n", false, true
+          # eddy
+          #ss.formDataViewer.context.sheetobj.ScheduleSheetCommands "#cmdstr\n#refreshCmd\n", false, true
         else
           ss.context.sheetobj.ScheduleSheetCommands "recalc\n", false, true
+          # eddy
+          #ss.formDataViewer.context.sheetobj.ScheduleSheetCommands "recalc\n", false, true
       | \snapshot
         vex?closeAll!
         SocialCalc.hadSnapshot = true
@@ -143,6 +156,14 @@
           SocialCalc.Formula.SheetCache.sheets = {}
           ss?sheet.recalconce = true
         parts = ss.DecodeSpreadsheetSave @data.snapshot if @data.snapshot
+        #if ss.formDataViewer._room is @data.room
+        #  ss.formDataViewer.sheet.ResetSheet!
+        #  if parts?sheet
+        #    ss.formDataViewer.ParseSheetSave( @data.snapshot.substring( parts.sheet.start, parts.sheet.end))
+        #  else
+        #    ss.formDataViewer.ParseSheetSave ""
+        #  ss.formDataViewer.context.sheetobj.ScheduleSheetCommands "recalc\n", false, true
+        #else           
         if parts?sheet
           SocialCalc.RecalcLoadedSheet(
             @data.room,
@@ -195,7 +216,7 @@ Check the activity stream to see the newly edited page!
 
   onLoad = (ssInstance=SocialCalc.CurrentSpreadsheetControlObject) ->
     window.spreadsheet = ss = ssInstance || (
-      if SocialCalc._view
+      if SocialCalc._view || SocialCalc._app
         new SocialCalc.SpreadsheetViewer!
       else
         new SocialCalc.SpreadsheetControl!

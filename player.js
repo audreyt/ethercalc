@@ -9,14 +9,20 @@
           return location.reload();
         }
         doPlay = function(){
-          var ref$, endpoint, ref1$, options, showError, x$, emit;
+          var requestParams, endpoint, ref$, ref1$, options, showError, x$, emit;
           window.SocialCalc == null && (window.SocialCalc = {});
           SocialCalc._username = Math.random().toString();
           SocialCalc.isConnected = true;
-          if (/\?auth=/.test(window.location.search)) {
-            SocialCalc._auth = (ref$ = window.location.search) != null ? ref$.replace(/\??auth=/, '') : void 8;
+          requestParams = SocialCalc.requestParams;
+          if (requestParams['auth'] != null) {
+            SocialCalc._auth = requestParams['auth'];
           }
-          SocialCalc._view = SocialCalc._auth === '0';
+          if (requestParams['app'] != null) {
+            SocialCalc._app = true;
+          }
+          if (requestParams['view'] != null) {
+            SocialCalc._view = true;
+          }
           SocialCalc._room == null && (SocialCalc._room = window.location.hash.replace('#', ''));
           SocialCalc._room = (SocialCalc._room + "").replace(/^_+/, '').replace(/\?.*/, '');
           endpoint = (ref$ = $('script[src*="/socket.io/socket.io.js"]')) != null ? (ref1$ = ref$.attr('src')) != null ? ref1$.replace(/\.?\/socket.io\/socket.io.js.*/, '') : void 8 : void 8;
@@ -35,6 +41,8 @@
               setTimeout(function(){
                 return window.history.pushState({}, '', "./" + SocialCalc._room + (function(){
                   switch (false) {
+                  case !SocialCalc._app:
+                    return '/app';
                   case !SocialCalc._view:
                     return '/view';
                   case !SocialCalc._auth:
@@ -336,7 +344,7 @@
         onLoad = function(ssInstance){
           var ss, ref$;
           ssInstance == null && (ssInstance = SocialCalc.CurrentSpreadsheetControlObject);
-          window.spreadsheet = ss = ssInstance || (SocialCalc._view
+          window.spreadsheet = ss = ssInstance || (SocialCalc._view || SocialCalc._app
             ? new SocialCalc.SpreadsheetViewer()
             : new SocialCalc.SpreadsheetControl());
           SocialCalc.Callbacks.broadcast('ask.log');

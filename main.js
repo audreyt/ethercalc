@@ -6,6 +6,7 @@
     this.use('json', this.app.router, this.express['static'](__dirname));
     this.app.use('/edit', this.express['static'](__dirname));
     this.app.use('/view', this.express['static'](__dirname));
+    this.app.use('/app', this.express['static'](__dirname));
     this.include('dotcloud');
     this.include('player-broadcast');
     this.include('player-graph');
@@ -164,7 +165,14 @@
       '/:room/view': function(){
         var room;
         room = this.params.room;
-        return this.response.redirect(BASEPATH + "/" + room + "?auth=0");
+        return this.response.redirect(BASEPATH + "/" + room + "?auth=" + hmac(room) + "&view=1");
+      }
+    });
+    this.get({
+      '/:room/app': function(){
+        var room;
+        room = this.params.room;
+        return this.response.redirect(BASEPATH + "/" + room + "?auth=" + hmac(room) + "&app=1");
       }
     });
     this.get({

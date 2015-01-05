@@ -7729,9 +7729,10 @@ SocialCalc.EditorRenderSheet = function(editor) {
    if (editor.ecell) editor.SetECellHeaders("selected");
 
    SocialCalc.AssignID(editor, editor.fullgrid, "fullgrid"); // give it an id
-
-   editor.EditorMouseRegister();
-
+   // eddy EditorRenderSheet {
+   if(editor.context.showRCHeaders === true) editor.EditorMouseRegister();
+   // } EditorRenderSheet
+   
    }
 
 //
@@ -9638,6 +9639,9 @@ SocialCalc.UpdateCellCSS = function(editor, cell, row, col) {
 
 SocialCalc.SetECellHeaders = function(editor, selected) {
 
+   // eddy SetECellHeaders {
+   if(editor.context.showRCHeaders === false) return;
+   // } SetECellHeaders
    var ecell = editor.ecell;
    var context = editor.context;
 
@@ -10163,8 +10167,11 @@ SocialCalc.CalculateRowPositions = function(editor, panenum, positions, sizes) {
 
    var tbodyobj;
 
-   if (!context.showRCHeaders) throw("Needs showRCHeaders=true");
-
+   // eddy CalculateRowPositions {
+//   if (!context.showRCHeaders) throw("Needs showRCHeaders=true");
+   if (!context.showRCHeaders) return;
+   // } CalculateRowPositions
+   
    tbodyobj=editor.fullgrid.lastChild;
 
    // Calculate start of this pane as row in this table:
@@ -10203,7 +10210,10 @@ SocialCalc.CalculateColPositions = function(editor, panenum, positions, sizes) {
 
    var tbodyobj;
 
-   if (!context.showRCHeaders) throw("Needs showRCHeaders=true");
+   // eddy CalculateColPositions {
+   // if (!context.showRCHeaders) throw("Needs showRCHeaders=true");
+   if (!context.showRCHeaders) return;
+   // } CalculateColPositions
 
    tbodyobj=editor.fullgrid.lastChild;
 
@@ -19467,6 +19477,19 @@ SocialCalc.TriggerIoAction.Button = function(triggerCellId) {
 	var parameters = sheet.ioParameterList[actionCellId];
 	
 	switch(parameters.function_name) {
+
+    /*
+     * set B8 text t william              ... coord: "B8",  datavalue: "william",     datatype: "t", formula: "",          valuetype: "t"
+     * set B10 constant nd 41307 2013/2/2 ... coord: "B10", datavalue: 41307,         datatype: "c", formula: "2013/2/2",  valuetype: "nd"
+     * set B11 value n 1                  ... coord: "B11", datavalue: 1,             datatype: "v", formula: "",          valuetype: "n"
+     *
+     * set B7 formula "test"&B3   ... coord: "B7",  datavalue: "testwilliam", datatype: "f", formula: ""test"&B3", valuetype: "t"
+     * set C8 formula B8       ... coord: "C8",  datavalue: "william",     datatype: "f", formula: "B8",        valuetype: "t"
+     * set C10 formula B10     ... coord: "C10", datavalue: 41307,         datatype: "f", formula: "B10",       valuetype: "nd"
+     * set C11 formula B11     ... coord: "C11", datavalue: 1,             datatype: "f", formula: "B11",       valuetype: "n"
+     *  set B3  formula TEXTBOX("")             ... coord: "B3", datavalue: "william", datatype: "f", formula: "TEXTBOX("william")", valuetype: "tiTEXTBOX"
+     */
+	  
 	  case "COPYVALUE" :
 	    //
 	    // e.g. set D3 text t push me 
@@ -19474,18 +19497,23 @@ SocialCalc.TriggerIoAction.Button = function(triggerCellId) {
 		//      set D5 constant n% 0.1 10%
 		//      set D6 constant nd 41922 10/10/2014
     	var cell = sheet.cells[SocialCalc.Formula.PlainCoord(parameters[1].value)];		
-		var sheetCommand; 
+		  var sheetCommand; 
     	if (typeof cell !== 'undefined' && cell.valuetype != 'b') { // if not blank get cell data
     		var cellDataType = cell.datatype;
     		var cellValueType = cell.valuetype; 		
     		var cellDataValue = cell.datavalue;		
     		var cellFormula = cell.formula;
     		
-    		if(cellDataType != 'f') {
-    			sheetCommand = 'set '+parameters[2].value+ ' ' + SocialCalc.Constants.cellDataType[cellValueType.charAt(0)] + ' ' +cellValueType + ' '+ SocialCalc.encodeForSave(cellDataValue);
-    		} else {
-    			sheetCommand = 'set '+parameters[2].value+ ' ' + SocialCalc.Constants.cellDataType[cellDataType] + ' ' +cellValueType + ' '+ SocialCalc.encodeForSave(cellDataValue) + ' ' + SocialCalc.encodeForSave(cellFormula);
+    		if(cellDataType == 'f') {
+          cellFormula = "";
+    		  cellDataType = cellValueType;
+    		  if(cellValueType == "nd") {
+    		    cellDataType = "c"; // for Date type etc 
+    		    cellFormula = cell.displaystring;
+    		  }
+    		  if(cellValueType.charAt(0) == "t") cellDataType = "t";    		  
     		}
+    		sheetCommand = 'set '+parameters[2].value+ ' ' + SocialCalc.Constants.cellDataType[cellDataType] + ' ' +cellValueType + ' '+ SocialCalc.encodeForSave(cellDataValue) + ' ' + SocialCalc.encodeForSave(cellFormula);
     		
     	} else { 
 			sheetCommand = 'set '+parameters[2].value+ ' empty';    		
@@ -19493,14 +19521,28 @@ SocialCalc.TriggerIoAction.Button = function(triggerCellId) {
 	    spreadsheet.editor.EditorScheduleSheetCommands(sheetCommand.trim(),  true, false);
 	    break;
 	  case "COPYFORMULA" : 
-        var cell = sheet.cells[SocialCalc.Formula.PlainCoord(parameters[1].value)];
-	    var result = "";
-        var resulttype = "b";
-        if (typeof cell !== 'undefined' && cell.valuetype != 'b') {
-            resulttype = cell.valuetype; // get type of value in the cell it points to
-            result = cell.datavalue;
-            }
-	    spreadsheet.editor.EditorScheduleSheetCommands('set '+parameters[2].value+' value '+resulttype+' '+result+'',  true, false);
+      var cell = sheet.cells[SocialCalc.Formula.PlainCoord(parameters[1].value)];   
+      var sheetCommand; 
+      if (typeof cell !== 'undefined' && cell.valuetype != 'b') { // if not blank get cell data
+        var cellDataType = cell.datatype;
+        var cellValueType = cell.valuetype;     
+        var cellDataValue = cell.datavalue;   
+        var cellFormula = cell.formula;
+        
+        if(cellDataType == 'f') {
+          sourceCell = SocialCalc.coordToCr(parameters[1].value);
+          destinationCell = SocialCalc.coordToCr(parameters[2].value);
+          cellFormula = SocialCalc.OffsetFormulaCoords(cellFormula, destinationCell.col -  sourceCell.col, destinationCell.row -  sourceCell.row);
+          cellDataValue = "";
+          cellValueType = "";  
+        }
+        sheetCommand = 'set '+parameters[2].value+ ' ' + SocialCalc.Constants.cellDataType[cellDataType] + ' ' +cellValueType + ' '+ SocialCalc.encodeForSave(cellDataValue) + ' ' + SocialCalc.encodeForSave(cellFormula);
+        
+      } else { 
+      sheetCommand = 'set '+parameters[2].value+ ' empty';        
+      }
+      spreadsheet.editor.EditorScheduleSheetCommands(sheetCommand.trim(),  true, false);
+      break;
 		break;
       }
 
@@ -22692,6 +22734,15 @@ spreadsheet.Buttons = {
    spreadsheet.spreadsheetDiv.appendChild(spreadsheet.formulabarDiv);
    var inputbox = new SocialCalc.InputBox(spreadsheet.formulabarDiv.firstChild, spreadsheet.editor);
 
+// eddy test add input 
+   var formDataDiv = document.createElement("div");
+   formDataDiv.id = "te_formData";
+   spreadsheet.spreadsheetDiv.appendChild(formDataDiv);   
+   spreadsheet.formDataViewer = new SocialCalc.SpreadsheetViewer("te_FormData-"); // should end with -
+   spreadsheet.formDataViewer.InitializeSpreadsheetViewer(formDataDiv.id, 100, 0, 200);
+       
+// }
+   
    for (button in spreadsheet.formulabuttons) {
       bele = document.createElement("img");
       bele.id = spreadsheet.idPrefix+button;
@@ -22719,9 +22770,12 @@ spreadsheet.Buttons = {
 
    // create sheet view and others
 
-   spreadsheet.nonviewheight = spreadsheet.statuslineheight +
-      spreadsheet.spreadsheetDiv.firstChild.offsetHeight +
-      spreadsheet.spreadsheetDiv.lastChild.offsetHeight;
+   // InitializeSpreadsheetControl eddy {
+   spreadsheet.nonviewheight = spreadsheet.statuslineheight;
+   for(var nodeIndex = 0;  nodeIndex < spreadsheet.spreadsheetDiv.childNodes.length;  nodeIndex++ ) {
+     spreadsheet.nonviewheight += spreadsheet.spreadsheetDiv.childNodes[nodeIndex].offsetHeight;
+   }
+   // } InitializeSpreadsheetControl
    spreadsheet.viewheight = spreadsheet.height-spreadsheet.nonviewheight;
    spreadsheet.editorDiv=spreadsheet.editor.CreateTableEditor(spreadsheet.width, spreadsheet.viewheight);
 
@@ -25482,8 +25536,15 @@ SocialCalc.SpreadsheetViewer = function(idPrefix) {
 
    this.sheet = new SocialCalc.Sheet();
    this.context = new SocialCalc.RenderContext(this.sheet);
-   this.context.showGrid=true;
-   this.context.showRCHeaders=true;
+   // eddy SpreadsheetViewer {
+   if(SocialCalc._app == true) {
+     this.context.showGrid= false; 
+     this.context.showRCHeaders= false;
+   } else {
+     this.context.showGrid= true; 
+     this.context.showRCHeaders= true;     
+   }
+   // } SpreadsheetViewer
    this.editor = new SocialCalc.TableEditor(this.context);
    this.editor.noEdit = true;
    this.editor.StatusCallback.statusline =

@@ -22,6 +22,7 @@ JS_FILES=\
 	app.js dotcloud.js player.js main.js sc.js db.js
 
 all :: SocialCalcModule.js static/ethercalc.js
+	@sed -i "s/Updated.*/Updated $(shell date)/" manifest.appcache
 	env PATH="$$PATH:../node_modules/LiveScript/bin" livescript -c -o . src
 	node app.js $(ETHERCALC_ARGS)
 
@@ -50,7 +51,6 @@ static/ethercalc.js :: $(ETHERCALC_FILES)
 	#@java -jar ../closure-compiler/compiler.jar --js $(ETHERCALC_FILES) --warning_level QUIET >> $@
 	#@cat $(ETHERCALC_FILES) >> $@
 	#@perl -e 'system(join(" ", "closure-compiler" => "--language_in=ES5" => map { ("--js", $$_) } @ARGV). " >> $@")' $(ETHERCALC_FILES) 
-	@sed -i "s/Updated.*/Updated $(shell date)/" manifest.appcache
  
 .coffee.js:
 	coffee -c $<

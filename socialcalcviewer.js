@@ -146,8 +146,15 @@ SocialCalc.SpreadsheetViewer = function(idPrefix) {
 
    this.sheet = new SocialCalc.Sheet();
    this.context = new SocialCalc.RenderContext(this.sheet);
-   this.context.showGrid=true;
-   this.context.showRCHeaders=true;
+   // eddy SpreadsheetViewer {
+   if(SocialCalc._app == true) {
+     this.context.showGrid= false; 
+     this.context.showRCHeaders= false;
+   } else {
+     this.context.showGrid= true; 
+     this.context.showRCHeaders= true;     
+   }
+   // } SpreadsheetViewer
    this.editor = new SocialCalc.TableEditor(this.context);
    this.editor.noEdit = true;
    this.editor.StatusCallback.statusline =

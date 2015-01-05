@@ -702,31 +702,39 @@
     linechart: {display: SocialCalc.Constants.s_loc_line_chart, func: MakeLineChart}
     scatterchart: {display: SocialCalc.Constants.s_loc_scatter_chart, func: MakeScatterChart}
 
-  scc = SocialCalc.Constants
+  scc = SocialCalc.Constants  
   b1 = if window.location.search then \A else \6
   b2 = \C
   b3 = \8
   b4 = \9
   b5 = \8
+  #eddy
   selectedbg = \4044A0
-  unselectedbg = \383953
-  cursor = \8E91D3
+  unselectedbg = \383953  
+  cursorgb = \8E91D3
+  hightLightForegoundColour = \FFF
+  if SocialCalc.requestParams[\app]?  
+    cursorgb = \FFF
+    hightLightForegoundColour = \000
+        
   #scc.SCToolbarbackground = 'background-color:#4040' + b1 + '0;'
   scc.SCToolbarbackground = 'background-color:#' + selectedbg + ';'
   scc.SCTabbackground = 'background-color:#' + unselectedbg + ';'
   scc.SCTabselectedCSS = 'font-size:small;padding:6px 30px 6px 8px;color:#FFF;background-color:#' + selectedbg + ';cursor:default;border-right:1px solid #CC' + b2 + ';'
   scc.SCTabplainCSS = 'font-size:small;padding:6px 30px 6px 8px;color:#FFF;background-color:#' + unselectedbg + ';cursor:default;border-right:1px solid #CC' + b2 + ';'
   scc.SCToolbartext = 'font-size:x-small;font-weight:bold;color:#FFF;padding-bottom:4px;'
-  scc.ISCButtonBorderNormal = '#4040' + b1 + '0'
+  #scc.ISCButtonBorderNormal = '#4040' + b1 + '0'
+  scc.ISCButtonBorderNormal = '#'+selectedbg
   scc.ISCButtonBorderHover = '#99' + b4
   scc.ISCButtonBorderDown = '#FFF'
   scc.ISCButtonDownBackground = '#88' + b5
-  scc.defaultImagePrefix = './images/sc-'
+  #eddy
+  scc.defaultImagePrefix = '/images/sc-'
   SocialCalc.Popup.LocalizeString = SocialCalc.LocalizeString
   #row and col header colours
-  scc.defaultColnameStyle = 'font-size:small;text-align:center;color:#FFF;background-color:#' + unselectedbg + ';cursor:e-resize;' 
-  scc.defaultSelectedColnameStyle = 'font-size:small;text-align:center;color:#FFF;background-color:#' + selectedbg + ';cursor:e-resize;'
-  scc.defaultRownameStyle = 'font-size:small;text-align:right;color:#FFF;background-color:#' + unselectedbg + ';direction:rtl;'
-  scc.defaultSelectedRownameStyle = 'font-size:small;text-align:right;color:#FFF;background-color:#' + selectedbg + ';'
-  scc.defaultHighlightTypeCursorStyle = 'color:#FFF;backgroundColor:#' + cursor + ';'
+  scc.defaultColnameStyle = 'font-size:small;text-align:center;color:#' + hightLightForegoundColour + ';background-color:#' + unselectedbg + ';cursor:e-resize;' 
+  scc.defaultSelectedColnameStyle = 'font-size:small;text-align:center;color:#' + hightLightForegoundColour + ';background-color:#' + selectedbg + ';cursor:e-resize;'
+  scc.defaultRownameStyle = 'font-size:small;text-align:right;color:#' + hightLightForegoundColour + ';background-color:#' + unselectedbg + ';direction:rtl;'
+  scc.defaultSelectedRownameStyle = 'font-size:small;text-align:right;color:#' + hightLightForegoundColour + ';background-color:#' + selectedbg + ';'
+  scc.defaultHighlightTypeCursorStyle = 'color:#' + hightLightForegoundColour + ';backgroundColor:#' + cursorgb + ';'
   

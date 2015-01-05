@@ -1064,6 +1064,15 @@ spreadsheet.Buttons = {
    spreadsheet.spreadsheetDiv.appendChild(spreadsheet.formulabarDiv);
    var inputbox = new SocialCalc.InputBox(spreadsheet.formulabarDiv.firstChild, spreadsheet.editor);
 
+// eddy test add input 
+   var formDataDiv = document.createElement("div");
+   formDataDiv.id = "te_formData";
+   spreadsheet.spreadsheetDiv.appendChild(formDataDiv);   
+   spreadsheet.formDataViewer = new SocialCalc.SpreadsheetViewer("te_FormData-"); // should end with -
+   spreadsheet.formDataViewer.InitializeSpreadsheetViewer(formDataDiv.id, 100, 0, 200);
+       
+// }
+   
    for (button in spreadsheet.formulabuttons) {
       bele = document.createElement("img");
       bele.id = spreadsheet.idPrefix+button;
@@ -1091,9 +1100,12 @@ spreadsheet.Buttons = {
 
    // create sheet view and others
 
-   spreadsheet.nonviewheight = spreadsheet.statuslineheight +
-      spreadsheet.spreadsheetDiv.firstChild.offsetHeight +
-      spreadsheet.spreadsheetDiv.lastChild.offsetHeight;
+   // InitializeSpreadsheetControl eddy {
+   spreadsheet.nonviewheight = spreadsheet.statuslineheight;
+   for(var nodeIndex = 0;  nodeIndex < spreadsheet.spreadsheetDiv.childNodes.length;  nodeIndex++ ) {
+     spreadsheet.nonviewheight += spreadsheet.spreadsheetDiv.childNodes[nodeIndex].offsetHeight;
+   }
+   // } InitializeSpreadsheetControl
    spreadsheet.viewheight = spreadsheet.height-spreadsheet.nonviewheight;
    spreadsheet.editorDiv=spreadsheet.editor.CreateTableEditor(spreadsheet.width, spreadsheet.viewheight);
 

@@ -2775,7 +2775,7 @@ SocialCalc.EditorRenderSheet = function(a) {
   a.fullgrid = a.context.RenderSheet(a.fullgrid);
   a.ecell && a.SetECellHeaders("selected");
   SocialCalc.AssignID(a, a.fullgrid, "fullgrid");
-  a.EditorMouseRegister();
+  !0 === a.context.showRCHeaders && a.EditorMouseRegister();
 };
 SocialCalc.EditorScheduleSheetCommands = function(a, b, c, d) {
   if ("start" == a.state || d) {
@@ -3553,20 +3553,22 @@ SocialCalc.UpdateCellCSS = function(a, b, c, d) {
   }
 };
 SocialCalc.SetECellHeaders = function(a, b) {
-  var c = a.ecell, d = a.context, e, f, g, l = 0, h = 0, n;
-  if (c) {
-    for (;"yes" == d.sheetobj.colattribs.hide[SocialCalc.rcColname(c.col)];) {
-      c.col++;
-    }
-    for (;"yes" == d.sheetobj.rowattribs.hide[c.row];) {
-      c.row++;
-    }
-    c.coord = SocialCalc.crToCoord(c.col, c.row);
-    for (e = 0;e < d.rowpanes.length;e++) {
-      f = d.rowpanes[e].first, g = d.rowpanes[e].last, c.row >= f && c.row <= g && (n = a.fullgrid.childNodes[1].childNodes[2 + l + c.row - f].childNodes[0]) && (d.classnames && (n.className = d.classnames[b + "rowname"]), d.explicitStyles && (n.style.cssText = d.explicitStyles[b + "rowname"]), n.style.verticalAlign = "top"), l += g - f + 2;
-    }
-    for (e = 0;e < d.colpanes.length;e++) {
-      f = d.colpanes[e].first, g = d.colpanes[e].last, c.col >= f && c.col <= g && (n = a.fullgrid.childNodes[1].childNodes[1].childNodes[1 + h + c.col - f]) && (d.classnames && (n.className = d.classnames[b + "colname"]), d.explicitStyles && (n.style.cssText = d.explicitStyles[b + "colname"])), h += g - f + 2;
+  if (!1 !== a.context.showRCHeaders) {
+    var c = a.ecell, d = a.context, e, f, g, l = 0, h = 0, n;
+    if (c) {
+      for (;"yes" == d.sheetobj.colattribs.hide[SocialCalc.rcColname(c.col)];) {
+        c.col++;
+      }
+      for (;"yes" == d.sheetobj.rowattribs.hide[c.row];) {
+        c.row++;
+      }
+      c.coord = SocialCalc.crToCoord(c.col, c.row);
+      for (e = 0;e < d.rowpanes.length;e++) {
+        f = d.rowpanes[e].first, g = d.rowpanes[e].last, c.row >= f && c.row <= g && (n = a.fullgrid.childNodes[1].childNodes[2 + l + c.row - f].childNodes[0]) && (d.classnames && (n.className = d.classnames[b + "rowname"]), d.explicitStyles && (n.style.cssText = d.explicitStyles[b + "rowname"]), n.style.verticalAlign = "top"), l += g - f + 2;
+      }
+      for (e = 0;e < d.colpanes.length;e++) {
+        f = d.colpanes[e].first, g = d.colpanes[e].last, c.col >= f && c.col <= g && (n = a.fullgrid.childNodes[1].childNodes[1].childNodes[1 + h + c.col - f]) && (d.classnames && (n.className = d.classnames[b + "colname"]), d.explicitStyles && (n.style.cssText = d.explicitStyles[b + "colname"])), h += g - f + 2;
+      }
     }
   }
 };
@@ -3830,33 +3832,31 @@ SocialCalc.DoPositionCalculations = function(a) {
 };
 SocialCalc.CalculateRowPositions = function(a, b, c, d) {
   var e, f, g, l, h = a.context, n;
-  if (!h.showRCHeaders) {
-    throw "Needs showRCHeaders=true";
-  }
-  n = a.fullgrid.lastChild;
-  a = 2;
-  for (e = 0;e < b;e++) {
-    a += h.rowpanes[e].last - h.rowpanes[e].first + 2;
-  }
-  f = 0;
-  for (b = h.rowpanes[e].first;b <= h.rowpanes[e].last;b++) {
-    g = n.childNodes[a + f], f++, l = SocialCalc.GetElementPosition(g.firstChild), c[b] || (c[b] = l.top, d[b] = g.firstChild.offsetHeight);
+  if (h.showRCHeaders) {
+    n = a.fullgrid.lastChild;
+    a = 2;
+    for (e = 0;e < b;e++) {
+      a += h.rowpanes[e].last - h.rowpanes[e].first + 2;
+    }
+    f = 0;
+    for (b = h.rowpanes[e].first;b <= h.rowpanes[e].last;b++) {
+      g = n.childNodes[a + f], f++, l = SocialCalc.GetElementPosition(g.firstChild), c[b] || (c[b] = l.top, d[b] = g.firstChild.offsetHeight);
+    }
   }
 };
 SocialCalc.CalculateColPositions = function(a, b, c, d) {
   var e, f, g, l, h = a.context;
-  if (!h.showRCHeaders) {
-    throw "Needs showRCHeaders=true";
-  }
-  f = a.fullgrid.lastChild;
-  a = 1;
-  for (e = 0;e < b;e++) {
-    a += h.colpanes[e].last - h.colpanes[e].first + 2;
-  }
-  g = f.childNodes[1];
-  f = 0;
-  for (b = h.colpanes[e].first;b <= h.colpanes[e].last;b++) {
-    l = SocialCalc.GetElementPosition(g.childNodes[a + f]), c[b] || (c[b] = l.left, g.childNodes[a + f] && (d[b] = g.childNodes[a + f].offsetWidth)), f++;
+  if (h.showRCHeaders) {
+    f = a.fullgrid.lastChild;
+    a = 1;
+    for (e = 0;e < b;e++) {
+      a += h.colpanes[e].last - h.colpanes[e].first + 2;
+    }
+    g = f.childNodes[1];
+    f = 0;
+    for (b = h.colpanes[e].first;b <= h.colpanes[e].last;b++) {
+      l = SocialCalc.GetElementPosition(g.childNodes[a + f]), c[b] || (c[b] = l.left, g.childNodes[a + f] && (d[b] = g.childNodes[a + f].offsetWidth)), f++;
+    }
   }
 };
 SocialCalc.ScrollRelative = function(a, b, c) {
@@ -7440,15 +7440,17 @@ SocialCalc.TriggerIoAction.Button = function(a) {
         case "COPYVALUE":
           var e = c.cells[SocialCalc.Formula.PlainCoord(a[1].value)];
           if ("undefined" !== typeof e && "b" != e.valuetype) {
-            var f = e.datatype, g = e.valuetype, l = e.datavalue, e = e.formula;
-            a = "f" != f ? "set " + a[2].value + " " + SocialCalc.Constants.cellDataType[g.charAt(0)] + " " + g + " " + SocialCalc.encodeForSave(l) : "set " + a[2].value + " " + SocialCalc.Constants.cellDataType[f] + " " + g + " " + SocialCalc.encodeForSave(l) + " " + SocialCalc.encodeForSave(e);
+            var f = e.datatype, g = e.valuetype, l = e.datavalue, h = e.formula;
+            "f" == f && (h = "", f = g, "nd" == g && (f = "c", h = e.displaystring), "t" == g.charAt(0) && (f = "t"));
+            a = "set " + a[2].value + " " + SocialCalc.Constants.cellDataType[f] + " " + g + " " + SocialCalc.encodeForSave(l) + " " + SocialCalc.encodeForSave(h);
           } else {
             a = "set " + a[2].value + " empty";
           }
           b.editor.EditorScheduleSheetCommands(a.trim(), !0, !1);
           break;
         case "COPYFORMULA":
-          e = c.cells[SocialCalc.Formula.PlainCoord(a[1].value)], f = "", g = "b", "undefined" !== typeof e && "b" != e.valuetype && (g = e.valuetype, f = e.datavalue), b.editor.EditorScheduleSheetCommands("set " + a[2].value + " value " + g + " " + f + "", !0, !1);
+          e = c.cells[SocialCalc.Formula.PlainCoord(a[1].value)], "undefined" !== typeof e && "b" != e.valuetype ? (f = e.datatype, g = e.valuetype, l = e.datavalue, h = e.formula, "f" == f && (sourceCell = SocialCalc.coordToCr(a[1].value), destinationCell = SocialCalc.coordToCr(a[2].value), h = SocialCalc.OffsetFormulaCoords(h, destinationCell.col - sourceCell.col, destinationCell.row - sourceCell.row), g = l = ""), a = "set " + a[2].value + " " + SocialCalc.Constants.cellDataType[f] + " " + g + 
+          " " + SocialCalc.encodeForSave(l) + " " + SocialCalc.encodeForSave(h)) : a = "set " + a[2].value + " empty", b.editor.EditorScheduleSheetCommands(a.trim(), !0, !1);
       }
     }
   }
@@ -8368,6 +8370,11 @@ SocialCalc.InitializeSpreadsheetControl = function(a, b, c, d, e) {
   a.formulabarDiv.innerHTML = '<input type="text" size="60" value="">&nbsp;';
   a.spreadsheetDiv.appendChild(a.formulabarDiv);
   new SocialCalc.InputBox(a.formulabarDiv.firstChild, a.editor);
+  f = document.createElement("div");
+  f.id = "te_formData";
+  a.spreadsheetDiv.appendChild(f);
+  a.formDataViewer = new SocialCalc.SpreadsheetViewer("te_FormData-");
+  a.formDataViewer.InitializeSpreadsheetViewer(f.id, 100, 0, 200);
   for (q in a.formulabuttons) {
     b = document.createElement("img"), b.id = a.idPrefix + q, b.src = (a.formulabuttons[q].skipImagePrefix ? "" : a.imagePrefix) + a.formulabuttons[q].image, b.style.verticalAlign = "middle", b.style.border = "1px solid #FFF", b.style.marginLeft = "4px", SocialCalc.TooltipRegister(b, g(a.formulabuttons[q].tooltip), {}, a.spreadsheetDiv), SocialCalc.ButtonRegister(a.editor, b, {normalstyle:"border:1px solid #FFF;backgroundColor:#FFF;", hoverstyle:"border:1px solid #CCC;backgroundColor:#FFF;", downstyle:"border:1px solid #000;backgroundColor:#FFF;"}, 
     {MouseDown:a.formulabuttons[q].command, Disabled:function() {
@@ -8379,7 +8386,10 @@ SocialCalc.InitializeSpreadsheetControl = function(a, b, c, d, e) {
       s[d].oncreate(a, s[d].name);
     }
   }
-  a.nonviewheight = a.statuslineheight + a.spreadsheetDiv.firstChild.offsetHeight + a.spreadsheetDiv.lastChild.offsetHeight;
+  a.nonviewheight = a.statuslineheight;
+  for (g = 0;g < a.spreadsheetDiv.childNodes.length;g++) {
+    a.nonviewheight += a.spreadsheetDiv.childNodes[g].offsetHeight;
+  }
   a.viewheight = a.height - a.nonviewheight;
   a.editorDiv = a.editor.CreateTableEditor(a.width, a.viewheight);
   a.spreadsheetDiv.appendChild(a.editorDiv);
@@ -8392,16 +8402,16 @@ SocialCalc.InitializeSpreadsheetControl = function(a, b, c, d, e) {
     c = c.replace(/\%id\./g, a.idPrefix);
     c = c.replace(/\%tbt\./g, a.toolbartext);
     c = c.replace(/\%img\./g, a.imagePrefix);
-    f = document.createElement("div");
-    SocialCalc.setStyles(f, r[h].divStyle);
-    f.style.display = "none";
-    f.style.width = a.width + "px";
-    f.style.height = a.viewheight + "px";
-    f.id = a.idPrefix + r[h].name + "view";
+    g = document.createElement("div");
+    SocialCalc.setStyles(g, r[h].divStyle);
+    g.style.display = "none";
+    g.style.width = a.width + "px";
+    g.style.height = a.viewheight + "px";
+    g.id = a.idPrefix + r[h].name + "view";
     c = l(c);
-    f.innerHTML = c;
-    a.spreadsheetDiv.appendChild(f);
-    r[h].element = f;
+    g.innerHTML = c;
+    a.spreadsheetDiv.appendChild(g);
+    r[h].element = g;
     if (r[h].oncreate) {
       r[h].oncreate(a, r[h]);
     }
@@ -9411,8 +9421,7 @@ SocialCalc.SpreadsheetViewer = function(a) {
   this.statuslineCSS = b.SVStatuslineCSS;
   this.sheet = new SocialCalc.Sheet;
   this.context = new SocialCalc.RenderContext(this.sheet);
-  this.context.showGrid = !0;
-  this.context.showRCHeaders = !0;
+  !0 == SocialCalc._app ? (this.context.showGrid = !1, this.context.showRCHeaders = !1) : (this.context.showGrid = !0, this.context.showRCHeaders = !0);
   this.editor = new SocialCalc.TableEditor(this.context);
   this.editor.noEdit = !0;
   this.editor.StatusCallback.statusline = {func:SocialCalc.SpreadsheetViewerStatuslineCallback, params:{}};

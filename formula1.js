@@ -4931,6 +4931,19 @@ SocialCalc.TriggerIoAction.Button = function(triggerCellId) {
 	var parameters = sheet.ioParameterList[actionCellId];
 	
 	switch(parameters.function_name) {
+
+    /*
+     * set B8 text t william              ... coord: "B8",  datavalue: "william",     datatype: "t", formula: "",          valuetype: "t"
+     * set B10 constant nd 41307 2013/2/2 ... coord: "B10", datavalue: 41307,         datatype: "c", formula: "2013/2/2",  valuetype: "nd"
+     * set B11 value n 1                  ... coord: "B11", datavalue: 1,             datatype: "v", formula: "",          valuetype: "n"
+     *
+     * set B7 formula "test"&B3   ... coord: "B7",  datavalue: "testwilliam", datatype: "f", formula: ""test"&B3", valuetype: "t"
+     * set C8 formula B8       ... coord: "C8",  datavalue: "william",     datatype: "f", formula: "B8",        valuetype: "t"
+     * set C10 formula B10     ... coord: "C10", datavalue: 41307,         datatype: "f", formula: "B10",       valuetype: "nd"
+     * set C11 formula B11     ... coord: "C11", datavalue: 1,             datatype: "f", formula: "B11",       valuetype: "n"
+     *  set B3  formula TEXTBOX("")             ... coord: "B3", datavalue: "william", datatype: "f", formula: "TEXTBOX("william")", valuetype: "tiTEXTBOX"
+     */
+	  
 	  case "COPYVALUE" :
 	    //
 	    // e.g. set D3 text t push me 
@@ -4938,18 +4951,23 @@ SocialCalc.TriggerIoAction.Button = function(triggerCellId) {
 		//      set D5 constant n% 0.1 10%
 		//      set D6 constant nd 41922 10/10/2014
     	var cell = sheet.cells[SocialCalc.Formula.PlainCoord(parameters[1].value)];		
-		var sheetCommand; 
+		  var sheetCommand; 
     	if (typeof cell !== 'undefined' && cell.valuetype != 'b') { // if not blank get cell data
     		var cellDataType = cell.datatype;
     		var cellValueType = cell.valuetype; 		
     		var cellDataValue = cell.datavalue;		
     		var cellFormula = cell.formula;
     		
-    		if(cellDataType != 'f') {
-    			sheetCommand = 'set '+parameters[2].value+ ' ' + SocialCalc.Constants.cellDataType[cellValueType.charAt(0)] + ' ' +cellValueType + ' '+ SocialCalc.encodeForSave(cellDataValue);
-    		} else {
-    			sheetCommand = 'set '+parameters[2].value+ ' ' + SocialCalc.Constants.cellDataType[cellDataType] + ' ' +cellValueType + ' '+ SocialCalc.encodeForSave(cellDataValue) + ' ' + SocialCalc.encodeForSave(cellFormula);
+    		if(cellDataType == 'f') {
+          cellFormula = "";
+    		  cellDataType = cellValueType;
+    		  if(cellValueType == "nd") {
+    		    cellDataType = "c"; // for Date type etc 
+    		    cellFormula = cell.displaystring;
+    		  }
+    		  if(cellValueType.charAt(0) == "t") cellDataType = "t";    		  
     		}
+    		sheetCommand = 'set '+parameters[2].value+ ' ' + SocialCalc.Constants.cellDataType[cellDataType] + ' ' +cellValueType + ' '+ SocialCalc.encodeForSave(cellDataValue) + ' ' + SocialCalc.encodeForSave(cellFormula);
     		
     	} else { 
 			sheetCommand = 'set '+parameters[2].value+ ' empty';    		
@@ -4957,14 +4975,28 @@ SocialCalc.TriggerIoAction.Button = function(triggerCellId) {
 	    spreadsheet.editor.EditorScheduleSheetCommands(sheetCommand.trim(),  true, false);
 	    break;
 	  case "COPYFORMULA" : 
-        var cell = sheet.cells[SocialCalc.Formula.PlainCoord(parameters[1].value)];
-	    var result = "";
-        var resulttype = "b";
-        if (typeof cell !== 'undefined' && cell.valuetype != 'b') {
-            resulttype = cell.valuetype; // get type of value in the cell it points to
-            result = cell.datavalue;
-            }
-	    spreadsheet.editor.EditorScheduleSheetCommands('set '+parameters[2].value+' value '+resulttype+' '+result+'',  true, false);
+      var cell = sheet.cells[SocialCalc.Formula.PlainCoord(parameters[1].value)];   
+      var sheetCommand; 
+      if (typeof cell !== 'undefined' && cell.valuetype != 'b') { // if not blank get cell data
+        var cellDataType = cell.datatype;
+        var cellValueType = cell.valuetype;     
+        var cellDataValue = cell.datavalue;   
+        var cellFormula = cell.formula;
+        
+        if(cellDataType == 'f') {
+          sourceCell = SocialCalc.coordToCr(parameters[1].value);
+          destinationCell = SocialCalc.coordToCr(parameters[2].value);
+          cellFormula = SocialCalc.OffsetFormulaCoords(cellFormula, destinationCell.col -  sourceCell.col, destinationCell.row -  sourceCell.row);
+          cellDataValue = "";
+          cellValueType = "";  
+        }
+        sheetCommand = 'set '+parameters[2].value+ ' ' + SocialCalc.Constants.cellDataType[cellDataType] + ' ' +cellValueType + ' '+ SocialCalc.encodeForSave(cellDataValue) + ' ' + SocialCalc.encodeForSave(cellFormula);
+        
+      } else { 
+      sheetCommand = 'set '+parameters[2].value+ ' empty';        
+      }
+      spreadsheet.editor.EditorScheduleSheetCommands(sheetCommand.trim(),  true, false);
+      break;
 		break;
       }
 

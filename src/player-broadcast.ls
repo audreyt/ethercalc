@@ -3,6 +3,18 @@
 
   return if SocialCalc?OrigDoPositionCalculations
 
+  # parseQuery string eddy {
+  parseQuery = (qstr) -> 
+    qstr = qstr.substr(1) if qstr.charAt(0) is \?
+    query = {}
+    params = qstr.split \&
+    for index of params
+      pair = params[index].split \=
+      query[decodeURIComponent(pair[0])] = decodeURIComponent(pair[1])
+    query
+  SocialCalc.requestParams = parseQuery window.location.search
+  # } parseQuery
+  
   SocialCalc.OrigDoPositionCalculations = SocialCalc.DoPositionCalculations
   SocialCalc.DoPositionCalculations = ->
     SocialCalc.OrigDoPositionCalculations.apply SocialCalc, arguments
@@ -42,7 +54,9 @@
     cmdstr = cmdstr.replace /\n\n+/g '\n'
     return unless /\S/.test cmdstr
     if not isRemote and cmdstr isnt \redisplay and cmdstr isnt \recalc
-      SocialCalc.Callbacks.broadcast? \execute { cmdstr, saveundo }
+      # eddy
+      #SocialCalc.Callbacks.broadcast? \execute { cmdstr, saveundo }
+      SocialCalc.Callbacks.broadcast? \execute { cmdstr, saveundo, @_room }
     SocialCalc.OrigScheduleSheetCommands sheet, cmdstr, saveundo, isRemote
   SocialCalc.MoveECell = (editor, newcell) ->
     highlights = editor.context.highlights

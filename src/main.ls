@@ -2,6 +2,7 @@
   @use \json, @app.router, @express.static __dirname
   @app.use \/edit @express.static __dirname
   @app.use \/view @express.static __dirname
+  @app.use \/app @express.static __dirname
 
   @include \dotcloud
   @include \player-broadcast
@@ -96,8 +97,11 @@
     @response.redirect "#BASEPATH/#room?auth=#{ hmac room }"
   @get '/:room/view': ->
     room = @params.room
-    @response.redirect "#BASEPATH/#room?auth=0"
-    #@response.redirect "#BASEPATH/#room?auth=#{ hmac room }"
+    #@response.redirect "#BASEPATH/#room?auth=0"
+    @response.redirect "#BASEPATH/#room?auth=#{ hmac room }&view=1"
+  @get '/:room/app': ->
+    room = @params.room
+    @response.redirect "#BASEPATH/#room?auth=#{ hmac room }&app=1"
   @get '/_/:room/cells/:cell': api -> [Json
     (sc, cb) ~> sc.exportCell @cell, cb
   ]
