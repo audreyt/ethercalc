@@ -26,6 +26,10 @@ all :: SocialCalcModule.js static/ethercalc.js
 	env PATH="$$PATH:../node_modules/LiveScript/bin" livescript -c -o . src
 	node app.js $(ETHERCALC_ARGS)
 
+only :: SocialCalcModule.js static/ethercalc.js
+	@sed -i "s/Updated.*/Updated $(shell date)/" manifest.appcache
+	env PATH="$$PATH:../node_modules/LiveScript/bin" livescript -c -o . src
+
 vm :: SocialCalcModule.js
 	env PATH="$$PATH:../node_modules/LiveScript/bin" livescript -c -o . src
 	node app.js --vm $(ETHERCALC_ARGS)

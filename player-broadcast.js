@@ -79,7 +79,7 @@
               ref$.broadcast('execute', {
                 cmdstr: cmdstr,
                 saveundo: saveundo,
-                _room: this._room
+                room: sheet._room
               });
             }
           }

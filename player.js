@@ -125,7 +125,9 @@
               return;
             }
             data.user = SocialCalc._username;
-            data.room = SocialCalc._room;
+            if (data.room == null) {
+              data.room = SocialCalc._room;
+            }
             data.type = type;
             if (SocialCalc._auth) {
               data.auth = SocialCalc._auth;
@@ -143,7 +145,7 @@
           };
           return this$.on({
             data: function(){
-              var ss, editor, user, ref$, ecell, peerClass, find, cr, cell, origCR, origCell, parts, cmdstr, line, refreshCmd;
+              var ss, ref$, editor, user, ecell, peerClass, find, cr, cell, origCR, origCell, parts, cmdstr, line, refreshCmd;
               if (!((typeof SocialCalc != 'undefined' && SocialCalc !== null) && SocialCalc.isConnected)) {
                 return;
               }
@@ -153,10 +155,13 @@
               if (this.data.to && this.data.to !== SocialCalc._username) {
                 return;
               }
-              if (this.data.room && this.data.room !== SocialCalc._room && this.data.type !== "recalc") {
+              ss = window.spreadsheet;
+              if (this.data.room && this.data.room !== SocialCalc._room && this.data.type !== "recalc" && this.data.type !== "log") {
                 return;
               }
-              ss = window.spreadsheet;
+              if (this.data.room && this.data.room !== SocialCalc._room && ((ref$ = ss.formDataViewer) != null ? ref$._room : void 8) !== this.data.room && this.data.type === "log") {
+                return;
+              }
               if (!ss) {
                 return;
               }
@@ -171,6 +176,9 @@
                 }
                 break;
               case 'ecells':
+                if (SocialCalc._app) {
+                  break;
+                }
                 for (user in ref$ = this.data.ecells) {
                   ecell = ref$[user];
                   if (user === SocialCalc._username) {
@@ -199,6 +207,9 @@
                     });
                   }
                 }
+                if (SocialCalc._app) {
+                  break;
+                }
                 cr = SocialCalc.coordToCr(this.data.ecell);
                 cell = SocialCalc.GetEditorCellElement(editor, cr.row, cr.col);
                 if ((cell != null ? (ref$ = cell.element) != null ? ref$.className.search(find) : void 8 : void 8) === -1) {
@@ -215,6 +226,22 @@
                 if (typeof vex != 'undefined' && vex !== null) {
                   vex.closeAll();
                 }
+                if (((ref$ = ss.formDataViewer) != null ? ref$._room : void 8) === this.data.room) {
+                  if (this.data.snapshot) {
+                    parts = ss.DecodeSpreadsheetSave(this.data.snapshot);
+                  }
+                  ss.formDataViewer.sheet.ResetSheet();
+                  if (parts != null && parts.sheet) {
+                    ss.formDataViewer.ParseSheetSave(this.data.snapshot.substring(parts.sheet.start, parts.sheet.end));
+                    ss.formDataViewer.context.sheetobj.ScheduleSheetCommands("recalc\n", false, true);
+                    ss.formDataViewer.context.formColNames = {
+                      A: "textboxB2",
+                      B: "tickboxC2"
+                    };
+                    ss.formDataViewer.parentNode.style.visibility = "visible";
+                  }
+                  break;
+                }
                 if (SocialCalc.hadSnapshot) {
                   break;
                 }
@@ -225,6 +252,12 @@
                 if (parts != null && parts.sheet) {
                   ss.sheet.ResetSheet();
                   ss.ParseSheetSave(this.data.snapshot.substring(parts.sheet.start, parts.sheet.end));
+                  if (SocialCalc._app == null && SocialCalc._view == null) {
+                    ss.formDataViewer.sheet._room = ss.formDataViewer._room = SocialCalc._room + "formdata";
+                    SocialCalc.Callbacks.broadcast('ask.log', {
+                      room: ss.formDataViewer._room
+                    });
+                  }
                 }
                 if (typeof window.addmsg === 'function') {
                   window.addmsg(this.data.chat.join('\n'), true);

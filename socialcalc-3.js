@@ -4642,6 +4642,14 @@ SocialCalc.RenderColHeaders = function(context) {
          result.appendChild(newcol);
          }
       }
+   // eddy {
+   if(context.formColNames != null) {
+     for(var nodeIndex = 0;  nodeIndex < result.childNodes.length;  nodeIndex++ ) {
+       var currentCol = result.childNodes[nodeIndex];
+       if(context.formColNames[currentCol.innerText] != null) currentCol.innerText = context.formColNames[currentCol.innerText];
+     }
+   }
+   // }
    return result;
    }
 

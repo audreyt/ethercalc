@@ -1924,6 +1924,11 @@ SocialCalc.RenderColHeaders = function(a) {
     }
     colpane < a.colpanes.length - 1 && (e = document.createElement("td"), e.width = a.defaultpanedividerwidth, a.classnames.panedivider && (e.className = a.classnames.panedivider), a.explicitStyles.panedivider && (e.style.cssText = a.explicitStyles.panedivider), c.appendChild(e));
   }
+  if (null != a.formColNames) {
+    for (b = 0;b < c.childNodes.length;b++) {
+      d = c.childNodes[b], null != a.formColNames[d.innerText] && (d.innerText = a.formColNames[d.innerText]);
+    }
+  }
   return c;
 };
 SocialCalc.RenderColGroup = function(a) {
@@ -8372,6 +8377,7 @@ SocialCalc.InitializeSpreadsheetControl = function(a, b, c, d, e) {
   new SocialCalc.InputBox(a.formulabarDiv.firstChild, a.editor);
   f = document.createElement("div");
   f.id = "te_formData";
+  f.style.visibility = "hidden";
   a.spreadsheetDiv.appendChild(f);
   a.formDataViewer = new SocialCalc.SpreadsheetViewer("te_FormData-");
   a.formDataViewer.InitializeSpreadsheetViewer(f.id, 100, 0, 200);

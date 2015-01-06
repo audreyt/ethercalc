@@ -1067,6 +1067,7 @@ spreadsheet.Buttons = {
 // eddy test add input 
    var formDataDiv = document.createElement("div");
    formDataDiv.id = "te_formData";
+   formDataDiv.style.visibility = "hidden";
    spreadsheet.spreadsheetDiv.appendChild(formDataDiv);   
    spreadsheet.formDataViewer = new SocialCalc.SpreadsheetViewer("te_FormData-"); // should end with -
    spreadsheet.formDataViewer.InitializeSpreadsheetViewer(formDataDiv.id, 100, 0, 200);

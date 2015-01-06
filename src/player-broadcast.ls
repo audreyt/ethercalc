@@ -56,7 +56,7 @@
     if not isRemote and cmdstr isnt \redisplay and cmdstr isnt \recalc
       # eddy
       #SocialCalc.Callbacks.broadcast? \execute { cmdstr, saveundo }
-      SocialCalc.Callbacks.broadcast? \execute { cmdstr, saveundo, @_room }
+      SocialCalc.Callbacks.broadcast? \execute { cmdstr, saveundo, room:sheet._room }
     SocialCalc.OrigScheduleSheetCommands sheet, cmdstr, saveundo, isRemote
   SocialCalc.MoveECell = (editor, newcell) ->
     highlights = editor.context.highlights

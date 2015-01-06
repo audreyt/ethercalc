@@ -68,7 +68,7 @@
     SocialCalc.Callbacks.broadcast = (type, data={}) ~>
       return unless SocialCalc.isConnected
       data.user = SocialCalc._username
-      data.room = SocialCalc._room
+      data.room = SocialCalc._room if !data.room?        
       data.type = type
       data.auth = SocialCalc._auth if SocialCalc._auth
       emit data
@@ -82,15 +82,16 @@
       return unless SocialCalc?isConnected
       return if @data.user == SocialCalc._username
       return if @data.to and @data.to != SocialCalc._username
-      return if @data.room and @data.room != SocialCalc._room and @data.type != "recalc"
       ss = window.spreadsheet
+      return if @data.room and @data.room != SocialCalc._room and @data.type != "recalc" and @data.type != "log"
+      return if @data.room and @data.room != SocialCalc._room and ss.formDataViewer?._room != @data.room and @data.type == "log"
       return unless ss
       editor = ss.editor
       switch @data.type
       | \confirmemailsent => SocialCalc.EditorSheetStatusCallback(null, "confirmemailsent", @data.message, editor);
       | \chat   => window.addmsg? @data.msg
       | \ecells   
-        # break if SocialCalc._app 
+        break if SocialCalc._app 
         do => for user, ecell of @data.ecells
           continue if user is SocialCalc._username
           peerClass = " #user defaultPeer"
@@ -110,7 +111,7 @@
             SocialCalc.Callbacks.broadcast \ecell,
               to: @data.user
               ecell: editor.ecell.coord
-        # break if SocialCalc._app 
+        break if SocialCalc._app 
         cr = SocialCalc.coordToCr @data.ecell
         cell = SocialCalc.GetEditorCellElement editor, cr.row, cr.col
         cell.element.className += peerClass if cell?element?className.search(find) == -1
@@ -120,6 +121,18 @@
           ecell: editor.ecell.coord
       | \log
         vex?closeAll!
+        #eddy
+        if ss.formDataViewer?._room is @data.room
+          if @data.snapshot
+            parts = ss.DecodeSpreadsheetSave @data.snapshot
+          ss.formDataViewer.sheet.ResetSheet!
+          if parts?sheet
+            ss.formDataViewer.ParseSheetSave( @data.snapshot.substring( parts.sheet.start, parts.sheet.end))
+            ss.formDataViewer.context.sheetobj.ScheduleSheetCommands "recalc\n", false, true
+            ss.formDataViewer.context.formColNames = {A:"textboxB2",B:"tickboxC2"}
+            ss.formDataViewer.parentNode.style.visibility = "visible"
+          break
+        #}
         break if SocialCalc.hadSnapshot
         SocialCalc.hadSnapshot = true
         if @data.snapshot
@@ -128,20 +141,19 @@
           ss.sheet.ResetSheet!
           ss.ParseSheetSave @data.snapshot.substring parts.sheet.start, parts.sheet.end
           # eddy 
-          #ss.formDataViewer._room = SocialCalc._room + "formdata"
-          #SocialCalc.RecalcInfo.LoadSheet ss.formDataViewer._room
+          if !SocialCalc._app? && !SocialCalc._view?
+            ss.formDataViewer.sheet._room = ss.formDataViewer._room = SocialCalc._room + "formdata"
+            SocialCalc.Callbacks.broadcast \ask.log {room: ss.formDataViewer._room}
+            #SocialCalc.RecalcInfo.LoadSheet ss.formDataViewer._room
+          # }
         window.addmsg? @data.chat.join(\\n), true
         cmdstr = [ line for line in @data.log
              | not /^re(calc|display)$/.test(line) ].join \\n
         if cmdstr.length
           refreshCmd = \recalc
           ss.context.sheetobj.ScheduleSheetCommands "#cmdstr\n#refreshCmd\n", false, true
-          # eddy
-          #ss.formDataViewer.context.sheetobj.ScheduleSheetCommands "#cmdstr\n#refreshCmd\n", false, true
         else
           ss.context.sheetobj.ScheduleSheetCommands "recalc\n", false, true
-          # eddy
-          #ss.formDataViewer.context.sheetobj.ScheduleSheetCommands "recalc\n", false, true
       | \snapshot
         vex?closeAll!
         SocialCalc.hadSnapshot = true
@@ -156,13 +168,12 @@
           SocialCalc.Formula.SheetCache.sheets = {}
           ss?sheet.recalconce = true
         parts = ss.DecodeSpreadsheetSave @data.snapshot if @data.snapshot
-        #if ss.formDataViewer._room is @data.room
+        #eddy
+        #if ss.formDataViewer?._room is @data.room
         #  ss.formDataViewer.sheet.ResetSheet!
         #  if parts?sheet
         #    ss.formDataViewer.ParseSheetSave( @data.snapshot.substring( parts.sheet.start, parts.sheet.end))
-        #  else
-        #    ss.formDataViewer.ParseSheetSave ""
-        #  ss.formDataViewer.context.sheetobj.ScheduleSheetCommands "recalc\n", false, true
+        #    ss.formDataViewer.context.sheetobj.ScheduleSheetCommands "recalc\n", false, true
         #else           
         if parts?sheet
           SocialCalc.RecalcLoadedSheet(
