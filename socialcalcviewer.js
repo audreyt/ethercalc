@@ -264,6 +264,11 @@ SocialCalc.InitializeSpreadsheetViewer = function(spreadsheet, node, height, wid
           params: {spreadsheetobj:spreadsheet}};
       }
 
+   // eddy InitializeSpreadsheetViewer {
+   if(SocialCalc._app == true) {
+     spreadsheet.formDataViewer = new SocialCalc.SpreadsheetViewer("te_FormData-");
+   }
+   
    // done - refresh screen needed
 
    return;

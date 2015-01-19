@@ -1924,11 +1924,6 @@ SocialCalc.RenderColHeaders = function(a) {
     }
     colpane < a.colpanes.length - 1 && (e = document.createElement("td"), e.width = a.defaultpanedividerwidth, a.classnames.panedivider && (e.className = a.classnames.panedivider), a.explicitStyles.panedivider && (e.style.cssText = a.explicitStyles.panedivider), c.appendChild(e));
   }
-  if (null != a.formColNames) {
-    for (b = 0;b < c.childNodes.length;b++) {
-      d = c.childNodes[b], null != a.formColNames[d.innerText] && (d.innerText = a.formColNames[d.innerText]);
-    }
-  }
   return c;
 };
 SocialCalc.RenderColGroup = function(a) {
@@ -2780,7 +2775,7 @@ SocialCalc.EditorRenderSheet = function(a) {
   a.fullgrid = a.context.RenderSheet(a.fullgrid);
   a.ecell && a.SetECellHeaders("selected");
   SocialCalc.AssignID(a, a.fullgrid, "fullgrid");
-  !0 === a.context.showRCHeaders && a.EditorMouseRegister();
+  a.EditorMouseRegister();
 };
 SocialCalc.EditorScheduleSheetCommands = function(a, b, c, d) {
   if ("start" == a.state || d) {
@@ -3033,11 +3028,13 @@ SocialCalc.ProcessEditorMouseDown = function(a) {
             SocialCalc.ProcessEditorColsizeMouseDown(a, g, c);
           } else {
             if (c.coord) {
-              d.hasrange || a.shiftKey && b.RangeAnchor();
-              c = b.MoveECell(c.coord);
-              var l = b.context.sheetobj.cells[c];
-              l && "i" == l.valuetype.charAt(1) ? (a = l.valuetype.substring(2), a = document.getElementById(a + "_" + c), SocialCalc.CmdGotFocus(a)) : (d.hasrange && (a.shiftKey ? b.RangeExtend() : b.RangeRemove()), f.mousedowncoord = c, f.mouselastcoord = c, b.EditorMouseRange(c), SocialCalc.KeyboardSetFocus(b), "start" != b.state && b.inputBox && b.inputBox.element.focus(), document.addEventListener ? (document.addEventListener("mousemove", SocialCalc.ProcessEditorMouseMove, !0), document.addEventListener("mouseup", 
-              SocialCalc.ProcessEditorMouseUp, !0)) : g.attachEvent && (g.setCapture(), g.attachEvent("onmousemove", SocialCalc.ProcessEditorMouseMove), g.attachEvent("onmouseup", SocialCalc.ProcessEditorMouseUp), g.attachEvent("onlosecapture", SocialCalc.ProcessEditorMouseUp)), e.stopPropagation ? e.stopPropagation() : e.cancelBubble = !0, e.preventDefault ? e.preventDefault() : e.returnValue = !1);
+              if (d.hasrange || a.shiftKey && b.RangeAnchor(), c = b.MoveECell(c.coord), !0 == SocialCalc._app) {
+                SocialCalc.CmdGotFocus(!0);
+              } else {
+                var l = b.context.sheetobj.cells[c];
+                l && "i" == l.valuetype.charAt(1) ? (a = l.valuetype.substring(2), a = document.getElementById(a + "_" + c), SocialCalc.CmdGotFocus(a)) : (d.hasrange && (a.shiftKey ? b.RangeExtend() : b.RangeRemove()), f.mousedowncoord = c, f.mouselastcoord = c, b.EditorMouseRange(c), SocialCalc.KeyboardSetFocus(b), "start" != b.state && b.inputBox && b.inputBox.element.focus(), document.addEventListener ? (document.addEventListener("mousemove", SocialCalc.ProcessEditorMouseMove, !0), document.addEventListener("mouseup", 
+                SocialCalc.ProcessEditorMouseUp, !0)) : g.attachEvent && (g.setCapture(), g.attachEvent("onmousemove", SocialCalc.ProcessEditorMouseMove), g.attachEvent("onmouseup", SocialCalc.ProcessEditorMouseUp), g.attachEvent("onlosecapture", SocialCalc.ProcessEditorMouseUp)), e.stopPropagation ? e.stopPropagation() : e.cancelBubble = !0, e.preventDefault ? e.preventDefault() : e.returnValue = !1);
+              }
             }
           }
         }
@@ -5957,19 +5954,31 @@ SocialCalc.Formula.StoreIoEventFormula = function(a, b, c, d, e) {
     "undefined" === typeof d.ioParameterList && (d.ioParameterList = {});
     if ("EventTree" == e && ("coord" == f[0].type || "range" == f[0].type)) {
       c = f[0].value.replace(/\$/g, "");
-      e = function(a, b, c) {
+      var g = function(a, b, c) {
         "undefined" === typeof a[b] && (a[b] = {});
         a[b][c] = c;
       };
       if ("range" == f[0].type) {
-        for (var g = SocialCalc.Formula.DecodeRangeParts(d, c), l = 0;l < g.ncols;l++) {
-          for (var h = 0;h < g.nrows;h++) {
-            var n = SocialCalc.crToCoord(g.col1num + l, g.row1num + h);
-            e(d.ioEventTree, n, b);
+        for (var l = SocialCalc.Formula.DecodeRangeParts(d, c), h = 0;h < l.ncols;h++) {
+          for (var n = 0;n < l.nrows;n++) {
+            var q = SocialCalc.crToCoord(l.col1num + h, l.row1num + n);
+            g(d.ioEventTree, q, b);
           }
         }
       }
-      "coord" == f[0].type && e(d.ioEventTree, c, b);
+      "coord" == f[0].type && g(d.ioEventTree, c, b);
+    }
+    if ("Input" == e && (e = null != SocialCalc.CurrentSpreadsheetControlObject ? SocialCalc.CurrentSpreadsheetControlObject.formDataViewer : SocialCalc.CurrentSpreadsheetViewerObject.formDataViewer, null != e && !0 == e.loaded)) {
+      null == e.formFields && SocialCalc.Formula.LoadFormFields();
+      g = (a + b).toLowerCase();
+      c = null;
+      null == e.formFields[g] && (c = e.formFields[g] = e.formFieldsLength++ + 2, c = "set " + SocialCalc.crToCoord(c, 1) + " text t " + SocialCalc.encodeForSave(a.toLowerCase() + b));
+      if ("t" == f[0].type.charAt(0) || "n" == f[0].type.charAt(0)) {
+        if (g = SocialCalc.crToCoord(e.formFields[g], 2), null == e.sheet.cells[g] || e.sheet.cells[g].datavalue != f[0].value) {
+          g = "set " + g + " text t " + SocialCalc.encodeForSave(f[0].value), c = null != c ? c + "\n" + g : g;
+        }
+      }
+      null != c && e.sheet.ScheduleSheetCommands(c, !1);
     }
     "undefined" === typeof d.ioParameterList[b] && (d.ioParameterList[b] = {});
     d.ioParameterList[b] = f;
@@ -5982,6 +5991,21 @@ SocialCalc.Formula.Clone = function(a, b) {
   for (var c in b) {
     "object" === typeof b[c] && null !== b[c] && a[c] ? SocialCalc.Formula.Clone(a[c], b[c]) : a[c] = b[c];
   }
+};
+SocialCalc.Formula.LoadFormFields = function() {
+  var a = null != SocialCalc.CurrentSpreadsheetControlObject ? SocialCalc.CurrentSpreadsheetControlObject.formDataViewer : SocialCalc.CurrentSpreadsheetViewerObject.formDataViewer;
+  a.formFields = {};
+  null == a.sheet.cells.A1 && a.sheet.ScheduleSheetCommands("set A1 text t " + SocialCalc.encodeForSave("FieldName:"), !1);
+  null == a.sheet.cells.A2 && a.sheet.ScheduleSheetCommands("set A2 text t " + SocialCalc.encodeForSave("Pending:"), !1);
+  for (var b = 2;;) {
+    var c = SocialCalc.crToCoord(b, 1), c = a.sheet.cells[c];
+    if (!c) {
+      break;
+    }
+    a.formFields[c.datavalue.toLowerCase()] = b;
+    b++;
+  }
+  a.formFieldsLength = b - 2;
 };
 SocialCalc.Formula.CalculateFunction = function(a, b, c, d) {
   var e, f, g, l, h = SocialCalc.Formula;
@@ -7433,8 +7457,8 @@ SocialCalc.Formula.FunctionList.EMAILONEDIT = [SocialCalc.Formula.IoFunctions, -
 SocialCalc.Formula.FunctionList.EMAILAT = [SocialCalc.Formula.IoFunctions, -4, "datetime, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList"];
 SocialCalc.Formula.FunctionList.EMAILONEDITIF = [SocialCalc.Formula.IoFunctions, -5, "editRange, condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "EventTree"];
 SocialCalc.Formula.FunctionList.EMAILATIF = [SocialCalc.Formula.IoFunctions, -5, "datetime, condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList"];
-SocialCalc.Formula.FunctionList.TEXTBOX = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "gui", "<input type='text' id='TEXTBOX_<%=cell_reference%>' onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.TextBox('<%=cell_reference%>')\" value='<%=display_value%>' >"];
-SocialCalc.Formula.FunctionList.CHECKBOX = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "gui", "<input type='checkbox' id='CHECKBOX_<%=cell_reference%>' <%=checked%> onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.CheckBox('<%=cell_reference%>')\" >"];
+SocialCalc.Formula.FunctionList.TEXTBOX = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "gui", "<input type='text' id='TEXTBOX_<%=cell_reference%>' onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.TextBox('<%=cell_reference%>')\" value='<%=display_value%>' >", "Input"];
+SocialCalc.Formula.FunctionList.CHECKBOX = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "gui", "<input type='checkbox' id='CHECKBOX_<%=cell_reference%>' <%=checked%> onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.CheckBox('<%=cell_reference%>')\" >", "Input"];
 SocialCalc.Formula.FunctionList.COPYVALUE = [SocialCalc.Formula.IoFunctions, 3, "txt", "", "action", "", "EventTree"];
 SocialCalc.Formula.FunctionList.COPYFORMULA = [SocialCalc.Formula.IoFunctions, 3, "txt", "", "action", "", "EventTree"];
 SocialCalc.TriggerIoAction.Button = function(a) {
@@ -7514,16 +7538,26 @@ SocialCalc.TriggerIoAction.Email = function(a, b) {
   }
 };
 SocialCalc.TriggerIoAction.TextBox = function(a) {
-  var b = window.spreadsheet, c = b.sheet.cells[a];
-  a = document.getElementById("TEXTBOX_" + a);
-  c = "set " + c.coord + ' formula TEXTBOX("' + SocialCalc.encodeForSave(a.value) + '")';
-  b.editor.EditorScheduleSheetCommands(c, !0, !1);
+  SocialCalc.TriggerIoAction.updateInputWidgetFormula("TEXTBOX", a, function(a) {
+    return a.value;
+  });
 };
 SocialCalc.TriggerIoAction.CheckBox = function(a) {
-  var b = window.spreadsheet, c = b.sheet.cells[a];
-  a = document.getElementById("CHECKBOX_" + a);
-  c = "set " + c.coord + ' formula CHECKBOX("' + SocialCalc.encodeForSave(a.checked ? "TRUE" : "FALSE") + '")';
-  b.editor.EditorScheduleSheetCommands(c, !0, !1);
+  SocialCalc.TriggerIoAction.updateInputWidgetFormula("CHECKBOX", a, function(a) {
+    return a.checked ? "TRUE" : "FALSE";
+  });
+};
+SocialCalc.TriggerIoAction.updateInputWidgetFormula = function(a, b, c) {
+  var d = window.spreadsheet, e = d.sheet.cells[b];
+  b = document.getElementById(a + "_" + b);
+  c = c(b);
+  c = SocialCalc.encodeForSave(c);
+  d.editor.EditorScheduleSheetCommands("set " + e.coord + " formula " + a + '("' + c + '")', !0, !1);
+  SocialCalc.TriggerIoAction.UpdateFormDataSheet(a, e.coord, c);
+};
+SocialCalc.TriggerIoAction.UpdateFormDataSheet = function(a, b, c) {
+  var d = null != SocialCalc.CurrentSpreadsheetControlObject ? SocialCalc.CurrentSpreadsheetControlObject.formDataViewer : SocialCalc.CurrentSpreadsheetViewerObject.formDataViewer;
+  null != d && (a = (a + b).toLowerCase(), null != d.formFields[a] && (a = SocialCalc.crToCoord(d.formFields[a], 2), d.sheet.ScheduleSheetCommands("set " + a + " text t " + c, !1)));
 };
 SocialCalc.Formula.SheetCache = {sheets:{}, waitingForLoading:null, constants:{asloaded:0, recalcing:1, recalcdone:2}, loadsheet:null};
 SocialCalc.Formula.FindInSheetCache = function(a) {
@@ -8377,10 +8411,10 @@ SocialCalc.InitializeSpreadsheetControl = function(a, b, c, d, e) {
   new SocialCalc.InputBox(a.formulabarDiv.firstChild, a.editor);
   f = document.createElement("div");
   f.id = "te_formData";
-  f.style.visibility = "hidden";
+  f.style.display = "none";
   a.spreadsheetDiv.appendChild(f);
   a.formDataViewer = new SocialCalc.SpreadsheetViewer("te_FormData-");
-  a.formDataViewer.InitializeSpreadsheetViewer(f.id, 100, 0, 200);
+  a.formDataViewer.InitializeSpreadsheetViewer(f.id, 180, 0, 200);
   for (q in a.formulabuttons) {
     b = document.createElement("img"), b.id = a.idPrefix + q, b.src = (a.formulabuttons[q].skipImagePrefix ? "" : a.imagePrefix) + a.formulabuttons[q].image, b.style.verticalAlign = "middle", b.style.border = "1px solid #FFF", b.style.marginLeft = "4px", SocialCalc.TooltipRegister(b, g(a.formulabuttons[q].tooltip), {}, a.spreadsheetDiv), SocialCalc.ButtonRegister(a.editor, b, {normalstyle:"border:1px solid #FFF;backgroundColor:#FFF;", hoverstyle:"border:1px solid #CCC;backgroundColor:#FFF;", downstyle:"border:1px solid #000;backgroundColor:#FFF;"}, 
     {MouseDown:a.formulabuttons[q].command, Disabled:function() {
@@ -8392,10 +8426,7 @@ SocialCalc.InitializeSpreadsheetControl = function(a, b, c, d, e) {
       s[d].oncreate(a, s[d].name);
     }
   }
-  a.nonviewheight = a.statuslineheight;
-  for (g = 0;g < a.spreadsheetDiv.childNodes.length;g++) {
-    a.nonviewheight += a.spreadsheetDiv.childNodes[g].offsetHeight;
-  }
+  SocialCalc.CalculateSheetNonViewHeight(a);
   a.viewheight = a.height - a.nonviewheight;
   a.editorDiv = a.editor.CreateTableEditor(a.width, a.viewheight);
   a.spreadsheetDiv.appendChild(a.editorDiv);
@@ -8444,6 +8475,12 @@ SocialCalc.InitializeSpreadsheetControl = function(a, b, c, d, e) {
     } else {
       throw SocialCalc.Constants.s_BrowserNotSupported;
     }
+  }
+};
+SocialCalc.CalculateSheetNonViewHeight = function(a) {
+  a.nonviewheight = a.statuslineheight;
+  for (var b = 0;b < a.spreadsheetDiv.childNodes.length;b++) {
+    "SocialCalc-statusline" != a.spreadsheetDiv.childNodes[b].id && (a.nonviewheight += a.spreadsheetDiv.childNodes[b].offsetHeight);
   }
 };
 SocialCalc.LocalizeString = function(a) {
@@ -9475,6 +9512,7 @@ SocialCalc.InitializeSpreadsheetViewer = function(a, b, c, d, e) {
   a.editorDiv = a.editor.CreateTableEditor(a.width, a.viewheight);
   a.spreadsheetDiv.appendChild(a.editorDiv);
   a.hasStatusLine && (a.statuslineDiv = document.createElement("div"), a.statuslineDiv.style.cssText = a.statuslineCSS, a.statuslineDiv.style.height = a.statuslineheight - (a.statuslineDiv.style.paddingTop.slice(0, -2) - 0) - (a.statuslineDiv.style.paddingBottom.slice(0, -2) - 0) + "px", a.statuslineDiv.id = a.idPrefix + "statusline", a.spreadsheetDiv.appendChild(a.statuslineDiv), a.editor.StatusCallback.statusline = {func:SocialCalc.SpreadsheetViewerStatuslineCallback, params:{spreadsheetobj:a}});
+  !0 == SocialCalc._app && (a.formDataViewer = new SocialCalc.SpreadsheetViewer("te_FormData-"));
 };
 SocialCalc.SpreadsheetViewerLoadSave = function(a, b) {
   var c, d, e;

@@ -1067,10 +1067,12 @@ spreadsheet.Buttons = {
 // eddy test add input 
    var formDataDiv = document.createElement("div");
    formDataDiv.id = "te_formData";
-   formDataDiv.style.visibility = "hidden";
+   //formDataDiv.style.visibility = "hidden";
+   formDataDiv.style.display = "none";
+   //formDataDiv.style.display = "inline";
    spreadsheet.spreadsheetDiv.appendChild(formDataDiv);   
    spreadsheet.formDataViewer = new SocialCalc.SpreadsheetViewer("te_FormData-"); // should end with -
-   spreadsheet.formDataViewer.InitializeSpreadsheetViewer(formDataDiv.id, 100, 0, 200);
+   spreadsheet.formDataViewer.InitializeSpreadsheetViewer(formDataDiv.id, 180, 0, 200);
        
 // }
    
@@ -1102,10 +1104,7 @@ spreadsheet.Buttons = {
    // create sheet view and others
 
    // InitializeSpreadsheetControl eddy {
-   spreadsheet.nonviewheight = spreadsheet.statuslineheight;
-   for(var nodeIndex = 0;  nodeIndex < spreadsheet.spreadsheetDiv.childNodes.length;  nodeIndex++ ) {
-     spreadsheet.nonviewheight += spreadsheet.spreadsheetDiv.childNodes[nodeIndex].offsetHeight;
-   }
+   SocialCalc.CalculateSheetNonViewHeight(spreadsheet);
    // } InitializeSpreadsheetControl
    spreadsheet.viewheight = spreadsheet.height-spreadsheet.nonviewheight;
    spreadsheet.editorDiv=spreadsheet.editor.CreateTableEditor(spreadsheet.width, spreadsheet.viewheight);
@@ -1169,6 +1168,20 @@ spreadsheet.Buttons = {
    return;
 
    }
+
+
+// eddy CalculateSheetNonViewHeight {
+SocialCalc.CalculateSheetNonViewHeight = function(spreadsheet) {
+  spreadsheet.nonviewheight = spreadsheet.statuslineheight;
+  for(var nodeIndex = 0;  nodeIndex < spreadsheet.spreadsheetDiv.childNodes.length;  nodeIndex++ ) {
+    if(spreadsheet.spreadsheetDiv.childNodes[nodeIndex].id == "SocialCalc-statusline") continue;
+    spreadsheet.nonviewheight += spreadsheet.spreadsheetDiv.childNodes[nodeIndex].offsetHeight;
+  }
+  
+}
+
+// }
+
 
 //
 // outstr = SocialCalc.LocalizeString(str)

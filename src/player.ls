@@ -126,11 +126,18 @@
           if @data.snapshot
             parts = ss.DecodeSpreadsheetSave @data.snapshot
           ss.formDataViewer.sheet.ResetSheet!
+          ss.formDataViewer.loaded = true
           if parts?sheet
             ss.formDataViewer.ParseSheetSave( @data.snapshot.substring( parts.sheet.start, parts.sheet.end))
             ss.formDataViewer.context.sheetobj.ScheduleSheetCommands "recalc\n", false, true
-            ss.formDataViewer.context.formColNames = {A:"textboxB2",B:"tickboxC2"}
-            ss.formDataViewer.parentNode.style.visibility = "visible"
+            #ss.formDataViewer.context.formColNames = {A:"textboxB2",B:"tickboxC2"}
+            # show formdata if not blank
+            if ss.formDataViewer.sheet.attribs.lastcol != 1 ||  ss.formDataViewer.sheet.attribs.lastrow != 1
+              #ss.formDataViewer.parentNode.style.visibility = "visible"
+              ss.formDataViewer.parentNode.style.display = "inline"
+              #SocialCalc.CalculateSheetNonViewHeight(ss)
+              ss.nonviewheight = 324
+              ss.DoOnResize!              
           break
         #}
         break if SocialCalc.hadSnapshot

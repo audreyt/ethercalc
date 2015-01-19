@@ -5515,12 +5515,12 @@ SocialCalc.RenderColHeaders = function(context) {
          }
       }
    // eddy {
-   if(context.formColNames != null) {
-     for(var nodeIndex = 0;  nodeIndex < result.childNodes.length;  nodeIndex++ ) {
-       var currentCol = result.childNodes[nodeIndex];
-       if(context.formColNames[currentCol.innerText] != null) currentCol.innerText = context.formColNames[currentCol.innerText];
-     }
-   }
+//   if(context.formColNames != null) {
+//     for(var nodeIndex = 0;  nodeIndex < result.childNodes.length;  nodeIndex++ ) {
+//       var currentCol = result.childNodes[nodeIndex];
+//       if(context.formColNames[currentCol.innerText] != null) currentCol.innerText = context.formColNames[currentCol.innerText];
+//     }
+//   }
    // }
    return result;
    }
@@ -7738,7 +7738,8 @@ SocialCalc.EditorRenderSheet = function(editor) {
 
    SocialCalc.AssignID(editor, editor.fullgrid, "fullgrid"); // give it an id
    // eddy EditorRenderSheet {
-   if(editor.context.showRCHeaders === true) editor.EditorMouseRegister();
+   // if(editor.context.showRCHeaders === true) 
+     editor.EditorMouseRegister();
    // } EditorRenderSheet
    
    }
@@ -8251,6 +8252,11 @@ SocialCalc.ProcessEditorMouseDown = function(e) {
       }
    coord = editor.MoveECell(result.coord);
    // eddy ProcessEditorMouseDown {
+   if(SocialCalc._app == true) { // "app" wigets need to keep focus - needed because "coord" always equals A1 
+     SocialCalc.CmdGotFocus(true); // cell widgets need to keep focus
+     return;
+   }
+   
    var clickedCell = editor.context.sheetobj.cells[coord];
    if(clickedCell) {
      if(clickedCell.valuetype.charAt(1) == 'i') { // IF cell contains ioWidget
@@ -16136,7 +16142,10 @@ SocialCalc.Formula.DecodeRangeParts = function(sheetdata, range) {
 //   func_def, if present, is a string explaining the function. If not, looked up in SocialCalc.Constants.
 //   func_class, if present, is the comma-separated names of the elements in SocialCalc.Formula.FunctionClasses.
 //   cell_html, if present, is the HTML to display in the cell. will find and replace these <%=cell_reference%>, <%=displayvalue%> see SocialCalc.FormatValueForDisplay
-//   io_parameters, if present, "ParameterList" is used with =CopyValue() etc, used to collect parameters for use trigger/action formulas, "EventTree" is used with =Button() etc, used to store trigger cell lookup table
+//   io_parameters, if present, 
+//        "ParameterList" is used with =CopyValue() etc, used to collect parameters for use trigger/action formulas, 
+//        "EventTree" is used with =Button() etc, used to store trigger cell lookup table
+//        "Input" for input style GUI widgets - textbox/radio buttons etc - 
 //
 // To add a function, just add it to this object.
 
@@ -16183,38 +16192,66 @@ SocialCalc.Formula.StoreIoEventFormula = function(function_name, coord, operand_
 
 	if(typeof sheet.ioEventTree === 'undefined') sheet.ioEventTree = {};	
 	if(typeof sheet.ioParameterList === 'undefined') sheet.ioParameterList = {};
-
 	
-	
-    if(io_parameters == "EventTree"	&& (operand[0].type == "coord" || operand[0].type == "range")) { // trigger cell exists   
-    	// create a list of action formulas for each trigger cell  
-        var triggerCellId = operand[0].value.replace(/\$/g,''); // strip dollar signs
-        var PushTriggerCord = function(list, index, v) {
-            if(typeof list[index] === 'undefined') list[index] = {};
-            list[index][v] = v;
-        };
+	// store trigger lookup table
+  if(io_parameters == "EventTree"	&& (operand[0].type == "coord" || operand[0].type == "range")) { // trigger cell exists   
+  	// create a list of action formulas for each trigger cell  
+    var triggerCellId = operand[0].value.replace(/\$/g,''); // strip dollar signs
+    var PushTriggerCord = function(list, index, v) {
+        if(typeof list[index] === 'undefined') list[index] = {};
+        list[index][v] = v;
+    };
 
 
-        if(operand[0].type == "range" )  {      
-   		      var rangeinfo = SocialCalc.Formula.DecodeRangeParts(sheet, triggerCellId);
- 		      for (var i=0; i<rangeinfo.ncols; i++) {
-		         for (var j=0; j<rangeinfo.nrows; j++) {
-		            var cellcr = SocialCalc.crToCoord(rangeinfo.col1num + i, rangeinfo.row1num + j);
-		                          PushTriggerCord(sheet.ioEventTree, cellcr, coord); 
-		                          
-		         }
-		      }
-        }
-        if(operand[0].type == "coord" ) {
-            PushTriggerCord(sheet.ioEventTree, triggerCellId, coord); 
-        }
-        
-        
-//    	if(typeof sheet.ioEventTree[triggerCellId] === 'undefined') sheet.ioEventTree[triggerCellId] = {};
-//    	sheet.ioEventTree[triggerCellId][coord] = coord;
+    if(operand[0].type == "range" )  {      
+	      var rangeinfo = SocialCalc.Formula.DecodeRangeParts(sheet, triggerCellId);
+      for (var i=0; i<rangeinfo.ncols; i++) {
+         for (var j=0; j<rangeinfo.nrows; j++) {
+            var cellcr = SocialCalc.crToCoord(rangeinfo.col1num + i, rangeinfo.row1num + j);
+                          PushTriggerCord(sheet.ioEventTree, cellcr, coord); 
+                          
+         }
+      }
     }
+    if(operand[0].type == "coord" ) {
+        PushTriggerCord(sheet.ioEventTree, triggerCellId, coord); 
+    }                
+  }
 
+  
+  //IF GUI widget is "Input"
+  if(io_parameters == "Input" ) {
+    var formDataViewer = (SocialCalc.CurrentSpreadsheetControlObject != null) 
+          ? SocialCalc.CurrentSpreadsheetControlObject.formDataViewer 
+          : SocialCalc.CurrentSpreadsheetViewerObject.formDataViewer;
     
+    if(formDataViewer != null && formDataViewer.loaded == true) {
+      
+      // IF formFields  not loaded - load formFields  
+      if( formDataViewer.formFields == null) SocialCalc.Formula.LoadFormFields();
+      //  get formFieldName
+      var formFieldName = (function_name+coord).toLowerCase();
+      //  if formFieldName not in formFields  
+      var sheetCmd = null;
+      if(formDataViewer.formFields[formFieldName] == null) {
+        //    store formFieldName of gui input widget 
+        //    add formFieldName  to formFields  
+        var col = formDataViewer.formFields[formFieldName] = formDataViewer.formFieldsLength++ + 2;
+        //    add formFieldName to next empty cell (starting with B1)
+        var headerCoord = SocialCalc.crToCoord(col, 1);
+        sheetCmd = "set "+headerCoord+" text t "+SocialCalc.encodeForSave(function_name.toLowerCase()+coord);
+      }
+      if(operand[0].type.charAt(0) == "t" || operand[0].type.charAt(0) == "n") {       
+        var valueCoord = SocialCalc.crToCoord(formDataViewer.formFields[formFieldName], 2);
+        if(formDataViewer.sheet.cells[valueCoord] == null ||  formDataViewer.sheet.cells[valueCoord].datavalue != operand[0].value) {
+          var sheetCmdTwo = "set "+valueCoord+" text t "+SocialCalc.encodeForSave(operand[0].value);
+          if (sheetCmd != null) sheetCmd = sheetCmd + "\n" + sheetCmdTwo; else sheetCmd = sheetCmdTwo;        
+        }
+  
+      }
+      if (sheetCmd != null) formDataViewer.sheet.ScheduleSheetCommands(sheetCmd, false);    
+    }    
+  }    
         
 	// store parameters of each action formulas 
 	if(typeof sheet.ioParameterList[coord] === 'undefined') sheet.ioParameterList[coord] = {};
@@ -16223,10 +16260,6 @@ SocialCalc.Formula.StoreIoEventFormula = function(function_name, coord, operand_
 
 	SocialCalc.DebugLog({ ioEventTree: sheet.ioEventTree});
 	SocialCalc.DebugLog({ ioParameterList: sheet.ioParameterList});
-
-
-
-		
 }   
    
 
@@ -16239,7 +16272,47 @@ SocialCalc.Formula.Clone =   function(destination, source) {
             }
         }
     };   
-   
+
+/**
+ * LoadFormFields
+ * 
+ * Load the fieldNames of the form 
+ *  Cell A1 contains "FieldName:" and cells B1 to n contain field names
+ *  Cell A2 contains "Pending" - pending data row. The pending row is moved to row 3 by inseting a new row 2 onSubmit 
+ *  Put the fieldNames into an array for fast lookup and position information
+ */    
+    
+SocialCalc.Formula.LoadFormFields =   function() {
+  var formDataViewer = (SocialCalc.CurrentSpreadsheetControlObject != null) 
+    ? SocialCalc.CurrentSpreadsheetControlObject.formDataViewer 
+    : SocialCalc.CurrentSpreadsheetViewerObject.formDataViewer;
+
+  formDataViewer.formFields = {};
+
+  
+  //IF cell A1 is blank - Adds "FieldName:" to A1
+  if(formDataViewer.sheet.cells.A1 == null ) {
+    formDataViewer.sheet.ScheduleSheetCommands("set A1 text t "+SocialCalc.encodeForSave("FieldName:"), false);       
+  }
+  
+  if(formDataViewer.sheet.cells.A2 == null ) {
+    formDataViewer.sheet.ScheduleSheetCommands("set A2 text t "+SocialCalc.encodeForSave("Pending:"), false);       
+  }
+
+  
+  //  For each cell in row 1, from B1 to 1st blank cell
+  var col = 2;
+  while(true) {
+    var coord = SocialCalc.crToCoord(col, 1);
+    var cell=formDataViewer.sheet.cells[coord];
+    if (!cell) break;
+    //    Put cell value into formFields  
+    formDataViewer.formFields[cell.datavalue.toLowerCase()] = col;
+    col ++;
+  }
+  formDataViewer.formFieldsLength = col -2;
+
+}    
    
 /*
 #
@@ -16267,11 +16340,9 @@ SocialCalc.Formula.CalculateFunction = function(fname, operand, sheet, coord) {
       scf.CopyFunctionArgs(operand, foperand);
 
 	  // eddy CalculateFunction {
-      if(fobj[6] && fobj[6] != "") {
-	  
-		SocialCalc.DebugLog("action:"+fname);
-		
-		scf.StoreIoEventFormula(fname, coord, foperand, sheet, fobj[6]);
+   if(fobj[6] && fobj[6] != "") {	  
+	   SocialCalc.DebugLog("action:"+fname);		
+		 scf.StoreIoEventFormula(fname, coord, foperand, sheet, fobj[6]);
 		
 	  }
 	  // }
@@ -19454,8 +19525,8 @@ SocialCalc.Formula.FunctionList["EMAILONEDIT"] = [SocialCalc.Formula.IoFunctions
 SocialCalc.Formula.FunctionList["EMAILAT"] = [SocialCalc.Formula.IoFunctions, -4, "datetime, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList" ];
 SocialCalc.Formula.FunctionList["EMAILONEDITIF"] = [SocialCalc.Formula.IoFunctions, -5, "editRange, condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "EventTree" ];
 SocialCalc.Formula.FunctionList["EMAILATIF"] = [SocialCalc.Formula.IoFunctions, -5, "datetime, condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList" ];
-SocialCalc.Formula.FunctionList["TEXTBOX"] = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "gui", "<input type='text' id='TEXTBOX_<%=cell_reference%>' onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.TextBox('<%=cell_reference%>')\" value='<%=display_value%>' >" ];
-SocialCalc.Formula.FunctionList["CHECKBOX"] = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "gui", "<input type='checkbox' id='CHECKBOX_<%=cell_reference%>' <%=checked%> onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.CheckBox('<%=cell_reference%>')\" >" ];
+SocialCalc.Formula.FunctionList["TEXTBOX"] = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "gui", "<input type='text' id='TEXTBOX_<%=cell_reference%>' onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.TextBox('<%=cell_reference%>')\" value='<%=display_value%>' >", "Input" ];
+SocialCalc.Formula.FunctionList["CHECKBOX"] = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "gui", "<input type='checkbox' id='CHECKBOX_<%=cell_reference%>' <%=checked%> onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.CheckBox('<%=cell_reference%>')\" >", "Input" ];
 
 SocialCalc.Formula.FunctionList["COPYVALUE"] = [SocialCalc.Formula.IoFunctions, 3, "txt", "", "action", "", "EventTree"];
 SocialCalc.Formula.FunctionList["COPYFORMULA"] = [SocialCalc.Formula.IoFunctions, 3, "txt", "", "action", "", "EventTree"];
@@ -19659,36 +19730,49 @@ SocialCalc.TriggerIoAction.Email = function(emailFormulaCellId, optionalTriggerC
 
 // onKeyUp=TextBox 
 SocialCalc.TriggerIoAction.TextBox = function(textBoxCellId) {
- var spreadsheet =  window.spreadsheet;
- var sheet = spreadsheet.sheet;
- var cell = sheet.cells[textBoxCellId];
-
- var cell_textbox=document.getElementById('TEXTBOX_'+textBoxCellId);
- 
-
- var sheetCommand = 'set '+cell.coord+ ' formula ' + 'TEXTBOX("' +SocialCalc.encodeForSave(cell_textbox.value)+'")'
- //SocialCalc.CmdGotFocus(cell_textbox);
-
- spreadsheet.editor.EditorScheduleSheetCommands(sheetCommand,  true, false);
- // var cell_textbox=document.getElementById('TEXTBOX_'+textBoxCellId).focus();
- 
+  var getHTMLTextBoxCellValue = function( textBoxWidget ) { return textBoxWidget.value; };
+  var function_name = "TEXTBOX";
+  SocialCalc.TriggerIoAction.updateInputWidgetFormula(function_name, textBoxCellId, getHTMLTextBoxCellValue );
 }
 
-// onKeyUp=TextBox 
-SocialCalc.TriggerIoAction.CheckBox = function(textBoxCellId) {
+//onKeyUp=CheckBox 
+SocialCalc.TriggerIoAction.CheckBox = function(checkBoxCellId) {
+  var getHTMLCheckBoxCellValue = function( checkBoxWidget ) { return (checkBoxWidget.checked ? "TRUE" : "FALSE") };
+  var function_name = "CHECKBOX"
+  SocialCalc.TriggerIoAction.updateInputWidgetFormula(function_name, checkBoxCellId, getHTMLCheckBoxCellValue );
+}
+
+SocialCalc.TriggerIoAction.updateInputWidgetFormula = function(function_name, widgetCellId, getHTMLWidgetCellValue ) {
+
  var spreadsheet =  window.spreadsheet;
  var sheet = spreadsheet.sheet;
- var cell = sheet.cells[textBoxCellId];
-
- var cell_textbox=document.getElementById('CHECKBOX_'+textBoxCellId);
+ var cell = sheet.cells[widgetCellId];
  
+ var cell_textbox=document.getElementById(function_name+'_'+widgetCellId);
+ var inputValue = getHTMLWidgetCellValue(cell_textbox);
+ inputValue = SocialCalc.encodeForSave(inputValue);
 
- var sheetCommand = 'set '+cell.coord+ ' formula ' + 'CHECKBOX("' +SocialCalc.encodeForSave(cell_textbox.checked ? "TRUE" : "FALSE")+'")'
+ var sheetCommand = 'set '+cell.coord+ ' formula ' + function_name+'("' +inputValue+'")'
  //SocialCalc.CmdGotFocus(cell_textbox);
 
  spreadsheet.editor.EditorScheduleSheetCommands(sheetCommand,  true, false);
- // var cell_textbox=document.getElementById('TEXTBOX_'+textBoxCellId).focus();
+ // var cell_textbox=document.getElementById('TEXTBOX_'+widgetCellId).focus(); 
  
+ SocialCalc.TriggerIoAction.UpdateFormDataSheet(function_name, cell.coord, inputValue);
+}
+
+// On edit of Form Input widget - Update form data sheet 
+SocialCalc.TriggerIoAction.UpdateFormDataSheet = function(function_name, formCellId, inputValue) {
+  var formDataViewer = (SocialCalc.CurrentSpreadsheetControlObject != null) 
+       ? SocialCalc.CurrentSpreadsheetControlObject.formDataViewer 
+       : SocialCalc.CurrentSpreadsheetViewerObject.formDataViewer; 
+  if (formDataViewer == null) return;
+
+  var formFieldName = (function_name+formCellId).toLowerCase();
+  if(formDataViewer.formFields[formFieldName] != null) {       
+    var valueCoord = SocialCalc.crToCoord(formDataViewer.formFields[formFieldName], 2);
+    formDataViewer.sheet.ScheduleSheetCommands("set "+valueCoord+" text t "+inputValue, false);    
+  }
 }
 
 
@@ -22745,10 +22829,12 @@ spreadsheet.Buttons = {
 // eddy test add input 
    var formDataDiv = document.createElement("div");
    formDataDiv.id = "te_formData";
-   formDataDiv.style.visibility = "hidden";
+   //formDataDiv.style.visibility = "hidden";
+   formDataDiv.style.display = "none";
+   //formDataDiv.style.display = "inline";
    spreadsheet.spreadsheetDiv.appendChild(formDataDiv);   
    spreadsheet.formDataViewer = new SocialCalc.SpreadsheetViewer("te_FormData-"); // should end with -
-   spreadsheet.formDataViewer.InitializeSpreadsheetViewer(formDataDiv.id, 100, 0, 200);
+   spreadsheet.formDataViewer.InitializeSpreadsheetViewer(formDataDiv.id, 180, 0, 200);
        
 // }
    
@@ -22780,10 +22866,7 @@ spreadsheet.Buttons = {
    // create sheet view and others
 
    // InitializeSpreadsheetControl eddy {
-   spreadsheet.nonviewheight = spreadsheet.statuslineheight;
-   for(var nodeIndex = 0;  nodeIndex < spreadsheet.spreadsheetDiv.childNodes.length;  nodeIndex++ ) {
-     spreadsheet.nonviewheight += spreadsheet.spreadsheetDiv.childNodes[nodeIndex].offsetHeight;
-   }
+   SocialCalc.CalculateSheetNonViewHeight(spreadsheet);
    // } InitializeSpreadsheetControl
    spreadsheet.viewheight = spreadsheet.height-spreadsheet.nonviewheight;
    spreadsheet.editorDiv=spreadsheet.editor.CreateTableEditor(spreadsheet.width, spreadsheet.viewheight);
@@ -22847,6 +22930,20 @@ spreadsheet.Buttons = {
    return;
 
    }
+
+
+// eddy CalculateSheetNonViewHeight {
+SocialCalc.CalculateSheetNonViewHeight = function(spreadsheet) {
+  spreadsheet.nonviewheight = spreadsheet.statuslineheight;
+  for(var nodeIndex = 0;  nodeIndex < spreadsheet.spreadsheetDiv.childNodes.length;  nodeIndex++ ) {
+    if(spreadsheet.spreadsheetDiv.childNodes[nodeIndex].id == "SocialCalc-statusline") continue;
+    spreadsheet.nonviewheight += spreadsheet.spreadsheetDiv.childNodes[nodeIndex].offsetHeight;
+  }
+  
+}
+
+// }
+
 
 //
 // outstr = SocialCalc.LocalizeString(str)
@@ -25663,6 +25760,11 @@ SocialCalc.InitializeSpreadsheetViewer = function(spreadsheet, node, height, wid
           params: {spreadsheetobj:spreadsheet}};
       }
 
+   // eddy InitializeSpreadsheetViewer {
+   if(SocialCalc._app == true) {
+     spreadsheet.formDataViewer = new SocialCalc.SpreadsheetViewer("te_FormData-");
+   }
+   
    // done - refresh screen needed
 
    return;

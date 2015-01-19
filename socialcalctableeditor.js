@@ -733,7 +733,8 @@ SocialCalc.EditorRenderSheet = function(editor) {
 
    SocialCalc.AssignID(editor, editor.fullgrid, "fullgrid"); // give it an id
    // eddy EditorRenderSheet {
-   if(editor.context.showRCHeaders === true) editor.EditorMouseRegister();
+   // if(editor.context.showRCHeaders === true) 
+     editor.EditorMouseRegister();
    // } EditorRenderSheet
    
    }
@@ -1246,6 +1247,11 @@ SocialCalc.ProcessEditorMouseDown = function(e) {
       }
    coord = editor.MoveECell(result.coord);
    // eddy ProcessEditorMouseDown {
+   if(SocialCalc._app == true) { // "app" wigets need to keep focus - needed because "coord" always equals A1 
+     SocialCalc.CmdGotFocus(true); // cell widgets need to keep focus
+     return;
+   }
+   
    var clickedCell = editor.context.sheetobj.cells[coord];
    if(clickedCell) {
      if(clickedCell.valuetype.charAt(1) == 'i') { // IF cell contains ioWidget
