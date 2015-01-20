@@ -21,7 +21,7 @@ export class HackFoldr
   at: (idx) -> @rows[idx] ? {}
 
   push: (row) ->
-    @init ~> @post-csv row.link, row.title, ~>
+    @init row, ~> @post-csv row.link, row.title, ~>
       if it?body?command?1 is /paste A(\d+) all/
         row.row = parseInt RegExp.$1
     @rows.push(row); @
@@ -36,20 +36,38 @@ export class HackFoldr
     @rows.splice idx, 1; @
 
   send-cmd: (cmd, cb=->) ->
-    @init ~> $.post("#{ @base }/_/#{ @id }").type(\text/plain).send(cmd).end ->
+    @init null, ~> $.post("#{ @base }/_/#{ @id }").type(\text/plain).send(cmd).end ->
 
-  init: (cb) ->
+  init: (row, cb) ->
     if @was-non-existent
+      row?row = 2
       @was-non-existent = false
-      return @post-csv '#url', '#title', ~> @init cb
-    else if @was-empty
       @was-empty = false
-      return @post-csv "/#{ @id }.1", "Sheet1", cb
+      return @post-raw-csv '#url', '#title', "/#{ @id }.1", "Sheet1", cb unless row
+      return @post-init-csv '#url', '#title', "/#{ @id }.1", "Sheet1", row.link, row.title, cb
+    else if @was-empty
+      row?row = 2
+      @was-empty = false
+      return @post-csv "/#{ @id }.1", "Sheet1", cb unless row
+      return @post-raw-csv "/#{ @id }.1", "Sheet1", row.link, row.title, cb
     cb!
   post-csv: (a="", b="", cb) ->
     $.post("#{ @base }/_/#{ @id }").type(\text/csv).accept(\application/json).send("""
       "#{ a.replace(/"/g, '""') }","#{ b.replace(/"/g, '""') }"
     """).end ~> cb? it
+  post-raw-csv: (a="", b="", c="", d="", cb) ->
+    $.post("#{ @base }/_/#{ @id }").type(\text/csv).accept(\application/json).send("""
+      "#{ a.replace(/"/g, '""') }","#{ b.replace(/"/g, '""') }"
+      "#{ c.replace(/"/g, '""') }","#{ d.replace(/"/g, '""') }"
+    """).end ~>
+      cb? it
+  post-init-csv: (a="", b="", c="", d="", e="", f="", cb) ->
+    $.post("#{ @base }/_/#{ @id }").type(\text/csv).accept(\application/json).send("""
+      "#{ a.replace(/"/g, '""') }","#{ b.replace(/"/g, '""') }"
+      "#{ c.replace(/"/g, '""') }","#{ d.replace(/"/g, '""') }"
+      "#{ e.replace(/"/g, '""') }","#{ f.replace(/"/g, '""') }"
+    """).end ~>
+      cb? it
 
 
 # test
