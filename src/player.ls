@@ -137,6 +137,7 @@
               ss.formDataViewer.parentNode.style.display = "inline"
               #SocialCalc.CalculateSheetNonViewHeight(ss)
               ss.nonviewheight = 324
+              ss.height = 0;
               ss.DoOnResize!              
           break
         #}

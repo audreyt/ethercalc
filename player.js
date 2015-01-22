@@ -238,6 +238,7 @@
                     if (ss.formDataViewer.sheet.attribs.lastcol !== 1 || ss.formDataViewer.sheet.attribs.lastrow !== 1) {
                       ss.formDataViewer.parentNode.style.display = "inline";
                       ss.nonviewheight = 324;
+                      ss.height = 0;
                       ss.DoOnResize();
                     }
                   }
