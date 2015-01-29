@@ -8402,6 +8402,7 @@ src/sc.ls
 stackato.yml
 start.html
 static/dist/ods.js
+static/download.png
 static/ethercalc.js
 static/export.png
 static/gear.png
@@ -8415,6 +8416,7 @@ static/index.css
 static/jquery.js
 static/jszip.js
 static/md5.js
+static/multi.js
 static/shim.js
 static/socialcalc.css
 static/start.css
