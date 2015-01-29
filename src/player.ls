@@ -241,7 +241,7 @@ Check the activity stream to see the newly edited page!
       $ @ .attr title: 'Export...'
     $ document .on \click '#te_fullgrid tr:nth-child(2) td:first' ->
       SocialCalc.Keyboard.passThru = yes if vex?dialog.open
-      isMultiple = SocialCalc._room is /\.[1-9]\d*$/
+      isMultiple = SocialCalc._room is /[1-9]\d*$/
       vex?defaultOptions.className = 'vex-theme-flat-attack'
       vex?dialog.open do
         message: "Please choose an export format.#{
