@@ -30,7 +30,7 @@ div.wiki .wafl {
 }
 
 #te_fullgrid tr:nth-child(2) td:nth-child(1) {
-    background: url('export.png') white 5px no-repeat;
+    background: url('download.png') white 5px no-repeat;
     cursor: pointer;
 }
 
@@ -832,4 +832,9 @@ body.vex-open {
 .vex-loading-spinner.vex-theme-flat-attack {
   height: 4em;
   width: 4em;
+}
+
+body, body #tableeditor {
+    margin-top: 0;
+    padding: 0;
 }

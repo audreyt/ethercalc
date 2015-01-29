@@ -2,7 +2,7 @@
 (function(){
   var join$ = [].join;
   this.include = function(){
-    var DB, SC, KEY, BASEPATH, EXPIRE, HMAC_CACHE, hmac, ref$, Text, Html, Csv, Json, RealBin, sendFile, newRoom, IO, api, ExportCSVJSON, ExportCSV, ExportHTML, requestToCommand, requestToSave;
+    var J, csvParse, DB, SC, KEY, BASEPATH, EXPIRE, HMAC_CACHE, hmac, ref$, Text, Html, Csv, Json, RealBin, sendFile, newRoom, IO, api, ExportCSVJSON, ExportCSV, ExportHTML, JTypeMap, ExportJ, ExportExcelXML, requestToCommand, requestToSave, i$, len$, route, ref1$;
     this.use('json', this.app.router, this.express['static'](__dirname));
     this.app.use('/edit', this.express['static'](__dirname));
     this.app.use('/view', this.express['static'](__dirname));
@@ -10,6 +10,8 @@
     this.include('player-broadcast');
     this.include('player-graph');
     this.include('player');
+    J = require('j');
+    csvParse = require('csv-parse');
     DB = this.include('db');
     SC = this.include('sc');
     KEY = this.KEY;
@@ -64,6 +66,31 @@
       }
     });
     this.get({
+      '/static/socialcalc:part.js': function(){
+        var part;
+        part = this.params.part;
+        this.response.type('application/javascript');
+        return this.response.sendfile(RealBin + "/socialcalc" + part + ".js");
+      }
+    });
+    this.get({
+      '/static/form:part.js': function(){
+        var part;
+        part = this.params.part;
+        this.response.type('application/javascript');
+        return this.response.sendfile(RealBin + "/form" + part + ".js");
+      }
+    });
+    this.get({
+      '/=_new': function(){
+        var room;
+        room = newRoom();
+        return this.response.redirect(KEY
+          ? BASEPATH + "/=" + room + "/edit"
+          : BASEPATH + "/=" + room);
+      }
+    });
+    this.get({
       '/_new': function(){
         var room;
         room = newRoom();
@@ -76,38 +103,75 @@
       '/_start': sendFile('start.html')
     });
     IO = this.io;
-    api = function(cb){
+    api = function(cb, cbMultiple){
       return function(){
-        var this$ = this;
-        return SC._get(this.params.room, IO, function(arg$){
-          var snapshot, ref$, type, content;
-          snapshot = arg$.snapshot;
-          if (snapshot) {
-            ref$ = cb.call(this$.params, snapshot), type = ref$[0], content = ref$[1];
-            if (type === Csv) {
-              this$.response.set('Content-Disposition', "attachment; filename=\"" + this$.params.room + ".csv\"");
+        var room, this$ = this;
+        room = encodeURIComponent(this.params.room);
+        if (/^%3D/.exec(room) && cbMultiple) {
+          room = room.slice(3);
+          return SC._get(room, IO, function(arg$){
+            var snapshot;
+            snapshot = arg$.snapshot;
+            if (!snapshot) {
+              this$.response.type(Text);
+              this$.response.send(404, '');
+              return;
             }
-            if (content instanceof Function) {
-              return content(SC[this$.params.room], function(rv){
-                this$.response.type(type);
-                return this$.response.send(200, rv);
+            return SC[room].exportCSV(function(csv){
+              return csvParse(csv, {
+                delimiter: ','
+              }, function(_, body){
+                var todo, names, i$, len$, idx, ref$, link, title;
+                body.shift();
+                todo = DB.multi();
+                names = [];
+                for (i$ = 0, len$ = body.length; i$ < len$; ++i$) {
+                  idx = i$;
+                  ref$ = body[i$], link = ref$[0], title = ref$[1];
+                  if (link && title && /^\//.exec(link)) {
+                    names = names.concat(title);
+                    todo = todo.get("snapshot-" + link.slice(1));
+                  }
+                }
+                return todo.exec(function(_, saves){
+                  var ref$, type, content;
+                  ref$ = cbMultiple.call(this$.params, names, saves), type = ref$[0], content = ref$[1];
+                  this$.response.type(type);
+                  this$.response.set('Content-Disposition', "attachment; filename=\"" + room + ".xlsx\"");
+                  return this$.response.send(200, content);
+                });
               });
+            });
+          });
+        } else {
+          return SC._get(room, IO, function(arg$){
+            var snapshot, ref$, type, content;
+            snapshot = arg$.snapshot;
+            if (snapshot) {
+              ref$ = cb.call(this$.params, snapshot), type = ref$[0], content = ref$[1];
+              if (type === Csv) {
+                this$.response.set('Content-Disposition', "attachment; filename=\"" + this$.params.room + ".csv\"");
+              }
+              if (content instanceof Function) {
+                return content(SC[room], function(rv){
+                  this$.response.type(type);
+                  return this$.response.send(200, rv);
+                });
+              } else {
+                this$.response.type(type);
+                return this$.response.send(200, content);
+              }
             } else {
-              this$.response.type(type);
-              return this$.response.send(200, content);
+              this$.response.type(Text);
+              return this$.response.send(404, '');
             }
-          } else {
-            this$.response.type(Text);
-            return this$.response.send(404, '');
-          }
-        });
+          });
+        }
       };
     };
     ExportCSVJSON = api(function(){
       return [
         Json, function(sc, cb){
-          var csvParse;
-          csvParse = require('csv-parse');
           return sc.exportCSV(function(csv){
             return csvParse(csv, {
               delimiter: ','
@@ -132,6 +196,39 @@
         }
       ];
     });
+    JTypeMap = {
+      md: 'text/x-markdown',
+      xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      ods: 'application/vnd.oasis.opendocument.spreadsheet'
+    };
+    ExportJ = function(type){
+      return api(function(it){
+        var rv;
+        rv = J.utils["to_" + type](J.read(it));
+        if ((rv != null ? rv.Sheet1 : void 8) != null) {
+          rv = rv.Sheet1;
+        }
+        return [JTypeMap[type], rv];
+      }, function(names, saves){
+        var input, i$, len$, idx, save, ref$, harb, Sheet1, rv;
+        input = [
+          null, {
+            SheetNames: names,
+            Sheets: {}
+          }
+        ];
+        for (i$ = 0, len$ = saves.length; i$ < len$; ++i$) {
+          idx = i$;
+          save = saves[i$];
+          ref$ = J.read(save), harb = ref$[0], Sheet1 = ref$[1].Sheets.Sheet1;
+          input[0] || (input[0] = harb);
+          input[1].Sheets[names[idx]] = Sheet1;
+        }
+        rv = J.utils["to_" + type](input);
+        return [JTypeMap[type], rv];
+      });
+    };
+    ExportExcelXML = api(function(){});
     this.get({
       '/:room.csv': ExportCSV
     });
@@ -140,6 +237,12 @@
     });
     this.get({
       '/:room.html': ExportHTML
+    });
+    this.get({
+      '/:room.xlsx': ExportJ('xlsx')
+    });
+    this.get({
+      '/:room.md': ExportJ('md')
     });
     this.get({
       '/_from/:template': function(){
@@ -159,17 +262,19 @@
       }
     });
     this.get({
-      '/:room': KEY
-        ? function(){
-          var ref$;
-          switch (false) {
-          case !((ref$ = this.query.auth) != null && ref$.length):
-            return sendFile('index.html').call(this);
-          default:
+      '/:room': function(){
+        var uiFile, ref$;
+        uiFile = /^=/.exec(this.params.room) ? 'multi/index.html' : 'index.html';
+        if (KEY) {
+          if ((ref$ = this.query.auth) != null && ref$.length) {
+            return sendFile(uiFile).call(this);
+          } else {
             return this.response.redirect(BASEPATH + "/" + this.params.room + "?auth=0");
           }
+        } else {
+          return sendFile(uiFile).call(this);
         }
-        : sendFile('index.html')
+      }
     });
     this.get({
       '/:room/edit': function(){
@@ -214,28 +319,43 @@
       '/_/:room/csv.json': ExportCSVJSON
     });
     this.get({
+      '/_/:room/xlsx': ExportJ('xlsx')
+    });
+    this.get({
+      '/_/:room/md': ExportJ('md')
+    });
+    this.get({
       '/_/:room': api(function(it){
         return [Text, it];
       })
     });
     requestToCommand = function(request, cb){
-      var command, ref$, buf, this$ = this;
+      var command, ref$, cs, this$ = this;
       if (request.is('application/json')) {
         command = (ref$ = request.body) != null ? ref$.command : void 8;
         if (command) {
           return cb(command);
         }
       }
-      buf = '';
-      request.setEncoding('utf8');
+      cs = [];
       request.on('data', function(chunk){
-        return buf += chunk;
+        return cs = cs.concat(chunk);
       });
       return request.on('end', function(){
-        if (!request.is('text/csv')) {
-          return cb(buf);
+        var buf, k, ref$, save;
+        buf = Buffer.concat(cs);
+        if (request.is('text/x-socialcalc')) {
+          return cb(buf.toString('utf8'));
         }
-        return SC.csvToSave(buf, function(save){
+        if (request.is('text/plain')) {
+          return cb(buf.toString('utf8'));
+        }
+        for (k in ref$ = J.utils.to_socialcalc(J.read(buf)) || {
+          '': ''
+        }) {
+          save = ref$[k];
+          save = save.replace(/[\d\D]*?\ncell:/, 'cell:');
+          save = save.replace(/\s--SocialCalcSpreadsheetControlSave--[\d\D]*/, '\n');
           if (~save.indexOf("\\")) {
             save = save.replace(/\\/g, "\\b");
           }
@@ -246,31 +366,39 @@
             save = save.replace(/\n/g, "\\n");
           }
           return cb("loadclipboard " + save);
-        });
+        }
       });
     };
     requestToSave = function(request, cb){
-      var snapshot, ref$, buf, this$ = this;
+      var snapshot, ref$, cs, this$ = this;
       if (request.is('application/json')) {
         snapshot = (ref$ = request.body) != null ? ref$.snapshot : void 8;
         if (snapshot) {
           return cb(snapshot);
         }
       }
-      buf = '';
-      request.setEncoding('utf8');
+      cs = [];
       request.on('data', function(chunk){
-        return buf += chunk;
+        return cs = cs.concat(chunk);
       });
       return request.on('end', function(){
-        if (!request.is('text/csv')) {
-          return cb(buf);
+        var buf, k, ref$, save;
+        buf = Buffer.concat(cs);
+        if (request.is('text/x-socialcalc')) {
+          return cb(buf.toString('utf8'));
         }
-        return SC.csvToSave(buf, function(save){
-          return cb("socialcalc:version:1.0\nMIME-Version: 1.0\nContent-Type: multipart/mixed; boundary=SocialCalcSpreadsheetControlSave\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n# SocialCalc Spreadsheet Control Save\nversion:1.0\npart:sheet\npart:edit\npart:audit\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n" + save + "\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n--SocialCalcSpreadsheetControlSave\nContent-type: text/plain; charset=UTF-8\n\n--SocialCalcSpreadsheetControlSave--\n");
-        });
+        for (k in ref$ = J.utils.to_socialcalc(J.read(buf)) || {
+          '': ''
+        }) {
+          save = ref$[k];
+          return cb(save);
+        }
       });
     };
+    for (i$ = 0, len$ = (ref$ = ['/=:room.xlsx', '/_/=:room/xlsx']).length; i$ < len$; ++i$) {
+      route = ref$[i$];
+      this.put((ref1$ = {}, ref1$[route + ""] = fn$, ref1$));
+    }
     this.put({
       '/_/:room': function(){
         var room, this$ = this;
@@ -522,5 +650,42 @@
         }
       }
     });
+    function fn$(){
+      var room, cs, this$ = this;
+      room = encodeURIComponent(this.params.room);
+      cs = [];
+      this.request.on('data', function(chunk){
+        return cs = cs.concat(chunk);
+      });
+      return this.request.on('end', function(){
+        var buf, idx, toc, parsed, sheetsToIdx, res, k, Sheet1, todo, save;
+        buf = Buffer.concat(cs);
+        idx = 0;
+        toc = '#url,#title\n';
+        parsed = J.utils.to_socialcalc(J.read(buf));
+        sheetsToIdx = {};
+        res = [];
+        for (k in parsed) {
+          idx++;
+          sheetsToIdx[k] = idx;
+          toc += "\"/" + this$.params.room.replace(/"/g, '""') + "." + idx + "\",";
+          toc += "\"" + k.replace(/"/g, '""') + "\"\n";
+          res.push(k.replace(/'/g, "''").replace(/(\W)/g, '\\$1'));
+        }
+        Sheet1 = J.utils.to_socialcalc(J.read(toc)).Sheet1;
+        todo = DB.multi().set("snapshot-" + room, Sheet1);
+        for (k in parsed) {
+          save = parsed[k];
+          idx = sheetsToIdx[k];
+          save = save.replace(RegExp('(\'?)\\b(' + res.join('|') + ')\\1!', 'g'), fn$);
+          todo = todo.set("snapshot-" + room + "." + idx, save);
+        }
+        todo.bgsave().exec();
+        return this$.response.send(201, 'OK');
+        function fn$(arg$, arg1$, ref){
+          return "'" + this$.params.room.replace(/'/g, "''") + "." + sheetsToIdx[ref.replace(/''/g, "'")] + "'!";
+        }
+      });
+    }
   };
 }).call(this);

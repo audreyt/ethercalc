@@ -13,6 +13,11 @@ if (!(window.location.hash.replace('#', ''))) {
         window.location = './_start';
     }
 }
+window.addEventListener("message", function(it){
+    if (/"type"\s*:\s*"multi"/.test(it.data)) {
+        window.__MULTI__ = (function(){ try { return JSON.parse(it.data); } catch (e$) {} }());
+    }
+}, false);
 </script>
 <script src="./static/ethercalc.js"></script>
 <script src="./socket.io/socket.io.js"></script>
@@ -20,6 +25,94 @@ if (!(window.location.hash.replace('#', ''))) {
 <script src="./player/broadcast.js"></script>
 <script src="./player/graph.js"></script>
 <script src="./player/main.js"></script>
+<script>
+var l10n_zh_TW = {
+  "s_BrowserNotSupported": "瀏覽器不支援",
+  "s_loc_align_center": "置中",
+  "s_loc_align_left": "置左",
+  "s_loc_align_right": "置右",
+  "s_loc_alignment": "對齊方式",
+  "s_loc_audit": "紀錄",
+  "s_loc_auto_sum": "自動加總",
+  "s_loc_automatic": "自動",
+  "s_loc_borders": "邊框",
+  "s_loc_bottom": "底",
+  "s_loc_csv_format": "逗號分隔值(CSV)格式",
+  "s_loc_cancel": "取消",
+  "s_loc_cancel": "取消",
+  "s_loc_category": "分類",
+  "s_loc_center": "中央",
+  "s_loc_clear": "清空",
+  "s_loc_clipboard": "剪貼簿",
+  "s_loc_color": "顏色",
+  "s_loc_column_": "欄 ",
+  "s_loc_comment": "留言",
+  "s_loc_copy": "複製",
+  "s_loc_custom": "自訂",
+  "s_loc_cut": "剪下",
+  "s_loc_default": "預設",
+  "s_loc_delete": "刪除",
+  "s_loc_delete_column": "刪除欄",
+  "s_loc_delete_contents": "刪除內文",
+  "s_loc_delete_row": "刪除列",
+  "s_loc_down": "下",
+  "s_loc_edit": "編輯",
+  "s_loc_font": "字體",
+  "s_loc_format": "格式",
+  "s_loc_formula": "公式",
+  "s_loc_function_list": "函式表",
+  "s_loc_functions": "函式",
+  "s_loc_grid": "格",
+  "s_loc_graph": "圖表",
+  "s_loc_horizontal": "水平",
+  "s_loc_insert_column": "置入一欄",
+  "s_loc_insert_row": "置入一列",
+  "s_loc_italic": "斜體",
+  "s_loc_left": "左",
+  "s_loc_left_border": "左邊框",
+  "s_loc_link": "連結",
+  "s_loc_list": "清單",
+  "s_loc_major_sort": "主要排序",
+  "s_loc_manual": "手冊",
+  "s_loc_merge_cells": "合併儲存格",
+  "s_loc_middle": "置中",
+  "s_loc_name": "名稱",
+  "s_loc_names": "名稱",
+  "s_loc_no_padding": "不留白",
+  "s_loc_normal": "一般",
+  "s_loc_number": "數值",
+  "s_loc_ok": "好",
+  "s_loc_padding": "留白",
+  "s_loc_page_name": "頁名",
+  "s_loc_paste": "貼上",
+  "s_loc_plain_text": "空白文件",
+  "s_loc_recalc": "重算",
+  "s_loc_recalculation": "重新計算",
+  "s_loc_redo": "重做",
+  "s_loc_right": "右",
+  "s_loc_right_border": "右邊框",
+  "s_loc_sheet_settings": "試算表設定",
+  "s_loc_save": "存檔",
+  "s_loc_save_to": "儲存為",
+  "s_loc_set_value_to": "賦值為",
+  "s_loc_sort": "排序",
+  "s_loc_sort_": "排序 ",
+  "s_loc_sort_cells": "排序儲存格",
+  "s_loc_url": "網址",
+  "s_loc_undo": "倒退",
+  "s_loc_unmerge_cells": "取消合併儲存格",
+  "s_loc_up": "上",
+  "s_loc_value": "值",
+  "s_loc_vertical": "垂直",
+  "s_loc_wikitext": "協作文字",
+  "s_loc_workspace": "工作區"
+}
+if (navigator.language === 'zh-TW') {
+    for (var k in l10n_zh_TW) {
+        SocialCalc.Constants[k] = l10n_zh_TW[k]
+    }
+}
+</script>
 
 <link rel="stylesheet" type="text/css" href="./static/socialcalc.css">
 <link rel="stylesheet" type="text/css" href="./static/index.css">

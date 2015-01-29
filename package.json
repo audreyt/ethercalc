@@ -1,7 +1,7 @@
 {
   "name": "ethercalc",
   "description": "Multi-User Spreadsheet Server",
-  "version": "0.20141209.1",
+  "version": "0.20150120.0",
   "homepage": "http://ethercalc.net/",
   "repository": {
     "type": "git",
@@ -14,10 +14,23 @@
     "zappajs": "0.5.x",
     "cors": "*",
     "LiveScript": "1.3.x",
-    "csv-parse": "^0.0.6"
+    "csv-parse": "^0.0.6",
+    "j": "^0.4.3"
   },
   "optionalDependencies": {
     "webworker-threads": "0.5.x"
+  },
+  "devDependencies": {
+    "css-loader": "^0.9.0",
+    "livescript-loader": "^0.1.2",
+    "react": "^0.12.1",
+    "react-basic-tabs": "^1.0.3",
+    "react-hot-loader": "^0.5.0",
+    "style-loader": "^0.8.2",
+    "stylus-loader": "^0.4.0",
+    "superagent": "^0.21.0",
+    "webpack": "^1.4.13",
+    "webpack-dev-server": "^1.6.6"
   },
   "subdomain": "ethercalc",
   "bin": {

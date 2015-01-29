@@ -42,6 +42,13 @@
     cmdstr = cmdstr.replace /\n\n+/g '\n'
     return unless /\S/.test cmdstr
     if not isRemote and cmdstr isnt \redisplay and cmdstr isnt \recalc
+      # Multi-sheet: Rewrite $Title.A1 into "index.1"!A1
+      # The window.__MULTI__ variable is populated by index.html.
+      if window.__MULTI__?rows?length and cmdstr is /set \w+ formula /
+        for {link, title} in window.__MULTI__.rows
+          cmdstr.=replace //\$#title\.([A-Z]+[1-9][0-9]*)//ig """
+            "#{ link.replace('/', '') }"!$1
+          """
       SocialCalc.Callbacks.broadcast? \execute { cmdstr, saveundo }
     SocialCalc.OrigScheduleSheetCommands sheet, cmdstr, saveundo, isRemote
   SocialCalc.MoveECell = (editor, newcell) ->

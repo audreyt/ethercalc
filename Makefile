@@ -9,7 +9,6 @@ SOCIALCALC_FILES=\
 	socialcalcviewer.js
 
 ETHERCALC_FILES=\
-	$(SOCIALCALC_FILES) \
 	third-party/class-js/lib/Class.js \
 	third-party/wikiwyg/lib/Document/Emitter.js \
 	third-party/wikiwyg/lib/Document/Emitter/HTML.js \
@@ -25,7 +24,7 @@ JS_FILES=\
 
 all :: SocialCalcModule.js
 	env PATH="$$PATH:./node_modules/LiveScript/bin" lsc -c -o . src
-	node app.js $(ETHERCALC_ARGS)
+	node app.js $(ETHERCALC_ARGS) --cors
 
 manifest ::
 	perl -pi -e 's/# [A-Z].*\n/# @{[`date`]}/m' manifest.appcache
@@ -41,7 +40,10 @@ expire :: SocialCalcModule.js
 ./node_modules/streamline/bin/_node :
 	npm i --dev
 
-depends :: app.js static/ethercalc.js static/start.css
+static/multi.js :: multi/main.ls multi/styles.styl
+	webpack --optimize-minimize
+
+depends :: app.js static/ethercalc.js static/start.css static/multi.js
 
 SocialCalcModule.js :: $(SOCIALCALC_FILES) exports.js
 

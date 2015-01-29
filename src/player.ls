@@ -71,8 +71,10 @@
       emit data
 
     SocialCalc.isConnected = true
+    SocialCalc.RecalcInfo.LoadSheetCache = {}
     SocialCalc.RecalcInfo.LoadSheet = (ref) ->
-      ref = ref.replace /[^a-zA-Z0-9]+/g '' .toLowerCase!
+      return if ref is /[^.a-zA-Z0-9]/
+      ref.=toLowerCase!
       emit type: \ask.recalc, user: SocialCalc._username, room: ref
 
     @on data: !->
@@ -144,12 +146,15 @@
           ss?sheet.recalconce = true
         parts = ss.DecodeSpreadsheetSave @data.snapshot if @data.snapshot
         if parts?sheet
+          sheetdata = @data.snapshot.substring(parts.sheet.start, parts.sheet.end)
           SocialCalc.RecalcLoadedSheet(
             @data.room,
-            @data.snapshot.substring(parts.sheet.start, parts.sheet.end),
+            sheetdata,
             true # recalc
           )
-          ss.context.sheetobj.ScheduleSheetCommands "recalc\n", false, true
+          if SocialCalc.RecalcInfo.LoadSheetCache[@data.room] isnt sheetdata
+            SocialCalc.RecalcInfo.LoadSheetCache[@data.room] = sheetdata
+            ss.context.sheetobj.ScheduleSheetCommands "recalc\n", false, true
         else
           SocialCalc.RecalcLoadedSheet @data.room, '', true
       | \execute
@@ -235,16 +240,29 @@ Check the activity stream to see the newly edited page!
     $ document .on \mouseover '#te_fullgrid tr:nth-child(2) td:first' ->
       $ @ .attr title: 'Export...'
     $ document .on \click '#te_fullgrid tr:nth-child(2) td:first' ->
+      SocialCalc.Keyboard.passThru = yes if vex?dialog.open
+      isMultiple = SocialCalc._room is /\.[1-9]\d*$/
       vex?defaultOptions.className = 'vex-theme-flat-attack'
       vex?dialog.open do
-        message: 'Please choose an export format.'
+        message: "Please choose an export format.#{
+          if isMultiple then "<br><small>(EXCEL supports multiple sheets.)</small>" else ""
+        }"
+        callback: -> SocialCalc.Keyboard.passThru = no
         buttons: [
-          $.extend {}, vex?dialog.buttons.YES, text: 'HTML', click: ->
-            window.open "./#{ SocialCalc._room }.html"
+          $.extend {}, vex?dialog.buttons.YES, text: 'Excel', click: ->
+            if isMultiple
+              window.open "./=#{ SocialCalc._room.replace(/\.[1-9]\d*$/, '') }.xlsx"
+            else
+              window.open "./#{ SocialCalc._room }.xlsx"
           $.extend {}, vex?dialog.buttons.YES, text: 'CSV', click: ->
             window.open "./#{ SocialCalc._room }.csv"
+          $.extend {}, vex?dialog.buttons.YES, text: 'HTML', click: ->
+            window.open "./#{ SocialCalc._room }.html"
           $.extend {}, vex?dialog.buttons.NO, text: 'Cancel'
         ]
+
+      # In-situ import courtesy of
+      # SocialCalc.CurrentSpreadsheetControlObject.tabs[6] ("Clipboard")
 
   if window.Document?Parser
     SocialCalc.Callbacks.expand_wiki = (val) -> """

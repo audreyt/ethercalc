@@ -125,8 +125,12 @@
             return emit(data);
           };
           SocialCalc.isConnected = true;
+          SocialCalc.RecalcInfo.LoadSheetCache = {};
           SocialCalc.RecalcInfo.LoadSheet = function(ref){
-            ref = ref.replace(/[^a-zA-Z0-9]+/g, '').toLowerCase();
+            if (/[^.a-zA-Z0-9]/.exec(ref)) {
+              return;
+            }
+            ref = ref.toLowerCase();
             return emit({
               type: 'ask.recalc',
               user: SocialCalc._username,
@@ -135,7 +139,7 @@
           };
           return this$.on({
             data: function(){
-              var ss, editor, user, ref$, ecell, peerClass, find, cr, cell, origCR, origCell, parts, cmdstr, line, refreshCmd, ref1$;
+              var ss, editor, user, ref$, ecell, peerClass, find, cr, cell, origCR, origCell, parts, cmdstr, line, refreshCmd, sheetdata, ref1$;
               if (!((typeof SocialCalc != 'undefined' && SocialCalc !== null) && SocialCalc.isConnected)) {
                 return;
               }
@@ -260,8 +264,12 @@
                   parts = ss.DecodeSpreadsheetSave(this.data.snapshot);
                 }
                 if (parts != null && parts.sheet) {
-                  SocialCalc.RecalcLoadedSheet(this.data.room, this.data.snapshot.substring(parts.sheet.start, parts.sheet.end), true);
-                  ss.context.sheetobj.ScheduleSheetCommands("recalc\n", false, true);
+                  sheetdata = this.data.snapshot.substring(parts.sheet.start, parts.sheet.end);
+                  SocialCalc.RecalcLoadedSheet(this.data.room, sheetdata, true);
+                  if (SocialCalc.RecalcInfo.LoadSheetCache[this.data.room] !== sheetdata) {
+                    SocialCalc.RecalcInfo.LoadSheetCache[this.data.room] = sheetdata;
+                    ss.context.sheetobj.ScheduleSheetCommands("recalc\n", false, true);
+                  }
                 } else {
                   SocialCalc.RecalcLoadedSheet(this.data.room, '', true);
                 }
@@ -388,21 +396,38 @@
             });
           });
           return $(document).on('click', '#te_fullgrid tr:nth-child(2) td:first', function(){
+            var isMultiple;
+            if ((typeof vex != 'undefined' && vex !== null) && vex.dialog.open) {
+              SocialCalc.Keyboard.passThru = true;
+            }
+            isMultiple = /\.[1-9]\d*$/.exec(SocialCalc._room);
             if (typeof vex != 'undefined' && vex !== null) {
               vex.defaultOptions.className = 'vex-theme-flat-attack';
             }
             return typeof vex != 'undefined' && vex !== null ? vex.dialog.open({
-              message: 'Please choose an export format.',
+              message: "Please choose an export format." + (isMultiple ? "<br><small>(EXCEL supports multiple sheets.)</small>" : ""),
+              callback: function(){
+                return SocialCalc.Keyboard.passThru = false;
+              },
               buttons: [
                 $.extend({}, typeof vex != 'undefined' && vex !== null ? vex.dialog.buttons.YES : void 8, {
-                  text: 'HTML',
+                  text: 'Excel',
                   click: function(){
-                    return window.open("./" + SocialCalc._room + ".html");
+                    if (isMultiple) {
+                      return window.open("./=" + SocialCalc._room.replace(/\.[1-9]\d*$/, '') + ".xlsx");
+                    } else {
+                      return window.open("./" + SocialCalc._room + ".xlsx");
+                    }
                   }
                 }), $.extend({}, typeof vex != 'undefined' && vex !== null ? vex.dialog.buttons.YES : void 8, {
                   text: 'CSV',
                   click: function(){
                     return window.open("./" + SocialCalc._room + ".csv");
+                  }
+                }), $.extend({}, typeof vex != 'undefined' && vex !== null ? vex.dialog.buttons.YES : void 8, {
+                  text: 'HTML',
+                  click: function(){
+                    return window.open("./" + SocialCalc._room + ".html");
                   }
                 }), $.extend({}, typeof vex != 'undefined' && vex !== null ? vex.dialog.buttons.NO : void 8, {
                   text: 'Cancel'
