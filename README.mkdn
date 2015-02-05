@@ -30,7 +30,7 @@ Or install with our [Docker](http://www.docker.io/) image, which comes with a
 webworker-threads support:
 
     # Run a redis Docker using the official redis Docker image with persistant database in <host-directory>
-    sudo docker run --name redis -d -v <host-directory>:/data redis:latest
+    sudo docker run --name redis -d -v <host-directory>:/data redis:latest redis-server --appendonly yes
 
     # Run ethercalc on default port 8000
     sudo docker run -d -p 8000:8000 --link redis:redis audreyt/ethercalc
