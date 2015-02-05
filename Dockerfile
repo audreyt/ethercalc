@@ -1,7 +1,7 @@
 #
 # This image requires a linked redis Docker container:
 #
-#    docker run -d redis
+#    docker run --name redis -d -v /docker/host/dir:/data redis redis-server --appendonly yes
 #    docker run -d -p 8000:8000 --link redis:redis audreyt/ethercalc
 #
 
