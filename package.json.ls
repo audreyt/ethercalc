@@ -3,20 +3,20 @@
 exec "perl -pi -e 's/# [A-Z].*\\n/# @{[`date`]}/m' manifest.appcache"
 name: \ethercalc
 description: 'Multi-User Spreadsheet Server'
-version: \0.20150130.5
+version: \0.20150217.0
 homepage: 'http://ethercalc.net/'
 repository:
   type: 'git'
   url: 'https://github.com/audreyt/ethercalc'
 dependencies:
-  redis: \0.8.2
+  redis: \0.12.x
   'uuid-pure': \*
   optimist: \*
   zappajs: \0.5.x
   cors: \*
   LiveScript: \1.3.x
   'csv-parse': '^0.0.6'
-  j: '^0.4.3'
+  j: \0.4.x
 optionalDependencies:
   'webworker-threads': \0.5.x
 devDependencies:

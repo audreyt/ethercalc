@@ -36,6 +36,9 @@ bootSC += """;(#{->
 IsThreaded = true
 Worker = try
   throw \vm if argv.vm
+  if process.platform is \darwin and parseInt(process.versions.node.slice(2)) > 10
+    console.log "Note: OS X threading with Node #{ process.versions.node } is WIP"
+    throw \too-new
   console.log "Starting backend using webworker-threads"
   (require \webworker-threads).Worker
 catch
