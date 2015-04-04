@@ -7169,7 +7169,16 @@ SocialCalc.TableEditor = function(context) {
                   }
                var cr;
                if (editor.range.hasrange) {
-                  cr = SocialCalc.crToCoord(editor.range.left, editor.range.top);
+                  var clipsheet = new SocialCalc.Sheet();
+                  clipsheet.ParseSheetSave(SocialCalc.Clipboard.clipboard);
+                  var matches = clipsheet.copiedfrom.match(/(.+):(.+)/);
+                  if (matches !== null && matches[1] === matches[2]) {
+                    // copy one cell to selected range
+                    cr = SocialCalc.crToCoord(editor.range.left, editor.range.top) +
+                      ':' + SocialCalc.crToCoord(editor.range.right, editor.range.bottom);
+                  } else {
+                    cr = SocialCalc.crToCoord(editor.range.left, editor.range.top);
+                  }
                   }
                else {
                   cr = editor.ecell.coord;
