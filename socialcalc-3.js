@@ -3093,7 +3093,7 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
         // remove tracklingine
         if (editor.griddiv) {
           editor.FitToEditTable();
-          trackLines = editor.griddiv.getElementsByClassName('tracklingine');
+          trackLines = editor.griddiv.getElementsByClassName('trackingline');
           for (var i = 0; i < trackLines.length; i++) {
             editor.griddiv.removeChild(trackLines[i]);
           }
