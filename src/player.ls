@@ -120,9 +120,13 @@
         SocialCalc.hadSnapshot = true
         if @data.snapshot
           parts = ss.DecodeSpreadsheetSave @data.snapshot
-        if parts?sheet
-          ss.sheet.ResetSheet!
-          ss.ParseSheetSave @data.snapshot.substring parts.sheet.start, parts.sheet.end
+        if parts?
+          if parts.sheet
+            ss.sheet.ResetSheet!
+            ss.ParseSheetSave @data.snapshot.substring parts.sheet.start, parts.sheet.end
+          if parts.edit
+            ss.editor.LoadEditorSettings @data.snapshot.substring parts.edit.start, parts.edit.end
+            ss.editor.ScheduleRender!
         window.addmsg? @data.chat.join(\\n), true
         cmdstr = [ line for line in @data.log
              | not /^re(calc|display)$/.test(line) ].join \\n
