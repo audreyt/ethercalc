@@ -10,7 +10,7 @@
   "s_escUnknownSheetCmd": "Unbekannter Tabellen-Befehl: ",
   "s_escUnknownSetCoordCmd": "Unbekannter set coord Befehl: ",
   "s_escUnknownCmd": "Unbekannter Befehl: ",
-  "s_caccCircRef": "Zirkuläre REferenz zu ",
+  "s_caccCircRef": "Zirkuläre Referenz zu ",
   "defaultRowNameWidth": "30",
   "defaultAssumedRowHeight": 15,
   "defaultCellIDPrefix": "cell_",
