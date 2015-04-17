@@ -26,8 +26,8 @@ For local non-root installation
     npm i
     make
 
-Or install with our [Docker](http://www.docker.io/) image, which comes with a
-webworker-threads support:
+Or install with our [Docker](http://www.docker.io/) image, which comes with
+support for webworker-threads:
 
     # Run a redis Docker using the official redis Docker image with persistant database in <host-directory>
     sudo docker run --name redis -d -v <host-directory>:/data redis:latest redis-server --appendonly yes
@@ -41,7 +41,7 @@ webworker-threads support:
 ## REST API
 
 Please see [API.md](https://github.com/audreyt/ethercalc/blob/master/API.md)
-for the API Blueprint, or http://docs.ethercalc.apiary.io/ for the online version.
+for the API Blueprint, or [the online version at Apiary](http://docs.ethercalc.apiary.io/).
 
 ## Runtime Flags
 
