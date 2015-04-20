@@ -5,7 +5,7 @@
 #    docker run -d -p 8000:8000 --link redis:redis audreyt/ethercalc
 #
 
-FROM node:0.10-slim
+FROM node:0.10
 
 RUN useradd ethercalc --create-home
 RUN npm install -g ethercalc pm2
