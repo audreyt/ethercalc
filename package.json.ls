@@ -3,7 +3,7 @@
 exec "perl -pi -e 's/# [A-Z].*\\n/# @{[`date`]}/m' manifest.appcache"
 name: \ethercalc
 description: 'Multi-User Spreadsheet Server'
-version: \0.20150405.0
+version: \0.20150420.0
 homepage: 'http://ethercalc.net/'
 repository:
   type: 'git'

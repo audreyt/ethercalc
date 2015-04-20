@@ -65,7 +65,7 @@
       '/manifest.appcache': function(){
         this.response.type('text/cache-manifest');
         if (DevMode) {
-          return this.response.send(200, "NETWORK:\n*\n");
+          return this.response.send(200, "CACHE MANIFEST\n\nNETWORK:\n*\n");
         } else {
           return this.response.sendfile(RealBin + "/manifest.appcache");
         }
