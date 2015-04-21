@@ -47,6 +47,7 @@ SocialCalcModule.js :: $(SOCIALCALC_FILES) exports.js
 	cat $(SOCIALCALC_FILES) exports.js > $@
 
 static/ethercalc.js: $(ETHERCALC_FILES) SocialCalcModule.js
+	@-mkdir .git
 	@echo '// Auto-generated from "make depends"; ALL CHANGES HERE WILL BE LOST!' > $@
 	node node_modules/zappajs/node_modules/uglify-js/bin/uglifyjs $(SOCIALCALC_FILES) $(ETHERCALC_FILES) -c -m >> $@
 
