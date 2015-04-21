@@ -53,7 +53,7 @@
   @get '/manifest.appcache': ->
     @response.type \text/cache-manifest
     if DevMode
-      @response.send 200 "NETWORK:\n*\n"
+      @response.send 200 "CACHE MANIFEST\n\nNETWORK:\n*\n"
     else
       @response.sendfile "#RealBin/manifest.appcache"
   @get '/static/socialcalc:part.js': ->
