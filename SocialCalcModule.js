@@ -150,13 +150,13 @@ SocialCalc.Constants = {
    defaultHighlightTypeRangeStyle: "color:#000;backgroundColor:#E5E5E5;",
 
    defaultColnameClass: "", // regular column heading letters, needs a cursor property 
-   defaultColnameStyle: "font-size:small;text-align:center;color:#FFFFFF;background-color:#808080;cursor:e-resize;",
+   defaultColnameStyle: "font-size:small;text-align:center;color:#FFFFFF;background-color:#808080;cursor:col-resize;",
    defaultSelectedColnameClass: "", // column with selected cell, needs a cursor property 
-   defaultSelectedColnameStyle: "font-size:small;text-align:center;color:#FFFFFF;background-color:#404040;cursor:e-resize;",
+   defaultSelectedColnameStyle: "font-size:small;text-align:center;color:#FFFFFF;background-color:#404040;cursor:col-resize;",
    defaultRownameClass: "", // regular row heading numbers
-   defaultRownameStyle: "font-size:small;text-align:right;color:#FFFFFF;background-color:#808080;direction:rtl;",
+   defaultRownameStyle: "font-size:small;text-align:right;color:#FFFFFF;background-color:#808080;direction:rtl;cursor:row-resize;",
    defaultSelectedRownameClass: "", // column with selected cell, needs a cursor property 
-   defaultSelectedRownameStyle: "font-size:small;text-align:right;color:#FFFFFF;background-color:#404040;",
+   defaultSelectedRownameStyle: "font-size:small;text-align:right;color:#FFFFFF;background-color:#404040;cursor:row-resize;",
    defaultUpperLeftClass: "", // Corner cell in upper left
    defaultUpperLeftStyle: "font-size:small;",
    defaultSkippedCellClass: "", // used if present for spanned cells peeking into a pane (at least one of class/style needed)
@@ -168,7 +168,7 @@ SocialCalc.Constants = {
    defaultUnhideRightClass: "",
    defaultUnhideRightStyle: "float:left;width:9px;height:12px;cursor:pointer;background-image:url(images/sc-unhideright.gif);padding:0;", // used if present
    defaultUnhideTopClass: "",
-   defaultUnhideTopStyle: "float:left;position:absolute;bottom:-4px;width:12px;height:9px;cursor:pointer;background-image:url(images/sc-unhidetop.gif);padding:0;",
+   defaultUnhideTopStyle: "float:left;left:1px;position:absolute;bottom:-4px;width:12px;height:9px;cursor:pointer;background-image:url(images/sc-unhidetop.gif);padding:0;",
    defaultUnhideBottomClass: "",
    defaultUnhideBottomStyle: "float:left;width:12px;height:9px;cursor:pointer;background-image:url(images/sc-unhidebottom.gif);padding:0;",
 
@@ -288,7 +288,7 @@ SocialCalc.Constants = {
 
    //*** SocialCalc.TCPSDragFunctionStart
 
-   TCPStrackinglineClass: "", // at least one of class/style for pane slider tracking line display in table control
+   TCPStrackinglineClass: "tracklingine", // at least one of class/style for pane slider tracking line display in table control
    TCPStrackinglineStyle: "overflow:hidden;position:absolute;zIndex:100;",
                            // if present, pseudo style (text-align is textAlign)
    TCPStrackinglineThickness: "2px", // narrow dimension of trackling line (string with units)
@@ -5024,7 +5024,9 @@ SocialCalc.RenderContext = function(sheetobj) {
    this.cellskip = {}; // if present, coord of cell covering this cell
    this.coordToCR = {}; // for cells starting spans, coordToCR[coord]={row:row, col:col}
    this.colwidth = []; // precomputed column widths, taking into account defaults
+   this.rowheight = []; // precomputed row height, taking into account defaults
    this.totalwidth = 0; // precomputed total table width
+   this.totalheight = 0; // precomputed total table height
 
    this.rowpanes = []; // for each pane, {first: firstrow, last: lastrow}
    this.colpanes = []; // for each pane, {first: firstrow, last: lastrow}
@@ -5136,6 +5138,7 @@ SocialCalc.RenderContext = function(sheetobj) {
 SocialCalc.RenderContext.prototype.PrecomputeSheetFontsAndLayouts = function() {SocialCalc.PrecomputeSheetFontsAndLayouts(this);};
 SocialCalc.RenderContext.prototype.CalculateCellSkipData = function() {SocialCalc.CalculateCellSkipData(this);};
 SocialCalc.RenderContext.prototype.CalculateColWidthData = function() {SocialCalc.CalculateColWidthData(this);};
+SocialCalc.RenderContext.prototype.CalculateRowHeightData = function() {SocialCalc.CalculateRowHeightData(this);};
 SocialCalc.RenderContext.prototype.SetRowPaneFirstLast = function(panenum, first, last) {this.rowpanes[panenum]={first:first, last:last};};
 SocialCalc.RenderContext.prototype.SetColPaneFirstLast = function(panenum, first, last) {this.colpanes[panenum]={first:first, last:last};};
 SocialCalc.RenderContext.prototype.CoordInPane = function(coord, rowpane, colpane) {return SocialCalc.CoordInPane(this, coord, rowpane, colpane);};
@@ -5276,6 +5279,28 @@ SocialCalc.CalculateColWidthData = function(context) {
 
    }
 
+SocialCalc.CalculateRowHeightData = function(context) {
+  var rownum, rowheight, totalheight;
+  var sheetobj = context.sheetobj;
+
+  // Calculate row height data
+  totalheight = context.showRCHeaders ? context.pixelsPerRow : 0;
+  for (rowpane = 0; rowpane < context.rowpanes.length; rowpane++) {
+    for (rownum = context.rowpanes[rowpane].first; rownum <= context.rowpanes[rowpane].last; rownum++) {
+      if (sheetobj.rowattribs.hide[rownum] === "yes") {
+        context.rowheight[rownum] = 0;
+      } else {
+        rowheight = sheetobj.rowattribs.height[rownum] || sheetobj.attribs.defaultrowheight || SocialCalc.Constants.defaultAssumedRowHeight;
+        if (rowheight === "blank" || rowheight === "auto") rowheight = "";
+        context.rowheight[rownum] = rowheight+"";
+        totalheight += (rowheight && ((rowheight - 0) > 0)) ? (rowheight-0) : 10;
+      }
+    }
+  }
+  context.totalheight = totalheight;
+
+}
+
 SocialCalc.InitializeTable = function(context, tableobj) {
 
 /*
@@ -5339,6 +5364,7 @@ SocialCalc.RenderSheet = function(context, oldtable, linkstyle) {
       }
 
    context.CalculateColWidthData(); // always make sure col width values are up to date
+   context.CalculateRowHeightData();
 
    // make the table element and fill it in
 
@@ -5391,6 +5417,7 @@ SocialCalc.RenderRow = function(context, rownum, rowpane, linkstyle) {
       if (context.classnames) newcol.className=context.classnames.rowname;
       if (context.explicitStyles) newcol.style.cssText=context.explicitStyles.rowname;
       newcol.width=context.rownamewidth;
+      newcol.height = context.rowheight[rownum];
       newcol.style.verticalAlign="top"; // to get around Safari making top of centered row number be
                                         // considered top of row (and can't get <row> position in Safari)
       newcol.innerHTML=rownum+"";
@@ -5404,6 +5431,9 @@ SocialCalc.RenderRow = function(context, rownum, rowpane, linkstyle) {
          var unhide = document.createElement("div");
          if (context.classnames) unhide.className=context.classnames.unhidetop;
          if (context.explicitStyles) unhide.style.cssText=context.explicitStyles.unhidetop;
+         var fixPosition = ((context.rowheight[rownum] - 0) - SocialCalc.Constants.defaultAssumedRowHeight);
+         fixPosition = (fixPosition === 0) ? 4 : fixPosition;
+         unhide.style.bottom = '-' + fixPosition + 'px';
          context.rowunhidetop[rownum] = unhide;
          container.appendChild(unhide);
          newcol.appendChild(container);
@@ -8012,7 +8042,7 @@ SocialCalc.EditorGetStatuslineString = function(editor, status, arg, params) {
       progress = coord + " (" + (editor.range.right-editor.range.left+1) + "x" + (editor.range.bottom-editor.range.top+1) +
                  ") "+scc.s_statusline_sum+"=" + sum + " " + progress;
       }
-   sstr = editor.ecell.coord+" &nbsp; "+progress;
+   sstr = (editor.ecell || {}).coord+" &nbsp; "+progress;
 
    if (!params.calculating && editor.context.sheetobj.attribs.needsrecalc=="yes") {
       sstr += ' &nbsp; '+scc.s_statusline_recalcneeded;
@@ -8163,8 +8193,8 @@ SocialCalc.ProcessEditorMouseDown = function(e) {
    if (!result) return; // not on a cell or col header
    mouseinfo.editor = editor; // remember for later
 
-   if (result.rowheader && result.rowtounhide) {
-      SocialCalc.ProcessEditorRowsizeMouseDown(e, ele, result); 
+   if (result.rowheader && result.rowtoresize) {
+      SocialCalc.ProcessEditorRowsizeMouseDown(e, ele, result);
       return;
       }
 
@@ -8495,7 +8525,7 @@ SocialCalc.ProcessEditorColsizeMouseUp = function(e) {
       editor.EditorScheduleSheetCommands("set "+mouseinfo.mouseresizecol+" width "+newsize, true, false);
 
       if (editor.timeout) window.clearTimeout(editor.timeout);
-      editor.timeout = window.setTimeout(SocialCalc.FinishColsize, 1); // wait - Firefox 2 has a bug otherwise with next mousedown
+      editor.timeout = window.setTimeout(SocialCalc.FinishColRowSize, 1); // wait - Firefox 2 has a bug otherwise with next mousedown
       }
 
    return false;
@@ -8503,7 +8533,7 @@ SocialCalc.ProcessEditorColsizeMouseUp = function(e) {
    }
 
 
-SocialCalc.FinishColsize = function() {
+SocialCalc.FinishColRowSize = function() {
 
    var mouseinfo = SocialCalc.EditorMouseInfo;
    var editor = mouseinfo.editor;
@@ -8528,11 +8558,33 @@ SocialCalc.ProcessEditorRowsizeMouseDown = function(e, ele, result) {
    var event = e || window.event;
    var mouseinfo = SocialCalc.EditorMouseInfo;
    var editor = mouseinfo.editor;
-   var pos = SocialCalc.GetElementPositionWithScroll(editor.toplevel);
-   var clientX = event.clientX - pos.left;
+   var pos = SocialCalc.GetSpreadsheetControlObject().spreadsheetDiv.firstChild.offsetHeight;
+   var clientY = event.clientY - pos;
 
+   mouseinfo.mouseresizerownum = result.rowtoresize; // remember col being resized
+   mouseinfo.mouseresizerow = result.rowtoresize;
+   mouseinfo.mousedownclienty = clientY;
    mouseinfo.mouserowtounhide = result.rowtounhide;
-   
+
+  if (!mouseinfo.mouserowtounhide) {
+    var sizedisplay = document.createElement("div");
+    mouseinfo.mouseresizedisplay = sizedisplay;
+    sizedisplay.style.width = editor.context.totalwidth+"px";
+    sizedisplay.style.height = editor.rowpositions[result.rowtoresize]+"px";
+    sizedisplay.style.position = "absolute";
+    sizedisplay.style.zIndex = 100;
+    sizedisplay.style.top = editor.rowpositions[result.rowtoresize]+"px";
+    sizedisplay.style.left = editor.headposition.left+"px";
+    sizedisplay.innerHTML = '<table cellpadding="0" cellspacing="0"><tr><td style="width:100px' +
+      'border:1px dashed black;background-color:white;height:' +
+      (editor.context.rowheight[mouseinfo.mouseresizerownum]-2) + 'px;">&nbsp;</td>'+
+      '<td><div style="font-size:small;color:white;background-color:gray;padding:4px;">'+
+      editor.context.rowheight[mouseinfo.mouseresizerownum] + '</div></td></tr></table>';
+    SocialCalc.setStyles(sizedisplay.firstChild.lastChild.firstChild.childNodes[0], "filter:alpha(opacity=85);opacity:.5;"); // so no warning msg with Firefox about filter
+
+    editor.toplevel.appendChild(sizedisplay);
+  }
+
    // Event code from JavaScript, Flanagan, 5th Edition, pg. 422
    if (document.addEventListener) { // DOM Level 2 -- Firefox, et al
       document.addEventListener("mousemove", SocialCalc.ProcessEditorRowsizeMouseMove, true); // capture everywhere
@@ -8560,6 +8612,21 @@ SocialCalc.ProcessEditorRowsizeMouseMove = function(e) {
    var editor = mouseinfo.editor;
    if (!editor) return; // not us, ignore
 
+  if (!mouseinfo.mouserowtounhide) {
+    var pos = SocialCalc.GetSpreadsheetControlObject().spreadsheetDiv.firstChild.offsetHeight;
+    var clientY = event.clientY - pos;
+
+    var newsize = (editor.context.rowheight[mouseinfo.mouseresizerownum]-0) + (clientY - mouseinfo.mousedownclienty);
+    if (newsize < SocialCalc.Constants.defaultAssumedRowHeight) newsize = SocialCalc.Constants.defaultAssumedRowHeight;
+
+    var sizedisplay = mouseinfo.mouseresizedisplay;
+    sizedisplay.innerHTML = '<table cellpadding="0" cellspacing="0"><tr><td style="width:100px;'+
+      'border:1px dashed black;background-color:white;height:' + (newsize-2) + 'px;">&nbsp;</td>'+
+      '<td><div style="font-size:small;color:white;background-color:gray;padding:4px;">'+
+      newsize + '</div></td></tr></table>';
+    SocialCalc.setStyles(sizedisplay.firstChild.lastChild.firstChild.childNodes[0], "filter:alpha(opacity=85);opacity:.5;"); // so no warning msg with Firefox about filter
+  }
+
    if (event.stopPropagation) event.stopPropagation(); // DOM Level 2
    else event.cancelBubble = true; // IE 5+
    if (event.preventDefault) event.preventDefault(); // DOM Level 2
@@ -8577,8 +8644,8 @@ SocialCalc.ProcessEditorRowsizeMouseUp = function(e) {
    var editor = mouseinfo.editor;
    if (!editor) return; // not us, ignore
    element = mouseinfo.element;
-   var pos = SocialCalc.GetElementPositionWithScroll(editor.toplevel);
-   var clientX = event.clientX - pos.left;
+   var pos = SocialCalc.GetSpreadsheetControlObject().spreadsheetDiv.firstChild.offsetHeight;
+   var clientY = event.clientY - pos;
 
    if (event.stopPropagation) event.stopPropagation(); // DOM Level 2
    else event.cancelBubble = true; // IE 5+
@@ -8599,6 +8666,14 @@ SocialCalc.ProcessEditorRowsizeMouseUp = function(e) {
    if (mouseinfo.mouserowtounhide) {
       editor.EditorScheduleSheetCommands("set "+mouseinfo.mouserowtounhide+" hide", true, false);
       }
+   else {
+     var newsize = (editor.context.rowheight[mouseinfo.mouseresizerownum]-0) + (clientY - mouseinfo.mousedownclienty);
+     if (newsize < SocialCalc.Constants.defaultAssumedRowHeight) newsize = SocialCalc.Constants.defaultAssumedRowHeight;
+     editor.EditorScheduleSheetCommands("set "+mouseinfo.mouseresizerownum+" height "+newsize, true, false);
+
+     if (editor.timeout) window.clearTimeout(editor.timeout);
+     editor.timeout = window.setTimeout(SocialCalc.FinishColRowSize, 1); // wait - Firefox 2 has a bug otherwise with next mousedown
+   }
 
    return false;
 
@@ -9156,7 +9231,7 @@ SocialCalc.EditorProcessMouseWheel = function(event, delta, mousewheelinfo, wobj
 
 SocialCalc.GridMousePosition = function(editor, clientX, clientY) { 
 
-   var row, col, colpane;
+   var row, rowpane, col, colpane;
    var result = {};
 
    for (row=1; row<editor.rowpositions.length; row++) {
@@ -9179,22 +9254,32 @@ SocialCalc.GridMousePosition = function(editor, clientX, clientY) {
       if (clientX < editor.headposition.left && clientX >= editor.gridposition.left) {
          result.rowheader = true;
          result.distance = editor.headposition.left - clientX;
-         result.rowtounhide = "";
+         result.rowtoresize = row-(editor.rowpositions[row]+editor.rowheight[row]/2>clientY?1:0) || 1;
 
          // Handle unhide row.
          if (unhide = editor.context.rowunhidetop[row]) {
-            pos = SocialCalc.GetElementPosition(unhide);
-            if (clientX >= pos.left && clientX < pos.left+unhide.offsetWidth && clientY >= pos.top  && clientY < pos.top+unhide.offsetHeight) {
-               result.rowtounhide = row+1;
-               }
-            }
+           pos = SocialCalc.GetElementPosition(unhide);
+           if (clientX >= pos.left && clientX < pos.left+unhide.offsetWidth
+               && clientY >= (editor.rowpositions[row] + editor.rowheight[row] - unhide.offsetHeight)
+               && clientY < (editor.rowpositions[row] + editor.rowheight[row])) {
+             result.rowtounhide = row+1;
+           }
+         }
          if (unhide = editor.context.rowunhidebottom[row]) {
-            pos = SocialCalc.GetElementPosition(unhide);
-            if (clientX >= pos.left && clientX < pos.left+unhide.offsetWidth && clientY >= pos.top  && clientY < pos.top+unhide.offsetHeight) {
-               result.rowtounhide = row-1;
-               }
-            }
-
+           pos = SocialCalc.GetElementPosition(unhide);
+           if (clientX >= pos.left && clientX < pos.left+unhide.offsetWidth
+               && clientY >= pos.top
+               && clientY < pos.top+unhide.offsetHeight) {
+             result.rowtounhide = row-1;
+           }
+         }
+         for (rowpane=0; rowpane<editor.context.rowpanes.length; rowpane++) {
+           if (result.rowtoresize >= editor.context.rowpanes[rowpane].first &&
+             result.rowtoresize <= editor.context.rowpanes[rowpane].last) { // visible column
+             return result;
+           }
+         }
+         delete result.rowtoresize;
          return result;
          }
       else if (clientY < editor.headposition.top && clientY > editor.gridposition.top) { // > because of sizing row
@@ -12008,11 +12093,7 @@ SocialCalc.TCPSDragFunctionStart = function(event, draginfo, dobj) {
    draginfo.trackingline.style.width = dobj.vertical ? 
       (editor.tablewidth-(editor.headposition.left-editor.gridposition.left))+"px" : scc.TCPStrackinglineThickness;
    draginfo.trackingline.style.backgroundImage="url("+editor.imageprefix+"trackingline-"+(dobj.vertical?"v":"h")+".gif)";;
-   if (scc.TCPStrackinglineClass) {
-     draginfo.trackingline.className = 'trackingline ' + scc.TCPStrackinglineClass;
-   } else {
-     draginfo.trackingline.className = 'trackingline';
-   }
+   if (scc.TCPStrackinglineClass) draginfo.trackingline.className = scc.TCPStrackinglineClass;
    SocialCalc.setStyles(draginfo.trackingline, scc.TCPStrackinglineStyle);
 
    if (dobj.vertical) {

@@ -4166,7 +4166,9 @@ SocialCalc.RenderContext = function(sheetobj) {
    this.cellskip = {}; // if present, coord of cell covering this cell
    this.coordToCR = {}; // for cells starting spans, coordToCR[coord]={row:row, col:col}
    this.colwidth = []; // precomputed column widths, taking into account defaults
+   this.rowheight = []; // precomputed row height, taking into account defaults
    this.totalwidth = 0; // precomputed total table width
+   this.totalheight = 0; // precomputed total table height
 
    this.rowpanes = []; // for each pane, {first: firstrow, last: lastrow}
    this.colpanes = []; // for each pane, {first: firstrow, last: lastrow}
@@ -4278,6 +4280,7 @@ SocialCalc.RenderContext = function(sheetobj) {
 SocialCalc.RenderContext.prototype.PrecomputeSheetFontsAndLayouts = function() {SocialCalc.PrecomputeSheetFontsAndLayouts(this);};
 SocialCalc.RenderContext.prototype.CalculateCellSkipData = function() {SocialCalc.CalculateCellSkipData(this);};
 SocialCalc.RenderContext.prototype.CalculateColWidthData = function() {SocialCalc.CalculateColWidthData(this);};
+SocialCalc.RenderContext.prototype.CalculateRowHeightData = function() {SocialCalc.CalculateRowHeightData(this);};
 SocialCalc.RenderContext.prototype.SetRowPaneFirstLast = function(panenum, first, last) {this.rowpanes[panenum]={first:first, last:last};};
 SocialCalc.RenderContext.prototype.SetColPaneFirstLast = function(panenum, first, last) {this.colpanes[panenum]={first:first, last:last};};
 SocialCalc.RenderContext.prototype.CoordInPane = function(coord, rowpane, colpane) {return SocialCalc.CoordInPane(this, coord, rowpane, colpane);};
@@ -4418,6 +4421,28 @@ SocialCalc.CalculateColWidthData = function(context) {
 
    }
 
+SocialCalc.CalculateRowHeightData = function(context) {
+  var rownum, rowheight, totalheight;
+  var sheetobj = context.sheetobj;
+
+  // Calculate row height data
+  totalheight = context.showRCHeaders ? context.pixelsPerRow : 0;
+  for (rowpane = 0; rowpane < context.rowpanes.length; rowpane++) {
+    for (rownum = context.rowpanes[rowpane].first; rownum <= context.rowpanes[rowpane].last; rownum++) {
+      if (sheetobj.rowattribs.hide[rownum] === "yes") {
+        context.rowheight[rownum] = 0;
+      } else {
+        rowheight = sheetobj.rowattribs.height[rownum] || sheetobj.attribs.defaultrowheight || SocialCalc.Constants.defaultAssumedRowHeight;
+        if (rowheight === "blank" || rowheight === "auto") rowheight = "";
+        context.rowheight[rownum] = rowheight+"";
+        totalheight += (rowheight && ((rowheight - 0) > 0)) ? (rowheight-0) : 10;
+      }
+    }
+  }
+  context.totalheight = totalheight;
+
+}
+
 SocialCalc.InitializeTable = function(context, tableobj) {
 
 /*
@@ -4481,6 +4506,7 @@ SocialCalc.RenderSheet = function(context, oldtable, linkstyle) {
       }
 
    context.CalculateColWidthData(); // always make sure col width values are up to date
+   context.CalculateRowHeightData();
 
    // make the table element and fill it in
 
@@ -4533,6 +4559,7 @@ SocialCalc.RenderRow = function(context, rownum, rowpane, linkstyle) {
       if (context.classnames) newcol.className=context.classnames.rowname;
       if (context.explicitStyles) newcol.style.cssText=context.explicitStyles.rowname;
       newcol.width=context.rownamewidth;
+      newcol.height = context.rowheight[rownum];
       newcol.style.verticalAlign="top"; // to get around Safari making top of centered row number be
                                         // considered top of row (and can't get <row> position in Safari)
       newcol.innerHTML=rownum+"";
@@ -4546,6 +4573,9 @@ SocialCalc.RenderRow = function(context, rownum, rowpane, linkstyle) {
          var unhide = document.createElement("div");
          if (context.classnames) unhide.className=context.classnames.unhidetop;
          if (context.explicitStyles) unhide.style.cssText=context.explicitStyles.unhidetop;
+         var fixPosition = ((context.rowheight[rownum] - 0) - SocialCalc.Constants.defaultAssumedRowHeight);
+         fixPosition = (fixPosition === 0) ? 4 : fixPosition;
+         unhide.style.bottom = '-' + fixPosition + 'px';
          context.rowunhidetop[rownum] = unhide;
          container.appendChild(unhide);
          newcol.appendChild(container);
