@@ -8012,7 +8012,7 @@ SocialCalc.EditorGetStatuslineString = function(editor, status, arg, params) {
       progress = coord + " (" + (editor.range.right-editor.range.left+1) + "x" + (editor.range.bottom-editor.range.top+1) +
                  ") "+scc.s_statusline_sum+"=" + sum + " " + progress;
       }
-   sstr = editor.ecell.coord+" &nbsp; "+progress;
+   sstr = (editor.ecell || {}).coord+" &nbsp; "+progress;
 
    if (!params.calculating && editor.context.sheetobj.attribs.needsrecalc=="yes") {
       sstr += ' &nbsp; '+scc.s_statusline_recalcneeded;
