@@ -295,6 +295,9 @@
               cells: window.ss.cells
             });
           case 'init':
+            SocialCalc.SaveEditorSettings = function(){
+              return "";
+            };
             SocialCalc.CreateAuditString = function(){
               return "";
             };
@@ -341,14 +344,9 @@
                 });
               }
             };
-            if (parts != null) {
-              if (parts.sheet) {
-                ss.sheet.ResetSheet();
-                ss.ParseSheetSave(this.data.snapshot.substring(parts.sheet.start, parts.sheet.end));
-              }
-              if (parts.edit) {
-                ss.editor.LoadEditorSettings(this.data.snapshot.substring(parts.edit.start, parts.edit.end));
-              }
+            if (parts != null && parts.sheet) {
+              ss.sheet.ResetSheet();
+              ss.ParseSheetSave(snapshot.substring(parts.sheet.start, parts.sheet.end));
             }
             cmdstr = (function(){
               var i$, ref$, len$, results$ = [];

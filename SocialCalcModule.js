@@ -856,7 +856,7 @@ SocialCalc.ConstantsSetImagePrefix = function(imagePrefix) {
 
    }
 
-  //
+//
 // The main SocialCalc code module of the SocialCalc package
 //
 /*
@@ -2598,7 +2598,6 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
    var sortfunction, slen, valtype, originalrow, sortedcr;
    var name, v1, v2;
    var cmdextension;
-   var col, row, editor, undoNum, trackLines;
 
    var attribs = sheet.attribs;
    var changes = sheet.changes;
@@ -3889,75 +3888,6 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
       case "changedrendervalues": // needed for undo sometimes
          sheet.changedrendervalues = true;
          break;
-
-      case "pane":
-
-        name = cmd.NextToken().toUpperCase();
-        undoNum = 1;
-        editor = SocialCalc.GetSpreadsheetControlObject().editor;
-
-        if (name.toUpperCase() === 'ROW') {
-          row = parseInt(cmd.NextToken(), 10);
-
-          if (typeof(editor.context.rowpanes[1]) !== 'undefined' && typeof(editor.context.rowpanes[1].first) === 'number') {
-            undoNum = editor.context.rowpanes[1].first;
-          }
-          if (saveundo) changes.AddUndo('pane row ' + undoNum);
-
-          // Handle hidden row.
-          while (editor.context.sheetobj.rowattribs.hide[row] == 'yes') {
-            row++;
-          }
-
-          if ((!row || row<=editor.context.rowpanes[0].first) && editor.context.rowpanes.length>1) { // set to no panes, leaving first pane settings
-            editor.context.rowpanes.length = 1;
-          } else if (editor.context.rowpanes.length-1 && !editor.timeout) { // has 2 already
-            // not waiting for position calc (so positions could be wrong)
-            editor.context.SetRowPaneFirstLast(0, editor.context.rowpanes[0].first, row-1);
-            editor.context.SetRowPaneFirstLast(1, row, row);
-          } else {
-            editor.context.SetRowPaneFirstLast(0, editor.context.rowpanes[0].first, row-1);
-            editor.context.SetRowPaneFirstLast(1, row, row);
-          }
-
-        } else {
-
-          col = parseInt(cmd.NextToken(), 10);
-
-          if (typeof(editor.context.colpanes[1]) !== 'undefined' && typeof(editor.context.colpanes[1].first) === 'number') {
-            undoNum = editor.context.colpanes[1].first;
-          }
-          if (saveundo) changes.AddUndo('pane col ' + undoNum);
-
-          // Handle hidden column.
-          while (editor.context.sheetobj.colattribs.hide[SocialCalc.rcColname(col)] == 'yes') {
-            col++;
-          }
-
-          if ((!col || col<=editor.context.colpanes[0].first) && editor.context.colpanes.length > 1) { // set to no panes, leaving first pane settings
-            editor.context.colpanes.length = 1;
-          } else if (editor.context.colpanes.length-1 && !editor.timeout) { // has 2 already
-            // not waiting for position calc (so positions could be wrong)
-            editor.context.SetColPaneFirstLast(0, editor.context.colpanes[0].first, col-1);
-            editor.context.SetColPaneFirstLast(1, col, col);
-          } else {
-            editor.context.SetColPaneFirstLast(0, editor.context.colpanes[0].first, col-1);
-            editor.context.SetColPaneFirstLast(1, col, col);
-          }
-        }
-
-        sheet.renderneeded = true;
-
-        // remove tracklingine
-        if (editor.griddiv) {
-          editor.FitToEditTable();
-          trackLines = editor.griddiv.getElementsByClassName('trackingline');
-          for (var i = 0; i < trackLines.length; i++) {
-            editor.griddiv.removeChild(trackLines[i]);
-          }
-        }
-
-        break;
 
       case "startcmdextension": // startcmdextension extension rest-of-command
          name = cmd.NextToken();
@@ -12098,38 +12028,67 @@ SocialCalc.TCPSDragFunctionStop = function(event, draginfo, dobj) {
    var editor = control.editor;
 
    if (dobj.vertical) {
-     max = control.morebuttonstart - control.minscrollingpanesize - draginfo.offsetY; // restrict movement
-     if (draginfo.clientY > max) draginfo.clientY = max;
-     min = editor.headposition.top - sliderthickness - draginfo.offsetY;
-     if (draginfo.clientY < min) draginfo.clientY = min;
+      max = control.morebuttonstart - control.minscrollingpanesize - draginfo.offsetY; // restrict movement
+      if (draginfo.clientY > max) draginfo.clientY = max;
+      min = editor.headposition.top - sliderthickness - draginfo.offsetY;
+      if (draginfo.clientY < min) draginfo.clientY = min;
 
-     row = SocialCalc.Lookup(draginfo.clientY+sliderthickness, editor.rowpositions);
-     if (row>editor.context.sheetobj.attribs.lastrow) row=editor.context.sheetobj.attribs.lastrow; // can't extend sheet here
+      row = SocialCalc.Lookup(draginfo.clientY+sliderthickness, editor.rowpositions);
+      if (row>editor.context.sheetobj.attribs.lastrow) row=editor.context.sheetobj.attribs.lastrow; // can't extend sheet here
 
-     // Handle hidden row.
-     while (editor.context.sheetobj.rowattribs.hide[row] == "yes") {
-       row++;
-     }
+      // Handle hidden row.
+      while (editor.context.sheetobj.rowattribs.hide[row] == "yes") {
+         row++;
+         }
 
-
-     editor.EditorScheduleSheetCommands('pane row ' + row, true, false);
-   }
+      if (!row || row<=editor.context.rowpanes[0].first) { // set to no panes, leaving first pane settings
+         if (editor.context.rowpanes.length>1) editor.context.rowpanes.length = 1;
+         }
+      else if (editor.context.rowpanes.length-1) { // has 2 already
+         if (!editor.timeout) { // not waiting for position calc (so positions could be wrong)
+            editor.context.SetRowPaneFirstLast(0, editor.context.rowpanes[0].first, row-1);
+            editor.context.SetRowPaneFirstLast(1, row, row);
+            }
+         }
+      else {
+         editor.context.SetRowPaneFirstLast(0, editor.context.rowpanes[0].first, row-1);
+         editor.context.SetRowPaneFirstLast(1, row, row);
+         }
+      }
    else {
-     max = control.morebuttonstart - control.minscrollingpanesize - draginfo.offsetX;
-     if (draginfo.clientX > max) draginfo.clientX = max;
-     min = editor.headposition.left - sliderthickness - draginfo.offsetX;
-     if (draginfo.clientX < min) draginfo.clientX = min;
+      max = control.morebuttonstart - control.minscrollingpanesize - draginfo.offsetX;
+      if (draginfo.clientX > max) draginfo.clientX = max;
+      min = editor.headposition.left - sliderthickness - draginfo.offsetX;
+      if (draginfo.clientX < min) draginfo.clientX = min;
 
-     col = SocialCalc.Lookup(draginfo.clientX+sliderthickness, editor.colpositions);
-     if (col>editor.context.sheetobj.attribs.lastcol) col=editor.context.sheetobj.attribs.lastcol; // can't extend sheet here
+      col = SocialCalc.Lookup(draginfo.clientX+sliderthickness, editor.colpositions);
+      if (col>editor.context.sheetobj.attribs.lastcol) col=editor.context.sheetobj.attribs.lastcol; // can't extend sheet here
 
-     // Handle hidden column.
-     while (editor.context.sheetobj.colattribs.hide[SocialCalc.rcColname(col)] == "yes") {
-       col++;
-     }
+      // Handle hidden column.
+      while (editor.context.sheetobj.colattribs.hide[SocialCalc.rcColname(col)] == "yes") {
+         col++;
+         }
 
-     editor.EditorScheduleSheetCommands('pane col ' + col, true, false);
-   }
+      if (!col || col<=editor.context.colpanes[0].first) { // set to no panes, leaving first pane settings
+         if (editor.context.colpanes.length>1) editor.context.colpanes.length = 1;
+         }
+      else if (editor.context.colpanes.length-1) { // has 2 already
+         if (!editor.timeout) { // not waiting for position calc (so positions could be wrong)
+            editor.context.SetColPaneFirstLast(0, editor.context.colpanes[0].first, col-1);
+            editor.context.SetColPaneFirstLast(1, col, col);
+            }
+         }
+      else {
+         editor.context.SetColPaneFirstLast(0, editor.context.colpanes[0].first, col-1);
+         editor.context.SetColPaneFirstLast(1, col, col);
+         }
+      }
+
+   editor.FitToEditTable();
+
+   editor.griddiv.removeChild(draginfo.trackingline);
+
+   editor.ScheduleRender();
 
    }
 

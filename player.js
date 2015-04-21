@@ -223,15 +223,9 @@
                 if (this.data.snapshot) {
                   parts = ss.DecodeSpreadsheetSave(this.data.snapshot);
                 }
-                if (parts != null) {
-                  if (parts.sheet) {
-                    ss.sheet.ResetSheet();
-                    ss.ParseSheetSave(this.data.snapshot.substring(parts.sheet.start, parts.sheet.end));
-                  }
-                  if (parts.edit) {
-                    ss.editor.LoadEditorSettings(this.data.snapshot.substring(parts.edit.start, parts.edit.end));
-                    ss.editor.ScheduleRender();
-                  }
+                if (parts != null && parts.sheet) {
+                  ss.sheet.ResetSheet();
+                  ss.ParseSheetSave(this.data.snapshot.substring(parts.sheet.start, parts.sheet.end));
                 }
                 if (typeof window.addmsg == 'function') {
                   window.addmsg(this.data.chat.join('\n'), true);

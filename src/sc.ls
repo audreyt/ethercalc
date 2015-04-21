@@ -122,6 +122,7 @@ Worker ||= class => (code) ->
       | \exportCells
         postMessage { type: \cells, cells: window.ss.cells }
       | \init
+        SocialCalc.SaveEditorSettings = -> ""
         SocialCalc.CreateAuditString = -> ""
         SocialCalc.CalculateEditorPositions = ->
         SocialCalc.Popup.Types.List.Create = ->
@@ -145,12 +146,9 @@ Worker ||= class => (code) ->
           return if ss._snapshot is newSnapshot
           ss._snapshot = newSnapshot
           postMessage { type: \snapshot, snapshot: newSnapshot }
-        if parts?
-          if parts.sheet
-            ss.sheet.ResetSheet!
-            ss.ParseSheetSave @data.snapshot.substring parts.sheet.start, parts.sheet.end
-          if parts.edit
-            ss.editor.LoadEditorSettings @data.snapshot.substring parts.edit.start, parts.edit.end
+        if parts?sheet
+          ss.sheet.ResetSheet!
+          ss.ParseSheetSave snapshot.substring parts.sheet.start, parts.sheet.end
         cmdstr = [ line for line in log
              | not /^re(calc|display)$/.test(line) ].join("\n")
         cmdstr += "\n" if cmdstr.length
