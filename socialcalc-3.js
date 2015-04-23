@@ -1,4 +1,4 @@
-  //
+//
 // The main SocialCalc code module of the SocialCalc package
 //
 /*
@@ -6,7 +6,7 @@
 // All Rights Reserved.
 //
 // The contents of this file are subject to the Artistic License 2.0; you may not
-// use this file except in compliance with the License. You may obtain a copy of 
+// use this file except in compliance with the License. You may obtain a copy of
 // the License at http://socialcalc.org/licenses/al-20/.
 //
 // Some of the other files in the SocialCalc package are licensed under
@@ -1740,7 +1740,7 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
    var sortfunction, slen, valtype, originalrow, sortedcr;
    var name, v1, v2;
    var cmdextension;
-   var col, row, editor, undoNum, trackLines;
+   var col, row, editor, undoNum, trackLine;
 
    var attribs = sheet.attribs;
    var changes = sheet.changes;
@@ -3034,72 +3034,82 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
 
       case "pane":
 
-        name = cmd.NextToken().toUpperCase();
-        undoNum = 1;
-        editor = SocialCalc.GetSpreadsheetControlObject().editor;
+         name = cmd.NextToken().toUpperCase();
+         undoNum = 1;
+         editor = SocialCalc.GetSpreadsheetControlObject().editor;
 
-        if (name.toUpperCase() === 'ROW') {
-          row = parseInt(cmd.NextToken(), 10);
+         if (name.toUpperCase() === 'ROW') {
+           row = parseInt(cmd.NextToken(), 10);
 
-          if (typeof(editor.context.rowpanes[1]) !== 'undefined' && typeof(editor.context.rowpanes[1].first) === 'number') {
-            undoNum = editor.context.rowpanes[1].first;
-          }
-          if (saveundo) changes.AddUndo('pane row ' + undoNum);
+           if (typeof(editor.context.rowpanes[1]) !== 'undefined' && typeof(editor.context.rowpanes[1].first) === 'number') {
+             undoNum = editor.context.rowpanes[1].first;
+           }
+           if (saveundo) changes.AddUndo('pane row ' + undoNum);
 
-          // Handle hidden row.
-          while (editor.context.sheetobj.rowattribs.hide[row] == 'yes') {
-            row++;
-          }
+           // Handle hidden row.
+           while (editor.context.sheetobj.rowattribs.hide[row] == 'yes') {
+             row++;
+           }
 
-          if ((!row || row<=editor.context.rowpanes[0].first) && editor.context.rowpanes.length>1) { // set to no panes, leaving first pane settings
-            editor.context.rowpanes.length = 1;
-          } else if (editor.context.rowpanes.length-1 && !editor.timeout) { // has 2 already
-            // not waiting for position calc (so positions could be wrong)
-            editor.context.SetRowPaneFirstLast(0, editor.context.rowpanes[0].first, row-1);
-            editor.context.SetRowPaneFirstLast(1, row, row);
-          } else {
-            editor.context.SetRowPaneFirstLast(0, editor.context.rowpanes[0].first, row-1);
-            editor.context.SetRowPaneFirstLast(1, row, row);
-          }
+           if ((!row || row<=editor.context.rowpanes[0].first) && editor.context.rowpanes.length>1) { // set to no panes, leaving first pane settings
+             editor.context.rowpanes.length = 1;
+           } else if (editor.context.rowpanes.length-1 && !editor.timeout) { // has 2 already
+             // not waiting for position calc (so positions could be wrong)
+             editor.context.SetRowPaneFirstLast(0, editor.context.rowpanes[0].first, row-1);
+             editor.context.SetRowPaneFirstLast(1, row, row);
+           } else {
+             editor.context.SetRowPaneFirstLast(0, editor.context.rowpanes[0].first, row-1);
+             editor.context.SetRowPaneFirstLast(1, row, row);
+           }
+           
+           // remove tracklingine
+           if (editor.griddiv) {
+             //trackingline-horizon
+             trackLine = document.getElementById('trackingline-vertical');
+             if (trackLine) {
+               editor.griddiv.removeChild(trackLine);
+               editor.FitToEditTable();
+             }
+           }
 
-        } else {
+         } else {
 
-          col = parseInt(cmd.NextToken(), 10);
+           col = parseInt(cmd.NextToken(), 10);
 
-          if (typeof(editor.context.colpanes[1]) !== 'undefined' && typeof(editor.context.colpanes[1].first) === 'number') {
-            undoNum = editor.context.colpanes[1].first;
-          }
-          if (saveundo) changes.AddUndo('pane col ' + undoNum);
+           if (typeof(editor.context.colpanes[1]) !== 'undefined' && typeof(editor.context.colpanes[1].first) === 'number') {
+             undoNum = editor.context.colpanes[1].first;
+           }
+           if (saveundo) changes.AddUndo('pane col ' + undoNum);
 
-          // Handle hidden column.
-          while (editor.context.sheetobj.colattribs.hide[SocialCalc.rcColname(col)] == 'yes') {
-            col++;
-          }
+           // Handle hidden column.
+           while (editor.context.sheetobj.colattribs.hide[SocialCalc.rcColname(col)] == 'yes') {
+             col++;
+           }
 
-          if ((!col || col<=editor.context.colpanes[0].first) && editor.context.colpanes.length > 1) { // set to no panes, leaving first pane settings
-            editor.context.colpanes.length = 1;
-          } else if (editor.context.colpanes.length-1 && !editor.timeout) { // has 2 already
-            // not waiting for position calc (so positions could be wrong)
-            editor.context.SetColPaneFirstLast(0, editor.context.colpanes[0].first, col-1);
-            editor.context.SetColPaneFirstLast(1, col, col);
-          } else {
-            editor.context.SetColPaneFirstLast(0, editor.context.colpanes[0].first, col-1);
-            editor.context.SetColPaneFirstLast(1, col, col);
-          }
-        }
+           if ((!col || col<=editor.context.colpanes[0].first) && editor.context.colpanes.length > 1) { // set to no panes, leaving first pane settings
+             editor.context.colpanes.length = 1;
+           } else if (editor.context.colpanes.length-1 && !editor.timeout) { // has 2 already
+             // not waiting for position calc (so positions could be wrong)
+             editor.context.SetColPaneFirstLast(0, editor.context.colpanes[0].first, col-1);
+             editor.context.SetColPaneFirstLast(1, col, col);
+           } else {
+             editor.context.SetColPaneFirstLast(0, editor.context.colpanes[0].first, col-1);
+             editor.context.SetColPaneFirstLast(1, col, col);
+           }
 
-        sheet.renderneeded = true;
+           // remove tracklingine
+           if (editor.griddiv) {
+             trackLine = document.getElementById('trackingline-horizon');
+             if (trackLine) {
+               editor.griddiv.removeChild(trackLine);
+               editor.FitToEditTable();
+             }
+           }
+         }
 
-        // remove tracklingine
-        if (editor.griddiv) {
-          editor.FitToEditTable();
-          trackLines = editor.griddiv.getElementsByClassName('trackingline');
-          for (var i = 0; i < trackLines.length; i++) {
-            editor.griddiv.removeChild(trackLines[i]);
-          }
-        }
+         sheet.renderneeded = true;
 
-        break;
+         break;
 
       case "startcmdextension": // startcmdextension extension rest-of-command
          name = cmd.NextToken();

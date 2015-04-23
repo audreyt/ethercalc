@@ -5038,6 +5038,7 @@ SocialCalc.TCPSDragFunctionStart = function(event, draginfo, dobj) {
       row = SocialCalc.Lookup(draginfo.clientY+dobj.functionobj.control.sliderthickness, editor.rowpositions);
       draginfo.trackingline.style.top = (editor.rowpositions[row] || editor.headposition.top)+"px";
       draginfo.trackingline.style.left = editor.headposition.left+"px";
+      draginfo.trackingline.id = 'trackingline-vertical';
       if (editor.context.rowpanes.length-1) { // has 2 already
          editor.context.SetRowPaneFirstLast(1, editor.context.rowpanes[0].last+1, editor.context.rowpanes[0].last+1);
          editor.FitToEditTable();
@@ -5048,6 +5049,7 @@ SocialCalc.TCPSDragFunctionStart = function(event, draginfo, dobj) {
       col = SocialCalc.Lookup(draginfo.clientX+dobj.functionobj.control.sliderthickness, editor.colpositions);
       draginfo.trackingline.style.top = editor.headposition.top+"px";
       draginfo.trackingline.style.left = (editor.colpositions[col] || editor.headposition.left)+"px";
+      draginfo.trackingline.id = 'trackingline-horizon';
       if (editor.context.colpanes.length-1) { // has 2 already
          editor.context.SetColPaneFirstLast(1, editor.context.colpanes[0].last+1, editor.context.colpanes[0].last+1);
          editor.FitToEditTable();
