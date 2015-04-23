@@ -344,10 +344,10 @@
             if (parts != null) {
               if (parts.sheet) {
                 ss.sheet.ResetSheet();
-                ss.ParseSheetSave(this.data.snapshot.substring(parts.sheet.start, parts.sheet.end));
+                ss.ParseSheetSave(snapshot.substring(parts.sheet.start, parts.sheet.end));
               }
               if (parts.edit) {
-                ss.editor.LoadEditorSettings(this.data.snapshot.substring(parts.edit.start, parts.edit.end));
+                ss.editor.LoadEditorSettings(snapshot.substring(parts.edit.start, parts.edit.end));
               }
             }
             cmdstr = (function(){
