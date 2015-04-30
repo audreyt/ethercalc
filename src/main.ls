@@ -28,8 +28,10 @@
     text/plain text/html text/csv application/json
   ]>.map (+ "; charset=utf-8")
 
+  require! <[ fs ]>
   const RealBin = require \path .dirname do
-    require \fs .realpathSync __filename
+    fs.realpathSync __filename
+  const DevMode = fs.existsSync "#RealBin/.git"
 
   sendFile = (file) -> ->
     @response.type Html
@@ -50,7 +52,10 @@
   @get '/favicon.ico': -> @response.send 404 ''
   @get '/manifest.appcache': ->
     @response.type \text/cache-manifest
-    @response.sendfile "#RealBin/manifest.appcache"
+    if DevMode
+      @response.send 200 "CACHE MANIFEST\n\nNETWORK:\n*\n"
+    else
+      @response.sendfile "#RealBin/manifest.appcache"
   @get '/static/socialcalc:part.js': ->
     part = @params.part
     @response.type \application/javascript

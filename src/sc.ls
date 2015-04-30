@@ -148,9 +148,9 @@ Worker ||= class => (code) ->
         if parts?
           if parts.sheet
             ss.sheet.ResetSheet!
-            ss.ParseSheetSave @data.snapshot.substring parts.sheet.start, parts.sheet.end
+            ss.ParseSheetSave snapshot.substring parts.sheet.start, parts.sheet.end
           if parts.edit
-            ss.editor.LoadEditorSettings @data.snapshot.substring parts.edit.start, parts.edit.end
+            ss.editor.LoadEditorSettings snapshot.substring parts.edit.start, parts.edit.end
         cmdstr = [ line for line in log
              | not /^re(calc|display)$/.test(line) ].join("\n")
         cmdstr += "\n" if cmdstr.length
