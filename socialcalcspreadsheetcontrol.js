@@ -978,9 +978,9 @@ spreadsheet.Buttons = {
    button_cut: {tooltip: "Cut", command: "cut"},
    button_paste: {tooltip: "Paste", command: "paste"},
    button_pasteformats: {tooltip: "Paste Formats", command: "pasteformats"},
-   button_lock: {tooltip: "Lock", command: "lock"},
-   button_unlock: {tooltip: "Unlock", command: "unlock"},
-   button_delete: {tooltip: "Delete Contents", command: "delete"},
+   button_lock: {tooltip: "Lock Cell", command: "lock"},
+   button_unlock: {tooltip: "Unlock Cell", command: "unlock"},
+   button_delete: {tooltip: "Delete Cell Contents", command: "delete"},
    button_filldown: {tooltip: "Fill Down", command: "filldown"},
    button_fillright: {tooltip: "Fill Right", command: "fillright"},
    button_movefrom: {tooltip: "Set/Clear Move From", command: "movefrom"},
@@ -994,13 +994,13 @@ spreadsheet.Buttons = {
    button_swapcolors: {tooltip: "Swap Colors", command: "swapcolors"},
    button_merge: {tooltip: "Merge Cells", command: "merge"},
    button_unmerge: {tooltip: "Unmerge Cells", command: "unmerge"},
-   button_insertrow: {tooltip: "Insert Row", command: "insertrow"},
-   button_insertcol: {tooltip: "Insert Column", command: "insertcol"},
+   button_insertrow: {tooltip: "Insert Row Before", command: "insertrow"},
+   button_insertcol: {tooltip: "Insert Column Before", command: "insertcol"},
    button_deleterow: {tooltip: "Delete Row", command: "deleterow"},
    button_deletecol: {tooltip: "Delete Column", command: "deletecol"},
    button_hiderow: {tooltip: "Hide Row", command: "hiderow"},
    button_hidecol: {tooltip: "Hide Column", command: "hidecol"},
-   button_recalc: {tooltip: "Recalc", command: "recalc"}
+   button_recalc: {tooltip: "Recalculate", command: "recalc"}
    }
 
    for (button in spreadsheet.Buttons) {
