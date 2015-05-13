@@ -21351,9 +21351,9 @@ SocialCalc.SpreadsheetControl = function(idPrefix) {
 ' &nbsp;<img src="%img.divider1.png" style="vertical-align:bottom;">&nbsp; '+
 '<img id="%id.button_insertrow" src="%img.insertrows.png" style="vertical-align:bottom;"> '+
 ' <img id="%id.button_insertcol" src="%img.insertcolumns.png" style="vertical-align:bottom;"> '+
-'&nbsp; <img id="%id.button_deleterow" src="%img.deleterows.png" style="vertical-align:bottom;"> '+
+' <img id="%id.button_deleterow" src="%img.deleterows.png" style="vertical-align:bottom;"> '+
 ' <img id="%id.button_deletecol" src="%img.deletecolumns.png" style="vertical-align:bottom;"> '+
-'&nbsp; <img id="%id.button_hiderow" src="%img.hiderow.png" style="vertical-align:bottom;"> '+
+' <img id="%id.button_hiderow" src="%img.hiderow.png" style="vertical-align:bottom;"> '+
 ' <img id="%id.button_hidecol" src="%img.hidecol.png" style="vertical-align:bottom;"> '+
 ' &nbsp;<img id="%id.divider_recalc" src="%img.divider1.png" style="vertical-align:bottom;">&nbsp; '+
 '<img id="%id.button_recalc" src="%img.recalc.png" style="vertical-align:bottom;"> '+
