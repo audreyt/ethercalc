@@ -124,3 +124,8 @@ Deletes a spreadsheet's content after N seconds of inactivity. Activities includ
 ### CC0 Public Domain (唐鳳)
 
 * src/*.ls
+
+### Mozilla Public License Version 2.0
+
+* images/sc_*.png
+
