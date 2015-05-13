@@ -37,8 +37,7 @@
     "ethercalc": "./bin/ethercalc"
   },
   "scripts": {
-    "start": "node app.js",
-    "prepublish": "node node_modules/livescript/bin/lsc -c package.json.ls || lsc -c package.json.ls || echo"
+    "start": "node app.js"
   },
   "engines": {
     "node": ">= 0.8.x"
