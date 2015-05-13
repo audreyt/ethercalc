@@ -849,3 +849,10 @@ body, body #tableeditor {
 #restore:hover {
   background: #00aa9a;
 }
+#SocialCalc-edittools img[id] {
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+    padding: 2px;
+    margin: -2px;
+}

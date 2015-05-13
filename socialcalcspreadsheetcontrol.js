@@ -229,13 +229,13 @@ SocialCalc.SpreadsheetControl = function(idPrefix) {
    // formula bar buttons
 
    this.formulabuttons = {
-      formulafunctions: {image: "formuladialog.gif", tooltip: "Functions", // tooltips are localized when set below
+      formulafunctions: {image: "insertformula.png", tooltip: "Functions", // tooltips are localized when set below
                          command: SocialCalc.SpreadsheetControl.DoFunctionList},
-      multilineinput: {image: "multilinedialog.gif", tooltip: "Multi-line Input Box",
+      multilineinput: {image: "listbox.png", tooltip: "Multi-line Input Box",
                          command: SocialCalc.SpreadsheetControl.DoMultiline},
-      link: {image: "linkdialog.gif", tooltip: "Link Input Box",
+      link: {image: "inserthyperlink.png", tooltip: "Link Input Box",
                          command: SocialCalc.SpreadsheetControl.DoLink},
-      sum: {image: "sumdialog.gif", tooltip: "Auto Sum",
+      sum: {image: "autosum.png", tooltip: "Auto Sum",
                          command: SocialCalc.SpreadsheetControl.DoSum}
       }
 
@@ -246,45 +246,44 @@ SocialCalc.SpreadsheetControl = function(idPrefix) {
    this.tabnums.edit = this.tabs.length;
    this.tabs.push({name: "edit", text: "Edit", html:
       ' <div id="%id.edittools" style="padding:10px 0px 0px 0px;">'+
-'&nbsp;<img id="%id.button_undo" src="%img.undo.gif" style="vertical-align:bottom;">'+
-' <img id="%id.button_redo" src="%img.redo.gif" style="vertical-align:bottom;">'+
-' &nbsp;<img src="%img.divider1.gif" style="vertical-align:bottom;">&nbsp; '+
-'<img id="%id.button_copy" src="%img.copy.gif" style="vertical-align:bottom;">'+
-' <img id="%id.button_cut" src="%img.cut.gif" style="vertical-align:bottom;">'+
-' <img id="%id.button_paste" src="%img.paste.gif" style="vertical-align:bottom;">'+
-' &nbsp;<img src="%img.divider1.gif" style="vertical-align:bottom;">&nbsp; '+
-'<img id="%id.button_delete" src="%img.delete.gif" style="vertical-align:bottom;">'+
-' <img id="%id.button_pasteformats" src="%img.pasteformats.gif" style="vertical-align:bottom;">'+
-' &nbsp;<img src="%img.divider1.gif" style="vertical-align:bottom;">&nbsp; '+
-' <span id="%id.locktools"><img id="%id.button_lock" src="%img.lock.gif" style="vertical-align:bottom;">'+
-' <img id="%id.button_unlock" src="%img.unlock.gif" style="vertical-align:bottom;">'+
-' &nbsp;<img src="%img.divider1.gif" style="vertical-align:bottom;">&nbsp;</span> '+
-'<img id="%id.button_filldown" src="%img.filldown.gif" style="vertical-align:bottom;">'+
-' <img id="%id.button_fillright" src="%img.fillright.gif" style="vertical-align:bottom;">'+
-' &nbsp;<img src="%img.divider1.gif" style="vertical-align:bottom;">&nbsp; '+
+'&nbsp;<img id="%id.button_undo" src="%img.undo.png" style="vertical-align:bottom;">'+
+' <img id="%id.button_redo" src="%img.redo.png" style="vertical-align:bottom;">'+
+' &nbsp;<img src="%img.divider1.png" style="vertical-align:bottom;">&nbsp; '+
+'<img id="%id.button_copy" src="%img.copy.png" style="vertical-align:bottom;">'+
+' <img id="%id.button_cut" src="%img.cut.png" style="vertical-align:bottom;">'+
+' <img id="%id.button_paste" src="%img.paste.png" style="vertical-align:bottom;">'+
+' &nbsp;<img src="%img.divider1.png" style="vertical-align:bottom;">&nbsp; '+
+'<img id="%id.button_delete" src="%img.delete.png" style="vertical-align:bottom;">'+
+' <img id="%id.button_pasteformats" src="%img.formatpaintbrush.png" style="vertical-align:bottom;">'+
+' &nbsp;<img src="%img.divider1.png" style="vertical-align:bottom;">&nbsp; '+
+' <span id="%id.locktools"><img id="%id.button_lock" src="%img.lock.png" style="vertical-align:bottom;">'+
+' <img id="%id.button_unlock" src="%img.unlock.png" style="vertical-align:bottom;">'+
+' &nbsp;<img src="%img.divider1.png" style="vertical-align:bottom;">&nbsp;</span> '+
+'<img id="%id.button_filldown" src="%img.filldown.png" style="vertical-align:bottom;">'+
+' <img id="%id.button_fillright" src="%img.fillright.png" style="vertical-align:bottom;">'+
+' &nbsp;<img src="%img.divider1.png" style="vertical-align:bottom;">&nbsp; '+
 '<img id="%id.button_movefrom" src="%img.movefromoff.gif" style="vertical-align:bottom;">'+
 ' <img id="%id.button_movepaste" src="%img.movepasteoff.gif" style="vertical-align:bottom;">'+
 ' <img id="%id.button_moveinsert" src="%img.moveinsertoff.gif" style="vertical-align:bottom;">'+
-' &nbsp;<img src="%img.divider1.gif" style="vertical-align:bottom;">&nbsp; '+
-'<img id="%id.button_alignleft" src="%img.alignleft.gif" style="vertical-align:bottom;">'+
-' <img id="%id.button_aligncenter" src="%img.aligncenter.gif" style="vertical-align:bottom;">'+
-' <img id="%id.button_alignright" src="%img.alignright.gif" style="vertical-align:bottom;">'+
-' &nbsp;<img src="%img.divider1.gif" style="vertical-align:bottom;">&nbsp; '+
-'<img id="%id.button_borderon" src="%img.borderson.gif" style="vertical-align:bottom;"> '+
-' <img id="%id.button_borderoff" src="%img.bordersoff.gif" style="vertical-align:bottom;"> '+
-' <img id="%id.button_swapcolors" src="%img.swapcolors.gif" style="vertical-align:bottom;"> '+
-' &nbsp;<img src="%img.divider1.gif" style="vertical-align:bottom;">&nbsp; '+
-'<img id="%id.button_merge" src="%img.merge.gif" style="vertical-align:bottom;"> '+
-' <img id="%id.button_unmerge" src="%img.unmerge.gif" style="vertical-align:bottom;"> '+
-' &nbsp;<img src="%img.divider1.gif" style="vertical-align:bottom;">&nbsp; '+
-'<img id="%id.button_insertrow" src="%img.insertrow.gif" style="vertical-align:bottom;"> '+
-' <img id="%id.button_insertcol" src="%img.insertcol.gif" style="vertical-align:bottom;"> '+
-'&nbsp; <img id="%id.button_deleterow" src="%img.deleterow.gif" style="vertical-align:bottom;"> '+
-' <img id="%id.button_deletecol" src="%img.deletecol.gif" style="vertical-align:bottom;"> '+
-'&nbsp; <img id="%id.button_hiderow" src="%img.hiderow.gif" style="vertical-align:bottom;"> '+
-' <img id="%id.button_hidecol" src="%img.hidecol.gif" style="vertical-align:bottom;"> '+
-' &nbsp;<img id="%id.divider_recalc" src="%img.divider1.gif" style="vertical-align:bottom;">&nbsp; '+
-'<img id="%id.button_recalc" src="%img.recalc.gif" style="vertical-align:bottom;"> '+
+' &nbsp;<img src="%img.divider1.png" style="vertical-align:bottom;">&nbsp; '+
+'<img id="%id.button_alignleft" src="%img.alignleft.png" style="vertical-align:bottom;">'+
+' <img id="%id.button_aligncenter" src="%img.aligncenter.png" style="vertical-align:bottom;">'+
+' <img id="%id.button_alignright" src="%img.alignright.png" style="vertical-align:bottom;">'+
+' &nbsp;<img src="%img.divider1.png" style="vertical-align:bottom;">&nbsp; '+
+'<img id="%id.button_borderon" src="%img.borderson.png" style="vertical-align:bottom;"> '+
+' <img id="%id.button_borderoff" src="%img.bordersoff.png" style="vertical-align:bottom;"> '+
+' <img id="%id.button_swapcolors" src="%img.swapcolors.png" style="vertical-align:bottom;"> '+
+' &nbsp;<img src="%img.divider1.png" style="vertical-align:bottom;">&nbsp; '+
+'<img id="%id.button_merge" src="%img.mergecells.png" style="vertical-align:bottom;"> '+
+' &nbsp;<img src="%img.divider1.png" style="vertical-align:bottom;">&nbsp; '+
+'<img id="%id.button_insertrow" src="%img.insertrows.png" style="vertical-align:bottom;"> '+
+' <img id="%id.button_insertcol" src="%img.insertcolumns.png" style="vertical-align:bottom;"> '+
+' <img id="%id.button_deleterow" src="%img.deleterows.png" style="vertical-align:bottom;"> '+
+' <img id="%id.button_deletecol" src="%img.deletecolumns.png" style="vertical-align:bottom;"> '+
+' <img id="%id.button_hiderow" src="%img.hiderow.png" style="vertical-align:bottom;"> '+
+' <img id="%id.button_hidecol" src="%img.hidecol.png" style="vertical-align:bottom;"> '+
+' &nbsp;<img id="%id.divider_recalc" src="%img.divider1.png" style="vertical-align:bottom;">&nbsp; '+
+'<img id="%id.button_recalc" src="%img.recalc.png" style="vertical-align:bottom;"> '+
       ' </div>',
       oncreate: null, //function(spreadsheet, viewobject) {SocialCalc.DoCmd(null, "fill-rowcolstuff");},
       onclick: null});
@@ -706,8 +705,8 @@ SocialCalc.SpreadsheetControl = function(idPrefix) {
       '      <div style="%tbt.">%loc!Major Sort!</div>'+
       '      <select id="%id.majorsort" size="1" onfocus="%s.CmdGotFocus(this);"></select>'+
       '     </td><td>'+
-      '      <input type="radio" name="majorsort" id="%id.majorsortup" value="up" checked><span style="font-size:x-small;color:#FFF;">%loc!Up!</span><br>'+
-      '      <input type="radio" name="majorsort" id="%id.majorsortdown" value="down"><span style="font-size:x-small;color:#FFF;">%loc!Down!</span>'+
+      '      <input type="radio" name="majorsort" id="%id.majorsortup" value="up" checked><span style="font-size:x-small;color:#555753;">%loc!Up!</span><br>'+
+      '      <input type="radio" name="majorsort" id="%id.majorsortdown" value="down"><span style="font-size:x-small;color:#555753;">%loc!Down!</span>'+
       '     </td>'+
       '    </tr></table>'+
       '   </td>'+
@@ -717,8 +716,8 @@ SocialCalc.SpreadsheetControl = function(idPrefix) {
       '      <div style="%tbt.">%loc!Minor Sort!</div>'+
       '      <select id="%id.minorsort" size="1" onfocus="%s.CmdGotFocus(this);"></select>'+
       '     </td><td>'+
-      '      <input type="radio" name="minorsort" id="%id.minorsortup" value="up" checked><span style="font-size:x-small;color:#FFF;">%loc!Up!</span><br>'+
-      '      <input type="radio" name="minorsort" id="%id.minorsortdown" value="down"><span style="font-size:x-small;color:#FFF;">%loc!Down!</span>'+
+      '      <input type="radio" name="minorsort" id="%id.minorsortup" value="up" checked><span style="font-size:x-small;color:#555753;">%loc!Up!</span><br>'+
+      '      <input type="radio" name="minorsort" id="%id.minorsortdown" value="down"><span style="font-size:x-small;color:#555753;">%loc!Down!</span>'+
       '     </td>'+
       '    </tr></table>'+
       '   </td>'+
@@ -728,8 +727,8 @@ SocialCalc.SpreadsheetControl = function(idPrefix) {
       '      <div style="%tbt.">%loc!Last Sort!</div>'+
       '      <select id="%id.lastsort" size="1" onfocus="%s.CmdGotFocus(this);"></select>'+
       '     </td><td>'+
-      '      <input type="radio" name="lastsort" id="%id.lastsortup" value="up" checked><span style="font-size:x-small;color:#FFF;">%loc!Up!</span><br>'+
-      '      <input type="radio" name="lastsort" id="%id.lastsortdown" value="down"><span style="font-size:x-small;color:#FFF;">%loc!Down!</span>'+
+      '      <input type="radio" name="lastsort" id="%id.lastsortup" value="up" checked><span style="font-size:x-small;color:#555753;">%loc!Up!</span><br>'+
+      '      <input type="radio" name="lastsort" id="%id.lastsortdown" value="down"><span style="font-size:x-small;color:#555753;">%loc!Down!</span>'+
       '     </td>'+
       '    </tr></table>'+
       '   </td>'+
@@ -942,7 +941,7 @@ SocialCalc.InitializeSpreadsheetControl = function(spreadsheet, node, height, wi
       }
 
    html += '</div>'+
-      '<div style="'+spreadsheet.tabbackground+'padding-bottom:4px;margin:0px 0px 8px 0px;">'+
+      '<div style="'+spreadsheet.tabbackground+'margin:0px 0px 8px 0px;">'+
       '<table cellpadding="0" cellspacing="0"><tr>';
 
    for (i=0; i<tabs.length; i++) {
@@ -992,8 +991,7 @@ spreadsheet.Buttons = {
    button_borderon: {tooltip: "Borders On", command: "borderon"},
    button_borderoff: {tooltip: "Borders Off", command: "borderoff"},
    button_swapcolors: {tooltip: "Swap Colors", command: "swapcolors"},
-   button_merge: {tooltip: "Merge Cells", command: "merge"},
-   button_unmerge: {tooltip: "Unmerge Cells", command: "unmerge"},
+   button_merge: {tooltip: "Merge/Unmerge Cells", command: "merge"},
    button_insertrow: {tooltip: "Insert Row Before", command: "insertrow"},
    button_insertcol: {tooltip: "Insert Column Before", command: "insertcol"},
    button_deleterow: {tooltip: "Delete Row", command: "deleterow"},
