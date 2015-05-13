@@ -363,7 +363,7 @@ SocialCalc.Constants = {
             "[break]:|1,234%:#,##0%|1,234.5%:#,##0.0%|1,234.56%:#,##0.00%|"+
             "[newcol]:|$1,234:$#,##0|$1,234.5:$#,##0.0|$1,234.56:$#,##0.00|[break]:|"+
             "(1,234):#,##0_);(#,##0)|(1,234.5):#,##0.0_);(#,##0.0)|(1,234.56):#,##0.00_);(#,##0.00)|[break]:|"+
-            "($1,234):#,##0_);($#,##0)|($1,234.5):$#,##0.0_);($#,##0.0)|($1,234.56):$#,##0.00_);($#,##0.00)|"+
+            "($1,234):$#,##0_);($#,##0)|($1,234.5):$#,##0.0_);($#,##0.0)|($1,234.56):$#,##0.00_);($#,##0.00)|"+
             "[newcol]:|1/4/06:m/d/yy|01/04/2006:mm/dd/yyyy|2006-01-04:yyyy-mm-dd|4-Jan-06:d-mmm-yy|04-Jan-2006:dd-mmm-yyyy|January 4, 2006:mmmm d, yyyy|"+
             "[break]:|1\\c23:h:mm|1\\c23 PM:h:mm AM/PM|1\\c23\\c45:h:mm:ss|01\\c23\\c45:hh:mm:ss|26\\c23 (h\\cm):[hh]:mm|69\\c45 (m\\cs):[mm]:ss|69 (s):[ss]|"+
             "[newcol]:|2006-01-04 01\\c23\\c45:yyyy-mm-dd hh:mm:ss|January 4, 2006:mmmm d, yyyy hh:mm:ss|Wed:ddd|Wednesday:dddd|",
@@ -2985,15 +2985,44 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
          what = cmd.NextToken();
          rest = cmd.RestOfString();
          ParseRange();
+         function increment_amount(down) {
+            function valid_datatype(type) {
+		return type == "v" || type == "c";
+            }
+            var editor = SocialCalc.GetSpreadsheetControlObject().editor;
+            var range = editor.range2;
+            var returnval = undefined; 
+            if (range.hasrange) {
+                var startcell, endcell;
+                if (down && (range.bottom - range.top == 1) && range.left == range.right) {
+                  startcell = sheet.GetAssuredCell(SocialCalc.crToCoord(range.left, range.top));
+                  endcell = sheet.GetAssuredCell(SocialCalc.crToCoord(range.left, range.bottom));
+                  if (valid_datatype(startcell.datatype) && valid_datatype(endcell.datatype)) {
+                      returnval =  endcell.datavalue - startcell.datavalue;
+                  }
+                } else if (!down && range.left != range.right) {
+                  startcell = sheet.GetAssuredCell(SocialCalc.crToCoord(range.left, range.top));
+                  endcell = sheet.GetAssuredCell(SocialCalc.crToCoord(range.right, range.top));
+                  if (valid_datatype(startcell.datatype) && valid_datatype(endcell.datatype)) {
+                      returnval =  endcell.datavalue - startcell.datavalue;
+		  }
+                }
+            }
+           editor.Range2Remove();
+           return returnval;
+         }
+	 var inc;
          if (cmd1 == "fillright") {
             fillright = true;
             rowstart = cr1.row;
             colstart = cr1.col + 1;
+	    inc = increment_amount(false);
             }
          else {
             fillright = false;
             rowstart = cr1.row + 1;
             colstart = cr1.col;
+	    inc = increment_amount(true);
             }
          for (row = rowstart; row <= cr2.row; row++) {
             for (col = colstart; col <= cr2.col; col++) {
@@ -3024,7 +3053,11 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
                      }
                   }
                if (rest == "all" || rest == "formulas") {
-                  cell.datavalue = basecell.datavalue;
+                  if (inc !== undefined) {
+                      cell.datavalue = basecell.datavalue + (fillright ? coloffset : rowoffset)*inc;
+                  } else {
+                      cell.datavalue = basecell.datavalue;
+                  }
                   cell.datatype = basecell.datatype;            
                   cell.valuetype = basecell.valuetype;
                   if (cell.datatype == "f") { // offset relative coords, even in sheet references
@@ -11189,6 +11222,11 @@ SocialCalc.CellHandlesMouseDown = function(e) {
          if (!range.hasrange) {
             editor.RangeAnchor();
             }
+         editor.range2.top = editor.range.top;
+         editor.range2.right = editor.range.right;
+         editor.range2.bottom = editor.range.bottom;
+         editor.range2.left = editor.range.left;
+         editor.range2.hasrange = true;
          break;
 
       case "Move":

@@ -4208,6 +4208,11 @@ SocialCalc.CellHandlesMouseDown = function(e) {
          if (!range.hasrange) {
             editor.RangeAnchor();
             }
+         editor.range2.top = editor.range.top;
+         editor.range2.right = editor.range.right;
+         editor.range2.bottom = editor.range.bottom;
+         editor.range2.left = editor.range.left;
+         editor.range2.hasrange = true;
          break;
 
       case "Move":
