@@ -8856,7 +8856,6 @@ SocialCalc.EditorOpenCellEdit = function(editor) {
    if (editor.inputBox.element.disabled) return true; // multi-line: ignore
    editor.inputBox.ShowInputBox(true);
    editor.inputBox.Focus();
-   editor.state = "inputboxdirect";
    editor.inputBox.SetText("");
    editor.inputBox.DisplayCellContents();
    editor.inputBox.Select("end");
