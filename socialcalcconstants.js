@@ -150,13 +150,13 @@ SocialCalc.Constants = {
    defaultHighlightTypeRangeStyle: "color:#000;backgroundColor:#E5E5E5;",
 
    defaultColnameClass: "", // regular column heading letters, needs a cursor property 
-   defaultColnameStyle: "font-size:small;text-align:center;color:#FFFFFF;background-color:#808080;cursor:e-resize;",
+   defaultColnameStyle: "font-size:small;text-align:center;color:#FFFFFF;background-color:#808080;cursor:col-resize;",
    defaultSelectedColnameClass: "", // column with selected cell, needs a cursor property 
-   defaultSelectedColnameStyle: "font-size:small;text-align:center;color:#FFFFFF;background-color:#404040;cursor:e-resize;",
+   defaultSelectedColnameStyle: "font-size:small;text-align:center;color:#FFFFFF;background-color:#404040;cursor:col-resize;",
    defaultRownameClass: "", // regular row heading numbers
-   defaultRownameStyle: "font-size:small;text-align:right;color:#FFFFFF;background-color:#808080;direction:rtl;",
+   defaultRownameStyle: "font-size:small;text-align:right;color:#FFFFFF;background-color:#808080;direction:rtl;cursor:row-resize;",
    defaultSelectedRownameClass: "", // column with selected cell, needs a cursor property 
-   defaultSelectedRownameStyle: "font-size:small;text-align:right;color:#FFFFFF;background-color:#404040;",
+   defaultSelectedRownameStyle: "font-size:small;text-align:right;color:#FFFFFF;background-color:#404040;cursor:row-resize;",
    defaultUpperLeftClass: "", // Corner cell in upper left
    defaultUpperLeftStyle: "font-size:small;",
    defaultSkippedCellClass: "", // used if present for spanned cells peeking into a pane (at least one of class/style needed)
@@ -168,7 +168,7 @@ SocialCalc.Constants = {
    defaultUnhideRightClass: "",
    defaultUnhideRightStyle: "float:left;width:9px;height:12px;cursor:pointer;background-image:url(images/sc-unhideright.gif);padding:0;", // used if present
    defaultUnhideTopClass: "",
-   defaultUnhideTopStyle: "float:left;position:absolute;bottom:-4px;width:12px;height:9px;cursor:pointer;background-image:url(images/sc-unhidetop.gif);padding:0;",
+   defaultUnhideTopStyle: "float:left;left:1px;position:absolute;bottom:-4px;width:12px;height:9px;cursor:pointer;background-image:url(images/sc-unhidetop.gif);padding:0;",
    defaultUnhideBottomClass: "",
    defaultUnhideBottomStyle: "float:left;width:12px;height:9px;cursor:pointer;background-image:url(images/sc-unhidebottom.gif);padding:0;",
 
@@ -288,7 +288,7 @@ SocialCalc.Constants = {
 
    //*** SocialCalc.TCPSDragFunctionStart
 
-   TCPStrackinglineClass: "", // at least one of class/style for pane slider tracking line display in table control
+   TCPStrackinglineClass: "tracklingine", // at least one of class/style for pane slider tracking line display in table control
    TCPStrackinglineStyle: "overflow:hidden;position:absolute;zIndex:100;",
                            // if present, pseudo style (text-align is textAlign)
    TCPStrackinglineThickness: "2px", // narrow dimension of trackling line (string with units)
