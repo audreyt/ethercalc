@@ -61,6 +61,20 @@ const pkgdef :Spk.PackageDefinition = (
   # Use this to force-include stuff that you know you need but which may
   # not have been detected as a dependency during `spk dev`. If you list
   # a directory here, its entire contents will be included recursively.
+
+  bridgeConfig = (
+    viewInfo = (
+      permissions = [(name = "modify", title = (defaultText = "modify"),
+                      description = (defaultText = "allows modifying the spreadsheet"))],
+      roles = [(title = (defaultText = "editor"),
+                permissions = [true],
+                verbPhrase = (defaultText = "can edit"),
+                default = true),
+               (title = (defaultText = "viewer"),
+                permissions = [false],
+                verbPhrase = (defaultText = "can view"))]
+    )
+  )
 );
 
 const myContinueCommand :Spk.Manifest.Command = (
