@@ -28,6 +28,9 @@
         <a id="newpadbutton" href="./_new" alt="Create Spreadsheet"><span>Create Spreadsheet</span><br>
         <small>No sign-up, start editing instantly</small></a>
       </div>
+      <a id="restore" target="_blank" href="https://ethercalc.org/log/"
+      title="View &amp; Restore Backups" class="btn btn-primary btn-fab
+      btn-raised mdi-action-restore" style="visibility: hidden; width: 28px; height: 28px; margin-left: 270px; margin-top: 10px"></a>
     </div>
   </div>
   <a href="https://github.com/audreyt/ethercalc"><img style="z-order: 9999;
@@ -38,7 +41,8 @@
   <script src="./static/xlsx.js"></script>
   <script src="./static/shim.js"></script>
   <script src="./static/jquery.js"></script>
-  <div id="drop">Drop a .csv, .ods, or a .xlsx file here to import it</div>
+  <div id="drop">Drop a .csv, .ods, or a .xlsx file here to import it<div
+  style="display:block;font-size:60%;padding-top:0.5ex"><label style="cursor:pointer"><input type='checkbox' id='rename_sheet' name='rename_sheet'>Rename sheet(s) after upload</label></div></div>
   <style>
       #drop {
           display: block;
@@ -55,6 +59,11 @@ background: #eee;
       }
   </style>
 <script>
+if (/^(?:www\.)?ethercalc\.(?:org|com)$/.test(location.host)) {
+  $("head").append("<link rel='stylesheet' type='text/css' href='https://ethercalc.org/log/css/material.min.css' />");
+  $("#restore").css('visibility', 'visible');
+}
+
 var rABS = typeof FileReader !== "undefined" && typeof FileReader.prototype !== "undefined" && typeof FileReader.prototype.readAsBinaryString !== "undefined";
 function fixdata(data) {
 	var o = "", l = 0, w = 10240;
@@ -64,13 +73,14 @@ function fixdata(data) {
 	return o;
 }
 
-function xlsxworker(data, cb) {
+// cb is typically process_wb
+function xlsxworker(data, cb, id) {
 	var worker = new Worker('./static/xlsxworker.js');
 	worker.onmessage = function(e) {
 		switch(e.data.t) {
 			case 'ready': break;
 			case 'e': console.error(e.data.d); break;
-			case 'xlsx': cb(JSON.parse(e.data.d)); break;
+			case 'xlsx': cb(JSON.parse(e.data.d), id); break;
 		}
 	};
 	var arr = rABS ? data : btoa(fixdata(data));
@@ -164,16 +174,8 @@ var sheet_to_socialcalc = (function() {
         };
 })();
 
-
-var tarea = document.getElementById('b64data');
-function b64it() {
-	var wb = XLSX.read(tarea.value, {type: 'base64'});
-	process_wb(wb);
-}
-
-function process_wb(wb) {
+function process_wb(wb, id) {
 	var output = "";
-        var id = newId(10, 36).toLowerCase();
         if (wb.SheetNames.length > 1) {
             var toc = '"#url","#title"\n';
             var names = [].concat(wb.SheetNames);
@@ -235,8 +237,7 @@ $.ajax({
 });
 }
 
-function post_csv (csv) {
-        var id = newId(10, 36).toLowerCase();
+function post_csv (csv, id) {
 $.ajax({
     url: './_/' + id,
     method: 'PUT',
@@ -258,41 +259,58 @@ function newId (len, radix) {
     for (i = 0; i < len; i++) newId[i] = chars[0 | Math.random()*radix];
 
     return newId.join('');
-  };
+};
+
+function get_id(file, checked) {
+	var id = null;
+	if (checked) {
+		id = prompt("Enter a spreadsheet name for " + file + " (letters only)", "");
+		id = id.trim().toLowerCase().replace(/\s/g, "_");
+	}
+	if (id === null) {
+		id = newId(10, 36).toLowerCase();
+	}
+	return id;
+}
 
 var drop = document.getElementById('drop');
+var renameSheetCheckbox = document.getElementById('rename_sheet');
 function handleDrop(e) {
 	e.stopPropagation();
 	e.preventDefault();
-        var toggle = function(){
-            $(drop).fadeOut('fast', function(){ $(drop).fadeIn('fast', toggle) });
-        }
+	var toggle = function(){
+		$(drop).fadeOut('fast', function(){ $(drop).fadeIn('fast', toggle) });
+	}
 	var files = e.dataTransfer.files;
 	var i,f;
-        $(drop).text('Working...');
+	$(drop).text('Working...');
 	for (i = 0, f = files[i]; i != files.length; ++i) {
 		var reader = new FileReader();
 		var name = f.name;
+		var id = get_id(name, $(renameSheetCheckbox).is(":checked"));
 		reader.onload = function(e) {
 			var data = e.target.result;
-                        if (!/^PK\u0003\u0004/.test(data) && /^[^\n]+,(?:[^\n]+)*\n/.test(data)) {
-                            return post_csv(data);
-                        }
+			if (!/^PK\u0003\u0004/.test(data) && /^[^\n]+,(?:[^\n]+)*\n/.test(data)) {
+				return post_csv(data, id);
+			}
 			if(typeof Worker !== 'undefined') {
-				xlsxworker(data, process_wb);
+				xlsxworker(data, process_wb, id);
 			} else {
 				var wb;
 				if(rABS) {
 					wb = XLSX.read(data, {type: 'binary'});
 				} else {
-				var arr = fixdata(data);
+					var arr = fixdata(data);
 					wb = XLSX.read(btoa(arr), {type: 'base64'});
 				}
-				process_wb(wb);
+				process_wb(wb, id);
 			}
 		};
-		if(rABS) reader.readAsBinaryString(f);
-		else reader.readAsArrayBuffer(f);
+		if(rABS) {
+			reader.readAsBinaryString(f);
+		} else {
+			reader.readAsArrayBuffer(f);
+		}
 	}
 }
 
