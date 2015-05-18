@@ -2597,9 +2597,12 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
             for (col=colstart; col <= lastcol - coloffset; col++) {
                cr = SocialCalc.crToCoord(col+coloffset, row+rowoffset);
                cell = sheet.cells[cr];
-               if (cell && cell.readonly) return errortext; 
+               if (cell && cell.readonly) {
+                    errortext = "Unable to remove " + (cmd1 == "deletecol" ? "column" : "row") + ", because cell " + cell.coord + " is locked";
+                    return errortext; 
                }
             }
+         }
 
          for (row=rowstart; row <= lastrow - rowoffset; row++) { // copy the cells backwards - extra so no dup of last set
             for (col=colstart; col <= lastcol - coloffset; col++) {
