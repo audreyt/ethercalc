@@ -11,26 +11,27 @@
     "redis": "0.12.x",
     "uuid-pure": "*",
     "optimist": "*",
-    "zappajs": "0.5.x",
+    "zappajs": "2.1.x",
     "cors": "*",
     "livescript": "1.4.x",
     "csv-parse": "^0.0.6",
+    "body-parser": "^1.12.4",
     "j": "0.4.x"
   },
   "optionalDependencies": {
     "webworker-threads": "0.5.x"
   },
   "devDependencies": {
-    "css-loader": "^0.9.0",
+    "css-loader": "^0.12.1",
     "livescript-loader": "git://github.com/audreyt/livescript-loader",
-    "react": "^0.12.1",
+    "react": "^0.13.3",
     "react-basic-tabs": "^1.0.3",
-    "react-hot-loader": "^0.5.0",
-    "style-loader": "^0.8.2",
-    "stylus-loader": "^0.4.0",
-    "superagent": "^0.21.0",
-    "webpack": "^1.4.13",
-    "webpack-dev-server": "^1.6.6"
+    "react-hot-loader": "^1.2.7",
+    "style-loader": "^0.12.2",
+    "stylus-loader": "^1.1.1",
+    "superagent": "^1.2.0",
+    "webpack": "^1.9.7",
+    "webpack-dev-server": "^1.8.2"
   },
   "subdomain": "ethercalc",
   "bin": {

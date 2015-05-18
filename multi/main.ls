@@ -3,9 +3,11 @@ React = require \react
 TabPanel = require \react-basic-tabs
 BasePath = if window.location.href is /(?:127.0.0.1|localhost):8080/ then \http://127.0.0.1:8000 else \.
 Index = \foobar
-Index = RegExp.$1 if window.location.href is /\/=([^_][^\/]*)$/
+Index = RegExp.$1 if window.location.href is /\/=([^_][^\/?]*)(?:\?.*)$/
 HackFoldr = require(\./foldr.ls).HackFoldr
+ReadOnly = window.location.href is /auth=0/
 
+# OK Now Use ReadOnly
 {div, iframe, input, button} = React.DOM
 
 createClass = React.createFactory << React.createClass

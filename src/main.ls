@@ -1,7 +1,5 @@
 @include = ->
-  @use \json, @app.router, @express.static __dirname
-  @app.use \/edit @express.static __dirname
-  @app.use \/view @express.static __dirname
+  @use require(\body-parser).json!
 
   @include \dotcloud
   @include \player-broadcast
@@ -35,7 +33,7 @@
 
   sendFile = (file) -> ->
     @response.type Html
-    @response.sendfile "#RealBin/#file"
+    @response.sendFile "#RealBin/#file"
 
   if @CORS
     console.log "Cross-Origin Resource Sharing (CORS) enabled."
@@ -49,21 +47,21 @@
   new-room = -> require \uuid-pure .newId 10 36 .toLowerCase!
 
   @get '/': sendFile \index.html
-  @get '/favicon.ico': -> @response.send 404 ''
+  @get '/favicon.ico': -> @response.status(404).send!
   @get '/manifest.appcache': ->
     @response.type \text/cache-manifest
     if DevMode
-      @response.send 200 "CACHE MANIFEST\n\n##{Date!}\n\nNETWORK:\n*\n"
+      @response.status(200).send "CACHE MANIFEST\n\n##{Date!}\n\nNETWORK:\n*\n"
     else
-      @response.sendfile "#RealBin/manifest.appcache"
+      @response.sendFile "#RealBin/manifest.appcache"
   @get '/static/socialcalc:part.js': ->
     part = @params.part
     @response.type \application/javascript
-    @response.sendfile "#RealBin/socialcalc#part.js"
+    @response.sendFile "#RealBin/socialcalc#part.js"
   @get '/static/form:part.js': ->
     part = @params.part
     @response.type \application/javascript
-    @response.sendfile "#RealBin/form#part.js"
+    @response.sendFile "#RealBin/form#part.js"
   @get '/=_new': ->
     room = new-room!
     @response.redirect if KEY then "#BASEPATH/=#room/edit" else "#BASEPATH/=#room"
@@ -80,7 +78,7 @@
       {snapshot} <~ SC._get room, IO
       unless snapshot
         @response.type Text
-        @response.send 404 ''
+        @response.status(404).send!
         return
       csv <~ SC[room].exportCSV
       _, body <~ csv-parse(csv, delimiter: \,)
@@ -96,7 +94,7 @@
       @response.set \Content-Disposition """
         attachment; filename="#room.xlsx"
       """
-      @response.send 200 content
+      @response.status(200).send content
     else
       {snapshot} <~ SC._get room, IO
       if snapshot
@@ -108,13 +106,13 @@
         if content instanceof Function
           rv <~ content SC[room]
           @response.type type
-          @response.send 200 rv
+          @response.status(200).send rv
         else
           @response.type type
-          @response.send 200 content
+          @response.status(200).send content
       else
         @response.type Text
-        @response.send 404 ''
+        @response.status(404).send!
 
   ExportCSV-JSON = api -> [Json, (sc, cb) ->
     csv <- sc.exportCSV
@@ -242,7 +240,7 @@
           sheets-to-idx[ref.replace(/''/g, "'")] }'!"
       todo.=set("snapshot-#room.#idx", save)
     todo.bgsave!.exec!
-    @response.send 201 \OK
+    @response.status(201).send \OK
 
   @put '/_/:room': ->
     @response.type Text
@@ -253,7 +251,7 @@
     <~ SC._put room, snapshot
     <~ DB.del "log-#room"
     IO.sockets.in "log-#room" .emit \data { snapshot, type: \snapshot }
-    @response.send 201 \OK
+    @response.status(201).send \OK
 
   @post '/_/:room': ->
     {room} = @params
@@ -261,7 +259,7 @@
     command <~ request-to-command @request
     unless command
       @response.type Text
-      return @response.send 400 'Please send command'
+      return @response.status(400).send 'Please send command'
     {log, snapshot} <~ SC._get room, IO
     if command is /^loadclipboard\s*/
       row = 1
@@ -288,7 +286,7 @@
     <~ SC._put room, snapshot
     @response.type Text
     @response.location "/_/#room"
-    @response.send 201 "/#room"
+    @response.status(201).send "/#room"
 
   @on disconnect: !->
     { id } = @socket
@@ -369,3 +367,7 @@
       broadcast @data
     | otherwise
       broadcast @data
+
+  @app.use \/edit @express.static __dirname
+  @app.use \/view @express.static __dirname
+  @use @express.static __dirname

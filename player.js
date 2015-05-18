@@ -24,6 +24,7 @@
             endpoint = location.pathname.replace(/\/(view|edit)$/, '');
             endpoint = endpoint.replace(RegExp('' + SocialCalc._room + '$'), '');
           }
+          alert(endpoint);
           if ((ref3$ = window.Drupal) != null && ref3$.sheetnode) {
             if (/overlay=node\/\d+/.test(window.location.hash)) {
               SocialCalc._room = window.location.hash.match(/=node\/(\d+)/)[1];

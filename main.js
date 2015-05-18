@@ -3,9 +3,7 @@
   var join$ = [].join;
   this.include = function(){
     var J, csvParse, DB, SC, KEY, BASEPATH, EXPIRE, HMAC_CACHE, hmac, ref$, Text, Html, Csv, Json, fs, RealBin, DevMode, sendFile, newRoom, IO, api, ExportCSVJSON, ExportCSV, ExportHTML, JTypeMap, ExportJ, ExportExcelXML, requestToCommand, requestToSave, i$, len$, route, ref1$;
-    this.use('json', this.app.router, this.express['static'](__dirname));
-    this.app.use('/edit', this.express['static'](__dirname));
-    this.app.use('/view', this.express['static'](__dirname));
+    this.use(require('body-parser').json());
     this.include('dotcloud');
     this.include('player-broadcast');
     this.include('player-graph');
@@ -35,7 +33,7 @@
     sendFile = function(file){
       return function(){
         this.response.type(Html);
-        return this.response.sendfile(RealBin + "/" + file);
+        return this.response.sendFile(RealBin + "/" + file);
       };
     };
     if (this.CORS) {
@@ -58,16 +56,16 @@
     });
     this.get({
       '/favicon.ico': function(){
-        return this.response.send(404, '');
+        return this.response.status(404).send();
       }
     });
     this.get({
       '/manifest.appcache': function(){
         this.response.type('text/cache-manifest');
         if (DevMode) {
-          return this.response.send(200, "CACHE MANIFEST\n\n#" + Date() + "\n\nNETWORK:\n*\n");
+          return this.response.status(200).send("CACHE MANIFEST\n\n#" + Date() + "\n\nNETWORK:\n*\n");
         } else {
-          return this.response.sendfile(RealBin + "/manifest.appcache");
+          return this.response.sendFile(RealBin + "/manifest.appcache");
         }
       }
     });
@@ -76,7 +74,7 @@
         var part;
         part = this.params.part;
         this.response.type('application/javascript');
-        return this.response.sendfile(RealBin + "/socialcalc" + part + ".js");
+        return this.response.sendFile(RealBin + "/socialcalc" + part + ".js");
       }
     });
     this.get({
@@ -84,7 +82,7 @@
         var part;
         part = this.params.part;
         this.response.type('application/javascript');
-        return this.response.sendfile(RealBin + "/form" + part + ".js");
+        return this.response.sendFile(RealBin + "/form" + part + ".js");
       }
     });
     this.get({
@@ -120,7 +118,7 @@
             snapshot = arg$.snapshot;
             if (!snapshot) {
               this$.response.type(Text);
-              this$.response.send(404, '');
+              this$.response.status(404).send();
               return;
             }
             return SC[room].exportCSV(function(csv){
@@ -144,7 +142,7 @@
                   ref$ = cbMultiple.call(this$.params, names, saves), type = ref$[0], content = ref$[1];
                   this$.response.type(type);
                   this$.response.set('Content-Disposition', "attachment; filename=\"" + room + ".xlsx\"");
-                  return this$.response.send(200, content);
+                  return this$.response.status(200).send(content);
                 });
               });
             });
@@ -161,15 +159,15 @@
               if (content instanceof Function) {
                 return content(SC[room], function(rv){
                   this$.response.type(type);
-                  return this$.response.send(200, rv);
+                  return this$.response.status(200).send(rv);
                 });
               } else {
                 this$.response.type(type);
-                return this$.response.send(200, content);
+                return this$.response.status(200).send(content);
               }
             } else {
               this$.response.type(Text);
-              return this$.response.send(404, '');
+              return this$.response.status(404).send();
             }
           });
         }
@@ -422,7 +420,7 @@
                 snapshot: snapshot,
                 type: 'snapshot'
               });
-              return this$.response.send(201, 'OK');
+              return this$.response.status(201).send('OK');
             });
           });
         });
@@ -438,7 +436,7 @@
         return requestToCommand(this.request, function(command){
           if (!command) {
             this$.response.type(Text);
-            return this$.response.send(400, 'Please send command');
+            return this$.response.status(400).send('Please send command');
           }
           return SC._get(room, IO, function(arg$){
             var log, snapshot, row, cmdstr;
@@ -486,7 +484,7 @@
           return SC._put(room, snapshot, function(){
             this$.response.type(Text);
             this$.response.location("/_/" + room);
-            return this$.response.send(201, "/" + room);
+            return this$.response.status(201).send("/" + room);
           });
         });
       }
@@ -531,7 +529,7 @@
         }
       }
     });
-    return this.on({
+    this.on({
       data: function(){
         var ref$, room, msg, user, ecell, cmdstr, type, auth, reply, broadcast, this$ = this;
         ref$ = this.data, room = ref$.room, msg = ref$.msg, user = ref$.user, ecell = ref$.ecell, cmdstr = ref$.cmdstr, type = ref$.type, auth = ref$.auth;
@@ -656,6 +654,9 @@
         }
       }
     });
+    this.app.use('/edit', this.express['static'](__dirname));
+    this.app.use('/view', this.express['static'](__dirname));
+    return this.use(this.express['static'](__dirname));
     function fn$(){
       var room, cs, this$ = this;
       room = encodeURIComponent(this.params.room);
@@ -687,7 +688,7 @@
           todo = todo.set("snapshot-" + room + "." + idx, save);
         }
         todo.bgsave().exec();
-        return this$.response.send(201, 'OK');
+        return this$.response.status(201).send('OK');
         function fn$(arg$, arg1$, ref){
           return "'" + this$.params.room.replace(/'/g, "''") + "." + sheetsToIdx[ref.replace(/''/g, "'")] + "'!";
         }
