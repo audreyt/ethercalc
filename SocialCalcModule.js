@@ -10196,6 +10196,7 @@ SocialCalc.CalculateRowPositions = function(editor, panenum, positions, sizes) {
    for (rownum=context.rowpanes[rowpane].first; rownum<=context.rowpanes[rowpane].last; rownum++) {
       trowobj = tbodyobj.childNodes[toprow+offset];
       offset++;
+      if (!trowobj) { continue; }
       cellposition = SocialCalc.GetElementPosition(trowobj.firstChild);
 
 // Safari has problem: If a cell in the row is high, cell 1 is centered and it returns top of centered part 
@@ -23086,11 +23087,17 @@ SocialCalc.SpreadsheetControlExecuteCommand = function(obj, combostr, sstr) {
       str.W = SocialCalc.rcColname(eobj.range.left) + ":" + SocialCalc.rcColname(eobj.range.right);
       str.H = eobj.range.top + ":" + eobj.range.bottom;
       }
-   else {
+   else if (eobj.ecell) {
       str.C = eobj.ecell.coord;
       str.R = eobj.ecell.coord+":"+eobj.ecell.coord;
       str.W = SocialCalc.rcColname(SocialCalc.coordToCr(eobj.ecell.coord).col);
       str.H = SocialCalc.coordToCr(eobj.ecell.coord).row;
+      }
+   else {
+      str.C = 'A1'
+      str.R = 'A1:A1'
+      str.W = SocialCalc.rcColname(SocialCalc.coordToCr('A1').col);
+      str.H = SocialCalc.coordToCr('A1').row;
       }
    str.S = sstr;
    combostr = combostr.replace(/%C/g, str.C);

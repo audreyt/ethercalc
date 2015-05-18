@@ -3139,6 +3139,7 @@ SocialCalc.CalculateRowPositions = function(editor, panenum, positions, sizes) {
    for (rownum=context.rowpanes[rowpane].first; rownum<=context.rowpanes[rowpane].last; rownum++) {
       trowobj = tbodyobj.childNodes[toprow+offset];
       offset++;
+      if (!trowobj) { continue; }
       cellposition = SocialCalc.GetElementPosition(trowobj.firstChild);
 
 // Safari has problem: If a cell in the row is high, cell 1 is centered and it returns top of centered part 
