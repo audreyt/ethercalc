@@ -51,11 +51,9 @@
   @get '/': sendFile \index.html
   @get '/favicon.ico': -> @response.send 404 ''
   @get '/manifest.appcache': ->
+    # Sandstorm: Skip manifest appcache
     @response.type \text/cache-manifest
-    if DevMode
-      @response.send 200 "CACHE MANIFEST\n\n##{Date!}\n\nNETWORK:\n*\n"
-    else
-      @response.sendfile "#RealBin/manifest.appcache"
+    @response.send 200 "CACHE MANIFEST\n\n##{Date!}\n\nNETWORK:\n*\n"
   @get '/static/socialcalc:part.js': ->
     part = @params.part
     @response.type \application/javascript

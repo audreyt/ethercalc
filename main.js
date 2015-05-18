@@ -64,11 +64,7 @@
     this.get({
       '/manifest.appcache': function(){
         this.response.type('text/cache-manifest');
-        if (DevMode) {
-          return this.response.send(200, "CACHE MANIFEST\n\n#" + Date() + "\n\nNETWORK:\n*\n");
-        } else {
-          return this.response.sendfile(RealBin + "/manifest.appcache");
-        }
+        return this.response.send(200, "CACHE MANIFEST\n\n#" + Date() + "\n\nNETWORK:\n*\n");
       }
     });
     this.get({
