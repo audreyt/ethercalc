@@ -38,14 +38,7 @@ expire :: SocialCalcModule.js
 ./node_modules/streamline/bin/_node :
 	npm i --dev
 
-static/multi.js :: multi/main.ls multi/styles.styl
-	webpack --optimize-minimize
-
 depends :: app.js static/ethercalc.js static/start.css static/multi.js
-
-SocialCalcModule.js :: $(SOCIALCALC_FILES) exports.js
-
-static/ethercalc.js: $(ETHERCALC_FILES) SocialCalcModule.js
 
 .coffee.js:
 	coffee -c $<

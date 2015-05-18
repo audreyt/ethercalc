@@ -248,6 +248,7 @@
     @response.send 201 \OK
 
   @put '/_/:room': ->
+    return if @request.get(\x-sandstorm-permissions) isnt /modify/
     @response.type Text
     {room} = @params
     snapshot <~ request-to-save @request
@@ -259,6 +260,7 @@
     @response.send 201 \OK
 
   @post '/_/:room': ->
+    return if @request.get(\x-sandstorm-permissions) isnt /modify/
     {room} = @params
     return if room is \Kaohsiung-explode-20140801
     command <~ request-to-command @request
@@ -286,6 +288,7 @@
     @response.json 202 {command}
 
   @post '/_': ->
+    return if @request.get(\x-sandstorm-permissions) isnt /modify/
     snapshot <~ request-to-save @request
     room = @body?room || new-room!
     <~ SC._put room, snapshot
@@ -330,7 +333,6 @@
     | \my.ecell
       DB.hset "ecell-#room", user, ecell
     | \execute
-      return if @request.get(\x-sandstorm-permissions) isnt /modify/
       return if auth is \0
       return if cmdstr is /^set sheet defaulttextvalueformat text-wiki\s*$/
       if KEY and hmac(room) isnt auth
@@ -369,7 +371,6 @@
       delete SC[room]
       broadcast @data
     | \ecell
-      return if @request.get(\x-sandstorm-permissions) isnt /modify/
       return if auth is \0 or KEY and auth isnt hmac room
       broadcast @data
     | otherwise
