@@ -196,7 +196,7 @@ SocialCalc.Constants = {
 
    //*** SocialCalc.TableEditor
 
-   defaultImagePrefix: "images/sc-", // URL prefix for images (e.g., "/images/sc")
+   defaultImagePrefix: "images/sc_", // URL prefix for images (e.g., "/images/sc")
    defaultTableEditorIDPrefix: "te_", // if present, many TableEditor elements are assigned IDs with this prefix
    defaultPageUpDnAmount: 15, // number of rows to move cursor on PgUp/PgDn keys (numeric)
 

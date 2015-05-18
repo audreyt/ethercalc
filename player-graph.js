@@ -909,7 +909,7 @@
         scc.ISCButtonBorderHover = '#99' + b4;
         scc.ISCButtonBorderDown = '#FFF';
         scc.ISCButtonDownBackground = '#88' + b5;
-        scc.defaultImagePrefix = './images/sc-';
+        scc.defaultImagePrefix = './images/sc_';
         return SocialCalc.Popup.LocalizeString = SocialCalc.LocalizeString;
       }
     });
