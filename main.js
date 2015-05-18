@@ -411,6 +411,9 @@
     this.put({
       '/_/:room': function(){
         var room, this$ = this;
+        if (!/modify/.test(this.request.get('x-sandstorm-permissions'))) {
+          return;
+        }
         this.response.type(Text);
         room = this.params.room;
         return requestToSave(this.request, function(snapshot){
@@ -434,6 +437,9 @@
     this.post({
       '/_/:room': function(){
         var room, this$ = this;
+        if (!/modify/.test(this.request.get('x-sandstorm-permissions'))) {
+          return;
+        }
         room = this.params.room;
         if (room === 'Kaohsiung-explode-20140801') {
           return;
@@ -483,6 +489,9 @@
     this.post({
       '/_': function(){
         var this$ = this;
+        if (!/modify/.test(this.request.get('x-sandstorm-permissions'))) {
+          return;
+        }
         return requestToSave(this.request, function(snapshot){
           var room, ref$;
           room = ((ref$ = this$.body) != null ? ref$.room : void 8) || newRoom();
@@ -571,9 +580,6 @@
           DB.hset("ecell-" + room, user, ecell);
           break;
         case 'execute':
-          if (!/modify/.test(this.request.get('x-sandstorm-permissions'))) {
-            return;
-          }
           if (auth === '0') {
             return;
           }
@@ -652,9 +658,6 @@
           });
           break;
         case 'ecell':
-          if (!/modify/.test(this.request.get('x-sandstorm-permissions'))) {
-            return;
-          }
           if (auth === '0' || KEY && auth !== hmac(room)) {
             return;
           }

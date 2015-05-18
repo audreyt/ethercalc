@@ -102,6 +102,9 @@ images/sc_unhidetop.gif
 images/sc_unlock.png
 index.html
 install_grain.sh
+l10n/de.json
+l10n/en.json
+l10n/zh-TW.json
 lib/x86_64-linux-gnu/ld-2.19.so
 lib/x86_64-linux-gnu/libacl.so.1
 lib/x86_64-linux-gnu/libacl.so.1.1.0
