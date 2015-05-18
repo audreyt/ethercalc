@@ -414,7 +414,7 @@
             if ((typeof vex != 'undefined' && vex !== null) && vex.dialog.open) {
               SocialCalc.Keyboard.passThru = true;
             }
-            isMultiple = /\.[1-9]\d*$/.exec(SocialCalc._room);
+            isMultiple = /[1-9]\d*$/.exec(SocialCalc._room);
             if (typeof vex != 'undefined' && vex !== null) {
               vex.defaultOptions.className = 'vex-theme-flat-attack';
             }

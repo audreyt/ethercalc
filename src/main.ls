@@ -162,6 +162,9 @@
 
   @get '/:room': ->
     ui-file = if @params.room is /^=/ then \multi/index.html else \index.html
+    if @request.get(\x-sandstorm-permissions) isnt /modify/ and not @query.auth?length
+      @response.redirect "#BASEPATH/#{ @params.room }?auth=0"
+    # Check header here and do a ?auth=0
     if KEY then
       if @query.auth?length
         sendFile(ui-file).call @
@@ -327,6 +330,7 @@
     | \my.ecell
       DB.hset "ecell-#room", user, ecell
     | \execute
+      return if @request.get(\x-sandstorm-permissions) isnt /modify/
       return if auth is \0
       return if cmdstr is /^set sheet defaulttextvalueformat text-wiki\s*$/
       if KEY and hmac(room) isnt auth
@@ -365,6 +369,7 @@
       delete SC[room]
       broadcast @data
     | \ecell
+      return if @request.get(\x-sandstorm-permissions) isnt /modify/
       return if auth is \0 or KEY and auth isnt hmac room
       broadcast @data
     | otherwise

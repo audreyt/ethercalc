@@ -17,9 +17,6 @@
     "csv-parse": "^0.0.6",
     "j": "0.4.x"
   },
-  "optionalDependencies": {
-    "webworker-threads": "0.5.x"
-  },
   "devDependencies": {
     "css-loader": "^0.9.0",
     "livescript-loader": "git://github.com/audreyt/livescript-loader",

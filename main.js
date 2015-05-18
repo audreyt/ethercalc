@@ -269,10 +269,13 @@
     });
     this.get({
       '/:room': function(){
-        var uiFile, ref$;
+        var uiFile, ref$, ref1$;
         uiFile = /^=/.exec(this.params.room) ? 'multi/index.html' : 'index.html';
+        if (!/modify/.test(this.request.get('x-sandstorm-permissions')) && !((ref$ = this.query.auth) != null && ref$.length)) {
+          this.response.redirect(BASEPATH + "/" + this.params.room + "?auth=0");
+        }
         if (KEY) {
-          if ((ref$ = this.query.auth) != null && ref$.length) {
+          if ((ref1$ = this.query.auth) != null && ref1$.length) {
             return sendFile(uiFile).call(this);
           } else {
             return this.response.redirect(BASEPATH + "/" + this.params.room + "?auth=0");
@@ -568,6 +571,9 @@
           DB.hset("ecell-" + room, user, ecell);
           break;
         case 'execute':
+          if (!/modify/.test(this.request.get('x-sandstorm-permissions'))) {
+            return;
+          }
           if (auth === '0') {
             return;
           }
@@ -646,6 +652,9 @@
           });
           break;
         case 'ecell':
+          if (!/modify/.test(this.request.get('x-sandstorm-permissions'))) {
+            return;
+          }
           if (auth === '0' || KEY && auth !== hmac(room)) {
             return;
           }
