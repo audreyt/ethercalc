@@ -46,10 +46,10 @@ body:last-child .defaultPeer {
 .defaultCommentNoGridStyle {}
 .defaultHighlightTypeCursor {color:#FFF;background-color:#A6A6A6;}
 .defaultHighlightTypeRange {color:#000;background-color:#E5E5E5;}
-.defaultColname {font-size:small;text-align:center;color:#FFFFFF;background-color:#808080;cursor:e-resize;}
-.defaultSelectedColname {font-size:small;text-align:center;color:#FFFFFF;background-color:#404040;cursor:e-resize;}
-.defaultRowname {font-size:small;text-align:right;color:#FFFFFF;background-color:#808080;}
-.defaultSelectedRowname {font-size:small;text-align:right;color:#FFFFFF;background-color:#404040;}
+.defaultColname {font-size:small;text-align:center;color:#FFFFFF;background-color:#808080;cursor:col-resize;}
+.defaultSelectedColname {font-size:small;text-align:center;color:#FFFFFF;background-color:#404040;cursor:col-resize;}
+.defaultRowname {font-size:small;text-align:right;color:#FFFFFF;background-color:#808080;cursor:row-resize;}
+.defaultSelectedRowname {font-size:small;text-align:right;color:#FFFFFF;background-color:#404040;cursor:row-resize;}
 .defaultUpperLeft {font-size:small;}
 .defaultSkippedCell {font-size:small;background-color:#CCC;}
 .defaultPaneDivider {font-size:small;background-color:#ECECEC;padding:0px;}
