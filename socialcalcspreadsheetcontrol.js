@@ -238,6 +238,14 @@ SocialCalc.SpreadsheetControl = function(idPrefix) {
       sum: {image: "autosum.png", tooltip: "Auto Sum",
                          command: SocialCalc.SpreadsheetControl.DoSum}
       }
+   
+   // find buttons
+   this.findbuttons = {
+       last: {image: 'upsearch.png', tooltip: 'Find Previous',
+              command: SocialCalc.SpreadsheetControl.SearchUp},
+       next: {image: 'downsearch.png', tooltip: 'Find Next', 
+              command: SocialCalc.SpreadsheetControl.SearchDown}
+   }
 
    // Default tabs:
 
@@ -1034,10 +1042,44 @@ spreadsheet.Buttons = {
           hoverstyle: "border:1px solid #CCC;backgroundColor:#FFF;",
           downstyle: "border:1px solid #000;backgroundColor:#FFF;"}, 
          {MouseDown: spreadsheet.formulabuttons[button].command, Disabled: function() {return spreadsheet.editor.ECellReadonly();}});
-      
-      spreadsheet.formulabarDiv.appendChild(bele);
-      }
+   spreadsheet.formulabarDiv.appendChild(bele);
+   }
 
+   var input = $("<input id='searchbarinput' value='' placeholder='Search sheet...'>");
+   var searchBar = $("<span id='searchbar'></span>");
+   searchBar.append("<div id='searchstatus'></div>");
+   searchBar.append(input);
+
+   // find buttons (right of formula bar)
+   for (button in spreadsheet.findbuttons) {
+      bele = document.createElement("img");
+      bele.id = spreadsheet.idPrefix+button;
+      bele.src = (spreadsheet.imagePrefix)+spreadsheet.findbuttons[button].image;
+      bele.style.verticalAlign = "middle";
+      bele.style.border = "1px solid #FFF";
+      SocialCalc.TooltipRegister(bele, SCLoc(spreadsheet.findbuttons[button].tooltip), {}, spreadsheet.formulabardiv);
+      SocialCalc.ButtonRegister(spreadsheet.editor, bele,
+         {normalstyle: "border:1px solid #FFF;backgroundColor:#FFF;",
+          hoverstyle: "border:1px solid #CCC;backgroundColor:#FFF;",
+          downstyle: "border:1px solid #000;backgroundColor:#FFF;"}, 
+         {MouseDown: spreadsheet.findbuttons[button].command, Disabled: function() {return false;}});
+      searchBar[0].appendChild(bele);
+   } 
+   input.on('input', SocialCalc.SpreadsheetControl.FindInSheet);
+   input.on('focus', function() {
+        SocialCalc.Keyboard.passThru = true;
+   });
+   input.on('blur', function() {
+        SocialCalc.Keyboard.passThru = false;
+   });
+   input.keyup(function (e) {
+        if (e.keyCode == 13) {
+           // search down when enter is pressed
+           SocialCalc.SpreadsheetControl.SearchDown();
+        }
+   });
+   spreadsheet.formulabarDiv.appendChild(searchBar[0]);
+   
    // initialize tabs that need it
 
    for (i=0; i<tabs.length; i++) { // execute any tab-specific initialization code
@@ -1134,6 +1176,8 @@ SocialCalc.LocalizeString = function(str) {
       }
    return cstr;
    }
+
+
 
 SocialCalc.LocalizeStringList = {}; // a list of strings to localize accumulated by the routine
 
@@ -2658,6 +2702,68 @@ SocialCalc.SpreadsheetControl.DoSum = function() {
 
    }
 
+SocialCalc.SpreadsheetControl.FindInSheet = function() {
+    var searchstatus = $("#searchstatus");
+    var spreadsheet = SocialCalc.GetSpreadsheetControlObject();
+    if (!this.value.length) {
+        searchstatus.text("");
+        spreadsheet.sheet.search_cells = [];
+        spreadsheet.sheet.selected_search_cell = undefined;
+        return;
+    }
+    var cells = spreadsheet.sheet.cells;
+    var regex = new RegExp(this.value, 'im');
+    var cell, cellvalue;
+    var search_cells = [];
+    for (var cell_id in cells) {
+        cell = cells[cell_id];
+        if (cell.datatype === 'c') {
+            cellvalue = cell.displaystring;
+        } else {
+            cellvalue = String(cell.datavalue);
+        }
+        if (cellvalue !== undefined && cellvalue.match(regex)) {
+           search_cells.push(cell_id);
+        } 
+    }
+    spreadsheet.sheet.search_cells = search_cells;
+    if (search_cells.length) {
+        spreadsheet.sheet.selected_search_cell = 0;
+        spreadsheet.editor.MoveECell(search_cells[0]);
+        searchstatus.text("1 of " + search_cells.length); 
+    } else {
+        spreadsheet.sheet.selected_search_cell = undefined;
+        searchstatus.text("No Matches");
+    }
+        
+}
+
+SocialCalc.SpreadsheetControl.SearchSheet = function(direction) {
+    var spreadsheet = SocialCalc.GetSpreadsheetControlObject();
+    var sheet = spreadsheet.sheet;
+    var cells = sheet.search_cells;
+    if (!cells.length) {
+        return;
+    }
+    var selected_cell = sheet.selected_search_cell;
+    if (selected_cell === (direction === 0 ? 0 : cells.length-1)) {
+        selected_cell = (direction === 0 ? cells.length-1 : 0);
+    } else {
+        selected_cell += (direction === 0 ? -1 : 1);
+    }
+    var new_cell = cells[selected_cell];
+    sheet.selected_search_cell = selected_cell; 
+    spreadsheet.editor.MoveECell(new_cell);
+    document.getElementById("searchstatus").textContent = String(selected_cell+1) + " of " + cells.length;
+}
+ 
+SocialCalc.SpreadsheetControl.SearchUp = function() {
+    SocialCalc.SpreadsheetControl.SearchSheet(0);    
+}
+
+SocialCalc.SpreadsheetControl.SearchDown = function() {
+    SocialCalc.SpreadsheetControl.SearchSheet(1);
+}
 
 //
 // TAB Routines
