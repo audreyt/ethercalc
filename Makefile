@@ -21,18 +21,18 @@ JS_FILES=\
 	app.js dotcloud.js player.js main.js sc.js db.js
 
 all :: depends
-	env PATH="$$PATH:./node_modules/LiveScript/bin" lsc -c -o . src
+	env PATH="$$PATH:./node_modules/livescript/bin" lsc -c -o . src
 	node app.js $(ETHERCALC_ARGS) --cors
 
 manifest ::
 	perl -pi -e 's/# [A-Z].*\n/# @{[`date`]}/m' manifest.appcache
 
 vm :: SocialCalcModule.js
-	env PATH="$$PATH:./node_modules/LiveScript/bin" lsc -c -o . src
+	env PATH="$$PATH:./node_modules/livescript/bin" lsc -c -o . src
 	node app.js --vm $(ETHERCALC_ARGS)
 
 expire :: SocialCalcModule.js
-	env PATH="$$PATH:./node_modules/LiveScript/bin" lsc -c -o . src
+	env PATH="$$PATH:./node_modules/livescript/bin" lsc -c -o . src
 	node app.js --expire 10 $(ETHERCALC_ARGS)
 
 ./node_modules/streamline/bin/_node :

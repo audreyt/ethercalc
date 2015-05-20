@@ -1,10 +1,17 @@
 require \./styles.styl
 React = require \react
 TabPanel = require \react-basic-tabs
-BasePath = if window.location.href is /(?:127.0.0.1|localhost):8080/ then \http://127.0.0.1:8000 else \.
+BasePath = if window.location.href is /(?:127.0.0.1|localhost|\.local):8080/ then \http://127.0.0.1:8000 else \.
 Index = \foobar
-Index = RegExp.$1 if window.location.href is /\/=([^_][^\/]*)$/
+Index = RegExp.$1 if window.location.href is /\/=([^_][^\/?]*)(?:\?.*)?$/
 HackFoldr = require(\./foldr.ls).HackFoldr
+IsReadOnly = window.location.href is /auth=0/
+Suffix = ""
+if /\?auth=/.test window.location.search
+  IsReadOnly = (/\??auth=0/.test window.location.search)
+  Suffix = if IsReadOnly then \/view else \/edit
+  BasePath = \.. if BasePath is \.
+  window.history.pushState {} '' "./=#Index#Suffix"
 
 {div, iframe, input, button} = React.DOM
 
@@ -14,9 +21,9 @@ App = createClass do
   getDefaultProps: -> activeIndex: 0
   render: ->
     can-delete = @props.foldr.size! > 1
-    div { className: \nav },
+    div { className: "nav#{ if IsReadOnly then ' readonly' else '' }" },
       Nav { rows: @props.foldr.rows, activeIndex: @get-idx!, @~onChange }
-      Buttons { can-delete, @~on-add, @~on-rename, @~on-delete }
+      if IsReadOnly then '' else Buttons { can-delete, @~on-add, @~on-rename, @~on-delete }
   get-idx: -> @props.activeIndex <? @props.foldr.lastIndex!
   get-sheet: -> @props.foldr.at(@get-idx!)
   componentDidUpdate: ->
@@ -66,7 +73,7 @@ Nav = createClass do
     TabPanel { activeIndex: @props.activeIndex, @~onChange, tabVerticalPosition: \bottom },
       ...for { title, link="/#{ encodeURIComponent title }" } in @props.rows
         div { key: title, title, className: \wrapper },
-          Frame { src: "#BasePath#link", rows: @props.rows }
+          Frame { src: "#BasePath#link#Suffix", rows: @props.rows }
 
 Frame = createClass do
   shouldComponentUpdate: -> @props.src isnt it.src
