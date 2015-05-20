@@ -294,6 +294,8 @@ SocialCalc.ResetSheet = function(sheet, reload) {
    sheet.cellformathash={};
    sheet.valueformats=[];
    sheet.valueformathash={};
+   sheet.matched_cells=[];
+   sheet.selected_search_cell=undefined;
 
    sheet.copiedfrom = ""; // if a range, then this was loaded from a saved range as clipboard content
 

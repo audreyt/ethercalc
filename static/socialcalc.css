@@ -84,3 +84,21 @@ body:last-child .defaultPeer {
     background: #AEF;
     font-weight: bold;
 }
+
+#searchbar {
+    display: inline;
+    float: right;
+}
+
+#searchbarinput {
+    width: 170px;
+    padding: 1px 3px;
+}
+
+#searchstatus {
+    display: inline;
+    padding-right: 5px;
+}
+#searchbar img {
+    vertical-align: middle;
+}
