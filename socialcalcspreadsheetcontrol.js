@@ -2717,6 +2717,10 @@ SocialCalc.SpreadsheetControl.FindInSheet = function() {
     var search_cells = [];
     for (var cell_id in cells) {
         cell = cells[cell_id];
+        var cr = SocialCalc.coordToCr(cell_id);
+        if (spreadsheet.sheet.rowattribs.hide[cr.row] === 'yes' || spreadsheet.sheet.colattribs.hide[SocialCalc.rcColname(cr.col)] === 'yes') {
+            continue;
+        }
         if (cell.datatype === 'c') {
             cellvalue = cell.displaystring;
         } else {
