@@ -22204,7 +22204,7 @@ spreadsheet.Buttons = {
    spreadsheet.formulabarDiv.appendChild(bele);
    }
 
-   var input = $("<input id='searchbarinput' value='' placeholder='Search sheet...'>");
+   var input = $("<input id='searchbarinput' value='' placeholder='Search sheet…'>");
    var searchBar = $("<span id='searchbar'></span>");
    searchBar.append("<div id='searchstatus'></div>");
    searchBar.append(input);
