@@ -1877,7 +1877,6 @@ SocialCalc.EditorOpenCellEdit = function(editor) {
    if (editor.inputBox.element.disabled) return true; // multi-line: ignore
    editor.inputBox.ShowInputBox(true);
    editor.inputBox.Focus();
-   editor.state = "inputboxdirect";
    editor.inputBox.SetText("");
    editor.inputBox.DisplayCellContents();
    editor.inputBox.Select("end");
@@ -3140,6 +3139,7 @@ SocialCalc.CalculateRowPositions = function(editor, panenum, positions, sizes) {
    for (rownum=context.rowpanes[rowpane].first; rownum<=context.rowpanes[rowpane].last; rownum++) {
       trowobj = tbodyobj.childNodes[toprow+offset];
       offset++;
+      if (!trowobj) { continue; }
       cellposition = SocialCalc.GetElementPosition(trowobj.firstChild);
 
 // Safari has problem: If a cell in the row is high, cell 1 is centered and it returns top of centered part 
@@ -4263,6 +4263,11 @@ SocialCalc.CellHandlesMouseDown = function(e) {
          if (!range.hasrange) {
             editor.RangeAnchor();
             }
+         editor.range2.top = editor.range.top;
+         editor.range2.right = editor.range.right;
+         editor.range2.bottom = editor.range.bottom;
+         editor.range2.left = editor.range.left;
+         editor.range2.hasrange = true;
          break;
 
       case "Move":
