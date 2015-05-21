@@ -234,6 +234,9 @@ SocialCalc.Constants = {
    defaultInputEchoPromptStyle: "filter:alpha(opacity=90);opacity:.9;backgroundColor:#FFD;"+
       "borderLeft:1px solid #884;borderRight:1px solid #884;borderBottom:1px solid #884;"+
       "fontSize:small;fontStyle:italic;padding:2px 10px 1px 2px;cursor:default;", // if present, pseudo style
+   defaultInputEchoHintClass: "", // if present, the class of the popup inputEcho div
+   defaultInputEchoHintStyle: "filter:alpha(opacity=80);opacity:.8;backgroundColor:#884;border:1px solid #884;"+
+      "fontSize:small;fontWeight:bold;padding:2px 2px 2px 2px;color:#FFF;position:absolute;top:-20px;cursor:default;", // if present, pseudo style
 
    //** SocialCalc.InputEchoText
 
@@ -10756,6 +10759,7 @@ SocialCalc.InputEcho = function(editor) {
    this.container = null; // element containing main echo as well as prompt line
    this.main = null; // main echo area
    this.prompt = null;
+   this.hint = null; // focus cell hint area
 
    this.functionbox = null; // function chooser dialog
 
@@ -10767,6 +10771,12 @@ SocialCalc.InputEcho = function(editor) {
    if (scc.defaultInputEchoStyle) SocialCalc.setStyles(this.main, scc.defaultInputEchoStyle);
    this.main.innerHTML = "&nbsp;";
 
+   this.hint = document.createElement("div");
+   if (scc.defaultInputEchoHintClass) this.hint.className = scc.defaultInputEchoHintClass;
+   if (scc.defaultInputEchoHintStyle) SocialCalc.setStyles(this.hint, scc.defaultInputEchoHintStyle);
+   this.hint.innerHTML = "";
+
+   this.container.appendChild(this.hint);
    this.container.appendChild(this.main);
 
    this.prompt = document.createElement("div");
@@ -10809,6 +10819,7 @@ SocialCalc.ShowInputEcho = function(inputecho, show) {
          inputecho.container.style.left = (position.left-1)+"px";
          inputecho.container.style.top = (position.top-1)+"px";
          }
+      inputecho.hint.innerHTML = editor.ecell.coord;
       inputecho.container.style.display = "block";
       if (inputecho.interval) window.clearInterval(inputecho.interval); // just in case
       inputecho.interval = window.setInterval(SocialCalc.InputEchoHeartbeat, 50);
