@@ -267,6 +267,10 @@ SocialCalc.InitializeSpreadsheetViewer = function(spreadsheet, node, height, wid
    // eddy InitializeSpreadsheetViewer {
    if(SocialCalc._app == true) {
      spreadsheet.formDataViewer = new SocialCalc.SpreadsheetViewer("te_FormData-");
+     // remove callback to stop drawing of table.
+     spreadsheet.formDataViewer.sheet.statuscallback = null;
+     // setup app viewer object
+     SocialCalc.CurrentSpreadsheetViewerObject = spreadsheet;
    }
    
    // done - refresh screen needed

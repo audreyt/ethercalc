@@ -1583,7 +1583,7 @@ SocialCalc.Formula.DecodeRangeParts = function(sheetdata, range) {
 //   func_class, if present, is the comma-separated names of the elements in SocialCalc.Formula.FunctionClasses.
 //   cell_html, if present, is the HTML to display in the cell. will find and replace these <%=cell_reference%>, <%=displayvalue%> see SocialCalc.FormatValueForDisplay
 //   io_parameters, if present, 
-//        "ParameterList" is used with =CopyValue() etc, used to collect parameters for use trigger/action formulas, 
+//        "ParameterList" is used with =CopyValue() etc, used to collect parameters of the formula, for use trigger/action formulas, 
 //        "EventTree" is used with =Button() etc, used to store trigger cell lookup table
 //        "Input" for input style GUI widgets - textbox/radio buttons etc - 
 //
@@ -4821,7 +4821,6 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
 // Min args are specified in SocialCalc.Formula.FunctionList.
 //   -2 = one or more number argument
 //   -1 = any type
-
 //   0 = number
 //   1 = text argument
 //   2 = coord argument
@@ -4839,6 +4838,7 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
 				,EMAILAT: [4, 4, 4, 4, 4]
 				,EMAILONEDITIF: [4, 4, 4, 4, 4, 4]
 				,EMAILATIF: [4, 4, 4, 4, 4, 4]
+        ,SUBMIT: [1]
 				,TEXTBOX: [1]
 				,CHECKBOX: [-1]
 				,COPYVALUE: [2, -1, 3]
@@ -4897,9 +4897,11 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
 
 
    switch (fname) {
-      case "BUTTON":
-      case "TEXTBOX":
-         result = operand_value[1];
+     case "SUBMIT":
+         result = "Submit";
+     case "BUTTON":
+     case "TEXTBOX":
+         if (numargs>0) result = operand_value[1];
          resulttype = "ti"+fname; // (t)ext value with (i)nterface (BUTTON,TEXTBOX,) 
          break;
 
@@ -4965,6 +4967,7 @@ SocialCalc.Formula.FunctionList["EMAILONEDIT"] = [SocialCalc.Formula.IoFunctions
 SocialCalc.Formula.FunctionList["EMAILAT"] = [SocialCalc.Formula.IoFunctions, -4, "datetime, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList" ];
 SocialCalc.Formula.FunctionList["EMAILONEDITIF"] = [SocialCalc.Formula.IoFunctions, -5, "editRange, condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "EventTree" ];
 SocialCalc.Formula.FunctionList["EMAILATIF"] = [SocialCalc.Formula.IoFunctions, -5, "datetime, condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList" ];
+SocialCalc.Formula.FunctionList["SUBMIT"] = [SocialCalc.Formula.IoFunctions, 100, "[txt]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Submit('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList" ];
 SocialCalc.Formula.FunctionList["TEXTBOX"] = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "gui", "<input type='text' id='TEXTBOX_<%=cell_reference%>' onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.TextBox('<%=cell_reference%>')\" value='<%=display_value%>' >", "Input" ];
 SocialCalc.Formula.FunctionList["CHECKBOX"] = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "gui", "<input type='checkbox' id='CHECKBOX_<%=cell_reference%>' <%=checked%> onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.CheckBox('<%=cell_reference%>')\" >", "Input" ];
 
@@ -5167,6 +5170,33 @@ SocialCalc.TriggerIoAction.Email = function(emailFormulaCellId, optionalTriggerC
 	 if(setStatusBarMessage) SocialCalc.EditorSheetStatusCallback(null, "emailing", null, spreadsheet.editor);	 
 }
 
+/*
+ * creates command on form: submitform \rtimestamp\rB2value\rC2value ...
+ */
+
+SocialCalc.TriggerIoAction.Submit = function(triggerCellId) {
+  var formDataViewer = (SocialCalc.CurrentSpreadsheetControlObject != null) 
+  ? SocialCalc.CurrentSpreadsheetControlObject.formDataViewer 
+  : SocialCalc.CurrentSpreadsheetViewerObject.formDataViewer;
+
+  if(formDataViewer != null && formDataViewer.loaded == true) {
+
+    var spreadsheet =  window.spreadsheet;
+    var sheet = spreadsheet.sheet;
+    
+    
+    var date = new Date();
+    var formDataValues = ""+date.getFullYear()  + "-" + (date.getMonth() +1 )    + "-" +  date.getDate() 
+       + " " +  date.getHours()     + ":" +  date.getMinutes()     + ":" +  date.getSeconds();
+    
+    for(var colIndex = 2; colIndex <= formDataViewer.formFieldsLength +1 ; colIndex++) {
+      var valueCoord = SocialCalc.crToCoord(colIndex, 2);
+      formDataValues += "\r" + formDataViewer.sheet.cells[valueCoord].datavalue;
+    }  
+    
+    sheet.ScheduleSheetCommands('submitform \r'+formDataValues,  false);
+  }
+}
 
 // onKeyUp=TextBox 
 SocialCalc.TriggerIoAction.TextBox = function(textBoxCellId) {

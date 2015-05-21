@@ -149,21 +149,24 @@
               if (!((typeof SocialCalc != 'undefined' && SocialCalc !== null) && SocialCalc.isConnected)) {
                 return;
               }
-              if (this.data.user === SocialCalc._username) {
+              if (this.data.user === SocialCalc._username && this.data.room === SocialCalc._room) {
                 return;
               }
               if (this.data.to && this.data.to !== SocialCalc._username) {
                 return;
               }
               ss = window.spreadsheet;
-              if (this.data.room && this.data.room !== SocialCalc._room && this.data.type !== "recalc" && this.data.type !== "log") {
+              if (!ss) {
                 return;
               }
               if (this.data.room && this.data.room !== SocialCalc._room && ((ref$ = ss.formDataViewer) != null ? ref$._room : void 8) !== this.data.room && this.data.type === "log") {
                 return;
               }
-              if (!ss) {
-                return;
+              if (this.data.room && this.data.room !== SocialCalc._room && this.data.type !== "recalc" && this.data.type !== "log") {
+                if (((ref$ = ss.formDataViewer) != null ? ref$._room : void 8) !== this.data.room) {
+                  return;
+                }
+                ss = ss.formDataViewer;
               }
               editor = ss.editor;
               switch (this.data.type) {
@@ -223,6 +226,7 @@
                 });
                 break;
               case 'log':
+                ss = window.spreadsheet;
                 if (typeof vex != 'undefined' && vex !== null) {
                   vex.closeAll();
                 }
@@ -232,15 +236,10 @@
                   }
                   ss.formDataViewer.sheet.ResetSheet();
                   ss.formDataViewer.loaded = true;
+                  SocialCalc.Callbacks.broadcast('ask.log');
                   if (parts != null && parts.sheet) {
                     ss.formDataViewer.ParseSheetSave(this.data.snapshot.substring(parts.sheet.start, parts.sheet.end));
                     ss.formDataViewer.context.sheetobj.ScheduleSheetCommands("recalc\n", false, true);
-                    if (ss.formDataViewer.sheet.attribs.lastcol !== 1 || ss.formDataViewer.sheet.attribs.lastrow !== 1) {
-                      ss.formDataViewer.parentNode.style.display = "inline";
-                      ss.nonviewheight = 324;
-                      ss.height = 0;
-                      ss.DoOnResize();
-                    }
                   }
                   break;
                 }
@@ -254,12 +253,6 @@
                 if (parts != null && parts.sheet) {
                   ss.sheet.ResetSheet();
                   ss.ParseSheetSave(this.data.snapshot.substring(parts.sheet.start, parts.sheet.end));
-                  if (SocialCalc._app == null && SocialCalc._view == null) {
-                    ss.formDataViewer.sheet._room = ss.formDataViewer._room = SocialCalc._room + "formdata";
-                    SocialCalc.Callbacks.broadcast('ask.log', {
-                      room: ss.formDataViewer._room
-                    });
-                  }
                 }
                 if (typeof window.addmsg === 'function') {
                   window.addmsg(this.data.chat.join('\n'), true);
@@ -382,13 +375,27 @@
           window.spreadsheet = ss = ssInstance || (SocialCalc._view || SocialCalc._app
             ? new SocialCalc.SpreadsheetViewer()
             : new SocialCalc.SpreadsheetControl());
-          SocialCalc.Callbacks.broadcast('ask.log');
-          if (!window.GraphOnClick) {
+          if (window.GraphOnClick == null) {
+            SocialCalc.Callbacks.broadcast('ask.log');
             return;
           }
           ss.ExportCallback = function(s){
             return alert(SocialCalc.ConvertSaveToOtherFormat(SocialCalc.Clipboard.clipboard, "csv"));
           };
+          SocialCalc.Constants.s_loc_form = "Form";
+          if (ss.tabs) {
+            ss.tabnums.form = ss.tabs.length;
+          }
+          if ((ref$ = ss.tabs) != null) {
+            ref$.push({
+              name: 'form',
+              text: SocialCalc.Constants.s_loc_form,
+              html: "<div id=\"%id.formtools\" style=\"display:none;\"><div style=\"%tbt.\"><table cellspacing=\"0\" cellpadding=\"0\">\n<tr><td style=\"vertical-align:middle;padding-right:32px;padding-left:16px;\"><div style=\"%tbt.\">\n<input type=\"button\" value=\"Live Form\" onclick=\"parent.location='" + SocialCalc._room + "/form'\" style=\"background-color: #5cb85c;border-color: #4cae4c;cursor: pointer;\"> " + document.location.origin + "/" + SocialCalc._room + "/form </div></td>\n</tr></table></div></div>",
+              view: 'sheet',
+              onclick: null,
+              onclickFocus: true
+            });
+          }
           if (ss.tabs) {
             ss.tabnums.graph = ss.tabs.length;
           }
@@ -421,6 +428,14 @@
           }
           if (typeof ss.InitializeSpreadsheetControl === 'function') {
             ss.InitializeSpreadsheetControl('tableeditor', 0, 0, 0);
+          }
+          if (SocialCalc._view == null && ss.formDataViewer != null) {
+            ss.formDataViewer.sheet._room = ss.formDataViewer._room = SocialCalc._room + "_formdata";
+            SocialCalc.Callbacks.broadcast('ask.log', {
+              room: ss.formDataViewer._room
+            });
+          } else {
+            SocialCalc.Callbacks.broadcast('ask.log');
           }
           if (typeof ss.ExecuteCommand === 'function') {
             ss.ExecuteCommand('redisplay', '');

@@ -142,6 +142,24 @@
       }
     });
     this.get({
+      '/:template/form': function(){
+        var template, room, this$ = this;
+        template = this.params.template;
+        room = template + '_' + newRoom();
+        delete SC[room];
+        return SC._get(template, IO, function(arg$){
+          var snapshot;
+          snapshot = arg$.snapshot;
+          return SC._put(room, snapshot, function(){
+            return this$.response.redirect(BASEPATH + "/" + room + "/app");
+          });
+        });
+      }
+    });
+    this.get({
+      '/:template/appeditor': sendFile('panels.html')
+    });
+    this.get({
       '/:room': KEY
         ? function(){
           var ref$;
@@ -389,7 +407,7 @@
       data: function(){
         var ref$, room, msg, user, ecell, cmdstr, type, auth, reply, broadcast, this$ = this;
         ref$ = this.data, room = ref$.room, msg = ref$.msg, user = ref$.user, ecell = ref$.ecell, cmdstr = ref$.cmdstr, type = ref$.type, auth = ref$.auth;
-        console.log("on data:" + type);
+        console.log("on data: ", (import$({}, this.data)));
         room = (room + "").replace(/^_+/, '');
         if (EXPIRE) {
           DB.expire("snapshot-" + room, EXPIRE);
@@ -400,9 +418,12 @@
           });
         };
         broadcast = function(data){
-          return this$.socket.broadcast.to(this$.data.to
+          this$.socket.broadcast.to(this$.data.to
             ? "user-" + this$.data.to
-            : "log-" + room).emit('data', data);
+            : "log-" + data.room).emit('data', data);
+          if ((data.include_self != null) === true) {
+            return this$.emit('data', data);
+          }
         };
         switch (type) {
         case 'chat':
@@ -423,16 +444,14 @@
           DB.hset("ecell-" + room, user, ecell);
           break;
         case 'execute':
-          console.log("execute:" + 1);
-          console.log("execute:" + 2);
           if (/^set sheet defaulttextvalueformat text-wiki\s*$/.exec(cmdstr)) {
             return;
           }
-          console.log("execute:" + 3);
-          console.log("execute:" + 4);
+          console.log("execute:" + 1);
           DB.multi().rpush("log-" + room, cmdstr).rpush("audit-" + room, cmdstr).bgsave().exec(function(){
-            var ref$;
-            console.log("execute:" + 5);
+            var commandParameters, ref$;
+            console.log("execute:" + 2);
+            commandParameters = cmdstr.split("\r");
             if (SC[room] == null) {
               console.log("SC[" + room + "] went away. Reloading...");
               DB.multi().get("snapshot-" + room).lrange("log-" + room, 0, -1).exec(function(_, arg$){
@@ -441,11 +460,53 @@
                 return SC[room] = SC._init(snapshot, log, DB, room, this$.io);
               });
             }
+            if (commandParameters[0].trim() === 'submitform') {
+              console.log("test SC[" + room + "] submitform...");
+              if (SC["aubzu1ovmu_formdata"] == null) {
+                console.log("Submitform. loading... SC[aubzu1ovmu_formdata]");
+                DB.multi().get("snapshot-aubzu1ovmu_formdata").lrange("log-aubzu1ovmu_formdata", 0, -1).exec(function(_, arg$){
+                  var snapshot, log;
+                  snapshot = arg$[0], log = arg$[1];
+                  return SC["aubzu1ovmu_formdata"] = SC._init(snapshot, log, DB, "aubzu1ovmu_formdata", this$.io);
+                });
+              }
+              if ((ref$ = SC["aubzu1ovmu_formdata"]) != null) {
+                ref$.exportAttribs(function(attribs){
+                  var formrow, res$, i$, len$, cmdstrformdata, this$ = this;
+                  console.log("sheet attribs:", (import$({}, attribs)));
+                  res$ = [];
+                  for (i$ = 0, len$ = commandParameters.length; i$ < len$; ++i$) {
+                    if (i$ !== 0) {
+                      res$.push((fn$.call(this, i$, commandParameters[i$])));
+                    }
+                  }
+                  formrow = res$;
+                  cmdstrformdata = formrow.join("\n");
+                  console.log("cmdstrformdata:" + cmdstrformdata);
+                  DB.multi().rpush("log-aubzu1ovmu_formdata", cmdstrformdata).rpush("audit-aubzu1ovmu_formdata", cmdstrformdata).bgsave().exec(function(){
+                    var ref$;
+                    if ((ref$ = SC["aubzu1ovmu_formdata"]) != null) {
+                      ref$.ExecuteCommand(cmdstrformdata);
+                    }
+                    return broadcast({
+                      room: "aubzu1ovmu_formdata",
+                      user: user,
+                      type: type,
+                      auth: auth,
+                      cmdstr: cmdstrformdata,
+                      include_self: true
+                    });
+                  });
+                  function fn$(formDataIndex, datavalue){
+                    return "set " + (String.fromCharCode(64 + formDataIndex) + (attribs.lastrow + 1)) + " text t " + datavalue;
+                  }
+                });
+              }
+            }
             console.log("execute:" + 6);
             if ((ref$ = SC[room]) != null) {
               ref$.ExecuteCommand(cmdstr);
             }
-            console.log("execute:" + 7);
             return broadcast(this$.data);
           });
           break;
@@ -457,6 +518,7 @@
             });
             return;
           }
+          console.log("join [log-" + room + "] [user-" + user + "]");
           this.socket.join("log-" + room);
           this.socket.join("user-" + user);
           DB.multi().get("snapshot-" + room).lrange("log-" + room, 0, -1).lrange("chat-" + room, 0, -1).exec(function(_, arg$){
@@ -516,4 +578,9 @@
       }
     });
   };
+  function import$(obj, src){
+    var own = {}.hasOwnProperty;
+    for (var key in src) if (own.call(src, key)) obj[key] = src[key];
+    return obj;
+  }
 }).call(this);

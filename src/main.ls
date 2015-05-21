@@ -87,6 +87,17 @@
     <~ SC._put room, snapshot
     @response.redirect if KEY then "#BASEPATH/#room/edit" else "#BASEPATH/#room"
 
+# eddy @get { 
+  @get '/:template/form': ->
+    template = @params.template
+    room = template + \_ + new-room!
+    delete SC[room]
+    {snapshot} <~ SC._get template, IO
+    <~ SC._put room, snapshot
+    @response.redirect "#BASEPATH/#room/app" 
+  @get '/:template/appeditor': sendFile \panels.html    
+# } eddy 
+
   @get '/:room':
     if KEY then ->
       | @query.auth?length  => sendFile \index.html .call @
@@ -208,14 +219,15 @@
   @on data: !->
     {room, msg, user, ecell, cmdstr, type, auth} = @data
     # eddy
-    console.log "on data:"+type
+    console.log "on data: " {...@data} 
     room = "#room" - /^_+/ # preceding underscore is reserved
     DB.expire "snapshot-#room", EXPIRE if EXPIRE
     reply = (data) ~> @emit {data}
     broadcast = (data) ~>
       @socket.broadcast.to do
-        if @data.to then "user-#{@data.to}" else "log-#room"
+        if @data.to then "user-#{@data.to}" else "log-#{data.room}"
       .emit \data data
+      if data.include_self? == true then @emit \data data   #message from server, so send to self as well
     switch type
     | \chat
       <~ DB.rpush "chat-#room" msg
@@ -226,27 +238,43 @@
     | \my.ecell
       DB.hset "ecell-#room", user, ecell
     | \execute
-      console.log "execute:"+1
-      #return if auth is \0
-      console.log "execute:"+2
       return if cmdstr is /^set sheet defaulttextvalueformat text-wiki\s*$/
-      console.log "execute:"+3
-      #if KEY and hmac(room) isnt auth
-      #  reply { type: \error, message: "Invalid session key. Modifications will not be saved." }
-      #  return
-      console.log "execute:"+4
+      console.log "execute:"+1
       <~ DB.multi!
         .rpush "log-#room" cmdstr
         .rpush "audit-#room" cmdstr
         .bgsave!.exec!
-      console.log "execute:"+5
+      console.log "execute:"+2
+      commandParameters = cmdstr.split("\r")       
       unless SC[room]?
         console.log "SC[#room] went away. Reloading..."
         _, [snapshot, log] <~ DB.multi!get("snapshot-#room").lrange("log-#room", 0, -1).exec
         SC[room] = SC._init snapshot, log, DB, room, @io
-      console.log "execute:"+6
+      # eddy @on data {
+      if commandParameters[0].trim() is \submitform
+        console.log "test SC[#{room}] submitform..."      
+        unless SC["aubzu1ovmu_formdata"]?
+          console.log "Submitform. loading... SC[aubzu1ovmu_formdata]"
+          _, [snapshot, log] <~ DB.multi!get("snapshot-aubzu1ovmu_formdata").lrange("log-aubzu1ovmu_formdata", 0, -1).exec
+          SC["aubzu1ovmu_formdata"] = SC._init snapshot, log, DB, "aubzu1ovmu_formdata", @io   
+        # add form values to last row of formdata sheet
+        attribs <-! SC["aubzu1ovmu_formdata"]?exportAttribs
+        console.log "sheet attribs:" { ...attribs }       
+        formrow = for let datavalue, formDataIndex in commandParameters when formDataIndex != 0
+          "set #{String.fromCharCode(64 + formDataIndex)+(attribs.lastrow+1)} text t #datavalue" 
+          #SocialCalc.crToCoord(formDataIndex, attribs.lastrow+1)}                   
+        #cmdstrformdata = "set A3 text t abc"   
+        cmdstrformdata = formrow.join("\n")
+        console.log "cmdstrformdata:"+cmdstrformdata        
+        <~ DB.multi!
+          .rpush "log-aubzu1ovmu_formdata" cmdstrformdata
+          .rpush "audit-aubzu1ovmu_formdata" cmdstrformdata
+          .bgsave!.exec!
+        SC["aubzu1ovmu_formdata"]?ExecuteCommand cmdstrformdata
+        broadcast { room:"aubzu1ovmu_formdata", user, type, auth, cmdstr: cmdstrformdata, +include_self }
+      console.log "execute:"+6        
+      # }eddy @on data 
       SC[room]?ExecuteCommand cmdstr
-      console.log "execute:"+7
       broadcast @data
     | \ask.log
       # eddy @on data {
@@ -256,6 +284,7 @@
         reply { type: \ignore }
         return
       # } eddy @on data         
+      console.log "join [log-#{room}] [user-#user]"
       @socket.join "log-#room"
       @socket.join "user-#user"
       _, [snapshot, log, chat] <~ DB.multi!

@@ -2547,8 +2547,16 @@ SocialCalc.SheetCommandsTimerRoutine = function(sci) {
    while (!sci.parseobj.EOF()) { // go through all commands (separated by newlines)
 
       errortext = SocialCalc.ExecuteSheetCommand(sci.sheetobj, sci.parseobj, sci.saveundo);
-      if (errortext) alert(errortext);
-
+      // eddy debug SheetCommandsTimerRoutine {
+      if (errortext) {
+        if (typeof(alert) == "function")  {
+          alert(errortext);
+        } else {
+          console.log(errortext)
+        }
+      }
+      // } eddy debug SheetCommandsTimerRoutine
+      
       sci.parseobj.NextLine();
 
       if (sci.cmdextensionbusy.length > 0) { // forced wait
@@ -3936,7 +3944,8 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
 //    	  break;
     	  
       case "sendemail":    
-    	  // email sent by server, so ignore here
+      case "submitform":    
+    	  // email/form handled by server, so ignore here
     	  break;
          // } eddy ExecuteSheetCommand 
     	  
@@ -6497,6 +6506,33 @@ SocialCalc.DetermineValueType = function(rawvalue) {
       value = SocialCalc.FormatNumber.convert_date_gregorian_to_julian(year, matches[2]-0, matches[3]-0)-2415019;
       type = "nd";
       }
+   else if (matches=value.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2}) (\d{1,2}):(\d{1,2})\s*$/)) { // YYYY-MM-DD, YYYY/MM/DD HH:MM
+     // eddy added YYYY-MM-DD, YYYY/MM/DD HH:MM
+     year = matches[1]-0;
+     year = year < 1000 ? year + 2000 : year;
+     hour = matches[4]-0;
+     minute = matches[5]-0;
+     value = SocialCalc.FormatNumber.convert_date_gregorian_to_julian(year, matches[2]-0, matches[3]-0)-2415019;
+     type = "nd";
+     if (hour < 24 && minute < 60) {
+       value += hour/24 + minute/(24*60);
+       type = "ndt";
+       }
+     }
+   else if (matches=value.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2}) (\d{1,2}):(\d{1,2}):(\d{1,2})\s*$/)) { // YYYY-MM-DD, YYYY/MM/DD HH:MM:SS
+     // eddy added YYYY-MM-DD, YYYY/MM/DD HH:MM:SS
+     year = matches[1]-0;
+     year = year < 1000 ? year + 2000 : year;
+     hour = matches[4]-0;
+     minute = matches[5]-0;
+     second = matches[6]-0;
+     value = SocialCalc.FormatNumber.convert_date_gregorian_to_julian(year, matches[2]-0, matches[3]-0)-2415019;
+     type = "nd";
+     if (hour < 24 && minute < 60 && second < 60) {
+       value += hour/24 + minute/(24*60) + second/(24*60*60);
+       type = "ndt";
+       }
+     }
    else if (matches=value.match(/^(\d{1,2}):(\d{1,2})\s*$/)) { // HH:MM
       hour = matches[1]-0;
       minute = matches[2]-0;
@@ -16143,7 +16179,7 @@ SocialCalc.Formula.DecodeRangeParts = function(sheetdata, range) {
 //   func_class, if present, is the comma-separated names of the elements in SocialCalc.Formula.FunctionClasses.
 //   cell_html, if present, is the HTML to display in the cell. will find and replace these <%=cell_reference%>, <%=displayvalue%> see SocialCalc.FormatValueForDisplay
 //   io_parameters, if present, 
-//        "ParameterList" is used with =CopyValue() etc, used to collect parameters for use trigger/action formulas, 
+//        "ParameterList" is used with =CopyValue() etc, used to collect parameters of the formula, for use trigger/action formulas, 
 //        "EventTree" is used with =Button() etc, used to store trigger cell lookup table
 //        "Input" for input style GUI widgets - textbox/radio buttons etc - 
 //
@@ -19381,7 +19417,6 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
 // Min args are specified in SocialCalc.Formula.FunctionList.
 //   -2 = one or more number argument
 //   -1 = any type
-
 //   0 = number
 //   1 = text argument
 //   2 = coord argument
@@ -19399,6 +19434,7 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
 				,EMAILAT: [4, 4, 4, 4, 4]
 				,EMAILONEDITIF: [4, 4, 4, 4, 4, 4]
 				,EMAILATIF: [4, 4, 4, 4, 4, 4]
+        ,SUBMIT: [1]
 				,TEXTBOX: [1]
 				,CHECKBOX: [-1]
 				,COPYVALUE: [2, -1, 3]
@@ -19457,9 +19493,11 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
 
 
    switch (fname) {
-      case "BUTTON":
-      case "TEXTBOX":
-         result = operand_value[1];
+     case "SUBMIT":
+         result = "Submit";
+     case "BUTTON":
+     case "TEXTBOX":
+         if (numargs>0) result = operand_value[1];
          resulttype = "ti"+fname; // (t)ext value with (i)nterface (BUTTON,TEXTBOX,) 
          break;
 
@@ -19525,6 +19563,7 @@ SocialCalc.Formula.FunctionList["EMAILONEDIT"] = [SocialCalc.Formula.IoFunctions
 SocialCalc.Formula.FunctionList["EMAILAT"] = [SocialCalc.Formula.IoFunctions, -4, "datetime, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList" ];
 SocialCalc.Formula.FunctionList["EMAILONEDITIF"] = [SocialCalc.Formula.IoFunctions, -5, "editRange, condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "EventTree" ];
 SocialCalc.Formula.FunctionList["EMAILATIF"] = [SocialCalc.Formula.IoFunctions, -5, "datetime, condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList" ];
+SocialCalc.Formula.FunctionList["SUBMIT"] = [SocialCalc.Formula.IoFunctions, 100, "[txt]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Submit('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList" ];
 SocialCalc.Formula.FunctionList["TEXTBOX"] = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "gui", "<input type='text' id='TEXTBOX_<%=cell_reference%>' onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.TextBox('<%=cell_reference%>')\" value='<%=display_value%>' >", "Input" ];
 SocialCalc.Formula.FunctionList["CHECKBOX"] = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "gui", "<input type='checkbox' id='CHECKBOX_<%=cell_reference%>' <%=checked%> onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.CheckBox('<%=cell_reference%>')\" >", "Input" ];
 
@@ -19727,6 +19766,33 @@ SocialCalc.TriggerIoAction.Email = function(emailFormulaCellId, optionalTriggerC
 	 if(setStatusBarMessage) SocialCalc.EditorSheetStatusCallback(null, "emailing", null, spreadsheet.editor);	 
 }
 
+/*
+ * creates command on form: submitform \rtimestamp\rB2value\rC2value ...
+ */
+
+SocialCalc.TriggerIoAction.Submit = function(triggerCellId) {
+  var formDataViewer = (SocialCalc.CurrentSpreadsheetControlObject != null) 
+  ? SocialCalc.CurrentSpreadsheetControlObject.formDataViewer 
+  : SocialCalc.CurrentSpreadsheetViewerObject.formDataViewer;
+
+  if(formDataViewer != null && formDataViewer.loaded == true) {
+
+    var spreadsheet =  window.spreadsheet;
+    var sheet = spreadsheet.sheet;
+    
+    
+    var date = new Date();
+    var formDataValues = ""+date.getFullYear()  + "-" + (date.getMonth() +1 )    + "-" +  date.getDate() 
+       + " " +  date.getHours()     + ":" +  date.getMinutes()     + ":" +  date.getSeconds();
+    
+    for(var colIndex = 2; colIndex <= formDataViewer.formFieldsLength +1 ; colIndex++) {
+      var valueCoord = SocialCalc.crToCoord(colIndex, 2);
+      formDataValues += "\r" + formDataViewer.sheet.cells[valueCoord].datavalue;
+    }  
+    
+    sheet.ScheduleSheetCommands('submitform \r'+formDataValues,  false);
+  }
+}
 
 // onKeyUp=TextBox 
 SocialCalc.TriggerIoAction.TextBox = function(textBoxCellId) {
@@ -22825,18 +22891,6 @@ spreadsheet.Buttons = {
    spreadsheet.formulabarDiv.innerHTML = '<input type="text" size="60" value="">&nbsp;'; //'<textarea rows="4" cols="60" style="z-index:5;background-color:white;position:relative;"></textarea>&nbsp;';
    spreadsheet.spreadsheetDiv.appendChild(spreadsheet.formulabarDiv);
    var inputbox = new SocialCalc.InputBox(spreadsheet.formulabarDiv.firstChild, spreadsheet.editor);
-
-// eddy test add input 
-   var formDataDiv = document.createElement("div");
-   formDataDiv.id = "te_formData";
-   //formDataDiv.style.visibility = "hidden";
-   formDataDiv.style.display = "none";
-   //formDataDiv.style.display = "inline";
-   spreadsheet.spreadsheetDiv.appendChild(formDataDiv);   
-   spreadsheet.formDataViewer = new SocialCalc.SpreadsheetViewer("te_FormData-"); // should end with -
-   spreadsheet.formDataViewer.InitializeSpreadsheetViewer(formDataDiv.id, 180, 0, 200);
-       
-// }
    
    for (button in spreadsheet.formulabuttons) {
       bele = document.createElement("img");
@@ -22871,8 +22925,31 @@ spreadsheet.Buttons = {
    spreadsheet.viewheight = spreadsheet.height-spreadsheet.nonviewheight;
    spreadsheet.editorDiv=spreadsheet.editor.CreateTableEditor(spreadsheet.width, spreadsheet.viewheight);
 
+// eddy test add input 
+   var appViewDiv = document.createElement("div");
+   appViewDiv.id = "te_appView";
+   
+   appViewDiv.appendChild(spreadsheet.editorDiv)
+   spreadsheet.editorDiv = appViewDiv;
+
+   var formDataDiv = document.createElement("div");
+   formDataDiv.id = "te_formData";
+   //formDataDiv.style.visibility = "hidden";
+   formDataDiv.style.display = "none";
+   //formDataDiv.style.display = "inline";
+   
+  // spreadsheet.spreadsheetDiv.appendChild(formDataDiv);   
+   spreadsheet.editorDiv.appendChild(formDataDiv);
+       
+// }
+      
    spreadsheet.spreadsheetDiv.appendChild(spreadsheet.editorDiv);
 
+// eddy test add input 
+   spreadsheet.formDataViewer = new SocialCalc.SpreadsheetViewer("te_FormData-"); // should end with -
+   spreadsheet.formDataViewer.InitializeSpreadsheetViewer(formDataDiv.id, 180, 0, 200);
+// end
+   
    for (vname in views) {
       html = views[vname].html;
       for (style in views[vname].replacements) {
@@ -25763,6 +25840,10 @@ SocialCalc.InitializeSpreadsheetViewer = function(spreadsheet, node, height, wid
    // eddy InitializeSpreadsheetViewer {
    if(SocialCalc._app == true) {
      spreadsheet.formDataViewer = new SocialCalc.SpreadsheetViewer("te_FormData-");
+     // remove callback to stop drawing of table.
+     spreadsheet.formDataViewer.sheet.statuscallback = null;
+     // setup app viewer object
+     SocialCalc.CurrentSpreadsheetViewerObject = spreadsheet;
    }
    
    // done - refresh screen needed

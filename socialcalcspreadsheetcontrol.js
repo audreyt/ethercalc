@@ -1063,18 +1063,6 @@ spreadsheet.Buttons = {
    spreadsheet.formulabarDiv.innerHTML = '<input type="text" size="60" value="">&nbsp;'; //'<textarea rows="4" cols="60" style="z-index:5;background-color:white;position:relative;"></textarea>&nbsp;';
    spreadsheet.spreadsheetDiv.appendChild(spreadsheet.formulabarDiv);
    var inputbox = new SocialCalc.InputBox(spreadsheet.formulabarDiv.firstChild, spreadsheet.editor);
-
-// eddy test add input 
-   var formDataDiv = document.createElement("div");
-   formDataDiv.id = "te_formData";
-   //formDataDiv.style.visibility = "hidden";
-   formDataDiv.style.display = "none";
-   //formDataDiv.style.display = "inline";
-   spreadsheet.spreadsheetDiv.appendChild(formDataDiv);   
-   spreadsheet.formDataViewer = new SocialCalc.SpreadsheetViewer("te_FormData-"); // should end with -
-   spreadsheet.formDataViewer.InitializeSpreadsheetViewer(formDataDiv.id, 180, 0, 200);
-       
-// }
    
    for (button in spreadsheet.formulabuttons) {
       bele = document.createElement("img");
@@ -1109,8 +1097,31 @@ spreadsheet.Buttons = {
    spreadsheet.viewheight = spreadsheet.height-spreadsheet.nonviewheight;
    spreadsheet.editorDiv=spreadsheet.editor.CreateTableEditor(spreadsheet.width, spreadsheet.viewheight);
 
+// eddy test add input 
+   var appViewDiv = document.createElement("div");
+   appViewDiv.id = "te_appView";
+   
+   appViewDiv.appendChild(spreadsheet.editorDiv)
+   spreadsheet.editorDiv = appViewDiv;
+
+   var formDataDiv = document.createElement("div");
+   formDataDiv.id = "te_formData";
+   //formDataDiv.style.visibility = "hidden";
+   formDataDiv.style.display = "none";
+   //formDataDiv.style.display = "inline";
+   
+  // spreadsheet.spreadsheetDiv.appendChild(formDataDiv);   
+   spreadsheet.editorDiv.appendChild(formDataDiv);
+       
+// }
+      
    spreadsheet.spreadsheetDiv.appendChild(spreadsheet.editorDiv);
 
+// eddy test add input 
+   spreadsheet.formDataViewer = new SocialCalc.SpreadsheetViewer("te_FormData-"); // should end with -
+   spreadsheet.formDataViewer.InitializeSpreadsheetViewer(formDataDiv.id, 180, 0, 200);
+// end
+   
    for (vname in views) {
       html = views[vname].html;
       for (style in views[vname].replacements) {

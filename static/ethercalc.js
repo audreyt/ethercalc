@@ -742,7 +742,7 @@ SocialCalc.ScheduleSheetCommands = function(a, b, c) {
 SocialCalc.SheetCommandsTimerRoutine = function(a) {
   var b, c = new Date;
   for (a.timerobj = null;!a.parseobj.EOF();) {
-    (b = SocialCalc.ExecuteSheetCommand(a.sheetobj, a.parseobj, a.saveundo)) && alert(b);
+    (b = SocialCalc.ExecuteSheetCommand(a.sheetobj, a.parseobj, a.saveundo)) && ("function" == typeof alert ? alert(b) : console.log(b));
     a.parseobj.NextLine();
     if (0 < a.cmdextensionbusy.length) {
       a.sheetobj.statuscallback && a.sheetobj.statuscallback(a, "cmdextension", a.cmdextensionbusy, a.sheetobj.statuscallbackparams);
@@ -1274,6 +1274,8 @@ SocialCalc.ExecuteSheetCommand = function(a, b, c) {
       (E = a.sci.CmdExtensionCallbacks[A]) && E.func(A, E.data, a, b, c);
       break;
     case "sendemail":
+    ;
+    case "submitform":
       break;
     default:
       n = z.s_escUnknownCmd + d;
@@ -2255,13 +2257,14 @@ SocialCalc.format_number_for_display = function(a, b, c) {
   return "logical" == c ? d ? e.defaultDisplayTRUE : e.defaultDisplayFALSE : "hidden" == c ? "&nbsp;" : SocialCalc.FormatNumber.formatNumberWithFormat(a, c, "");
 };
 SocialCalc.DetermineValueType = function(a) {
-  var b = a + "", c = "t", d, e;
+  var b = a + "", c = "t", d, e, f;
   d = b.replace(/^\s+/, "");
   d = d.replace(/\s+$/, "");
   0 == b.length ? c = "" : b.match(/^\s+$/) || (d.match(/^[-+]?\d*(?:\.)?\d*(?:[eE][-+]?\d+)?$/) ? (b = d - 0, isNaN(b) ? b = a + "" : c = "n") : d.match(/^[-+]?\d*(?:\.)?\d*\s*%$/) ? (b = (d.slice(0, -1) - 0) / 100, c = "n%") : d.match(/^[-+]?\$\s*\d*(?:\.)?\d*\s*$/) && d.match(/\d/) ? (b = d.replace(/\$/, "") - 0, c = "n$") : d.match(/^[-+]?(\d*,\d*)+(?:\.)?\d*$/) ? (b = d.replace(/,/g, "") - 0, c = "n") : d.match(/^[-+]?(\d*,\d*)+(?:\.)?\d*\s*%$/) ? (b = (d.replace(/[%,]/g, "") - 0) / 100, c = 
   "n%") : d.match(/^[-+]?\$\s*(\d*,\d*)+(?:\.)?\d*$/) && d.match(/\d/) ? (b = d.replace(/[\$,]/g, "") - 0, c = "n$") : (a = b.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{1,4})\s*$/)) ? (b = a[3] - 0, b = SocialCalc.FormatNumber.convert_date_gregorian_to_julian(1E3 > b ? b + 2E3 : b, a[1] - 0, a[2] - 0) - 2415019, c = "nd") : (a = b.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})\s*$/)) ? (b = a[1] - 0, b = 1E3 > b ? b + 2E3 : b, b = SocialCalc.FormatNumber.convert_date_gregorian_to_julian(b, a[2] - 0, 
-  a[3] - 0) - 2415019, c = "nd") : (a = b.match(/^(\d{1,2}):(\d{1,2})\s*$/)) ? (d = a[1] - 0, e = a[2] - 0, 24 > d && 60 > e && (b = d / 24 + e / 1440, c = "nt")) : (a = b.match(/^(\d{1,2}):(\d{1,2}):(\d{1,2})\s*$/)) ? (d = a[1] - 0, e = a[2] - 0, a = a[3] - 0, 24 > d && 60 > e && 60 > a && (b = d / 24 + e / 1440 + a / 86400, c = "nt")) : (a = b.match(/^\s*([-+]?\d+) (\d+)\/(\d+)\s*$/)) ? (e = a[1] - 0, d = a[2] - 0, (a = a[3] - 0) && 0 < a && (b = e + (0 > e ? -d / a : d / a), c = "n")) : (a = SocialCalc.InputConstants[b.toUpperCase()]) ? 
-  (d = a.indexOf(","), b = a.substring(0, d) - 0, c = a.substring(d + 1)) : 7 < d.length && "http://" == d.substring(0, 7).toLowerCase() ? (b = d, c = "tl") : d.match(/<([A-Z][A-Z0-9]*)\b[^>]*>[\s\S]*?<\/\1>/i) && (b = d, c = "th"));
+  a[3] - 0) - 2415019, c = "nd") : (a = b.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2}) (\d{1,2}):(\d{1,2})\s*$/)) ? (b = a[1] - 0, b = 1E3 > b ? b + 2E3 : b, d = a[4] - 0, e = a[5] - 0, b = SocialCalc.FormatNumber.convert_date_gregorian_to_julian(b, a[2] - 0, a[3] - 0) - 2415019, c = "nd", 24 > d && 60 > e && (b += d / 24 + e / 1440, c = "ndt")) : (a = b.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2}) (\d{1,2}):(\d{1,2}):(\d{1,2})\s*$/)) ? (b = a[1] - 0, b = 1E3 > b ? b + 2E3 : b, d = a[4] - 0, e = 
+  a[5] - 0, f = a[6] - 0, b = SocialCalc.FormatNumber.convert_date_gregorian_to_julian(b, a[2] - 0, a[3] - 0) - 2415019, c = "nd", 24 > d && 60 > e && 60 > f && (b += d / 24 + e / 1440 + f / 86400, c = "ndt")) : (a = b.match(/^(\d{1,2}):(\d{1,2})\s*$/)) ? (d = a[1] - 0, e = a[2] - 0, 24 > d && 60 > e && (b = d / 24 + e / 1440, c = "nt")) : (a = b.match(/^(\d{1,2}):(\d{1,2}):(\d{1,2})\s*$/)) ? (d = a[1] - 0, e = a[2] - 0, f = a[3] - 0, 24 > d && 60 > e && 60 > f && (b = d / 24 + e / 1440 + f / 86400, 
+  c = "nt")) : (a = b.match(/^\s*([-+]?\d+) (\d+)\/(\d+)\s*$/)) ? (e = a[1] - 0, d = a[2] - 0, (a = a[3] - 0) && 0 < a && (b = e + (0 > e ? -d / a : d / a), c = "n")) : (a = SocialCalc.InputConstants[b.toUpperCase()]) ? (d = a.indexOf(","), b = a.substring(0, d) - 0, c = a.substring(d + 1)) : 7 < d.length && "http://" == d.substring(0, 7).toLowerCase() ? (b = d, c = "tl") : d.match(/<([A-Z][A-Z0-9]*)\b[^>]*>[\s\S]*?<\/\1>/i) && (b = d, c = "th"));
   return{value:b, type:c};
 };
 SocialCalc.InputConstants = {TRUE:"1,nl", FALSE:"0,nl", "#N/A":"0,e#N/A", "#NULL!":"0,e#NULL!", "#NUM!":"0,e#NUM!", "#DIV/0!":"0,e#DIV/0!", "#VALUE!":"0,e#VALUE!", "#REF!":"0,e#REF!", "#NAME?":"0,e#NAME?"};
@@ -7400,7 +7403,7 @@ SocialCalc.Formula.IRRFunction = function(a, b, c, d) {
 };
 SocialCalc.Formula.FunctionList.IRR = [SocialCalc.Formula.IRRFunction, -1, "irr", "", "financial"];
 SocialCalc.Formula.IoFunctions = function(a, b, c, d) {
-  var e, f, g = SocialCalc.Formula, l = 0, h = "e#VALUE!", n = c.length, q = {BUTTON:[1], EMAIL:[4, 4, 4, 4], EMAILIF:[4, 4, 4, 4, 4], EMAILONEDIT:[4, 4, 4, 4, 4], EMAILAT:[4, 4, 4, 4, 4], EMAILONEDITIF:[4, 4, 4, 4, 4, 4], EMAILATIF:[4, 4, 4, 4, 4, 4], TEXTBOX:[1], CHECKBOX:[-1], COPYVALUE:[2, -1, 3], COPYFORMULA:[2, -1, 3]}[a], s = [], r = [];
+  var e, f, g = SocialCalc.Formula, l = 0, h = "e#VALUE!", n = c.length, q = {BUTTON:[1], EMAIL:[4, 4, 4, 4], EMAILIF:[4, 4, 4, 4, 4], EMAILONEDIT:[4, 4, 4, 4, 4], EMAILAT:[4, 4, 4, 4, 4], EMAILONEDITIF:[4, 4, 4, 4, 4, 4], EMAILATIF:[4, 4, 4, 4, 4, 4], SUBMIT:[1], TEXTBOX:[1], CHECKBOX:[-1], COPYVALUE:[2, -1, 3], COPYFORMULA:[2, -1, 3]}[a], s = [], r = [];
   for (e = 1;e <= n;e++) {
     if (e > q.length) {
       g.FunctionArgsError(a, b);
@@ -7415,10 +7418,12 @@ SocialCalc.Formula.IoFunctions = function(a, b, c, d) {
     }
   }
   switch(a) {
+    case "SUBMIT":
+      l = "Submit";
     case "BUTTON":
     ;
     case "TEXTBOX":
-      l = s[1];
+      0 < n && (l = s[1]);
       h = "ti" + a;
       break;
     case "EMAIL":
@@ -7457,6 +7462,7 @@ SocialCalc.Formula.FunctionList.EMAILONEDIT = [SocialCalc.Formula.IoFunctions, -
 SocialCalc.Formula.FunctionList.EMAILAT = [SocialCalc.Formula.IoFunctions, -4, "datetime, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList"];
 SocialCalc.Formula.FunctionList.EMAILONEDITIF = [SocialCalc.Formula.IoFunctions, -5, "editRange, condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "EventTree"];
 SocialCalc.Formula.FunctionList.EMAILATIF = [SocialCalc.Formula.IoFunctions, -5, "datetime, condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList"];
+SocialCalc.Formula.FunctionList.SUBMIT = [SocialCalc.Formula.IoFunctions, 100, "[txt]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Submit('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList"];
 SocialCalc.Formula.FunctionList.TEXTBOX = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "gui", "<input type='text' id='TEXTBOX_<%=cell_reference%>' onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.TextBox('<%=cell_reference%>')\" value='<%=display_value%>' >", "Input"];
 SocialCalc.Formula.FunctionList.CHECKBOX = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "gui", "<input type='checkbox' id='CHECKBOX_<%=cell_reference%>' <%=checked%> onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.CheckBox('<%=cell_reference%>')\" >", "Input"];
 SocialCalc.Formula.FunctionList.COPYVALUE = [SocialCalc.Formula.IoFunctions, 3, "txt", "", "action", "", "EventTree"];
@@ -7535,6 +7541,15 @@ SocialCalc.TriggerIoAction.Email = function(a, b) {
       }
     }
     g && SocialCalc.EditorSheetStatusCallback(null, "emailing", null, d.editor);
+  }
+};
+SocialCalc.TriggerIoAction.Submit = function(a) {
+  a = null != SocialCalc.CurrentSpreadsheetControlObject ? SocialCalc.CurrentSpreadsheetControlObject.formDataViewer : SocialCalc.CurrentSpreadsheetViewerObject.formDataViewer;
+  if (null != a && !0 == a.loaded) {
+    for (var b = window.spreadsheet.sheet, c = new Date, c = "" + c.getFullYear() + "-" + (c.getMonth() + 1) + "-" + c.getDate() + " " + c.getHours() + ":" + c.getMinutes() + ":" + c.getSeconds(), d = 2;d <= a.formFieldsLength + 1;d++) {
+      var e = SocialCalc.crToCoord(d, 2), c = c + ("\r" + a.sheet.cells[e].datavalue)
+    }
+    b.ScheduleSheetCommands("submitform \r" + c, !1);
   }
 };
 SocialCalc.TriggerIoAction.TextBox = function(a) {
@@ -8409,12 +8424,6 @@ SocialCalc.InitializeSpreadsheetControl = function(a, b, c, d, e) {
   a.formulabarDiv.innerHTML = '<input type="text" size="60" value="">&nbsp;';
   a.spreadsheetDiv.appendChild(a.formulabarDiv);
   new SocialCalc.InputBox(a.formulabarDiv.firstChild, a.editor);
-  f = document.createElement("div");
-  f.id = "te_formData";
-  f.style.display = "none";
-  a.spreadsheetDiv.appendChild(f);
-  a.formDataViewer = new SocialCalc.SpreadsheetViewer("te_FormData-");
-  a.formDataViewer.InitializeSpreadsheetViewer(f.id, 180, 0, 200);
   for (q in a.formulabuttons) {
     b = document.createElement("img"), b.id = a.idPrefix + q, b.src = (a.formulabuttons[q].skipImagePrefix ? "" : a.imagePrefix) + a.formulabuttons[q].image, b.style.verticalAlign = "middle", b.style.border = "1px solid #FFF", b.style.marginLeft = "4px", SocialCalc.TooltipRegister(b, g(a.formulabuttons[q].tooltip), {}, a.spreadsheetDiv), SocialCalc.ButtonRegister(a.editor, b, {normalstyle:"border:1px solid #FFF;backgroundColor:#FFF;", hoverstyle:"border:1px solid #CCC;backgroundColor:#FFF;", downstyle:"border:1px solid #000;backgroundColor:#FFF;"}, 
     {MouseDown:a.formulabuttons[q].command, Disabled:function() {
@@ -8429,7 +8438,17 @@ SocialCalc.InitializeSpreadsheetControl = function(a, b, c, d, e) {
   SocialCalc.CalculateSheetNonViewHeight(a);
   a.viewheight = a.height - a.nonviewheight;
   a.editorDiv = a.editor.CreateTableEditor(a.width, a.viewheight);
+  f = document.createElement("div");
+  f.id = "te_appView";
+  f.appendChild(a.editorDiv);
+  a.editorDiv = f;
+  f = document.createElement("div");
+  f.id = "te_formData";
+  f.style.display = "none";
+  a.editorDiv.appendChild(f);
   a.spreadsheetDiv.appendChild(a.editorDiv);
+  a.formDataViewer = new SocialCalc.SpreadsheetViewer("te_FormData-");
+  a.formDataViewer.InitializeSpreadsheetViewer(f.id, 180, 0, 200);
   for (h in r) {
     c = r[h].html;
     for (n in r[h].replacements) {
@@ -8439,16 +8458,16 @@ SocialCalc.InitializeSpreadsheetControl = function(a, b, c, d, e) {
     c = c.replace(/\%id\./g, a.idPrefix);
     c = c.replace(/\%tbt\./g, a.toolbartext);
     c = c.replace(/\%img\./g, a.imagePrefix);
-    g = document.createElement("div");
-    SocialCalc.setStyles(g, r[h].divStyle);
-    g.style.display = "none";
-    g.style.width = a.width + "px";
-    g.style.height = a.viewheight + "px";
-    g.id = a.idPrefix + r[h].name + "view";
+    f = document.createElement("div");
+    SocialCalc.setStyles(f, r[h].divStyle);
+    f.style.display = "none";
+    f.style.width = a.width + "px";
+    f.style.height = a.viewheight + "px";
+    f.id = a.idPrefix + r[h].name + "view";
     c = l(c);
-    g.innerHTML = c;
-    a.spreadsheetDiv.appendChild(g);
-    r[h].element = g;
+    f.innerHTML = c;
+    a.spreadsheetDiv.appendChild(f);
+    r[h].element = f;
     if (r[h].oncreate) {
       r[h].oncreate(a, r[h]);
     }
@@ -9512,7 +9531,7 @@ SocialCalc.InitializeSpreadsheetViewer = function(a, b, c, d, e) {
   a.editorDiv = a.editor.CreateTableEditor(a.width, a.viewheight);
   a.spreadsheetDiv.appendChild(a.editorDiv);
   a.hasStatusLine && (a.statuslineDiv = document.createElement("div"), a.statuslineDiv.style.cssText = a.statuslineCSS, a.statuslineDiv.style.height = a.statuslineheight - (a.statuslineDiv.style.paddingTop.slice(0, -2) - 0) - (a.statuslineDiv.style.paddingBottom.slice(0, -2) - 0) + "px", a.statuslineDiv.id = a.idPrefix + "statusline", a.spreadsheetDiv.appendChild(a.statuslineDiv), a.editor.StatusCallback.statusline = {func:SocialCalc.SpreadsheetViewerStatuslineCallback, params:{spreadsheetobj:a}});
-  !0 == SocialCalc._app && (a.formDataViewer = new SocialCalc.SpreadsheetViewer("te_FormData-"));
+  !0 == SocialCalc._app && (a.formDataViewer = new SocialCalc.SpreadsheetViewer("te_FormData-"), a.formDataViewer.sheet.statuscallback = null, SocialCalc.CurrentSpreadsheetViewerObject = a);
 };
 SocialCalc.SpreadsheetViewerLoadSave = function(a, b) {
   var c, d, e;

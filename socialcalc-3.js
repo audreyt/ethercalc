@@ -1675,8 +1675,16 @@ SocialCalc.SheetCommandsTimerRoutine = function(sci) {
    while (!sci.parseobj.EOF()) { // go through all commands (separated by newlines)
 
       errortext = SocialCalc.ExecuteSheetCommand(sci.sheetobj, sci.parseobj, sci.saveundo);
-      if (errortext) alert(errortext);
-
+      // eddy debug SheetCommandsTimerRoutine {
+      if (errortext) {
+        if (typeof(alert) == "function")  {
+          alert(errortext);
+        } else {
+          console.log(errortext)
+        }
+      }
+      // } eddy debug SheetCommandsTimerRoutine
+      
       sci.parseobj.NextLine();
 
       if (sci.cmdextensionbusy.length > 0) { // forced wait
@@ -3064,7 +3072,8 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
 //    	  break;
     	  
       case "sendemail":    
-    	  // email sent by server, so ignore here
+      case "submitform":    
+    	  // email/form handled by server, so ignore here
     	  break;
          // } eddy ExecuteSheetCommand 
     	  
@@ -5625,6 +5634,33 @@ SocialCalc.DetermineValueType = function(rawvalue) {
       value = SocialCalc.FormatNumber.convert_date_gregorian_to_julian(year, matches[2]-0, matches[3]-0)-2415019;
       type = "nd";
       }
+   else if (matches=value.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2}) (\d{1,2}):(\d{1,2})\s*$/)) { // YYYY-MM-DD, YYYY/MM/DD HH:MM
+     // eddy added YYYY-MM-DD, YYYY/MM/DD HH:MM
+     year = matches[1]-0;
+     year = year < 1000 ? year + 2000 : year;
+     hour = matches[4]-0;
+     minute = matches[5]-0;
+     value = SocialCalc.FormatNumber.convert_date_gregorian_to_julian(year, matches[2]-0, matches[3]-0)-2415019;
+     type = "nd";
+     if (hour < 24 && minute < 60) {
+       value += hour/24 + minute/(24*60);
+       type = "ndt";
+       }
+     }
+   else if (matches=value.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2}) (\d{1,2}):(\d{1,2}):(\d{1,2})\s*$/)) { // YYYY-MM-DD, YYYY/MM/DD HH:MM:SS
+     // eddy added YYYY-MM-DD, YYYY/MM/DD HH:MM:SS
+     year = matches[1]-0;
+     year = year < 1000 ? year + 2000 : year;
+     hour = matches[4]-0;
+     minute = matches[5]-0;
+     second = matches[6]-0;
+     value = SocialCalc.FormatNumber.convert_date_gregorian_to_julian(year, matches[2]-0, matches[3]-0)-2415019;
+     type = "nd";
+     if (hour < 24 && minute < 60 && second < 60) {
+       value += hour/24 + minute/(24*60) + second/(24*60*60);
+       type = "ndt";
+       }
+     }
    else if (matches=value.match(/^(\d{1,2}):(\d{1,2})\s*$/)) { // HH:MM
       hour = matches[1]-0;
       minute = matches[2]-0;

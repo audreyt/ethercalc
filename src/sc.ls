@@ -303,6 +303,9 @@ Worker ||= class =>
       }])
     """, (cell) -> if cell is \undefined then cb 'null' else cb cell
     w.exportCells = (cb) -> w._eval "JSON.stringify(window.ss.sheet.cells)", cb
+    # eddy exportAttribs {
+    w.exportAttribs = (cb) -> w._eval "window.ss.sheet.attribs", cb
+    # }
     w.thread.eval bootSC, ~> w.postMessage { type: \init, room, log, snapshot }
     return w
   return SC
