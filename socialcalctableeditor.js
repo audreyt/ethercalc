@@ -4850,7 +4850,6 @@ SocialCalc.CreateTableControl = function(control) {
    s.position = "absolute";
    s[control.vertical?"top":"left"] = "4px";
    s.zIndex = 3;
-   setStyles(control.paneslider, scc.TCpanesliderStyle);
    s.backgroundImage="url("+imageprefix+"paneslider-"+vh+".gif)";
    if (scc.TCpanesliderClass) control.paneslider.className = scc.TCpanesliderClass;
    AssignID(control.editor, control.paneslider, "paneslider"+vh);

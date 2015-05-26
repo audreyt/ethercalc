@@ -270,8 +270,7 @@ SocialCalc.Constants = {
    TCmainClass: "", // if present, the CSS class of the main div for a table control
    TCendcapStyle: "backgroundColor:#FFF;", // backgroundColor may be used while waiting for image that may not come
    TCendcapClass: "",
-   TCpanesliderStyle: "backgroundColor:#CCC;",
-   TCpanesliderClass: "",
+   TCpanesliderClass: "tc-paneslider",
    s_panesliderTooltiph: "Drag to lock pane vertically", // tooltip for horizontal table control pane slider
    s_panesliderTooltipv: "Drag to lock pane horizontally",
    TClessbuttonStyle: "backgroundColor:#AAA;",
@@ -11912,7 +11911,6 @@ SocialCalc.CreateTableControl = function(control) {
    s.position = "absolute";
    s[control.vertical?"top":"left"] = "4px";
    s.zIndex = 3;
-   setStyles(control.paneslider, scc.TCpanesliderStyle);
    s.backgroundImage="url("+imageprefix+"paneslider-"+vh+".gif)";
    if (scc.TCpanesliderClass) control.paneslider.className = scc.TCpanesliderClass;
    AssignID(control.editor, control.paneslider, "paneslider"+vh);
