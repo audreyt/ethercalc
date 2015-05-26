@@ -3697,6 +3697,7 @@ SocialCalc.InputEcho = function(editor) {
    this.container = null; // element containing main echo as well as prompt line
    this.main = null; // main echo area
    this.prompt = null;
+   this.hint = null; // focus cell hint area
 
    this.functionbox = null; // function chooser dialog
 
@@ -3708,6 +3709,12 @@ SocialCalc.InputEcho = function(editor) {
    if (scc.defaultInputEchoStyle) SocialCalc.setStyles(this.main, scc.defaultInputEchoStyle);
    this.main.innerHTML = "&nbsp;";
 
+   this.hint = document.createElement("div");
+   if (scc.defaultInputEchoHintClass) this.hint.className = scc.defaultInputEchoHintClass;
+   if (scc.defaultInputEchoHintStyle) SocialCalc.setStyles(this.hint, scc.defaultInputEchoHintStyle);
+   this.hint.innerHTML = "";
+
+   this.container.appendChild(this.hint);
    this.container.appendChild(this.main);
 
    this.prompt = document.createElement("div");
@@ -3750,6 +3757,7 @@ SocialCalc.ShowInputEcho = function(inputecho, show) {
          inputecho.container.style.left = (position.left-1)+"px";
          inputecho.container.style.top = (position.top-1)+"px";
          }
+      inputecho.hint.innerHTML = editor.ecell.coord;
       inputecho.container.style.display = "block";
       if (inputecho.interval) window.clearInterval(inputecho.interval); // just in case
       inputecho.interval = window.setInterval(SocialCalc.InputEchoHeartbeat, 50);
@@ -4842,7 +4850,6 @@ SocialCalc.CreateTableControl = function(control) {
    s.position = "absolute";
    s[control.vertical?"top":"left"] = "4px";
    s.zIndex = 3;
-   setStyles(control.paneslider, scc.TCpanesliderStyle);
    s.backgroundImage="url("+imageprefix+"paneslider-"+vh+".gif)";
    if (scc.TCpanesliderClass) control.paneslider.className = scc.TCpanesliderClass;
    AssignID(control.editor, control.paneslider, "paneslider"+vh);

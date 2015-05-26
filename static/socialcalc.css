@@ -102,3 +102,17 @@ body:last-child .defaultPeer {
 #searchbar img {
     vertical-align: middle;
 }
+
+/* Pane Sliders */
+
+.tc-paneslider {
+    background-color:#CCC;
+}
+
+#te_panesliderh {
+    cursor: col-resize;
+}
+
+#te_panesliderv {
+    cursor: row-resize;
+}
