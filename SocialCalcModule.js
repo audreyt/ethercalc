@@ -123,7 +123,7 @@ SocialCalc.Constants = {
    defaultCellFontSize: "small",
    defaultCellFontFamily: "Verdana,Arial,Helvetica,sans-serif",
 
-   defaultPaneDividerWidth: "2", // a string
+   defaultPaneDividerWidth: "3", // a string
    defaultPaneDividerHeight: "3", // a string
 
    defaultGridCSS: "1px solid #C0C0C0;", // used as style to set each border when grid enabled (was #ECECEC)

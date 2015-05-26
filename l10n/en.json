@@ -18,7 +18,7 @@
   "defaultCellFontStyle": "normal normal",
   "defaultCellFontSize": "small",
   "defaultCellFontFamily": "Verdana,Arial,Helvetica,sans-serif",
-  "defaultPaneDividerWidth": "2",
+  "defaultPaneDividerWidth": "3",
   "defaultPaneDividerHeight": "3",
   "defaultGridCSS": "1px solid #C0C0C0;",
   "defaultCommentClass": "",
