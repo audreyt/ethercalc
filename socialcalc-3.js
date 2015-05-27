@@ -2701,12 +2701,12 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
          if (saveundo) {
             if (cmd1 == "deletecol") {
                for (col=cr1.col; col<=cr2.col; col++) {
-                  changes.AddUndo("insertcol "+SocialCalc.rcColname(col));
+                  changes.AddUndo("insertcol "+SocialCalc.rcColname(cr1.col));
                   }
                }
             else {
                for (row=cr1.row; row<=cr2.row; row++) {
-                  changes.AddUndo("insertrow "+row);
+                  changes.AddUndo("insertrow "+cr1.row);
                   }
                }
             }
