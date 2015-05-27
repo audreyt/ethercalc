@@ -22243,7 +22243,11 @@ spreadsheet.Buttons = {
    input.keyup(function (e) {
         if (e.keyCode == 13) {
            // search down when enter is pressed
-           SocialCalc.SpreadsheetControl.SearchDown();
+           if (e.shiftKey) {
+               SocialCalc.SpreadsheetControl.SearchUp();
+           } else {
+               SocialCalc.SpreadsheetControl.SearchDown();
+           }
         }
    });
    spreadsheet.formulabarDiv.appendChild(searchBar[0]);
