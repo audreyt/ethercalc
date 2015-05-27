@@ -9600,18 +9600,18 @@ SocialCalc.EnsureECellVisible = function(editor) {
 
    if (editor.ecell.row > editor.lastnonscrollingrow) {
       if (editor.ecell.row < editor.firstscrollingrow) {
-         vamount = editor.ecell.row - editor.firstscrollingrow;
+         vamount = editor.ecell.row - editor.firstscrollingrow - Math.floor((editor.lastvisiblerow - editor.firstscrollingrow)/2);
          }
-      else if (editor.ecell.row > editor.lastvisiblerow) {
-         vamount = editor.ecell.row - editor.lastvisiblerow;
+      else if (editor.ecell.row + 1 > editor.lastvisiblerow) {
+         vamount = editor.ecell.row - editor.lastvisiblerow + Math.floor((editor.lastvisiblerow - editor.firstscrollingrow)/2);
          }
       }   
    if (editor.ecell.col > editor.lastnonscrollingcol) {
       if (editor.ecell.col < editor.firstscrollingcol) {
-         hamount = editor.ecell.col - editor.firstscrollingcol;
+         hamount = editor.ecell.col - editor.firstscrollingcol - Math.floor((editor.lastvisiblecol - editor.firstscrollingcol)/2);
          }
-      else if (editor.ecell.col > editor.lastvisiblecol) {
-        hamount = editor.ecell.col- editor.lastvisiblecol;
+      else if (editor.ecell.col + 1 > editor.lastvisiblecol) {
+        hamount = editor.ecell.col- editor.lastvisiblecol + Math.floor((editor.lastvisiblecol - editor.firstscrollingcol)/2);
          }
       }
 
