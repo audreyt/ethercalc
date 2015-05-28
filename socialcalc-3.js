@@ -5017,9 +5017,11 @@ SocialCalc.RenderCell = function(context, rownum, colnum, rowpane, colpane, noEl
    result.style.cssText=stylestr;
 
    //!!!!!!!!!
-   // NOTE: csss and cssc are not supported yet.
+   // NOTE: csss is not supported yet.
    // csss needs to be parsed into pieces to override just the attributes specified, not all with assignment to cssText.
-   // cssc just needs to set the className.
+   if (cell.cssc !== undefined) {
+      noElement ? (result.className = (result.className ? result.className + ' ' : '') + cell.cssc) : result.classList.add(cell.cssc);
+   }
 
    t = context.highlights[coord];
    if (t) { // this is a highlit cell: Override style appropriately
