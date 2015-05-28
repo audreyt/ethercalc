@@ -272,7 +272,7 @@
         command := [command, "insertrow A#row", "paste A#row all"]
       else
         command := [command, "paste A#row all"]
-    if command is /^set\s(A\d+):B\d+\sempty/
+    if command is /^set\s+(A\d+):B\d+\s+empty\s+multi-cascade/
       _, [snapshot] <~ DB.multi!get("snapshot-#room").exec
       if snapshot
         sheetId = RegExp.$1
