@@ -150,13 +150,13 @@ SocialCalc.Constants = {
    defaultHighlightTypeRangeStyle: "color:#000;backgroundColor:#E5E5E5;",
 
    defaultColnameClass: "", // regular column heading letters, needs a cursor property 
-   defaultColnameStyle: "font-size:small;text-align:center;color:#FFFFFF;background-color:#808080;cursor:col-resize;",
+   defaultColnameStyle: "overflow:visible;font-size:small;text-align:center;color:#FFFFFF;background-color:#808080;",
    defaultSelectedColnameClass: "", // column with selected cell, needs a cursor property 
-   defaultSelectedColnameStyle: "font-size:small;text-align:center;color:#FFFFFF;background-color:#404040;cursor:col-resize;",
+   defaultSelectedColnameStyle: "overflow:visible;font-size:small;text-align:center;color:#FFFFFF;background-color:#404040;",
    defaultRownameClass: "", // regular row heading numbers
-   defaultRownameStyle: "font-size:small;text-align:right;color:#FFFFFF;background-color:#808080;direction:rtl;cursor:row-resize;",
+   defaultRownameStyle: "position:relative;overflow:visible;font-size:small;text-align:right;color:#FFFFFF;background-color:#808080;",
    defaultSelectedRownameClass: "", // column with selected cell, needs a cursor property 
-   defaultSelectedRownameStyle: "font-size:small;text-align:right;color:#FFFFFF;background-color:#404040;cursor:row-resize;",
+   defaultSelectedRownameStyle: "position:relative;overflow:visible;font-size:small;text-align:right;color:#FFFFFF;background-color:#404040;",
    defaultUpperLeftClass: "", // Corner cell in upper left
    defaultUpperLeftStyle: "font-size:small;",
    defaultSkippedCellClass: "", // used if present for spanned cells peeking into a pane (at least one of class/style needed)
@@ -171,6 +171,9 @@ SocialCalc.Constants = {
    defaultUnhideTopStyle: "float:left;left:1px;position:absolute;bottom:-4px;width:12px;height:9px;cursor:pointer;background-image:url(images/sc-unhidetop.gif);padding:0;",
    defaultUnhideBottomClass: "",
    defaultUnhideBottomStyle: "float:left;width:12px;height:9px;cursor:pointer;background-image:url(images/sc-unhidebottom.gif);padding:0;",
+
+   defaultColResizeBarClass: "col-resize-bar",
+   defaultRowResizeBarClass: "row-resize-bar",
 
    s_rcMissingSheet: "Render Context must have a sheet object", // unlikely thrown error
 
