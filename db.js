@@ -116,7 +116,7 @@
             ? ref1$
             : ref$[key] = []) : void 8;
         },
-        hset: function(key, idx, val){
+        hset: function(key, idx, val, cb){
           var ref$, ref1$;
           ((ref1$ = (ref$ = db.DB)[key]) != null
             ? ref1$
@@ -128,6 +128,11 @@
           return typeof cb == 'function' ? cb(null, (ref1$ = (ref$ = db.DB)[key]) != null
             ? ref1$
             : ref$[key] = {}) : void 8;
+        },
+        rename: function(key, key2, cb){
+          var ref$, ref1$;
+          db.DB[key2] = (ref1$ = (ref$ = db.DB)[key], delete ref$[key], ref1$);
+          return typeof cb == 'function' ? cb() : void 8;
         },
         del: function(keys, cb){
           var i$, len$, key;
