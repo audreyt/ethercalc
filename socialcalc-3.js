@@ -4280,7 +4280,9 @@ SocialCalc.RenderContext = function(sheetobj) {
          unhideleft: scc.defaultUnhideLeftClass,
          unhideright: scc.defaultUnhideRightClass,
          unhidetop: scc.defaultUnhideTopClass,
-         unhidebottom: scc.defaultUnhideBottomClass
+         unhidebottom: scc.defaultUnhideBottomClass,
+         colresizebar: scc.defaultColResizeBarClass,
+         rowresizebar: scc.defaultRowResizeBarClass
       };
 
    this.explicitStyles = // these may be used so you won't need a stylesheet with the classnames
@@ -4636,6 +4638,11 @@ SocialCalc.RenderRow = function(context, rownum, rowpane, linkstyle) {
          newcol.appendChild(unhide);
          }
 
+      // add resize bar
+      var resizeBar = document.createElement('div');
+      resizeBar.className = context.classnames.rowresizebar;
+      newcol.appendChild(resizeBar);
+
       result.appendChild(newcol);
       }
 
@@ -4739,14 +4746,20 @@ SocialCalc.RenderColHeaders = function(context) {
             if (context.explicitStyles) unhide.style.cssText=context.explicitStyles.unhideleft;
             context.colunhideleft[colnum] = unhide;
             newcol.appendChild(unhide);
-            }
+         }
          if (colnum > 1 && sheetobj.colattribs.hide[SocialCalc.rcColname(colnum-1)] == "yes") {
             unhide = document.createElement("div");
             if (context.classnames) unhide.className=context.classnames.unhideright;
             if (context.explicitStyles) unhide.style.cssText=context.explicitStyles.unhideright;
             context.colunhideright[colnum] = unhide;
             newcol.appendChild(unhide);
-            }
+         }
+
+         // add resize bar
+         var resizeBar = document.createElement('span');
+         resizeBar.style.height = SocialCalc.Constants.defaultAssumedRowHeight + 'px';
+         resizeBar.className = context.classnames.colresizebar;
+         newcol.appendChild(resizeBar);
 
          result.appendChild(newcol);
          }

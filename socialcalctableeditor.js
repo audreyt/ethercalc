@@ -1182,12 +1182,12 @@ SocialCalc.ProcessEditorMouseDown = function(e) {
    if (!result) return; // not on a cell or col header
    mouseinfo.editor = editor; // remember for later
 
-   if (result.rowheader && result.rowtoresize) {
+   if (result.rowheader) {
       SocialCalc.ProcessEditorRowsizeMouseDown(e, ele, result);
       return;
       }
 
-   if (result.colheader && result.coltoresize) { // col header - do drag resize
+   if (result.colheader) {
       SocialCalc.ProcessEditorColsizeMouseDown(e, ele, result);
       return;
       }
@@ -1401,8 +1401,8 @@ SocialCalc.ProcessEditorColsizeMouseDown = function(e, ele, result) {
    mouseinfo.mouseresizecol = SocialCalc.rcColname(result.coltoresize);
    mouseinfo.mousedownclientx = clientX;
    mouseinfo.mousecoltounhide = result.coltounhide;
-   
-   if (!mouseinfo.mousecoltounhide) {
+
+   if (result.coltoresize) {
       var sizedisplay = document.createElement("div");
       mouseinfo.mouseresizedisplay = sizedisplay;
       sizedisplay.style.width = "auto";
@@ -1447,7 +1447,7 @@ SocialCalc.ProcessEditorColsizeMouseMove = function(e) {
    var editor = mouseinfo.editor;
    if (!editor) return; // not us, ignore
 
-   if (!mouseinfo.mousecoltounhide) {
+   if (mouseinfo.mouseresizecolnum) {
       var pos = SocialCalc.GetElementPositionWithScroll(editor.toplevel);
       var clientX = event.clientX - pos.left;
 
@@ -1507,7 +1507,7 @@ SocialCalc.ProcessEditorColsizeMouseUp = function(e) {
          editor.MoveECell(SocialCalc.crToCoord(mouseinfo.mousecoltounhide, editor.ecell.row));
          }*/
       }
-   else {
+   else if (mouseinfo.mouseresizecolnum) {
       var newsize = (editor.context.colwidth[mouseinfo.mouseresizecolnum]-0) + (clientX - mouseinfo.mousedownclientx);
       if (newsize < SocialCalc.Constants.defaultMinimumColWidth) newsize = SocialCalc.Constants.defaultMinimumColWidth;
 
@@ -1555,7 +1555,7 @@ SocialCalc.ProcessEditorRowsizeMouseDown = function(e, ele, result) {
    mouseinfo.mousedownclienty = clientY;
    mouseinfo.mouserowtounhide = result.rowtounhide;
 
-  if (!mouseinfo.mouserowtounhide) {
+  if (result.rowtoresize) {
     var sizedisplay = document.createElement("div");
     mouseinfo.mouseresizedisplay = sizedisplay;
     sizedisplay.style.width = editor.context.totalwidth+"px";
@@ -1601,7 +1601,7 @@ SocialCalc.ProcessEditorRowsizeMouseMove = function(e) {
    var editor = mouseinfo.editor;
    if (!editor) return; // not us, ignore
 
-  if (!mouseinfo.mouserowtounhide) {
+  if (mouseinfo.mouseresizerownum) {
     var pos = SocialCalc.GetSpreadsheetControlObject().spreadsheetDiv.firstChild.offsetHeight;
     var clientY = event.clientY - pos;
 
@@ -1655,7 +1655,7 @@ SocialCalc.ProcessEditorRowsizeMouseUp = function(e) {
    if (mouseinfo.mouserowtounhide) {
       editor.EditorScheduleSheetCommands("set "+mouseinfo.mouserowtounhide+" hide", true, false);
       }
-   else {
+   else if (mouseinfo.mouseresizerownum) {
      var newsize = (editor.context.rowheight[mouseinfo.mouseresizerownum]-0) + (clientY - mouseinfo.mousedownclienty);
      if (newsize < SocialCalc.Constants.defaultAssumedRowHeight) newsize = SocialCalc.Constants.defaultAssumedRowHeight;
      editor.EditorScheduleSheetCommands("set "+mouseinfo.mouseresizerownum+" height "+newsize, true, false);
@@ -2219,7 +2219,7 @@ SocialCalc.EditorProcessMouseWheel = function(event, delta, mousewheelinfo, wobj
 
 SocialCalc.GridMousePosition = function(editor, clientX, clientY) { 
 
-   var row, rowpane, col, colpane;
+   var row, rowpane, col, colpane, rowtoresize, coltoresize;
    var result = {};
 
    for (row=1; row<editor.rowpositions.length; row++) {
@@ -2242,7 +2242,17 @@ SocialCalc.GridMousePosition = function(editor, clientX, clientY) {
       if (clientX < editor.headposition.left && clientX >= editor.gridposition.left) {
          result.rowheader = true;
          result.distance = editor.headposition.left - clientX;
-         result.rowtoresize = row-(editor.rowpositions[row]+editor.rowheight[row]/2>clientY?1:0) || 1;
+         result.rowtoresize = false;
+
+         // resize bar
+         for (rowtoresize=1; rowtoresize<editor.rowpositions.length; rowtoresize++) {
+            if (!editor.rowheight[rowtoresize]) continue;
+            if (((editor.rowpositions[rowtoresize] + editor.rowheight[rowtoresize]) - 3) <= clientY
+               && ((editor.rowpositions[rowtoresize] + editor.rowheight[rowtoresize]) + 3) >= clientY) {
+               result.rowtoresize = rowtoresize;
+               break;
+            }
+         }
 
          // Handle unhide row.
          if (unhide = editor.context.rowunhidetop[row]) {
@@ -2256,8 +2266,8 @@ SocialCalc.GridMousePosition = function(editor, clientX, clientY) {
          if (unhide = editor.context.rowunhidebottom[row]) {
            pos = SocialCalc.GetElementPosition(unhide);
            if (clientX >= pos.left && clientX < pos.left+unhide.offsetWidth
-               && clientY >= pos.top
-               && clientY < pos.top+unhide.offsetHeight) {
+               && clientY >= (editor.rowpositions[row])
+               && clientY < (editor.rowpositions[row] + unhide.offsetHeight)) {
              result.rowtounhide = row-1;
            }
          }
@@ -2273,7 +2283,17 @@ SocialCalc.GridMousePosition = function(editor, clientX, clientY) {
       else if (clientY < editor.headposition.top && clientY > editor.gridposition.top) { // > because of sizing row
          result.colheader = true;
          result.distance = editor.headposition.top - clientY;
-         result.coltoresize = col-(editor.colpositions[col]+editor.colwidth[col]/2>clientX?1:0) || 1;
+         result.coltoresize = false;
+
+         // resize bar
+         for (coltoresize=1; coltoresize<editor.colpositions.length; coltoresize++) {
+            if (!editor.colwidth[coltoresize]) continue;
+            if (((editor.colpositions[coltoresize] + editor.colwidth[coltoresize]) - 3) <= clientX
+               && ((editor.colpositions[coltoresize] + editor.colwidth[coltoresize]) + 3) >= clientX) {
+               result.coltoresize = coltoresize;
+               break;
+            }
+         }
 
          // Handle unhide column.
          if (unhide = editor.context.colunhideleft[col]) {
@@ -3140,14 +3160,9 @@ SocialCalc.CalculateRowPositions = function(editor, panenum, positions, sizes) {
       trowobj = tbodyobj.childNodes[toprow+offset];
       offset++;
       if (!trowobj) { continue; }
-      cellposition = SocialCalc.GetElementPosition(trowobj.firstChild);
-
-// Safari has problem: If a cell in the row is high, cell 1 is centered and it returns top of centered part 
-// but if you get position of row element, it always returns the same value (not the row's)
-// So we require row number to be vertical aligned to top
 
       if (!positions[rownum]) {
-         positions[rownum] = cellposition.top; // first one takes precedence
+         positions[rownum] = trowobj.firstChild.offsetTop;
          sizes[rownum] = trowobj.firstChild.offsetHeight;
          }
       }
