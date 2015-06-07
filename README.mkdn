@@ -90,7 +90,6 @@ Deletes a spreadsheet's content after N seconds of inactivity. Activities includ
 
 * socialcalcspreadsheetcontrol.js
 * socialcalctableeditor.js
-* images/*
 
 ### Artistic License 2.0 (Socialtext Inc.)
 
@@ -99,6 +98,10 @@ Deletes a spreadsheet's content after N seconds of inactivity. Activities includ
 * socialcalc-3.js 
 * socialcalcconstants.js 
 * socialcalcpopup.js 
+
+#### Artistic License 2.0 (Framasoft)
+
+* l10n/fr.json
 
 ### MIT License (John Resig, The Dojo Foundation)
 
