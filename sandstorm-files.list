@@ -11,6 +11,9 @@ README.mkdn
 SocialCalcModule.js
 apache/apache-ldap.conf
 app.js
+app-graphics/ethercalc-128.svg
+app-graphics/ethercalc-150.svg
+app-graphics/ethercalc-24.svg
 bin/bash
 bin/cp
 bin/dash

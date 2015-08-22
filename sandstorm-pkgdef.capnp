@@ -17,24 +17,55 @@ const pkgdef :Spk.PackageDefinition = (
     # This manifest is included in your app package to tell Sandstorm
     # about your app.
 
-    appVersion = 201505183,  # Increment this for every release.
+    appVersion = 201508221,  # Increment this for every release.
     appTitle = (defaultText = "EtherCalc"),
     appMarketingVersion = (defaultText = "2015.05.18.3"),
 
     actions = [
       # Define your "new document" handlers here.
       ( title = (defaultText = "New EtherCalc Spreadsheet"),
+        nounPhrase = (defaultText = "spreadsheet"),
         command = .myContinueCommand
         # The command to run when starting for the first time. (".myCommand"
         # is just a constant defined at the bottom of the file.)
       )
     ],
 
-    continueCommand = .myContinueCommand
+    continueCommand = .myContinueCommand,
     # This is the command called to start your app back up after it has been
     # shut down for inactivity. Here we're using the same command as for
     # starting a new instance, but you could use different commands for each
     # case.
+
+
+
+    metadata = (
+      icons = (
+        appGrid = (svg = embed "app-graphics/ethercalc-128.svg"),
+        grain = (svg = embed "app-graphics/ethercalc-24.svg"),
+        market = (svg = embed "app-graphics/ethercalc-150.svg"),
+      ),
+
+      website = "http://ethercalc.net/",
+      codeUrl = "https://github.com/audreyt/ethercalc",
+      license = (openSource = cpal),
+      categories = [office, productivity],
+
+      author = (
+        contactEmail = "audreyt@audreyt.org",
+        pgpSignature = embed "pgp-signature",
+        upstreamAuthor = "Audrey Tang",
+      ),
+      pgpKeyring = embed "pgp-keyring",
+
+      description = (defaultText = embed "README.mkdn"),
+
+      screenshots = [
+        (width = 478, height = 298, png = embed "static/img/davy/gfx/screenshot.png")
+      ],
+
+      changeLog = (defaultText = embed "CHANGELOG.mkdn"),
+
   ),
 
   sourceMap = (
