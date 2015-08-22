@@ -33,7 +33,7 @@ export class HackFoldr
     @rows[idx] <<< patch; @
   delete-at: (idx) ->
     row = @rows[idx].row
-    @send-cmd "set A#row:B#row empty"
+    @send-cmd "set A#row:B#row empty multi-cascade"
     @rows.splice idx, 1; @
 
   send-cmd: (cmd, cb=->) ->

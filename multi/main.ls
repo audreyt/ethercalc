@@ -6,8 +6,12 @@ Index = \foobar
 Index = RegExp.$1 if window.location.href is /\/=([^_][^\/?]*)(?:\?.*)?$/
 HackFoldr = require(\./foldr.ls).HackFoldr
 IsReadOnly = window.location.href is /auth=0/
+Suffix = ""
 if /\?auth=/.test window.location.search
   IsReadOnly = (/\??auth=0/.test window.location.search)
+  Suffix = if IsReadOnly then \/view else \/edit
+  BasePath = \.. if BasePath is \.
+  window.history.pushState {} '' "./=#Index#Suffix"
 
 {div, iframe, input, button} = React.DOM
 
@@ -69,7 +73,7 @@ Nav = createClass do
     TabPanel { activeIndex: @props.activeIndex, @~onChange, tabVerticalPosition: \bottom },
       ...for { title, link="/#{ encodeURIComponent title }" } in @props.rows
         div { key: title, title, className: \wrapper },
-          Frame { src: "#BasePath#link#{ if IsReadOnly then \/view else '' }", rows: @props.rows }
+          Frame { src: "#BasePath#link#Suffix", rows: @props.rows }
 
 Frame = createClass do
   shouldComponentUpdate: -> @props.src isnt it.src

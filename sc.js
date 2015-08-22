@@ -140,8 +140,8 @@
       if (argv.vm) {
         throw 'vm';
       }
-      if (process.platform === 'darwin' && parseInt(process.versions.node.slice(2)) > 10 || parseInt(process.versions.node[0])) {
-        console.log("Note: OS X threading with Node " + process.versions.node + " is WIP");
+      if (parseInt(process.versions.node.slice(2)) > 10 || parseInt(process.versions.node[0])) {
+        console.log("Note: Threading with Node " + process.versions.node + " is work in progress.\n=>> https://github.com/audreyt/node-webworker-threads/issues/48");
         throw 'too-new';
       }
       console.log("Starting backend using webworker-threads");

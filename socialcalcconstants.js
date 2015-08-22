@@ -123,7 +123,7 @@ SocialCalc.Constants = {
    defaultCellFontSize: "small",
    defaultCellFontFamily: "Verdana,Arial,Helvetica,sans-serif",
 
-   defaultPaneDividerWidth: "2", // a string
+   defaultPaneDividerWidth: "3", // a string
    defaultPaneDividerHeight: "3", // a string
 
    defaultGridCSS: "1px solid #C0C0C0;", // used as style to set each border when grid enabled (was #ECECEC)
@@ -150,13 +150,13 @@ SocialCalc.Constants = {
    defaultHighlightTypeRangeStyle: "color:#000;backgroundColor:#E5E5E5;",
 
    defaultColnameClass: "", // regular column heading letters, needs a cursor property 
-   defaultColnameStyle: "font-size:small;text-align:center;color:#FFFFFF;background-color:#808080;cursor:col-resize;",
+   defaultColnameStyle: "overflow:visible;font-size:small;text-align:center;color:#FFFFFF;background-color:#808080;",
    defaultSelectedColnameClass: "", // column with selected cell, needs a cursor property 
-   defaultSelectedColnameStyle: "font-size:small;text-align:center;color:#FFFFFF;background-color:#404040;cursor:col-resize;",
+   defaultSelectedColnameStyle: "overflow:visible;font-size:small;text-align:center;color:#FFFFFF;background-color:#404040;",
    defaultRownameClass: "", // regular row heading numbers
-   defaultRownameStyle: "font-size:small;text-align:right;color:#FFFFFF;background-color:#808080;direction:rtl;cursor:row-resize;",
+   defaultRownameStyle: "position:relative;overflow:visible;font-size:small;text-align:right;color:#FFFFFF;background-color:#808080;",
    defaultSelectedRownameClass: "", // column with selected cell, needs a cursor property 
-   defaultSelectedRownameStyle: "font-size:small;text-align:right;color:#FFFFFF;background-color:#404040;cursor:row-resize;",
+   defaultSelectedRownameStyle: "position:relative;overflow:visible;font-size:small;text-align:right;color:#FFFFFF;background-color:#404040;",
    defaultUpperLeftClass: "", // Corner cell in upper left
    defaultUpperLeftStyle: "font-size:small;",
    defaultSkippedCellClass: "", // used if present for spanned cells peeking into a pane (at least one of class/style needed)
@@ -171,6 +171,9 @@ SocialCalc.Constants = {
    defaultUnhideTopStyle: "float:left;left:1px;position:absolute;bottom:-4px;width:12px;height:9px;cursor:pointer;background-image:url(images/sc-unhidetop.gif);padding:0;",
    defaultUnhideBottomClass: "",
    defaultUnhideBottomStyle: "float:left;width:12px;height:9px;cursor:pointer;background-image:url(images/sc-unhidebottom.gif);padding:0;",
+
+   defaultColResizeBarClass: "col-resize-bar",
+   defaultRowResizeBarClass: "row-resize-bar",
 
    s_rcMissingSheet: "Render Context must have a sheet object", // unlikely thrown error
 
@@ -234,6 +237,9 @@ SocialCalc.Constants = {
    defaultInputEchoPromptStyle: "filter:alpha(opacity=90);opacity:.9;backgroundColor:#FFD;"+
       "borderLeft:1px solid #884;borderRight:1px solid #884;borderBottom:1px solid #884;"+
       "fontSize:small;fontStyle:italic;padding:2px 10px 1px 2px;cursor:default;", // if present, pseudo style
+   defaultInputEchoHintClass: "", // if present, the class of the popup inputEcho div
+   defaultInputEchoHintStyle: "filter:alpha(opacity=80);opacity:.8;backgroundColor:#884;border:1px solid #884;"+
+      "fontSize:small;fontWeight:bold;padding:2px 2px 2px 2px;color:#FFF;position:absolute;top:-20px;cursor:default;", // if present, pseudo style
 
    //** SocialCalc.InputEchoText
 
@@ -267,8 +273,7 @@ SocialCalc.Constants = {
    TCmainClass: "", // if present, the CSS class of the main div for a table control
    TCendcapStyle: "backgroundColor:#FFF;", // backgroundColor may be used while waiting for image that may not come
    TCendcapClass: "",
-   TCpanesliderStyle: "backgroundColor:#CCC;",
-   TCpanesliderClass: "",
+   TCpanesliderClass: "tc-paneslider",
    s_panesliderTooltiph: "Drag to lock pane vertically", // tooltip for horizontal table control pane slider
    s_panesliderTooltipv: "Drag to lock pane horizontally",
    TClessbuttonStyle: "backgroundColor:#AAA;",

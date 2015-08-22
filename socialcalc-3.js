@@ -294,6 +294,8 @@ SocialCalc.ResetSheet = function(sheet, reload) {
    sheet.cellformathash={};
    sheet.valueformats=[];
    sheet.valueformathash={};
+   sheet.matched_cells=[];
+   sheet.selected_search_cell=undefined;
 
    sheet.copiedfrom = ""; // if a range, then this was loaded from a saved range as clipboard content
 
@@ -2699,12 +2701,12 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
          if (saveundo) {
             if (cmd1 == "deletecol") {
                for (col=cr1.col; col<=cr2.col; col++) {
-                  changes.AddUndo("insertcol "+SocialCalc.rcColname(col));
+                  changes.AddUndo("insertcol "+SocialCalc.rcColname(cr1.col));
                   }
                }
             else {
                for (row=cr1.row; row<=cr2.row; row++) {
-                  changes.AddUndo("insertrow "+row);
+                  changes.AddUndo("insertrow "+cr1.row);
                   }
                }
             }
@@ -4278,7 +4280,9 @@ SocialCalc.RenderContext = function(sheetobj) {
          unhideleft: scc.defaultUnhideLeftClass,
          unhideright: scc.defaultUnhideRightClass,
          unhidetop: scc.defaultUnhideTopClass,
-         unhidebottom: scc.defaultUnhideBottomClass
+         unhidebottom: scc.defaultUnhideBottomClass,
+         colresizebar: scc.defaultColResizeBarClass,
+         rowresizebar: scc.defaultRowResizeBarClass
       };
 
    this.explicitStyles = // these may be used so you won't need a stylesheet with the classnames
@@ -4634,6 +4638,11 @@ SocialCalc.RenderRow = function(context, rownum, rowpane, linkstyle) {
          newcol.appendChild(unhide);
          }
 
+      // add resize bar
+      var resizeBar = document.createElement('div');
+      resizeBar.className = context.classnames.rowresizebar;
+      newcol.appendChild(resizeBar);
+
       result.appendChild(newcol);
       }
 
@@ -4737,14 +4746,20 @@ SocialCalc.RenderColHeaders = function(context) {
             if (context.explicitStyles) unhide.style.cssText=context.explicitStyles.unhideleft;
             context.colunhideleft[colnum] = unhide;
             newcol.appendChild(unhide);
-            }
+         }
          if (colnum > 1 && sheetobj.colattribs.hide[SocialCalc.rcColname(colnum-1)] == "yes") {
             unhide = document.createElement("div");
             if (context.classnames) unhide.className=context.classnames.unhideright;
             if (context.explicitStyles) unhide.style.cssText=context.explicitStyles.unhideright;
             context.colunhideright[colnum] = unhide;
             newcol.appendChild(unhide);
-            }
+         }
+
+         // add resize bar
+         var resizeBar = document.createElement('span');
+         resizeBar.style.height = SocialCalc.Constants.defaultAssumedRowHeight + 'px';
+         resizeBar.className = context.classnames.colresizebar;
+         newcol.appendChild(resizeBar);
 
          result.appendChild(newcol);
          }
@@ -5015,9 +5030,11 @@ SocialCalc.RenderCell = function(context, rownum, colnum, rowpane, colpane, noEl
    result.style.cssText=stylestr;
 
    //!!!!!!!!!
-   // NOTE: csss and cssc are not supported yet.
+   // NOTE: csss is not supported yet.
    // csss needs to be parsed into pieces to override just the attributes specified, not all with assignment to cssText.
-   // cssc just needs to set the className.
+   if (cell.cssc !== undefined) {
+      noElement ? (result.className = (result.className ? result.className + ' ' : '') + cell.cssc) : result.classList.add(cell.cssc);
+   }
 
    t = context.highlights[coord];
    if (t) { // this is a highlit cell: Override style appropriately

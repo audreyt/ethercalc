@@ -275,6 +275,19 @@
         command := [command, "insertrow A#row", "paste A#row all"]
       else
         command := [command, "paste A#row all"]
+    if command is /^set\s+(A\d+):B\d+\s+empty\s+multi-cascade/
+      _, [snapshot] <~ DB.multi!get("snapshot-#room").exec
+      if snapshot
+        sheetId = RegExp.$1
+        matches = snapshot.match(new RegExp("cell:#sheetId:t:\/(.+)\n", "i"));
+        if matches
+            removeKey = matches[1]
+            backupKey = "#{matches[1]}.bak"
+            _ <~ DB.multi!
+              .del("snapshot-#backupKey").rename("snapshot-#removeKey", "snapshot-#backupKey")
+              .del("log-#backupKey").rename("log-#removeKey", "log-#backupKey")
+              .del("audit-#backupKey").rename("audit-#removeKey", "audit-#backupKey")
+              .bgsave!.exec
     command := [command] unless Array.isArray command
     cmdstr = command * \\n
     <~ DB.multi!

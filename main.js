@@ -460,6 +460,21 @@
                 command = [command, "paste A" + row + " all"];
               }
             }
+            if (/^set\s+(A\d+):B\d+\s+empty\s+multi-cascade/.exec(command)) {
+              DB.multi().get("snapshot-" + room).exec(function(_, arg$){
+                var snapshot, sheetId, matches, removeKey, backupKey;
+                snapshot = arg$[0];
+                if (snapshot) {
+                  sheetId = RegExp.$1;
+                  matches = snapshot.match(new RegExp("cell:" + sheetId + ":t:/(.+)\n", "i"));
+                  if (matches) {
+                    removeKey = matches[1];
+                    backupKey = matches[1] + ".bak";
+                    return DB.multi().del("snapshot-" + backupKey).rename("snapshot-" + removeKey, "snapshot-" + backupKey).del("log-" + backupKey).rename("log-" + removeKey, "log-" + backupKey).del("audit-" + backupKey).rename("audit-" + removeKey, "audit-" + backupKey).bgsave().exec(function(_){});
+                  }
+                }
+              });
+            }
             if (!Array.isArray(command)) {
               command = [command];
             }
