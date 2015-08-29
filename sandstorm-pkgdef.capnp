@@ -59,13 +59,14 @@ const pkgdef :Spk.PackageDefinition = (
       pgpKeyring = embed "pgp-keyring",
 
       description = (defaultText = embed "README.mkdn"),
+      shortDescription = (defaultText = "Collaborative Spreadsheet"),
 
       screenshots = [
         (width = 478, height = 298, png = embed "static/img/davy/gfx/screenshot.png")
       ],
 
       changeLog = (defaultText = embed "CHANGELOG.mkdn"),
-
+    ),
   ),
 
   sourceMap = (
