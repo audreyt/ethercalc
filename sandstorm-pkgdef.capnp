@@ -17,9 +17,9 @@ const pkgdef :Spk.PackageDefinition = (
     # This manifest is included in your app package to tell Sandstorm
     # about your app.
 
-    appVersion = 201508291,  # Increment this for every release.
+    appVersion = 201508292,  # Increment this for every release.
     appTitle = (defaultText = "EtherCalc"),
-    appMarketingVersion = (defaultText = "2015.08.29.1"),
+    appMarketingVersion = (defaultText = "2015.08.29.2"),
 
     actions = [
       # Define your "new document" handlers here.
@@ -59,7 +59,7 @@ const pkgdef :Spk.PackageDefinition = (
       pgpKeyring = embed "pgp-keyring",
 
       description = (defaultText = embed "README.mkdn"),
-      shortDescription = (defaultText = "Collaborative Spreadsheet"),
+      shortDescription = (defaultText = "Multi-user Spreadsheet"),
 
       screenshots = [
         (width = 478, height = 298, png = embed "static/img/davy/gfx/screenshot.png")
