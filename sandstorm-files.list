@@ -2,6 +2,7 @@
 # This file is automatically updated and rewritten in sorted order every time
 # the app runs in dev mode. You may manually add or remove files, but don't
 # expect comments or ordering to be retained.
+CHANGELOG.mkdn
 Changes.txt
 Dockerfile
 LEGAL.txt
@@ -46,10 +47,11 @@ images/sc_cursorinsertleft.gif
 images/sc_cursorinsertup.gif
 images/sc_cut.png
 images/sc_defaultcolor.gif
-images/sc_deletecolumns.png
 images/sc_delete.png
+images/sc_deletecolumns.png
 images/sc_deleterows.png
 images/sc_divider1.png
+images/sc_downsearch.png
 images/sc_drag-handles.gif
 images/sc_drag-handles.png
 images/sc_endcap-h.gif
@@ -63,18 +65,23 @@ images/sc_insertcolumns.png
 images/sc_insertformula.png
 images/sc_inserthyperlink.png
 images/sc_insertrows.png
+images/sc_less-hd.gif
 images/sc_less-hh.gif
 images/sc_less-hn.gif
+images/sc_less-vh.gif
 images/sc_less-vn.gif
 images/sc_listbox.png
-images/sc_lockbg.gif
 images/sc_lock.png
+images/sc_lockbg.gif
 images/sc_logo.gif
 images/sc_main-h.gif
 images/sc_main-v.gif
 images/sc_mergecells.png
+images/sc_more-hd.gif
 images/sc_more-hh.gif
 images/sc_more-hn.gif
+images/sc_more-vd.gif
+images/sc_more-vh.gif
 images/sc_more-vn.gif
 images/sc_movefrom.gif
 images/sc_movefromoff.gif
@@ -97,16 +104,20 @@ images/sc_thumb-hn.gif
 images/sc_thumb-vd.gif
 images/sc_thumb-vh.gif
 images/sc_thumb-vn.gif
+images/sc_trackingline-h.gif
+images/sc_trackingline-v.gif
 images/sc_undo.png
 images/sc_unhidebottom.gif
 images/sc_unhideleft.gif
 images/sc_unhideright.gif
 images/sc_unhidetop.gif
 images/sc_unlock.png
+images/sc_upsearch.png
 index.html
 install_grain.sh
 l10n/de.json
 l10n/en.json
+l10n/fr.json
 l10n/zh-TW.json
 lib/x86_64-linux-gnu/ld-2.19.so
 lib/x86_64-linux-gnu/libacl.so.1
@@ -8287,6 +8298,8 @@ node_modules/livescript-loader/node_modules/loader-utils/node_modules/big.js/big
 node_modules/livescript-loader/node_modules/loader-utils/node_modules/big.js/doc/bigAPI.html
 node_modules/livescript-loader/node_modules/loader-utils/node_modules/big.js/.npmignore
 node_modules/livescript-loader/node_modules/loader-utils/node_modules/big.js/big.js
+pgp-keyring
+pgp-signature
 player-broadcast.js
 player-graph.js
 player.js
