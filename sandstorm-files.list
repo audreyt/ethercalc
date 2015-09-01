@@ -4,6 +4,7 @@
 # expect comments or ordering to be retained.
 CHANGELOG.mkdn
 Changes.txt
+DESCRIPTION.mkdn
 Dockerfile
 LEGAL.txt
 LICENSE.txt

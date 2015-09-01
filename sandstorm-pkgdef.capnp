@@ -58,7 +58,7 @@ const pkgdef :Spk.PackageDefinition = (
       ),
       pgpKeyring = embed "pgp-keyring",
 
-      description = (defaultText = embed "README.mkdn"),
+      description = (defaultText = embed "DESCRIPTION.mkdn"),
       shortDescription = (defaultText = "Multi-user Spreadsheet"),
 
       screenshots = [
