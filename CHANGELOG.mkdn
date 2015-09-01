@@ -1,3 +1,7 @@
+# 20150901.1
+
+- Updated "Description" metadata as per Kenton.
+
 # 20150822.1
 
 - Initial release to Sandstorm App Market.
