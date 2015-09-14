@@ -506,7 +506,7 @@
   "s_fdef_VLOOKUP": "Cherche la valeur assortie à la valeur donnée dans la sélection et retourne la valeur correpondante dans la cellule spécifiée par la colonne de compensation. Si l'option sélection-de-recherche est égale à 1 (par défaut) et non 0, cherche une correspondance dans une fouchette numérique (valeur associée<=valeur) au lieu d'une correspondance exacte. ",
   "s_fdef_WEEKDAY": "Retourne le jour de la semaine de la date spécifiée. Si le type est égal à 1 (par défaut), le jour 1 est le dimanche et le samedi est le jour 7. Si le type est égal à 2, le lundi est le jour 1 et le dimanche est le jour 7. Si le type est 3, le lundi est le jour 0 et le dimanche est le jour 6. ",
   "s_fdef_YEAR": "Retourne l'année d'une date entière. ",
-  "s_fdef_SUMPRODUCT": "Somme le produit croisé de 2 ou plus plages. Les plages doivent êtres de même longueur.",
+  "s_fdef_SUMPRODUCT": "Somme le produit croisé de 2 ou plus plages. Les plages doivent être de même longueur.",
   "s_fdef_CEILING": "Arrondit supérieurement le nombre donné à l'entier ou au multiple de la significativité le plus proche. La significativité est la valeur du multiple de 10 à laquelle le nombre est arrondi supérieurement (.01, .1, 1, 10, etc.)",
   "s_fdef_FLOOR": "Arrondit inférieurement le nombre donné à l'entier ou au multiple de la significativité le plus proche. La significativité est la valeur du multiple de 10 à laquelle le nombre est arrondi inférieurement (.01, .1, 1, 10, etc.)",
   "s_farg_v": "valeur",
