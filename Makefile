@@ -20,6 +20,11 @@ ETHERCALC_FILES=\
 JS_FILES=\
 	app.js dotcloud.js player.js main.js sc.js db.js
 
+UGLIFYJS_ARGS = -c -m
+ifdef DEBUG
+  UGLIFYJS_ARGS += -b
+endif
+	
 all :: depends
 	env PATH="$$PATH:./node_modules/livescript/bin" lsc -c -o . src
 	node app.js $(ETHERCALC_ARGS) --cors
@@ -49,7 +54,7 @@ SocialCalcModule.js :: $(SOCIALCALC_FILES) exports.js
 static/ethercalc.js: $(ETHERCALC_FILES) SocialCalcModule.js
 	@-mkdir .git
 	@echo '// Auto-generated from "make depends"; ALL CHANGES HERE WILL BE LOST!' > $@
-	node node_modules/zappajs/node_modules/uglify-js/bin/uglifyjs $(SOCIALCALC_FILES) $(ETHERCALC_FILES) -c -m >> $@
+	node node_modules/zappajs/node_modules/uglify-js/bin/uglifyjs $(SOCIALCALC_FILES) $(ETHERCALC_FILES) $(UGLIFYJS_ARGS) >> $@
 
 .coffee.js:
 	coffee -c $<
