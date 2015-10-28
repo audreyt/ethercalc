@@ -21209,7 +21209,7 @@ SocialCalc.Popup.Types.ColorChooser.CloseOK = function(e) {
 // (c) Copyright 2008, 2009, 2010 Socialtext, Inc.
 // All Rights Reserved.
 //
-*/
+
 
 /*
 
@@ -21901,7 +21901,7 @@ SocialCalc.SpreadsheetControl = function(idPrefix) {
       '  <table cellspacing="0" cellpadding="0"><tr>'+
       '   <td style="vertical-align:top;padding-right:4px;width:160px;">'+
       '    <div style="%tbt.">%loc!Set Cells To Sort!</div>'+
-      '    <select id="%id.sortlist" size="1" onfocus="%s.CmdGotFocus(this);"><option selected>[select range]</option></select>'+
+      '    <select id="%id.sortlist" size="1" onfocus="%s.CmdGotFocus(this);"><option selected>[select range]</option><option value="all">Sort All</option></select>'+
       '    <input type="button" value="%loc!OK!" onclick="%s.DoCmd(this, \'ok-setsort\');" style="font-size:x-small;">'+
       '   </td>'+
       '   <td style="vertical-align:middle;padding-right:16px;width:100px;text-align:right;">'+
@@ -22833,8 +22833,32 @@ SocialCalc.DoCmd = function(obj, which) {
                }
             }
          else {
-            spreadsheet.sortrange = lele.options[lele.selectedIndex].value;
+            var val = lele.options[lele.selectedIndex].value;
+            if (val == 'all') {
+                var cells = spreadsheet.sheet.cells; 
+                var min_col = -1, max_col = -1, min_row = -1, max_row = -1;
+                for (var cell_id in cells) {
+                    cell = cells[cell_id];
+                    var cr = SocialCalc.coordToCr(cell_id);
+                    if (min_row == -1 || cr.row < min_row) {
+                        min_row = cr.row;
+                    }
+                    if (min_col == -1 || cr.col < min_col) {
+                        min_col = cr.col;
+                    }
+                    if (max_row == -1 || cr.row > max_row) {
+                        max_row = cr.row;
+                    }
+                    if (max_col == -1 || cr.col > max_col) {
+                        max_col = cr.col;
+                    }
+                } 
+                spreadsheet.sortrange = SocialCalc.crToCoord(min_col, min_row) + ":" + SocialCalc.crToCoord(max_col, max_row); 
+                lele.options[lele.selectedIndex].text += " (" + spreadsheet.sortrange + ")";
+            } else { 
+                spreadsheet.sortrange = lele.options[lele.selectedIndex].value;
             }
+         }
          ele = document.getElementById(spreadsheet.idPrefix+"sortbutton");
          ele.value = SocialCalc.LocalizeString("Sort ")+spreadsheet.sortrange;
          ele.style.visibility = "visible";
@@ -23994,11 +24018,14 @@ SocialCalc.SpreadsheetControlSortOnclick = function(s, t) {
    namelist.sort();
    nl.length = 0;
    nl.options[0] = new Option(SocialCalc.LocalizeString("[select range]"));
+   nl.options[1] = new Option(SocialCalc.LocalizeString("Sort All"), "all");
+   n_options = nl.options.length;
+
    for (i=0; i<namelist.length; i++) {
       name = namelist[i];
-      nl.options[i+1] = new Option(name, name);
+      nl.options[i+n_options] = new Option(name, name);
       if (name == s.sortrange) {
-         nl.options[i+1].selected = true;
+         nl.options[i+n_options].selected = true;
          }
       }
    if (s.sortrange == "") {
