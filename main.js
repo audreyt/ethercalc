@@ -108,7 +108,7 @@
     api = function(cb, cbMultiple){
       return function(){
         var room, this$ = this;
-        room = encodeURIComponent(this.params.room);
+        room = encodeURIComponent(this.params.room).replace(/%3A/g, ':');
         if (/^%3D/.exec(room) && cbMultiple) {
           room = room.slice(3);
           return SC._get(room, IO, function(arg$){
@@ -681,7 +681,7 @@
     });
     function fn$(){
       var room, cs, this$ = this;
-      room = encodeURIComponent(this.params.room);
+      room = encodeURIComponent(this.params.room).replace(/%3A/g, ':');
       cs = [];
       this.request.on('data', function(chunk){
         return cs = cs.concat(chunk);

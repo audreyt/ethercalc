@@ -20,6 +20,11 @@ ETHERCALC_FILES=\
 JS_FILES=\
 	app.js dotcloud.js player.js main.js sc.js db.js
 
+UGLIFYJS_ARGS = -c -m
+ifdef DEBUG
+  UGLIFYJS_ARGS += -b
+endif
+	
 all :: depends
 	env PATH="$$PATH:./node_modules/livescript/bin" lsc -c -o . src
 	node app.js $(ETHERCALC_ARGS) --cors

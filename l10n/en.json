@@ -565,5 +565,26 @@
   "s_fclass_test": "Test",
   "s_fclass_math": "Math",
   "s_fclass_text": "Text",
-  "lastone": null
+  "lastone": null,
+
+  "s_loc_plain": "Plain",
+  "s_loc_graph": "Graph",
+  "s_loc_cells_to_graph": "Cells to Graph",
+  "s_loc_set_cells_to_graph": "Set Cells To Graph",
+  "s_loc_graph_type": "Graph Type",
+  "s_loc_help": "Help",
+  "s_loc_horizontal_bar": "Horizontal Bar",
+  "s_loc_vertical_bar": "Vertical Bar",
+  "s_loc_pie_chart": "Pie Chart",
+  "s_loc_line_chart": "Line Chart",
+  "s_loc_scatter_chart": "Plot Points",
+  "s_loc_not_set": "Not Set",
+  "s_loc_unknown_range_name": "Unknown range name",
+  "s_loc_hide_help": "Hide Help",
+  "s_loc_x": "X ",
+  "s_loc_y": "Y ",
+  "s_loc_max": "Max ",
+  "s_loc_min": "Min ",
+  "s_loc_ok": " OK ",
+  "s_GraphRangeNotSelected": "Select a range of cells with numeric values to graph and use the OK button above to set the range as the graph range."
 }

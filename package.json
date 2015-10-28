@@ -1,7 +1,7 @@
 {
   "name": "ethercalc",
   "description": "Multi-User Spreadsheet Server",
-  "version": "0.20150822.0",
+  "version": "0.20151028.0",
   "homepage": "http://ethercalc.net/",
   "repository": {
     "type": "git",
@@ -16,6 +16,9 @@
     "livescript": "1.4.x",
     "csv-parse": "^0.0.6",
     "j": "0.4.x"
+  },
+  "optionalDependencies": {
+    "webworker-threads": "0.6.x"
   },
   "devDependencies": {
     "css-loader": "^0.9.0",

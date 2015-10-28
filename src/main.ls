@@ -72,7 +72,7 @@
 
   IO = @io
   api = (cb, cb-multiple) -> ->
-    room = encodeURIComponent @params.room
+    room = encodeURIComponent(@params.room).replace(/%3A/g \:)
     if room is /^%3D/ and cb-multiple
       room.=slice 3
       {snapshot} <~ SC._get room, IO
@@ -219,7 +219,7 @@
       return cb save
 
   for route in <[ /=:room.xlsx /_/=:room/xlsx ]> => @put "#route": ->
-    room = encodeURIComponent @params.room
+    room = encodeURIComponent(@params.room).replace(/%3A/g \:)
     cs = []; @request.on \data (chunk) ~> cs ++= chunk
     <~ @request.on \end
     buf = Buffer.concat cs
