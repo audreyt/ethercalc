@@ -263,7 +263,7 @@ function newId (len, radix) {
 function get_id(file, checked) {
 	var id = null;
 	if (checked) {
-		id = prompt("Enter a spreadsheet name for " + file + " (letters only)", "");
+		id = prompt("Enter a spreadsheet name for " + file + " (alphanumeric only)", "");
 		id = id.trim().toLowerCase().replace(/\s/g, "_");
 	}
 	if (id === null) {
