@@ -24,20 +24,20 @@ UGLIFYJS_ARGS = -c -m
 ifdef DEBUG
   UGLIFYJS_ARGS += -b
 endif
-	
+
 all :: depends
-	env PATH="$$PATH:./node_modules/livescript/bin" lsc -c -o . src
+	env PATH="$$PATH:./node_modules/livescript/bin" lsc -m linked --c -o . src
 	node app.js $(ETHERCALC_ARGS) --cors
 
 manifest ::
 	perl -pi -e 's/# [A-Z].*\n/# @{[`date`]}/m' manifest.appcache
 
 vm :: SocialCalcModule.js
-	env PATH="$$PATH:./node_modules/livescript/bin" lsc -c -o . src
+	env PATH="$$PATH:./node_modules/livescript/bin" lsc -m linked -c -o . src
 	node app.js --vm $(ETHERCALC_ARGS)
 
 expire :: SocialCalcModule.js
-	env PATH="$$PATH:./node_modules/livescript/bin" lsc -c -o . src
+	env PATH="$$PATH:./node_modules/livescript/bin" lsc -m linked -c -o . src
 	node app.js --expire 10 $(ETHERCALC_ARGS)
 
 ./node_modules/streamline/bin/_node :
@@ -54,7 +54,8 @@ SocialCalcModule.js :: $(SOCIALCALC_FILES) exports.js
 static/ethercalc.js: $(ETHERCALC_FILES) SocialCalcModule.js
 	@-mkdir .git
 	@echo '// Auto-generated from "make depends"; ALL CHANGES HERE WILL BE LOST!' > $@
-	node node_modules/zappajs/node_modules/uglify-js/bin/uglifyjs $(SOCIALCALC_FILES) $(ETHERCALC_FILES) $(UGLIFYJS_ARGS) >> $@
+	node node_modules/zappajs/node_modules/uglify-js/bin/uglifyjs $(SOCIALCALC_FILES) $(ETHERCALC_FILES) $(UGLIFYJS_ARGS) --source-map ethercalc.js.map --source-map-include-sources >> $@
+	mv ethercalc.js.map static
 
 .coffee.js:
 	coffee -c $<
