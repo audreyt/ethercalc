@@ -1554,8 +1554,11 @@ SocialCalc.ProcessEditorRowselectMouseDown = function(editor, result) {
 	coord1 = SocialCalc.crToCoord(1, result.row)
 	coord2 = SocialCalc.crToCoord(editor.colpositions.length,
 				      result.row)
+	coord3 = SocialCalc.crToCoord(editor.firstscrollingcol,
+				      result.row)
 	editor.RangeAnchor(coord1);
 	editor.RangeExtend(coord2);
+	editor.MoveECell(coord3);
     }
 }
 
@@ -1564,8 +1567,12 @@ SocialCalc.ProcessEditorColselectMouseDown = function(editor, result) {
 	coord1 = SocialCalc.crToCoord(result.col, 1)
 	coord2 = SocialCalc.crToCoord(result.col,
 				      editor.rowpositions.length)
+	coord3 = SocialCalc.crToCoord(result.col,
+				      editor.firstscrollingrow)
+
 	editor.RangeAnchor(coord1);
 	editor.RangeExtend(coord2);
+	editor.MoveECell(coord3);
     }
 }
 
