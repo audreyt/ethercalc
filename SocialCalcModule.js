@@ -8261,15 +8261,23 @@ SocialCalc.ProcessEditorMouseDown = function(e) {
    if (!result) return; // not on a cell or col header
    mouseinfo.editor = editor; // remember for later
 
-   if (result.rowheader) {
-      SocialCalc.ProcessEditorRowsizeMouseDown(e, ele, result);
-      return;
-      }
+    if (result.rowheader) {
+	if (result.rowselect)  {
+	    SocialCalc.ProcessEditorRowselectMouseDown(editor, result);
+	} else {
+	    SocialCalc.ProcessEditorRowsizeMouseDown(e, ele, result);
+	}
+	return;
+    }
 
-   if (result.colheader) {
-      SocialCalc.ProcessEditorColsizeMouseDown(e, ele, result);
-      return;
-      }
+    if (result.colheader) {
+	if (result.colselect)  {
+	    SocialCalc.ProcessEditorColselectMouseDown(editor, result);
+	} else {
+	    SocialCalc.ProcessEditorColsizeMouseDown(e, ele, result);
+	}
+	return;
+    }
 
    if (!result.coord) return; // not us
 
@@ -8620,6 +8628,25 @@ SocialCalc.FinishColRowSize = function() {
 
    }
 
+SocialCalc.ProcessEditorRowselectMouseDown = function(editor, result) {
+    if (result.rowselect) {
+	coord1 = SocialCalc.crToCoord(1, result.row)
+	coord2 = SocialCalc.crToCoord(editor.colpositions.length,
+				      result.row)
+	editor.RangeAnchor(coord1);
+	editor.RangeExtend(coord2);
+    }
+}
+
+SocialCalc.ProcessEditorColselectMouseDown = function(editor, result) {
+    if (result.colselect) {
+	coord1 = SocialCalc.crToCoord(result.col, 1)
+	coord2 = SocialCalc.crToCoord(result.col,
+				      editor.rowpositions.length)
+	editor.RangeAnchor(coord1);
+	editor.RangeExtend(coord2);
+    }
+}
 
 SocialCalc.ProcessEditorRowsizeMouseDown = function(e, ele, result) {
 
@@ -9322,6 +9349,7 @@ SocialCalc.GridMousePosition = function(editor, clientX, clientY) {
          result.rowheader = true;
          result.distance = editor.headposition.left - clientX;
          result.rowtoresize = false;
+         result.rowselect = false;
 
          // resize bar
          for (rowtoresize=1; rowtoresize<editor.rowpositions.length; rowtoresize++) {
@@ -9357,12 +9385,14 @@ SocialCalc.GridMousePosition = function(editor, clientX, clientY) {
            }
          }
          delete result.rowtoresize;
+         result.rowselect = true;
          return result;
          }
       else if (clientY < editor.headposition.top && clientY > editor.gridposition.top) { // > because of sizing row
          result.colheader = true;
          result.distance = editor.headposition.top - clientY;
          result.coltoresize = false;
+	 result.colselect = false;
 
          // resize bar
          for (coltoresize=1; coltoresize<editor.colpositions.length; coltoresize++) {
@@ -9395,6 +9425,7 @@ SocialCalc.GridMousePosition = function(editor, clientX, clientY) {
                }
             }
          delete result.coltoresize;
+         result.colselect = true;
          return result;
          }
       else if (clientX >= editor.verticaltablecontrol.controlborder) {
