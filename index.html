@@ -10,7 +10,7 @@
 if (!(window.location.hash.replace('#', ''))) {
     if (window.location.href.match(/\/([^_][^\/]*)$/)) {
         var SocialCalc = { _room: RegExp.$1 };
-        document.title = "EtherCalc: " + SocialCalc._room;
+        document.title = SocialCalc._room + " – EtherCalc";
     }
     else {
         window.location = './_start';
