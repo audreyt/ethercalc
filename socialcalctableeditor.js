@@ -1232,7 +1232,7 @@ SocialCalc.ProcessEditorMouseDown = function(e) {
 
     if (result.rowheader) {
 	if (result.rowselect)  {
-	    SocialCalc.ProcessEditorRowselectMouseDown(editor, result);
+	    SocialCalc.ProcessEditorRowselectMouseDown(e, ele, result);
 	} else {
 	    SocialCalc.ProcessEditorRowsizeMouseDown(e, ele, result);
 	}
@@ -1241,7 +1241,7 @@ SocialCalc.ProcessEditorMouseDown = function(e) {
 
     if (result.colheader) {
 	if (result.colselect)  {
-	    SocialCalc.ProcessEditorColselectMouseDown(editor, result);
+	    SocialCalc.ProcessEditorColselectMouseDown(e, ele, result);
 	} else {
 	    SocialCalc.ProcessEditorColsizeMouseDown(e, ele, result);
 	}
@@ -1534,31 +1534,105 @@ SocialCalc.FinishColRowSize = function() {
 
    }
 
-SocialCalc.ProcessEditorRowselectMouseDown = function(editor, result) {
-    if (result.rowselect) {
-	coord1 = SocialCalc.crToCoord(1, result.row)
-	coord2 = SocialCalc.crToCoord(editor.colpositions.length,
-				      result.row)
-	coord3 = SocialCalc.crToCoord(editor.firstscrollingcol,
-				      result.row)
-	editor.RangeAnchor(coord1);
-	editor.RangeExtend(coord2);
-	editor.MoveECell(coord3);
-    }
+SocialCalc.ProcessEditorRowselectMouseDown = function(e, ele, result) {
+    var event = e || window.event;
+    var mouseinfo = SocialCalc.EditorMouseInfo;
+    var editor = mouseinfo.editor;
+    coord1 = SocialCalc.crToCoord(1, result.row)
+    coord2 = SocialCalc.crToCoord(editor.colpositions.length,
+				  result.row)
+    coord3 = SocialCalc.crToCoord(editor.firstscrollingcol,
+				  result.row)
+    editor.RangeAnchor(coord1);
+    editor.RangeExtend(coord2);
+    editor.MoveECell(coord3);
+    SocialCalc.SetMouseMoveUp(SocialCalc.ProcessEditorRowselectMouseMove,
+			      SocialCalc.ProcessEditorRowselectMouseUp,
+			      editor.toplevel,
+			      event);
 }
 
-SocialCalc.ProcessEditorColselectMouseDown = function(editor, result) {
-    if (result.colselect) {
-	coord1 = SocialCalc.crToCoord(result.col, 1)
-	coord2 = SocialCalc.crToCoord(result.col,
-				      editor.rowpositions.length)
-	coord3 = SocialCalc.crToCoord(result.col,
-				      editor.firstscrollingrow)
+SocialCalc.ProcessEditorRowselectMouseMove = function(e) {
+    var event = e || window.event;
+    var mouseinfo = SocialCalc.EditorMouseInfo;
+    var editor = mouseinfo.editor;
+    if (!editor) return; // not us, ignore
 
-	editor.RangeAnchor(coord1);
-	editor.RangeExtend(coord2);
-	editor.MoveECell(coord3);
-    }
+    var pos = SocialCalc.GetElementPositionWithScroll(editor.toplevel);
+    var clientX = event.clientX - pos.left;
+    var clientY = event.clientY - pos.top;
+    result = SocialCalc.GridMousePosition(editor, clientX, clientY);
+    coord2 = SocialCalc.crToCoord(editor.colpositions.length,
+				  result.row)
+    coord3 = SocialCalc.crToCoord(editor.firstscrollingcol,
+				  result.row)
+    editor.RangeExtend(coord2);
+    editor.MoveECell(coord3);
+    return;
+}
+
+SocialCalc.ProcessEditorRowselectMouseUp = function(e) {
+    var event = e || window.event;
+    var mouseinfo = SocialCalc.EditorMouseInfo;
+    var editor = mouseinfo.editor;
+    if (!editor) return; // not us, ignore
+    SocialCalc.SetRemoveMouseMoveUp(SocialCalc.ProcessEditorRowselectMouseMove,
+				    SocialCalc.ProcessEditorRowselectMouseUp,
+				    editor.toplevel,
+				    e);
+    return;
+}
+
+SocialCalc.ProcessEditorColselectMouseDown = function(e, ele, result) {
+    var event = e || window.event;
+    var mouseinfo = SocialCalc.EditorMouseInfo;
+    var editor = mouseinfo.editor;
+
+    coord1 = SocialCalc.crToCoord(result.col, 1)
+    coord2 = SocialCalc.crToCoord(result.col,
+				  editor.rowpositions.length)
+    coord3 = SocialCalc.crToCoord(result.col,
+				  editor.firstscrollingrow)
+    
+    editor.RangeAnchor(coord1);
+    editor.RangeExtend(coord2);
+    editor.MoveECell(coord3);
+    SocialCalc.SetMouseMoveUp(SocialCalc.ProcessEditorColselectMouseMove,
+			      SocialCalc.ProcessEditorColselectMouseUp,
+			      editor.toplevel,
+			      event);
+
+}
+
+SocialCalc.ProcessEditorColselectMouseMove = function(e) {
+    var event = e || window.event;
+    var mouseinfo = SocialCalc.EditorMouseInfo;
+    var editor = mouseinfo.editor;
+    if (!editor) return; // not us, ignore
+
+    var pos = SocialCalc.GetElementPositionWithScroll(editor.toplevel);
+    var clientX = event.clientX - pos.left;
+    var clientY = event.clientY - pos.top;
+    result = SocialCalc.GridMousePosition(editor, clientX, clientY);
+    coord2 = SocialCalc.crToCoord(result.col,
+				  editor.rowpositions.length)
+    coord3 = SocialCalc.crToCoord(result.col,
+				  editor.firstscrollingrow)
+    editor.RangeExtend(coord2);
+    editor.MoveECell(coord3);
+    return;
+}
+
+SocialCalc.ProcessEditorColselectMouseUp = function(e) {
+    var event = e || window.event;
+    var mouseinfo = SocialCalc.EditorMouseInfo;
+    var editor = mouseinfo.editor;
+    if (!editor) return; // not us, ignore
+    SocialCalc.SetRemoveMouseMoveUp(SocialCalc.ProcessEditorColselectMouseMove,
+				    SocialCalc.ProcessEditorColselectMouseUp,
+				    editor.toplevel,
+				    e);
+    return;
 }
 
 SocialCalc.ProcessEditorRowsizeMouseDown = function(e, ele, result) {
