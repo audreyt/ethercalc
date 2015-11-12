@@ -460,3 +460,5 @@
     });
   };
 }).call(this);
+
+//# sourceMappingURL=player.js.map

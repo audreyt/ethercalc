@@ -4886,7 +4886,7 @@ SocialCalc.Formula.TestCriteria = function(value, type, criteria) {
          if (criteria == "*") {
             // "*" means cell contains 'anything'
             basestring = ".+";
-         else {
+         } else {
              // otherwise convert Excel syntax to regex syntax. * -> .*    ? -> .?    ~* -> \*    ~? -> \?
              basestring = criteria.replace(/(?:([^~])\?|^\?)/, "$1.?").replace("~?", "\\?").replace(/(?:([^~])\*|^\*)/, "$1.*").replace("~*", "\\*");
          }
