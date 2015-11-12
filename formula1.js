@@ -4880,11 +4880,15 @@ SocialCalc.Formula.TestCriteria = function(value, type, criteria) {
       basestring = criteria.substring(1);
       }
    else {
+      // check for '*' or '?' in search string - wildcard
       if (criteria.search(/([^~]\*|^\*)/) != -1 || criteria.search(/([^~]\?|^\?)/) != -1) {
          comparitor = "regex";
-         basestring = criteria.replace(/(?:([^~])\?|^\?)/, "$1.?").replace("~?", "\\?").replace(/(?:([^~])\*|^\*)/, "$1.*").replace("~*", "\\*");
-         if (basestring == ".*") {
+         if (criteria == "*") {
+            // "*" means cell contains 'anything'
             basestring = ".+";
+         else {
+             // otherwise convert Excel syntax to regex syntax. * -> .*    ? -> .?    ~* -> \*    ~? -> \?
+             basestring = criteria.replace(/(?:([^~])\?|^\?)/, "$1.?").replace("~?", "\\?").replace(/(?:([^~])\*|^\*)/, "$1.*").replace("~*", "\\*");
          }
       } else {
           comparitor = criteria.substring(0,2);
