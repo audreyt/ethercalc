@@ -19453,9 +19453,13 @@ SocialCalc.Formula.TestCriteria = function(value, type, criteria) {
             // "*" means cell contains 'anything'
             basestring = ".+";
          } else {
-             // otherwise convert Excel syntax to regex syntax. * -> .*    ? -> .?    ~* -> \*    ~? -> \?
-             basestring = criteria.replace(/(?:([^~])\?|^\?)/, "$1.?").replace("~?", "\\?").replace(/(?:([^~])\*|^\*)/, "$1.*").replace("~*", "\\*");
+             // convert Excel syntax to regex syntax. * -> .*    ? -> .?    ~* -> \*    ~? -> \?
+             // there are no negative lookbehinds in Javascript. Reverse the string and do negative lookaheads on ~? and ~*
+             basestring = criteria.split("").reverse().join("");
+             basestring = basestring.replace(/\?(?=[^~])|\?$/g, "?.").replace(/\?~/g, "?\\").replace(/\*(?=[^~])|\*$/g, "*.").replace(/\*~/, "*\\");
+             basestring = basestring.split("").reverse().join("");
          }
+         basestring = "^" + basestring + "$";
       } else {
           comparitor = criteria.substring(0,2);
           if (comparitor == "<=" || comparitor == "<>" || comparitor == ">=") {
@@ -19575,7 +19579,7 @@ SocialCalc.Formula.TestCriteria = function(value, type, criteria) {
             break;
 
          case "regex":
-            cond = value.search(basevalue.value) != -1;
+            cond = value.search(new RegExp(basevalue.value)) != -1;
             break;
          }
       }
