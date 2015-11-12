@@ -1,4 +1,5 @@
 //
+//
 /*
 // SocialCalc Spreadsheet Formula Library
 //
@@ -2676,7 +2677,6 @@ SocialCalc.Formula.CountifSumifFunctions = function(fname, operand, foperand, sh
    while (foperand.length) {
       value1 = operand_value_and_type(sheet, foperand);
       value2 = operand_value_and_type(sheet, f2operand);
-
       if (!scf.TestCriteria(value1.value, value1.type, criteria.value)) {
          continue;
          }
@@ -4880,15 +4880,26 @@ SocialCalc.Formula.TestCriteria = function(value, type, criteria) {
       basestring = criteria.substring(1);
       }
    else {
-      comparitor = criteria.substring(0,2);
-      if (comparitor == "<=" || comparitor == "<>" || comparitor == ">=") {
-         basestring = criteria.substring(2);
+      // check for '*' or '?' in search string - wildcard
+      if (criteria.search(/([^~]\*|^\*)/) != -1 || criteria.search(/([^~]\?|^\?)/) != -1) {
+         comparitor = "regex";
+         if (criteria == "*") {
+            // "*" means cell contains 'anything'
+            basestring = ".+";
+         else {
+             // otherwise convert Excel syntax to regex syntax. * -> .*    ? -> .?    ~* -> \*    ~? -> \?
+             basestring = criteria.replace(/(?:([^~])\?|^\?)/, "$1.?").replace("~?", "\\?").replace(/(?:([^~])\*|^\*)/, "$1.*").replace("~*", "\\*");
          }
-      else {
-         comparitor = "none";
-         basestring = criteria;
-         }
+      } else {
+          comparitor = criteria.substring(0,2);
+          if (comparitor == "<=" || comparitor == "<>" || comparitor == ">=") {
+             basestring = criteria.substring(2);
+          } else {
+             comparitor = "none";
+             basestring = criteria;
+          }
       }
+   }
 
    basevalue = SocialCalc.DetermineValueType(basestring); // get type of value being compared
    if (!basevalue.type) { // no criteria base value given
@@ -4995,6 +5006,10 @@ SocialCalc.Formula.TestCriteria = function(value, type, criteria) {
 
          case "<>":
             cond = value != basevalue.value;
+            break;
+
+         case "regex":
+            cond = value.search(basevalue.value) != -1;
             break;
          }
       }
