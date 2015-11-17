@@ -115,9 +115,18 @@
             var snapshot;
             snapshot = arg$.snapshot;
             if (!snapshot) {
-              this$.response.type(Text);
-              this$.response.send(404, '');
-              return;
+              DB.get("snapshot-" + room + ".1", function(_, defaultSnapshot){
+                var ref$, type, content;
+                if (!defaultSnapshot) {
+                  this$.response.type(Text);
+                  this$.response.send(404, '');
+                  return;
+                }
+                ref$ = cbMultiple.call(this$.params, ['Sheet1'], [defaultSnapshot]), type = ref$[0], content = ref$[1];
+                this$.response.type(type);
+                this$.response.set('Content-Disposition', "attachment; filename=\"" + room + ".xlsx\"");
+                this$.response.send(200, content);
+              });
             }
             return SC[room].exportCSV(function(csv){
               return csvParse(csv, {
@@ -718,3 +727,5 @@
     }
   };
 }).call(this);
+
+//# sourceMappingURL=main.js.map

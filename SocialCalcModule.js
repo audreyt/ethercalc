@@ -7522,6 +7522,18 @@ SocialCalc.TableEditor.prototype.ScrollTableDownOneRow = function() {return Soci
 SocialCalc.TableEditor.prototype.ScrollTableLeftOneCol = function() {return SocialCalc.ScrollTableLeftOneCol(this);};
 SocialCalc.TableEditor.prototype.ScrollTableRightOneCol = function() {return SocialCalc.ScrollTableRightOneCol(this);};
 
+SocialCalc.TableEditor.prototype.StopPropagation = function() {
+    return SocialCalc.StopPropagation(this);
+};
+
+SocialCalc.TableEditor.prototype.SetMouseMoveUp = function() {
+    return SocialCalc.SetMouseMoveUp(this);
+};
+
+SocialCalc.TableEditor.prototype.RemoveMouseMoveUp = function() {
+    return SocialCalc.RemoveMouseMoveUp(this);
+};
+
 // Functions:
 
 SocialCalc.CreateTableEditor = function(editor, width, height) {
@@ -8229,6 +8241,42 @@ SocialCalc.EditorMouseUnregister = function(editor) {
 
    }
 
+SocialCalc.StopPropagation = function(event) {
+    if (event.stopPropagation) event.stopPropagation(); // DOM Level 2
+    else event.cancelBubble = true; // IE 5+
+    if (event.preventDefault) event.preventDefault(); // DOM Level 2
+    else event.returnValue = false; // IE 5+
+}
+
+SocialCalc.SetMouseMoveUp = function(move, up, element, event) {
+       // Event code from JavaScript, Flanagan, 5th Edition, pg. 422
+   if (document.addEventListener) { // DOM Level 2 -- Firefox, et al
+      document.addEventListener("mousemove", move, true); // capture everywhere
+      document.addEventListener("mouseup", up, true); // capture everywhere
+      }
+   else if (element.attachEvent) { // IE 5+
+      element.setCapture();
+      element.attachEvent("onmousemove", move);
+      element.attachEvent("onmouseup", up);
+      element.attachEvent("onlosecapture", up);
+   }
+    SocialCalc.StopPropagation(event);
+}
+
+SocialCalc.RemoveMouseMoveUp = function(move, up, element, event) {
+    SocialCalc.StopPropagation(event);
+    if (document.removeEventListener) { // DOM Level 2
+	document.removeEventListener("mousemove", move, true);
+	document.removeEventListener("mouseup", up, true);
+    }
+    else if (element.detachEvent) { // IE
+	element.detachEvent("onlosecapture", up);
+	element.detachEvent("onmouseup", up);
+	element.detachEvent("onmousemove", move);
+	element.releaseCapture();
+    }
+}
+
 SocialCalc.ProcessEditorMouseDown = function(e) {
 
    var editor, result, coord, textarea, wval, range;
@@ -8261,15 +8309,23 @@ SocialCalc.ProcessEditorMouseDown = function(e) {
    if (!result) return; // not on a cell or col header
    mouseinfo.editor = editor; // remember for later
 
-   if (result.rowheader) {
-      SocialCalc.ProcessEditorRowsizeMouseDown(e, ele, result);
-      return;
-      }
+    if (result.rowheader) {
+	if (result.rowselect)  {
+	    SocialCalc.ProcessEditorRowselectMouseDown(e, ele, result);
+	} else {
+	    SocialCalc.ProcessEditorRowsizeMouseDown(e, ele, result);
+	}
+	return;
+    }
 
-   if (result.colheader) {
-      SocialCalc.ProcessEditorColsizeMouseDown(e, ele, result);
-      return;
-      }
+    if (result.colheader) {
+	if (result.colselect)  {
+	    SocialCalc.ProcessEditorColselectMouseDown(e, ele, result);
+	} else {
+	    SocialCalc.ProcessEditorColsizeMouseDown(e, ele, result);
+	}
+	return;
+    }
 
    if (!result.coord) return; // not us
 
@@ -8294,23 +8350,10 @@ SocialCalc.ProcessEditorMouseDown = function(e) {
 
    SocialCalc.KeyboardSetFocus(editor);
    if (editor.state!="start" && editor.inputBox) editor.inputBox.element.focus();
-
-   // Event code from JavaScript, Flanagan, 5th Edition, pg. 422
-   if (document.addEventListener) { // DOM Level 2 -- Firefox, et al
-      document.addEventListener("mousemove", SocialCalc.ProcessEditorMouseMove, true); // capture everywhere
-      document.addEventListener("mouseup", SocialCalc.ProcessEditorMouseUp, true); // capture everywhere
-      }
-   else if (ele.attachEvent) { // IE 5+
-      ele.setCapture();
-      ele.attachEvent("onmousemove", SocialCalc.ProcessEditorMouseMove);
-      ele.attachEvent("onmouseup", SocialCalc.ProcessEditorMouseUp);
-      ele.attachEvent("onlosecapture", SocialCalc.ProcessEditorMouseUp);
-      }
-   if (event.stopPropagation) event.stopPropagation(); // DOM Level 2
-   else event.cancelBubble = true; // IE 5+
-   if (event.preventDefault) event.preventDefault(); // DOM Level 2
-   else event.returnValue = false; // IE 5+
-
+    SocialCalc.SetMouseMoveUp(SocialCalc.ProcessEditorMouseMove,
+			      SocialCalc.ProcessEditorMouseUp,
+			      ele,
+			      event);
    return;
 
    }
@@ -8399,14 +8442,8 @@ SocialCalc.ProcessEditorMouseMove = function(e) {
    mouseinfo.mouselastcoord = result.coord;
 
    editor.EditorMouseRange(result.coord);
-
-   if (event.stopPropagation) event.stopPropagation(); // DOM Level 2
-   else event.cancelBubble = true; // IE 5+
-   if (event.preventDefault) event.preventDefault(); // DOM Level 2
-   else event.returnValue = false; // IE 5+
-
+   SocialCalc.StopPropagation(event); 
    return;
-
    }
 
 
@@ -8444,25 +8481,11 @@ SocialCalc.ProcessEditorMouseUp = function(e) {
       }
 
    editor.EditorMouseRange(result.coord);
-
-   if (event.stopPropagation) event.stopPropagation(); // DOM Level 2
-   else event.cancelBubble = true; // IE 5+
-   if (event.preventDefault) event.preventDefault(); // DOM Level 2
-   else event.returnValue = false; // IE 5+
-
-   if (document.removeEventListener) { // DOM Level 2
-      document.removeEventListener("mousemove", SocialCalc.ProcessEditorMouseMove, true);
-      document.removeEventListener("mouseup", SocialCalc.ProcessEditorMouseUp, true);
-      }
-   else if (element.detachEvent) { // IE
-      element.detachEvent("onlosecapture", SocialCalc.ProcessEditorMouseUp);
-      element.detachEvent("onmouseup", SocialCalc.ProcessEditorMouseUp);
-      element.detachEvent("onmousemove", SocialCalc.ProcessEditorMouseMove);
-      element.releaseCapture();
-      }
-
    mouseinfo.editor = null;
-
+   SocialCalc.RemoveMouseMoveUp(SocialCalc.ProcessEditorMouseMove,
+				  SocialCalc.ProcessEditorMouseUp,
+				  element,
+				  event);
    return false;
 
    }
@@ -8498,23 +8521,10 @@ SocialCalc.ProcessEditorColsizeMouseDown = function(e, ele, result) {
 
       editor.toplevel.appendChild(sizedisplay);
       }
-
-   // Event code from JavaScript, Flanagan, 5th Edition, pg. 422
-   if (document.addEventListener) { // DOM Level 2 -- Firefox, et al
-      document.addEventListener("mousemove", SocialCalc.ProcessEditorColsizeMouseMove, true); // capture everywhere
-      document.addEventListener("mouseup", SocialCalc.ProcessEditorColsizeMouseUp, true); // capture everywhere
-      }
-   else if (editor.toplevel.attachEvent) { // IE 5+
-      editor.toplevel.setCapture();
-      editor.toplevel.attachEvent("onmousemove", SocialCalc.ProcessEditorColsizeMouseMove);
-      editor.toplevel.attachEvent("onmouseup", SocialCalc.ProcessEditorColsizeMouseUp);
-      editor.toplevel.attachEvent("onlosecapture", SocialCalc.ProcessEditorColsizeMouseUp);
-      }
-   if (event.stopPropagation) event.stopPropagation(); // DOM Level 2
-   else event.cancelBubble = true; // IE 5+
-   if (event.preventDefault) event.preventDefault(); // DOM Level 2
-   else event.returnValue = false; // IE 5+
-
+    SocialCalc.SetMouseMoveUp( SocialCalc.ProcessEditorColsizeMouseMove,
+			       SocialCalc.ProcessEditorColsizeMouseUp,
+			       editor.toplevel,
+			       event);
    return;
    }
 
@@ -8542,14 +8552,8 @@ SocialCalc.ProcessEditorColsizeMouseMove = function(e) {
           newsize + '</div></td></tr></table>';
       SocialCalc.setStyles(sizedisplay.firstChild.lastChild.firstChild.childNodes[0], "filter:alpha(opacity=85);opacity:.85;"); // so no warning msg with Firefox about filter
       }
-
-   if (event.stopPropagation) event.stopPropagation(); // DOM Level 2
-   else event.cancelBubble = true; // IE 5+
-   if (event.preventDefault) event.preventDefault(); // DOM Level 2
-   else event.returnValue = false; // IE 5+
-
+   SocialCalc.StopPropagation(event);
    return;
-
    }
 
 
@@ -8562,22 +8566,11 @@ SocialCalc.ProcessEditorColsizeMouseUp = function(e) {
    element = mouseinfo.element;
    var pos = SocialCalc.GetElementPositionWithScroll(editor.toplevel);
    var clientX = event.clientX - pos.left;
-
-   if (event.stopPropagation) event.stopPropagation(); // DOM Level 2
-   else event.cancelBubble = true; // IE 5+
-   if (event.preventDefault) event.preventDefault(); // DOM Level 2
-   else event.returnValue = false; // IE 5+
-
-   if (document.removeEventListener) { // DOM Level 2
-      document.removeEventListener("mousemove", SocialCalc.ProcessEditorColsizeMouseMove, true);
-      document.removeEventListener("mouseup", SocialCalc.ProcessEditorColsizeMouseUp, true);
-      }
-   else if (editor.toplevel.detachEvent) { // IE
-      editor.toplevel.detachEvent("onlosecapture", SocialCalc.ProcessEditorColsizeMouseUp);
-      editor.toplevel.detachEvent("onmouseup", SocialCalc.ProcessEditorColsizeMouseUp);
-      editor.toplevel.detachEvent("onmousemove", SocialCalc.ProcessEditorColsizeMouseMove);
-      editor.toplevel.releaseCapture();
-      }
+   SocialCalc.RemoveMouseMoveUp(
+       SocialCalc.ProcessEditorColsizeMouseMove,
+       SocialCalc.ProcessEditorColsizeMouseUp, 
+       editor.toplevel,
+       event);
 
    if (mouseinfo.mousecoltounhide) {
       editor.EditorScheduleSheetCommands("set "+SocialCalc.rcColname(mouseinfo.mousecoltounhide)+" hide", true, false);
@@ -8620,6 +8613,106 @@ SocialCalc.FinishColRowSize = function() {
 
    }
 
+SocialCalc.ProcessEditorRowselectMouseDown = function(e, ele, result) {
+    var event = e || window.event;
+    var mouseinfo = SocialCalc.EditorMouseInfo;
+    var editor = mouseinfo.editor;
+    coord1 = SocialCalc.crToCoord(1, result.row)
+    coord2 = SocialCalc.crToCoord(editor.colpositions.length,
+				  result.row)
+    coord3 = SocialCalc.crToCoord(editor.firstscrollingcol,
+				  result.row)
+    editor.RangeAnchor(coord1);
+    editor.RangeExtend(coord2);
+    editor.MoveECell(coord3);
+    SocialCalc.SetMouseMoveUp(SocialCalc.ProcessEditorRowselectMouseMove,
+			      SocialCalc.ProcessEditorRowselectMouseUp,
+			      editor.toplevel,
+			      event);
+}
+
+SocialCalc.ProcessEditorRowselectMouseMove = function(e) {
+    var event = e || window.event;
+    var mouseinfo = SocialCalc.EditorMouseInfo;
+    var editor = mouseinfo.editor;
+    if (!editor) return; // not us, ignore
+
+    var pos = SocialCalc.GetElementPositionWithScroll(editor.toplevel);
+    var clientX = event.clientX - pos.left;
+    var clientY = event.clientY - pos.top;
+    result = SocialCalc.GridMousePosition(editor, clientX, clientY);
+    coord2 = SocialCalc.crToCoord(editor.colpositions.length,
+				  result.row)
+    coord3 = SocialCalc.crToCoord(editor.firstscrollingcol,
+				  result.row)
+    editor.RangeExtend(coord2);
+    editor.MoveECell(coord3);
+    return;
+}
+
+SocialCalc.ProcessEditorRowselectMouseUp = function(e) {
+    var event = e || window.event;
+    var mouseinfo = SocialCalc.EditorMouseInfo;
+    var editor = mouseinfo.editor;
+    if (!editor) return; // not us, ignore
+    SocialCalc.RemoveMouseMoveUp(SocialCalc.ProcessEditorRowselectMouseMove,
+				 SocialCalc.ProcessEditorRowselectMouseUp,
+				 editor.toplevel,
+				 e);
+    return;
+}
+
+SocialCalc.ProcessEditorColselectMouseDown = function(e, ele, result) {
+    var event = e || window.event;
+    var mouseinfo = SocialCalc.EditorMouseInfo;
+    var editor = mouseinfo.editor;
+
+    coord1 = SocialCalc.crToCoord(result.col, 1)
+    coord2 = SocialCalc.crToCoord(result.col,
+				  editor.rowpositions.length)
+    coord3 = SocialCalc.crToCoord(result.col,
+				  editor.firstscrollingrow)
+    
+    editor.RangeAnchor(coord1);
+    editor.RangeExtend(coord2);
+    editor.MoveECell(coord3);
+    SocialCalc.SetMouseMoveUp(SocialCalc.ProcessEditorColselectMouseMove,
+			      SocialCalc.ProcessEditorColselectMouseUp,
+			      editor.toplevel,
+			      event);
+
+}
+
+SocialCalc.ProcessEditorColselectMouseMove = function(e) {
+    var event = e || window.event;
+    var mouseinfo = SocialCalc.EditorMouseInfo;
+    var editor = mouseinfo.editor;
+    if (!editor) return; // not us, ignore
+
+    var pos = SocialCalc.GetElementPositionWithScroll(editor.toplevel);
+    var clientX = event.clientX - pos.left;
+    var clientY = event.clientY - pos.top;
+    result = SocialCalc.GridMousePosition(editor, clientX, clientY);
+    coord2 = SocialCalc.crToCoord(result.col,
+				  editor.rowpositions.length)
+    coord3 = SocialCalc.crToCoord(result.col,
+				  editor.firstscrollingrow)
+    editor.RangeExtend(coord2);
+    editor.MoveECell(coord3);
+    return;
+}
+
+SocialCalc.ProcessEditorColselectMouseUp = function(e) {
+    var event = e || window.event;
+    var mouseinfo = SocialCalc.EditorMouseInfo;
+    var editor = mouseinfo.editor;
+    if (!editor) return; // not us, ignore
+    SocialCalc.RemoveMouseMoveUp(SocialCalc.ProcessEditorColselectMouseMove,
+				 SocialCalc.ProcessEditorColselectMouseUp,
+				 editor.toplevel,
+				 e);
+    return;
+}
 
 SocialCalc.ProcessEditorRowsizeMouseDown = function(e, ele, result) {
 
@@ -8652,24 +8745,11 @@ SocialCalc.ProcessEditorRowsizeMouseDown = function(e, ele, result) {
 
     editor.toplevel.appendChild(sizedisplay);
   }
-
-   // Event code from JavaScript, Flanagan, 5th Edition, pg. 422
-   if (document.addEventListener) { // DOM Level 2 -- Firefox, et al
-      document.addEventListener("mousemove", SocialCalc.ProcessEditorRowsizeMouseMove, true); // capture everywhere
-      document.addEventListener("mouseup", SocialCalc.ProcessEditorRowsizeMouseUp, true); // capture everywhere
-      }
-   else if (editor.toplevel.attachEvent) { // IE 5+
-      editor.toplevel.setCapture();
-      editor.toplevel.attachEvent("onmousemove", SocialCalc.ProcessEditorRowsizeMouseMove);
-      editor.toplevel.attachEvent("onmouseup", SocialCalc.ProcessEditorRowsizeMouseUp);
-      editor.toplevel.attachEvent("onlosecapture", SocialCalc.ProcessEditorRowsizeMouseUp);
-      }
-   if (event.stopPropagation) event.stopPropagation(); // DOM Level 2
-   else event.cancelBubble = true; // IE 5+
-   if (event.preventDefault) event.preventDefault(); // DOM Level 2
-   else event.returnValue = false; // IE 5+
-
-   return;
+    SocialCalc.SetMouseMoveUp(SocialCalc.ProcessEditorRowsizeMouseMove,
+			      SocialCalc.ProcessEditorRowsizeMouseUp,
+			      editor.toplevel,
+			      event);
+    return;
    }
 
 
@@ -8695,11 +8775,7 @@ SocialCalc.ProcessEditorRowsizeMouseMove = function(e) {
     SocialCalc.setStyles(sizedisplay.firstChild.lastChild.firstChild.childNodes[0], "filter:alpha(opacity=85);opacity:.5;"); // so no warning msg with Firefox about filter
   }
 
-   if (event.stopPropagation) event.stopPropagation(); // DOM Level 2
-   else event.cancelBubble = true; // IE 5+
-   if (event.preventDefault) event.preventDefault(); // DOM Level 2
-   else event.returnValue = false; // IE 5+
-
+   SocialCalc.StopPropagation(event);
    return;
 
    }
@@ -8714,23 +8790,11 @@ SocialCalc.ProcessEditorRowsizeMouseUp = function(e) {
    element = mouseinfo.element;
    var pos = SocialCalc.GetSpreadsheetControlObject().spreadsheetDiv.firstChild.offsetHeight;
    var clientY = event.clientY - pos;
-
-   if (event.stopPropagation) event.stopPropagation(); // DOM Level 2
-   else event.cancelBubble = true; // IE 5+
-   if (event.preventDefault) event.preventDefault(); // DOM Level 2
-   else event.returnValue = false; // IE 5+
-
-   if (document.removeEventListener) { // DOM Level 2
-      document.removeEventListener("mousemove", SocialCalc.ProcessEditorRowsizeMouseMove, true);
-      document.removeEventListener("mouseup", SocialCalc.ProcessEditorRowsizeMouseUp, true);
-      }
-   else if (editor.toplevel.detachEvent) { // IE
-      editor.toplevel.detachEvent("onlosecapture", SocialCalc.ProcessEditorRowsizeMouseUp);
-      editor.toplevel.detachEvent("onmouseup", SocialCalc.ProcessEditorRowsizeMouseUp);
-      editor.toplevel.detachEvent("onmousemove", SocialCalc.ProcessEditorRowsizeMouseMove);
-      editor.toplevel.releaseCapture();
-      }
-
+   SocialCalc.RemoveMouseMoveUp(
+       SocialCalc.ProcessEditorRowsizeMouseMove,
+       SocialCalc.ProcessEditorRowsizeMouseUp,
+       editor.toplevel,
+       event);
    if (mouseinfo.mouserowtounhide) {
       editor.EditorScheduleSheetCommands("set "+mouseinfo.mouserowtounhide+" hide", true, false);
       }
@@ -8936,12 +9000,7 @@ SocialCalc.ProcessEditorDblClick = function(e) {
       default:
          break;
       }
-
-   if (event.stopPropagation) event.stopPropagation(); // DOM Level 2
-   else event.cancelBubble = true; // IE 5+
-   if (event.preventDefault) event.preventDefault(); // DOM Level 2
-   else event.returnValue = false; // IE 5+
-
+   SocialCalc.StopPropagation(event);
    return;
 
    }
@@ -9322,6 +9381,7 @@ SocialCalc.GridMousePosition = function(editor, clientX, clientY) {
          result.rowheader = true;
          result.distance = editor.headposition.left - clientX;
          result.rowtoresize = false;
+         result.rowselect = false;
 
          // resize bar
          for (rowtoresize=1; rowtoresize<editor.rowpositions.length; rowtoresize++) {
@@ -9357,12 +9417,14 @@ SocialCalc.GridMousePosition = function(editor, clientX, clientY) {
            }
          }
          delete result.rowtoresize;
+         result.rowselect = true;
          return result;
          }
       else if (clientY < editor.headposition.top && clientY > editor.gridposition.top) { // > because of sizing row
          result.colheader = true;
          result.distance = editor.headposition.top - clientY;
          result.coltoresize = false;
+	 result.colselect = false;
 
          // resize bar
          for (coltoresize=1; coltoresize<editor.colpositions.length; coltoresize++) {
@@ -9395,6 +9457,7 @@ SocialCalc.GridMousePosition = function(editor, clientX, clientY) {
                }
             }
          delete result.coltoresize;
+         result.colselect = true;
          return result;
          }
       else if (clientX >= editor.verticaltablecontrol.controlborder) {
@@ -11421,12 +11484,8 @@ SocialCalc.CellHandlesMouseDown = function(e) {
       cellhandles.draghandle.attachEvent("onmousemove", SocialCalc.CellHandlesMouseMove);
       cellhandles.draghandle.attachEvent("onmouseup", SocialCalc.CellHandlesMouseUp);
       cellhandles.draghandle.attachEvent("onlosecapture", SocialCalc.CellHandlesMouseUp);
-      }
-   if (event.stopPropagation) event.stopPropagation(); // DOM Level 2
-   else event.cancelBubble = true; // IE 5+
-   if (event.preventDefault) event.preventDefault(); // DOM Level 2
-   else event.returnValue = false; // IE 5+
-
+     }
+   SocialCalc.StopPropagation(event);
    return;
 
    }
@@ -11571,14 +11630,8 @@ SocialCalc.CellHandlesMouseMove = function(e) {
    cellhandles.fillinghandle.style.display = "block";
 
    mouseinfo.mouselastcoord = result.coord;
-
-   if (event.stopPropagation) event.stopPropagation(); // DOM Level 2
-   else event.cancelBubble = true; // IE 5+
-   if (event.preventDefault) event.preventDefault(); // DOM Level 2
-   else event.returnValue = false; // IE 5+
-
+   SocialCalc.StopPropagation(event);
    return;
-
    }
 
 SocialCalc.CellHandlesDragAutoRepeat = function(coord, direction) {
@@ -11794,27 +11847,12 @@ SocialCalc.CellHandlesMouseUp = function(e) {
          break;
 
       }
-
-   if (event.stopPropagation) event.stopPropagation(); // DOM Level 2
-   else event.cancelBubble = true; // IE 5+
-   if (event.preventDefault) event.preventDefault(); // DOM Level 2
-   else event.returnValue = false; // IE 5+
-
-   if (document.removeEventListener) { // DOM Level 2
-      document.removeEventListener("mousemove", SocialCalc.CellHandlesMouseMove, true);
-      document.removeEventListener("mouseup", SocialCalc.CellHandlesMouseUp, true);
-      }
-   else if (cellhandles.draghandle.detachEvent) { // IE
-      cellhandles.draghandle.detachEvent("onlosecapture", SocialCalc.CellHandlesMouseUp);
-      cellhandles.draghandle.detachEvent("onmouseup", SocialCalc.CellHandlesMouseUp);
-      cellhandles.draghandle.detachEvent("onmousemove", SocialCalc.CellHandlesMouseMove);
-      cellhandles.draghandle.releaseCapture();
-      }
-
+    SocialCalc.RemoveMouseMoveUp(SocialCalc.CellHandlesMouseMove,
+				    SocialCalc.CellHandlesMouseUp,
+				    cellhandles.draghandle,
+				    event);
    mouseinfo.editor = null;
-
    return false;
-
    }
 
 // *************************************
@@ -12616,23 +12654,10 @@ SocialCalc.DragMouseDown = function(event) {
    draginfo.offsetY = 0;
 
    dobj.element.style.zIndex = "100";
-
-   // Event code from JavaScript, Flanagan, 5th Edition, pg. 422
-   if (document.addEventListener) { // DOM Level 2 -- Firefox, et al
-      document.addEventListener("mousemove", SocialCalc.DragMouseMove, true); // capture everywhere
-      document.addEventListener("mouseup", SocialCalc.DragMouseUp, true);
-      }
-   else if (dobj.element.attachEvent) { // IE 5+
-      dobj.element.setCapture();
-      dobj.element.attachEvent("onmousemove", SocialCalc.DragMouseMove);
-      dobj.element.attachEvent("onmouseup", SocialCalc.DragMouseUp);
-      dobj.element.attachEvent("onlosecapture", SocialCalc.DragMouseUp);
-      }
-   if (e.stopPropagation) e.stopPropagation(); // DOM Level 2
-   else e.cancelBubble = true; // IE 5+
-   if (e.preventDefault) e.preventDefault(); // DOM Level 2
-   else e.returnValue = false; // IE 5+
-
+   SocialCalc.SetMouseMoveUp(SocialCalc.DragMouseMove,
+			     SocialCalc.DragMouseUp,
+			     dobj.element,
+			     e);
    if (dobj && dobj.functionobj && dobj.functionobj.MouseDown) dobj.functionobj.MouseDown(e, draginfo, dobj);
 
    return false;
@@ -12652,14 +12677,9 @@ SocialCalc.DragMouseMove = function(event) {
 
    draginfo.clientX = e.clientX - draginfo.relativeOffset.left;
    draginfo.clientY = e.clientY - draginfo.relativeOffset.top;
-
-   if (e.stopPropagation) e.stopPropagation(); // DOM Level 2
-   else e.cancelBubble = true; // IE 5+
-
+   SocialCalc.StopPropagation(e);
    if (dobj && dobj.functionobj && dobj.functionobj.MouseMove) dobj.functionobj.MouseMove(e, draginfo, dobj);
-
    return false;
-
    }
 
 //
@@ -12679,28 +12699,11 @@ SocialCalc.DragMouseUp = function(event) {
    dobj.element.style.zIndex = draginfo.startZ;
 
    if (dobj && dobj.functionobj && dobj.functionobj.MouseUp) dobj.functionobj.MouseUp(e, draginfo, dobj);
-
-   if (e.stopPropagation) e.stopPropagation(); // DOM Level 2
-   else e.cancelBubble = true; // IE 5+
-
-   if (document.removeEventListener) { // DOM Level 2
-      document.removeEventListener("mousemove", SocialCalc.DragMouseMove, true);
-      document.removeEventListener("mouseup", SocialCalc.DragMouseUp, true);
-      // Note: In old (1.5?) versions of Firefox, this causes the browser to skip the MouseUp for
-      // the button code. https://bugzilla.mozilla.org/show_bug.cgi?id=174320
-      // Firefox 1.5 is <1% share (http://marketshare.hitslink.com/report.aspx?qprid=7)
-      }
-   else if (dobj.element.detachEvent) { // IE
-      dobj.element.detachEvent("onlosecapture", SocialCalc.DragMouseUp);
-      dobj.element.detachEvent("onmouseup", SocialCalc.DragMouseUp);
-      dobj.element.detachEvent("onmousemove", SocialCalc.DragMouseMove);
-      dobj.element.releaseCapture();
-      }
-
+   SocialCalc.RemoveMouseMoveUp(SocialCalc.DragMouseMove,
+				SocialCalc.DragMouseUp,
+				dobj.element, e);
    draginfo.draggingElement = null;
-
    return false;
-
    }
 
 //
@@ -13001,7 +13004,6 @@ SocialCalc.ButtonRegister = function(editor, element, paramobj, functionobj) {
       }
 
    return;
-
    }
 
 //
@@ -13109,11 +13111,7 @@ SocialCalc.ButtonMouseDown = function(event) {
       bobj.element.attachEvent("onmouseup", SocialCalc.ButtonMouseUp);
       bobj.element.attachEvent("onlosecapture", SocialCalc.ButtonMouseUp);
       }
-   if (e.stopPropagation) e.stopPropagation(); // DOM Level 2
-   else e.cancelBubble = true; // IE 5+
-   if (e.preventDefault) e.preventDefault(); // DOM Level 2
-   else e.returnValue = false; // IE 5+
-
+   SocialCalc.StopPropagation(e);
    buttoninfo.relativeOffset = SocialCalc.GetElementPositionWithScroll(bobj.editor.toplevel);
    buttoninfo.clientX = e.clientX - buttoninfo.relativeOffset.left;
    buttoninfo.clientY = e.clientY - buttoninfo.relativeOffset.top;
@@ -13145,12 +13143,7 @@ SocialCalc.ButtonMouseUp = function(event) {
       }
 
    if (!buttoninfo.buttonDown) return; // already did this (e.g., in IE, releaseCapture fires losecapture)
-
-   if (e.stopPropagation) e.stopPropagation(); // DOM Level 2
-   else e.cancelBubble = true; // IE 5+
-   if (e.preventDefault) e.preventDefault(); // DOM Level 2
-   else e.returnValue = false; // IE 5+
-
+   SocialCalc.StopPropagation(e);
    if (document.removeEventListener) { // DOM Level 2
       document.removeEventListener("mouseup", SocialCalc.ButtonMouseUp, true);
       }
@@ -13535,13 +13528,9 @@ SocialCalc.ProcessKeyPress = function(e) {
 //
 
 SocialCalc.ProcessKey = function (ch, e) {
-
    var ft = SocialCalc.Keyboard.focusTable;
-
    if (!ft) return true; // we're not handling it -- let browser do default
-
    return ft.EditorProcessKey(ch, e);
-
    }
 
 
@@ -14575,6 +14564,7 @@ SocialCalc.intFunc = function(n) {
       }
    }
 
+//
 //
 /*
 // SocialCalc Spreadsheet Formula Library
@@ -17253,7 +17243,6 @@ SocialCalc.Formula.CountifSumifFunctions = function(fname, operand, foperand, sh
    while (foperand.length) {
       value1 = operand_value_and_type(sheet, foperand);
       value2 = operand_value_and_type(sheet, f2operand);
-
       if (!scf.TestCriteria(value1.value, value1.type, criteria.value)) {
          continue;
          }
@@ -19457,15 +19446,30 @@ SocialCalc.Formula.TestCriteria = function(value, type, criteria) {
       basestring = criteria.substring(1);
       }
    else {
-      comparitor = criteria.substring(0,2);
-      if (comparitor == "<=" || comparitor == "<>" || comparitor == ">=") {
-         basestring = criteria.substring(2);
+      // check for '*' or '?' in search string - wildcard
+      if (criteria.search(/([^~]\*|^\*)/) != -1 || criteria.search(/([^~]\?|^\?)/) != -1) {
+         comparitor = "regex";
+         if (criteria == "*") {
+            // "*" means cell contains 'anything'
+            basestring = ".+";
+         } else {
+             // convert Excel syntax to regex syntax. * -> .*    ? -> .?    ~* -> \*    ~? -> \?
+             // there are no negative lookbehinds in Javascript. Reverse the string and do negative lookaheads on ~? and ~*
+             basestring = criteria.split("").reverse().join("");
+             basestring = basestring.replace(/\?(?=[^~])|\?$/g, "?.").replace(/\?~/g, "?\\").replace(/\*(?=[^~])|\*$/g, "*.").replace(/\*~/, "*\\");
+             basestring = basestring.split("").reverse().join("");
          }
-      else {
-         comparitor = "none";
-         basestring = criteria;
-         }
+         basestring = "^" + basestring + "$";
+      } else {
+          comparitor = criteria.substring(0,2);
+          if (comparitor == "<=" || comparitor == "<>" || comparitor == ">=") {
+             basestring = criteria.substring(2);
+          } else {
+             comparitor = "none";
+             basestring = criteria;
+          }
       }
+   }
 
    basevalue = SocialCalc.DetermineValueType(basestring); // get type of value being compared
    if (!basevalue.type) { // no criteria base value given
@@ -19572,6 +19576,10 @@ SocialCalc.Formula.TestCriteria = function(value, type, criteria) {
 
          case "<>":
             cond = value != basevalue.value;
+            break;
+
+         case "regex":
+            cond = value.search(new RegExp(basevalue.value)) != -1;
             break;
          }
       }

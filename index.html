@@ -10,6 +10,7 @@
 if (!(window.location.hash.replace('#', ''))) {
     if (window.location.href.match(/\/([^_][^\/]*)$/)) {
         var SocialCalc = { _room: RegExp.$1 };
+        document.title = SocialCalc._room + " – EtherCalc";
     }
     else {
         window.location = './=sheet';
@@ -33,11 +34,11 @@ var readl10nfile = function(data) {
         SocialCalc.Constants[k] = data[k];
     }
 }
-$.ajax({url: ("/l10n/" + navigator.language + ".json").replace(/de_\w+/, 'de').replace(/zh-Hant/i, 'zh-TW').replace(/fr_\w+/, 'fr'),
+$.ajax({url: ("./l10n/" + navigator.language + ".json").replace(/de_\w+/, 'de').replace(/zh-Hant/i, 'zh-TW').replace(/fr_\w+/, 'fr'),
         async: false,
         success: function(data){readl10nfile(data)},
         error: function() {
-          $.ajax({url: "/l10n/en.json",
+          $.ajax({url: "./l10n/en.json",
                   async: false,
                   success: function(data){readl10nfile(data)},
                   error: function(){console.error("Language file not found.")}
