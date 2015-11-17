@@ -79,8 +79,17 @@
       room.=slice 3
       {snapshot} <~ SC._get room, IO
       unless snapshot
-        @response.type Text
-        @response.send 404 ''
+        _, default-snapshot <~ DB.get "snapshot-#room.1"
+        unless default-snapshot
+          @response.type Text
+          @response.send 404 ''
+          return
+        [type, content] = cb-multiple.call @params, <[ Sheet1 ]>, [ default-snapshot ]
+        @response.type type
+        @response.set \Content-Disposition """
+          attachment; filename="#room.xlsx"
+        """
+        @response.send 200 content
         return
       csv <~ SC[room].exportCSV
       _, body <~ csv-parse(csv, delimiter: \,)
