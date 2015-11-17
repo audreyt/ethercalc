@@ -25,19 +25,19 @@ ifdef DEBUG
   UGLIFYJS_ARGS += -b
 endif
 
-all :: depends
-	env PATH="$$PATH:./node_modules/livescript/bin" lsc -m linked --c -o . src
+all ::
+	#env PATH="$$PATH:./node_modules/livescript/bin" lsc -m linked --c -o . src
 	node app.js $(ETHERCALC_ARGS) --cors
 
 manifest ::
 	perl -pi -e 's/# [A-Z].*\n/# @{[`date`]}/m' manifest.appcache
 
 vm :: SocialCalcModule.js
-	env PATH="$$PATH:./node_modules/livescript/bin" lsc -m linked -c -o . src
+	#env PATH="$$PATH:./node_modules/livescript/bin" lsc -m linked -c -o . src
 	node app.js --vm $(ETHERCALC_ARGS)
 
 expire :: SocialCalcModule.js
-	env PATH="$$PATH:./node_modules/livescript/bin" lsc -m linked -c -o . src
+	#env PATH="$$PATH:./node_modules/livescript/bin" lsc -m linked -c -o . src
 	node app.js --expire 10 $(ETHERCALC_ARGS)
 
 ./node_modules/streamline/bin/_node :
