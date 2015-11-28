@@ -71,7 +71,7 @@ Worker ||= class => (code) ->
   DB = @include \db
   EXPIRE = @EXPIRE
 
-  SC.csv-to-save = (csv, cb) ->
+  SC._csv-to-save = (csv, cb) ->
     w = new Worker
     <- w.thread.eval bootSC
     (,rv) <- w.thread.eval "SocialCalc.ConvertOtherFormatToSave(#{ JSON.stringify csv }, 'csv')"
@@ -97,6 +97,8 @@ Worker ||= class => (code) ->
     DB.expire "snapshot-#room", EXPIRE if EXPIRE
     cb?!
 
+  SC._rooms = ->
+    return Object.keys(SC).filter((x) -> return x.lastIndexOf('_') !== 0)
   SC._init = (snapshot, log=[], DB, room, io) ->
     if SC[room]?
       SC[room]._doClearCache!

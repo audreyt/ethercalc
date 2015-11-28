@@ -159,7 +159,9 @@
   #@get '/:room.ods': Export-J \ods
   @get '/:room.xlsx': Export-J \xlsx
   @get '/:room.md': Export-J \md
-
+  @get '/_rooms' : ->
+       @response.type \application/json
+       @response.json 200 SC._rooms()
 
   @get '/_from/:template': ->
     room = new-room!
