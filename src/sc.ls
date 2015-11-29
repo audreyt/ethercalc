@@ -87,7 +87,6 @@ Worker ||= class => (code) ->
     if (snapshot or log.length) and io
       SC[room] = SC._init snapshot, log, DB, room, io
     cb {log, snapshot}
-
   SC._put = (room, snapshot, cb) ->
     return cb?! unless snapshot
     <~ DB.multi!
@@ -96,9 +95,21 @@ Worker ||= class => (code) ->
       .bgsave!exec!
     DB.expire "snapshot-#room", EXPIRE if EXPIRE
     cb?!
-
-  SC._rooms = ->
-    return Object.keys(SC).filter((x) -> return x.lastIndexOf('_') !== 0)
+  SC._del = (room, cb) ->
+    <~ DB.multi!
+       .del ["snapshot-#room", "log-#room" "chat-#room" "ecell-#room" "audit-#room"]
+       .bgsave!exec!
+    cb?!
+  SC._rooms = (cb) ->
+    (, [rooms]) <~ DB.multi!
+       .keys \snapshot-*
+       .exec!
+    cb [ ..replace(/^snapshot-/, "") for rooms]
+  SC._exists = (room, cb) ->
+    (, [x]) <~ DB.multi!
+       .exists "snapshot-#room"
+       .exec!
+       cb x
   SC._init = (snapshot, log=[], DB, room, io) ->
     if SC[room]?
       SC[room]._doClearCache!
