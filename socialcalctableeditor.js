@@ -1534,12 +1534,14 @@ SocialCalc.FinishColRowSize = function() {
 
    }
 
+
 SocialCalc.ProcessEditorRowselectMouseDown = function(e, ele, result) {
     var event = e || window.event;
     var mouseinfo = SocialCalc.EditorMouseInfo;
     var editor = mouseinfo.editor;
+    var sheet = SocialCalc.GetSpreadsheetControlObject().sheet;
     coord1 = SocialCalc.crToCoord(1, result.row)
-    coord2 = SocialCalc.crToCoord(editor.colpositions.length,
+    coord2 = SocialCalc.crToCoord(sheet.LastCol(),
 				  result.row)
     coord3 = SocialCalc.crToCoord(editor.firstscrollingcol,
 				  result.row)
@@ -1587,10 +1589,11 @@ SocialCalc.ProcessEditorColselectMouseDown = function(e, ele, result) {
     var event = e || window.event;
     var mouseinfo = SocialCalc.EditorMouseInfo;
     var editor = mouseinfo.editor;
+    var sheet = SocialCalc.GetSpreadsheetControlObject().sheet;
 
     coord1 = SocialCalc.crToCoord(result.col, 1)
     coord2 = SocialCalc.crToCoord(result.col,
-				  editor.rowpositions.length)
+				  sheet.LastRow())
     coord3 = SocialCalc.crToCoord(result.col,
 				  editor.firstscrollingrow)
     

@@ -317,6 +317,26 @@ SocialCalc.ResetSheet = function(sheet, reload) {
 
 SocialCalc.Sheet.prototype.ResetSheet = function() {SocialCalc.ResetSheet(this);};
 SocialCalc.Sheet.prototype.AddCell = function(newcell) {return this.cells[newcell.coord]=newcell;};
+SocialCalc.Sheet.prototype.LastCol = function() { 
+    var last_col = 1;
+    for (var cell_id  in this.cells) {
+        var cr = SocialCalc.coordToCr(cell_id);
+        if (cr.col > last_col) {
+            last_col = cr.col;
+        }
+    }
+    return last_col;
+}
+SocialCalc.Sheet.prototype.LastRow = function() { 
+    var last_row = 1;
+    for (var cell_id  in this.cells) {
+        var cr = SocialCalc.coordToCr(cell_id);
+        if (cr.row > last_row) {
+            last_row = cr.row;
+        }
+    }
+    return last_row;
+} 
 SocialCalc.Sheet.prototype.GetAssuredCell = function(coord) {
    return this.cells[coord] || this.AddCell(new SocialCalc.Cell(coord));
    };
