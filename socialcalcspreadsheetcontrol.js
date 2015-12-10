@@ -1637,7 +1637,6 @@ SocialCalc.DoCmd = function(obj, which) {
                 var cells = spreadsheet.sheet.cells; 
                 var min_col = -1, max_col = -1, min_row = -1, max_row = -1;
                 for (var cell_id in cells) {
-                    cell = cells[cell_id];
                     var cr = SocialCalc.coordToCr(cell_id);
                     if (min_row == -1 || cr.row < min_row) {
                         min_row = cr.row;
