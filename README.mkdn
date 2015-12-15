@@ -1,0 +1,126 @@
+# EtherCalc
+
+* Overview: http://ethercalc.net/
+* 中文版: http://ethercalc.tw/
+* REST API: http://docs.ethercalc.apiary.io/
+
+* Language: [LiveScript](http://livescript.net/)
+* Runtime: [Node.js](http://nodejs.org/) (0.8+ preferred)
+* Services: [Redis](http://redis.io) (2.4+; fall-back to on-disk JSON storage if not present)
+    * Multi-server is supported _only_ when running with Redis
+    * Note to Redis 2.2 users (e.g. on Ubuntu 12.04): Please disable the `timeout 300` setting in `/etc/redis.conf`, or upgrade to Redis 2.4+ if possible at all. For more details, see [#49](https://github.com/audreyt/ethercalc/issues/49#issuecomment-25331595).
+* Browsers tested: Safari, Chrome, Firefox, IE.
+* Integrated with content management systems:
+    * [Socialtext](http://www.socialtext.com/)
+    * [Drupal](https://drupal.org/project/sheetnode)
+
+## Installation
+
+For global installation (may need root)
+
+    npm i -g ethercalc
+    ethercalc
+
+For local non-root installation 
+
+    npm i
+    make
+
+Or install with our [Docker](http://www.docker.io/) image, which comes with a
+webworker-threads support:
+
+    # Run a redis Docker using the official redis Docker image with persistant database in <host-directory>
+    sudo docker run --name redis -d -v <host-directory>:/data redis:latest
+
+    # Run ethercalc on default port 8000
+    sudo docker run -d -p 8000:8000 --link redis:redis audreyt/ethercalc
+
+    # Run ethercalc on custom port 80
+    sudo docker run -d -p 80:8000 --link redis:redis audreyt/ethercalc
+
+## REST API
+
+Please see [API.md](https://github.com/audreyt/ethercalc/blob/master/API.md)
+for the API Blueprint, or http://docs.ethercalc.apiary.io/ for the online version.
+
+## Runtime Flags
+
+### Listening Interface: `--host` / `--port`
+
+Specify a specific host and/or a different port for the service.
+
+By default EtherCalc listens at `0.0.0.0:8000` (all IPv4 interfaces).
+
+### Using SSL: `--keyfile` / `--certfile`
+
+    openssl genrsa -out ethercalc-key.pem 1024
+    openssl req -new -key ethercalc-key.pem -out certrequest.csr
+    openssl x509 -req -in certrequest.csr -signkey ethercalc-key.pem -out ethercalc-cert.pem
+    ethercalc --keyfile ethercalc-key.pem --certfile ethercalc-cert.pem
+
+### Prefers polling over Websocket: `--polling`
+
+Useful when running behind a proxy without WebSocket support.
+
+### Enable Cross-Origin Resource Sharing: `--cors`
+
+Useful when setting up EtherCalc as a public REST API server.
+
+### URL Prefix: `--basepath /path/prefix`
+
+Useful when running under an URL rewriter.
+
+### Access Control: `--key secret`
+
+Offers read-write vs. read-only modes. See issues [#1](https://github.com/audreyt/ethercalc/issues/1) and [#4](https://github.com/audreyt/ethercalc/issues/4) for details on setting this up.
+
+### Disable server-side WebWorkers: `--vm`
+
+Runs a single-thread background loop with `vm.createContext` instead of `webworker-threads`.
+
+Useful for running custom functions in server side that requires full VM access.
+
+### Expires inactive spreadsheets: `--expire 86400`
+
+Deletes a spreadsheet's content after N seconds of inactivity. Activities include accessing with REST API as well as Web UI, including moving the active cell cursor on an opened page.
+
+# Licensing
+
+### Common Public Attribution License (Socialtext Inc.)
+
+* socialcalcspreadsheetcontrol.js
+* socialcalctableeditor.js
+* images/*
+
+### Artistic License 2.0 (Socialtext Inc.)
+
+* formatnumber2.js 
+* formula1.js 
+* socialcalc-3.js 
+* socialcalcconstants.js 
+* socialcalcpopup.js 
+
+### MIT License (John Resig, The Dojo Foundation)
+
+* static/jquery.js 
+
+### MIT License (HubSpot, Inc.)
+
+* static/vex-theme-flat-attack.css
+* static/vex.combined.min.js
+* static/vex.css
+
+### MIT License (Stuart Knightley, David Duponchel, Franz Buchinger, Ant'onio Afonso)
+
+* static/jszip.js
+
+### Apache License 2.0 (SheetJS)
+
+* static/shim.js
+* static/xlsx.js
+* static/xlsxworker.js
+* start.html (xlsx2socialcalc.js)
+
+### CC0 Public Domain (唐鳳)
+
+* src/*.ls

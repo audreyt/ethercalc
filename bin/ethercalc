@@ -1,0 +1,7 @@
+#!/usr/bin/env node
+
+var path = require("path");
+var fs = require("fs");
+var path = path.join(path.dirname(fs.realpathSync(__filename)), '..');
+
+require(path + '/app');

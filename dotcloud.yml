@@ -1,0 +1,7 @@
+www:
+  type: nodejs
+  approot: .
+  config:
+    node_version: v0.8.x
+data:
+  type: redis
