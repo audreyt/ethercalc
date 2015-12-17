@@ -98,7 +98,11 @@
   @get '/:template/appeditor': sendFile \panels.html    
 # } eddy 
 
-  @get '/:room':
+  @get '/:room':  ->
+# eddy @get log {
+    logdate = new Date() 
+    console.log "Open Sheet: #{logdate.getFullYear() }-#{(logdate.getMonth()) + 1 }-#{logdate.getDate()} #{logdate.getHours()}:#{logdate.getMinutes()}:#{logdate.getSeconds()} #{ @params.room }"
+# } eddy 
     if KEY then ->
       | @query.auth?length  => sendFile \index.html .call @
       | otherwise       => @response.redirect "#BASEPATH/#{ @params.room }?auth=0"

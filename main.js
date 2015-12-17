@@ -160,17 +160,24 @@
       '/:template/appeditor': sendFile('panels.html')
     });
     this.get({
-      '/:room': KEY
-        ? function(){
-          var ref$;
-          switch (false) {
-          case !((ref$ = this.query.auth) != null && ref$.length):
-            return sendFile('index.html').call(this);
-          default:
-            return this.response.redirect(BASEPATH + "/" + this.params.room + "?auth=0");
-          }
+      '/:room': function(){
+        var logdate;
+        logdate = new Date();
+        console.log("Open Sheet: " + logdate.getFullYear() + "-" + (logdate.getMonth() + 1) + "-" + logdate.getDate() + " " + logdate.getHours() + ":" + logdate.getMinutes() + ":" + logdate.getSeconds() + " " + this.params.room);
+        if (KEY) {
+          return function(){
+            var ref$;
+            switch (false) {
+            case !((ref$ = this.query.auth) != null && ref$.length):
+              return sendFile('index.html').call(this);
+            default:
+              return this.response.redirect(BASEPATH + "/" + this.params.room + "?auth=0");
+            }
+          };
+        } else {
+          return sendFile('index.html');
         }
-        : sendFile('index.html')
+      }
     });
     this.get({
       '/:room/edit': function(){
