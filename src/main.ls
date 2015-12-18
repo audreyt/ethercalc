@@ -33,6 +33,7 @@
     @response.type Html
     @response.sendfile "#RealBin/#file"
 
+
   if @CORS
     console.log "Cross-Origin Resource Sharing (CORS) enabled."
     @all \* (req, res, next) ->
@@ -98,11 +99,7 @@
   @get '/:template/appeditor': sendFile \panels.html    
 # } eddy 
 
-  @get '/:room':  ->
-# eddy @get log {
-    logdate = new Date() 
-    console.log "Open Sheet: #{logdate.getFullYear() }-#{(logdate.getMonth()) + 1 }-#{logdate.getDate()} #{logdate.getHours()}:#{logdate.getMinutes()}:#{logdate.getSeconds()} #{ @params.room }"
-# } eddy 
+  @get '/:room':
     if KEY then ->
       | @query.auth?length  => sendFile \index.html .call @
       | otherwise       => @response.redirect "#BASEPATH/#{ @params.room }?auth=0"

@@ -372,7 +372,9 @@
         });
         w._snapshot = newSnapshot;
         return DB.multi().set("snapshot-" + room, newSnapshot).del("log-" + room).bgsave().exec(function(){
-          console.log("==> Regenerated snapshot for " + room);
+          var logdate;
+          logdate = new Date();
+          console.log("==> Regenerated snapshot " + logdate.getFullYear() + "-" + (logdate.getMonth() + 1) + "-" + logdate.getDate() + " " + logdate.getHours() + ":" + logdate.getMinutes() + ":" + logdate.getSeconds() + " for " + room);
           if (EXPIRE) {
             return DB.expire("snapshot-" + room, EXPIRE);
           }

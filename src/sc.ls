@@ -185,7 +185,8 @@ Worker ||= class =>
         .del "log-#room"
         .bgsave!
         .exec!
-      console.log "==> Regenerated snapshot for #room"
+      logdate = new Date() 
+      console.log "==> Regenerated snapshot #{logdate.getFullYear() }-#{(logdate.getMonth()) + 1 }-#{logdate.getDate()} #{logdate.getHours()}:#{logdate.getMinutes()}:#{logdate.getSeconds()} for #room"
       DB.expire "snapshot-#room", EXPIRE if EXPIRE
     w.onerror = -> console.log it
     w.onmessage = ({ data: { type, snapshot, html, csv, ref, parts, save, emaildata } }) -> switch type
