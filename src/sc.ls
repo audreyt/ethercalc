@@ -71,7 +71,7 @@ Worker ||= class => (code) ->
   DB = @include \db
   EXPIRE = @EXPIRE
 
-  SC.csv-to-save = (csv, cb) ->
+  SC._csv-to-save = (csv, cb) ->
     w = new Worker
     <- w.thread.eval bootSC
     (,rv) <- w.thread.eval "SocialCalc.ConvertOtherFormatToSave(#{ JSON.stringify csv }, 'csv')"
@@ -87,7 +87,6 @@ Worker ||= class => (code) ->
     if (snapshot or log.length) and io
       SC[room] = SC._init snapshot, log, DB, room, io
     cb {log, snapshot}
-
   SC._put = (room, snapshot, cb) ->
     return cb?! unless snapshot
     <~ DB.multi!
@@ -96,7 +95,21 @@ Worker ||= class => (code) ->
       .bgsave!exec!
     DB.expire "snapshot-#room", EXPIRE if EXPIRE
     cb?!
-
+  SC._del = (room, cb) ->
+    <~ DB.multi!
+       .del ["snapshot-#room", "log-#room" "chat-#room" "ecell-#room" "audit-#room"]
+       .bgsave!exec!
+    cb?!
+  SC._rooms = (cb) ->
+    (, [rooms]) <~ DB.multi!
+       .keys \snapshot-*
+       .exec!
+    cb [ ..replace(/^snapshot-/, "") for rooms]
+  SC._exists = (room, cb) ->
+    (, [x]) <~ DB.multi!
+       .exists "snapshot-#room"
+       .exec!
+       cb x
   SC._init = (snapshot, log=[], DB, room, io) ->
     if SC[room]?
       SC[room]._doClearCache!
