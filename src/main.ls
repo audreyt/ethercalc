@@ -159,10 +159,15 @@
   #@get '/:room.ods': Export-J \ods
   @get '/:room.xlsx': Export-J \xlsx
   @get '/:room.md': Export-J \md
-  @get '/_rooms' : ->
-       rooms <~ SC._rooms 
-       @response.type \application/json
-       @response.json 200 rooms
+  if @CORS
+     @get '/_rooms' : ->
+        @response.type Text
+        return @response.send 403 '_rooms not available with CORS'
+  else
+     @get '/_rooms' : ->
+        rooms <~ SC._rooms 
+        @response.type \application/json
+        @response.json 200 rooms
   @get '/_from/:template': ->
     room = new-room!
     template = @params.template
