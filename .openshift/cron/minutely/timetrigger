@@ -14,11 +14,10 @@ minutes=$(($(date +'%s / 60')))
 # passed since Epoch and define a frequency
 # let's say, every 5 mins
 # debug log
-date >> ${OPENSHIFT_LOG_DIR}ticktock.log
 #echo "logged date"
 #echo "${OPENSHIFT_LOG_DIR}ticktock.log"
 
-if [[ $(($minutes % 1)) -ne 0 ]]; then
+if [[ $(($minutes % 5)) -ne 0 ]]; then
     exit 0
 #    echo "exit"
 fi
@@ -38,6 +37,7 @@ if [ "$topTime" -gt "$minutes" ]; then
 fi
 
 # and your actual script starts here
+date >> ${OPENSHIFT_LOG_DIR}ticktock.log
 #echo "NextTriggerTime past, $minutes, $topTime" 
 echo "NextTriggerTime past, $minutes, $topTime" >> ${OPENSHIFT_LOG_DIR}ticktock.log
 
