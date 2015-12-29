@@ -24,7 +24,7 @@ fi
 
 #save default time to nextTriggerTime.txt
 if [ ! -f "${OPENSHIFT_DATA_DIR}nextTriggerTime.txt" ]; then
-    echo "32503680000" >> ${OPENSHIFT_DATA_DIR}nextTriggerTime.txt
+    echo "2147483647" >> ${OPENSHIFT_DATA_DIR}nextTriggerTime.txt
 #    echo "exit, set default"
     exit 0
 fi
