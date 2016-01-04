@@ -15,7 +15,7 @@ minutes=$(($(date +'%s / 60')))
 #echo "${OPENSHIFT_LOG_DIR}ticktock.log"
 
 # every day - log UTC time at midnight
-if [[ $(($minutes % 1440)) -ne 0 ]]; then
+if [[ $(($minutes % 1440)) -eq 0 ]]; then
     date -u >> ${OPENSHIFT_LOG_DIR}ticktock.log
 fi
 
