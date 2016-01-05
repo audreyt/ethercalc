@@ -46,7 +46,7 @@
       return res.send(204) if req?method is \OPTIONS
       next!
 
-  new-room = -> require \uuid-pure .newId 10 36 .toLowerCase!
+  new-room = -> require \uuid-pure .newId 12 36 .toLowerCase!
 
   @get '/': sendFile \index.html
   @get '/favicon.ico': -> @response.send 404 ''
