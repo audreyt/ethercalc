@@ -3943,9 +3943,10 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
 //      case "setemailparameters":    	  
 //    	  break;
     	  
+      case "settimetrigger":    
       case "sendemail":    
       case "submitform":    
-    	  // email/form handled by server, so ignore here
+    	  // email/form/timetrigger handled by server, so ignore here
     	  break;
          // } eddy ExecuteSheetCommand 
     	  
@@ -16226,9 +16227,55 @@ SocialCalc.Formula.StoreIoEventFormula = function(function_name, coord, operand_
 	}
 	
 
-	if(typeof sheet.ioEventTree === 'undefined') sheet.ioEventTree = {};	
-	if(typeof sheet.ioParameterList === 'undefined') sheet.ioParameterList = {};
-	
+  if(typeof sheet.ioEventTree === 'undefined') sheet.ioEventTree = {};	
+  if(typeof sheet.ioParameterList === 'undefined') sheet.ioParameterList = {};
+  if(typeof sheet.ioTimeTriggerList === 'undefined') sheet.ioTimeTriggerList = {}; 
+
+  // send trigger times to server if changed
+  if(io_parameters == "TimeTrigger") { // timer trigger formula exists   
+    // function to push cell time into array
+    var PushTriggerTime = function(list, coordA1, sheetData) {
+      var cell = sheetData.cells[coordA1];   
+      if (typeof cell !== 'undefined' && cell.valuetype.charAt(0) == "n") { // if not blank and is number
+        list.push(cell.datavalue);
+      }
+    };
+
+    var triggerTimeCellId = SocialCalc.Formula.PlainCoord(operand[0].value); // strip dollar signs
+    
+    var currentTriggerTimeList = [];
+    
+    if(operand[0].type == "range" )  {      
+      var rangeinfo = SocialCalc.Formula.DecodeRangeParts(sheet, triggerTimeCellId);
+      for (var i=0; i<rangeinfo.ncols; i++) {
+        for (var j=0; j<rangeinfo.nrows; j++) {
+          var cellCoord = SocialCalc.crToCoord(rangeinfo.col1num + i, rangeinfo.row1num + j);
+          PushTriggerTime(currentTriggerTimeList, cellCoord, sheet);
+        }
+      }
+    }
+    
+    if(operand[0].type == "coord" ) {      
+      PushTriggerTime(currentTriggerTimeList, triggerTimeCellId, sheet);
+    }
+    
+    if (operand[0].type.charAt(0) == "n") {
+      currentTriggerTimeList.push(operand[0].value);      
+    }
+
+    // if time triggers changed then set changed times in ioTimeTrigger and schedule      
+    if(typeof sheet.ioTimeTriggerList[coord] === 'undefined' || SocialCalc.Formula.ArrayValuesEqual(sheet.ioTimeTriggerList[coord], currentTriggerTimeList) == false) {
+      // set the time+cell in ioTimeTrigger
+      sheet.ioTimeTriggerList[coord] = currentTriggerTimeList;
+      // schedule the set Time Trigger // sheet.ScheduleSheetCommands('...    
+      var timeZoneOffsetMins = (new Date()).getTimezoneOffset();
+      var start_1_1_1970 = 25569; // Day number of 1/1/1970 starting with 1/1/1900 as 1      
+      var triggerUTCTimeList = []; /// EPOCH in Mins - Mins since 1/1/1970 GMT
+      for(var index = 0; index < currentTriggerTimeList.length; ++index) triggerUTCTimeList[index] = Math.floor(((currentTriggerTimeList[index] - start_1_1_1970 ) *24 * 60) + timeZoneOffsetMins);
+      sheet.ScheduleSheetCommands('settimetrigger '+coord+' '+triggerUTCTimeList.toString());       
+    }
+  }
+  
 	// store trigger lookup table
   if(io_parameters == "EventTree"	&& (operand[0].type == "coord" || operand[0].type == "range")) { // trigger cell exists   
   	// create a list of action formulas for each trigger cell  
@@ -16298,6 +16345,20 @@ SocialCalc.Formula.StoreIoEventFormula = function(function_name, coord, operand_
 	SocialCalc.DebugLog({ ioParameterList: sheet.ioParameterList});
 }   
    
+/**
+ * ArrayValuesEqual
+ * 
+ * Warning - nested vales are NOT tested.
+ * returns true if both arrays contain the same values
+ */    
+SocialCalc.Formula.ArrayValuesEqual = function(a, b) {
+  var i = a.length;
+  if (i != b.length) return false;
+  while (i--) {
+      if (a[i] !== b[i]) return false;
+  }
+  return true;
+};
 
 SocialCalc.Formula.Clone =   function(destination, source) {
         for (var property in source) {
@@ -19560,9 +19621,9 @@ SocialCalc.Formula.FunctionList["BUTTON"] = [SocialCalc.Formula.IoFunctions, 1, 
 SocialCalc.Formula.FunctionList["EMAIL"] = [SocialCalc.Formula.IoFunctions, -3, "to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList" ];
 SocialCalc.Formula.FunctionList["EMAILIF"] = [SocialCalc.Formula.IoFunctions, -4, "condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList" ];
 SocialCalc.Formula.FunctionList["EMAILONEDIT"] = [SocialCalc.Formula.IoFunctions, -4, "editRange, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "EventTree"];
-SocialCalc.Formula.FunctionList["EMAILAT"] = [SocialCalc.Formula.IoFunctions, -4, "datetime, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList" ];
+SocialCalc.Formula.FunctionList["EMAILAT"] = [SocialCalc.Formula.IoFunctions, -4, "datetime, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "TimeTrigger" ];
 SocialCalc.Formula.FunctionList["EMAILONEDITIF"] = [SocialCalc.Formula.IoFunctions, -5, "editRange, condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "EventTree" ];
-SocialCalc.Formula.FunctionList["EMAILATIF"] = [SocialCalc.Formula.IoFunctions, -5, "datetime, condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList" ];
+SocialCalc.Formula.FunctionList["EMAILATIF"] = [SocialCalc.Formula.IoFunctions, -5, "datetime, condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "TimeTrigger" ];
 SocialCalc.Formula.FunctionList["SUBMIT"] = [SocialCalc.Formula.IoFunctions, 100, "[txt]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Submit('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList" ];
 SocialCalc.Formula.FunctionList["TEXTBOX"] = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "gui", "<input type='text' id='TEXTBOX_<%=cell_reference%>' onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.TextBox('<%=cell_reference%>')\" value='<%=display_value%>' >", "Input" ];
 SocialCalc.Formula.FunctionList["CHECKBOX"] = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "gui", "<input type='checkbox' id='CHECKBOX_<%=cell_reference%>' <%=checked%> onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.CheckBox('<%=cell_reference%>')\" >", "Input" ];

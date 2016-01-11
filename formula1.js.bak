@@ -1630,53 +1630,37 @@ SocialCalc.Formula.StoreIoEventFormula = function(function_name, coord, operand_
 	}
 	
 
-  if(typeof sheet.ioEventTree === 'undefined') sheet.ioEventTree = {};	
-  if(typeof sheet.ioParameterList === 'undefined') sheet.ioParameterList = {};
-  if(typeof sheet.ioTimeTriggerList === 'undefined') sheet.ioTimeTriggerList = {}; 
+  //if(typeof sheet.ioTimeTriggers === 'undefined') sheet.ioTimeTriggers = {};  
+  if(typeof sheet.ioEventTree === 'undefined') sheet.ioEventTree = {};  
+	if(typeof sheet.ioParameterList === 'undefined') sheet.ioParameterList = {};
 
-  // send trigger times to server if changed
-  if(io_parameters == "TimeTrigger") { // timer trigger formula exists   
-    // function to push cell time into array
-    var PushTriggerTime = function(list, coordA1, sheetData) {
-      var cell = sheetData.cells[coordA1];   
-      if (typeof cell !== 'undefined' && cell.valuetype.charAt(0) == "n") { // if not blank and is number
-        list.push(cell.datavalue);
-      }
+  // SocialCalc.DebugLog({ TimeTrigger: operand[0]});
+  // store time as trigger 
+  if(io_parameters == "TimeTrigger" && (operand[0].type == "coord" || operand[0].type == "range")) { // trigger time  exists   
+    SocialCalc.DebugLog({ InTimeTrigger: io_parameters});
+    
+    // create a list of action formulas for each trigger cell  
+    var triggerCellId = operand[0].value.replace(/\$/g,''); // strip dollar signs
+    var PushTriggerTime = function(list, index, v) {
+        if(typeof list[index] === 'undefined') list[index] = {};
+        list[index][v] = v;
     };
 
-    var triggerTimeCellId = SocialCalc.Formula.PlainCoord(operand[0].value); // strip dollar signs
-    
-    var currentTriggerTimeList = [];
-    
+
     if(operand[0].type == "range" )  {      
-      var rangeinfo = SocialCalc.Formula.DecodeRangeParts(sheet, triggerTimeCellId);
+        var rangeinfo = SocialCalc.Formula.DecodeRangeParts(sheet, triggerCellId);
       for (var i=0; i<rangeinfo.ncols; i++) {
-        for (var j=0; j<rangeinfo.nrows; j++) {
-          var cellCoord = SocialCalc.crToCoord(rangeinfo.col1num + i, rangeinfo.row1num + j);
-          PushTriggerTime(currentTriggerTimeList, cellCoord, sheet);
-        }
+         for (var j=0; j<rangeinfo.nrows; j++) {
+            var cellcr = SocialCalc.crToCoord(rangeinfo.col1num + i, rangeinfo.row1num + j);
+            PushTriggerTime(sheet.ioEventTree, cellcr, coord); 
+                          
+         }
       }
     }
+    if(operand[0].type == "coord" ) {
+        PushTriggerTime(sheet.ioEventTree, triggerCellId, coord); 
+    }                
     
-    if(operand[0].type == "coord" ) {      
-      PushTriggerTime(currentTriggerTimeList, triggerTimeCellId, sheet);
-    }
-    
-    if (operand[0].type.charAt(0) == "n") {
-      currentTriggerTimeList.push(operand[0].value);      
-    }
-
-    // if time triggers changed then set changed times in ioTimeTrigger and schedule      
-    if(typeof sheet.ioTimeTriggerList[coord] === 'undefined' || SocialCalc.Formula.ArrayValuesEqual(sheet.ioTimeTriggerList[coord], currentTriggerTimeList) == false) {
-      // set the time+cell in ioTimeTrigger
-      sheet.ioTimeTriggerList[coord] = currentTriggerTimeList;
-      // schedule the set Time Trigger // sheet.ScheduleSheetCommands('...    
-      var timeZoneOffsetMins = (new Date()).getTimezoneOffset();
-      var start_1_1_1970 = 25569; // Day number of 1/1/1970 starting with 1/1/1900 as 1      
-      var triggerUTCTimeList = []; /// EPOCH in Mins - Mins since 1/1/1970 GMT
-      for(var index = 0; index < currentTriggerTimeList.length; ++index) triggerUTCTimeList[index] = Math.floor(((currentTriggerTimeList[index] - start_1_1_1970 ) *24 * 60) + timeZoneOffsetMins);
-      sheet.ScheduleSheetCommands('settimetrigger '+coord+' '+triggerUTCTimeList.toString());       
-    }
   }
   
 	// store trigger lookup table
@@ -1748,20 +1732,6 @@ SocialCalc.Formula.StoreIoEventFormula = function(function_name, coord, operand_
 	SocialCalc.DebugLog({ ioParameterList: sheet.ioParameterList});
 }   
    
-/**
- * ArrayValuesEqual
- * 
- * Warning - nested vales are NOT tested.
- * returns true if both arrays contain the same values
- */    
-SocialCalc.Formula.ArrayValuesEqual = function(a, b) {
-  var i = a.length;
-  if (i != b.length) return false;
-  while (i--) {
-      if (a[i] !== b[i]) return false;
-  }
-  return true;
-};
 
 SocialCalc.Formula.Clone =   function(destination, source) {
         for (var property in source) {

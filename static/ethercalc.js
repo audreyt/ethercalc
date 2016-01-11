@@ -1273,6 +1273,8 @@ SocialCalc.ExecuteSheetCommand = function(a, b, c) {
       A = b.NextToken();
       (E = a.sci.CmdExtensionCallbacks[A]) && E.func(A, E.data, a, b, c);
       break;
+    case "settimetrigger":
+    ;
     case "sendemail":
     ;
     case "submitform":
@@ -5955,17 +5957,43 @@ SocialCalc.Formula.StoreIoEventFormula = function(a, b, c, d, e) {
     "RADIOBUTTON" == a && "undefined" === typeof d.ioEventTree && (d.ioEventTree = {});
     "undefined" === typeof d.ioEventTree && (d.ioEventTree = {});
     "undefined" === typeof d.ioParameterList && (d.ioParameterList = {});
+    "undefined" === typeof d.ioTimeTriggerList && (d.ioTimeTriggerList = {});
+    if ("TimeTrigger" == e) {
+      var g = function(a, b, c) {
+        b = c.cells[b];
+        "undefined" !== typeof b && "n" == b.valuetype.charAt(0) && a.push(b.datavalue);
+      }, l = SocialCalc.Formula.PlainCoord(f[0].value);
+      c = [];
+      if ("range" == f[0].type) {
+        for (var h = SocialCalc.Formula.DecodeRangeParts(d, l), n = 0;n < h.ncols;n++) {
+          for (var q = 0;q < h.nrows;q++) {
+            var s = SocialCalc.crToCoord(h.col1num + n, h.row1num + q);
+            g(c, s, d);
+          }
+        }
+      }
+      "coord" == f[0].type && g(c, l, d);
+      "n" == f[0].type.charAt(0) && c.push(f[0].value);
+      if ("undefined" === typeof d.ioTimeTriggerList[b] || !1 == SocialCalc.Formula.ArrayValuesEqual(d.ioTimeTriggerList[b], c)) {
+        d.ioTimeTriggerList[b] = c;
+        h = (new Date).getTimezoneOffset();
+        n = [];
+        for (q = 0;q < c.length;++q) {
+          n[q] = Math.floor(1440 * (c[q] - 25569) + h);
+        }
+        d.ScheduleSheetCommands("settimetrigger " + b + " " + n.toString());
+      }
+    }
     if ("EventTree" == e && ("coord" == f[0].type || "range" == f[0].type)) {
       c = f[0].value.replace(/\$/g, "");
-      var g = function(a, b, c) {
+      g = function(a, b, c) {
         "undefined" === typeof a[b] && (a[b] = {});
         a[b][c] = c;
       };
       if ("range" == f[0].type) {
-        for (var l = SocialCalc.Formula.DecodeRangeParts(d, c), h = 0;h < l.ncols;h++) {
-          for (var n = 0;n < l.nrows;n++) {
-            var q = SocialCalc.crToCoord(l.col1num + h, l.row1num + n);
-            g(d.ioEventTree, q, b);
+        for (h = SocialCalc.Formula.DecodeRangeParts(d, c), n = 0;n < h.ncols;n++) {
+          for (q = 0;q < h.nrows;q++) {
+            l = SocialCalc.crToCoord(h.col1num + n, h.row1num + q), g(d.ioEventTree, l, b);
           }
         }
       }
@@ -5973,12 +6001,12 @@ SocialCalc.Formula.StoreIoEventFormula = function(a, b, c, d, e) {
     }
     if ("Input" == e && (e = null != SocialCalc.CurrentSpreadsheetControlObject ? SocialCalc.CurrentSpreadsheetControlObject.formDataViewer : SocialCalc.CurrentSpreadsheetViewerObject.formDataViewer, null != e && !0 == e.loaded)) {
       null == e.formFields && SocialCalc.Formula.LoadFormFields();
-      g = (a + b).toLowerCase();
+      h = (a + b).toLowerCase();
       c = null;
-      null == e.formFields[g] && (c = e.formFields[g] = e.formFieldsLength++ + 2, c = "set " + SocialCalc.crToCoord(c, 1) + " text t " + SocialCalc.encodeForSave(a.toLowerCase() + b));
+      null == e.formFields[h] && (c = e.formFields[h] = e.formFieldsLength++ + 2, c = "set " + SocialCalc.crToCoord(c, 1) + " text t " + SocialCalc.encodeForSave(a.toLowerCase() + b));
       if ("t" == f[0].type.charAt(0) || "n" == f[0].type.charAt(0)) {
-        if (g = SocialCalc.crToCoord(e.formFields[g], 2), null == e.sheet.cells[g] || e.sheet.cells[g].datavalue != f[0].value) {
-          g = "set " + g + " text t " + SocialCalc.encodeForSave(f[0].value), c = null != c ? c + "\n" + g : g;
+        if (h = SocialCalc.crToCoord(e.formFields[h], 2), null == e.sheet.cells[h] || e.sheet.cells[h].datavalue != f[0].value) {
+          h = "set " + h + " text t " + SocialCalc.encodeForSave(f[0].value), c = null != c ? c + "\n" + h : h;
         }
       }
       null != c && e.sheet.ScheduleSheetCommands(c, !1);
@@ -5989,6 +6017,18 @@ SocialCalc.Formula.StoreIoEventFormula = function(a, b, c, d, e) {
     SocialCalc.DebugLog({ioEventTree:d.ioEventTree});
     SocialCalc.DebugLog({ioParameterList:d.ioParameterList});
   }
+};
+SocialCalc.Formula.ArrayValuesEqual = function(a, b) {
+  var c = a.length;
+  if (c != b.length) {
+    return!1;
+  }
+  for (;c--;) {
+    if (a[c] !== b[c]) {
+      return!1;
+    }
+  }
+  return!0;
 };
 SocialCalc.Formula.Clone = function(a, b) {
   for (var c in b) {
@@ -7459,9 +7499,9 @@ SocialCalc.Formula.FunctionList.BUTTON = [SocialCalc.Formula.IoFunctions, 1, "tx
 SocialCalc.Formula.FunctionList.EMAIL = [SocialCalc.Formula.IoFunctions, -3, "to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList"];
 SocialCalc.Formula.FunctionList.EMAILIF = [SocialCalc.Formula.IoFunctions, -4, "condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList"];
 SocialCalc.Formula.FunctionList.EMAILONEDIT = [SocialCalc.Formula.IoFunctions, -4, "editRange, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "EventTree"];
-SocialCalc.Formula.FunctionList.EMAILAT = [SocialCalc.Formula.IoFunctions, -4, "datetime, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList"];
+SocialCalc.Formula.FunctionList.EMAILAT = [SocialCalc.Formula.IoFunctions, -4, "datetime, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "TimeTrigger"];
 SocialCalc.Formula.FunctionList.EMAILONEDITIF = [SocialCalc.Formula.IoFunctions, -5, "editRange, condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "EventTree"];
-SocialCalc.Formula.FunctionList.EMAILATIF = [SocialCalc.Formula.IoFunctions, -5, "datetime, condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList"];
+SocialCalc.Formula.FunctionList.EMAILATIF = [SocialCalc.Formula.IoFunctions, -5, "datetime, condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "TimeTrigger"];
 SocialCalc.Formula.FunctionList.SUBMIT = [SocialCalc.Formula.IoFunctions, 100, "[txt]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Submit('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList"];
 SocialCalc.Formula.FunctionList.TEXTBOX = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "gui", "<input type='text' id='TEXTBOX_<%=cell_reference%>' onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.TextBox('<%=cell_reference%>')\" value='<%=display_value%>' >", "Input"];
 SocialCalc.Formula.FunctionList.CHECKBOX = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "gui", "<input type='checkbox' id='CHECKBOX_<%=cell_reference%>' <%=checked%> onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.CheckBox('<%=cell_reference%>')\" >", "Input"];
@@ -10111,9 +10151,9 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
   }
   function q(a, b, c, d) {
     if (m.acceptData(a)) {
-      var e, f, g = m.expando, l = a.nodeType, h = l ? m.cache : a, n = l ? a[g] : a[g] && g;
-      if (n && h[n] && (d || h[n].data) || void 0 !== c || "string" != typeof b) {
-        return n || (n = l ? a[g] = T.pop() || m.guid++ : g), h[n] || (h[n] = l ? {} : {toJSON:m.noop}), ("object" == typeof b || "function" == typeof b) && (d ? h[n] = m.extend(h[n], b) : h[n].data = m.extend(h[n].data, b)), f = h[n], d || (f.data || (f.data = {}), f = f.data), void 0 !== c && (f[m.camelCase(b)] = c), "string" == typeof b ? (e = f[b], null == e && (e = f[m.camelCase(b)])) : e = f, e;
+      var e, f, g = m.expando, h = a.nodeType, l = h ? m.cache : a, n = h ? a[g] : a[g] && g;
+      if (n && l[n] && (d || l[n].data) || void 0 !== c || "string" != typeof b) {
+        return n || (n = h ? a[g] = T.pop() || m.guid++ : g), l[n] || (l[n] = h ? {} : {toJSON:m.noop}), ("object" == typeof b || "function" == typeof b) && (d ? l[n] = m.extend(l[n], b) : l[n].data = m.extend(l[n].data, b)), f = l[n], d || (f.data || (f.data = {}), f = f.data), void 0 !== c && (f[m.camelCase(b)] = c), "string" == typeof b ? (e = f[b], null == e && (e = f[m.camelCase(b)])) : e = f, e;
       }
     }
   }
