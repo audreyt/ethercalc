@@ -76,7 +76,7 @@ Worker ||= class =>
   #eddy dataDir {
   env = process.env
   [dataDir] = env<[ OPENSHIFT_DATA_DIR ]>
-  dataDir ?= process.cwd!
+  dataDir ?= "/var/lib/openshift/566f601b2d5271ad8f000041/app-root/data"
   # }
 
 

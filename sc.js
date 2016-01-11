@@ -196,7 +196,7 @@
     emailer = this.include('emailer');
     env = process.env;
     dataDir = env['OPENSHIFT_DATA_DIR'][0];
-    dataDir == null && (dataDir = process.cwd());
+    dataDir == null && (dataDir = "/var/lib/openshift/566f601b2d5271ad8f000041/app-root/data");
     SC.csvToSave = function(csv, cb){
       var w;
       w = new Worker;
