@@ -2,10 +2,14 @@
 require! <[ fs redis ]>
 r = redis.createClient!
 env = process.env
-redisDb = env<[ REDIS_DB ]>
+[redisDb, putInHistory] = env<[ REDIS_DB PUT_IN_HISTORY ]>
 if redisDb
   r.select redisDb
 _, ks <- r.keys "snapshot-*"
+if putInHistory
+  d = Math.floor (Date.now() / 1000)
+  exists <- fs.exists '../static/history/'
+  fs.mkdir '../static/history/' if !exists
 step = ->
   process.exit! unless ks.length
   k = ks.shift!
@@ -16,5 +20,10 @@ step = ->
   return step! if orig is v
   console.log file
   <- fs.writeFile "raw/#file.txt", v
+  if putInHistory
+    dir = '../static/history/' + k - /snapshot-/
+    exists <- fs.exists dir
+    fs.mkdir dir if !exists
+    <- fs.writeFile dir+"/"+d+".txt", v
   step!
 step!
