@@ -5,12 +5,6 @@ bootSC = fs.readFileSync "#{
 
 global.SC ?= {console}
 
-#eddy dataDir {
-env = process.env
-[dataDir] = env<[ OPENSHIFT_DATA_DIR ]>
-dataDir ?= process.cwd!
-# }
-
 argv = (try require \optimist .boolean <[ vm polling ]> .argv) || {}
 
 bootSC += """;(#{->
@@ -78,6 +72,13 @@ Worker ||= class =>
   EXPIRE = @EXPIRE
   emailer = @include \emailer
   #emailer.log!
+  
+  #eddy dataDir {
+  env = process.env
+  [dataDir] = env<[ OPENSHIFT_DATA_DIR ]>
+  dataDir ?= process.cwd!
+  # }
+
 
   SC.csv-to-save = (csv, cb) ->
     w = new Worker
@@ -205,7 +206,7 @@ Worker ||= class =>
       (, nextTriggerTime) <~ DB.get "cron-nextTriggerTime"
       scheduledNextTriggerTime = nextTriggerTime
       timeNowMins = Math.floor(new Date().getTime() / (1000 * 60))
-      console.log "timeNowMins #timeNowMins"
+      console.log "timeNowMins #timeNowMins dataDir #dataDir"
       nextTriggerTime ?= 2147483647   # set to max seconds possible (31^2)
       triggerTimeList = for nextTime in timetriggerdata.times.split(",") when nextTime >= timeNowMins
         if nextTriggerTime > nextTime 
@@ -213,7 +214,7 @@ Worker ||= class =>
         nextTime
       if scheduledNextTriggerTime != nextTriggerTime
         fs.writeFileSync do
-          "#dataDir/nextTriggerTime_debug.txt"
+          "#dataDir/nextTriggerTime.txt"
           nextTriggerTime
           \utf8               
       if triggerTimeList.length == 0 
