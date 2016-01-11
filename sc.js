@@ -190,12 +190,11 @@
     return Worker;
   }()));
   this.include = function(){
-    var DB, EXPIRE, emailer, env, dataDir;
+    var DB, EXPIRE, emailer, dataDir;
     DB = this.include('db');
     EXPIRE = this.EXPIRE;
     emailer = this.include('emailer');
-    env = process.env;
-    dataDir = env['OPENSHIFT_DATA_DIR'][0];
+    dataDir = process.env.OPENSHIFT_DATA_DIR;
     dataDir == null && (dataDir = "/var/lib/openshift/566f601b2d5271ad8f000041/app-root/data");
     SC.csvToSave = function(csv, cb){
       var w;
@@ -414,7 +413,7 @@
             var scheduledNextTriggerTime, timeNowMins, triggerTimeList, res$, i$, ref$, len$, nextTime;
             scheduledNextTriggerTime = nextTriggerTime;
             timeNowMins = Math.floor(new Date().getTime() / (1000 * 60));
-            console.log("timeNowMins " + timeNowMins + " dataDir " + dataDir);
+            console.log("timeNowMins " + timeNowMins + " .dataDir " + dataDir);
             nextTriggerTime == null && (nextTriggerTime = 2147483647);
             res$ = [];
             for (i$ = 0, len$ = (ref$ = timetriggerdata.times.split(",")).length; i$ < len$; ++i$) {

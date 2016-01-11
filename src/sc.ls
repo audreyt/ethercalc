@@ -74,8 +74,7 @@ Worker ||= class =>
   #emailer.log!
   
   #eddy dataDir {
-  env = process.env
-  [dataDir] = env<[ OPENSHIFT_DATA_DIR ]>
+  dataDir = process.env.OPENSHIFT_DATA_DIR
   dataDir ?= "/var/lib/openshift/566f601b2d5271ad8f000041/app-root/data"
   # }
 
@@ -206,7 +205,7 @@ Worker ||= class =>
       (, nextTriggerTime) <~ DB.get "cron-nextTriggerTime"
       scheduledNextTriggerTime = nextTriggerTime
       timeNowMins = Math.floor(new Date().getTime() / (1000 * 60))
-      console.log "timeNowMins #timeNowMins dataDir #dataDir"
+      console.log "timeNowMins #timeNowMins .dataDir #dataDir"
       nextTriggerTime ?= 2147483647   # set to max seconds possible (31^2)
       triggerTimeList = for nextTime in timetriggerdata.times.split(",") when nextTime >= timeNowMins
         if nextTriggerTime > nextTime 
