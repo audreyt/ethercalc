@@ -1,6 +1,10 @@
 #!/usr/local/bin/lsc
 require! <[ fs redis ]>
 r = redis.createClient!
+env = process.env
+redisDb = env<[ REDIS_DB ]>
+if redisDb
+  r.select redisDb
 _, ks <- r.keys "snapshot-*"
 step = ->
   process.exit! unless ks.length
