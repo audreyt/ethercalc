@@ -1534,12 +1534,14 @@ SocialCalc.FinishColRowSize = function() {
 
    }
 
+
 SocialCalc.ProcessEditorRowselectMouseDown = function(e, ele, result) {
     var event = e || window.event;
     var mouseinfo = SocialCalc.EditorMouseInfo;
     var editor = mouseinfo.editor;
+    var sheet = SocialCalc.GetSpreadsheetControlObject().sheet;
     coord1 = SocialCalc.crToCoord(1, result.row)
-    coord2 = SocialCalc.crToCoord(editor.colpositions.length,
+    coord2 = SocialCalc.crToCoord(sheet.LastCol(),
 				  result.row)
     coord3 = SocialCalc.crToCoord(editor.firstscrollingcol,
 				  result.row)
@@ -1556,13 +1558,15 @@ SocialCalc.ProcessEditorRowselectMouseMove = function(e) {
     var event = e || window.event;
     var mouseinfo = SocialCalc.EditorMouseInfo;
     var editor = mouseinfo.editor;
+    var sheet = SocialCalc.GetSpreadsheetControlObject().sheet;
+
     if (!editor) return; // not us, ignore
 
     var pos = SocialCalc.GetElementPositionWithScroll(editor.toplevel);
     var clientX = event.clientX - pos.left;
     var clientY = event.clientY - pos.top;
     result = SocialCalc.GridMousePosition(editor, clientX, clientY);
-    coord2 = SocialCalc.crToCoord(editor.colpositions.length,
+    coord2 = SocialCalc.crToCoord(sheet.LastCol(),
 				  result.row)
     coord3 = SocialCalc.crToCoord(editor.firstscrollingcol,
 				  result.row)
@@ -1587,10 +1591,11 @@ SocialCalc.ProcessEditorColselectMouseDown = function(e, ele, result) {
     var event = e || window.event;
     var mouseinfo = SocialCalc.EditorMouseInfo;
     var editor = mouseinfo.editor;
+    var sheet = SocialCalc.GetSpreadsheetControlObject().sheet;
 
     coord1 = SocialCalc.crToCoord(result.col, 1)
     coord2 = SocialCalc.crToCoord(result.col,
-				  editor.rowpositions.length)
+				  sheet.LastRow())
     coord3 = SocialCalc.crToCoord(result.col,
 				  editor.firstscrollingrow)
     
@@ -1608,6 +1613,8 @@ SocialCalc.ProcessEditorColselectMouseMove = function(e) {
     var event = e || window.event;
     var mouseinfo = SocialCalc.EditorMouseInfo;
     var editor = mouseinfo.editor;
+    var sheet = SocialCalc.GetSpreadsheetControlObject().sheet;
+
     if (!editor) return; // not us, ignore
 
     var pos = SocialCalc.GetElementPositionWithScroll(editor.toplevel);
@@ -1615,7 +1622,7 @@ SocialCalc.ProcessEditorColselectMouseMove = function(e) {
     var clientY = event.clientY - pos.top;
     result = SocialCalc.GridMousePosition(editor, clientX, clientY);
     coord2 = SocialCalc.crToCoord(result.col,
-				  editor.rowpositions.length)
+				  sheet.LastRow())
     coord3 = SocialCalc.crToCoord(result.col,
 				  editor.firstscrollingrow)
     editor.RangeExtend(coord2);
