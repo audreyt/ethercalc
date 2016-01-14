@@ -5719,7 +5719,7 @@ SocialCalc.DetermineValueType = function(rawvalue) {
    else if (matches=value.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{1,4})\s*$/)) { // MM-DD-YYYY, MM/DD/YYYY
       year = matches[3] - 0;
       year = year < 1000 ? year + 2000 : year;
-      value = ((navigator.language).indexOf("fr") > -1)  ? (SocialCalc.FormatNumber.convert_date_gregorian_to_julian(year, matches[2]-0, matches[1]-0)-2415019) : (SocialCalc.FormatNumber.convert_date_gregorian_to_julian(year, matches[1]-0, matches[2]-0)-2415019);
+      value = ((navigator.language).indexOf("fr") === 0)  ? (SocialCalc.FormatNumber.convert_date_gregorian_to_julian(year, matches[2]-0, matches[1]-0)-2415019) : (SocialCalc.FormatNumber.convert_date_gregorian_to_julian(year, matches[1]-0, matches[2]-0)-2415019);
       type = "nd";
       }
    else if (matches=value.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})\s*$/)) { // YYYY-MM-DD, YYYY/MM/DD
