@@ -34,16 +34,16 @@ bootSC += """;(#{->
 ##################################
 ### WebWorker Threads Fallback ###
 ##################################
-IsThreaded = true
-Worker = try
-  @console = console
-  throw \vm if argv.vm
-  console.log "Starting backend using webworker-threads"
-  (require \webworker-threads).Worker
-catch
-  console.log "Falling back to vm.CreateContext backend"
-  IsThreaded = false
-#IsThreaded = false
+#IsThreaded = true
+#Worker = try
+#  @console = console
+#  throw \vm if argv.vm
+#  console.log "Starting backend using webworker-threads"
+#  (require \webworker-threads).Worker
+#catch
+#  console.log "Falling back to vm.CreateContext backend"
+#  IsThreaded = false
+IsThreaded = false
 
 Worker ||= class => 
   (code) ->
@@ -343,6 +343,7 @@ Worker ||= class =>
     # eddy exportAttribs, triggerActionCell {
     w.exportAttribs = (cb) -> w._eval "window.ss.sheet.attribs", cb    
     w.triggerActionCell = (coord, cb) -> w._eval "window.ss.SocialCalc.TriggerIoAction.Email('#coord')" (emailcmd) ->
+      console.log "send via OAuth"
       for nextEmail in emailcmd
         nextEmail = for addSpaces in nextEmail #replace %20 with spaces
           addSpaces.replace(/%20/g,' ')

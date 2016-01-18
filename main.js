@@ -185,14 +185,12 @@
               }
             }
             timeList = res$;
-            console.log("timeList " + timeList);
             if (timeList.length === 0) {
               DB.hdel("cron-list", cellID);
             } else {
               DB.hset("cron-list", cellID, timeList.toString());
             }
           }
-          console.log("nextTriggerTime " + nextTriggerTime);
           return DB.multi().set("cron-nextTriggerTime", nextTriggerTime).bgsave().exec(function(){
             fs.writeFileSync(dataDir + "/nextTriggerTime.txt", nextTriggerTime, 'utf8');
             console.log("--- cron email sent ---");

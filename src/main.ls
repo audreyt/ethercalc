@@ -118,12 +118,12 @@
             if nextTriggerTime > triggerTimeMins 
               nextTriggerTime = triggerTimeMins
             triggerTimeMins
-        console.log "timeList #timeList"
+        #console.log "timeList #timeList"
         if timeList.length == 0 
           DB.hdel "cron-list", cellID
         else
           DB.hset "cron-list", cellID, timeList.toString()      
-      console.log "nextTriggerTime #nextTriggerTime" 
+      #console.log "nextTriggerTime #nextTriggerTime" 
       <~ DB.multi!
         .set "cron-nextTriggerTime" nextTriggerTime
         .bgsave!exec!
