@@ -26,8 +26,11 @@
     text/plain text/html text/csv application/json
   ]>.map (+ "; charset=utf-8")
 
+
+  dataDir = process.env.OPENSHIFT_DATA_DIR #eddy
+  fs = require \fs   #eddy require fs
   const RealBin = require \path .dirname do
-    require \fs .realpathSync __filename
+    fs .realpathSync __filename
 
   sendFile = (file) -> ->
     @response.type Html
@@ -45,7 +48,7 @@
   new-room = -> require \uuid-pure .newId 10 36 .toLowerCase!
 
   @get '/': sendFile \index.html
-  @get '/favicon.ico': -> @response.send 404 ''
+  @get '/favicon.ico': sendFile \favicon.ico  #eddy return browser site icon
   @get '/manifest.appcache': ->
     @response.type \text/cache-manifest
     @response.sendfile "#RealBin/manifest.appcache"
@@ -59,6 +62,7 @@
     {snapshot} <~ SC._get @params.room, IO
     if snapshot
       [type, content] = cb.call @params, snapshot
+      #console.log "type #type params " {...@params} #eddy debug  
       if type is Csv
         @response.set \Content-Disposition """
           attachment; filename="#{ @params.room }.csv"
@@ -96,6 +100,50 @@
     <~ SC._put room, snapshot
     @response.redirect "#BASEPATH/#room/app" 
   @get '/:template/appeditor': sendFile \panels.html    
+  @get '/_timetrigger': -> 
+      (, allTimeTriggers) <~ DB.hgetall "cron-list"
+      console.log "allTimeTriggers "  {...allTimeTriggers}
+      timeNowMins = Math.floor(new Date().getTime() / (1000 * 60))
+      nextTriggerTime = 2147483647   # set to max seconds possible (31^2)      
+      for cellID, timeList of allTimeTriggers
+        timeList = for triggerTimeMins in timeList.split(',')
+          if triggerTimeMins <= timeNowMins
+            [room, cell] = cellID.split('!')        
+            console.log "cellID #cellID triggerTimeMins #triggerTimeMins" 
+            do
+              {snapshot} <~ SC._get room, IO
+              SC[room].triggerActionCell cell, ->                
+            continue
+          else
+            if nextTriggerTime > triggerTimeMins 
+              nextTriggerTime = triggerTimeMins
+            triggerTimeMins
+        console.log "timeList #timeList"
+        if timeList.length == 0 
+          DB.hdel "cron-list", cellID
+        else
+          DB.hset "cron-list", cellID, timeList.toString()      
+      console.log "nextTriggerTime #nextTriggerTime" 
+      <~ DB.multi!
+        .set "cron-nextTriggerTime" nextTriggerTime
+        .bgsave!exec!
+      fs.writeFileSync do
+        "#dataDir/nextTriggerTime.txt"
+        nextTriggerTime
+        \utf8                       
+      console.log "--- cron email sent ---"
+      @response.type Json
+      @response.send allTimeTriggers
+  @get '/_debug': -> 
+      (, allTimeTriggers) <~ DB.hgetall "cron-list"
+      triggerCells = Object.keys( allTimeTriggers );
+      [sheet, cell] = triggerCells[0].split('!') 
+      console.log "sheet #sheet cell #cell" 
+      @params.room = sheet
+      start = api -> [Json
+       (sc, cb) -> sc.debug cell, cb
+      ]
+      start.call this  
 # } eddy 
 
   @get '/:room':

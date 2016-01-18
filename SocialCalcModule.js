@@ -2522,6 +2522,7 @@ SocialCalc.ScheduleSheetCommands = function(sheet, cmdstr, saveundo) {
 
    var sci = sheet.sci;
 
+   // console.trace();
    sci.parseobj = new SocialCalc.Parse(cmdstr);
    sci.saveundo = saveundo;
 
@@ -2542,6 +2543,7 @@ SocialCalc.SheetCommandsTimerRoutine = function(sci) {
    var errortext;
    var starttime = new Date();
 
+   // console.log("SheetCommandsTimerRoutine"); // eddy debug
    sci.timerobj = null;
 
    while (!sci.parseobj.EOF()) { // go through all commands (separated by newlines)
@@ -2664,6 +2666,7 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
 
    cmd1 = cmd.NextToken();
 
+   // console.log("ExecuteSheetCommand "+cmd1); //eddy debug
    switch (cmd1) {
 
       case "set":
@@ -16231,6 +16234,11 @@ SocialCalc.Formula.StoreIoEventFormula = function(function_name, coord, operand_
   if(typeof sheet.ioParameterList === 'undefined') sheet.ioParameterList = {};
   if(typeof sheet.ioTimeTriggerList === 'undefined') sheet.ioTimeTriggerList = {}; 
 
+  // store parameters of each action formulas 
+  if(typeof sheet.ioParameterList[coord] === 'undefined') sheet.ioParameterList[coord] = {};
+  sheet.ioParameterList[coord] = operand;
+  sheet.ioParameterList[coord].function_name = function_name;
+  
   // send trigger times to server if changed
   if(io_parameters == "TimeTrigger") { // timer trigger formula exists   
     // function to push cell time into array
@@ -16336,10 +16344,6 @@ SocialCalc.Formula.StoreIoEventFormula = function(function_name, coord, operand_
     }    
   }    
         
-	// store parameters of each action formulas 
-	if(typeof sheet.ioParameterList[coord] === 'undefined') sheet.ioParameterList[coord] = {};
-	sheet.ioParameterList[coord] = operand;
-	sheet.ioParameterList[coord].function_name = function_name;
 
 	SocialCalc.DebugLog({ ioEventTree: sheet.ioEventTree});
 	SocialCalc.DebugLog({ ioParameterList: sheet.ioParameterList});
@@ -19735,13 +19739,15 @@ SocialCalc.TriggerIoAction.Email = function(emailFormulaCellId, optionalTriggerC
      optionalTriggerCellId = typeof optionalTriggerCellId !== 'undefined' ? optionalTriggerCellId : null;
 	 var scf = SocialCalc.Formula;	
 	 var spreadsheet =  window.spreadsheet;
+	 if (spreadsheet == null) spreadsheet = window.ss
 	 var sheet = spreadsheet.sheet;
 	 var cell = sheet.cells[emailFormulaCellId];
 	 
 	 if(typeof sheet.ioParameterList === 'undefined') return;
 	 
 	 var parameters = sheet.ioParameterList[emailFormulaCellId];
-	 
+   if(typeof parameters === 'undefined') return;
+   //var debugLog = "debug TriggerIoAction.Email\n"; //eddy
 	 //spreadsheet.editor.EditorScheduleSheetCommands('sendemail to eddy.nihon',  false, false); 
 	 // grab array for TO, SUBJECT and BODY 
 	 var parameterValues = [];
@@ -19749,10 +19755,10 @@ SocialCalc.TriggerIoAction.Email = function(emailFormulaCellId, optionalTriggerC
 	 var maxRangeSize = 1;
 	 for(var index=0; index < parameters.length; index ++) {
 		 if(parameters[index].type.charAt(0) == 't') {
-			 parameterValues[index] = [parameters[index].value.replace(/ /g, "%20")];
+			 parameterValues[index] = [String(parameters[index].value).replace(/ /g, "%20")];
 		 }
 		 if(parameters[index].type == 'coord') {
-			 parameterValues[index] = [sheet.GetAssuredCell(parameters[index].value).datavalue.replace(/ /g, "%20")];
+			 parameterValues[index] = [String(sheet.GetAssuredCell(parameters[index].value).datavalue).replace(/ /g, "%20")];
 		 }
 		 if(parameters[index].type == 'range') {
 		      var rangeinfo = scf.DecodeRangeParts(sheet, parameters[index].value);
@@ -19772,6 +19778,7 @@ SocialCalc.TriggerIoAction.Email = function(emailFormulaCellId, optionalTriggerC
 		      if(rangeSizeCounter > maxRangeSize) maxRangeSize = rangeSizeCounter;			 
 		 }
 	 }
+   //debugLog = debugLog + "got TO, Subject, body\n"; //eddy
 	 
     var conditionIndex = -1; // check if email formula is conditional, -1 = not conditional 
     var toAddressParamOffset = 0;
@@ -19792,6 +19799,7 @@ SocialCalc.TriggerIoAction.Email = function(emailFormulaCellId, optionalTriggerC
       case "EMAIL":
     	  break;
     }	 
+    // debugLog = debugLog + "function_name "+parameters.function_name+"\n"; //eddy
     
     switch (parameters.function_name) {
         case "EMAILONEDIT":
@@ -19803,6 +19811,7 @@ SocialCalc.TriggerIoAction.Email = function(emailFormulaCellId, optionalTriggerC
     }
 
      var setStatusBarMessage = false;
+   var emailContentsList = [];
 	 for(var rangeIndex = maxRangeSize -1; rangeIndex > -1; rangeIndex-- ) {
 		 
 		 // if email formula is conditional && condition is false then skip 
@@ -19821,10 +19830,15 @@ SocialCalc.TriggerIoAction.Email = function(emailFormulaCellId, optionalTriggerC
 		 setStatusBarMessage = true;
 //		 spreadsheet.editor.EditorScheduleSheetCommands('sendemail '+emailContents,  false, false); 
 		 sheet.ScheduleSheetCommands('sendemail '+emailContents,  false); 
+		 // cron job email - ignores ScheduleSheetCommands so send via return value
+		 emailContentsList.push([parameterValues[toAddressParamOffset][toaddressRangeIndex], parameterValues[toAddressParamOffset+1][subjectsRangeIndex], parameterValues[toAddressParamOffset+2][bodyRangeIndex]]);
+		 //debugLog = debugLog + "emailContents "+emailContents+"\n"; //eddy
 		 
 	 }
+	 console.log( "log formula1.js Email");
 	 // update status bar to indicate email is being sent
 	 if(setStatusBarMessage) SocialCalc.EditorSheetStatusCallback(null, "emailing", null, spreadsheet.editor);	 
+   return emailContentsList; // cron job email
 }
 
 /*

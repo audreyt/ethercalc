@@ -121,6 +121,7 @@
           };
           SocialCalc.Callbacks.broadcast = function(type, data){
             data == null && (data = {});
+            console.log("SocialCalc.Callbacks.broadcast " + data);
             if (!SocialCalc.isConnected) {
               return;
             }

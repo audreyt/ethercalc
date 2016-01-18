@@ -1650,6 +1650,7 @@ SocialCalc.ScheduleSheetCommands = function(sheet, cmdstr, saveundo) {
 
    var sci = sheet.sci;
 
+   // console.trace();
    sci.parseobj = new SocialCalc.Parse(cmdstr);
    sci.saveundo = saveundo;
 
@@ -1670,6 +1671,7 @@ SocialCalc.SheetCommandsTimerRoutine = function(sci) {
    var errortext;
    var starttime = new Date();
 
+   // console.log("SheetCommandsTimerRoutine"); // eddy debug
    sci.timerobj = null;
 
    while (!sci.parseobj.EOF()) { // go through all commands (separated by newlines)
@@ -1792,6 +1794,7 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
 
    cmd1 = cmd.NextToken();
 
+   // console.log("ExecuteSheetCommand "+cmd1); //eddy debug
    switch (cmd1) {
 
       case "set":

@@ -2,7 +2,7 @@
 (function(){
   var join$ = [].join;
   this.include = function(){
-    var DB, SC, KEY, BASEPATH, EXPIRE, HMAC_CACHE, hmac, ref$, Text, Html, Csv, Json, RealBin, sendFile, newRoom, IO, api, ExportCSV, ExportHTML, requestToCommand, requestToSave;
+    var DB, SC, KEY, BASEPATH, EXPIRE, HMAC_CACHE, hmac, ref$, Text, Html, Csv, Json, dataDir, fs, RealBin, sendFile, newRoom, IO, api, ExportCSV, ExportHTML, requestToCommand, requestToSave;
     this.use('json', this.app.router, this.express['static'](__dirname));
     this.app.use('/edit', this.express['static'](__dirname));
     this.app.use('/view', this.express['static'](__dirname));
@@ -28,7 +28,9 @@
     ref$ = ['text/plain', 'text/html', 'text/csv', 'application/json'].map((function(it){
       return it + "; charset=utf-8";
     })), Text = ref$[0], Html = ref$[1], Csv = ref$[2], Json = ref$[3];
-    RealBin = require('path').dirname(require('fs').realpathSync(__filename));
+    dataDir = process.env.OPENSHIFT_DATA_DIR;
+    fs = require('fs');
+    RealBin = require('path').dirname(fs.realpathSync(__filename));
     sendFile = function(file){
       return function(){
         this.response.type(Html);
@@ -54,9 +56,7 @@
       '/': sendFile('index.html')
     });
     this.get({
-      '/favicon.ico': function(){
-        return this.response.send(404, '');
-      }
+      '/favicon.ico': sendFile('favicon.ico')
     });
     this.get({
       '/manifest.appcache': function(){
@@ -158,6 +158,74 @@
     });
     this.get({
       '/:template/appeditor': sendFile('panels.html')
+    });
+    this.get({
+      '/_timetrigger': function(){
+        var this$ = this;
+        return DB.hgetall("cron-list", function(arg$, allTimeTriggers){
+          var timeNowMins, nextTriggerTime, cellID, timeList, res$, i$, ref$, len$, triggerTimeMins, ref1$, room, cell;
+          console.log("allTimeTriggers ", (import$({}, allTimeTriggers)));
+          timeNowMins = Math.floor(new Date().getTime() / (1000 * 60));
+          nextTriggerTime = 2147483647;
+          for (cellID in allTimeTriggers) {
+            timeList = allTimeTriggers[cellID];
+            res$ = [];
+            for (i$ = 0, len$ = (ref$ = timeList.split(',')).length; i$ < len$; ++i$) {
+              triggerTimeMins = ref$[i$];
+              if (triggerTimeMins <= timeNowMins) {
+                ref1$ = cellID.split('!'), room = ref1$[0], cell = ref1$[1];
+                console.log("cellID " + cellID + " triggerTimeMins " + triggerTimeMins);
+                SC._get(room, IO, fn$);
+                continue;
+              } else {
+                if (nextTriggerTime > triggerTimeMins) {
+                  nextTriggerTime = triggerTimeMins;
+                }
+                res$.push(triggerTimeMins);
+              }
+            }
+            timeList = res$;
+            console.log("timeList " + timeList);
+            if (timeList.length === 0) {
+              DB.hdel("cron-list", cellID);
+            } else {
+              DB.hset("cron-list", cellID, timeList.toString());
+            }
+          }
+          console.log("nextTriggerTime " + nextTriggerTime);
+          return DB.multi().set("cron-nextTriggerTime", nextTriggerTime).bgsave().exec(function(){
+            fs.writeFileSync(dataDir + "/nextTriggerTime.txt", nextTriggerTime, 'utf8');
+            console.log("--- cron email sent ---");
+            this$.response.type(Json);
+            return this$.response.send(allTimeTriggers);
+          });
+          function fn$(arg$){
+            var snapshot;
+            snapshot = arg$.snapshot;
+            return SC[room].triggerActionCell(cell, function(){});
+          }
+        });
+      }
+    });
+    this.get({
+      '/_debug': function(){
+        var this$ = this;
+        return DB.hgetall("cron-list", function(arg$, allTimeTriggers){
+          var triggerCells, ref$, sheet, cell, start;
+          triggerCells = Object.keys(allTimeTriggers);
+          ref$ = triggerCells[0].split('!'), sheet = ref$[0], cell = ref$[1];
+          console.log("sheet " + sheet + " cell " + cell);
+          this$.params.room = sheet;
+          start = api(function(){
+            return [
+              Json, function(sc, cb){
+                return sc.debug(cell, cb);
+              }
+            ];
+          });
+          return start.call(this$);
+        });
+      }
     });
     this.get({
       '/:room': KEY

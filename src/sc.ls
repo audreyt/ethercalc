@@ -34,16 +34,16 @@ bootSC += """;(#{->
 ##################################
 ### WebWorker Threads Fallback ###
 ##################################
-#IsThreaded = true
-#Worker = try
-#  @console = console
-#  throw \vm if argv.vm
-#  console.log "Starting backend using webworker-threads"
-#  (require \webworker-threads).Worker
-#catch
-#  console.log "Falling back to vm.CreateContext backend"
-#  IsThreaded = false
-IsThreaded = false
+IsThreaded = true
+Worker = try
+  @console = console
+  throw \vm if argv.vm
+  console.log "Starting backend using webworker-threads"
+  (require \webworker-threads).Worker
+catch
+  console.log "Falling back to vm.CreateContext backend"
+  IsThreaded = false
+#IsThreaded = false
 
 Worker ||= class => 
   (code) ->
@@ -75,7 +75,7 @@ Worker ||= class =>
   
   #eddy dataDir {
   dataDir = process.env.OPENSHIFT_DATA_DIR
-  dataDir ?= "/var/lib/openshift/566f601b2d5271ad8f000041/app-root/data"
+  #dataDir ?= "/var/lib/openshift/566f601b2d5271ad8f000041/app-root/data"
   # }
 
 
@@ -217,7 +217,7 @@ Worker ||= class =>
           nextTriggerTime
           \utf8               
       if triggerTimeList.length == 0 
-        <~ DB.hdel "cron-list" "#{room}_#{timetriggerdata.cell}"
+        <~ DB.hdel "cron-list" "#{room}!#{timetriggerdata.cell}"
       else
         <~ DB.multi!
           .hset "cron-list" "#{room}!#{timetriggerdata.cell}" triggerTimeList.toString()
@@ -299,13 +299,18 @@ Worker ||= class =>
       (, log) <~ DB.lrange "log-#room" 0 -1
       x.thread.eval bootSC, -> x.post-message {snapshot: w._snapshot, log}
     w._eval = (code, cb) ->
-      (, rv) <- w.thread.eval code
-      return cb rv if rv?
-      # Maybe thread is not yet initialized - retry at most once
-      (, rv) <- w.thread.eval code
-      return cb rv
+      setTimeout do
+        -> 
+          console.log "EVAL un-threaded"
+          (, rv) <- w.thread.eval code
+          return cb rv if rv?
+          # Maybe thread is not yet initialized - retry at most once
+          (, rv) <- w.thread.eval code
+          return cb rv
+        100ms
     if IsThreaded => w._eval = (code, cb) ->
       x = new Worker -> @onmessage = ({data: { snapshot, log=[], code }}) -> try
+        console.log "EVAL isThreaded"
         parts = SocialCalc.SpreadsheetControlDecodeSpreadsheetSave("", snapshot)
         save = snapshot.substring parts.sheet.start, parts.sheet.end
         window.setTimeout = (cb, ms) -> thread.next-tick cb
@@ -335,8 +340,16 @@ Worker ||= class =>
       }])
     """, (cell) -> if cell is \undefined then cb 'null' else cb cell
     w.exportCells = (cb) -> w._eval "JSON.stringify(window.ss.sheet.cells)", cb
-    # eddy exportAttribs {
-    w.exportAttribs = (cb) -> w._eval "window.ss.sheet.attribs", cb
+    # eddy exportAttribs, triggerActionCell {
+    w.exportAttribs = (cb) -> w._eval "window.ss.sheet.attribs", cb    
+    w.triggerActionCell = (coord, cb) -> w._eval "window.ss.SocialCalc.TriggerIoAction.Email('#coord')" (emailcmd) ->
+      for nextEmail in emailcmd
+        nextEmail = for addSpaces in nextEmail #replace %20 with spaces
+          addSpaces.replace(/%20/g,' ')
+        [emailto, subject, body] = nextEmail
+        emailer.sendemail emailto, subject, body,  (message) ->
+      cb emailcmd
+    w.debug = (coord, cb) -> w._eval "window.ss.sheet.ioParameterList", cb
     # }
     w.thread.eval bootSC, ~> w.postMessage { type: \init, room, log, snapshot }
     return w

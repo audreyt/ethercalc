@@ -42,4 +42,5 @@ fi
 date -u >> ${OPENSHIFT_LOG_DIR}ticktock.log
 #echo "NextTriggerTime past, $minutes, $topTime" 
 echo "NextTriggerTime past, $minutes, $topTime" >> ${OPENSHIFT_LOG_DIR}ticktock.log
-
+echo "--- $minutes ---" >> ${OPENSHIFT_LOG_DIR}allTimeTriggers.log
+curl http://${OPENSHIFT_APP_DNS}/_timeTrigger > ${OPENSHIFT_LOG_DIR}allTimeTriggers.log

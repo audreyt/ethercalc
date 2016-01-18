@@ -5958,6 +5958,9 @@ SocialCalc.Formula.StoreIoEventFormula = function(a, b, c, d, e) {
     "undefined" === typeof d.ioEventTree && (d.ioEventTree = {});
     "undefined" === typeof d.ioParameterList && (d.ioParameterList = {});
     "undefined" === typeof d.ioTimeTriggerList && (d.ioTimeTriggerList = {});
+    "undefined" === typeof d.ioParameterList[b] && (d.ioParameterList[b] = {});
+    d.ioParameterList[b] = f;
+    d.ioParameterList[b].function_name = a;
     if ("TimeTrigger" == e) {
       var g = function(a, b, c) {
         b = c.cells[b];
@@ -6005,15 +6008,12 @@ SocialCalc.Formula.StoreIoEventFormula = function(a, b, c, d, e) {
       c = null;
       null == e.formFields[h] && (c = e.formFields[h] = e.formFieldsLength++ + 2, c = "set " + SocialCalc.crToCoord(c, 1) + " text t " + SocialCalc.encodeForSave(a.toLowerCase() + b));
       if ("t" == f[0].type.charAt(0) || "n" == f[0].type.charAt(0)) {
-        if (h = SocialCalc.crToCoord(e.formFields[h], 2), null == e.sheet.cells[h] || e.sheet.cells[h].datavalue != f[0].value) {
-          h = "set " + h + " text t " + SocialCalc.encodeForSave(f[0].value), c = null != c ? c + "\n" + h : h;
+        if (a = SocialCalc.crToCoord(e.formFields[h], 2), null == e.sheet.cells[a] || e.sheet.cells[a].datavalue != f[0].value) {
+          f = "set " + a + " text t " + SocialCalc.encodeForSave(f[0].value), c = null != c ? c + "\n" + f : f;
         }
       }
       null != c && e.sheet.ScheduleSheetCommands(c, !1);
     }
-    "undefined" === typeof d.ioParameterList[b] && (d.ioParameterList[b] = {});
-    d.ioParameterList[b] = f;
-    d.ioParameterList[b].function_name = a;
     SocialCalc.DebugLog({ioEventTree:d.ioEventTree});
     SocialCalc.DebugLog({ioParameterList:d.ioParameterList});
   }
@@ -7532,55 +7532,63 @@ SocialCalc.TriggerIoAction.Button = function(a) {
 };
 SocialCalc.TriggerIoAction.Email = function(a, b) {
   b = "undefined" !== typeof b ? b : null;
-  var c = SocialCalc.Formula, d = window.spreadsheet, e = d.sheet, f = e.cells[a];
+  var c = SocialCalc.Formula, d = window.spreadsheet;
+  null == d && (d = window.ss);
+  var e = d.sheet, f = e.cells[a];
   if ("undefined" !== typeof e.ioParameterList) {
-    for (var g = e.ioParameterList[a], l = [], h = [], n = 1, q = 0;q < g.length;q++) {
-      if ("t" == g[q].type.charAt(0) && (l[q] = [g[q].value.replace(/ /g, "%20")]), "coord" == g[q].type && (l[q] = [e.GetAssuredCell(g[q].value).datavalue.replace(/ /g, "%20")]), "range" == g[q].type) {
-        var s = c.DecodeRangeParts(e, g[q].value);
-        l[q] = [];
-        h[q] = [];
-        for (var r = 0, p = 0;p < s.ncols;p++) {
-          for (var t = 0;t < s.nrows;t++) {
-            var u = SocialCalc.crToCoord(s.col1num + p, s.row1num + t), f = s.sheetdata.GetAssuredCell(u);
-            l[q].push(f.datavalue.toString().replace(/ /g, "%20"));
-            h[q].push(u);
-            r++;
+    var g = e.ioParameterList[a];
+    if ("undefined" !== typeof g) {
+      for (var l = [], h = [], n = 1, q = 0;q < g.length;q++) {
+        if ("t" == g[q].type.charAt(0) && (l[q] = [String(g[q].value).replace(/ /g, "%20")]), "coord" == g[q].type && (l[q] = [String(e.GetAssuredCell(g[q].value).datavalue).replace(/ /g, "%20")]), "range" == g[q].type) {
+          var s = c.DecodeRangeParts(e, g[q].value);
+          l[q] = [];
+          h[q] = [];
+          for (var r = 0, p = 0;p < s.ncols;p++) {
+            for (var t = 0;t < s.nrows;t++) {
+              var u = SocialCalc.crToCoord(s.col1num + p, s.row1num + t), f = s.sheetdata.GetAssuredCell(u);
+              l[q].push(f.datavalue.toString().replace(/ /g, "%20"));
+              h[q].push(u);
+              r++;
+            }
           }
+          r > n && (n = r);
         }
-        r > n && (n = r);
       }
-    }
-    c = -1;
-    f = 0;
-    switch(g.function_name) {
-      case "EMAILIF":
-        c = 0;
-      case "EMAILAT":
-      ;
-      case "EMAILONEDIT":
-        f = 1;
-        break;
-      case "EMAILONEDITIF":
-      ;
-      case "EMAILATIF":
-        c = 1, f = 2;
-    }
-    switch(g.function_name) {
-      case "EMAILONEDIT":
-      ;
-      case "EMAILONEDITIF":
-        b && "coord" == g[0].type && g[0].value == b && (b = null);
-        break;
-      default:
-        b = null;
-    }
-    g = !1;
-    for (n -= 1;-1 < n;n--) {
-      if (-1 == c || !1 != l[c][n >= l[c].length ? 0 : n]) {
-        b && b != h[0][n] || (q = l[f][n >= l[f].length ? 0 : n] + " " + l[f + 1][n >= l[f + 1].length ? 0 : n] + " " + l[f + 2][n >= l[f + 2].length ? 0 : n], g = !0, e.ScheduleSheetCommands("sendemail " + q, !1));
+      c = -1;
+      f = 0;
+      switch(g.function_name) {
+        case "EMAILIF":
+          c = 0;
+        case "EMAILAT":
+        ;
+        case "EMAILONEDIT":
+          f = 1;
+          break;
+        case "EMAILONEDITIF":
+        ;
+        case "EMAILATIF":
+          c = 1, f = 2;
       }
+      switch(g.function_name) {
+        case "EMAILONEDIT":
+        ;
+        case "EMAILONEDITIF":
+          b && "coord" == g[0].type && g[0].value == b && (b = null);
+          break;
+        default:
+          b = null;
+      }
+      g = !1;
+      q = [];
+      for (n -= 1;-1 < n;n--) {
+        if (-1 == c || !1 != l[c][n >= l[c].length ? 0 : n]) {
+          b && b != h[0][n] || (s = n >= l[f].length ? 0 : n, r = n >= l[f + 1].length ? 0 : n, p = n >= l[f + 2].length ? 0 : n, t = l[f][s] + " " + l[f + 1][r] + " " + l[f + 2][p], g = !0, e.ScheduleSheetCommands("sendemail " + t, !1), q.push([l[f][s], l[f + 1][r], l[f + 2][p]]));
+        }
+      }
+      console.log("log formula1.js Email");
+      g && SocialCalc.EditorSheetStatusCallback(null, "emailing", null, d.editor);
+      return q;
     }
-    g && SocialCalc.EditorSheetStatusCallback(null, "emailing", null, d.editor);
   }
 };
 SocialCalc.TriggerIoAction.Submit = function(a) {
@@ -10151,9 +10159,9 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
   }
   function q(a, b, c, d) {
     if (m.acceptData(a)) {
-      var e, f, g = m.expando, h = a.nodeType, l = h ? m.cache : a, n = h ? a[g] : a[g] && g;
-      if (n && l[n] && (d || l[n].data) || void 0 !== c || "string" != typeof b) {
-        return n || (n = h ? a[g] = T.pop() || m.guid++ : g), l[n] || (l[n] = h ? {} : {toJSON:m.noop}), ("object" == typeof b || "function" == typeof b) && (d ? l[n] = m.extend(l[n], b) : l[n].data = m.extend(l[n].data, b)), f = l[n], d || (f.data || (f.data = {}), f = f.data), void 0 !== c && (f[m.camelCase(b)] = c), "string" == typeof b ? (e = f[b], null == e && (e = f[m.camelCase(b)])) : e = f, e;
+      var e, f, g = m.expando, l = a.nodeType, h = l ? m.cache : a, n = l ? a[g] : a[g] && g;
+      if (n && h[n] && (d || h[n].data) || void 0 !== c || "string" != typeof b) {
+        return n || (n = l ? a[g] = T.pop() || m.guid++ : g), h[n] || (h[n] = l ? {} : {toJSON:m.noop}), ("object" == typeof b || "function" == typeof b) && (d ? h[n] = m.extend(h[n], b) : h[n].data = m.extend(h[n].data, b)), f = h[n], d || (f.data || (f.data = {}), f = f.data), void 0 !== c && (f[m.camelCase(b)] = c), "string" == typeof b ? (e = f[b], null == e && (e = f[m.camelCase(b)])) : e = f, e;
       }
     }
   }
@@ -10287,7 +10295,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
   function Y(a, b, c) {
     var d = !0, e = "width" === b ? a.offsetWidth : a.offsetHeight, f = ka(a), g = x.boxSizing() && "border-box" === m.css(a, "boxSizing", !1, f);
     if (0 >= e || null == e) {
-      if (e = da(a, b, f), (0 > e || null == e) && (e = a.style[b]), wa.test(e)) {
+      if (e = da(a, b, f), (0 > e || null == e) && (e = a.style[b]), va.test(e)) {
         return e;
       }
       d = g && (x.boxSizingReliable() || e === a.style[b]);
@@ -10330,7 +10338,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     }
   }
   function Za(a, b, c) {
-    var d, e = 0, f = xa.length, g = m.Deferred().always(function() {
+    var d, e = 0, f = wa.length, g = m.Deferred().always(function() {
       delete l.elem;
     }), l = function() {
       if (d) {
@@ -10355,7 +10363,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     }});
     c = h.props;
     for (Gb(c, h.opts.specialEasing);f > e;e++) {
-      if (b = xa[e].call(h, a, c, h.opts)) {
+      if (b = wa[e].call(h, a, c, h.opts)) {
         return b;
       }
     }
@@ -10600,7 +10608,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         return[];
       }
       if (O && !e) {
-        if (f = xa.exec(a)) {
+        if (f = wa.exec(a)) {
           if (F = f[1]) {
             if (9 === h) {
               if (g = c.getElementById(F), !g || !g.parentNode) {
@@ -10610,7 +10618,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
                 return d.push(g), d;
               }
             } else {
-              if (c.ownerDocument && (g = c.ownerDocument.getElementById(F)) && Aa(c, g) && g.id === F) {
+              if (c.ownerDocument && (g = c.ownerDocument.getElementById(F)) && za(c, g) && g.id === F) {
                 return d.push(g), d;
               }
             }
@@ -10626,7 +10634,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         if (y.qsa && (!X || !X.test(a))) {
           if (g = f = R, F = c, l = 9 === h && a, 1 === h && "object" !== c.nodeName.toLowerCase()) {
             h = p(a);
-            (f = c.getAttribute("id")) ? g = f.replace(ya, "\\$&") : c.setAttribute("id", g);
+            (f = c.getAttribute("id")) ? g = f.replace(xa, "\\$&") : c.setAttribute("id", g);
             g = "[id='" + g + "'] ";
             for (F = h.length;F--;) {
               h[F] = g + r(h[F]);
@@ -10791,7 +10799,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         }
       };
     }
-    function u(a) {
+    function t(a) {
       return 1 < a.length ? function(b, c, d) {
         for (var e = a.length;e--;) {
           if (!a[e](b, c, d)) {
@@ -10801,7 +10809,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         return!0;
       } : a[0];
     }
-    function t(a, b, c, d, e) {
+    function u(a, b, c, d, e) {
       for (var f, g = [], F = 0, h = a.length, l = null != b;h > F;F++) {
         (f = a[F]) && (!c || c(f, d, e)) && (g.push(f), l && b.push(F));
       }
@@ -10812,15 +10820,15 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         var m, K, n = [], P = [], q = F.length, N;
         if (!(N = d)) {
           N = c || "*";
-          for (var p = h.nodeType ? [h] : h, za = [], va = 0, r = p.length;r > va;va++) {
-            b(N, p[va], za);
+          for (var p = h.nodeType ? [h] : h, ya = [], r = 0, Ca = p.length;Ca > r;r++) {
+            b(N, p[r], ya);
           }
-          N = za;
+          N = ya;
         }
-        N = !a || !d && c ? N : t(N, n, a, h, l);
+        N = !a || !d && c ? N : u(N, n, a, h, l);
         p = e ? g || (d ? a : q || f) ? [] : F : N;
         if (e && e(N, p, h, l), f) {
-          for (m = t(p, P), f(m, [], h, l), h = m.length;h--;) {
+          for (m = u(p, P), f(m, [], h, l), h = m.length;h--;) {
             (K = m[h]) && (p[P[h]] = !(N[P[h]] = K));
           }
         }
@@ -10838,7 +10846,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
             }
           }
         } else {
-          p = t(p === F ? p.splice(q, p.length) : p), g ? g(null, F, p, l) : ma.apply(F, p);
+          p = u(p === F ? p.splice(q, p.length) : p), g ? g(null, F, p, l) : ma.apply(F, p);
         }
       });
     }
@@ -10853,22 +10861,22 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         return!f && (d || c !== E) || ((b = c).nodeType ? F(a, c, d) : h(a, c, d));
       }];e > g;g++) {
         if (c = x.relative[a[g].type]) {
-          l = [s(u(l), c)];
+          l = [s(t(l), c)];
         } else {
           if (c = x.filter[a[g].type].apply(null, a[g].matches), c[R]) {
             for (d = ++g;e > d && !x.relative[a[d].type];d++) {
             }
-            return v(1 < g && u(l), 1 < g && r(a.slice(0, g - 1).concat({value:" " === a[g - 2].type ? "*" : ""})).replace(aa, "$1"), c, d > g && w(a.slice(g, d)), e > d && w(a = a.slice(d)), e > d && r(a));
+            return v(1 < g && t(l), 1 < g && r(a.slice(0, g - 1).concat({value:" " === a[g - 2].type ? "*" : ""})).replace(aa, "$1"), c, d > g && w(a.slice(g, d)), e > d && w(a = a.slice(d)), e > d && r(a));
           }
           l.push(c);
         }
       }
-      return u(l);
+      return t(l);
     }
     function z(a, c) {
       var e = 0 < c.length, f = 0 < a.length, g = function(d, g, F, h, l) {
-        var m, K, n, P = 0, q = "0", p = d && [], N = [], za = E, va = d || f && x.find.TAG("*", l), r = ca += null == za ? 1 : Math.random() || 0.1, s = va.length;
-        for (l && (E = g !== J && g);q !== s && null != (m = va[q]);q++) {
+        var m, K, n, P = 0, q = "0", p = d && [], N = [], ya = E, r = d || f && x.find.TAG("*", l), Ca = ca += null == ya ? 1 : Math.random() || 0.1, s = r.length;
+        for (l && (E = g !== J && g);q !== s && null != (m = r[q]);q++) {
           if (f && m) {
             for (K = 0;n = a[K++];) {
               if (n(m, g, F)) {
@@ -10876,7 +10884,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
                 break;
               }
             }
-            l && (ca = r);
+            l && (ca = Ca);
           }
           e && ((m = !n && m) && P--, d && p.push(m));
         }
@@ -10890,16 +10898,16 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
                 p[q] || N[q] || (N[q] = ja.call(h));
               }
             }
-            N = t(N);
+            N = u(N);
           }
           ma.apply(h, N);
           l && !d && 0 < N.length && 1 < P + c.length && b.uniqueSort(h);
         }
-        return l && (ca = r, E = za), p;
+        return l && (ca = Ca, E = ya), p;
       };
       return e ? d(g) : g;
     }
-    var A, y, x, C, B, D, E, G, H, I, J, M, O, X, Q, Da, Aa, R = "sizzle" + -new Date, ba = a.document, ca = 0, Tb = 0, V = c(), W = c(), Z = c(), Y = function(a, b) {
+    var A, y, x, C, B, D, E, G, H, I, J, M, O, X, Q, Da, za, R = "sizzle" + -new Date, ba = a.document, ca = 0, Tb = 0, V = c(), W = c(), Z = c(), Y = function(a, b) {
       return a === b && (H = !0), 0;
     }, T = "undefined", $ = -2147483648, ga = {}.hasOwnProperty, S = [], ja = S.pop, ka = S.push, ma = S.push, da = S.slice, U = S.indexOf || function(a) {
       for (var b = 0, c = this.length;c > b;b++) {
@@ -10910,14 +10918,14 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
       return-1;
     }, ha = "(?:\\\\.|[\\w-]|[^\\x00-\\xa0])+".replace("w", "w#"), ia = "\\[[\\x20\\t\\r\\n\\f]*((?:\\\\.|[\\w-]|[^\\x00-\\xa0])+)[\\x20\\t\\r\\n\\f]*(?:([*^$|!~]?=)[\\x20\\t\\r\\n\\f]*(?:(['\"])((?:\\\\.|[^\\\\])*?)\\3|(" + ha + ")|)|)[\\x20\\t\\r\\n\\f]*\\]", ea = ":((?:\\\\.|[\\w-]|[^\\x00-\\xa0])+)(?:\\(((['\"])((?:\\\\.|[^\\\\])*?)\\3|((?:\\\\.|[^\\\\()[\\]]|" + ia.replace(3, 8) + ")*)|.*)\\)|)", aa = RegExp("^[\\x20\\t\\r\\n\\f]+|((?:^|[^\\\\])(?:\\\\.)*)[\\x20\\t\\r\\n\\f]+$", "g"), pa = /^[\x20\t\r\n\f]*,[\x20\t\r\n\f]*/, 
     qa = /^[\x20\t\r\n\f]*([>+~]|[\x20\t\r\n\f])[\x20\t\r\n\f]*/, ra = RegExp("=[\\x20\\t\\r\\n\\f]*([^\\]'\"]*?)[\\x20\\t\\r\\n\\f]*\\]", "g"), sa = RegExp(ea), ta = RegExp("^" + ha + "$"), fa = {ID:/^#((?:\\.|[\w-]|[^\x00-\xa0])+)/, CLASS:/^\.((?:\\.|[\w-]|[^\x00-\xa0])+)/, TAG:RegExp("^(" + "(?:\\\\.|[\\w-]|[^\\x00-\\xa0])+".replace("w", "w*") + ")"), ATTR:RegExp("^" + ia), PSEUDO:RegExp("^" + ea), CHILD:RegExp("^:(only|first|last|nth|nth-last)-(child|of-type)(?:\\([\\x20\\t\\r\\n\\f]*(even|odd|(([+-]|)(\\d*)n|)[\\x20\\t\\r\\n\\f]*(?:([+-]|)[\\x20\\t\\r\\n\\f]*(\\d+)|))[\\x20\\t\\r\\n\\f]*\\)|)", 
-    "i"), bool:RegExp("^(?:checked|selected|async|autofocus|autoplay|controls|defer|disabled|hidden|ismap|loop|multiple|open|readonly|required|scoped)$", "i"), needsContext:RegExp("^[\\x20\\t\\r\\n\\f]*[>+~]|:(even|odd|eq|gt|lt|nth|first|last)(?:\\([\\x20\\t\\r\\n\\f]*((?:-\\d)?\\d*)[\\x20\\t\\r\\n\\f]*\\)|)(?=[^-]|$)", "i")}, ua = /^(?:input|select|textarea|button)$/i, wa = /^h\d$/i, Ba = /^[^{]+\{\s*\[native \w/, xa = /^(?:#([\w-]+)|(\w+)|\.([\w-]+))$/, la = /[+~]/, ya = /'|\\/g, na = RegExp("\\\\([\\da-f]{1,6}[\\x20\\t\\r\\n\\f]?|([\\x20\\t\\r\\n\\f])|.)", 
+    "i"), bool:RegExp("^(?:checked|selected|async|autofocus|autoplay|controls|defer|disabled|hidden|ismap|loop|multiple|open|readonly|required|scoped)$", "i"), needsContext:RegExp("^[\\x20\\t\\r\\n\\f]*[>+~]|:(even|odd|eq|gt|lt|nth|first|last)(?:\\([\\x20\\t\\r\\n\\f]*((?:-\\d)?\\d*)[\\x20\\t\\r\\n\\f]*\\)|)(?=[^-]|$)", "i")}, ua = /^(?:input|select|textarea|button)$/i, va = /^h\d$/i, Aa = /^[^{]+\{\s*\[native \w/, wa = /^(?:#([\w-]+)|(\w+)|\.([\w-]+))$/, la = /[+~]/, xa = /'|\\/g, na = RegExp("\\\\([\\da-f]{1,6}[\\x20\\t\\r\\n\\f]?|([\\x20\\t\\r\\n\\f])|.)", 
     "ig"), oa = function(a, b, c) {
       a = "0x" + b - 65536;
       return a !== a || c ? b : 0 > a ? String.fromCharCode(a + 65536) : String.fromCharCode(a >> 10 | 55296, 1023 & a | 56320);
     };
     try {
       ma.apply(S = da.call(ba.childNodes), ba.childNodes), S[ba.childNodes.length].nodeType;
-    } catch (Ca) {
+    } catch (Ba) {
       ma = {apply:S.length ? function(a, b) {
         ka.apply(a, da.call(b));
       } : function(a, b) {
@@ -10941,7 +10949,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         return a.className = "i", !a.getAttribute("className");
       }), y.getElementsByTagName = e(function(a) {
         return a.appendChild(c.createComment("")), !a.getElementsByTagName("*").length;
-      }), y.getElementsByClassName = Ba.test(c.getElementsByClassName) && e(function(a) {
+      }), y.getElementsByClassName = Aa.test(c.getElementsByClassName) && e(function(a) {
         return a.innerHTML = "<div class='a'></div><div class='a i'></div>", a.firstChild.className = "i", 2 === a.getElementsByClassName("i").length;
       }), y.getById = e(function(a) {
         return M.appendChild(a).id = R, !c.getElementsByName || !c.getElementsByName(R).length;
@@ -10973,7 +10981,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         return f;
       }, x.find.CLASS = y.getElementsByClassName && function(a, b) {
         return typeof b.getElementsByClassName !== T && O ? b.getElementsByClassName(a) : void 0;
-      }, Q = [], X = [], (y.qsa = Ba.test(c.querySelectorAll)) && (e(function(a) {
+      }, Q = [], X = [], (y.qsa = Aa.test(c.querySelectorAll)) && (e(function(a) {
         a.innerHTML = "<select t=''><option selected=''></option></select>";
         a.querySelectorAll("[t^='']").length && X.push("[*^$]=[\\x20\\t\\r\\n\\f]*(?:''|\"\")");
         a.querySelectorAll("[selected]").length || X.push("\\[[\\x20\\t\\r\\n\\f]*(?:value|checked|selected|async|autofocus|autoplay|controls|defer|disabled|hidden|ismap|loop|multiple|open|readonly|required|scoped)");
@@ -10986,11 +10994,11 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         a.querySelectorAll(":enabled").length || X.push(":enabled", ":disabled");
         a.querySelectorAll("*,:x");
         X.push(",.*:");
-      })), (y.matchesSelector = Ba.test(Da = M.webkitMatchesSelector || M.mozMatchesSelector || M.oMatchesSelector || M.msMatchesSelector)) && e(function(a) {
+      })), (y.matchesSelector = Aa.test(Da = M.webkitMatchesSelector || M.mozMatchesSelector || M.oMatchesSelector || M.msMatchesSelector)) && e(function(a) {
         y.disconnectedMatch = Da.call(a, "div");
         Da.call(a, "[s!='']:x");
         Q.push("!=", ea);
-      }), X = X.length && RegExp(X.join("|")), Q = Q.length && RegExp(Q.join("|")), b = Ba.test(M.compareDocumentPosition), Aa = b || Ba.test(M.contains) ? function(a, b) {
+      }), X = X.length && RegExp(X.join("|")), Q = Q.length && RegExp(Q.join("|")), b = Aa.test(M.compareDocumentPosition), za = b || Aa.test(M.contains) ? function(a, b) {
         var c = 9 === a.nodeType ? a.documentElement : a, d = b && b.parentNode;
         return a === d || !(!d || 1 !== d.nodeType || !(c.contains ? c.contains(d) : a.compareDocumentPosition && 16 & a.compareDocumentPosition(d)));
       } : function(a, b) {
@@ -11007,7 +11015,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
           return H = !0, 0;
         }
         var d = !a.compareDocumentPosition - !b.compareDocumentPosition;
-        return d ? d : (d = (a.ownerDocument || a) === (b.ownerDocument || b) ? a.compareDocumentPosition(b) : 1, 1 & d || !y.sortDetached && b.compareDocumentPosition(a) === d ? a === c || a.ownerDocument === ba && Aa(ba, a) ? -1 : b === c || b.ownerDocument === ba && Aa(ba, b) ? 1 : G ? U.call(G, a) - U.call(G, b) : 0 : 4 & d ? -1 : 1);
+        return d ? d : (d = (a.ownerDocument || a) === (b.ownerDocument || b) ? a.compareDocumentPosition(b) : 1, 1 & d || !y.sortDetached && b.compareDocumentPosition(a) === d ? a === c || a.ownerDocument === ba && za(ba, a) ? -1 : b === c || b.ownerDocument === ba && za(ba, b) ? 1 : G ? U.call(G, a) - U.call(G, b) : 0 : 4 & d ? -1 : 1);
       } : function(a, b) {
         if (a === b) {
           return H = !0, 0;
@@ -11049,7 +11057,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
       return 0 < b(c, J, null, [a]).length;
     };
     b.contains = function(a, b) {
-      return(a.ownerDocument || a) !== J && I(a), Aa(a, b);
+      return(a.ownerDocument || a) !== J && I(a), za(a, b);
     };
     b.attr = function(a, b) {
       (a.ownerDocument || a) !== J && I(a);
@@ -11220,7 +11228,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     }, parent:function(a) {
       return!x.pseudos.empty(a);
     }, header:function(a) {
-      return wa.test(a.nodeName);
+      return va.test(a.nodeName);
     }, input:function(a) {
       return ua.test(a.nodeName);
     }, button:function(a) {
@@ -11530,7 +11538,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     }
     return e || f.resolveWith(n, c), f.promise();
   }});
-  var ya;
+  var xa;
   m.fn.ready = function(a) {
     return m.ready.promise().done(a), this;
   };
@@ -11542,12 +11550,12 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         return setTimeout(m.ready);
       }
       m.isReady = !0;
-      !0 !== a && 0 < --m.readyWait || (ya.resolveWith(D, [m]), m.fn.trigger && m(D).trigger("ready").off("ready"));
+      !0 !== a && 0 < --m.readyWait || (xa.resolveWith(D, [m]), m.fn.trigger && m(D).trigger("ready").off("ready"));
     }
   }});
   m.ready.promise = function(b) {
-    if (!ya) {
-      if (ya = m.Deferred(), "complete" === D.readyState) {
+    if (!xa) {
+      if (xa = m.Deferred(), "complete" === D.readyState) {
         setTimeout(m.ready);
       } else {
         if (D.addEventListener) {
@@ -11574,7 +11582,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         }
       }
     }
-    return ya.promise(b);
+    return xa.promise(b);
   };
   var W = "undefined", lb;
   for (lb in m(x)) {
@@ -11675,7 +11683,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     }
     return h(), e.promise(b);
   }});
-  var Ca = /[+-]?(?:\d*\.|)\d+(?:[eE][+-]?\d+|)/.source, ja = ["Top", "Right", "Bottom", "Left"], sa = function(a, b) {
+  var Ba = /[+-]?(?:\d*\.|)\d+(?:[eE][+-]?\d+|)/.source, ja = ["Top", "Right", "Bottom", "Left"], sa = function(a, b) {
     return a = b || a, "none" === m.css(a, "display") || !m.contains(a.ownerDocument, a);
   }, U = m.access = function(a, b, c, d, e, f, g) {
     var h = 0, l = a.length, n = null == c;
@@ -12178,17 +12186,17 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
       return b;
     };
   }();
-  var ub = /^margin/, wa = RegExp("^(" + Ca + ")(?!px)[a-z%]+$", "i"), ka, da, dc = /^(top|right|bottom|left)$/;
+  var ub = /^margin/, va = RegExp("^(" + Ba + ")(?!px)[a-z%]+$", "i"), ka, da, dc = /^(top|right|bottom|left)$/;
   a.getComputedStyle ? (ka = function(a) {
     return a.ownerDocument.defaultView.getComputedStyle(a, null);
   }, da = function(a, b, c) {
     var d, e, f, g, h = a.style;
-    return c = c || ka(a), g = c ? c.getPropertyValue(b) || c[b] : void 0, c && ("" !== g || m.contains(a.ownerDocument, a) || (g = m.style(a, b)), wa.test(g) && ub.test(b) && (d = h.width, e = h.minWidth, f = h.maxWidth, h.minWidth = h.maxWidth = h.width = g, g = c.width, h.width = d, h.minWidth = e, h.maxWidth = f)), void 0 === g ? g : g + "";
+    return c = c || ka(a), g = c ? c.getPropertyValue(b) || c[b] : void 0, c && ("" !== g || m.contains(a.ownerDocument, a) || (g = m.style(a, b)), va.test(g) && ub.test(b) && (d = h.width, e = h.minWidth, f = h.maxWidth, h.minWidth = h.maxWidth = h.width = g, g = c.width, h.width = d, h.minWidth = e, h.maxWidth = f)), void 0 === g ? g : g + "";
   }) : D.documentElement.currentStyle && (ka = function(a) {
     return a.currentStyle;
   }, da = function(a, b, c) {
     var d, e, f, g, h = a.style;
-    return c = c || ka(a), g = c ? c[b] : void 0, null == g && h && h[b] && (g = h[b]), wa.test(g) && !dc.test(b) && (d = h.left, e = a.runtimeStyle, f = e && e.left, f && (e.left = a.currentStyle.left), h.left = "fontSize" === b ? "1em" : g, g = h.pixelLeft + "px", h.left = d, f && (e.left = f)), void 0 === g ? g : g + "" || "auto";
+    return c = c || ka(a), g = c ? c[b] : void 0, null == g && h && h[b] && (g = h[b]), va.test(g) && !dc.test(b) && (d = h.left, e = a.runtimeStyle, f = e && e.left, f && (e.left = a.currentStyle.left), h.left = "fontSize" === b ? "1em" : g, g = h.pixelLeft + "px", h.left = d, f && (e.left = f)), void 0 === g ? g : g + "" || "auto";
   });
   !function() {
     function b() {
@@ -12253,7 +12261,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     }
     return c;
   };
-  var Ra = /alpha\([^)]*\)/i, ec = /opacity\s*=\s*([^)]*)/, fc = /^(none|table(?!-c[ea]).+)/, Lb = RegExp("^(" + Ca + ")(.*)$", "i"), gc = RegExp("^([+-])=(" + Ca + ")", "i"), hc = {position:"absolute", visibility:"hidden", display:"block"}, vb = {letterSpacing:0, fontWeight:400}, eb = ["Webkit", "O", "Moz", "ms"];
+  var Ra = /alpha\([^)]*\)/i, ec = /opacity\s*=\s*([^)]*)/, fc = /^(none|table(?!-c[ea]).+)/, Lb = RegExp("^(" + Ba + ")(.*)$", "i"), gc = RegExp("^([+-])=(" + Ba + ")", "i"), hc = {position:"absolute", visibility:"hidden", display:"block"}, vb = {letterSpacing:0, fontWeight:400}, eb = ["Webkit", "O", "Moz", "ms"];
   m.extend({cssHooks:{opacity:{get:function(a, b) {
     if (b) {
       var c = da(a, "opacity");
@@ -12360,7 +12368,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
   }};
   m.fx = I.prototype.init;
   m.fx.step = {};
-  var ea, Ea, ic = /^(?:toggle|show|hide)$/, wb = RegExp("^(?:([+-])=|)(" + Ca + ")([a-z%]*)$", "i"), jc = /queueHooks$/, xa = [function(a, b, c) {
+  var ea, Ea, ic = /^(?:toggle|show|hide)$/, wb = RegExp("^(?:([+-])=|)(" + Ba + ")([a-z%]*)$", "i"), jc = /queueHooks$/, wa = [function(a, b, c) {
     var d, e, f, g, h, l, n, q = this, p = {}, r = a.style, s = a.nodeType && sa(a), t = m._data(a, "fxshow");
     c.queue || (g = m._queueHooks(a, "fx"), null == g.unqueued && (g.unqueued = 0, h = g.empty.fire, g.empty.fire = function() {
       g.unqueued || h();
@@ -12418,7 +12426,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
       c = a[d], ta[c] = ta[c] || [], ta[c].unshift(b);
     }
   }, prefilter:function(a, b) {
-    b ? xa.unshift(a) : xa.push(a);
+    b ? wa.unshift(a) : wa.push(a);
   }});
   m.speed = function(a, b, c) {
     var d = a && "object" == typeof a ? m.extend({}, a) : {complete:c || !c && b || m.isFunction(a) && a, duration:a, easing:c && b || b && !m.isFunction(b) && b};
@@ -13237,7 +13245,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
   });
   m.each(["top", "left"], function(a, b) {
     m.cssHooks[b] = Q(x.pixelPosition, function(a, c) {
-      return c ? (c = da(a, b), wa.test(c) ? m(a).position()[b] + "px" : c) : void 0;
+      return c ? (c = da(a, b), va.test(c) ? m(a).position()[b] + "px" : c) : void 0;
     });
   });
   m.each({Height:"height", Width:"width"}, function(a, b) {
