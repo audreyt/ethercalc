@@ -428,9 +428,7 @@
                   text: 'Excel',
                   click: function(){
                     if (isMultiple) {
-                      alert(window.parent.location.href);
                       if (window.parent.location.href.match(/(^.*\/=[^?/]+)/)) {
-                        alert(RegExp.$1);
                         return window.open(RegExp.$1 + ".xlsx");
                       } else {
                         return window.open("./=" + SocialCalc._room.replace(/\.[1-9]\d*$/, '') + ".xlsx");
