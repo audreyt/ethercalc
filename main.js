@@ -115,7 +115,7 @@
             var snapshot;
             snapshot = arg$.snapshot;
             if (!snapshot) {
-              DB.get("snapshot-" + room + ".1", function(_, defaultSnapshot){
+              DB.get("snapshot-" + room + "1", function(_, defaultSnapshot){
                 var ref$, type, content;
                 if (!defaultSnapshot) {
                   this$.response.type(Text);

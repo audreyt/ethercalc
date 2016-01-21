@@ -77,7 +77,7 @@
       room.=slice 3
       {snapshot} <~ SC._get room, IO
       unless snapshot
-        _, default-snapshot <~ DB.get "snapshot-#room.1"
+        _, default-snapshot <~ DB.get "snapshot-#{room}1"
         unless default-snapshot
           @response.type Text
           @response.send 404 ''
