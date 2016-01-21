@@ -1,3 +1,8 @@
+# 20160122.5
+
+- Fixed Excel multi-spreadsheet export.
+- Allow selecting entire rows and columns.
+
 # 20150901.1
 
 - Updated "Description" metadata as per Kenton.
