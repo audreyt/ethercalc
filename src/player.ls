@@ -251,7 +251,7 @@ Check the activity stream to see the newly edited page!
       $ @ .attr title: 'Export...'
     $ document .on \click '#te_fullgrid tr:nth-child(2) td:first' ->
       SocialCalc.Keyboard.passThru = yes if vex?dialog.open
-      isMultiple = SocialCalc._room is /[1-9]\d*$/
+      isMultiple = (window.__MULTI__ or SocialCalc._room is /\.[1-9]\d*$/)
       vex?defaultOptions.className = 'vex-theme-flat-attack'
       vex?dialog.open do
         message: "Please choose an export format.#{
@@ -261,7 +261,10 @@ Check the activity stream to see the newly edited page!
         buttons: [
           $.extend {}, vex?dialog.buttons.YES, text: 'Excel', click: ->
             if isMultiple
-              window.open "./=#{ SocialCalc._room.replace(/\.[1-9]\d*$/, '') }.xlsx"
+              if window.parent.location.href.match(/(^.*\/=[^?/]+)/)
+                window.open "#{ RegExp.$1 }.xlsx"
+              else
+                window.open "./=#{ SocialCalc._room.replace(/\.[1-9]\d*$/, '') }.xlsx"
             else
               window.open "./#{ SocialCalc._room }.xlsx"
           $.extend {}, vex?dialog.buttons.YES, text: 'CSV', click: ->

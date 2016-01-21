@@ -58,5 +58,3 @@ This work is published from Taiwan.
     return this.include('main');
   });
 }).call(this);
-
-//# sourceMappingURL=app.js.map

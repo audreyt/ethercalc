@@ -1180,6 +1180,26 @@ SocialCalc.ResetSheet = function(sheet, reload) {
 
 SocialCalc.Sheet.prototype.ResetSheet = function() {SocialCalc.ResetSheet(this);};
 SocialCalc.Sheet.prototype.AddCell = function(newcell) {return this.cells[newcell.coord]=newcell;};
+SocialCalc.Sheet.prototype.LastCol = function() { 
+    var last_col = 1;
+    for (var cell_id  in this.cells) {
+        var cr = SocialCalc.coordToCr(cell_id);
+        if (cr.col > last_col) {
+            last_col = cr.col;
+        }
+    }
+    return last_col;
+}
+SocialCalc.Sheet.prototype.LastRow = function() { 
+    var last_row = 1;
+    for (var cell_id  in this.cells) {
+        var cr = SocialCalc.coordToCr(cell_id);
+        if (cr.row > last_row) {
+            last_row = cr.row;
+        }
+    }
+    return last_row;
+} 
 SocialCalc.Sheet.prototype.GetAssuredCell = function(coord) {
    return this.cells[coord] || this.AddCell(new SocialCalc.Cell(coord));
    };
@@ -6559,10 +6579,10 @@ SocialCalc.DetermineValueType = function(rawvalue) {
       value = tvalue.replace(/[\$,]/g, "") - 0;
       type = "n$";
       }
-   else if (matches=value.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{1,4})\s*$/)) { // MM/DD/YYYY, MM/DD/YYYY
+   else if (matches=value.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{1,4})\s*$/)) { // MM-DD-YYYY, MM/DD/YYYY
       year = matches[3] - 0;
       year = year < 1000 ? year + 2000 : year;
-      value = SocialCalc.FormatNumber.convert_date_gregorian_to_julian(year, matches[1]-0, matches[2]-0)-2415019;
+      value = ((navigator.language).indexOf("fr") === 0)  ? (SocialCalc.FormatNumber.convert_date_gregorian_to_julian(year, matches[2]-0, matches[1]-0)-2415019) : (SocialCalc.FormatNumber.convert_date_gregorian_to_julian(year, matches[1]-0, matches[2]-0)-2415019);
       type = "nd";
       }
    else if (matches=value.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})\s*$/)) { // YYYY-MM-DD, YYYY/MM/DD
@@ -8613,12 +8633,14 @@ SocialCalc.FinishColRowSize = function() {
 
    }
 
+
 SocialCalc.ProcessEditorRowselectMouseDown = function(e, ele, result) {
     var event = e || window.event;
     var mouseinfo = SocialCalc.EditorMouseInfo;
     var editor = mouseinfo.editor;
+    var sheet = SocialCalc.GetSpreadsheetControlObject().sheet;
     coord1 = SocialCalc.crToCoord(1, result.row)
-    coord2 = SocialCalc.crToCoord(editor.colpositions.length,
+    coord2 = SocialCalc.crToCoord(sheet.LastCol(),
 				  result.row)
     coord3 = SocialCalc.crToCoord(editor.firstscrollingcol,
 				  result.row)
@@ -8635,13 +8657,15 @@ SocialCalc.ProcessEditorRowselectMouseMove = function(e) {
     var event = e || window.event;
     var mouseinfo = SocialCalc.EditorMouseInfo;
     var editor = mouseinfo.editor;
+    var sheet = SocialCalc.GetSpreadsheetControlObject().sheet;
+
     if (!editor) return; // not us, ignore
 
     var pos = SocialCalc.GetElementPositionWithScroll(editor.toplevel);
     var clientX = event.clientX - pos.left;
     var clientY = event.clientY - pos.top;
     result = SocialCalc.GridMousePosition(editor, clientX, clientY);
-    coord2 = SocialCalc.crToCoord(editor.colpositions.length,
+    coord2 = SocialCalc.crToCoord(sheet.LastCol(),
 				  result.row)
     coord3 = SocialCalc.crToCoord(editor.firstscrollingcol,
 				  result.row)
@@ -8666,10 +8690,11 @@ SocialCalc.ProcessEditorColselectMouseDown = function(e, ele, result) {
     var event = e || window.event;
     var mouseinfo = SocialCalc.EditorMouseInfo;
     var editor = mouseinfo.editor;
+    var sheet = SocialCalc.GetSpreadsheetControlObject().sheet;
 
     coord1 = SocialCalc.crToCoord(result.col, 1)
     coord2 = SocialCalc.crToCoord(result.col,
-				  editor.rowpositions.length)
+				  sheet.LastRow())
     coord3 = SocialCalc.crToCoord(result.col,
 				  editor.firstscrollingrow)
     
@@ -8687,6 +8712,8 @@ SocialCalc.ProcessEditorColselectMouseMove = function(e) {
     var event = e || window.event;
     var mouseinfo = SocialCalc.EditorMouseInfo;
     var editor = mouseinfo.editor;
+    var sheet = SocialCalc.GetSpreadsheetControlObject().sheet;
+
     if (!editor) return; // not us, ignore
 
     var pos = SocialCalc.GetElementPositionWithScroll(editor.toplevel);
@@ -8694,7 +8721,7 @@ SocialCalc.ProcessEditorColselectMouseMove = function(e) {
     var clientY = event.clientY - pos.top;
     result = SocialCalc.GridMousePosition(editor, clientX, clientY);
     coord2 = SocialCalc.crToCoord(result.col,
-				  editor.rowpositions.length)
+				  sheet.LastRow())
     coord3 = SocialCalc.crToCoord(result.col,
 				  editor.firstscrollingrow)
     editor.RangeExtend(coord2);
@@ -22846,7 +22873,6 @@ SocialCalc.DoCmd = function(obj, which) {
                 var cells = spreadsheet.sheet.cells; 
                 var min_col = -1, max_col = -1, min_row = -1, max_row = -1;
                 for (var cell_id in cells) {
-                    cell = cells[cell_id];
                     var cr = SocialCalc.coordToCr(cell_id);
                     if (min_row == -1 || cr.row < min_row) {
                         min_row = cr.row;

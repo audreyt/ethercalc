@@ -255,6 +255,24 @@
     this.get({
       '/:room.md': ExportJ('md')
     });
+    if (this.CORS) {
+      this.get({
+        '/_rooms': function(){
+          this.response.type(Text);
+          return this.response.send(403, '_rooms not available with CORS');
+        }
+      });
+    } else {
+      this.get({
+        '/_rooms': function(){
+          var this$ = this;
+          return SC._rooms(function(rooms){
+            this$.response.type('application/json');
+            return this$.response.json(200, rooms);
+          });
+        }
+      });
+    }
     this.get({
       '/_from/:template': function(){
         var room, template, this$ = this;
@@ -269,6 +287,15 @@
               ? BASEPATH + "/" + room + "/edit"
               : BASEPATH + "/" + room);
           });
+        });
+      }
+    });
+    this.get({
+      '/_exists/:room': function(){
+        var this$ = this;
+        return SC._exists(this.params.room, function(exists){
+          this$.response.type('application/json');
+          return this$.response.json(deepEq$(exists, 1, '==='));
         });
       }
     });
@@ -523,6 +550,20 @@
         });
       }
     });
+    this['delete']({
+      '/_/:room': function(){
+        var room, ref$, this$ = this;
+        this.response.type(Text);
+        room = this.params.room;
+        if ((ref$ = SC[room]) != null) {
+          ref$.terminate();
+        }
+        delete SC[room];
+        return SC._del(room, function(){
+          return this$.response.send(201, 'OK');
+        });
+      }
+    });
     this.on({
       disconnect: function(){
         var id, ref$, key, i$, ref1$, len$, client, room, ref2$, val, isConnected, ref3$;
@@ -726,6 +767,88 @@
       });
     }
   };
+  function deepEq$(x, y, type){
+    var toString = {}.toString, hasOwnProperty = {}.hasOwnProperty,
+        has = function (obj, key) { return hasOwnProperty.call(obj, key); };
+    var first = true;
+    return eq(x, y, []);
+    function eq(a, b, stack) {
+      var className, length, size, result, alength, blength, r, key, ref, sizeB;
+      if (a == null || b == null) { return a === b; }
+      if (a.__placeholder__ || b.__placeholder__) { return true; }
+      if (a === b) { return a !== 0 || 1 / a == 1 / b; }
+      className = toString.call(a);
+      if (toString.call(b) != className) { return false; }
+      switch (className) {
+        case '[object String]': return a == String(b);
+        case '[object Number]':
+          return a != +a ? b != +b : (a == 0 ? 1 / a == 1 / b : a == +b);
+        case '[object Date]':
+        case '[object Boolean]':
+          return +a == +b;
+        case '[object RegExp]':
+          return a.source == b.source &&
+                 a.global == b.global &&
+                 a.multiline == b.multiline &&
+                 a.ignoreCase == b.ignoreCase;
+      }
+      if (typeof a != 'object' || typeof b != 'object') { return false; }
+      length = stack.length;
+      while (length--) { if (stack[length] == a) { return true; } }
+      stack.push(a);
+      size = 0;
+      result = true;
+      if (className == '[object Array]') {
+        alength = a.length;
+        blength = b.length;
+        if (first) {
+          switch (type) {
+          case '===': result = alength === blength; break;
+          case '<==': result = alength <= blength; break;
+          case '<<=': result = alength < blength; break;
+          }
+          size = alength;
+          first = false;
+        } else {
+          result = alength === blength;
+          size = alength;
+        }
+        if (result) {
+          while (size--) {
+            if (!(result = size in a == size in b && eq(a[size], b[size], stack))){ break; }
+          }
+        }
+      } else {
+        if ('constructor' in a != 'constructor' in b || a.constructor != b.constructor) {
+          return false;
+        }
+        for (key in a) {
+          if (has(a, key)) {
+            size++;
+            if (!(result = has(b, key) && eq(a[key], b[key], stack))) { break; }
+          }
+        }
+        if (result) {
+          sizeB = 0;
+          for (key in b) {
+            if (has(b, key)) { ++sizeB; }
+          }
+          if (first) {
+            if (type === '<<=') {
+              result = size < sizeB;
+            } else if (type === '<==') {
+              result = size <= sizeB
+            } else {
+              result = size === sizeB;
+            }
+          } else {
+            first = false;
+            result = size === sizeB;
+          }
+        }
+      }
+      stack.pop();
+      return result;
+    }
+  }
 }).call(this);
-
-//# sourceMappingURL=main.js.map

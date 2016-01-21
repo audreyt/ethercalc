@@ -210,7 +210,7 @@
     var DB, EXPIRE;
     DB = this.include('db');
     EXPIRE = this.EXPIRE;
-    SC.csvToSave = function(csv, cb){
+    SC._csvToSave = function(csv, cb){
       var w;
       w = new Worker;
       return w.thread.eval(bootSC, function(){
@@ -251,6 +251,35 @@
           DB.expire("snapshot-" + room, EXPIRE);
         }
         return typeof cb == 'function' ? cb() : void 8;
+      });
+    };
+    SC._del = function(room, cb){
+      var this$ = this;
+      return DB.multi().del(["snapshot-" + room, "log-" + room, "chat-" + room, "ecell-" + room, "audit-" + room]).bgsave().exec(function(){
+        return typeof cb == 'function' ? cb() : void 8;
+      });
+    };
+    SC._rooms = function(cb){
+      var this$ = this;
+      return DB.multi().keys('snapshot-*').exec(function(arg$, arg1$){
+        var rooms;
+        rooms = arg1$[0];
+        return cb((function(){
+          var i$, x$, ref$, len$, results$ = [];
+          for (i$ = 0, len$ = (ref$ = rooms).length; i$ < len$; ++i$) {
+            x$ = ref$[i$];
+            results$.push(x$.replace(/^snapshot-/, ""));
+          }
+          return results$;
+        }()));
+      });
+    };
+    SC._exists = function(room, cb){
+      var this$ = this;
+      return DB.multi().exists("snapshot-" + room).exec(function(arg$, arg1$){
+        var x;
+        x = arg1$[0];
+        return cb(x);
       });
     };
     SC._init = function(snapshot, log, DB, room, io){
@@ -682,5 +711,3 @@
     return SC;
   };
 }).call(this);
-
-//# sourceMappingURL=sc.js.map

@@ -414,7 +414,7 @@
             if ((typeof vex != 'undefined' && vex !== null) && vex.dialog.open) {
               SocialCalc.Keyboard.passThru = true;
             }
-            isMultiple = /[1-9]\d*$/.exec(SocialCalc._room);
+            isMultiple = window.__MULTI__ || /\.[1-9]\d*$/.exec(SocialCalc._room);
             if (typeof vex != 'undefined' && vex !== null) {
               vex.defaultOptions.className = 'vex-theme-flat-attack';
             }
@@ -428,7 +428,11 @@
                   text: 'Excel',
                   click: function(){
                     if (isMultiple) {
-                      return window.open("./=" + SocialCalc._room.replace(/\.[1-9]\d*$/, '') + ".xlsx");
+                      if (window.parent.location.href.match(/(^.*\/=[^?/]+)/)) {
+                        return window.open(RegExp.$1 + ".xlsx");
+                      } else {
+                        return window.open("./=" + SocialCalc._room.replace(/\.[1-9]\d*$/, '') + ".xlsx");
+                      }
                     } else {
                       return window.open("./" + SocialCalc._room + ".xlsx");
                     }
@@ -460,5 +464,3 @@
     });
   };
 }).call(this);
-
-//# sourceMappingURL=player.js.map

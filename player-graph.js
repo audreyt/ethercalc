@@ -895,5 +895,3 @@
     });
   };
 }).call(this);
-
-//# sourceMappingURL=player-graph.js.map

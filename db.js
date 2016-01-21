@@ -67,7 +67,7 @@
     });
     EXPIRE = this.EXPIRE;
     db.on('error', function(err){
-      var fs, Commands;
+      var fs, minimatch, Commands;
       switch (false) {
       case db.DB !== true:
         return console.log("==> Lost connection to Redis Server - attempting to reconnect...");
@@ -84,6 +84,7 @@
       }
       fs = require('fs');
       db.DB = {};
+      minimatch = require('minimatch');
       try {
         db.DB = JSON.parse(require('fs').readFileSync("/var/dump.json", 'utf8'));
         console.log("==> Restored previous session from JSON file");
@@ -102,6 +103,9 @@
         set: function(key, val, cb){
           db.DB[key] = val;
           return typeof cb == 'function' ? cb() : void 8;
+        },
+        exists: function(key, cb){
+          return cb(null, db.DB.hasOwnProperty(key) ? 1 : 0);
         },
         rpush: function(key, val, cb){
           var ref$, ref1$;
@@ -133,6 +137,9 @@
           var ref$, ref1$;
           db.DB[key2] = (ref1$ = (ref$ = db.DB)[key], delete ref$[key], ref1$);
           return typeof cb == 'function' ? cb() : void 8;
+        },
+        keys: function(select, cb){
+          return typeof cb == 'function' ? cb(null, Object.keys(db.DB).filter(minimatch.filter(select))) : void 8;
         },
         del: function(keys, cb){
           var i$, len$, key;
@@ -187,5 +194,3 @@
     return obj;
   }
 }).call(this);
-
-//# sourceMappingURL=db.js.map

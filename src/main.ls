@@ -157,8 +157,15 @@
   #@get '/:room.ods': Export-J \ods
   @get '/:room.xlsx': Export-J \xlsx
   @get '/:room.md': Export-J \md
-
-
+  if @CORS
+     @get '/_rooms' : ->
+        @response.type Text
+        return @response.send 403 '_rooms not available with CORS'
+  else
+     @get '/_rooms' : ->
+        rooms <~ SC._rooms 
+        @response.type \application/json
+        @response.json 200 rooms
   @get '/_from/:template': ->
     room = new-room!
     template = @params.template
@@ -166,6 +173,10 @@
     {snapshot} <~ SC._get template, IO
     <~ SC._put room, snapshot
     @response.redirect if KEY then "#BASEPATH/#room/edit" else "#BASEPATH/#room"
+  @get '/_exists/:room' : ->
+    exists <~ SC._exists @params.room
+    @response.type \application/json
+    @response.json (exists === 1)
 
   @get '/:room': ->
     ui-file = if @params.room is /^=/ then \multi/index.html else \index.html
@@ -315,6 +326,14 @@
     @response.type Text
     @response.location "/_/#room"
     @response.send 201 "/#room"
+
+  @delete '/_/:room': ->
+    @response.type Text
+    {room} = @params
+    SC[room]?terminate!
+    delete SC[room]
+    <~ SC._del room
+    @response.send 201 \OK
 
   @on disconnect: !->
     { id } = @socket
