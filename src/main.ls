@@ -26,11 +26,16 @@
     text/plain text/html text/csv application/json
   ]>.map (+ "; charset=utf-8")
 
+<<<<<<< HEAD
 
   dataDir = process.env.OPENSHIFT_DATA_DIR #eddy
   fs = require \fs   #eddy require fs
   const RealBin = require \path .dirname do
     fs .realpathSync __filename
+=======
+  const RealBin = require \path .dirname do
+    require \fs .realpathSync __filename
+>>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
 
   sendFile = (file) -> ->
     @response.type Html
@@ -48,7 +53,11 @@
   new-room = -> require \uuid-pure .newId 10 36 .toLowerCase!
 
   @get '/': sendFile \index.html
+<<<<<<< HEAD
   @get '/favicon.ico': sendFile \favicon.ico  #eddy return browser site icon
+=======
+  @get '/favicon.ico': -> @response.send 404 ''
+>>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
   @get '/manifest.appcache': ->
     @response.type \text/cache-manifest
     @response.sendfile "#RealBin/manifest.appcache"
@@ -62,7 +71,10 @@
     {snapshot} <~ SC._get @params.room, IO
     if snapshot
       [type, content] = cb.call @params, snapshot
+<<<<<<< HEAD
       #console.log "type #type params " {...@params} #eddy debug  
+=======
+>>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
       if type is Csv
         @response.set \Content-Disposition """
           attachment; filename="#{ @params.room }.csv"
@@ -100,6 +112,7 @@
     <~ SC._put room, snapshot
     @response.redirect "#BASEPATH/#room/app" 
   @get '/:template/appeditor': sendFile \panels.html    
+<<<<<<< HEAD
   @get '/_timetrigger': -> 
       (, allTimeTriggers) <~ DB.hgetall "cron-list"
       console.log "allTimeTriggers "  {...allTimeTriggers}
@@ -144,6 +157,8 @@
        (sc, cb) -> sc.debug cell, cb
       ]
       start.call this  
+=======
+>>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
 # } eddy 
 
   @get '/:room':

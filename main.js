@@ -2,7 +2,11 @@
 (function(){
   var join$ = [].join;
   this.include = function(){
+<<<<<<< HEAD
     var DB, SC, KEY, BASEPATH, EXPIRE, HMAC_CACHE, hmac, ref$, Text, Html, Csv, Json, dataDir, fs, RealBin, sendFile, newRoom, IO, api, ExportCSV, ExportHTML, requestToCommand, requestToSave;
+=======
+    var DB, SC, KEY, BASEPATH, EXPIRE, HMAC_CACHE, hmac, ref$, Text, Html, Csv, Json, RealBin, sendFile, newRoom, IO, api, ExportCSV, ExportHTML, requestToCommand, requestToSave;
+>>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
     this.use('json', this.app.router, this.express['static'](__dirname));
     this.app.use('/edit', this.express['static'](__dirname));
     this.app.use('/view', this.express['static'](__dirname));
@@ -28,9 +32,13 @@
     ref$ = ['text/plain', 'text/html', 'text/csv', 'application/json'].map((function(it){
       return it + "; charset=utf-8";
     })), Text = ref$[0], Html = ref$[1], Csv = ref$[2], Json = ref$[3];
+<<<<<<< HEAD
     dataDir = process.env.OPENSHIFT_DATA_DIR;
     fs = require('fs');
     RealBin = require('path').dirname(fs.realpathSync(__filename));
+=======
+    RealBin = require('path').dirname(require('fs').realpathSync(__filename));
+>>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
     sendFile = function(file){
       return function(){
         this.response.type(Html);
@@ -56,7 +64,13 @@
       '/': sendFile('index.html')
     });
     this.get({
+<<<<<<< HEAD
       '/favicon.ico': sendFile('favicon.ico')
+=======
+      '/favicon.ico': function(){
+        return this.response.send(404, '');
+      }
+>>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
     });
     this.get({
       '/manifest.appcache': function(){
@@ -160,6 +174,7 @@
       '/:template/appeditor': sendFile('panels.html')
     });
     this.get({
+<<<<<<< HEAD
       '/_timetrigger': function(){
         var this$ = this;
         return DB.hgetall("cron-list", function(arg$, allTimeTriggers){
@@ -226,6 +241,8 @@
       }
     });
     this.get({
+=======
+>>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
       '/:room': KEY
         ? function(){
           var ref$;

@@ -121,7 +121,10 @@
           };
           SocialCalc.Callbacks.broadcast = function(type, data){
             data == null && (data = {});
+<<<<<<< HEAD
             console.log("SocialCalc.Callbacks.broadcast " + data);
+=======
+>>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
             if (!SocialCalc.isConnected) {
               return;
             }

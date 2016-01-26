@@ -66,7 +66,10 @@
 
     emit = (data) ~> @emit {data}
     SocialCalc.Callbacks.broadcast = (type, data={}) ~>
+<<<<<<< HEAD
       console.log "SocialCalc.Callbacks.broadcast #data"
+=======
+>>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
       return unless SocialCalc.isConnected
       data.user = SocialCalc._username
       data.room = SocialCalc._room if !data.room?        

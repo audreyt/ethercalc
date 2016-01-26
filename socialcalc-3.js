@@ -1650,7 +1650,10 @@ SocialCalc.ScheduleSheetCommands = function(sheet, cmdstr, saveundo) {
 
    var sci = sheet.sci;
 
+<<<<<<< HEAD
    // console.trace();
+=======
+>>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
    sci.parseobj = new SocialCalc.Parse(cmdstr);
    sci.saveundo = saveundo;
 
@@ -1671,7 +1674,10 @@ SocialCalc.SheetCommandsTimerRoutine = function(sci) {
    var errortext;
    var starttime = new Date();
 
+<<<<<<< HEAD
    // console.log("SheetCommandsTimerRoutine"); // eddy debug
+=======
+>>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
    sci.timerobj = null;
 
    while (!sci.parseobj.EOF()) { // go through all commands (separated by newlines)
@@ -1794,7 +1800,10 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
 
    cmd1 = cmd.NextToken();
 
+<<<<<<< HEAD
    // console.log("ExecuteSheetCommand "+cmd1); //eddy debug
+=======
+>>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
    switch (cmd1) {
 
       case "set":
@@ -3074,10 +3083,16 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
 //      case "setemailparameters":    	  
 //    	  break;
     	  
+<<<<<<< HEAD
       case "settimetrigger":    
       case "sendemail":    
       case "submitform":    
     	  // email/form/timetrigger handled by server, so ignore here
+=======
+      case "sendemail":    
+      case "submitform":    
+    	  // email/form handled by server, so ignore here
+>>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
     	  break;
          // } eddy ExecuteSheetCommand 
     	  

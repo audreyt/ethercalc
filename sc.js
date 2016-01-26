@@ -190,11 +190,18 @@
     return Worker;
   }()));
   this.include = function(){
+<<<<<<< HEAD
     var DB, EXPIRE, emailer, dataDir;
     DB = this.include('db');
     EXPIRE = this.EXPIRE;
     emailer = this.include('emailer');
     dataDir = process.env.OPENSHIFT_DATA_DIR;
+=======
+    var DB, EXPIRE, emailer;
+    DB = this.include('db');
+    EXPIRE = this.EXPIRE;
+    emailer = this.include('emailer');
+>>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
     SC.csvToSave = function(csv, cb){
       var w;
       w = new Worker;
@@ -256,6 +263,7 @@
           case 'cmd':
             console.log("===> cmd " + command);
             commandParameters = command.split(" ");
+<<<<<<< HEAD
             if (commandParameters[0] === 'settimetrigger') {
               console.log("------ set time trigger --------");
               postMessage({
@@ -266,6 +274,8 @@
                 }
               });
             }
+=======
+>>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
             if (commandParameters[0] === 'sendemail') {
               console.log("------ send email --------");
               console.log(" to:" + commandParameters[1] + " subject:" + commandParameters[2] + " body:" + commandParameters[3]);
@@ -383,9 +393,13 @@
         });
         w._snapshot = newSnapshot;
         return DB.multi().set("snapshot-" + room, newSnapshot).del("log-" + room).bgsave().exec(function(){
+<<<<<<< HEAD
           var logdate;
           logdate = new Date();
           console.log("==> Regenerated snapshot " + logdate.getFullYear() + "-" + (logdate.getMonth() + 1) + "-" + logdate.getDate() + " " + logdate.getHours() + ":" + logdate.getMinutes() + ":" + logdate.getSeconds() + " for " + room);
+=======
+          console.log("==> Regenerated snapshot for " + room);
+>>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
           if (EXPIRE) {
             return DB.expire("snapshot-" + room, EXPIRE);
           }
@@ -395,8 +409,13 @@
         return console.log(it);
       };
       w.onmessage = function(arg$){
+<<<<<<< HEAD
         var ref$, type, snapshot, html, csv, ref, parts, save, emaildata, timetriggerdata, this$ = this;
         ref$ = arg$.data, type = ref$.type, snapshot = ref$.snapshot, html = ref$.html, csv = ref$.csv, ref = ref$.ref, parts = ref$.parts, save = ref$.save, emaildata = ref$.emaildata, timetriggerdata = ref$.timetriggerdata;
+=======
+        var ref$, type, snapshot, html, csv, ref, parts, save, emaildata;
+        ref$ = arg$.data, type = ref$.type, snapshot = ref$.snapshot, html = ref$.html, csv = ref$.csv, ref = ref$.ref, parts = ref$.parts, save = ref$.save, emaildata = ref$.emaildata;
+>>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
         switch (type) {
         case 'snapshot':
           return w.onSnapshot(snapshot);
@@ -406,6 +425,7 @@
           return w.onHtml(html);
         case 'csv':
           return w.onCsv(csv);
+<<<<<<< HEAD
         case 'setcrontrigger':
           console.log("set cron " + room);
           return DB.get("cron-nextTriggerTime", function(arg$, nextTriggerTime){
@@ -438,6 +458,8 @@
               });
             }
           });
+=======
+>>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
         case 'sendemailout':
           console.log("onmessage " + emaildata.to);
           return emailer.sendemail(emaildata.to, emaildata.subject, emaildata.body, function(message){
@@ -624,6 +646,7 @@
         };
       }
       w._eval = function(code, cb){
+<<<<<<< HEAD
         return setTimeout(function(){
           console.log("EVAL un-threaded");
           return w.thread.eval(code, function(arg$, rv){
@@ -635,6 +658,16 @@
             });
           });
         }, 100);
+=======
+        return w.thread.eval(code, function(arg$, rv){
+          if (rv != null) {
+            return cb(rv);
+          }
+          return w.thread.eval(code, function(arg$, rv){
+            return cb(rv);
+          });
+        });
+>>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
       };
       if (IsThreaded) {
         w._eval = function(code, cb){
@@ -646,7 +679,10 @@
                 ? ref1$
                 : [], code = ref$.code;
               try {
+<<<<<<< HEAD
                 console.log("EVAL isThreaded");
+=======
+>>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
                 parts = SocialCalc.SpreadsheetControlDecodeSpreadsheetSave("", snapshot);
                 save = snapshot.substring(parts.sheet.start, parts.sheet.end);
                 window.setTimeout = function(cb, ms){
@@ -723,6 +759,7 @@
       w.exportAttribs = function(cb){
         return w._eval("window.ss.sheet.attribs", cb);
       };
+<<<<<<< HEAD
       w.triggerActionCell = function(coord, cb){
         return w._eval("window.ss.SocialCalc.TriggerIoAction.Email('" + coord + "')", function(emailcmd){
           var i$, len$, nextEmail, res$, j$, len1$, addSpaces, emailto, subject, body;
@@ -745,6 +782,8 @@
       w.debug = function(coord, cb){
         return w._eval("window.ss.sheet.ioParameterList", cb);
       };
+=======
+>>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
       w.thread.eval(bootSC, function(){
         return w.postMessage({
           type: 'init',
@@ -757,9 +796,12 @@
     };
     return SC;
   };
+<<<<<<< HEAD
   function import$(obj, src){
     var own = {}.hasOwnProperty;
     for (var key in src) if (own.call(src, key)) obj[key] = src[key];
     return obj;
   }
+=======
+>>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
 }).call(this);
