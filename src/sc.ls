@@ -4,12 +4,6 @@ bootSC = fs.readFileSync "#{
 }/SocialCalcModule.js" \utf8
 
 global.SC ?= {console}
-<<<<<<< HEAD
-=======
-#console.log "===> global.SC.sendemail "
-#global.SC.sendemail = require './sendemail.js'
-
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
 
 argv = (try require \optimist .boolean <[ vm polling ]> .argv) || {}
 
@@ -57,11 +51,6 @@ Worker ||= class =>
     cxt.window =
       setTimeout: (cb, ms) -> process.nextTick cb
       clearTimeout: ->
-<<<<<<< HEAD
-=======
-    #cxt.console.log "===> cxt.sendemail "
-    #cxt.sendemail = global.SC.sendemail
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
     @postMessage = (data) -> sandbox.self.onmessage {data}
     @thread = cxt.thread =
       nextTick: (cb) -> process.nextTick cb
@@ -82,16 +71,12 @@ Worker ||= class =>
   DB = @include \db
   EXPIRE = @EXPIRE
   emailer = @include \emailer
-  #emailer.log!
-<<<<<<< HEAD
+
   
   #eddy dataDir {
   dataDir = process.env.OPENSHIFT_DATA_DIR
-  #dataDir ?= "/var/lib/openshift/566f601b2d5271ad8f000041/app-root/data"
   # }
 
-=======
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
 
   SC.csv-to-save = (csv, cb) ->
     w = new Worker
@@ -131,12 +116,9 @@ Worker ||= class =>
         | \cmd
           console.log "===> cmd "+command
           commandParameters = command.split(" ")
-<<<<<<< HEAD
           if commandParameters[0] is \settimetrigger
             console.log "------ set time trigger --------"
             postMessage { type: \setcrontrigger, timetriggerdata: { cell:commandParameters[1], times:commandParameters[2] } }
-=======
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
           if commandParameters[0] is \sendemail
             console.log "------ send email --------"
             console.log " to:"+commandParameters[1]+" subject:"+commandParameters[2]+" body:"+commandParameters[3]             
@@ -206,23 +188,15 @@ Worker ||= class =>
         .del "log-#room"
         .bgsave!
         .exec!
-<<<<<<< HEAD
-      logdate = new Date() 
-      console.log "==> Regenerated snapshot #{logdate.getFullYear() }-#{(logdate.getMonth()) + 1 }-#{logdate.getDate()} #{logdate.getHours()}:#{logdate.getMinutes()}:#{logdate.getSeconds()} for #room"
+      #logdate = new Date() 
+      #console.log "==> Regenerated snapshot #{logdate.getFullYear() }-#{(logdate.getMonth()) + 1 }-#{logdate.getDate()} #{logdate.getHours()}:#{logdate.getMinutes()}:#{logdate.getSeconds()} for #room"
       DB.expire "snapshot-#room", EXPIRE if EXPIRE
     w.onerror = -> console.log it
     w.onmessage = ({ data: { type, snapshot, html, csv, ref, parts, save, emaildata, timetriggerdata } }) -> switch type
-=======
-      console.log "==> Regenerated snapshot for #room"
-      DB.expire "snapshot-#room", EXPIRE if EXPIRE
-    w.onerror = -> console.log it
-    w.onmessage = ({ data: { type, snapshot, html, csv, ref, parts, save, emaildata } }) -> switch type
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
     | \snapshot   => w.on-snapshot snapshot
     | \save     => w.on-save save
     | \html     => w.on-html html
     | \csv    => w.on-csv csv
-<<<<<<< HEAD
     | \setcrontrigger
       console.log "set cron #room"
       # trigger times have been added or edited, so update the list of times and check the next scheduled item is correct
@@ -250,8 +224,6 @@ Worker ||= class =>
           .bgsave!exec!
         (, allTimeTriggers) <~ DB.hgetall "cron-list"
         console.log "allTimeTriggers" {...allTimeTriggers} " nextTriggerTime #nextTriggerTime"
-=======
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
     | \sendemailout 
       console.log "onmessage "+emaildata.to
       emailer.sendemail emaildata.to, emaildata.subject, emaildata.body,  (message) ->
@@ -326,7 +298,6 @@ Worker ||= class =>
       (, log) <~ DB.lrange "log-#room" 0 -1
       x.thread.eval bootSC, -> x.post-message {snapshot: w._snapshot, log}
     w._eval = (code, cb) ->
-<<<<<<< HEAD
       setTimeout do
         -> 
           console.log "EVAL un-threaded"
@@ -338,16 +309,7 @@ Worker ||= class =>
         100ms
     if IsThreaded => w._eval = (code, cb) ->
       x = new Worker -> @onmessage = ({data: { snapshot, log=[], code }}) -> try
-        console.log "EVAL isThreaded"
-=======
-      (, rv) <- w.thread.eval code
-      return cb rv if rv?
-      # Maybe thread is not yet initialized - retry at most once
-      (, rv) <- w.thread.eval code
-      return cb rv
-    if IsThreaded => w._eval = (code, cb) ->
-      x = new Worker -> @onmessage = ({data: { snapshot, log=[], code }}) -> try
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
+        #console.log "EVAL isThreaded"
         parts = SocialCalc.SpreadsheetControlDecodeSpreadsheetSave("", snapshot)
         save = snapshot.substring parts.sheet.start, parts.sheet.end
         window.setTimeout = (cb, ms) -> thread.next-tick cb
@@ -377,22 +339,17 @@ Worker ||= class =>
       }])
     """, (cell) -> if cell is \undefined then cb 'null' else cb cell
     w.exportCells = (cb) -> w._eval "JSON.stringify(window.ss.sheet.cells)", cb
-<<<<<<< HEAD
     # eddy exportAttribs, triggerActionCell {
     w.exportAttribs = (cb) -> w._eval "window.ss.sheet.attribs", cb    
     w.triggerActionCell = (coord, cb) -> w._eval "window.ss.SocialCalc.TriggerIoAction.Email('#coord')" (emailcmd) ->
-      console.log "send via OAuth"
+      #console.log "send via OAuth"
       for nextEmail in emailcmd
         nextEmail = for addSpaces in nextEmail #replace %20 with spaces
           addSpaces.replace(/%20/g,' ')
         [emailto, subject, body] = nextEmail
         emailer.sendemail emailto, subject, body,  (message) ->
       cb emailcmd
-    w.debug = (coord, cb) -> w._eval "window.ss.sheet.ioParameterList", cb
-=======
-    # eddy exportAttribs {
-    w.exportAttribs = (cb) -> w._eval "window.ss.sheet.attribs", cb
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
+    #w.debug = (coord, cb) -> w._eval "window.ss.sheet.ioParameterList", cb
     # }
     w.thread.eval bootSC, ~> w.postMessage { type: \init, room, log, snapshot }
     return w

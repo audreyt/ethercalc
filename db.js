@@ -106,19 +106,11 @@
             ? ref1$
             : ref$[key] = []) : void 8;
         },
-<<<<<<< HEAD
         hset: function(key, idx, val, cb){
           var ref$, ref1$;
           ((ref1$ = (ref$ = db.DB)[key]) != null
             ? ref1$
             : ref$[key] = {})[idx] = val;
-=======
-        hset: function(key, idx, val){
-          var ref$, ref1$;
-          ((ref1$ = (ref$ = db.DB)[key]) != null
-            ? ref1$
-            : ref$[key] = [])[idx] = val;
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
           return typeof cb === 'function' ? cb() : void 8;
         },
         hgetall: function(key, cb){
@@ -127,15 +119,12 @@
             ? ref1$
             : ref$[key] = {}) : void 8;
         },
-<<<<<<< HEAD
         hdel: function(key, idx){
           if (db.DB[key] != null) {
             delete db.DB[key][idx];
           }
           return typeof cb === 'function' ? cb() : void 8;
         },
-=======
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
         del: function(keys, cb){
           var i$, len$, yet$, key;
           if (Array.isArray(keys)) {
