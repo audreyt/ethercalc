@@ -1273,11 +1273,8 @@ SocialCalc.ExecuteSheetCommand = function(a, b, c) {
       A = b.NextToken();
       (E = a.sci.CmdExtensionCallbacks[A]) && E.func(A, E.data, a, b, c);
       break;
-<<<<<<< HEAD
     case "settimetrigger":
     ;
-=======
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
     case "sendemail":
     ;
     case "submitform":
@@ -5960,7 +5957,6 @@ SocialCalc.Formula.StoreIoEventFormula = function(a, b, c, d, e) {
     "RADIOBUTTON" == a && "undefined" === typeof d.ioEventTree && (d.ioEventTree = {});
     "undefined" === typeof d.ioEventTree && (d.ioEventTree = {});
     "undefined" === typeof d.ioParameterList && (d.ioParameterList = {});
-<<<<<<< HEAD
     "undefined" === typeof d.ioTimeTriggerList && (d.ioTimeTriggerList = {});
     "undefined" === typeof d.ioParameterList[b] && (d.ioParameterList[b] = {});
     d.ioParameterList[b] = f;
@@ -5994,25 +5990,13 @@ SocialCalc.Formula.StoreIoEventFormula = function(a, b, c, d, e) {
     if ("EventTree" == e && ("coord" == f[0].type || "range" == f[0].type)) {
       c = f[0].value.replace(/\$/g, "");
       g = function(a, b, c) {
-=======
-    if ("EventTree" == e && ("coord" == f[0].type || "range" == f[0].type)) {
-      c = f[0].value.replace(/\$/g, "");
-      var g = function(a, b, c) {
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
         "undefined" === typeof a[b] && (a[b] = {});
         a[b][c] = c;
       };
       if ("range" == f[0].type) {
-<<<<<<< HEAD
         for (h = SocialCalc.Formula.DecodeRangeParts(d, c), n = 0;n < h.ncols;n++) {
           for (q = 0;q < h.nrows;q++) {
             l = SocialCalc.crToCoord(h.col1num + n, h.row1num + q), g(d.ioEventTree, l, b);
-=======
-        for (var l = SocialCalc.Formula.DecodeRangeParts(d, c), h = 0;h < l.ncols;h++) {
-          for (var n = 0;n < l.nrows;n++) {
-            var q = SocialCalc.crToCoord(l.col1num + h, l.row1num + n);
-            g(d.ioEventTree, q, b);
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
           }
         }
       }
@@ -6020,36 +6004,20 @@ SocialCalc.Formula.StoreIoEventFormula = function(a, b, c, d, e) {
     }
     if ("Input" == e && (e = null != SocialCalc.CurrentSpreadsheetControlObject ? SocialCalc.CurrentSpreadsheetControlObject.formDataViewer : SocialCalc.CurrentSpreadsheetViewerObject.formDataViewer, null != e && !0 == e.loaded)) {
       null == e.formFields && SocialCalc.Formula.LoadFormFields();
-<<<<<<< HEAD
       h = (a + b).toLowerCase();
       c = null;
       null == e.formFields[h] && (c = e.formFields[h] = e.formFieldsLength++ + 2, c = "set " + SocialCalc.crToCoord(c, 1) + " text t " + SocialCalc.encodeForSave(a.toLowerCase() + b));
       if ("t" == f[0].type.charAt(0) || "n" == f[0].type.charAt(0)) {
         if (a = SocialCalc.crToCoord(e.formFields[h], 2), null == e.sheet.cells[a] || e.sheet.cells[a].datavalue != f[0].value) {
           f = "set " + a + " text t " + SocialCalc.encodeForSave(f[0].value), c = null != c ? c + "\n" + f : f;
-=======
-      g = (a + b).toLowerCase();
-      c = null;
-      null == e.formFields[g] && (c = e.formFields[g] = e.formFieldsLength++ + 2, c = "set " + SocialCalc.crToCoord(c, 1) + " text t " + SocialCalc.encodeForSave(a.toLowerCase() + b));
-      if ("t" == f[0].type.charAt(0) || "n" == f[0].type.charAt(0)) {
-        if (g = SocialCalc.crToCoord(e.formFields[g], 2), null == e.sheet.cells[g] || e.sheet.cells[g].datavalue != f[0].value) {
-          g = "set " + g + " text t " + SocialCalc.encodeForSave(f[0].value), c = null != c ? c + "\n" + g : g;
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
         }
       }
       null != c && e.sheet.ScheduleSheetCommands(c, !1);
     }
-<<<<<<< HEAD
-=======
-    "undefined" === typeof d.ioParameterList[b] && (d.ioParameterList[b] = {});
-    d.ioParameterList[b] = f;
-    d.ioParameterList[b].function_name = a;
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
     SocialCalc.DebugLog({ioEventTree:d.ioEventTree});
     SocialCalc.DebugLog({ioParameterList:d.ioParameterList});
   }
 };
-<<<<<<< HEAD
 SocialCalc.Formula.ArrayValuesEqual = function(a, b) {
   var c = a.length;
   if (c != b.length) {
@@ -6062,8 +6030,6 @@ SocialCalc.Formula.ArrayValuesEqual = function(a, b) {
   }
   return!0;
 };
-=======
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
 SocialCalc.Formula.Clone = function(a, b) {
   for (var c in b) {
     "object" === typeof b[c] && null !== b[c] && a[c] ? SocialCalc.Formula.Clone(a[c], b[c]) : a[c] = b[c];
@@ -7529,24 +7495,18 @@ SocialCalc.Formula.IoFunctions = function(a, b, c, d) {
   }
   g.PushOperand(b, h, l);
 };
-SocialCalc.Formula.FunctionList.BUTTON = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "gui", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Button('<%=cell_reference%>');\"><%=formated_value%></button>"];
-SocialCalc.Formula.FunctionList.EMAIL = [SocialCalc.Formula.IoFunctions, -3, "to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList"];
-SocialCalc.Formula.FunctionList.EMAILIF = [SocialCalc.Formula.IoFunctions, -4, "condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList"];
-SocialCalc.Formula.FunctionList.EMAILONEDIT = [SocialCalc.Formula.IoFunctions, -4, "editRange, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "EventTree"];
-<<<<<<< HEAD
-SocialCalc.Formula.FunctionList.EMAILAT = [SocialCalc.Formula.IoFunctions, -4, "datetime, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "TimeTrigger"];
-SocialCalc.Formula.FunctionList.EMAILONEDITIF = [SocialCalc.Formula.IoFunctions, -5, "editRange, condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "EventTree"];
-SocialCalc.Formula.FunctionList.EMAILATIF = [SocialCalc.Formula.IoFunctions, -5, "datetime, condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "TimeTrigger"];
-=======
-SocialCalc.Formula.FunctionList.EMAILAT = [SocialCalc.Formula.IoFunctions, -4, "datetime, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList"];
-SocialCalc.Formula.FunctionList.EMAILONEDITIF = [SocialCalc.Formula.IoFunctions, -5, "editRange, condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "EventTree"];
-SocialCalc.Formula.FunctionList.EMAILATIF = [SocialCalc.Formula.IoFunctions, -5, "datetime, condition, to, subject, body, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList"];
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
-SocialCalc.Formula.FunctionList.SUBMIT = [SocialCalc.Formula.IoFunctions, 100, "[txt]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Submit('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList"];
-SocialCalc.Formula.FunctionList.TEXTBOX = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "gui", "<input type='text' id='TEXTBOX_<%=cell_reference%>' onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.TextBox('<%=cell_reference%>')\" value='<%=display_value%>' >", "Input"];
-SocialCalc.Formula.FunctionList.CHECKBOX = [SocialCalc.Formula.IoFunctions, 1, "txt", "", "gui", "<input type='checkbox' id='CHECKBOX_<%=cell_reference%>' <%=checked%> onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.CheckBox('<%=cell_reference%>')\" >", "Input"];
-SocialCalc.Formula.FunctionList.COPYVALUE = [SocialCalc.Formula.IoFunctions, 3, "txt", "", "action", "", "EventTree"];
-SocialCalc.Formula.FunctionList.COPYFORMULA = [SocialCalc.Formula.IoFunctions, 3, "txt", "", "action", "", "EventTree"];
+SocialCalc.Formula.FunctionList.BUTTON = [SocialCalc.Formula.IoFunctions, 1, "label", "", "gui", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Button('<%=cell_reference%>');\"><%=formated_value%></button>"];
+SocialCalc.Formula.FunctionList.EMAIL = [SocialCalc.Formula.IoFunctions, -3, "to_range subject_range, body_range, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList"];
+SocialCalc.Formula.FunctionList.EMAILIF = [SocialCalc.Formula.IoFunctions, -4, "condition_range, to_range subject_range, body_range, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList"];
+SocialCalc.Formula.FunctionList.EMAILONEDIT = [SocialCalc.Formula.IoFunctions, -4, "editRange, to_range subject_range, body_range, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "EventTree"];
+SocialCalc.Formula.FunctionList.EMAILAT = [SocialCalc.Formula.IoFunctions, -4, "datetime_value, to_range subject_range, body_range, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "TimeTrigger"];
+SocialCalc.Formula.FunctionList.EMAILONEDITIF = [SocialCalc.Formula.IoFunctions, -5, "editRange, condition, to_range subject_range, body_range, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "EventTree"];
+SocialCalc.Formula.FunctionList.EMAILATIF = [SocialCalc.Formula.IoFunctions, -5, "datetime_value, condition, to_range subject_range, body_range, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "TimeTrigger"];
+SocialCalc.Formula.FunctionList.SUBMIT = [SocialCalc.Formula.IoFunctions, 100, "[label]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Submit('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList"];
+SocialCalc.Formula.FunctionList.TEXTBOX = [SocialCalc.Formula.IoFunctions, 1, "label", "", "gui", "<input type='text' id='TEXTBOX_<%=cell_reference%>' onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.TextBox('<%=cell_reference%>')\" value='<%=display_value%>' >", "Input"];
+SocialCalc.Formula.FunctionList.CHECKBOX = [SocialCalc.Formula.IoFunctions, 1, "label", "", "gui", "<input type='checkbox' id='CHECKBOX_<%=cell_reference%>' <%=checked%> onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.CheckBox('<%=cell_reference%>')\" >", "Input"];
+SocialCalc.Formula.FunctionList.COPYVALUE = [SocialCalc.Formula.IoFunctions, 3, "trigger_cell, value_range, destinationCell(s)", "", "action", "", "EventTree"];
+SocialCalc.Formula.FunctionList.COPYFORMULA = [SocialCalc.Formula.IoFunctions, 3, "trigger_cell, formula_range, destinationCell(s)", "", "action", "", "EventTree"];
 SocialCalc.TriggerIoAction.Button = function(a) {
   var b = window.spreadsheet, c = b.sheet;
   if ("undefined" !== typeof c.ioEventTree && "undefined" !== typeof c.ioParameterList && "undefined" !== c.ioEventTree[a]) {
@@ -7572,7 +7532,6 @@ SocialCalc.TriggerIoAction.Button = function(a) {
 };
 SocialCalc.TriggerIoAction.Email = function(a, b) {
   b = "undefined" !== typeof b ? b : null;
-<<<<<<< HEAD
   var c = SocialCalc.Formula, d = window.spreadsheet;
   null == d && (d = window.ss);
   var e = d.sheet, f = e.cells[a];
@@ -7626,61 +7585,9 @@ SocialCalc.TriggerIoAction.Email = function(a, b) {
           b && b != h[0][n] || (s = n >= l[f].length ? 0 : n, r = n >= l[f + 1].length ? 0 : n, p = n >= l[f + 2].length ? 0 : n, t = l[f][s] + " " + l[f + 1][r] + " " + l[f + 2][p], g = !0, e.ScheduleSheetCommands("sendemail " + t, !1), q.push([l[f][s], l[f + 1][r], l[f + 2][p]]));
         }
       }
-      console.log("log formula1.js Email");
       g && SocialCalc.EditorSheetStatusCallback(null, "emailing", null, d.editor);
       return q;
     }
-=======
-  var c = SocialCalc.Formula, d = window.spreadsheet, e = d.sheet, f = e.cells[a];
-  if ("undefined" !== typeof e.ioParameterList) {
-    for (var g = e.ioParameterList[a], l = [], h = [], n = 1, q = 0;q < g.length;q++) {
-      if ("t" == g[q].type.charAt(0) && (l[q] = [g[q].value.replace(/ /g, "%20")]), "coord" == g[q].type && (l[q] = [e.GetAssuredCell(g[q].value).datavalue.replace(/ /g, "%20")]), "range" == g[q].type) {
-        var s = c.DecodeRangeParts(e, g[q].value);
-        l[q] = [];
-        h[q] = [];
-        for (var r = 0, p = 0;p < s.ncols;p++) {
-          for (var t = 0;t < s.nrows;t++) {
-            var u = SocialCalc.crToCoord(s.col1num + p, s.row1num + t), f = s.sheetdata.GetAssuredCell(u);
-            l[q].push(f.datavalue.toString().replace(/ /g, "%20"));
-            h[q].push(u);
-            r++;
-          }
-        }
-        r > n && (n = r);
-      }
-    }
-    c = -1;
-    f = 0;
-    switch(g.function_name) {
-      case "EMAILIF":
-        c = 0;
-      case "EMAILAT":
-      ;
-      case "EMAILONEDIT":
-        f = 1;
-        break;
-      case "EMAILONEDITIF":
-      ;
-      case "EMAILATIF":
-        c = 1, f = 2;
-    }
-    switch(g.function_name) {
-      case "EMAILONEDIT":
-      ;
-      case "EMAILONEDITIF":
-        b && "coord" == g[0].type && g[0].value == b && (b = null);
-        break;
-      default:
-        b = null;
-    }
-    g = !1;
-    for (n -= 1;-1 < n;n--) {
-      if (-1 == c || !1 != l[c][n >= l[c].length ? 0 : n]) {
-        b && b != h[0][n] || (q = l[f][n >= l[f].length ? 0 : n] + " " + l[f + 1][n >= l[f + 1].length ? 0 : n] + " " + l[f + 2][n >= l[f + 2].length ? 0 : n], g = !0, e.ScheduleSheetCommands("sendemail " + q, !1));
-      }
-    }
-    g && SocialCalc.EditorSheetStatusCallback(null, "emailing", null, d.editor);
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
   }
 };
 SocialCalc.TriggerIoAction.Submit = function(a) {
@@ -10387,11 +10294,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
   function Y(a, b, c) {
     var d = !0, e = "width" === b ? a.offsetWidth : a.offsetHeight, f = ka(a), g = x.boxSizing() && "border-box" === m.css(a, "boxSizing", !1, f);
     if (0 >= e || null == e) {
-<<<<<<< HEAD
       if (e = da(a, b, f), (0 > e || null == e) && (e = a.style[b]), va.test(e)) {
-=======
-      if (e = da(a, b, f), (0 > e || null == e) && (e = a.style[b]), wa.test(e)) {
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
         return e;
       }
       d = g && (x.boxSizingReliable() || e === a.style[b]);
@@ -10434,11 +10337,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     }
   }
   function Za(a, b, c) {
-<<<<<<< HEAD
     var d, e = 0, f = wa.length, g = m.Deferred().always(function() {
-=======
-    var d, e = 0, f = xa.length, g = m.Deferred().always(function() {
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
       delete l.elem;
     }), l = function() {
       if (d) {
@@ -10463,11 +10362,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     }});
     c = h.props;
     for (Gb(c, h.opts.specialEasing);f > e;e++) {
-<<<<<<< HEAD
       if (b = wa[e].call(h, a, c, h.opts)) {
-=======
-      if (b = xa[e].call(h, a, c, h.opts)) {
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
         return b;
       }
     }
@@ -10712,11 +10607,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         return[];
       }
       if (O && !e) {
-<<<<<<< HEAD
         if (f = wa.exec(a)) {
-=======
-        if (f = xa.exec(a)) {
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
           if (F = f[1]) {
             if (9 === h) {
               if (g = c.getElementById(F), !g || !g.parentNode) {
@@ -10726,11 +10617,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
                 return d.push(g), d;
               }
             } else {
-<<<<<<< HEAD
               if (c.ownerDocument && (g = c.ownerDocument.getElementById(F)) && za(c, g) && g.id === F) {
-=======
-              if (c.ownerDocument && (g = c.ownerDocument.getElementById(F)) && Aa(c, g) && g.id === F) {
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
                 return d.push(g), d;
               }
             }
@@ -10746,11 +10633,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         if (y.qsa && (!X || !X.test(a))) {
           if (g = f = R, F = c, l = 9 === h && a, 1 === h && "object" !== c.nodeName.toLowerCase()) {
             h = p(a);
-<<<<<<< HEAD
             (f = c.getAttribute("id")) ? g = f.replace(xa, "\\$&") : c.setAttribute("id", g);
-=======
-            (f = c.getAttribute("id")) ? g = f.replace(ya, "\\$&") : c.setAttribute("id", g);
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
             g = "[id='" + g + "'] ";
             for (F = h.length;F--;) {
               h[F] = g + r(h[F]);
@@ -10915,11 +10798,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         }
       };
     }
-<<<<<<< HEAD
     function t(a) {
-=======
-    function u(a) {
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
       return 1 < a.length ? function(b, c, d) {
         for (var e = a.length;e--;) {
           if (!a[e](b, c, d)) {
@@ -10929,11 +10808,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         return!0;
       } : a[0];
     }
-<<<<<<< HEAD
     function u(a, b, c, d, e) {
-=======
-    function t(a, b, c, d, e) {
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
       for (var f, g = [], F = 0, h = a.length, l = null != b;h > F;F++) {
         (f = a[F]) && (!c || c(f, d, e)) && (g.push(f), l && b.push(F));
       }
@@ -10944,7 +10819,6 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         var m, K, n = [], P = [], q = F.length, N;
         if (!(N = d)) {
           N = c || "*";
-<<<<<<< HEAD
           for (var p = h.nodeType ? [h] : h, ya = [], r = 0, Ca = p.length;Ca > r;r++) {
             b(N, p[r], ya);
           }
@@ -10954,17 +10828,6 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         p = e ? g || (d ? a : q || f) ? [] : F : N;
         if (e && e(N, p, h, l), f) {
           for (m = u(p, P), f(m, [], h, l), h = m.length;h--;) {
-=======
-          for (var p = h.nodeType ? [h] : h, za = [], va = 0, r = p.length;r > va;va++) {
-            b(N, p[va], za);
-          }
-          N = za;
-        }
-        N = !a || !d && c ? N : t(N, n, a, h, l);
-        p = e ? g || (d ? a : q || f) ? [] : F : N;
-        if (e && e(N, p, h, l), f) {
-          for (m = t(p, P), f(m, [], h, l), h = m.length;h--;) {
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
             (K = m[h]) && (p[P[h]] = !(N[P[h]] = K));
           }
         }
@@ -10982,11 +10845,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
             }
           }
         } else {
-<<<<<<< HEAD
           p = u(p === F ? p.splice(q, p.length) : p), g ? g(null, F, p, l) : ma.apply(F, p);
-=======
-          p = t(p === F ? p.splice(q, p.length) : p), g ? g(null, F, p, l) : ma.apply(F, p);
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
         }
       });
     }
@@ -11001,39 +10860,22 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         return!f && (d || c !== E) || ((b = c).nodeType ? F(a, c, d) : h(a, c, d));
       }];e > g;g++) {
         if (c = x.relative[a[g].type]) {
-<<<<<<< HEAD
           l = [s(t(l), c)];
-=======
-          l = [s(u(l), c)];
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
         } else {
           if (c = x.filter[a[g].type].apply(null, a[g].matches), c[R]) {
             for (d = ++g;e > d && !x.relative[a[d].type];d++) {
             }
-<<<<<<< HEAD
             return v(1 < g && t(l), 1 < g && r(a.slice(0, g - 1).concat({value:" " === a[g - 2].type ? "*" : ""})).replace(aa, "$1"), c, d > g && w(a.slice(g, d)), e > d && w(a = a.slice(d)), e > d && r(a));
-=======
-            return v(1 < g && u(l), 1 < g && r(a.slice(0, g - 1).concat({value:" " === a[g - 2].type ? "*" : ""})).replace(aa, "$1"), c, d > g && w(a.slice(g, d)), e > d && w(a = a.slice(d)), e > d && r(a));
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
           }
           l.push(c);
         }
       }
-<<<<<<< HEAD
       return t(l);
     }
     function z(a, c) {
       var e = 0 < c.length, f = 0 < a.length, g = function(d, g, F, h, l) {
         var m, K, n, P = 0, q = "0", p = d && [], N = [], ya = E, r = d || f && x.find.TAG("*", l), Ca = ca += null == ya ? 1 : Math.random() || 0.1, s = r.length;
         for (l && (E = g !== J && g);q !== s && null != (m = r[q]);q++) {
-=======
-      return u(l);
-    }
-    function z(a, c) {
-      var e = 0 < c.length, f = 0 < a.length, g = function(d, g, F, h, l) {
-        var m, K, n, P = 0, q = "0", p = d && [], N = [], za = E, va = d || f && x.find.TAG("*", l), r = ca += null == za ? 1 : Math.random() || 0.1, s = va.length;
-        for (l && (E = g !== J && g);q !== s && null != (m = va[q]);q++) {
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
           if (f && m) {
             for (K = 0;n = a[K++];) {
               if (n(m, g, F)) {
@@ -11041,11 +10883,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
                 break;
               }
             }
-<<<<<<< HEAD
             l && (ca = Ca);
-=======
-            l && (ca = r);
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
           }
           e && ((m = !n && m) && P--, d && p.push(m));
         }
@@ -11059,28 +10897,16 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
                 p[q] || N[q] || (N[q] = ja.call(h));
               }
             }
-<<<<<<< HEAD
             N = u(N);
-=======
-            N = t(N);
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
           }
           ma.apply(h, N);
           l && !d && 0 < N.length && 1 < P + c.length && b.uniqueSort(h);
         }
-<<<<<<< HEAD
         return l && (ca = Ca, E = ya), p;
       };
       return e ? d(g) : g;
     }
     var A, y, x, C, B, D, E, G, H, I, J, M, O, X, Q, Da, za, R = "sizzle" + -new Date, ba = a.document, ca = 0, Tb = 0, V = c(), W = c(), Z = c(), Y = function(a, b) {
-=======
-        return l && (ca = r, E = za), p;
-      };
-      return e ? d(g) : g;
-    }
-    var A, y, x, C, B, D, E, G, H, I, J, M, O, X, Q, Da, Aa, R = "sizzle" + -new Date, ba = a.document, ca = 0, Tb = 0, V = c(), W = c(), Z = c(), Y = function(a, b) {
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
       return a === b && (H = !0), 0;
     }, T = "undefined", $ = -2147483648, ga = {}.hasOwnProperty, S = [], ja = S.pop, ka = S.push, ma = S.push, da = S.slice, U = S.indexOf || function(a) {
       for (var b = 0, c = this.length;c > b;b++) {
@@ -11091,22 +10917,14 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
       return-1;
     }, ha = "(?:\\\\.|[\\w-]|[^\\x00-\\xa0])+".replace("w", "w#"), ia = "\\[[\\x20\\t\\r\\n\\f]*((?:\\\\.|[\\w-]|[^\\x00-\\xa0])+)[\\x20\\t\\r\\n\\f]*(?:([*^$|!~]?=)[\\x20\\t\\r\\n\\f]*(?:(['\"])((?:\\\\.|[^\\\\])*?)\\3|(" + ha + ")|)|)[\\x20\\t\\r\\n\\f]*\\]", ea = ":((?:\\\\.|[\\w-]|[^\\x00-\\xa0])+)(?:\\(((['\"])((?:\\\\.|[^\\\\])*?)\\3|((?:\\\\.|[^\\\\()[\\]]|" + ia.replace(3, 8) + ")*)|.*)\\)|)", aa = RegExp("^[\\x20\\t\\r\\n\\f]+|((?:^|[^\\\\])(?:\\\\.)*)[\\x20\\t\\r\\n\\f]+$", "g"), pa = /^[\x20\t\r\n\f]*,[\x20\t\r\n\f]*/, 
     qa = /^[\x20\t\r\n\f]*([>+~]|[\x20\t\r\n\f])[\x20\t\r\n\f]*/, ra = RegExp("=[\\x20\\t\\r\\n\\f]*([^\\]'\"]*?)[\\x20\\t\\r\\n\\f]*\\]", "g"), sa = RegExp(ea), ta = RegExp("^" + ha + "$"), fa = {ID:/^#((?:\\.|[\w-]|[^\x00-\xa0])+)/, CLASS:/^\.((?:\\.|[\w-]|[^\x00-\xa0])+)/, TAG:RegExp("^(" + "(?:\\\\.|[\\w-]|[^\\x00-\\xa0])+".replace("w", "w*") + ")"), ATTR:RegExp("^" + ia), PSEUDO:RegExp("^" + ea), CHILD:RegExp("^:(only|first|last|nth|nth-last)-(child|of-type)(?:\\([\\x20\\t\\r\\n\\f]*(even|odd|(([+-]|)(\\d*)n|)[\\x20\\t\\r\\n\\f]*(?:([+-]|)[\\x20\\t\\r\\n\\f]*(\\d+)|))[\\x20\\t\\r\\n\\f]*\\)|)", 
-<<<<<<< HEAD
     "i"), bool:RegExp("^(?:checked|selected|async|autofocus|autoplay|controls|defer|disabled|hidden|ismap|loop|multiple|open|readonly|required|scoped)$", "i"), needsContext:RegExp("^[\\x20\\t\\r\\n\\f]*[>+~]|:(even|odd|eq|gt|lt|nth|first|last)(?:\\([\\x20\\t\\r\\n\\f]*((?:-\\d)?\\d*)[\\x20\\t\\r\\n\\f]*\\)|)(?=[^-]|$)", "i")}, ua = /^(?:input|select|textarea|button)$/i, va = /^h\d$/i, Aa = /^[^{]+\{\s*\[native \w/, wa = /^(?:#([\w-]+)|(\w+)|\.([\w-]+))$/, la = /[+~]/, xa = /'|\\/g, na = RegExp("\\\\([\\da-f]{1,6}[\\x20\\t\\r\\n\\f]?|([\\x20\\t\\r\\n\\f])|.)", 
-=======
-    "i"), bool:RegExp("^(?:checked|selected|async|autofocus|autoplay|controls|defer|disabled|hidden|ismap|loop|multiple|open|readonly|required|scoped)$", "i"), needsContext:RegExp("^[\\x20\\t\\r\\n\\f]*[>+~]|:(even|odd|eq|gt|lt|nth|first|last)(?:\\([\\x20\\t\\r\\n\\f]*((?:-\\d)?\\d*)[\\x20\\t\\r\\n\\f]*\\)|)(?=[^-]|$)", "i")}, ua = /^(?:input|select|textarea|button)$/i, wa = /^h\d$/i, Ba = /^[^{]+\{\s*\[native \w/, xa = /^(?:#([\w-]+)|(\w+)|\.([\w-]+))$/, la = /[+~]/, ya = /'|\\/g, na = RegExp("\\\\([\\da-f]{1,6}[\\x20\\t\\r\\n\\f]?|([\\x20\\t\\r\\n\\f])|.)", 
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
     "ig"), oa = function(a, b, c) {
       a = "0x" + b - 65536;
       return a !== a || c ? b : 0 > a ? String.fromCharCode(a + 65536) : String.fromCharCode(a >> 10 | 55296, 1023 & a | 56320);
     };
     try {
       ma.apply(S = da.call(ba.childNodes), ba.childNodes), S[ba.childNodes.length].nodeType;
-<<<<<<< HEAD
     } catch (Ba) {
-=======
-    } catch (Ca) {
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
       ma = {apply:S.length ? function(a, b) {
         ka.apply(a, da.call(b));
       } : function(a, b) {
@@ -11130,11 +10948,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         return a.className = "i", !a.getAttribute("className");
       }), y.getElementsByTagName = e(function(a) {
         return a.appendChild(c.createComment("")), !a.getElementsByTagName("*").length;
-<<<<<<< HEAD
       }), y.getElementsByClassName = Aa.test(c.getElementsByClassName) && e(function(a) {
-=======
-      }), y.getElementsByClassName = Ba.test(c.getElementsByClassName) && e(function(a) {
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
         return a.innerHTML = "<div class='a'></div><div class='a i'></div>", a.firstChild.className = "i", 2 === a.getElementsByClassName("i").length;
       }), y.getById = e(function(a) {
         return M.appendChild(a).id = R, !c.getElementsByName || !c.getElementsByName(R).length;
@@ -11166,11 +10980,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         return f;
       }, x.find.CLASS = y.getElementsByClassName && function(a, b) {
         return typeof b.getElementsByClassName !== T && O ? b.getElementsByClassName(a) : void 0;
-<<<<<<< HEAD
       }, Q = [], X = [], (y.qsa = Aa.test(c.querySelectorAll)) && (e(function(a) {
-=======
-      }, Q = [], X = [], (y.qsa = Ba.test(c.querySelectorAll)) && (e(function(a) {
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
         a.innerHTML = "<select t=''><option selected=''></option></select>";
         a.querySelectorAll("[t^='']").length && X.push("[*^$]=[\\x20\\t\\r\\n\\f]*(?:''|\"\")");
         a.querySelectorAll("[selected]").length || X.push("\\[[\\x20\\t\\r\\n\\f]*(?:value|checked|selected|async|autofocus|autoplay|controls|defer|disabled|hidden|ismap|loop|multiple|open|readonly|required|scoped)");
@@ -11183,19 +10993,11 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         a.querySelectorAll(":enabled").length || X.push(":enabled", ":disabled");
         a.querySelectorAll("*,:x");
         X.push(",.*:");
-<<<<<<< HEAD
       })), (y.matchesSelector = Aa.test(Da = M.webkitMatchesSelector || M.mozMatchesSelector || M.oMatchesSelector || M.msMatchesSelector)) && e(function(a) {
         y.disconnectedMatch = Da.call(a, "div");
         Da.call(a, "[s!='']:x");
         Q.push("!=", ea);
       }), X = X.length && RegExp(X.join("|")), Q = Q.length && RegExp(Q.join("|")), b = Aa.test(M.compareDocumentPosition), za = b || Aa.test(M.contains) ? function(a, b) {
-=======
-      })), (y.matchesSelector = Ba.test(Da = M.webkitMatchesSelector || M.mozMatchesSelector || M.oMatchesSelector || M.msMatchesSelector)) && e(function(a) {
-        y.disconnectedMatch = Da.call(a, "div");
-        Da.call(a, "[s!='']:x");
-        Q.push("!=", ea);
-      }), X = X.length && RegExp(X.join("|")), Q = Q.length && RegExp(Q.join("|")), b = Ba.test(M.compareDocumentPosition), Aa = b || Ba.test(M.contains) ? function(a, b) {
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
         var c = 9 === a.nodeType ? a.documentElement : a, d = b && b.parentNode;
         return a === d || !(!d || 1 !== d.nodeType || !(c.contains ? c.contains(d) : a.compareDocumentPosition && 16 & a.compareDocumentPosition(d)));
       } : function(a, b) {
@@ -11212,11 +11014,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
           return H = !0, 0;
         }
         var d = !a.compareDocumentPosition - !b.compareDocumentPosition;
-<<<<<<< HEAD
         return d ? d : (d = (a.ownerDocument || a) === (b.ownerDocument || b) ? a.compareDocumentPosition(b) : 1, 1 & d || !y.sortDetached && b.compareDocumentPosition(a) === d ? a === c || a.ownerDocument === ba && za(ba, a) ? -1 : b === c || b.ownerDocument === ba && za(ba, b) ? 1 : G ? U.call(G, a) - U.call(G, b) : 0 : 4 & d ? -1 : 1);
-=======
-        return d ? d : (d = (a.ownerDocument || a) === (b.ownerDocument || b) ? a.compareDocumentPosition(b) : 1, 1 & d || !y.sortDetached && b.compareDocumentPosition(a) === d ? a === c || a.ownerDocument === ba && Aa(ba, a) ? -1 : b === c || b.ownerDocument === ba && Aa(ba, b) ? 1 : G ? U.call(G, a) - U.call(G, b) : 0 : 4 & d ? -1 : 1);
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
       } : function(a, b) {
         if (a === b) {
           return H = !0, 0;
@@ -11258,11 +11056,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
       return 0 < b(c, J, null, [a]).length;
     };
     b.contains = function(a, b) {
-<<<<<<< HEAD
       return(a.ownerDocument || a) !== J && I(a), za(a, b);
-=======
-      return(a.ownerDocument || a) !== J && I(a), Aa(a, b);
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
     };
     b.attr = function(a, b) {
       (a.ownerDocument || a) !== J && I(a);
@@ -11433,11 +11227,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     }, parent:function(a) {
       return!x.pseudos.empty(a);
     }, header:function(a) {
-<<<<<<< HEAD
       return va.test(a.nodeName);
-=======
-      return wa.test(a.nodeName);
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
     }, input:function(a) {
       return ua.test(a.nodeName);
     }, button:function(a) {
@@ -11747,11 +11537,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     }
     return e || f.resolveWith(n, c), f.promise();
   }});
-<<<<<<< HEAD
   var xa;
-=======
-  var ya;
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
   m.fn.ready = function(a) {
     return m.ready.promise().done(a), this;
   };
@@ -11763,21 +11549,12 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         return setTimeout(m.ready);
       }
       m.isReady = !0;
-<<<<<<< HEAD
       !0 !== a && 0 < --m.readyWait || (xa.resolveWith(D, [m]), m.fn.trigger && m(D).trigger("ready").off("ready"));
     }
   }});
   m.ready.promise = function(b) {
     if (!xa) {
       if (xa = m.Deferred(), "complete" === D.readyState) {
-=======
-      !0 !== a && 0 < --m.readyWait || (ya.resolveWith(D, [m]), m.fn.trigger && m(D).trigger("ready").off("ready"));
-    }
-  }});
-  m.ready.promise = function(b) {
-    if (!ya) {
-      if (ya = m.Deferred(), "complete" === D.readyState) {
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
         setTimeout(m.ready);
       } else {
         if (D.addEventListener) {
@@ -11804,11 +11581,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
         }
       }
     }
-<<<<<<< HEAD
     return xa.promise(b);
-=======
-    return ya.promise(b);
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
   };
   var W = "undefined", lb;
   for (lb in m(x)) {
@@ -11909,11 +11682,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     }
     return h(), e.promise(b);
   }});
-<<<<<<< HEAD
   var Ba = /[+-]?(?:\d*\.|)\d+(?:[eE][+-]?\d+|)/.source, ja = ["Top", "Right", "Bottom", "Left"], sa = function(a, b) {
-=======
-  var Ca = /[+-]?(?:\d*\.|)\d+(?:[eE][+-]?\d+|)/.source, ja = ["Top", "Right", "Bottom", "Left"], sa = function(a, b) {
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
     return a = b || a, "none" === m.css(a, "display") || !m.contains(a.ownerDocument, a);
   }, U = m.access = function(a, b, c, d, e, f, g) {
     var h = 0, l = a.length, n = null == c;
@@ -12416,29 +12185,17 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
       return b;
     };
   }();
-<<<<<<< HEAD
   var ub = /^margin/, va = RegExp("^(" + Ba + ")(?!px)[a-z%]+$", "i"), ka, da, dc = /^(top|right|bottom|left)$/;
-=======
-  var ub = /^margin/, wa = RegExp("^(" + Ca + ")(?!px)[a-z%]+$", "i"), ka, da, dc = /^(top|right|bottom|left)$/;
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
   a.getComputedStyle ? (ka = function(a) {
     return a.ownerDocument.defaultView.getComputedStyle(a, null);
   }, da = function(a, b, c) {
     var d, e, f, g, h = a.style;
-<<<<<<< HEAD
     return c = c || ka(a), g = c ? c.getPropertyValue(b) || c[b] : void 0, c && ("" !== g || m.contains(a.ownerDocument, a) || (g = m.style(a, b)), va.test(g) && ub.test(b) && (d = h.width, e = h.minWidth, f = h.maxWidth, h.minWidth = h.maxWidth = h.width = g, g = c.width, h.width = d, h.minWidth = e, h.maxWidth = f)), void 0 === g ? g : g + "";
-=======
-    return c = c || ka(a), g = c ? c.getPropertyValue(b) || c[b] : void 0, c && ("" !== g || m.contains(a.ownerDocument, a) || (g = m.style(a, b)), wa.test(g) && ub.test(b) && (d = h.width, e = h.minWidth, f = h.maxWidth, h.minWidth = h.maxWidth = h.width = g, g = c.width, h.width = d, h.minWidth = e, h.maxWidth = f)), void 0 === g ? g : g + "";
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
   }) : D.documentElement.currentStyle && (ka = function(a) {
     return a.currentStyle;
   }, da = function(a, b, c) {
     var d, e, f, g, h = a.style;
-<<<<<<< HEAD
     return c = c || ka(a), g = c ? c[b] : void 0, null == g && h && h[b] && (g = h[b]), va.test(g) && !dc.test(b) && (d = h.left, e = a.runtimeStyle, f = e && e.left, f && (e.left = a.currentStyle.left), h.left = "fontSize" === b ? "1em" : g, g = h.pixelLeft + "px", h.left = d, f && (e.left = f)), void 0 === g ? g : g + "" || "auto";
-=======
-    return c = c || ka(a), g = c ? c[b] : void 0, null == g && h && h[b] && (g = h[b]), wa.test(g) && !dc.test(b) && (d = h.left, e = a.runtimeStyle, f = e && e.left, f && (e.left = a.currentStyle.left), h.left = "fontSize" === b ? "1em" : g, g = h.pixelLeft + "px", h.left = d, f && (e.left = f)), void 0 === g ? g : g + "" || "auto";
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
   });
   !function() {
     function b() {
@@ -12503,11 +12260,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
     }
     return c;
   };
-<<<<<<< HEAD
   var Ra = /alpha\([^)]*\)/i, ec = /opacity\s*=\s*([^)]*)/, fc = /^(none|table(?!-c[ea]).+)/, Lb = RegExp("^(" + Ba + ")(.*)$", "i"), gc = RegExp("^([+-])=(" + Ba + ")", "i"), hc = {position:"absolute", visibility:"hidden", display:"block"}, vb = {letterSpacing:0, fontWeight:400}, eb = ["Webkit", "O", "Moz", "ms"];
-=======
-  var Ra = /alpha\([^)]*\)/i, ec = /opacity\s*=\s*([^)]*)/, fc = /^(none|table(?!-c[ea]).+)/, Lb = RegExp("^(" + Ca + ")(.*)$", "i"), gc = RegExp("^([+-])=(" + Ca + ")", "i"), hc = {position:"absolute", visibility:"hidden", display:"block"}, vb = {letterSpacing:0, fontWeight:400}, eb = ["Webkit", "O", "Moz", "ms"];
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
   m.extend({cssHooks:{opacity:{get:function(a, b) {
     if (b) {
       var c = da(a, "opacity");
@@ -12614,11 +12367,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
   }};
   m.fx = I.prototype.init;
   m.fx.step = {};
-<<<<<<< HEAD
   var ea, Ea, ic = /^(?:toggle|show|hide)$/, wb = RegExp("^(?:([+-])=|)(" + Ba + ")([a-z%]*)$", "i"), jc = /queueHooks$/, wa = [function(a, b, c) {
-=======
-  var ea, Ea, ic = /^(?:toggle|show|hide)$/, wb = RegExp("^(?:([+-])=|)(" + Ca + ")([a-z%]*)$", "i"), jc = /queueHooks$/, xa = [function(a, b, c) {
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
     var d, e, f, g, h, l, n, q = this, p = {}, r = a.style, s = a.nodeType && sa(a), t = m._data(a, "fxshow");
     c.queue || (g = m._queueHooks(a, "fx"), null == g.unqueued && (g.unqueued = 0, h = g.empty.fire, g.empty.fire = function() {
       g.unqueued || h();
@@ -12676,11 +12425,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
       c = a[d], ta[c] = ta[c] || [], ta[c].unshift(b);
     }
   }, prefilter:function(a, b) {
-<<<<<<< HEAD
     b ? wa.unshift(a) : wa.push(a);
-=======
-    b ? xa.unshift(a) : xa.push(a);
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
   }});
   m.speed = function(a, b, c) {
     var d = a && "object" == typeof a ? m.extend({}, a) : {complete:c || !c && b || m.isFunction(a) && a, duration:a, easing:c && b || b && !m.isFunction(b) && b};
@@ -13499,11 +13244,7 @@ Class("Document.Parser.Wikitext(Document.Parser)", function() {
   });
   m.each(["top", "left"], function(a, b) {
     m.cssHooks[b] = Q(x.pixelPosition, function(a, c) {
-<<<<<<< HEAD
       return c ? (c = da(a, b), va.test(c) ? m(a).position()[b] + "px" : c) : void 0;
-=======
-      return c ? (c = da(a, b), wa.test(c) ? m(a).position()[b] + "px" : c) : void 0;
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
     });
   });
   m.each({Height:"height", Width:"width"}, function(a, b) {

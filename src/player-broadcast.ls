@@ -51,10 +51,6 @@
     SocialCalc.ScheduleSheetCommands.apply(SocialCalc, [@].concat([].slice.call(arguments)))
   SocialCalc.OrigScheduleSheetCommands = SocialCalc.ScheduleSheetCommands
   SocialCalc.ScheduleSheetCommands = (sheet, cmdstr, saveundo, isRemote) ->
-<<<<<<< HEAD
-    console.log "broadcast ScheduleSheetCommands #cmdstr" #eddy debug
-=======
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
     cmdstr = cmdstr.replace /\n\n+/g '\n'
     return unless /\S/.test cmdstr
     if not isRemote and cmdstr isnt \redisplay and cmdstr isnt \recalc
