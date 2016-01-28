@@ -3,6 +3,18 @@
 
   return if SocialCalc?OrigDoPositionCalculations
 
+  # parseQuery string eddy {
+  parseQuery = (qstr) -> 
+    qstr = qstr.substr(1) if qstr.charAt(0) is \?
+    query = {}
+    params = qstr.split \&
+    for index of params
+      pair = params[index].split \=
+      query[decodeURIComponent(pair[0])] = decodeURIComponent(pair[1])
+    query
+  SocialCalc.requestParams = parseQuery window.location.search
+  # } parseQuery
+  
   SocialCalc.OrigDoPositionCalculations = SocialCalc.DoPositionCalculations
   SocialCalc.DoPositionCalculations = ->
     SocialCalc.OrigDoPositionCalculations.apply SocialCalc, arguments
@@ -49,7 +61,8 @@
           cmdstr.=replace //\$#title\.([A-Z]+[1-9][0-9]*)//ig """
             "#{ link.replace('/', '') }"!$1
           """
-      SocialCalc.Callbacks.broadcast? \execute { cmdstr, saveundo }
+      # Form/App Builder: callback requires room ID
+      SocialCalc.Callbacks.broadcast? \execute { cmdstr, saveundo, room:sheet._room }
     SocialCalc.OrigScheduleSheetCommands sheet, cmdstr, saveundo, isRemote
   SocialCalc.MoveECell = (editor, newcell) ->
     highlights = editor.context.highlights

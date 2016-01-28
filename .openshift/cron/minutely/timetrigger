@@ -1,0 +1,46 @@
+#!/bin/bash
+# We can get the
+#echo "Started"
+#OPENSHIFT_LOG_DIR=~/
+#OPENSHIFT_DATA_DIR=~/
+
+minutes=$(($(date +'%s / 60')))
+#hours=$(($(date +'%s / 60 / 60')))
+#days=$(($(date +'%s / 60 / 60 / 24')))
+#weeks=$(($(date +'%s / 60 / 60 / 24 / 7')))
+#moons=$(($(date +'%s / 60 / 60 / 24 / 656'))) 
+
+# debug log
+#echo "logged date"
+#echo "${OPENSHIFT_LOG_DIR}ticktock.log"
+
+# every day - log UTC time at midnight
+if [[ $(($minutes % 1440)) -eq 0 ]]; then
+    date -u >> ${OPENSHIFT_LOG_DIR}ticktock.log
+fi
+
+# passed since Epoch and define a frequency
+# let's say, every 5 mins
+if [[ $(($minutes % 5)) -ne 0 ]]; then
+    exit 0
+fi
+
+#save default time to nextTriggerTime.txt
+if [ ! -f "${OPENSHIFT_DATA_DIR}nextTriggerTime.txt" ]; then
+    echo "2147483647" >> ${OPENSHIFT_DATA_DIR}nextTriggerTime.txt
+    exit 0
+fi
+
+# Check Time of next Cron Job
+topTime=$(cat ${OPENSHIFT_DATA_DIR}nextTriggerTime.txt)
+#echo "debug $minutes, $topTime" 
+if [ "$topTime" -gt "$minutes" ]; then
+    exit 0
+fi
+
+# and your actual script starts here
+date -u >> ${OPENSHIFT_LOG_DIR}ticktock.log
+#echo "NextTriggerTime past, $minutes, $topTime" 
+echo "NextTriggerTime past, $minutes, $topTime" >> ${OPENSHIFT_LOG_DIR}ticktock.log
+echo "--- $minutes ---" >> ${OPENSHIFT_LOG_DIR}allTimeTriggers.log
+curl http://${OPENSHIFT_APP_DNS}/_timeTrigger > ${OPENSHIFT_LOG_DIR}allTimeTriggers.log

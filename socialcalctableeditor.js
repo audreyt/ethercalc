@@ -137,6 +137,7 @@ SocialCalc.TableEditor = function(context) {
    this.busy = false; // true when executing command, calculating, etc.
    this.ensureecell = false; // if true, ensure ecell is visible after timeout
    this.deferredCommands = []; // commands to execute after busy, in form: {cmdstr: "cmds", saveundo: t/f}
+   this.deferredEmailCommands = []; // Email commands to execute after busy, in form: {cmdstr: "cmds", saveundo: t/f}
 
    this.gridposition = null; // screen coords of full grid
    this.headposition = null; // screen coords of upper left of grid within header rows
@@ -752,9 +753,11 @@ SocialCalc.EditorRenderSheet = function(editor) {
    if (editor.ecell) editor.SetECellHeaders("selected");
 
    SocialCalc.AssignID(editor, editor.fullgrid, "fullgrid"); // give it an id
-
-   editor.EditorMouseRegister();
-
+   // eddy EditorRenderSheet {
+   // if(editor.context.showRCHeaders === true) 
+     editor.EditorMouseRegister();
+   // } EditorRenderSheet
+   
    }
 
 //
@@ -772,7 +775,11 @@ SocialCalc.EditorScheduleSheetCommands = function(editor, cmdstr, saveundo, igno
       return;
       }
 
-   switch (cmdstr) {
+   // eddy ExecuteSheetCommand {
+   var cmdTokens = cmdstr.split(" ");
+
+   switch (cmdTokens[0]) {
+	   // } eddy ExecuteSheetCommand 
       case "recalc":
       case "redisplay":
          editor.context.sheetobj.ScheduleSheetCommands(cmdstr, false);
@@ -785,7 +792,12 @@ SocialCalc.EditorScheduleSheetCommands = function(editor, cmdstr, saveundo, igno
       case "redo":
          editor.SheetRedo();
          break;
-
+         
+      case "setemailparameters":    	  
+		  SocialCalc.TriggerIoAction.Email(cmdTokens[1], cmdTokens[2]);
+    	  break;
+         
+         
       default:
          editor.context.sheetobj.ScheduleSheetCommands(cmdstr, saveundo);
          break;
@@ -839,13 +851,11 @@ SocialCalc.EditorSheetStatusCallback = function(recalcdata, status, arg, editor)
             cell = SocialCalc.GetEditorCellElement(editor, cr.row, cr.col);
             editor.ReplaceCell(cell, cr.row, cr.col);
             }
-
          if (editor.deferredCommands.length) {
             dcmd = editor.deferredCommands.shift();
             editor.EditorScheduleSheetCommands(dcmd.cmdstr, dcmd.saveundo, true);
             return;
             }
-
          if (sheetobj.attribs.needsrecalc &&
                (sheetobj.attribs.recalc!="off" || sheetobj.recalconce)
                && editor.recalcFunction) {
@@ -919,6 +929,14 @@ SocialCalc.EditorSheetStatusCallback = function(recalcdata, status, arg, editor)
          break;
 
       case "doneposcalc":
+          if (editor.deferredEmailCommands.length) {
+              signalstatus(status);
+              var emailcmd = editor.deferredEmailCommands.shift();
+              editor.EditorScheduleSheetCommands(emailcmd.cmdstr, emailcmd.saveundo, true);
+              return;
+              }
+    	  
+    	  
          if (editor.deferredCommands.length) {
             signalstatus(status);
             dcmd = editor.deferredCommands.shift();
@@ -930,9 +948,14 @@ SocialCalc.EditorSheetStatusCallback = function(recalcdata, status, arg, editor)
             if (editor.state=="start") editor.DisplayCellContents(); // make sure up to date
             }
          return;
-
+      // eddy EditorSheetStatusCallback {
+      case "emailing":
+      case "confirmemailsent":
+        break;
+      // } EditorSheetStatusCallback eddy 
+         
       default:
-addmsg("Unknown status: "+status);
+    	 alert("Unknown status: "+status);
          break;
 
       }
@@ -989,7 +1012,16 @@ SocialCalc.EditorGetStatuslineString = function(editor, status, arg, params) {
       case "doneposcalc":
          document.body.style.cursor = "default";
          editor.griddiv.style.cursor = "default";
+         // eddy EditorGetStatuslineString {
+         // all updates done, So let future event clear the "sent" message in the status bar
+         if(params.emailing == "sent") {
+        	 progress = params.emailreponse;
+        	 params.emailreponse = "";
+        	 params.emailing = "done";
+         }
+         // } eddy EditorGetStatuslineString 
          break;
+         
       case "calcorder":
          progress = scc.s_statusline_ordering+Math.floor(100*arg.count/(arg.total||1))+"%";
          break;
@@ -1013,11 +1045,33 @@ SocialCalc.EditorGetStatuslineString = function(editor, status, arg, params) {
       case "calcfinished":
          params.calculating = false;
          break;
+      // eddy EditorGetStatuslineString {
+      case "emailing":
+    	 params.emailing = "sending";
+    	 params.emailreponse ="";
+         break;
+      case "confirmemailsent":
+     	 params.emailing = "sent";
+     	 if(typeof params.emailreponse === 'undefined') params.emailreponse ="";
+     	 params.emailreponse += arg;
+         break;    	  
+      // } eddy EditorGetStatuslineString 
+         
       default:
          progress = status;
          break;
       }
 
+   // eddy EditorGetStatuslineString {
+   // if send email then update status bar with "sending" and then "sent"
+   if(params.emailing == "sending") {
+  	 progress += scc.s_statusline_sendemail;
+   }
+   if(params.emailing == "sent") {
+  	 progress += params.emailreponse;
+   }   
+   // } eddy EditorGetStatuslineString 
+   
    if (!progress && params.calculating) {
       progress = scc.s_statusline_calculating;
       }
@@ -1054,7 +1108,9 @@ SocialCalc.EditorGetStatuslineString = function(editor, status, arg, params) {
       circ = circ.replace(/\|/, " referenced by ");
       sstr += ' &nbsp; '+scc.s_statusline_circref + circ + '</span>';
       }
-
+   // eddy EditorGetStatuslineString {
+   sstr += "";
+   // } eddy EditorGetStatuslineString 
    return sstr;
 
    }
@@ -1254,8 +1310,24 @@ SocialCalc.ProcessEditorMouseDown = function(e) {
       if (e.shiftKey)
          editor.RangeAnchor();
       }
-
    coord = editor.MoveECell(result.coord);
+   // eddy ProcessEditorMouseDown {
+   if(SocialCalc._app == true) { // "app" wigets need to keep focus - needed because "coord" always equals A1 
+     SocialCalc.CmdGotFocus(true); // cell widgets need to keep focus
+     return;
+   }
+   
+   var clickedCell = editor.context.sheetobj.cells[coord];
+   if(clickedCell) {
+     if(clickedCell.valuetype.charAt(1) == 'i') { // IF cell contains ioWidget
+        var formula_name= clickedCell.valuetype.substring(2);	 
+	    var cell_widget=document.getElementById(formula_name+'_'+coord);
+		SocialCalc.CmdGotFocus(cell_widget); // cell widgets need to keep focus 
+		// SocialCalc.Keyboard.FocusWidget = coord;
+		return; // let ioWidget keep the focus 
+		}
+	 }
+   // }
 
    if (range.hasrange) {
       if (e.shiftKey)
@@ -2227,10 +2299,48 @@ SocialCalc.EditorSaveEdit = function(editor, text) {
 
    cmdline = "set "+wval.ecoord+" "+type+" "+value;
    editor.EditorScheduleSheetCommands(cmdline, true, false);
+   // eddy EditorSaveEdit {
+   if(typeof sheetobj.ioEventTree === 'undefined') return;	
+   if(typeof sheetobj.ioParameterList === 'undefined') return;
+   if(typeof sheetobj.ioEventTree[wval.ecoord] !== 'undefined') {
+	   SocialCalc.EditedTriggerCell(sheetobj.ioEventTree[wval.ecoord], wval.ecoord, editor, sheetobj);   		
+   }
+   		
+   // }
 
    return;
 
    }
+
+
+// Eddy EditedTriggerCell {
+
+
+SocialCalc.EditedTriggerCell  = function(actionFormulaCells, editedCellRef, editor, sheet) {
+ 
+	 for(var actionCellId in actionFormulaCells) {
+		 
+			var parameters = sheet.ioParameterList[actionCellId];
+            if(typeof parameters === 'undefined') continue;	
+			
+			switch(parameters.function_name) {
+				  case "EMAILONEDIT" :
+				  case "EMAILONEDITIF" :
+					  cmdline = "setemailparameters "+actionCellId+ " " + editedCellRef;
+					// hold off on commands until recalc done
+				      editor.deferredEmailCommands.push({cmdstr: cmdline, saveundo: false});
+//					  editor.EditorScheduleSheetCommands(cmdline, false, false);
+					  break;
+			}
+	 }
+	
+}	
+// } Eddy EditedTriggerCell
+
+
+
+
+
 
 //
 // SocialCalc.EditorApplySetCommandsToRange(editor, cmd)
@@ -2597,6 +2707,8 @@ SocialCalc.MoveECell = function(editor, newcell) {
    editor.ecell = SocialCalc.coordToCr(newcell);
    editor.ecell.coord = newcell;
    cell=SocialCalc.GetEditorCellElement(editor, editor.ecell.row, editor.ecell.col);
+   // eddy MoveECell {
+   // }
    highlights[newcell] = "cursor";
 
    for (f in editor.MoveECellCallback) { // let others know
@@ -2689,6 +2801,9 @@ SocialCalc.UpdateCellCSS = function(editor, cell, row, col) {
 
 SocialCalc.SetECellHeaders = function(editor, selected) {
 
+   // eddy SetECellHeaders {
+   if(editor.context.showRCHeaders === false) return;
+   // } SetECellHeaders
    var ecell = editor.ecell;
    var context = editor.context;
 
@@ -3214,8 +3329,11 @@ SocialCalc.CalculateRowPositions = function(editor, panenum, positions, sizes) {
 
    var tbodyobj;
 
-   if (!context.showRCHeaders) throw("Needs showRCHeaders=true");
-
+   // eddy CalculateRowPositions {
+//   if (!context.showRCHeaders) throw("Needs showRCHeaders=true");
+   if (!context.showRCHeaders) return;
+   // } CalculateRowPositions
+   
    tbodyobj=editor.fullgrid.lastChild;
 
    // Calculate start of this pane as row in this table:
@@ -3250,7 +3368,10 @@ SocialCalc.CalculateColPositions = function(editor, panenum, positions, sizes) {
 
    var tbodyobj;
 
-   if (!context.showRCHeaders) throw("Needs showRCHeaders=true");
+   // eddy CalculateColPositions {
+   // if (!context.showRCHeaders) throw("Needs showRCHeaders=true");
+   if (!context.showRCHeaders) return;
+   // } CalculateColPositions
 
    tbodyobj=editor.fullgrid.lastChild;
 

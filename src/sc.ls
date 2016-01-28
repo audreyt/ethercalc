@@ -3,7 +3,8 @@ bootSC = fs.readFileSync "#{
   path.dirname fs.realpathSync __filename
 }/SocialCalcModule.js" \utf8
 
-global.SC ?= {}
+global.SC ?= {console}
+
 argv = (try require \optimist .boolean <[ vm polling ]> .argv) || {}
 
 bootSC += """;(#{->
@@ -70,6 +71,13 @@ Worker ||= class => (code) ->
 @include = ->
   DB = @include \db
   EXPIRE = @EXPIRE
+  emailer = @include \emailer
+
+  
+  #eddy dataDir {
+  dataDir = process.env.OPENSHIFT_DATA_DIR
+  # }
+
 
   SC._csv-to-save = (csv, cb) ->
     w = new Worker
@@ -117,7 +125,16 @@ Worker ||= class => (code) ->
     w = new Worker ->
       self.onmessage = ({ data: { type, ref, snapshot, command, room, log=[] } }) -> switch type
       | \cmd
-        window.ss.ExecuteCommand command
+        #console.log "===> cmd "+command
+        commandParameters = command.split(" ")
+        if commandParameters[0] is \settimetrigger
+          #console.log "------ set time trigger --------"
+          postMessage { type: \setcrontrigger, timetriggerdata: { cell:commandParameters[1], times:commandParameters[2] } }
+        if commandParameters[0] is \sendemail
+          #console.log "------ send email --------"
+          #console.log " to:"+commandParameters[1]+" subject:"+commandParameters[2]+" body:"+commandParameters[3]             
+          postMessage { type: \sendemailout, emaildata: { to: commandParameters[1].replace(/%20/g,' '), subject: commandParameters[2].replace(/%20/g,' '), body:commandParameters[3].replace(/%20/g,' ')  } }
+          window.ss.ExecuteCommand command
       | \recalc
         SocialCalc.RecalcLoadedSheet ref, snapshot, true
       | \clearCache
@@ -135,6 +152,7 @@ Worker ||= class => (code) ->
       | \exportCells
         postMessage { type: \cells, cells: window.ss.cells }
       | \init
+        SocialCalc.SaveEditorSettings = -> ""  #Returns a string representation of the pane settings 
         SocialCalc.CreateAuditString = -> ""
         SocialCalc.CalculateEditorPositions = ->
         SocialCalc.Popup.Types.List.Create = ->
@@ -184,14 +202,49 @@ Worker ||= class => (code) ->
         .del "log-#room"
         .bgsave!
         .exec!
-      console.log "==> Regenerated snapshot for #room"
+      #logdate = new Date() 
+      #console.log "==> Regenerated snapshot #{logdate.getFullYear() }-#{(logdate.getMonth()) + 1 }-#{logdate.getDate()} #{logdate.getHours()}:#{logdate.getMinutes()}:#{logdate.getSeconds()} for #room"
       DB.expire "snapshot-#room", EXPIRE if EXPIRE
     w.onerror = -> console.log it
-    w.onmessage = ({ data: { type, snapshot, html, csv, ref, parts, save } }) -> switch type
+    w.onmessage = ({ data: { type, snapshot, html, csv, ref, parts, save, emaildata, timetriggerdata } }) -> switch type
     | \snapshot   => w.on-snapshot snapshot
     | \save     => w.on-save save
     | \html     => w.on-html html
     | \csv    => w.on-csv csv
+    | \setcrontrigger
+      console.log "set cron #room"
+      # trigger times have been added or edited, so update the list of times and check the next scheduled item is correct
+      #get next scheduled time to execute Time based trigger
+      (, nextTriggerTime) <~ DB.get "cron-nextTriggerTime"
+      scheduledNextTriggerTime = nextTriggerTime
+      timeNowMins = Math.floor(new Date().getTime() / (1000 * 60))
+      console.log "timeNowMins #timeNowMins .dataDir #dataDir"
+      nextTriggerTime ?= 2147483647   # set to max seconds possible (31^2)
+      triggerTimeList = for nextTime in timetriggerdata.times.split(",") when nextTime >= timeNowMins
+        if nextTriggerTime > nextTime 
+          nextTriggerTime = nextTime
+        nextTime
+      if scheduledNextTriggerTime != nextTriggerTime
+        fs.writeFileSync do
+          "#dataDir/nextTriggerTime.txt"
+          nextTriggerTime
+          \utf8               
+      if triggerTimeList.length == 0 
+        <~ DB.hdel "cron-list" "#{room}!#{timetriggerdata.cell}"
+      else
+        <~ DB.multi!
+          .hset "cron-list" "#{room}!#{timetriggerdata.cell}" triggerTimeList.toString()
+          .set "cron-nextTriggerTime" nextTriggerTime
+          .bgsave!exec!
+        (, allTimeTriggers) <~ DB.hgetall "cron-list"
+        console.log "allTimeTriggers" {...allTimeTriggers} " nextTriggerTime #nextTriggerTime"
+    | \sendemailout 
+      console.log "onmessage "+emaildata.to
+      emailer.sendemail emaildata.to, emaildata.subject, emaildata.body,  (message) ->
+        io.sockets.in "log-#room" .emit \data {
+          type: \confirmemailsent
+          message
+        }
     | \load-sheet
       <- SC._get ref, io
       if SC[ref]
@@ -259,13 +312,18 @@ Worker ||= class => (code) ->
       (, log) <~ DB.lrange "log-#room" 0 -1
       x.thread.eval bootSC, -> x.post-message {snapshot: w._snapshot, log}
     w._eval = (code, cb) ->
-      (, rv) <- w.thread.eval code
-      return cb rv if rv?
-      # Maybe thread is not yet initialized - retry at most once
-      (, rv) <- w.thread.eval code
-      return cb rv
+      setTimeout do #delay to give server side sheet time to initialize
+        -> 
+          #console.log "EVAL un-threaded"
+          (, rv) <- w.thread.eval code
+          return cb rv if rv?
+          # Maybe thread is not yet initialized - retry at most once
+          (, rv) <- w.thread.eval code
+          return cb rv
+        100ms
     if IsThreaded => w._eval = (code, cb) ->
       x = new Worker -> @onmessage = ({data: { snapshot, log=[], code }}) -> try
+        #console.log "EVAL isThreaded"
         parts = SocialCalc.SpreadsheetControlDecodeSpreadsheetSave("", snapshot)
         save = snapshot.substring parts.sheet.start, parts.sheet.end
         window.setTimeout = (cb, ms) -> thread.next-tick cb
@@ -295,6 +353,18 @@ Worker ||= class => (code) ->
       }])
     """, (cell) -> if cell is \undefined then cb 'null' else cb cell
     w.exportCells = (cb) -> w._eval "JSON.stringify(window.ss.sheet.cells)", cb
+    # eddy exportAttribs, triggerActionCell {
+    w.exportAttribs = (cb) -> w._eval "window.ss.sheet.attribs", cb    
+    w.triggerActionCell = (coord, cb) -> w._eval "window.ss.SocialCalc.TriggerIoAction.Email('#coord')" (emailcmd) ->
+      #console.log "send via OAuth"
+      for nextEmail in emailcmd
+        nextEmail = for addSpaces in nextEmail #replace %20 with spaces
+          addSpaces.replace(/%20/g,' ')
+        [emailto, subject, body] = nextEmail
+        emailer.sendemail emailto, subject, body,  (message) ->
+      cb emailcmd
+    #w.debug = (coord, cb) -> w._eval "window.ss.sheet.ioParameterList", cb
+    # }
     w.thread.eval bootSC, ~> w.postMessage { type: \init, room, log, snapshot }
     return w
   return SC

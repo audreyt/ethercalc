@@ -77,8 +77,9 @@
       exists: (key, cb) -> cb(null, if db.DB.hasOwnProperty(key) then 1 else 0)
       rpush: (key, val, cb) -> (db.DB[key] ?= []).push val; cb?!
       lrange: (key, from, to, cb) -> cb?(null, db.DB[key] ?= [])
-      hset: (key, idx, val, cb) -> (db.DB[key] ?= [])[idx] = val; cb?!
+      hset: (key, idx, val, cb) -> (db.DB[key] ?= {})[idx] = val; cb?!   # e.g. HSET myhash field1 "Hello"
       hgetall: (key, cb) -> cb?(null, db.DB[key] ?= {})
+      hdel: (key, idx) -> delete db.DB[key][idx] if db.DB[key]?; cb?!    # e.g. HDEL myhash field1
       rename: (key, key2, cb) -> db.DB[key2] = delete db.DB[key]; cb?!
       keys: (select, cb) -> cb?(null, Object.keys(db.DB).filter(minimatch.filter(select)))
       del: (keys, cb) ->
