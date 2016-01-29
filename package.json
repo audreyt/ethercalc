@@ -19,8 +19,6 @@
     "minimatch" : "*"  
     "nodemailer": "*",
     "xoauth2": "*",
-    "cron": "^1.0.5",
-    "time": "^0.11.0"
   },
   "optionalDependencies": {
     "webworker-threads": "0.6.x"

@@ -412,7 +412,7 @@
   @on data: !->
     {room, msg, user, ecell, cmdstr, type, auth} = @data
     # eddy
-    console.log "on data: " {...@data} 
+    #console.log "on data: " {...@data} 
     room = "#room" - /^_+/ # preceding underscore is reserved
     DB.expire "snapshot-#room", EXPIRE if EXPIRE
     reply = (data) ~> @emit {data}

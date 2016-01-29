@@ -555,7 +555,9 @@
     "financial",
     "test",
     "math",
-    "text"
+    "text",
+    "gui",
+    "action"
   ],
   "s_fclass_all": "All",
   "s_fclass_stat": "Statistics",
@@ -565,6 +567,8 @@
   "s_fclass_test": "Test",
   "s_fclass_math": "Math",
   "s_fclass_text": "Text",
+  "s_fclass_action": "Email & Copy", 
+  "s_fclass_gui": "Button & Input",
   "lastone": null,
 
   "s_loc_plain": "Plain",
