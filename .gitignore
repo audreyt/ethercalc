@@ -1,9 +1,6 @@
 node_modules/
 .env
 test-include.js
-<<<<<<< HEAD
 .settings/
 .project
-=======
->>>>>>> 4bffcf223c6e5be6c3ceff63ad0579f42e9ea9a0
 
