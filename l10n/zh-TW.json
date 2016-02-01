@@ -555,7 +555,9 @@
     "financial",
     "test",
     "math",
-    "text"
+    "text",
+    "gui",
+    "action"
   ],
   "s_fclass_all": "All",
   "s_fclass_stat": "Statistics",
