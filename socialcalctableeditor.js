@@ -3810,7 +3810,10 @@ SocialCalc.InputBoxDisplayCellContents = function(inputbox, coord) {
    var scc = SocialCalc.Constants;
 
    if (!inputbox) return;
-   if (!coord) coord = inputbox.editor.ecell.coord;
+   if (!coord) {
+     if(!inputbox.editor.ecell) return; // not initilized yet
+     coord = inputbox.editor.ecell.coord;
+   }
    var text = SocialCalc.GetCellContents(inputbox.editor.context.sheetobj, coord);
    if (text.indexOf("\n")!=-1) {
       text = scc.s_inputboxdisplaymultilinetext;

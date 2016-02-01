@@ -10,10 +10,10 @@
     #//   from OAuth playground: https://developers.google.com/oauthplayground/
     #//   to node environment vars (process.env.)
     #// **********************************
-    user: process.env.i3pqpufosc_user #// Your gmail address.
-    clientId: process.env.i3pqpufosc_clientId
-    clientSecret: process.env.i3pqpufosc_clientSecret
-    refreshToken: process.env.i3pqpufosc_refreshToken 
+    user: process.env.gmail_user #// Your gmail address.
+    clientId: process.env.gmail_clientId
+    clientSecret: process.env.gmail_clientSecret
+    refreshToken: process.env.gmail_refreshToken 
 
   #// listen for token updates
   #// you probably want to store these to a db
