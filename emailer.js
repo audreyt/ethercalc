@@ -12,10 +12,10 @@
     };
     nodemailer = require('nodemailer');
     generator = require('xoauth2').createXOAuth2Generator({
-      user: process.env.i3pqpufosc_user,
-      clientId: process.env.i3pqpufosc_clientId,
-      clientSecret: process.env.i3pqpufosc_clientSecret,
-      refreshToken: process.env.i3pqpufosc_refreshToken
+      user: process.env.gmail_user,
+      clientId: process.env.gmail_clientId,
+      clientSecret: process.env.gmail_clientSecret,
+      refreshToken: process.env.gmail_refreshToken
     });
     generator.on('token', function(token){});
     smtpTransport = nodemailer.createTransport({
