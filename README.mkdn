@@ -42,8 +42,9 @@ support for webworker-threads:
 Send email - Optional - Send email formulas requires OAuth2 & cron  e.g. =email(to, subject, body), =emailAt(time, to, subject, body) 
 
     OAuth2 - Set environment vars 
-    1) Tutorial: http://masashi-k.blogspot.com.au/2013/06/sending-mail-with-gmail-using-xoauth2.html 
-    2) Set 4 vars environment vars - see [src/emailer.ls](src/emailer.ls) vars: user, clientId, clientSecret, refreshToken
+    1) Tutorial: follow the tutorial to get the 4 environment vars http://masashi-k.blogspot.com.au/2013/06/sending-mail-with-gmail-using-xoauth2.html 
+    2) Set 4 environment vars - see [src/emailer.ls](src/emailer.ls) vars: user, clientId, clientSecret, refreshToken
+    Tested using gmail, have not tested with other providors
 
     Cron - Required for emailAt formulas.
     See *curl* in [.openshift/cron/minutely/timetrigger](.openshift/cron/minutely/timetrigger) for openshift version (openshift](openshift.redhat.com) 
