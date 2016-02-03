@@ -320,9 +320,8 @@
                   body: commandParameters[3].replace(/%20/g, ' ')
                 }
               });
-              return window.ss.ExecuteCommand(command);
             }
-            break;
+            return window.ss.ExecuteCommand(command);
           case 'recalc':
             return SocialCalc.RecalcLoadedSheet(ref, snapshot, true);
           case 'clearCache':
@@ -349,9 +348,6 @@
               cells: window.ss.cells
             });
           case 'init':
-            SocialCalc.SaveEditorSettings = function(){
-              return "";
-            };
             SocialCalc.CreateAuditString = function(){
               return "";
             };
