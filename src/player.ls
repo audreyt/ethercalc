@@ -311,9 +311,9 @@ Check the activity stream to see the newly edited page!
     
     ss.ExecuteCommand? \redisplay, ''
     ss.ExecuteCommand? 'set sheet defaulttextvalueformat text-wiki'
-    $ document .on \mouseover '#te_fullgrid tr:nth-child(2) td:first' ->
+    $ document .on \mouseover '.te_download tr:nth-child(2) td:first' ->
       $ @ .attr title: 'Export...'
-    $ document .on \click '#te_fullgrid tr:nth-child(2) td:first' ->
+    $ document .on \click '.te_download tr:nth-child(2) td:first' ->
       SocialCalc.Keyboard.passThru = yes if vex?dialog.open
       isMultiple = (window.__MULTI__ or SocialCalc._room is /\.[1-9]\d*$/)
       vex?defaultOptions.className = 'vex-theme-flat-attack'

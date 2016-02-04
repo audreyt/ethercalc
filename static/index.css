@@ -29,12 +29,12 @@ div.wiki .wafl {
     margin:8px 10px 10px 0px;
 }
 
-#te_fullgrid tr:nth-child(2) td:nth-child(1) {
+.te_download tr:nth-child(2) td:nth-child(1) {
     background: url('download.png') white 5px no-repeat;
     cursor: pointer;
 }
 
-#te_fullgrid tr:nth-child(2) td:nth-child(1):hover {
+.te_download tr:nth-child(2) td:nth-child(1):hover {
     border: 1px solid #333;
 }
 @keyframes vex-fadein {

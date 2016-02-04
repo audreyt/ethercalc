@@ -134,7 +134,7 @@ Worker ||= class => (code) ->
           #console.log "------ send email --------"
           #console.log " to:"+commandParameters[1]+" subject:"+commandParameters[2]+" body:"+commandParameters[3]             
           postMessage { type: \sendemailout, emaildata: { to: commandParameters[1].replace(/%20/g,' '), subject: commandParameters[2].replace(/%20/g,' '), body:commandParameters[3].replace(/%20/g,' ')  } }
-          window.ss.ExecuteCommand command
+        window.ss.ExecuteCommand command
       | \recalc
         SocialCalc.RecalcLoadedSheet ref, snapshot, true
       | \clearCache

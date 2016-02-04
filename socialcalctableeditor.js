@@ -754,8 +754,8 @@ SocialCalc.EditorRenderSheet = function(editor) {
 
    SocialCalc.AssignID(editor, editor.fullgrid, "fullgrid"); // give it an id
    // eddy EditorRenderSheet {
-   // if(editor.context.showRCHeaders === true) 
-     editor.EditorMouseRegister();
+   if(!SocialCalc._app) editor.fullgrid.className = "te_download";
+   editor.EditorMouseRegister();
    // } EditorRenderSheet
    
    }
