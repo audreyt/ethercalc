@@ -713,10 +713,8 @@
           if (/^set sheet defaulttextvalueformat text-wiki\s*$/.exec(cmdstr)) {
             return;
           }
-          console.log("execute:" + 1);
           DB.multi().rpush("log-" + room, cmdstr).rpush("audit-" + room, cmdstr).bgsave().exec(function(){
             var commandParameters, ref$;
-            console.log("execute:" + 2);
             commandParameters = cmdstr.split("\r");
             if (SC[room] == null) {
               console.log("SC[" + room + "] went away. Reloading...");
@@ -728,15 +726,15 @@
             }
             if (commandParameters[0].trim() === 'submitform') {
               console.log("test SC[" + room + "] submitform...");
-              if (SC["aubzu1ovmu_formdata"] == null) {
-                console.log("Submitform. loading... SC[aubzu1ovmu_formdata]");
-                DB.multi().get("snapshot-aubzu1ovmu_formdata").lrange("log-aubzu1ovmu_formdata", 0, -1).exec(function(_, arg$){
+              if (SC[room + "_formdata"] == null) {
+                console.log("Submitform. loading... SC[" + room + "_formdata]");
+                DB.multi().get("snapshot-" + room + "_formdata").lrange("log-" + room + "_formdata", 0, -1).exec(function(_, arg$){
                   var snapshot, log;
                   snapshot = arg$[0], log = arg$[1];
-                  return SC["aubzu1ovmu_formdata"] = SC._init(snapshot, log, DB, "aubzu1ovmu_formdata", this$.io);
+                  return SC[room + "_formdata"] = SC._init(snapshot, log, DB, room + "_formdata", this$.io);
                 });
               }
-              if ((ref$ = SC["aubzu1ovmu_formdata"]) != null) {
+              if ((ref$ = SC[room + "_formdata"]) != null) {
                 ref$.exportAttribs(function(attribs){
                   var formrow, res$, i$, len$, cmdstrformdata, this$ = this;
                   console.log("sheet attribs:", (import$({}, attribs)));
@@ -749,13 +747,13 @@
                   formrow = res$;
                   cmdstrformdata = formrow.join("\n");
                   console.log("cmdstrformdata:" + cmdstrformdata);
-                  DB.multi().rpush("log-aubzu1ovmu_formdata", cmdstrformdata).rpush("audit-aubzu1ovmu_formdata", cmdstrformdata).bgsave().exec(function(){
+                  DB.multi().rpush("log-" + room + "_formdata", cmdstrformdata).rpush("audit-" + room + "_formdata", cmdstrformdata).bgsave().exec(function(){
                     var ref$;
-                    if ((ref$ = SC["aubzu1ovmu_formdata"]) != null) {
+                    if ((ref$ = SC[room + "_formdata"]) != null) {
                       ref$.ExecuteCommand(cmdstrformdata);
                     }
                     return broadcast({
-                      room: "aubzu1ovmu_formdata",
+                      room: room + "_formdata",
                       user: user,
                       type: type,
                       auth: auth,
@@ -769,7 +767,6 @@
                 });
               }
             }
-            console.log("execute:" + 6);
             if ((ref$ = SC[room]) != null) {
               ref$.ExecuteCommand(cmdstr);
             }
