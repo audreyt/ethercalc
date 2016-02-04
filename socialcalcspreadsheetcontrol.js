@@ -8,7 +8,7 @@
 // (c) Copyright 2008, 2009, 2010 Socialtext, Inc.
 // All Rights Reserved.
 //
-*/
+
 
 /*
 
@@ -233,15 +233,23 @@ SocialCalc.SpreadsheetControl = function(idPrefix) {
    // formula bar buttons
 
    this.formulabuttons = {
-      formulafunctions: {image: "formuladialog.gif", tooltip: "Functions", // tooltips are localized when set below
+      formulafunctions: {image: "insertformula.png", tooltip: "Functions", // tooltips are localized when set below
                          command: SocialCalc.SpreadsheetControl.DoFunctionList},
-      multilineinput: {image: "multilinedialog.gif", tooltip: "Multi-line Input Box",
+      multilineinput: {image: "listbox.png", tooltip: "Multi-line Input Box",
                          command: SocialCalc.SpreadsheetControl.DoMultiline},
-      link: {image: "linkdialog.gif", tooltip: "Link Input Box",
+      link: {image: "inserthyperlink.png", tooltip: "Link Input Box",
                          command: SocialCalc.SpreadsheetControl.DoLink},
-      sum: {image: "sumdialog.gif", tooltip: "Auto Sum",
+      sum: {image: "autosum.png", tooltip: "Auto Sum",
                          command: SocialCalc.SpreadsheetControl.DoSum}
       }
+   
+   // find buttons
+   this.findbuttons = {
+       last: {image: 'upsearch.png', tooltip: 'Find Previous',
+              command: SocialCalc.SpreadsheetControl.SearchUp},
+       next: {image: 'downsearch.png', tooltip: 'Find Next', 
+              command: SocialCalc.SpreadsheetControl.SearchDown}
+   }
 
    // Default tabs:
 
@@ -250,45 +258,44 @@ SocialCalc.SpreadsheetControl = function(idPrefix) {
    this.tabnums.edit = this.tabs.length;
    this.tabs.push({name: "edit", text: "Edit", html:
       ' <div id="%id.edittools" style="padding:10px 0px 0px 0px;">'+
-'&nbsp;<img id="%id.button_undo" src="%img.undo.gif" style="vertical-align:bottom;">'+
-' <img id="%id.button_redo" src="%img.redo.gif" style="vertical-align:bottom;">'+
-' &nbsp;<img src="%img.divider1.gif" style="vertical-align:bottom;">&nbsp; '+
-'<img id="%id.button_copy" src="%img.copy.gif" style="vertical-align:bottom;">'+
-' <img id="%id.button_cut" src="%img.cut.gif" style="vertical-align:bottom;">'+
-' <img id="%id.button_paste" src="%img.paste.gif" style="vertical-align:bottom;">'+
-' &nbsp;<img src="%img.divider1.gif" style="vertical-align:bottom;">&nbsp; '+
-'<img id="%id.button_delete" src="%img.delete.gif" style="vertical-align:bottom;">'+
-' <img id="%id.button_pasteformats" src="%img.pasteformats.gif" style="vertical-align:bottom;">'+
-' &nbsp;<img src="%img.divider1.gif" style="vertical-align:bottom;">&nbsp; '+
-' <span id="%id.locktools"><img id="%id.button_lock" src="%img.lock.gif" style="vertical-align:bottom;">'+
-' <img id="%id.button_unlock" src="%img.unlock.gif" style="vertical-align:bottom;">'+
-' &nbsp;<img src="%img.divider1.gif" style="vertical-align:bottom;">&nbsp;</span> '+
-'<img id="%id.button_filldown" src="%img.filldown.gif" style="vertical-align:bottom;">'+
-' <img id="%id.button_fillright" src="%img.fillright.gif" style="vertical-align:bottom;">'+
-' &nbsp;<img src="%img.divider1.gif" style="vertical-align:bottom;">&nbsp; '+
+'&nbsp;<img id="%id.button_undo" src="%img.undo.png" style="vertical-align:bottom;">'+
+' <img id="%id.button_redo" src="%img.redo.png" style="vertical-align:bottom;">'+
+' &nbsp;<img src="%img.divider1.png" style="vertical-align:bottom;">&nbsp; '+
+'<img id="%id.button_copy" src="%img.copy.png" style="vertical-align:bottom;">'+
+' <img id="%id.button_cut" src="%img.cut.png" style="vertical-align:bottom;">'+
+' <img id="%id.button_paste" src="%img.paste.png" style="vertical-align:bottom;">'+
+' &nbsp;<img src="%img.divider1.png" style="vertical-align:bottom;">&nbsp; '+
+'<img id="%id.button_delete" src="%img.delete.png" style="vertical-align:bottom;">'+
+' <img id="%id.button_pasteformats" src="%img.formatpaintbrush.png" style="vertical-align:bottom;">'+
+' &nbsp;<img src="%img.divider1.png" style="vertical-align:bottom;">&nbsp; '+
+' <span id="%id.locktools"><img id="%id.button_lock" src="%img.lock.png" style="vertical-align:bottom;">'+
+' <img id="%id.button_unlock" src="%img.unlock.png" style="vertical-align:bottom;">'+
+' &nbsp;<img src="%img.divider1.png" style="vertical-align:bottom;">&nbsp;</span> '+
+'<img id="%id.button_filldown" src="%img.filldown.png" style="vertical-align:bottom;">'+
+' <img id="%id.button_fillright" src="%img.fillright.png" style="vertical-align:bottom;">'+
+' &nbsp;<img src="%img.divider1.png" style="vertical-align:bottom;">&nbsp; '+
 '<img id="%id.button_movefrom" src="%img.movefromoff.gif" style="vertical-align:bottom;">'+
 ' <img id="%id.button_movepaste" src="%img.movepasteoff.gif" style="vertical-align:bottom;">'+
 ' <img id="%id.button_moveinsert" src="%img.moveinsertoff.gif" style="vertical-align:bottom;">'+
-' &nbsp;<img src="%img.divider1.gif" style="vertical-align:bottom;">&nbsp; '+
-'<img id="%id.button_alignleft" src="%img.alignleft.gif" style="vertical-align:bottom;">'+
-' <img id="%id.button_aligncenter" src="%img.aligncenter.gif" style="vertical-align:bottom;">'+
-' <img id="%id.button_alignright" src="%img.alignright.gif" style="vertical-align:bottom;">'+
-' &nbsp;<img src="%img.divider1.gif" style="vertical-align:bottom;">&nbsp; '+
-'<img id="%id.button_borderon" src="%img.borderson.gif" style="vertical-align:bottom;"> '+
-' <img id="%id.button_borderoff" src="%img.bordersoff.gif" style="vertical-align:bottom;"> '+
-' <img id="%id.button_swapcolors" src="%img.swapcolors.gif" style="vertical-align:bottom;"> '+
-' &nbsp;<img src="%img.divider1.gif" style="vertical-align:bottom;">&nbsp; '+
-'<img id="%id.button_merge" src="%img.merge.gif" style="vertical-align:bottom;"> '+
-' <img id="%id.button_unmerge" src="%img.unmerge.gif" style="vertical-align:bottom;"> '+
-' &nbsp;<img src="%img.divider1.gif" style="vertical-align:bottom;">&nbsp; '+
-'<img id="%id.button_insertrow" src="%img.insertrow.gif" style="vertical-align:bottom;"> '+
-' <img id="%id.button_insertcol" src="%img.insertcol.gif" style="vertical-align:bottom;"> '+
-'&nbsp; <img id="%id.button_deleterow" src="%img.deleterow.gif" style="vertical-align:bottom;"> '+
-' <img id="%id.button_deletecol" src="%img.deletecol.gif" style="vertical-align:bottom;"> '+
-'&nbsp; <img id="%id.button_hiderow" src="%img.hiderow.gif" style="vertical-align:bottom;"> '+
-' <img id="%id.button_hidecol" src="%img.hidecol.gif" style="vertical-align:bottom;"> '+
-' &nbsp;<img id="%id.divider_recalc" src="%img.divider1.gif" style="vertical-align:bottom;">&nbsp; '+
-'<img id="%id.button_recalc" src="%img.recalc.gif" style="vertical-align:bottom;"> '+
+' &nbsp;<img src="%img.divider1.png" style="vertical-align:bottom;">&nbsp; '+
+'<img id="%id.button_alignleft" src="%img.alignleft.png" style="vertical-align:bottom;">'+
+' <img id="%id.button_aligncenter" src="%img.aligncenter.png" style="vertical-align:bottom;">'+
+' <img id="%id.button_alignright" src="%img.alignright.png" style="vertical-align:bottom;">'+
+' &nbsp;<img src="%img.divider1.png" style="vertical-align:bottom;">&nbsp; '+
+'<img id="%id.button_borderon" src="%img.borderson.png" style="vertical-align:bottom;"> '+
+' <img id="%id.button_borderoff" src="%img.bordersoff.png" style="vertical-align:bottom;"> '+
+' <img id="%id.button_swapcolors" src="%img.swapcolors.png" style="vertical-align:bottom;"> '+
+' &nbsp;<img src="%img.divider1.png" style="vertical-align:bottom;">&nbsp; '+
+'<img id="%id.button_merge" src="%img.mergecells.png" style="vertical-align:bottom;"> '+
+' &nbsp;<img src="%img.divider1.png" style="vertical-align:bottom;">&nbsp; '+
+'<img id="%id.button_insertrow" src="%img.insertrows.png" style="vertical-align:bottom;"> '+
+' <img id="%id.button_insertcol" src="%img.insertcolumns.png" style="vertical-align:bottom;"> '+
+' <img id="%id.button_deleterow" src="%img.deleterows.png" style="vertical-align:bottom;"> '+
+' <img id="%id.button_deletecol" src="%img.deletecolumns.png" style="vertical-align:bottom;"> '+
+' <img id="%id.button_hiderow" src="%img.hiderow.png" style="vertical-align:bottom;"> '+
+' <img id="%id.button_hidecol" src="%img.hidecol.png" style="vertical-align:bottom;"> '+
+' &nbsp;<img id="%id.divider_recalc" src="%img.divider1.png" style="vertical-align:bottom;">&nbsp; '+
+'<img id="%id.button_recalc" src="%img.recalc.png" style="vertical-align:bottom;"> '+
       ' </div>',
       oncreate: null, //function(spreadsheet, viewobject) {SocialCalc.DoCmd(null, "fill-rowcolstuff");},
       onclick: null});
@@ -697,7 +704,7 @@ SocialCalc.SpreadsheetControl = function(idPrefix) {
       '  <table cellspacing="0" cellpadding="0"><tr>'+
       '   <td style="vertical-align:top;padding-right:4px;width:160px;">'+
       '    <div style="%tbt.">%loc!Set Cells To Sort!</div>'+
-      '    <select id="%id.sortlist" size="1" onfocus="%s.CmdGotFocus(this);"><option selected>[select range]</option></select>'+
+      '    <select id="%id.sortlist" size="1" onfocus="%s.CmdGotFocus(this);"><option selected>[select range]</option><option value="all">Sort All</option></select>'+
       '    <input type="button" value="%loc!OK!" onclick="%s.DoCmd(this, \'ok-setsort\');" style="font-size:x-small;">'+
       '   </td>'+
       '   <td style="vertical-align:middle;padding-right:16px;width:100px;text-align:right;">'+
@@ -710,8 +717,8 @@ SocialCalc.SpreadsheetControl = function(idPrefix) {
       '      <div style="%tbt.">%loc!Major Sort!</div>'+
       '      <select id="%id.majorsort" size="1" onfocus="%s.CmdGotFocus(this);"></select>'+
       '     </td><td>'+
-      '      <input type="radio" name="majorsort" id="%id.majorsortup" value="up" checked><span style="font-size:x-small;color:#FFF;">%loc!Up!</span><br>'+
-      '      <input type="radio" name="majorsort" id="%id.majorsortdown" value="down"><span style="font-size:x-small;color:#FFF;">%loc!Down!</span>'+
+      '      <input type="radio" name="majorsort" id="%id.majorsortup" value="up" checked><span style="font-size:x-small;color:#555753;">%loc!Up!</span><br>'+
+      '      <input type="radio" name="majorsort" id="%id.majorsortdown" value="down"><span style="font-size:x-small;color:#555753;">%loc!Down!</span>'+
       '     </td>'+
       '    </tr></table>'+
       '   </td>'+
@@ -721,8 +728,8 @@ SocialCalc.SpreadsheetControl = function(idPrefix) {
       '      <div style="%tbt.">%loc!Minor Sort!</div>'+
       '      <select id="%id.minorsort" size="1" onfocus="%s.CmdGotFocus(this);"></select>'+
       '     </td><td>'+
-      '      <input type="radio" name="minorsort" id="%id.minorsortup" value="up" checked><span style="font-size:x-small;color:#FFF;">%loc!Up!</span><br>'+
-      '      <input type="radio" name="minorsort" id="%id.minorsortdown" value="down"><span style="font-size:x-small;color:#FFF;">%loc!Down!</span>'+
+      '      <input type="radio" name="minorsort" id="%id.minorsortup" value="up" checked><span style="font-size:x-small;color:#555753;">%loc!Up!</span><br>'+
+      '      <input type="radio" name="minorsort" id="%id.minorsortdown" value="down"><span style="font-size:x-small;color:#555753;">%loc!Down!</span>'+
       '     </td>'+
       '    </tr></table>'+
       '   </td>'+
@@ -732,8 +739,8 @@ SocialCalc.SpreadsheetControl = function(idPrefix) {
       '      <div style="%tbt.">%loc!Last Sort!</div>'+
       '      <select id="%id.lastsort" size="1" onfocus="%s.CmdGotFocus(this);"></select>'+
       '     </td><td>'+
-      '      <input type="radio" name="lastsort" id="%id.lastsortup" value="up" checked><span style="font-size:x-small;color:#FFF;">%loc!Up!</span><br>'+
-      '      <input type="radio" name="lastsort" id="%id.lastsortdown" value="down"><span style="font-size:x-small;color:#FFF;">%loc!Down!</span>'+
+      '      <input type="radio" name="lastsort" id="%id.lastsortup" value="up" checked><span style="font-size:x-small;color:#555753;">%loc!Up!</span><br>'+
+      '      <input type="radio" name="lastsort" id="%id.lastsortdown" value="down"><span style="font-size:x-small;color:#555753;">%loc!Down!</span>'+
       '     </td>'+
       '    </tr></table>'+
       '   </td>'+
@@ -983,7 +990,7 @@ SocialCalc.InitializeSpreadsheetControl = function(spreadsheet, node, height, wi
       }
 
    html += '</div>'+
-      '<div style="'+spreadsheet.tabbackground+'padding-bottom:4px;margin:0px 0px 8px 0px;">'+
+      '<div style="'+spreadsheet.tabbackground+'margin:0px 0px 8px 0px;">'+
       '<table cellpadding="0" cellspacing="0"><tr>';
 
    for (i=0; i<tabs.length; i++) {
@@ -1019,9 +1026,9 @@ spreadsheet.Buttons = {
    button_cut: {tooltip: "Cut", command: "cut"},
    button_paste: {tooltip: "Paste", command: "paste"},
    button_pasteformats: {tooltip: "Paste Formats", command: "pasteformats"},
-   button_lock: {tooltip: "Lock", command: "lock"},
-   button_unlock: {tooltip: "Unlock", command: "unlock"},
-   button_delete: {tooltip: "Delete Contents", command: "delete"},
+   button_lock: {tooltip: "Lock Cell", command: "lock"},
+   button_unlock: {tooltip: "Unlock Cell", command: "unlock"},
+   button_delete: {tooltip: "Delete Cell Contents", command: "delete"},
    button_filldown: {tooltip: "Fill Down", command: "filldown"},
    button_fillright: {tooltip: "Fill Right", command: "fillright"},
    button_movefrom: {tooltip: "Set/Clear Move From", command: "movefrom"},
@@ -1033,15 +1040,14 @@ spreadsheet.Buttons = {
    button_borderon: {tooltip: "Borders On", command: "borderon"},
    button_borderoff: {tooltip: "Borders Off", command: "borderoff"},
    button_swapcolors: {tooltip: "Swap Colors", command: "swapcolors"},
-   button_merge: {tooltip: "Merge Cells", command: "merge"},
-   button_unmerge: {tooltip: "Unmerge Cells", command: "unmerge"},
-   button_insertrow: {tooltip: "Insert Row", command: "insertrow"},
-   button_insertcol: {tooltip: "Insert Column", command: "insertcol"},
+   button_merge: {tooltip: "Merge/Unmerge Cells", command: "merge"},
+   button_insertrow: {tooltip: "Insert Row Before", command: "insertrow"},
+   button_insertcol: {tooltip: "Insert Column Before", command: "insertcol"},
    button_deleterow: {tooltip: "Delete Row", command: "deleterow"},
    button_deletecol: {tooltip: "Delete Column", command: "deletecol"},
    button_hiderow: {tooltip: "Hide Row", command: "hiderow"},
    button_hidecol: {tooltip: "Hide Column", command: "hidecol"},
-   button_recalc: {tooltip: "Recalc", command: "recalc"}
+   button_recalc: {tooltip: "Recalculate", command: "recalc"}
    }
 
    for (button in spreadsheet.Buttons) {
@@ -1077,10 +1083,48 @@ spreadsheet.Buttons = {
           hoverstyle: "border:1px solid #CCC;backgroundColor:#FFF;",
           downstyle: "border:1px solid #000;backgroundColor:#FFF;"}, 
          {MouseDown: spreadsheet.formulabuttons[button].command, Disabled: function() {return spreadsheet.editor.ECellReadonly();}});
-      
-      spreadsheet.formulabarDiv.appendChild(bele);
-      }
+   spreadsheet.formulabarDiv.appendChild(bele);
+   }
 
+   var input = $("<input id='searchbarinput' value='' placeholder='Search sheet…'>");
+   var searchBar = $("<span id='searchbar'></span>");
+   searchBar.append("<div id='searchstatus'></div>");
+   searchBar.append(input);
+
+   // find buttons (right of formula bar)
+   for (button in spreadsheet.findbuttons) {
+      bele = document.createElement("img");
+      bele.id = spreadsheet.idPrefix+button;
+      bele.src = (spreadsheet.imagePrefix)+spreadsheet.findbuttons[button].image;
+      bele.style.verticalAlign = "middle";
+      bele.style.border = "1px solid #FFF";
+      SocialCalc.TooltipRegister(bele, SCLoc(spreadsheet.findbuttons[button].tooltip), {}, spreadsheet.formulabardiv);
+      SocialCalc.ButtonRegister(spreadsheet.editor, bele,
+         {normalstyle: "border:1px solid #FFF;backgroundColor:#FFF;",
+          hoverstyle: "border:1px solid #CCC;backgroundColor:#FFF;",
+          downstyle: "border:1px solid #000;backgroundColor:#FFF;"}, 
+         {MouseDown: spreadsheet.findbuttons[button].command, Disabled: function() {return false;}});
+      searchBar[0].appendChild(bele);
+   } 
+   input.on('input', SocialCalc.SpreadsheetControl.FindInSheet);
+   input.on('focus', function() {
+        SocialCalc.Keyboard.passThru = true;
+   });
+   input.on('blur', function() {
+        SocialCalc.Keyboard.passThru = false;
+   });
+   input.keyup(function (e) {
+        if (e.keyCode == 13) {
+           // search down when enter is pressed
+           if (e.shiftKey) {
+               SocialCalc.SpreadsheetControl.SearchUp();
+           } else {
+               SocialCalc.SpreadsheetControl.SearchDown();
+           }
+        }
+   });
+   spreadsheet.formulabarDiv.appendChild(searchBar[0]);
+   
    // initialize tabs that need it
 
    for (i=0; i<tabs.length; i++) { // execute any tab-specific initialization code
@@ -1214,6 +1258,8 @@ SocialCalc.LocalizeString = function(str) {
       }
    return cstr;
    }
+
+
 
 SocialCalc.LocalizeStringList = {}; // a list of strings to localize accumulated by the routine
 
@@ -1664,8 +1710,31 @@ SocialCalc.DoCmd = function(obj, which) {
                }
             }
          else {
-            spreadsheet.sortrange = lele.options[lele.selectedIndex].value;
+            var val = lele.options[lele.selectedIndex].value;
+            if (val == 'all') {
+                var cells = spreadsheet.sheet.cells; 
+                var min_col = -1, max_col = -1, min_row = -1, max_row = -1;
+                for (var cell_id in cells) {
+                    var cr = SocialCalc.coordToCr(cell_id);
+                    if (min_row == -1 || cr.row < min_row) {
+                        min_row = cr.row;
+                    }
+                    if (min_col == -1 || cr.col < min_col) {
+                        min_col = cr.col;
+                    }
+                    if (max_row == -1 || cr.row > max_row) {
+                        max_row = cr.row;
+                    }
+                    if (max_col == -1 || cr.col > max_col) {
+                        max_col = cr.col;
+                    }
+                } 
+                spreadsheet.sortrange = SocialCalc.crToCoord(min_col, min_row) + ":" + SocialCalc.crToCoord(max_col, max_row); 
+                lele.options[lele.selectedIndex].text += " (" + spreadsheet.sortrange + ")";
+            } else { 
+                spreadsheet.sortrange = lele.options[lele.selectedIndex].value;
             }
+         }
          ele = document.getElementById(spreadsheet.idPrefix+"sortbutton");
          ele.value = SocialCalc.LocalizeString("Sort ")+spreadsheet.sortrange;
          ele.style.visibility = "visible";
@@ -2010,11 +2079,17 @@ SocialCalc.SpreadsheetControlExecuteCommand = function(obj, combostr, sstr) {
       str.W = SocialCalc.rcColname(eobj.range.left) + ":" + SocialCalc.rcColname(eobj.range.right);
       str.H = eobj.range.top + ":" + eobj.range.bottom;
       }
-   else {
+   else if (eobj.ecell) {
       str.C = eobj.ecell.coord;
       str.R = eobj.ecell.coord+":"+eobj.ecell.coord;
       str.W = SocialCalc.rcColname(SocialCalc.coordToCr(eobj.ecell.coord).col);
       str.H = SocialCalc.coordToCr(eobj.ecell.coord).row;
+      }
+   else {
+      str.C = 'A1'
+      str.R = 'A1:A1'
+      str.W = SocialCalc.rcColname(SocialCalc.coordToCr('A1').col);
+      str.H = SocialCalc.coordToCr('A1').row;
       }
    str.S = sstr;
    combostr = combostr.replace(/%C/g, str.C);
@@ -2732,6 +2807,72 @@ SocialCalc.SpreadsheetControl.DoSum = function() {
 
    }
 
+SocialCalc.SpreadsheetControl.FindInSheet = function() {
+    var searchstatus = $("#searchstatus");
+    var spreadsheet = SocialCalc.GetSpreadsheetControlObject();
+    if (!this.value.length) {
+        searchstatus.text("");
+        spreadsheet.sheet.search_cells = [];
+        spreadsheet.sheet.selected_search_cell = undefined;
+        return;
+    }
+    var cells = spreadsheet.sheet.cells;
+    var regex = new RegExp(this.value, 'im');
+    var cell, cellvalue;
+    var search_cells = [];
+    for (var cell_id in cells) {
+        cell = cells[cell_id];
+        var cr = SocialCalc.coordToCr(cell_id);
+        if (spreadsheet.sheet.rowattribs.hide[cr.row] === 'yes' || spreadsheet.sheet.colattribs.hide[SocialCalc.rcColname(cr.col)] === 'yes') {
+            continue;
+        }
+        if (cell.datatype === 'c') {
+            cellvalue = cell.displaystring;
+        } else {
+            cellvalue = String(cell.datavalue);
+        }
+        if (cellvalue !== undefined && cellvalue.match(regex)) {
+           search_cells.push(cell_id);
+        } 
+    }
+    spreadsheet.sheet.search_cells = search_cells;
+    if (search_cells.length) {
+        spreadsheet.sheet.selected_search_cell = 0;
+        spreadsheet.editor.MoveECell(search_cells[0]);
+        searchstatus.text("1 of " + search_cells.length); 
+    } else {
+        spreadsheet.sheet.selected_search_cell = undefined;
+        searchstatus.text("No Matches");
+    }
+        
+}
+
+SocialCalc.SpreadsheetControl.SearchSheet = function(direction) {
+    var spreadsheet = SocialCalc.GetSpreadsheetControlObject();
+    var sheet = spreadsheet.sheet;
+    var cells = sheet.search_cells;
+    if (!cells.length) {
+        return;
+    }
+    var selected_cell = sheet.selected_search_cell;
+    if (selected_cell === (direction === 0 ? 0 : cells.length-1)) {
+        selected_cell = (direction === 0 ? cells.length-1 : 0);
+    } else {
+        selected_cell += (direction === 0 ? -1 : 1);
+    }
+    var new_cell = cells[selected_cell];
+    sheet.selected_search_cell = selected_cell; 
+    spreadsheet.editor.MoveECell(new_cell);
+    document.getElementById("searchstatus").textContent = String(selected_cell+1) + " of " + cells.length;
+}
+ 
+SocialCalc.SpreadsheetControl.SearchUp = function() {
+    SocialCalc.SpreadsheetControl.SearchSheet(0);    
+}
+
+SocialCalc.SpreadsheetControl.SearchDown = function() {
+    SocialCalc.SpreadsheetControl.SearchSheet(1);
+}
 
 //
 // TAB Routines
@@ -2753,11 +2894,14 @@ SocialCalc.SpreadsheetControlSortOnclick = function(s, t) {
    namelist.sort();
    nl.length = 0;
    nl.options[0] = new Option(SocialCalc.LocalizeString("[select range]"));
+   nl.options[1] = new Option(SocialCalc.LocalizeString("Sort All"), "all");
+   n_options = nl.options.length;
+
    for (i=0; i<namelist.length; i++) {
       name = namelist[i];
-      nl.options[i+1] = new Option(name, name);
+      nl.options[i+n_options] = new Option(name, name);
       if (name == s.sortrange) {
-         nl.options[i+1].selected = true;
+         nl.options[i+n_options].selected = true;
          }
       }
    if (s.sortrange == "") {

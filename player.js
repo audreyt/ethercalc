@@ -39,7 +39,7 @@
           } else if (SocialCalc._room) {
             if (!SocialCalc.CurrentSpreadsheetControlObject) {
               setTimeout(function(){
-                return window.history.pushState({}, '', "./" + SocialCalc._room + (function(){
+                window.history.pushState({}, '', "./" + SocialCalc._room + (function(){
                   switch (false) {
                   case !SocialCalc._app:
                     return '/app';
@@ -51,6 +51,14 @@
                     return '';
                   }
                 }()));
+                if (/^(?:www\.)?ethercalc\.(?:org|com)$/.exec(location.host)) {
+                  return $('<a />', {
+                    id: "restore",
+                    target: "_blank",
+                    href: "https://ethercalc.org/log/?" + SocialCalc._room,
+                    title: "View & Restore Backups"
+                  }).text("↻").appendTo('body');
+                }
               }, 100);
             }
           } else {
@@ -135,8 +143,12 @@
             return emit(data);
           };
           SocialCalc.isConnected = true;
+          SocialCalc.RecalcInfo.LoadSheetCache = {};
           SocialCalc.RecalcInfo.LoadSheet = function(ref){
-            ref = ref.replace(/[^a-zA-Z0-9]+/g, '').toLowerCase();
+            if (/[^.a-zA-Z0-9]/.exec(ref)) {
+              return;
+            }
+            ref = ref.toLowerCase();
             return emit({
               type: 'ask.recalc',
               user: SocialCalc._username,
@@ -145,7 +157,7 @@
           };
           return this$.on({
             data: function(){
-              var ss, ref$, editor, user, ecell, peerClass, find, cr, cell, origCR, origCell, parts, cmdstr, line, refreshCmd;
+              var ss, ref$, editor, user, ecell, peerClass, find, cr, cell, origCR, origCell, parts, cmdstr, line, refreshCmd, sheetdata;
               if (!((typeof SocialCalc != 'undefined' && SocialCalc !== null) && SocialCalc.isConnected)) {
                 return;
               }
@@ -250,9 +262,15 @@
                 if (this.data.snapshot) {
                   parts = ss.DecodeSpreadsheetSave(this.data.snapshot);
                 }
-                if (parts != null && parts.sheet) {
-                  ss.sheet.ResetSheet();
-                  ss.ParseSheetSave(this.data.snapshot.substring(parts.sheet.start, parts.sheet.end));
+                if (parts != null) {
+                  if (parts.sheet) {
+                    ss.sheet.ResetSheet();
+                    ss.ParseSheetSave(this.data.snapshot.substring(parts.sheet.start, parts.sheet.end));
+                  }
+                  if (parts.edit) {
+                    ss.editor.LoadEditorSettings(this.data.snapshot.substring(parts.edit.start, parts.edit.end));
+                    ss.editor.ScheduleRender();
+                  }
                 }
                 if (typeof window.addmsg === 'function') {
                   window.addmsg(this.data.chat.join('\n'), true);
@@ -299,8 +317,12 @@
                   parts = ss.DecodeSpreadsheetSave(this.data.snapshot);
                 }
                 if (parts != null && parts.sheet) {
-                  SocialCalc.RecalcLoadedSheet(this.data.room, this.data.snapshot.substring(parts.sheet.start, parts.sheet.end), true);
-                  ss.context.sheetobj.ScheduleSheetCommands("recalc\n", false, true);
+                  sheetdata = this.data.snapshot.substring(parts.sheet.start, parts.sheet.end);
+                  SocialCalc.RecalcLoadedSheet(this.data.room, sheetdata, true);
+                  if (SocialCalc.RecalcInfo.LoadSheetCache[this.data.room] !== sheetdata) {
+                    SocialCalc.RecalcInfo.LoadSheetCache[this.data.room] = sheetdata;
+                    ss.context.sheetobj.ScheduleSheetCommands("recalc\n", false, true);
+                  }
                 } else {
                   SocialCalc.RecalcLoadedSheet(this.data.room, '', true);
                 }
@@ -403,7 +425,7 @@
             ref$.push({
               name: 'graph',
               text: SocialCalc.Constants.s_loc_graph,
-              html: "<div id=\"%id.graphtools\" style=\"display:none;\"><div style=\"%tbt.\"><table cellspacing=\"0\" cellpadding=\"0\"><tr><td style=\"vertical-align:middle;padding-right:32px;padding-left:16px;\"><div style=\"%tbt.\">Cells to Graph</div><div id=\"%id.graphrange\" style=\"font-weight:bold;\">Not Set</div></td><td style=\"vertical-align:top;padding-right:32px;\"><div style=\"%tbt.\">Set Cells To Graph</div><select id=\"%id.graphlist\" size=\"1\" onfocus=\"%s.CmdGotFocus(this);\"><option selected>[select range]</option></select></td><td style=\"vertical-align:middle;padding-right:4px;\"><div style=\"%tbt.\">Graph Type</div><select id=\"%id.graphtype\" size=\"1\" onchange=\"window.GraphChanged(this);\" onfocus=\"%s.CmdGotFocus(this);\"></select><input type=\"button\" value=\"OK\" onclick=\"window.GraphSetCells();\" style=\"font-size:x-small;\"></div></td><td style=\"vertical-align:middle;padding-right:16px;\"><div style=\"%tbt.\">&nbsp;</div><input id=\"%id.graphhelp\" type=\"button\" onclick=\"DoGraph(true);\" value=\"Help\" style=\"font-size:x-small;\"></div></td><td style=\"vertical-align:middle;padding-right:16px;\">Min X <input id=\"%id.graphMinX\" onchange=\"window.MinMaxChanged(this,0);\" onfocus=\"%s.CmdGotFocus(this);\" size=5/>Max X <input id=\"%id.graphMaxX\" onchange=\"window.MinMaxChanged(this,1);\" onfocus=\"%s.CmdGotFocus(this);\" size=5/><br/>Min Y <input id=\"%id.graphMinY\" onchange=\"window.MinMaxChanged(this,2);\" onfocus=\"%s.CmdGotFocus(this);\" size=5/>Max Y <input id=\"%id.graphMaxY\" onchange=\"window.MinMaxChanged(this,3);\" onfocus=\"%s.CmdGotFocus(this);\" size=5/></div></td></tr></table></div></div>",
+              html: "<div id=\"%id.graphtools\" style=\"display:none;\"><div style=\"%tbt.\"><table cellspacing=\"0\" cellpadding=\"0\"><tr><td style=\"vertical-align:middle;padding-right:32px;padding-left:16px;\"><div style=\"%tbt.\">Cells to Graph</div><div id=\"%id.graphrange\" style=\"font-weight:bold;\">Not Set</div></td><td style=\"vertical-align:top;padding-right:32px;\"><div style=\"%tbt.\">Set Cells To Graph</div><select id=\"%id.graphlist\" size=\"1\" onfocus=\"%s.CmdGotFocus(this);\"><option selected>[select range]</option><option>Select all</option></select></td><td style=\"vertical-align:middle;padding-right:4px;\"><div style=\"%tbt.\">Graph Type</div><select id=\"%id.graphtype\" size=\"1\" onchange=\"window.GraphChanged(this);\" onfocus=\"%s.CmdGotFocus(this);\"></select><input type=\"button\" value=\"OK\" onclick=\"window.GraphSetCells();\" style=\"font-size:x-small;\"></div></td><td style=\"vertical-align:middle;padding-right:16px;\"><div style=\"%tbt.\">&nbsp;</div><input id=\"%id.graphhelp\" type=\"button\" onclick=\"DoGraph(true);\" value=\"Help\" style=\"font-size:x-small;\"></div></td><td style=\"vertical-align:middle;padding-right:16px;\">Min X <input id=\"%id.graphMinX\" onchange=\"window.MinMaxChanged(this,0);\" onfocus=\"%s.CmdGotFocus(this);\" size=5/>Max X <input id=\"%id.graphMaxX\" onchange=\"window.MinMaxChanged(this,1);\" onfocus=\"%s.CmdGotFocus(this);\" size=5/><br/>Min Y <input id=\"%id.graphMinY\" onchange=\"window.MinMaxChanged(this,2);\" onfocus=\"%s.CmdGotFocus(this);\" size=5/>Max Y <input id=\"%id.graphMaxY\" onchange=\"window.MinMaxChanged(this,3);\" onfocus=\"%s.CmdGotFocus(this);\" size=5/></div></td></tr></table></div></div>",
               view: 'graph',
               onclick: window.GraphOnClick,
               onclickFocus: true
@@ -443,27 +465,48 @@
           if (typeof ss.ExecuteCommand === 'function') {
             ss.ExecuteCommand('set sheet defaulttextvalueformat text-wiki');
           }
-          $(document).on('mouseover', '#te_fullgrid tr:nth-child(2) td:first', function(){
+          $(document).on('mouseover', '.te_download tr:nth-child(2) td:first', function(){
             return $(this).attr({
               title: 'Export...'
             });
           });
-          return $(document).on('click', '#te_fullgrid tr:nth-child(2) td:first', function(){
+          return $(document).on('click', '.te_download tr:nth-child(2) td:first', function(){
+            var isMultiple;
+            if ((typeof vex != 'undefined' && vex !== null) && vex.dialog.open) {
+              SocialCalc.Keyboard.passThru = true;
+            }
+            isMultiple = window.__MULTI__ || /\.[1-9]\d*$/.exec(SocialCalc._room);
             if (typeof vex != 'undefined' && vex !== null) {
               vex.defaultOptions.className = 'vex-theme-flat-attack';
             }
             return typeof vex != 'undefined' && vex !== null ? vex.dialog.open({
-              message: 'Please choose an export format.',
+              message: "Please choose an export format." + (isMultiple ? "<br><small>(EXCEL supports multiple sheets.)</small>" : ""),
+              callback: function(){
+                return SocialCalc.Keyboard.passThru = false;
+              },
               buttons: [
                 $.extend({}, typeof vex != 'undefined' && vex !== null ? vex.dialog.buttons.YES : void 8, {
-                  text: 'HTML',
+                  text: 'Excel',
                   click: function(){
-                    return window.open("./" + SocialCalc._room + ".html");
+                    if (isMultiple) {
+                      if (window.parent.location.href.match(/(^.*\/=[^?/]+)/)) {
+                        return window.open(RegExp.$1 + ".xlsx");
+                      } else {
+                        return window.open("./=" + SocialCalc._room.replace(/\.[1-9]\d*$/, '') + ".xlsx");
+                      }
+                    } else {
+                      return window.open("./" + SocialCalc._room + ".xlsx");
+                    }
                   }
                 }), $.extend({}, typeof vex != 'undefined' && vex !== null ? vex.dialog.buttons.YES : void 8, {
                   text: 'CSV',
                   click: function(){
                     return window.open("./" + SocialCalc._room + ".csv");
+                  }
+                }), $.extend({}, typeof vex != 'undefined' && vex !== null ? vex.dialog.buttons.YES : void 8, {
+                  text: 'HTML',
+                  click: function(){
+                    return window.open("./" + SocialCalc._room + ".html");
                   }
                 }), $.extend({}, typeof vex != 'undefined' && vex !== null ? vex.dialog.buttons.NO : void 8, {
                   text: 'Cancel'

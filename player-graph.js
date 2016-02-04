@@ -9,26 +9,6 @@
           return location.reload();
         }
         SocialCalc = window.SocialCalc || alert('Cannot find window.SocialCalc');
-        SocialCalc.Constants.s_loc_plain = "Plain";
-        SocialCalc.Constants.s_loc_graph = "Graph";
-        SocialCalc.Constants.s_loc_cells_to_graph = "Cells to Graph";
-        SocialCalc.Constants.s_loc_set_cells_to_graph = "Set Cells To Graph";
-        SocialCalc.Constants.s_loc_graph_type = "Graph Type";
-        SocialCalc.Constants.s_loc_help = "Help";
-        SocialCalc.Constants.s_loc_horizontal_bar = "Horizontal Bar";
-        SocialCalc.Constants.s_loc_vertical_bar = "Vertical Bar";
-        SocialCalc.Constants.s_loc_pie_chart = "Pie Chart";
-        SocialCalc.Constants.s_loc_line_chart = "Line Chart";
-        SocialCalc.Constants.s_loc_scatter_chart = "Plot Points";
-        SocialCalc.Constants.s_loc_not_set = "Not Set";
-        SocialCalc.Constants.s_loc_unknown_range_name = "Unknown range name";
-        SocialCalc.Constants.s_loc_hide_help = "Hide Help";
-        SocialCalc.Constants.s_loc_x = "X ";
-        SocialCalc.Constants.s_loc_y = "Y ";
-        SocialCalc.Constants.s_loc_max = "Max ";
-        SocialCalc.Constants.s_loc_min = "Min ";
-        SocialCalc.Constants.s_loc_ok = " OK ";
-        SocialCalc.Constants.s_GraphRangeNotSelected = "Select a range of cells with numeric values to graph and use the OK button above to set the range as the graph range.";
         colorIndex = 0;
         getBarColor = function(){
           var colors;
@@ -917,7 +897,7 @@
         scc.ISCButtonBorderHover = '#99' + b4;
         scc.ISCButtonBorderDown = '#FFF';
         scc.ISCButtonDownBackground = '#88' + b5;
-        scc.defaultImagePrefix = '/images/sc-';
+        scc.defaultImagePrefix = './images/sc_';
         SocialCalc.Popup.LocalizeString = SocialCalc.LocalizeString;
         scc.defaultColnameStyle = 'font-size:small;text-align:center;color:#' + hightLightForegoundColour + ';background-color:#' + unselectedbg + ';cursor:e-resize;';
         scc.defaultSelectedColnameStyle = 'font-size:small;text-align:center;color:#' + hightLightForegoundColour + ';background-color:#' + selectedbg + ';cursor:e-resize;';

@@ -28,16 +28,15 @@ div.wiki .wafl {
     /* margin:8px 140px 10px 0px; */
     margin:8px 10px 10px 0px;
 }
-/* eddy
-#te_fullgrid tr:nth-child(2) td:nth-child(1) {
-    background: url('export.png') white 5px no-repeat;
+
+.te_download tr:nth-child(2) td:nth-child(1) {
+    background: url('download.png') white 5px no-repeat;
     cursor: pointer;
 }
 
-#te_fullgrid tr:nth-child(2) td:nth-child(1):hover {
+.te_download tr:nth-child(2) td:nth-child(1):hover {
     border: 1px solid #333;
 }
-*/
 @keyframes vex-fadein {
   /* line 9, ../sass/_keyframes.sass */
   0% {
@@ -833,4 +832,27 @@ body.vex-open {
 .vex-loading-spinner.vex-theme-flat-attack {
   height: 4em;
   width: 4em;
+}
+
+body, body #tableeditor {
+    margin-top: 0;
+    padding: 0;
+}
+#restore {
+  position: absolute; background-color: #009688;
+  width: 20px; height: 20px; right: 6px; top: 50px;
+  color: rgba(255,255,255,.84); border-radius: 100%;
+  box-shadow: 0 1px 6px 0 rgba(0,0,0,.12),0 1px 6px 0 rgba(0,0,0,.12);
+  padding: 15px; font-size: 24px; text-decoration: none;
+  line-height: 20px; font-family: "Arial Unicode MS", sans-serif;
+}
+#restore:hover {
+  background: #00aa9a;
+}
+#SocialCalc-edittools img[id] {
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+    padding: 2px;
+    margin: -2px;
 }

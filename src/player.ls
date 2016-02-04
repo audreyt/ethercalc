@@ -33,6 +33,12 @@
           | SocialCalc._auth  => '/edit'
           | otherwise     => ''
         }"
+        if location.host is /^(?:www\.)?ethercalc\.(?:org|com)$/
+          $('<a />', {
+            id: "restore", target: "_blank"
+            href: "https://ethercalc.org/log/?#{ SocialCalc._room }"
+            title: "View & Restore Backups"
+          }).text("↻").appendTo('body')
     else
       window.location = './_start'
       return
@@ -74,8 +80,10 @@
       emit data
 
     SocialCalc.isConnected = true
+    SocialCalc.RecalcInfo.LoadSheetCache = {}
     SocialCalc.RecalcInfo.LoadSheet = (ref) ->
-      ref = ref.replace /[^a-zA-Z0-9]+/g '' .toLowerCase!
+      return if ref is /[^.a-zA-Z0-9]/
+      ref.=toLowerCase!
       emit type: \ask.recalc, user: SocialCalc._username, room: ref
 
     @on data: !->
@@ -150,9 +158,13 @@
         SocialCalc.hadSnapshot = true
         if @data.snapshot
           parts = ss.DecodeSpreadsheetSave @data.snapshot
-        if parts?sheet
-          ss.sheet.ResetSheet!
-          ss.ParseSheetSave @data.snapshot.substring parts.sheet.start, parts.sheet.end
+        if parts?
+          if parts.sheet
+            ss.sheet.ResetSheet!
+            ss.ParseSheetSave @data.snapshot.substring parts.sheet.start, parts.sheet.end
+          if parts.edit
+            ss.editor.LoadEditorSettings @data.snapshot.substring parts.edit.start, parts.edit.end
+            ss.editor.ScheduleRender!
         window.addmsg? @data.chat.join(\\n), true
         cmdstr = [ line for line in @data.log
              | not /^re(calc|display)$/.test(line) ].join \\n
@@ -176,12 +188,15 @@
           ss?sheet.recalconce = true
         parts = ss.DecodeSpreadsheetSave @data.snapshot if @data.snapshot
         if parts?sheet
+          sheetdata = @data.snapshot.substring(parts.sheet.start, parts.sheet.end)
           SocialCalc.RecalcLoadedSheet(
             @data.room,
-            @data.snapshot.substring(parts.sheet.start, parts.sheet.end),
+            sheetdata,
             true # recalc
           )
-          ss.context.sheetobj.ScheduleSheetCommands "recalc\n", false, true
+          if SocialCalc.RecalcInfo.LoadSheetCache[@data.room] isnt sheetdata
+            SocialCalc.RecalcInfo.LoadSheetCache[@data.room] = sheetdata
+            ss.context.sheetobj.ScheduleSheetCommands "recalc\n", false, true
         else
           SocialCalc.RecalcLoadedSheet @data.room, '', true
       | \execute
@@ -266,7 +281,7 @@ Check the activity stream to see the newly edited page!
       name: \graph
       text: SocialCalc.Constants.s_loc_graph
       html: """
-        <div id="%id.graphtools" style="display:none;"><div style="%tbt."><table cellspacing="0" cellpadding="0"><tr><td style="vertical-align:middle;padding-right:32px;padding-left:16px;"><div style="%tbt.">Cells to Graph</div><div id="%id.graphrange" style="font-weight:bold;">Not Set</div></td><td style="vertical-align:top;padding-right:32px;"><div style="%tbt.">Set Cells To Graph</div><select id="%id.graphlist" size="1" onfocus="%s.CmdGotFocus(this);"><option selected>[select range]</option></select></td><td style="vertical-align:middle;padding-right:4px;"><div style="%tbt.">Graph Type</div><select id="%id.graphtype" size="1" onchange="window.GraphChanged(this);" onfocus="%s.CmdGotFocus(this);"></select><input type="button" value="OK" onclick="window.GraphSetCells();" style="font-size:x-small;"></div></td><td style="vertical-align:middle;padding-right:16px;"><div style="%tbt.">&nbsp;</div><input id="%id.graphhelp" type="button" onclick="DoGraph(true);" value="Help" style="font-size:x-small;"></div></td><td style="vertical-align:middle;padding-right:16px;">Min X <input id="%id.graphMinX" onchange="window.MinMaxChanged(this,0);" onfocus="%s.CmdGotFocus(this);" size=5/>Max X <input id="%id.graphMaxX" onchange="window.MinMaxChanged(this,1);" onfocus="%s.CmdGotFocus(this);" size=5/><br/>Min Y <input id="%id.graphMinY" onchange="window.MinMaxChanged(this,2);" onfocus="%s.CmdGotFocus(this);" size=5/>Max Y <input id="%id.graphMaxY" onchange="window.MinMaxChanged(this,3);" onfocus="%s.CmdGotFocus(this);" size=5/></div></td></tr></table></div></div>
+        <div id="%id.graphtools" style="display:none;"><div style="%tbt."><table cellspacing="0" cellpadding="0"><tr><td style="vertical-align:middle;padding-right:32px;padding-left:16px;"><div style="%tbt.">Cells to Graph</div><div id="%id.graphrange" style="font-weight:bold;">Not Set</div></td><td style="vertical-align:top;padding-right:32px;"><div style="%tbt.">Set Cells To Graph</div><select id="%id.graphlist" size="1" onfocus="%s.CmdGotFocus(this);"><option selected>[select range]</option><option>Select all</option></select></td><td style="vertical-align:middle;padding-right:4px;"><div style="%tbt.">Graph Type</div><select id="%id.graphtype" size="1" onchange="window.GraphChanged(this);" onfocus="%s.CmdGotFocus(this);"></select><input type="button" value="OK" onclick="window.GraphSetCells();" style="font-size:x-small;"></div></td><td style="vertical-align:middle;padding-right:16px;"><div style="%tbt.">&nbsp;</div><input id="%id.graphhelp" type="button" onclick="DoGraph(true);" value="Help" style="font-size:x-small;"></div></td><td style="vertical-align:middle;padding-right:16px;">Min X <input id="%id.graphMinX" onchange="window.MinMaxChanged(this,0);" onfocus="%s.CmdGotFocus(this);" size=5/>Max X <input id="%id.graphMaxX" onchange="window.MinMaxChanged(this,1);" onfocus="%s.CmdGotFocus(this);" size=5/><br/>Min Y <input id="%id.graphMinY" onchange="window.MinMaxChanged(this,2);" onfocus="%s.CmdGotFocus(this);" size=5/>Max Y <input id="%id.graphMaxY" onchange="window.MinMaxChanged(this,3);" onfocus="%s.CmdGotFocus(this);" size=5/></div></td></tr></table></div></div>
       """
       view: \graph
       onclick: window.GraphOnClick
@@ -296,19 +311,35 @@ Check the activity stream to see the newly edited page!
     
     ss.ExecuteCommand? \redisplay, ''
     ss.ExecuteCommand? 'set sheet defaulttextvalueformat text-wiki'
-    $ document .on \mouseover '#te_fullgrid tr:nth-child(2) td:first' ->
+    $ document .on \mouseover '.te_download tr:nth-child(2) td:first' ->
       $ @ .attr title: 'Export...'
-    $ document .on \click '#te_fullgrid tr:nth-child(2) td:first' ->
+    $ document .on \click '.te_download tr:nth-child(2) td:first' ->
+      SocialCalc.Keyboard.passThru = yes if vex?dialog.open
+      isMultiple = (window.__MULTI__ or SocialCalc._room is /\.[1-9]\d*$/)
       vex?defaultOptions.className = 'vex-theme-flat-attack'
       vex?dialog.open do
-        message: 'Please choose an export format.'
+        message: "Please choose an export format.#{
+          if isMultiple then "<br><small>(EXCEL supports multiple sheets.)</small>" else ""
+        }"
+        callback: -> SocialCalc.Keyboard.passThru = no
         buttons: [
-          $.extend {}, vex?dialog.buttons.YES, text: 'HTML', click: ->
-            window.open "./#{ SocialCalc._room }.html"
+          $.extend {}, vex?dialog.buttons.YES, text: 'Excel', click: ->
+            if isMultiple
+              if window.parent.location.href.match(/(^.*\/=[^?/]+)/)
+                window.open "#{ RegExp.$1 }.xlsx"
+              else
+                window.open "./=#{ SocialCalc._room.replace(/\.[1-9]\d*$/, '') }.xlsx"
+            else
+              window.open "./#{ SocialCalc._room }.xlsx"
           $.extend {}, vex?dialog.buttons.YES, text: 'CSV', click: ->
             window.open "./#{ SocialCalc._room }.csv"
+          $.extend {}, vex?dialog.buttons.YES, text: 'HTML', click: ->
+            window.open "./#{ SocialCalc._room }.html"
           $.extend {}, vex?dialog.buttons.NO, text: 'Cancel'
         ]
+
+      # In-situ import courtesy of
+      # SocialCalc.CurrentSpreadsheetControlObject.tabs[6] ("Clipboard")
 
   if window.Document?Parser
     SocialCalc.Callbacks.expand_wiki = (val) -> """

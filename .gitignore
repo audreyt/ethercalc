@@ -1,6 +1,7 @@
-node_modules/
 .env
 test-include.js
 .settings/
 .project
-
+/node_modules/
+/dump.json
+*.swp

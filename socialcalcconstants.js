@@ -135,7 +135,7 @@ SocialCalc.Constants = {
    defaultCellFontSize: "small",
    defaultCellFontFamily: "Verdana,Arial,Helvetica,sans-serif",
 
-   defaultPaneDividerWidth: "2", // a string
+   defaultPaneDividerWidth: "3", // a string
    defaultPaneDividerHeight: "3", // a string
 
    defaultGridCSS: "1px solid #C0C0C0;", // used as style to set each border when grid enabled (was #ECECEC)
@@ -162,13 +162,13 @@ SocialCalc.Constants = {
    defaultHighlightTypeRangeStyle: "color:#000;backgroundColor:#E5E5E5;",
 
    defaultColnameClass: "", // regular column heading letters, needs a cursor property 
-   defaultColnameStyle: "font-size:small;text-align:center;color:#FFFFFF;background-color:#808080;cursor:e-resize;",
+   defaultColnameStyle: "overflow:visible;font-size:small;text-align:center;color:#FFFFFF;background-color:#808080;",
    defaultSelectedColnameClass: "", // column with selected cell, needs a cursor property 
-   defaultSelectedColnameStyle: "font-size:small;text-align:center;color:#FFFFFF;background-color:#404040;cursor:e-resize;",
+   defaultSelectedColnameStyle: "overflow:visible;font-size:small;text-align:center;color:#FFFFFF;background-color:#404040;",
    defaultRownameClass: "", // regular row heading numbers
-   defaultRownameStyle: "font-size:small;text-align:right;color:#FFFFFF;background-color:#808080;direction:rtl;",
+   defaultRownameStyle: "position:relative;overflow:visible;font-size:small;text-align:right;color:#FFFFFF;background-color:#808080;",
    defaultSelectedRownameClass: "", // column with selected cell, needs a cursor property 
-   defaultSelectedRownameStyle: "font-size:small;text-align:right;color:#FFFFFF;background-color:#404040;",
+   defaultSelectedRownameStyle: "position:relative;overflow:visible;font-size:small;text-align:right;color:#FFFFFF;background-color:#404040;",
    defaultUpperLeftClass: "", // Corner cell in upper left
    defaultUpperLeftStyle: "font-size:small;",
    defaultSkippedCellClass: "", // used if present for spanned cells peeking into a pane (at least one of class/style needed)
@@ -180,9 +180,12 @@ SocialCalc.Constants = {
    defaultUnhideRightClass: "",
    defaultUnhideRightStyle: "float:left;width:9px;height:12px;cursor:pointer;background-image:url(images/sc-unhideright.gif);padding:0;", // used if present
    defaultUnhideTopClass: "",
-   defaultUnhideTopStyle: "float:left;position:absolute;bottom:-4px;width:12px;height:9px;cursor:pointer;background-image:url(images/sc-unhidetop.gif);padding:0;",
+   defaultUnhideTopStyle: "float:left;left:1px;position:absolute;bottom:-4px;width:12px;height:9px;cursor:pointer;background-image:url(images/sc-unhidetop.gif);padding:0;",
    defaultUnhideBottomClass: "",
    defaultUnhideBottomStyle: "float:left;width:12px;height:9px;cursor:pointer;background-image:url(images/sc-unhidebottom.gif);padding:0;",
+
+   defaultColResizeBarClass: "col-resize-bar",
+   defaultRowResizeBarClass: "row-resize-bar",
 
    s_rcMissingSheet: "Render Context must have a sheet object", // unlikely thrown error
 
@@ -208,7 +211,7 @@ SocialCalc.Constants = {
 
    //*** SocialCalc.TableEditor
 
-   defaultImagePrefix: "images/sc-", // URL prefix for images (e.g., "/images/sc")
+   defaultImagePrefix: "images/sc_", // URL prefix for images (e.g., "/images/sc")
    defaultTableEditorIDPrefix: "te_", // if present, many TableEditor elements are assigned IDs with this prefix
    defaultPageUpDnAmount: 15, // number of rows to move cursor on PgUp/PgDn keys (numeric)
 
@@ -246,6 +249,9 @@ SocialCalc.Constants = {
    defaultInputEchoPromptStyle: "filter:alpha(opacity=90);opacity:.9;backgroundColor:#FFD;"+
       "borderLeft:1px solid #884;borderRight:1px solid #884;borderBottom:1px solid #884;"+
       "fontSize:small;fontStyle:italic;padding:2px 10px 1px 2px;cursor:default;", // if present, pseudo style
+   defaultInputEchoHintClass: "", // if present, the class of the popup inputEcho div
+   defaultInputEchoHintStyle: "filter:alpha(opacity=80);opacity:.8;backgroundColor:#884;border:1px solid #884;"+
+      "fontSize:small;fontWeight:bold;padding:2px 2px 2px 2px;color:#FFF;position:absolute;top:-20px;cursor:default;", // if present, pseudo style
 
    //** SocialCalc.InputEchoText
 
@@ -279,8 +285,7 @@ SocialCalc.Constants = {
    TCmainClass: "", // if present, the CSS class of the main div for a table control
    TCendcapStyle: "backgroundColor:#FFF;", // backgroundColor may be used while waiting for image that may not come
    TCendcapClass: "",
-   TCpanesliderStyle: "backgroundColor:#CCC;",
-   TCpanesliderClass: "",
+   TCpanesliderClass: "tc-paneslider",
    s_panesliderTooltiph: "Drag to lock pane vertically", // tooltip for horizontal table control pane slider
    s_panesliderTooltipv: "Drag to lock pane horizontally",
    TClessbuttonStyle: "backgroundColor:#AAA;",
@@ -300,7 +305,7 @@ SocialCalc.Constants = {
 
    //*** SocialCalc.TCPSDragFunctionStart
 
-   TCPStrackinglineClass: "", // at least one of class/style for pane slider tracking line display in table control
+   TCPStrackinglineClass: "tracklingine", // at least one of class/style for pane slider tracking line display in table control
    TCPStrackinglineStyle: "overflow:hidden;position:absolute;zIndex:100;",
                            // if present, pseudo style (text-align is textAlign)
    TCPStrackinglineThickness: "2px", // narrow dimension of trackling line (string with units)
@@ -353,7 +358,7 @@ SocialCalc.Constants = {
    SCTabbackground: "background-color:#CCC;",
    SCTabselectedCSS: "font-size:small;padding:6px 30px 6px 8px;color:#FFF;background-color:#404040;cursor:default;border-right:1px solid #CCC;",
    SCTabplainCSS: "font-size:small;padding:6px 30px 6px 8px;color:#FFF;background-color:#808080;cursor:default;border-right:1px solid #CCC;",
-   SCToolbartext: "font-size:x-small;font-weight:bold;color:#FFF;padding-bottom:4px;",
+   SCToolbartext: "font-size:x-small;font-weight:bold;color:#FFF",
 
    SCFormulabarheight: 30, // in pixels, will contain a text input box
 
@@ -375,7 +380,7 @@ SocialCalc.Constants = {
             "[break]:|1,234%:#,##0%|1,234.5%:#,##0.0%|1,234.56%:#,##0.00%|"+
             "[newcol]:|$1,234:$#,##0|$1,234.5:$#,##0.0|$1,234.56:$#,##0.00|[break]:|"+
             "(1,234):#,##0_);(#,##0)|(1,234.5):#,##0.0_);(#,##0.0)|(1,234.56):#,##0.00_);(#,##0.00)|[break]:|"+
-            "($1,234):#,##0_);($#,##0)|($1,234.5):$#,##0.0_);($#,##0.0)|($1,234.56):$#,##0.00_);($#,##0.00)|"+
+            "($1,234):$#,##0_);($#,##0)|($1,234.5):$#,##0.0_);($#,##0.0)|($1,234.56):$#,##0.00_);($#,##0.00)|"+
             "[newcol]:|1/4/06:m/d/yy|01/04/2006:mm/dd/yyyy|2006-01-04:yyyy-mm-dd|4-Jan-06:d-mmm-yy|04-Jan-2006:dd-mmm-yyyy|January 4, 2006:mmmm d, yyyy|"+
             "[break]:|1\\c23:h:mm|1\\c23 PM:h:mm AM/PM|1\\c23\\c45:h:mm:ss|01\\c23\\c45:hh:mm:ss|26\\c23 (h\\cm):[hh]:mm|69\\c45 (m\\cs):[mm]:ss|69 (s):[ss]|"+
             "[newcol]:|2006-01-04 01\\c23\\c45:yyyy-mm-dd hh:mm:ss|January 4, 2006:mmmm d, yyyy hh:mm:ss|Wed:ddd|Wednesday:dddd|",

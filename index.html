@@ -3,16 +3,24 @@
 <head>
 <meta charset="utf-8" />
 <meta content="IE=edge" http-equiv="X-UA-Compatible"/>
-<title>CellMaster - Share the URL and edit</title>
+<meta name="referrer" content="no-referrer"/>
+<base target="_blank"/>
+<title>EtherCalc - Share the URL to your friends and edit together!</title>
 <script>
 if (!(window.location.hash.replace('#', ''))) {
-    if (window.location.href.match(/\/([^_][^\/]*)$/)) {
+    if (window.location.href.match(/\/([^_][^\*\$\/]*)$/)) {
         var SocialCalc = { _room: RegExp.$1 };
+        document.title = SocialCalc._room + " – EtherCalc";
     }
     else {
         window.location = './_start';
     }
 }
+window.addEventListener("message", function(it){
+    if (/"type"\s*:\s*"multi"/.test(it.data)) {
+        window.__MULTI__ = (function(){ try { return JSON.parse(it.data); } catch (e$) {} }());
+    }
+}, false);
 </script>
 <script src="./static/ethercalc.js"></script>
 <script src="./socket.io/socket.io.js"></script>
@@ -20,6 +28,24 @@ if (!(window.location.hash.replace('#', ''))) {
 <script src="./player/broadcast.js"></script>
 <script src="./player/graph.js"></script>
 <script src="./player/main.js"></script>
+<script>
+var readl10nfile = function(data) {
+  for (var k in data) {
+        SocialCalc.Constants[k] = data[k];
+    }
+}
+$.ajax({url: ("./l10n/" + navigator.language + ".json").replace(/de_\w+/, 'de').replace(/zh-Hant/i, 'zh-TW').replace(/fr_\w+/, 'fr'),
+        async: false,
+        success: function(data){readl10nfile(data)},
+        error: function() {
+          $.ajax({url: "./l10n/en.json",
+                  async: false,
+                  success: function(data){readl10nfile(data)},
+                  error: function(){console.error("Language file not found.")}
+          });
+        }
+  });
+</script>
 
 <link rel="stylesheet" type="text/css" href="./static/socialcalc.css">
 <link rel="stylesheet" type="text/css" href="./static/index.css">

@@ -2,6 +2,7 @@
 
 * Overview: http://ethercalc.net/
 * 中文版: http://ethercalc.tw/
+* 简体中文: http://cn.ethercalc.net/
 * REST API: http://docs.ethercalc.apiary.io/
 
 * Language: [LiveScript](http://livescript.net/)
@@ -26,11 +27,11 @@ For local non-root installation
     npm i
     make
 
-Or install with our [Docker](http://www.docker.io/) image, which comes with a
-webworker-threads support:
+Or install with our [Docker](http://www.docker.io/) image, which comes with
+support for webworker-threads:
 
     # Run a redis Docker using the official redis Docker image with persistant database in <host-directory>
-    sudo docker run --name redis -d -v <host-directory>:/data redis:latest
+    sudo docker run --name redis -d -v <host-directory>:/data redis:latest redis-server --appendonly yes
 
     # Run ethercalc on default port 8000
     sudo docker run -d -p 8000:8000 --link redis:redis audreyt/ethercalc
@@ -38,10 +39,21 @@ webworker-threads support:
     # Run ethercalc on custom port 80
     sudo docker run -d -p 80:8000 --link redis:redis audreyt/ethercalc
 
+Send email - Optional - Send email formulas requires OAuth2 & cron  e.g. =email(to, subject, body), =emailAt(time, to, subject, body) 
+
+    OAuth2 - Set environment vars 
+    1) Tutorial: follow the tutorial to get the 4 environment vars http://masashi-k.blogspot.com.au/2013/06/sending-mail-with-gmail-using-xoauth2.html 
+    2) Set 4 environment vars - see [src/emailer.ls](src/emailer.ls) vars: user, clientId, clientSecret, refreshToken
+    Tested using gmail, have not tested with other providors
+
+    Cron - Required for emailAt formulas.
+    See *curl* in [.openshift/cron/minutely/timetrigger](.openshift/cron/minutely/timetrigger) for openshift version (openshift](openshift.redhat.com) 
+    The curl checks the database for unsent emails and updates the database after sending. 
+
 ## REST API
 
 Please see [API.md](https://github.com/audreyt/ethercalc/blob/master/API.md)
-for the API Blueprint, or http://docs.ethercalc.apiary.io/ for the online version.
+for the API Blueprint, or [the online version at Apiary](http://docs.ethercalc.apiary.io/).
 
 ## Runtime Flags
 
@@ -90,7 +102,6 @@ Deletes a spreadsheet's content after N seconds of inactivity. Activities includ
 
 * socialcalcspreadsheetcontrol.js
 * socialcalctableeditor.js
-* images/*
 
 ### Artistic License 2.0 (Socialtext Inc.)
 
@@ -99,6 +110,10 @@ Deletes a spreadsheet's content after N seconds of inactivity. Activities includ
 * socialcalc-3.js 
 * socialcalcconstants.js 
 * socialcalcpopup.js 
+
+#### Artistic License 2.0 (Framasoft)
+
+* l10n/fr.json
 
 ### MIT License (John Resig, The Dojo Foundation)
 
@@ -124,3 +139,8 @@ Deletes a spreadsheet's content after N seconds of inactivity. Activities includ
 ### CC0 Public Domain (唐鳳)
 
 * src/*.ls
+
+### Mozilla Public License Version 2.0
+
+* images/sc_*.png
+

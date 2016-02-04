@@ -53,6 +53,13 @@ Takes a SocialCalc serialization format that contains the new spreadsheet's cont
 + Request (text/x-socialcalc)
 + Response 201
 
+## Create from Excel XML [POST]
+
+Takes a Excel XML file that contains the new spreadsheet's content.
+
++ Request (application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)
++ Response 201
+
 # Page [/_/{id}]
 
 ## Page Content [GET]
@@ -73,6 +80,13 @@ Replace the page with a serialization in CSV format.
 Replace the page with a serialization in SocialCalc save format.
 
 + Request (text/x-socialcalc)
++ Response 200
+
+## Overwrite with Excel XML [PUT]
+
+Replace the page with a serialization in Excel XML format.
+
++ Request (application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)
 + Response 200
 
 ## Post Commands [POST]
@@ -102,6 +116,12 @@ Takes a CSV structure that contains fields to be appended to the first column af
 + Request (text/csv)
 + Response 200
 
+## Delete Room [DELETE]
+
+Deletes a room from the database
+
++ Response 201 OK
+
 # Page Cells [/_/{id}/cells]
 
 ## GET
@@ -118,7 +138,7 @@ Returns a JSON representation of a single cell in the page.
 
 + Response 200 (application/json)
 
-# HTML Export [/_/{id}.html]
+# HTML Export [/{id}.html]
 
 ## GET
 
@@ -126,10 +146,67 @@ Returns a HTML rendering of the page. (GET `/_/{id}/html` also works.)
 
 + Response 200 (text/html)
 
-# CSV Export [/_/{id}.csv]
+# CSV Export [/{id}.csv]
 
 ## GET
 
 Returns a CSV rendering of the page. (GET `/_/{id}/csv` also works.)
 
 + Response 200 (text/csv)
+
+# JSON Export [/{id}.csv.json]
+
+## GET
+
+Returns a JSON array-of-array rendering of the page. (GET `/_/{id}/csv.json` also works.)
+
++ Response 200 (application/json)
+
+# Excel XML Export [/{id}.xlsx]
+
+## GET
+
+Returns a Excel XML rendering of the page. (GET `/_/{id}/xlsx` also works.)
+
++ Response 200 (application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)
+
+# Markdown Export [/{id}.md]
+
+## GET
+
+Returns a Excel XML rendering of the page. (GET `/_/{id}/md` also works.)
+
++ Response 200 (text/x-markdown)
+
+# Multi-sheet Excel XML [/={id}.xlsx]
+
+## Export [GET]
+
+Fetch the sheet collection in Excel XML format.  (GET `/_/{id}/xlsx` also works.)
+
++ Response 200 (application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)
+
+## Import [PUT]
+
+Replace the page with a serialization in Excel XML format.
+
++ Request (application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)
++ Response 200
+
+# Rooms [/_rooms]
+
+## Index of rooms [GET]
+
+Get index of rooms.  Will fail with 403 if CORS is enabled.
+
++ Response 200
+
+# Page [/_exists/{id}]
+
+## Page Exists [GET]
+
+Check if page exists
+
++ Response 200 (application/json)
+
+

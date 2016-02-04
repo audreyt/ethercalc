@@ -46,8 +46,8 @@ body:last-child .defaultPeer {
 .defaultCommentNoGridStyle {}
 .defaultHighlightTypeCursor {color:#FFF;background-color:#A6A6A6;}
 .defaultHighlightTypeRange {color:#000;background-color:#E5E5E5;}
-.defaultColname {font-size:small;text-align:center;color:#FFFFFF;background-color:#808080;cursor:e-resize;}
-.defaultSelectedColname {font-size:small;text-align:center;color:#FFFFFF;background-color:#404040;cursor:e-resize;}
+.defaultColname {font-size:small;text-align:center;color:#FFFFFF;background-color:#808080;}
+.defaultSelectedColname {font-size:small;text-align:center;color:#FFFFFF;background-color:#404040;}
 .defaultRowname {font-size:small;text-align:right;color:#FFFFFF;background-color:#808080;}
 .defaultSelectedRowname {font-size:small;text-align:right;color:#FFFFFF;background-color:#404040;}
 .defaultUpperLeft {font-size:small;}
@@ -69,6 +69,10 @@ body:last-child .defaultPeer {
 .TDpopupElement {border:1px solid black;padding:1px 2px 2px 2px;text-align:center;background-color:#FFF;
  font-size:7pt;font-family:Verdana,Arial,Helvetica,sans-serif;
  position:absolute;width:auto;z-index:110;}
+.col-resize-bar {background:transparent;cursor:col-resize;float:right;margin-right:-3px;width:5px;}
+.col-resize-bar:hover {background:rgb(192,192,192);}
+.row-resize-bar {background:transparent;cursor:row-resize;height:5px;width:100%;bottom:-3px;z-index:9;position:absolute;}
+.row-resize-bar:hover {background:rgb(192,192,192);}
 
 #te_fullgrid {
     table-layout: fixed;
@@ -83,4 +87,36 @@ body:last-child .defaultPeer {
 #SocialCalc-settings-savecell, #SocialCalc-settings-savesheet {
     background: #AEF;
     font-weight: bold;
+}
+
+#searchbar {
+    display: inline;
+    float: right;
+}
+
+#searchbarinput {
+    width: 170px;
+    padding: 1px 3px;
+}
+
+#searchstatus {
+    display: inline;
+    padding-right: 5px;
+}
+#searchbar img {
+    vertical-align: middle;
+}
+
+/* Pane Sliders */
+
+.tc-paneslider {
+    background-color:#CCC;
+}
+
+#te_panesliderh {
+    cursor: col-resize;
+}
+
+#te_panesliderv {
+    cursor: row-resize;
 }

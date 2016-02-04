@@ -34,37 +34,38 @@ bootSC += """;(#{->
 ##################################
 ### WebWorker Threads Fallback ###
 ##################################
-#IsThreaded = true
-#Worker = try
-#  @console = console
-#  throw \vm if argv.vm
-#  console.log "Starting backend using webworker-threads"
-#  (require \webworker-threads).Worker
-#catch
-#  console.log "Falling back to vm.CreateContext backend"
-#  IsThreaded = false
-IsThreaded = false
+IsThreaded = true
+Worker = try
+  throw \vm if argv.vm
+  if parseInt(process.versions.node.slice(2)) > 10 or parseInt(process.versions.node[0])
+    console.log "Note: Threading with Node #{ process.versions.node } is work in progress.\n=>> https://github.com/audreyt/node-webworker-threads/issues/48"
+    throw \too-new
+  console.log "Starting backend using webworker-threads"
+  (require \webworker-threads).Worker
+catch
+  console.log "Falling back to vm.CreateContext backend"
+  IsThreaded = false
 
-Worker ||= class => 
-  (code) ->
-    cxt = { console: global.SC.console, self: { onmessage: -> } }
-    cxt.window =
-      setTimeout: (cb, ms) -> process.nextTick cb
-      clearTimeout: ->
-    @postMessage = (data) -> sandbox.self.onmessage {data}
-    @thread = cxt.thread =
-      nextTick: (cb) -> process.nextTick cb
-      eval: (src, cb) -> try
-        rv = vm.runInContext src, sandbox
-        cb? null, rv
-      catch e
-        console.log "e #e"
-        cb? e
-    @terminate = ->
-    @sandbox = sandbox = vm.createContext cxt
-    sandbox.postMessage = (data) ~> @onmessage? {data}
-    vm.runInContext "(#code)()", sandbox if code
-    return @
+Worker ||= class => (code) ->
+  cxt = { console, self: { onmessage: -> }, alert: -> }
+  cxt.window =
+    setTimeout: (cb, ms) -> process.nextTick cb
+    alert: ->
+    clearTimeout: ->
+  @postMessage = (data) -> sandbox.self.onmessage {data}
+  @thread = cxt.thread =
+    nextTick: (cb) -> process.nextTick cb
+    eval: (src, cb) -> try
+      rv = vm.runInContext src, sandbox
+      cb? null, rv
+    catch e
+      console.log "e #e"
+      cb? e
+  @terminate = ->
+  @sandbox = sandbox = vm.createContext cxt
+  sandbox.postMessage = (data) ~> @onmessage? {data}
+  vm.runInContext "(#code)()", sandbox if code
+  return @
 ##################################
 
 @include = ->
@@ -78,7 +79,7 @@ Worker ||= class =>
   # }
 
 
-  SC.csv-to-save = (csv, cb) ->
+  SC._csv-to-save = (csv, cb) ->
     w = new Worker
     <- w.thread.eval bootSC
     (,rv) <- w.thread.eval "SocialCalc.ConvertOtherFormatToSave(#{ JSON.stringify csv }, 'csv')"
@@ -94,7 +95,6 @@ Worker ||= class =>
     if (snapshot or log.length) and io
       SC[room] = SC._init snapshot, log, DB, room, io
     cb {log, snapshot}
-
   SC._put = (room, snapshot, cb) ->
     return cb?! unless snapshot
     <~ DB.multi!
@@ -103,77 +103,90 @@ Worker ||= class =>
       .bgsave!exec!
     DB.expire "snapshot-#room", EXPIRE if EXPIRE
     cb?!
-
+  SC._del = (room, cb) ->
+    <~ DB.multi!
+       .del ["snapshot-#room", "log-#room" "chat-#room" "ecell-#room" "audit-#room"]
+       .bgsave!exec!
+    cb?!
+  SC._rooms = (cb) ->
+    (, [rooms]) <~ DB.multi!
+       .keys \snapshot-*
+       .exec!
+    cb [ ..replace(/^snapshot-/, "") for rooms]
+  SC._exists = (room, cb) ->
+    (, [x]) <~ DB.multi!
+       .exists "snapshot-#room"
+       .exec!
+       cb x
   SC._init = (snapshot, log=[], DB, room, io) ->
     if SC[room]?
       SC[room]._doClearCache!
       return SC[room]
-    #console.log "==> new Worker()"  
-    w = new Worker ->        
-      self.onmessage = ({ data: { type, ref, snapshot, command, room, log=[] } }) ->  
-        console.log "==> Worker.onmessage #type"       
-        switch type
-        | \cmd
-          console.log "===> cmd "+command
-          commandParameters = command.split(" ")
-          if commandParameters[0] is \settimetrigger
-            console.log "------ set time trigger --------"
-            postMessage { type: \setcrontrigger, timetriggerdata: { cell:commandParameters[1], times:commandParameters[2] } }
-          if commandParameters[0] is \sendemail
-            console.log "------ send email --------"
-            console.log " to:"+commandParameters[1]+" subject:"+commandParameters[2]+" body:"+commandParameters[3]             
-            postMessage { type: \sendemailout, emaildata: { to: commandParameters[1].replace(/%20/g,' '), subject: commandParameters[2].replace(/%20/g,' '), body:commandParameters[3].replace(/%20/g,' ')  } }
-          window.ss.ExecuteCommand command
-        | \recalc
-          SocialCalc.RecalcLoadedSheet ref, snapshot, true
-        | \clearCache
-          SocialCalc.Formula.SheetCache.sheets = {}
-        | \exportSave
-          postMessage { type: \save, save: window.ss.CreateSheetSave! }
-        | \exportHTML
-          postMessage { type: \html, html: window.ss.CreateSheetHTML! }
-        | \exportCSV
-          csv = window.ss.SocialCalc.ConvertSaveToOtherFormat(
-            window.ss.CreateSheetSave!
-            \csv
-          )
-          postMessage { type: \csv, csv }
-        | \exportCells
-          postMessage { type: \cells, cells: window.ss.cells }
-        | \init
-          console.log "------ SocialCalc --------"
-          #Emailer.log!
-          SocialCalc.SaveEditorSettings = -> ""
-          SocialCalc.CreateAuditString = -> ""
-          SocialCalc.CalculateEditorPositions = ->
-          SocialCalc.Popup.Types.List.Create = ->
-          SocialCalc.Popup.Types.ColorChooser.Create = ->
-          SocialCalc.Popup.Initialize = ->
-          SocialCalc.RecalcInfo.LoadSheet = (ref) ->
-            ref = "#ref".replace(/[^a-zA-Z0-9]+/g '')toLowerCase!
-            postMessage { type: \load-sheet, ref }
-            return true
-          window.setTimeout = (cb, ms) -> thread.next-tick cb
-          window.clearTimeout = ->
-          window.ss = ss = new SocialCalc.SpreadsheetControl
-          ss.SocialCalc = SocialCalc
-          ss._room = room
-          parts = ss.DecodeSpreadsheetSave(snapshot) if snapshot
-          ss.editor.StatusCallback.EtherCalc = func: (editor, status, arg) ->
-            return unless status is \doneposcalc # and not ss.editor.busy
-            newSnapshot = ss.CreateSpreadsheetSave!
-            return if ss._snapshot is newSnapshot
-            ss._snapshot = newSnapshot
-            postMessage { type: \snapshot, snapshot: newSnapshot }
-          if parts?sheet
+    w = new Worker ->
+      self.onmessage = ({ data: { type, ref, snapshot, command, room, log=[] } }) -> switch type
+      | \cmd
+        #console.log "===> cmd "+command
+        commandParameters = command.split(" ")
+        if commandParameters[0] is \settimetrigger
+          #console.log "------ set time trigger --------"
+          postMessage { type: \setcrontrigger, timetriggerdata: { cell:commandParameters[1], times:commandParameters[2] } }
+        if commandParameters[0] is \sendemail
+          #console.log "------ send email --------"
+          #console.log " to:"+commandParameters[1]+" subject:"+commandParameters[2]+" body:"+commandParameters[3]             
+          postMessage { type: \sendemailout, emaildata: { to: commandParameters[1].replace(/%20/g,' '), subject: commandParameters[2].replace(/%20/g,' '), body:commandParameters[3].replace(/%20/g,' ')  } }
+        window.ss.ExecuteCommand command
+      | \recalc
+        SocialCalc.RecalcLoadedSheet ref, snapshot, true
+      | \clearCache
+        SocialCalc.Formula.SheetCache.sheets = {}
+      | \exportSave
+        postMessage { type: \save, save: window.ss.CreateSheetSave! }
+      | \exportHTML
+        postMessage { type: \html, html: window.ss.CreateSheetHTML! }
+      | \exportCSV
+        csv = window.ss.SocialCalc.ConvertSaveToOtherFormat(
+          window.ss.CreateSheetSave!
+          \csv
+        )
+        postMessage { type: \csv, csv }
+      | \exportCells
+        postMessage { type: \cells, cells: window.ss.cells }
+      | \init
+        SocialCalc.CreateAuditString = -> ""
+        SocialCalc.CalculateEditorPositions = ->
+        SocialCalc.Popup.Types.List.Create = ->
+        SocialCalc.Popup.Types.ColorChooser.Create = ->
+        SocialCalc.Popup.Initialize = ->
+        SocialCalc.RecalcInfo.LoadSheet = (ref) ->
+          return if ref is /[^.a-zA-Z0-9]/
+          ref.=toLowerCase!
+          postMessage { type: \load-sheet, ref }
+          return true
+        window.setTimeout = (cb, ms) -> thread.next-tick cb
+        window.clearTimeout = ->
+        window.alert = alert = ->
+        window.ss = ss = new SocialCalc.SpreadsheetControl
+        ss.SocialCalc = SocialCalc
+        ss._room = room
+        parts = ss.DecodeSpreadsheetSave(snapshot) if snapshot
+        ss.editor.StatusCallback.EtherCalc = func: (editor, status, arg) ->
+          return unless status is \doneposcalc # and not ss.editor.busy
+          newSnapshot = ss.CreateSpreadsheetSave!
+          return if ss._snapshot is newSnapshot
+          ss._snapshot = newSnapshot
+          postMessage { type: \snapshot, snapshot: newSnapshot }
+        if parts?
+          if parts.sheet
             ss.sheet.ResetSheet!
             ss.ParseSheetSave snapshot.substring parts.sheet.start, parts.sheet.end
-          cmdstr = [ line for line in log
-               | not /^re(calc|display)$/.test(line) ].join("\n")
-          cmdstr += "\n" if cmdstr.length
-          ss.context.sheetobj.ScheduleSheetCommands "set sheet defaulttextvalueformat text-wiki\n#{
-            cmdstr
-          }recalc\n" false true
+          if parts.edit
+            ss.editor.LoadEditorSettings snapshot.substring parts.edit.start, parts.edit.end
+        cmdstr = [ line for line in log
+             | not /^re(calc|display)$/.test(line) ].join("\n")
+        cmdstr += "\n" if cmdstr.length
+        ss.context.sheetobj.ScheduleSheetCommands "set sheet defaulttextvalueformat text-wiki\n#{
+          cmdstr
+        }recalc\n" false true
     w._snapshot = snapshot
     w.on-snapshot = (newSnapshot) ->
       io.sockets.in "recalc.#room" .emit \data {
@@ -298,9 +311,9 @@ Worker ||= class =>
       (, log) <~ DB.lrange "log-#room" 0 -1
       x.thread.eval bootSC, -> x.post-message {snapshot: w._snapshot, log}
     w._eval = (code, cb) ->
-      setTimeout do
+      setTimeout do #delay to give server side sheet time to initialize
         -> 
-          console.log "EVAL un-threaded"
+          #console.log "EVAL un-threaded"
           (, rv) <- w.thread.eval code
           return cb rv if rv?
           # Maybe thread is not yet initialized - retry at most once

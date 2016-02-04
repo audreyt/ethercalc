@@ -1,4 +1,5 @@
 //
+//
 /*
 // SocialCalc Spreadsheet Formula Library
 //
@@ -2979,7 +2980,6 @@ SocialCalc.Formula.CountifSumifFunctions = function(fname, operand, foperand, sh
    while (foperand.length) {
       value1 = operand_value_and_type(sheet, foperand);
       value2 = operand_value_and_type(sheet, f2operand);
-
       if (!scf.TestCriteria(value1.value, value1.type, criteria.value)) {
          continue;
          }
@@ -5023,12 +5023,12 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
 
 
 SocialCalc.Formula.FunctionList["BUTTON"] = [SocialCalc.Formula.IoFunctions, 1, "label", "", "gui", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Button('<%=cell_reference%>');\"><%=formated_value%></button>" ];
-SocialCalc.Formula.FunctionList["EMAIL"] = [SocialCalc.Formula.IoFunctions, -3, "to_range subject_range, body_range, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList" ];
-SocialCalc.Formula.FunctionList["EMAILIF"] = [SocialCalc.Formula.IoFunctions, -4, "condition_range, to_range subject_range, body_range, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList" ];
-SocialCalc.Formula.FunctionList["EMAILONEDIT"] = [SocialCalc.Formula.IoFunctions, -4, "editRange, to_range subject_range, body_range, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "EventTree"];
-SocialCalc.Formula.FunctionList["EMAILAT"] = [SocialCalc.Formula.IoFunctions, -4, "datetime_value, to_range subject_range, body_range, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "TimeTrigger" ];
-SocialCalc.Formula.FunctionList["EMAILONEDITIF"] = [SocialCalc.Formula.IoFunctions, -5, "editRange, condition, to_range subject_range, body_range, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "EventTree" ];
-SocialCalc.Formula.FunctionList["EMAILATIF"] = [SocialCalc.Formula.IoFunctions, -5, "datetime_value, condition, to_range subject_range, body_range, [replacewith]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "TimeTrigger" ];
+SocialCalc.Formula.FunctionList["EMAIL"] = [SocialCalc.Formula.IoFunctions, -3, "to_range subject_range, body_range", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList" ];
+SocialCalc.Formula.FunctionList["EMAILIF"] = [SocialCalc.Formula.IoFunctions, -4, "condition_range, to_range subject_range, body_range", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList" ];
+SocialCalc.Formula.FunctionList["EMAILONEDIT"] = [SocialCalc.Formula.IoFunctions, -4, "editRange, to_range subject_range, body_range", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "EventTree"];
+SocialCalc.Formula.FunctionList["EMAILAT"] = [SocialCalc.Formula.IoFunctions, -4, "datetime_value, to_range subject_range, body_range", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "TimeTrigger" ];
+SocialCalc.Formula.FunctionList["EMAILONEDITIF"] = [SocialCalc.Formula.IoFunctions, -5, "editRange, condition, to_range subject_range, body_range", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "EventTree" ];
+SocialCalc.Formula.FunctionList["EMAILATIF"] = [SocialCalc.Formula.IoFunctions, -5, "datetime_value, condition, to_range subject_range, body_range", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "TimeTrigger" ];
 SocialCalc.Formula.FunctionList["SUBMIT"] = [SocialCalc.Formula.IoFunctions, 100, "[label]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Submit('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList" ];
 SocialCalc.Formula.FunctionList["TEXTBOX"] = [SocialCalc.Formula.IoFunctions, 1, "label", "", "gui", "<input type='text' id='TEXTBOX_<%=cell_reference%>' onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.TextBox('<%=cell_reference%>')\" value='<%=display_value%>' >", "Input" ];
 SocialCalc.Formula.FunctionList["CHECKBOX"] = [SocialCalc.Formula.IoFunctions, 1, "label", "", "gui", "<input type='checkbox' id='CHECKBOX_<%=cell_reference%>' <%=checked%> onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.CheckBox('<%=cell_reference%>')\" >", "Input" ];
@@ -5565,15 +5565,30 @@ SocialCalc.Formula.TestCriteria = function(value, type, criteria) {
       basestring = criteria.substring(1);
       }
    else {
-      comparitor = criteria.substring(0,2);
-      if (comparitor == "<=" || comparitor == "<>" || comparitor == ">=") {
-         basestring = criteria.substring(2);
+      // check for '*' or '?' in search string - wildcard
+      if (criteria.search(/([^~]\*|^\*)/) != -1 || criteria.search(/([^~]\?|^\?)/) != -1) {
+         comparitor = "regex";
+         if (criteria == "*") {
+            // "*" means cell contains 'anything'
+            basestring = ".+";
+         } else {
+             // convert Excel syntax to regex syntax. * -> .*    ? -> .?    ~* -> \*    ~? -> \?
+             // there are no negative lookbehinds in Javascript. Reverse the string and do negative lookaheads on ~? and ~*
+             basestring = criteria.split("").reverse().join("");
+             basestring = basestring.replace(/\?(?=[^~])|\?$/g, "?.").replace(/\?~/g, "?\\").replace(/\*(?=[^~])|\*$/g, "*.").replace(/\*~/, "*\\");
+             basestring = basestring.split("").reverse().join("");
          }
-      else {
-         comparitor = "none";
-         basestring = criteria;
-         }
+         basestring = "^" + basestring + "$";
+      } else {
+          comparitor = criteria.substring(0,2);
+          if (comparitor == "<=" || comparitor == "<>" || comparitor == ">=") {
+             basestring = criteria.substring(2);
+          } else {
+             comparitor = "none";
+             basestring = criteria;
+          }
       }
+   }
 
    basevalue = SocialCalc.DetermineValueType(basestring); // get type of value being compared
    if (!basevalue.type) { // no criteria base value given
@@ -5680,6 +5695,10 @@ SocialCalc.Formula.TestCriteria = function(value, type, criteria) {
 
          case "<>":
             cond = value != basevalue.value;
+            break;
+
+         case "regex":
+            cond = value.search(new RegExp(basevalue.value)) != -1;
             break;
          }
       }

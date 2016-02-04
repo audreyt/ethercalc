@@ -69,12 +69,18 @@
         };
         SocialCalc.OrigScheduleSheetCommands = SocialCalc.ScheduleSheetCommands;
         SocialCalc.ScheduleSheetCommands = function(sheet, cmdstr, saveundo, isRemote){
-          var ref$;
+          var ref$, ref1$, i$, len$, link, title;
           cmdstr = cmdstr.replace(/\n\n+/g, '\n');
           if (!/\S/.test(cmdstr)) {
             return;
           }
           if (!isRemote && cmdstr !== 'redisplay' && cmdstr !== 'recalc') {
+            if (((ref$ = window.__MULTI__) != null && ((ref1$ = ref$.rows) != null && ref1$.length)) && /set \w+ formula /.exec(cmdstr)) {
+              for (i$ = 0, len$ = (ref$ = window.__MULTI__.rows).length; i$ < len$; ++i$) {
+                ref1$ = ref$[i$], link = ref1$.link, title = ref1$.title;
+                cmdstr = cmdstr.replace(RegExp('\\$' + title + '\\.([A-Z]+[1-9][0-9]*)', 'ig'), "\"" + link.replace('/', '') + "\"!$1");
+              }
+            }
             if (typeof (ref$ = SocialCalc.Callbacks).broadcast === 'function') {
               ref$.broadcast('execute', {
                 cmdstr: cmdstr,
