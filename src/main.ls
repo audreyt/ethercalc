@@ -432,12 +432,10 @@
       DB.hset "ecell-#room", user, ecell
     | \execute
       return if cmdstr is /^set sheet defaulttextvalueformat text-wiki\s*$/
-      console.log "execute:"+1
       <~ DB.multi!
         .rpush "log-#room" cmdstr
         .rpush "audit-#room" cmdstr
         .bgsave!.exec!
-      console.log "execute:"+2
       commandParameters = cmdstr.split("\r")       
       unless SC[room]?
         console.log "SC[#room] went away. Reloading..."
@@ -446,12 +444,12 @@
       # eddy @on data {
       if commandParameters[0].trim() is \submitform
         console.log "test SC[#{room}] submitform..."      
-        unless SC["aubzu1ovmu_formdata"]?
-          console.log "Submitform. loading... SC[aubzu1ovmu_formdata]"
-          _, [snapshot, log] <~ DB.multi!get("snapshot-aubzu1ovmu_formdata").lrange("log-aubzu1ovmu_formdata", 0, -1).exec
-          SC["aubzu1ovmu_formdata"] = SC._init snapshot, log, DB, "aubzu1ovmu_formdata", @io   
+        unless SC["#{room}_formdata"]?
+          console.log "Submitform. loading... SC[#{room}_formdata]"
+          _, [snapshot, log] <~ DB.multi!get("snapshot-#{room}_formdata").lrange("log-#{room}_formdata", 0, -1).exec
+          SC["#{room}_formdata"] = SC._init snapshot, log, DB, "#{room}_formdata", @io   
         # add form values to last row of formdata sheet
-        attribs <-! SC["aubzu1ovmu_formdata"]?exportAttribs
+        attribs <-! SC["#{room}_formdata"]?exportAttribs
         console.log "sheet attribs:" { ...attribs }       
         formrow = for let datavalue, formDataIndex in commandParameters when formDataIndex != 0
           "set #{String.fromCharCode(64 + formDataIndex)+(attribs.lastrow+1)} text t #datavalue" 
@@ -460,12 +458,11 @@
         cmdstrformdata = formrow.join("\n")
         console.log "cmdstrformdata:"+cmdstrformdata        
         <~ DB.multi!
-          .rpush "log-aubzu1ovmu_formdata" cmdstrformdata
-          .rpush "audit-aubzu1ovmu_formdata" cmdstrformdata
+          .rpush "log-#{room}_formdata" cmdstrformdata
+          .rpush "audit-#{room}_formdata" cmdstrformdata
           .bgsave!.exec!
-        SC["aubzu1ovmu_formdata"]?ExecuteCommand cmdstrformdata
-        broadcast { room:"aubzu1ovmu_formdata", user, type, auth, cmdstr: cmdstrformdata, +include_self }
-      console.log "execute:"+6        
+        SC["#{room}_formdata"]?ExecuteCommand cmdstrformdata
+        broadcast { room:"#{room}_formdata", user, type, auth, cmdstr: cmdstrformdata, +include_self }
       # }eddy @on data 
       SC[room]?ExecuteCommand cmdstr
       broadcast @data
