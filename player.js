@@ -465,12 +465,12 @@
           if (typeof ss.ExecuteCommand === 'function') {
             ss.ExecuteCommand('set sheet defaulttextvalueformat text-wiki');
           }
-          $(document).on('mouseover', '#te_fullgrid tr:nth-child(2) td:first', function(){
+          $(document).on('mouseover', '.te_download tr:nth-child(2) td:first', function(){
             return $(this).attr({
               title: 'Export...'
             });
           });
-          return $(document).on('click', '#te_fullgrid tr:nth-child(2) td:first', function(){
+          return $(document).on('click', '.te_download tr:nth-child(2) td:first', function(){
             var isMultiple;
             if ((typeof vex != 'undefined' && vex !== null) && vex.dialog.open) {
               SocialCalc.Keyboard.passThru = true;

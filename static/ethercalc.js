@@ -2878,6 +2878,7 @@ SocialCalc.EditorRenderSheet = function(a) {
   a.fullgrid = a.context.RenderSheet(a.fullgrid);
   a.ecell && a.SetECellHeaders("selected");
   SocialCalc.AssignID(a, a.fullgrid, "fullgrid");
+  SocialCalc._app || (a.fullgrid.className = "te_download");
   a.EditorMouseRegister();
 };
 SocialCalc.EditorScheduleSheetCommands = function(a, b, c, d) {
