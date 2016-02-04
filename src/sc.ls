@@ -152,7 +152,6 @@ Worker ||= class => (code) ->
       | \exportCells
         postMessage { type: \cells, cells: window.ss.cells }
       | \init
-        SocialCalc.SaveEditorSettings = -> ""  #Returns a string representation of the pane settings 
         SocialCalc.CreateAuditString = -> ""
         SocialCalc.CalculateEditorPositions = ->
         SocialCalc.Popup.Types.List.Create = ->

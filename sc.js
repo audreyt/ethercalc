@@ -320,8 +320,9 @@
                   body: commandParameters[3].replace(/%20/g, ' ')
                 }
               });
+              return window.ss.ExecuteCommand(command);
             }
-            return window.ss.ExecuteCommand(command);
+            break;
           case 'recalc':
             return SocialCalc.RecalcLoadedSheet(ref, snapshot, true);
           case 'clearCache':
