@@ -154,6 +154,42 @@
     rv = J.utils["to_#type"](input)
     [J-TypeMap[type], rv]
   )
+      
+  # Send time triggered email. Send due emails and schedule time of next send. Called from bash file:timetrigger in cron
+  @get '/_timetrigger': -> 
+      console.log "_timetrigger"        
+      (, allTimeTriggers) <~ DB.hgetall "cron-list"
+      console.log "allTimeTriggers "  {...allTimeTriggers}
+      timeNowMins = Math.floor(new Date().getTime() / (1000 * 60))
+      nextTriggerTime = 2147483647   # set to max seconds possible (31^2)      
+      for cellID, timeList of allTimeTriggers
+        timeList = for triggerTimeMins in timeList.split(',')
+          if triggerTimeMins <= timeNowMins
+            [room, cell] = cellID.split('!')        
+            console.log "cellID #cellID triggerTimeMins #triggerTimeMins" 
+            do
+              {snapshot} <~ SC._get room, IO
+              SC[room].triggerActionCell cell, ->                
+            continue
+          else
+            if nextTriggerTime > triggerTimeMins 
+              nextTriggerTime = triggerTimeMins
+            triggerTimeMins
+        #console.log "timeList #timeList"
+        if timeList.length == 0 
+          DB.hdel "cron-list", cellID
+        else
+          DB.hset "cron-list", cellID, timeList.toString()      
+      <~ DB.multi!
+        .set "cron-nextTriggerTime" nextTriggerTime
+        .bgsave!exec!
+      fs.writeFileSync do
+        "#dataDir/nextTriggerTime.txt"
+        nextTriggerTime
+        \utf8                       
+      console.log "--- cron email sent ---"
+      @response.type Json
+      @response.send 200 allTimeTriggers
 
   ExportExcelXML = api ->
 
@@ -201,41 +237,6 @@
     <~ SC._put room, snapshot
     @response.redirect "#BASEPATH/#room/app" 
   @get '/:template/appeditor': sendFile \panels.html    
-
-  # Send time triggered email. Send due emails and schedule time of next send. Called from bash file:timetrigger in cron
-  @get '/_timetrigger': -> 
-      (, allTimeTriggers) <~ DB.hgetall "cron-list"
-      console.log "allTimeTriggers "  {...allTimeTriggers}
-      timeNowMins = Math.floor(new Date().getTime() / (1000 * 60))
-      nextTriggerTime = 2147483647   # set to max seconds possible (31^2)      
-      for cellID, timeList of allTimeTriggers
-        timeList = for triggerTimeMins in timeList.split(',')
-          if triggerTimeMins <= timeNowMins
-            [room, cell] = cellID.split('!')        
-            console.log "cellID #cellID triggerTimeMins #triggerTimeMins" 
-            do
-              {snapshot} <~ SC._get room, IO
-              SC[room].triggerActionCell cell, ->                
-            continue
-          else
-            if nextTriggerTime > triggerTimeMins 
-              nextTriggerTime = triggerTimeMins
-            triggerTimeMins
-        #console.log "timeList #timeList"
-        if timeList.length == 0 
-          DB.hdel "cron-list", cellID
-        else
-          DB.hset "cron-list", cellID, timeList.toString()      
-      <~ DB.multi!
-        .set "cron-nextTriggerTime" nextTriggerTime
-        .bgsave!exec!
-      fs.writeFileSync do
-        "#dataDir/nextTriggerTime.txt"
-        nextTriggerTime
-        \utf8                       
-      console.log "--- cron email sent ---"
-      @response.type Json
-      @response.send allTimeTriggers
 
   @get '/:room/edit': ->
     room = @params.room

@@ -245,6 +245,53 @@
         return [JTypeMap[type], rv];
       });
     };
+    this.get({
+      '/_timetrigger': function(){
+        var this$ = this;
+        console.log("_timetrigger");
+        return DB.hgetall("cron-list", function(arg$, allTimeTriggers){
+          var timeNowMins, nextTriggerTime, cellID, timeList, res$, i$, ref$, len$, triggerTimeMins, ref1$, room, cell;
+          console.log("allTimeTriggers ", (import$({}, allTimeTriggers)));
+          timeNowMins = Math.floor(new Date().getTime() / (1000 * 60));
+          nextTriggerTime = 2147483647;
+          for (cellID in allTimeTriggers) {
+            timeList = allTimeTriggers[cellID];
+            res$ = [];
+            for (i$ = 0, len$ = (ref$ = timeList.split(',')).length; i$ < len$; ++i$) {
+              triggerTimeMins = ref$[i$];
+              if (triggerTimeMins <= timeNowMins) {
+                ref1$ = cellID.split('!'), room = ref1$[0], cell = ref1$[1];
+                console.log("cellID " + cellID + " triggerTimeMins " + triggerTimeMins);
+                SC._get(room, IO, fn$);
+                continue;
+              } else {
+                if (nextTriggerTime > triggerTimeMins) {
+                  nextTriggerTime = triggerTimeMins;
+                }
+                res$.push(triggerTimeMins);
+              }
+            }
+            timeList = res$;
+            if (timeList.length === 0) {
+              DB.hdel("cron-list", cellID);
+            } else {
+              DB.hset("cron-list", cellID, timeList.toString());
+            }
+          }
+          return DB.multi().set("cron-nextTriggerTime", nextTriggerTime).bgsave().exec(function(){
+            fs.writeFileSync(dataDir + "/nextTriggerTime.txt", nextTriggerTime, 'utf8');
+            console.log("--- cron email sent ---");
+            this$.response.type(Json);
+            return this$.response.send(200, allTimeTriggers);
+          });
+          function fn$(arg$){
+            var snapshot;
+            snapshot = arg$.snapshot;
+            return SC[room].triggerActionCell(cell, function(){});
+          }
+        });
+      }
+    });
     ExportExcelXML = api(function(){});
     this.get({
       '/:room.csv': ExportCSV
@@ -337,52 +384,6 @@
     });
     this.get({
       '/:template/appeditor': sendFile('panels.html')
-    });
-    this.get({
-      '/_timetrigger': function(){
-        var this$ = this;
-        return DB.hgetall("cron-list", function(arg$, allTimeTriggers){
-          var timeNowMins, nextTriggerTime, cellID, timeList, res$, i$, ref$, len$, triggerTimeMins, ref1$, room, cell;
-          console.log("allTimeTriggers ", (import$({}, allTimeTriggers)));
-          timeNowMins = Math.floor(new Date().getTime() / (1000 * 60));
-          nextTriggerTime = 2147483647;
-          for (cellID in allTimeTriggers) {
-            timeList = allTimeTriggers[cellID];
-            res$ = [];
-            for (i$ = 0, len$ = (ref$ = timeList.split(',')).length; i$ < len$; ++i$) {
-              triggerTimeMins = ref$[i$];
-              if (triggerTimeMins <= timeNowMins) {
-                ref1$ = cellID.split('!'), room = ref1$[0], cell = ref1$[1];
-                console.log("cellID " + cellID + " triggerTimeMins " + triggerTimeMins);
-                SC._get(room, IO, fn$);
-                continue;
-              } else {
-                if (nextTriggerTime > triggerTimeMins) {
-                  nextTriggerTime = triggerTimeMins;
-                }
-                res$.push(triggerTimeMins);
-              }
-            }
-            timeList = res$;
-            if (timeList.length === 0) {
-              DB.hdel("cron-list", cellID);
-            } else {
-              DB.hset("cron-list", cellID, timeList.toString());
-            }
-          }
-          return DB.multi().set("cron-nextTriggerTime", nextTriggerTime).bgsave().exec(function(){
-            fs.writeFileSync(dataDir + "/nextTriggerTime.txt", nextTriggerTime, 'utf8');
-            console.log("--- cron email sent ---");
-            this$.response.type(Json);
-            return this$.response.send(allTimeTriggers);
-          });
-          function fn$(arg$){
-            var snapshot;
-            snapshot = arg$.snapshot;
-            return SC[room].triggerActionCell(cell, function(){});
-          }
-        });
-      }
     });
     this.get({
       '/:room/edit': function(){
@@ -878,6 +879,11 @@
       });
     }
   };
+  function import$(obj, src){
+    var own = {}.hasOwnProperty;
+    for (var key in src) if (own.call(src, key)) obj[key] = src[key];
+    return obj;
+  }
   function deepEq$(x, y, type){
     var toString = {}.toString, hasOwnProperty = {}.hasOwnProperty,
         has = function (obj, key) { return hasOwnProperty.call(obj, key); };
@@ -961,10 +967,5 @@
       stack.pop();
       return result;
     }
-  }
-  function import$(obj, src){
-    var own = {}.hasOwnProperty;
-    for (var key in src) if (own.call(src, key)) obj[key] = src[key];
-    return obj;
   }
 }).call(this);
