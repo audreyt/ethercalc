@@ -68,7 +68,7 @@
   "defaultFormatt": "[h]:mm:ss",
   "defaultDisplayTRUE": "TRUE",
   "defaultDisplayFALSE": "FALSE",
-  "defaultImagePrefix": "images/sc_",
+  "_comment": "use socialcalcconstants defaultImagePrefix",
   "defaultTableEditorIDPrefix": "te_",
   "defaultPageUpDnAmount": 15,
   "AllowCtrlS": true,
