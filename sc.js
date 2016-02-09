@@ -668,7 +668,7 @@
           });
         };
       }
-      w._eval = w._emailEval = function(code, cb){
+      w._eval = function(code, cb){
         return setTimeout(function(){
           return w.thread.eval(code, function(arg$, rv){
             if (rv != null) {
@@ -772,7 +772,7 @@
         return w._eval("window.ss.sheet.attribs", cb);
       };
       w.triggerActionCell = function(coord, cb){
-        return w._emailEval("window.ss.SocialCalc.TriggerIoAction.Email('" + coord + "')", function(emailcmd){
+        return w._eval("window.ss.SocialCalc.TriggerIoAction.Email('" + coord + "')", function(emailcmd){
           var i$, len$, nextEmail, res$, j$, len1$, addSpaces, emailto, subject, body;
           console.log("send via OAuth");
           for (i$ = 0, len$ = emailcmd.length; i$ < len$; ++i$) {
