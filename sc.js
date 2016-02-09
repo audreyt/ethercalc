@@ -213,7 +213,7 @@
     DB = this.include('db');
     EXPIRE = this.EXPIRE;
     emailer = this.include('emailer');
-    dataDir = process.env.OPENSHIFT_DATA_DIR;
+    dataDir = "..";
     SC._csvToSave = function(csv, cb){
       var w;
       w = new Worker;
