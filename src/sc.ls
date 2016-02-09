@@ -325,7 +325,7 @@ Worker ||= class => (code) ->
       console.log "EVAL isThreaded"
       x = new Worker -> do
         @onmessage = ({data: { snapshot, log=[], code }}) -> try
-          console.log "EVAL onmessage isThreaded"
+          @console.log "EVAL onmessage isThreaded"
           parts = SocialCalc.SpreadsheetControlDecodeSpreadsheetSave("", snapshot)
           save = snapshot.substring parts.sheet.start, parts.sheet.end
           window.setTimeout = (cb, ms) -> thread.next-tick cb

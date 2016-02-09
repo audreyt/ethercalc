@@ -691,7 +691,7 @@
                 ? ref1$
                 : [], code = ref$.code;
               try {
-                console.log("EVAL onmessage isThreaded");
+                this.console.log("EVAL onmessage isThreaded");
                 parts = SocialCalc.SpreadsheetControlDecodeSpreadsheetSave("", snapshot);
                 save = snapshot.substring(parts.sheet.start, parts.sheet.end);
                 window.setTimeout = function(cb, ms){
