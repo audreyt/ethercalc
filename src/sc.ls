@@ -34,18 +34,17 @@ bootSC += """;(#{->
 ##################################
 ### WebWorker Threads Fallback ###
 ##################################
-#IsThreaded = true
-#Worker = try
-#  throw \vm if argv.vm
-#  if parseInt(process.versions.node.slice(2)) > 10 or parseInt(process.versions.node[0])
-#    console.log "Note: Threading with Node #{ process.versions.node } is work in progress.\n=>> https://github.com/audreyt/node-webworker-threads/issues/48"
-#    throw \too-new
-#  console.log "Starting backend using webworker-threads"
-#  (require \webworker-threads).Worker
-#catch
-#  console.log "Falling back to vm.CreateContext backend"
-#  IsThreaded = false
-IsThreaded = false
+IsThreaded = true
+Worker = try
+  throw \vm if argv.vm
+  if parseInt(process.versions.node.slice(2)) > 10 or parseInt(process.versions.node[0])
+    console.log "Note: Threading with Node #{ process.versions.node } is work in progress.\n=>> https://github.com/audreyt/node-webworker-threads/issues/48"
+    throw \too-new
+  console.log "Starting backend using webworker-threads"
+  (require \webworker-threads).Worker
+catch
+  console.log "Falling back to vm.CreateContext backend"
+  IsThreaded = false
 
 Worker ||= class => (code) ->
   cxt = { console, self: { onmessage: -> }, alert: -> }
@@ -332,17 +331,20 @@ Worker ||= class => (code) ->
         window.ss = ss = new SocialCalc.SpreadsheetControl
         ss.sheet.ResetSheet!
         ss.ParseSheetSave save
-        if log?length
-          cmdstr = [ line for line in log
-               | not /^re(calc|display)$/.test(line) and line isnt "set sheet defaulttextvalueformat text-wiki"].join("\n")
-          # TODO: Validate cmdstr!
-          cmdstr += "\n" if cmdstr.length
-          ss.editor.StatusCallback.EtherCalc = func: (editor, status, arg) ->
-            return unless status is \doneposcalc
-            post-message eval code
-          ss.context.sheetobj.ScheduleSheetCommands cmdstr, false true
-        else
-          post-message eval code
+        setTimeout do #delay to give server side sheet time to initialize
+          -> 
+            if log?length
+              cmdstr = [ line for line in log
+                   | not /^re(calc|display)$/.test(line) and line isnt "set sheet defaulttextvalueformat text-wiki"].join("\n")
+              # TODO: Validate cmdstr!
+              cmdstr += "\n" if cmdstr.length
+              ss.editor.StatusCallback.EtherCalc = func: (editor, status, arg) ->
+                return unless status is \doneposcalc
+                post-message eval code
+              ss.context.sheetobj.ScheduleSheetCommands cmdstr, false true
+            else
+              post-message eval code
+        100ms
       catch e => post-message "ERROR: #{ e }"
       x.onmessage = ({data}) -> x.thread.destroy!; cb data
       (, log) <~ DB.lrange "log-#room" 0 -1

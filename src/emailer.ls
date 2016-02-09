@@ -33,7 +33,7 @@
     #debug return before sending
   emailer.sendemail = (emailTo, emailSubject, emailBody, callback) !->
     mailOptions = 
-      from: process.env.i3pqpufosc_user
+      from: process.env.gmail_user
       to: emailTo               #// to address
       subject: emailSubject     #// Subject line
       text: emailBody           #// plaintext body
@@ -45,7 +45,7 @@
         console.dir info
         callback " EMAIL ERROR - "+error        
       else
-        console.log 'Message sent to:'+(info.accepted)
+        #console.log 'Message sent to:'+(info.accepted)
         #//console.dir(info);
         callback " [E-mail Sent]" 
         return info.accepted
