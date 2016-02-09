@@ -264,25 +264,27 @@ Worker ||= class => (code) ->
     """, (, csv) -> cb csv
     # Create a new worker for each HTML conversion to avoid starvation
     if IsThreaded => w.exportHTML = !(cb) ->
-      x = new Worker -> @onmessage = ({data: { snapshot, log=[] }}) -> try
-        parts = SocialCalc.SpreadsheetControlDecodeSpreadsheetSave("", snapshot)
-        save = snapshot.substring parts.sheet.start, parts.sheet.end
-        window.setTimeout = (cb, ms) -> thread.next-tick cb
-        window.clearTimeout = ->
-        window.ss = ss = new SocialCalc.SpreadsheetControl
-        ss.sheet.ResetSheet!
-        ss.ParseSheetSave save
-        if log?length
-          cmdstr = [ line for line in log
-               | not /^re(calc|display)$/.test(line) and line isnt "set sheet defaulttextvalueformat text-wiki"].join("\n")
-          cmdstr += "\n" if cmdstr.length
-          ss.editor.StatusCallback.EtherCalc = func: (editor, status, arg) ->
-            return unless status is \doneposcalc
+      x = new Worker -> do
+        @onmessage = ({data: { snapshot, log=[] }}) -> try
+          parts = SocialCalc.SpreadsheetControlDecodeSpreadsheetSave("", snapshot)
+          save = snapshot.substring parts.sheet.start, parts.sheet.end
+          window.setTimeout = (cb, ms) -> thread.next-tick cb
+          window.clearTimeout = ->
+          window.ss = ss = new SocialCalc.SpreadsheetControl
+          ss.sheet.ResetSheet!
+          ss.ParseSheetSave save
+          if log?length
+            cmdstr = [ line for line in log
+                 | not /^re(calc|display)$/.test(line) and line isnt "set sheet defaulttextvalueformat text-wiki"].join("\n")
+            cmdstr += "\n" if cmdstr.length
+            ss.editor.StatusCallback.EtherCalc = func: (editor, status, arg) ->
+              return unless status is \doneposcalc
+              post-message ss.CreateSheetHTML!
+            ss.context.sheetobj.ScheduleSheetCommands cmdstr, false true
+          else
             post-message ss.CreateSheetHTML!
-          ss.context.sheetobj.ScheduleSheetCommands cmdstr, false true
-        else
-          post-message ss.CreateSheetHTML!
-      catch e => post-message "ERROR: #{ e }"
+        catch e => post-message "ERROR: #{ e }"
+        @console = console
       x.onmessage = ({data}) -> x.thread.destroy!; cb data
       (, log) <~ DB.lrange "log-#room" 0 -1
       x.thread.eval bootSC, -> x.post-message {snapshot: w._snapshot, log}
