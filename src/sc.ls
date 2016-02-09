@@ -347,6 +347,8 @@ Worker ||= class => (code) ->
               post-message eval code
           100ms
       catch e => post-message "ERROR: #{ e }"
+      console.log "EVAL isThreaded 2"    
+      x.console = console  
       x.onmessage = ({data}) -> x.thread.destroy!; cb data
       (, log) <~ DB.lrange "log-#room" 0 -1
       x.thread.eval bootSC, -> x.post-message {snapshot: w._snapshot, log, code}

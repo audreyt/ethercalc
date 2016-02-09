@@ -736,6 +736,8 @@
               }
             };
           });
+          console.log("EVAL isThreaded 2");
+          x.console = console;
           x.onmessage = function(arg$){
             var data;
             data = arg$.data;
