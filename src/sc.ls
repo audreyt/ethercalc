@@ -311,7 +311,7 @@ Worker ||= class => (code) ->
       x.onmessage = ({data}) -> x.thread.destroy!; cb data
       (, log) <~ DB.lrange "log-#room" 0 -1
       x.thread.eval bootSC, -> x.post-message {snapshot: w._snapshot, log}
-    w._eval = (code, cb) ->
+    w._eval = w._emailEval = (code, cb) ->
       setTimeout do #delay to give server side sheet time to initialize
         -> 
           #console.log "EVAL un-threaded"
@@ -359,7 +359,7 @@ Worker ||= class => (code) ->
     w.exportCells = (cb) -> w._eval "JSON.stringify(window.ss.sheet.cells)", cb
     # eddy exportAttribs, triggerActionCell {
     w.exportAttribs = (cb) -> w._eval "window.ss.sheet.attribs", cb    
-    w.triggerActionCell = (coord, cb) -> w._eval "window.ss.SocialCalc.TriggerIoAction.Email('#coord')" (emailcmd) ->
+    w.triggerActionCell = (coord, cb) -> w._emailEval "window.ss.SocialCalc.TriggerIoAction.Email('#coord')" (emailcmd) ->
       console.log "send via OAuth"
       for nextEmail in emailcmd
         nextEmail = for addSpaces in nextEmail #replace %20 with spaces
