@@ -536,7 +536,7 @@
         w.exportHTML = function(cb){
           var x, this$ = this;
           x = new Worker(function(){
-            this.onmessage = function(arg$){
+            return this.onmessage = function(arg$){
               var ref$, snapshot, log, ref1$, parts, save, ss, cmdstr, line, e;
               ref$ = arg$.data, snapshot = ref$.snapshot, log = (ref1$ = ref$.log) != null
                 ? ref1$
@@ -582,7 +582,6 @@
                 return postMessage("ERROR: " + e);
               }
             };
-            return this.console = console;
           });
           x.onmessage = function(arg$){
             var data;
@@ -686,7 +685,7 @@
           var x, this$ = this;
           console.log("EVAL isThreaded");
           x = new Worker(function(){
-            return this.onmessage = function(arg$){
+            this.onmessage = function(arg$){
               var ref$, snapshot, log, ref1$, code, parts, save, ss, e;
               ref$ = arg$.data, snapshot = ref$.snapshot, log = (ref1$ = ref$.log) != null
                 ? ref1$
@@ -736,9 +735,9 @@
                 return postMessage("ERROR: " + e);
               }
             };
+            return this.console = console;
           });
           console.log("EVAL isThreaded 2");
-          x.console = console;
           x.onmessage = function(arg$){
             var data;
             data = arg$.data;

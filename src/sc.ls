@@ -264,27 +264,25 @@ Worker ||= class => (code) ->
     """, (, csv) -> cb csv
     # Create a new worker for each HTML conversion to avoid starvation
     if IsThreaded => w.exportHTML = !(cb) ->
-      x = new Worker -> do
-        @onmessage = ({data: { snapshot, log=[] }}) -> try
-          parts = SocialCalc.SpreadsheetControlDecodeSpreadsheetSave("", snapshot)
-          save = snapshot.substring parts.sheet.start, parts.sheet.end
-          window.setTimeout = (cb, ms) -> thread.next-tick cb
-          window.clearTimeout = ->
-          window.ss = ss = new SocialCalc.SpreadsheetControl
-          ss.sheet.ResetSheet!
-          ss.ParseSheetSave save
-          if log?length
-            cmdstr = [ line for line in log
-                 | not /^re(calc|display)$/.test(line) and line isnt "set sheet defaulttextvalueformat text-wiki"].join("\n")
-            cmdstr += "\n" if cmdstr.length
-            ss.editor.StatusCallback.EtherCalc = func: (editor, status, arg) ->
-              return unless status is \doneposcalc
-              post-message ss.CreateSheetHTML!
-            ss.context.sheetobj.ScheduleSheetCommands cmdstr, false true
-          else
+      x = new Worker -> @onmessage = ({data: { snapshot, log=[] }}) -> try
+        parts = SocialCalc.SpreadsheetControlDecodeSpreadsheetSave("", snapshot)
+        save = snapshot.substring parts.sheet.start, parts.sheet.end
+        window.setTimeout = (cb, ms) -> thread.next-tick cb
+        window.clearTimeout = ->
+        window.ss = ss = new SocialCalc.SpreadsheetControl
+        ss.sheet.ResetSheet!
+        ss.ParseSheetSave save
+        if log?length
+          cmdstr = [ line for line in log
+               | not /^re(calc|display)$/.test(line) and line isnt "set sheet defaulttextvalueformat text-wiki"].join("\n")
+          cmdstr += "\n" if cmdstr.length
+          ss.editor.StatusCallback.EtherCalc = func: (editor, status, arg) ->
+            return unless status is \doneposcalc
             post-message ss.CreateSheetHTML!
-        catch e => post-message "ERROR: #{ e }"
-        @console = console
+          ss.context.sheetobj.ScheduleSheetCommands cmdstr, false true
+        else
+          post-message ss.CreateSheetHTML!
+      catch e => post-message "ERROR: #{ e }"
       x.onmessage = ({data}) -> x.thread.destroy!; cb data
       (, log) <~ DB.lrange "log-#room" 0 -1
       x.thread.eval bootSC, -> x.post-message {snapshot: w._snapshot, log}
@@ -325,32 +323,33 @@ Worker ||= class => (code) ->
         100ms
     if IsThreaded => w._eval = (code, cb) ->
       console.log "EVAL isThreaded"
-      x = new Worker -> @onmessage = ({data: { snapshot, log=[], code }}) -> try
-        console.log "EVAL onmessage isThreaded"
-        parts = SocialCalc.SpreadsheetControlDecodeSpreadsheetSave("", snapshot)
-        save = snapshot.substring parts.sheet.start, parts.sheet.end
-        window.setTimeout = (cb, ms) -> thread.next-tick cb
-        window.clearTimeout = ->
-        window.ss = ss = new SocialCalc.SpreadsheetControl
-        ss.sheet.ResetSheet!
-        ss.ParseSheetSave save
-        setTimeout do #delay to give server side sheet time to initialize
-          -> 
-            if log?length
-              cmdstr = [ line for line in log
-                   | not /^re(calc|display)$/.test(line) and line isnt "set sheet defaulttextvalueformat text-wiki"].join("\n")
-              # TODO: Validate cmdstr!
-              cmdstr += "\n" if cmdstr.length
-              ss.editor.StatusCallback.EtherCalc = func: (editor, status, arg) ->
-                return unless status is \doneposcalc
+      x = new Worker -> do
+        @onmessage = ({data: { snapshot, log=[], code }}) -> try
+          console.log "EVAL onmessage isThreaded"
+          parts = SocialCalc.SpreadsheetControlDecodeSpreadsheetSave("", snapshot)
+          save = snapshot.substring parts.sheet.start, parts.sheet.end
+          window.setTimeout = (cb, ms) -> thread.next-tick cb
+          window.clearTimeout = ->
+          window.ss = ss = new SocialCalc.SpreadsheetControl
+          ss.sheet.ResetSheet!
+          ss.ParseSheetSave save
+          setTimeout do #delay to give server side sheet time to initialize
+            -> 
+              if log?length
+                cmdstr = [ line for line in log
+                     | not /^re(calc|display)$/.test(line) and line isnt "set sheet defaulttextvalueformat text-wiki"].join("\n")
+                # TODO: Validate cmdstr!
+                cmdstr += "\n" if cmdstr.length
+                ss.editor.StatusCallback.EtherCalc = func: (editor, status, arg) ->
+                  return unless status is \doneposcalc
+                  post-message eval code
+                ss.context.sheetobj.ScheduleSheetCommands cmdstr, false true
+              else
                 post-message eval code
-              ss.context.sheetobj.ScheduleSheetCommands cmdstr, false true
-            else
-              post-message eval code
-          100ms
-      catch e => post-message "ERROR: #{ e }"
-      console.log "EVAL isThreaded 2"    
-      x.console = console  
+            100ms
+        catch e => post-message "ERROR: #{ e }"
+        @console = console
+      console.log "EVAL isThreaded 2"      
       x.onmessage = ({data}) -> x.thread.destroy!; cb data
       (, log) <~ DB.lrange "log-#room" 0 -1
       x.thread.eval bootSC, -> x.post-message {snapshot: w._snapshot, log, code}
