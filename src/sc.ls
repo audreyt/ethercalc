@@ -322,8 +322,9 @@ Worker ||= class => (code) ->
           return cb rv
         100ms
     if IsThreaded => w._eval = (code, cb) ->
+      console.log "EVAL isThreaded"
       x = new Worker -> @onmessage = ({data: { snapshot, log=[], code }}) -> try
-        #console.log "EVAL isThreaded"
+        console.log "EVAL onmessage isThreaded"
         parts = SocialCalc.SpreadsheetControlDecodeSpreadsheetSave("", snapshot)
         save = snapshot.substring parts.sheet.start, parts.sheet.end
         window.setTimeout = (cb, ms) -> thread.next-tick cb
@@ -344,7 +345,7 @@ Worker ||= class => (code) ->
               ss.context.sheetobj.ScheduleSheetCommands cmdstr, false true
             else
               post-message eval code
-        100ms
+          100ms
       catch e => post-message "ERROR: #{ e }"
       x.onmessage = ({data}) -> x.thread.destroy!; cb data
       (, log) <~ DB.lrange "log-#room" 0 -1
@@ -359,7 +360,7 @@ Worker ||= class => (code) ->
     # eddy exportAttribs, triggerActionCell {
     w.exportAttribs = (cb) -> w._eval "window.ss.sheet.attribs", cb    
     w.triggerActionCell = (coord, cb) -> w._eval "window.ss.SocialCalc.TriggerIoAction.Email('#coord')" (emailcmd) ->
-      #console.log "send via OAuth"
+      console.log "send via OAuth"
       for nextEmail in emailcmd
         nextEmail = for addSpaces in nextEmail #replace %20 with spaces
           addSpaces.replace(/%20/g,' ')

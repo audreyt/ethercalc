@@ -683,6 +683,7 @@
       if (IsThreaded) {
         w._eval = function(code, cb){
           var x, this$ = this;
+          console.log("EVAL isThreaded");
           x = new Worker(function(){
             return this.onmessage = function(arg$){
               var ref$, snapshot, log, ref1$, code, parts, save, ss, e;
@@ -690,6 +691,7 @@
                 ? ref1$
                 : [], code = ref$.code;
               try {
+                console.log("EVAL onmessage isThreaded");
                 parts = SocialCalc.SpreadsheetControlDecodeSpreadsheetSave("", snapshot);
                 save = snapshot.substring(parts.sheet.start, parts.sheet.end);
                 window.setTimeout = function(cb, ms){
@@ -699,7 +701,7 @@
                 window.ss = ss = new SocialCalc.SpreadsheetControl;
                 ss.sheet.ResetSheet();
                 ss.ParseSheetSave(save);
-                setTimeout(function(){
+                return setTimeout(function(){
                   var cmdstr, line;
                   if (log != null && log.length) {
                     cmdstr = (function(){
@@ -727,8 +729,7 @@
                   } else {
                     return postMessage(eval(code));
                   }
-                });
-                return 100;
+                }, 100);
               } catch (e$) {
                 e = e$;
                 return postMessage("ERROR: " + e);
@@ -773,6 +774,7 @@
       w.triggerActionCell = function(coord, cb){
         return w._eval("window.ss.SocialCalc.TriggerIoAction.Email('" + coord + "')", function(emailcmd){
           var i$, len$, nextEmail, res$, j$, len1$, addSpaces, emailto, subject, body;
+          console.log("send via OAuth");
           for (i$ = 0, len$ = emailcmd.length; i$ < len$; ++i$) {
             nextEmail = emailcmd[i$];
             res$ = [];
