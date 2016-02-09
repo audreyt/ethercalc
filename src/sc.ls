@@ -34,17 +34,18 @@ bootSC += """;(#{->
 ##################################
 ### WebWorker Threads Fallback ###
 ##################################
-IsThreaded = true
-Worker = try
-  throw \vm if argv.vm
-  if parseInt(process.versions.node.slice(2)) > 10 or parseInt(process.versions.node[0])
-    console.log "Note: Threading with Node #{ process.versions.node } is work in progress.\n=>> https://github.com/audreyt/node-webworker-threads/issues/48"
-    throw \too-new
-  console.log "Starting backend using webworker-threads"
-  (require \webworker-threads).Worker
-catch
-  console.log "Falling back to vm.CreateContext backend"
-  IsThreaded = false
+#IsThreaded = true
+#Worker = try
+#  throw \vm if argv.vm
+#  if parseInt(process.versions.node.slice(2)) > 10 or parseInt(process.versions.node[0])
+#    console.log "Note: Threading with Node #{ process.versions.node } is work in progress.\n=>> https://github.com/audreyt/node-webworker-threads/issues/48"
+#    throw \too-new
+#  console.log "Starting backend using webworker-threads"
+#  (require \webworker-threads).Worker
+#catch
+#  console.log "Falling back to vm.CreateContext backend"
+#  IsThreaded = false
+IsThreaded = false
 
 Worker ||= class => (code) ->
   cxt = { console, self: { onmessage: -> }, alert: -> }
@@ -322,34 +323,27 @@ Worker ||= class => (code) ->
           return cb rv
         100ms
     if IsThreaded => w._eval = (code, cb) ->
-      console.log "EVAL isThreaded"
-      x = new Worker -> do
-        @onmessage = ({data: { snapshot, log=[], code }}) -> try
-          @console.log "EVAL onmessage isThreaded"
-          parts = SocialCalc.SpreadsheetControlDecodeSpreadsheetSave("", snapshot)
-          save = snapshot.substring parts.sheet.start, parts.sheet.end
-          window.setTimeout = (cb, ms) -> thread.next-tick cb
-          window.clearTimeout = ->
-          window.ss = ss = new SocialCalc.SpreadsheetControl
-          ss.sheet.ResetSheet!
-          ss.ParseSheetSave save
-          setTimeout do #delay to give server side sheet time to initialize
-            -> 
-              if log?length
-                cmdstr = [ line for line in log
-                     | not /^re(calc|display)$/.test(line) and line isnt "set sheet defaulttextvalueformat text-wiki"].join("\n")
-                # TODO: Validate cmdstr!
-                cmdstr += "\n" if cmdstr.length
-                ss.editor.StatusCallback.EtherCalc = func: (editor, status, arg) ->
-                  return unless status is \doneposcalc
-                  post-message eval code
-                ss.context.sheetobj.ScheduleSheetCommands cmdstr, false true
-              else
-                post-message eval code
-            100ms
-        catch e => post-message "ERROR: #{ e }"
-        @console = console
-      console.log "EVAL isThreaded 2"      
+      x = new Worker -> @onmessage = ({data: { snapshot, log=[], code }}) -> try
+        #console.log "EVAL isThreaded"
+        parts = SocialCalc.SpreadsheetControlDecodeSpreadsheetSave("", snapshot)
+        save = snapshot.substring parts.sheet.start, parts.sheet.end
+        window.setTimeout = (cb, ms) -> thread.next-tick cb
+        window.clearTimeout = ->
+        window.ss = ss = new SocialCalc.SpreadsheetControl
+        ss.sheet.ResetSheet!
+        ss.ParseSheetSave save
+        if log?length
+          cmdstr = [ line for line in log
+               | not /^re(calc|display)$/.test(line) and line isnt "set sheet defaulttextvalueformat text-wiki"].join("\n")
+          # TODO: Validate cmdstr!
+          cmdstr += "\n" if cmdstr.length
+          ss.editor.StatusCallback.EtherCalc = func: (editor, status, arg) ->
+            return unless status is \doneposcalc
+            post-message eval code
+          ss.context.sheetobj.ScheduleSheetCommands cmdstr, false true
+        else
+          post-message eval code
+      catch e => post-message "ERROR: #{ e }"
       x.onmessage = ({data}) -> x.thread.destroy!; cb data
       (, log) <~ DB.lrange "log-#room" 0 -1
       x.thread.eval bootSC, -> x.post-message {snapshot: w._snapshot, log, code}
@@ -363,7 +357,7 @@ Worker ||= class => (code) ->
     # eddy exportAttribs, triggerActionCell {
     w.exportAttribs = (cb) -> w._eval "window.ss.sheet.attribs", cb    
     w.triggerActionCell = (coord, cb) -> w._eval "window.ss.SocialCalc.TriggerIoAction.Email('#coord')" (emailcmd) ->
-      console.log "send via OAuth"
+      #console.log "send via OAuth"
       for nextEmail in emailcmd
         nextEmail = for addSpaces in nextEmail #replace %20 with spaces
           addSpaces.replace(/%20/g,' ')
