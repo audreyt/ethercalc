@@ -72,6 +72,18 @@ SocialCalc.Constants = {
 // Main SocialCalc module, socialcalc-3.js:
 //
 
+// eddy cellDataType {
+//    datatype: if present, v=numeric value, t=text value, f=formula,
+//              or c=constant that is not a simple number (like "$1.20")
+   cellDataType: { 
+	v:"value",
+	n:"value",
+	t:"text",
+	f:"formula",
+	c:"constant"	
+   },
+// }   
+   
    //*** Common Constants
 
    textdatadefaulttype: "t", // This sets the default type for text on reading source file
@@ -199,7 +211,7 @@ SocialCalc.Constants = {
 
    //*** SocialCalc.TableEditor
 
-   defaultImagePrefix: "images/sc_", // URL prefix for images (e.g., "/images/sc")
+   defaultImagePrefix: "/images/sc_", // URL prefix for images (e.g., "/images/sc")
    defaultTableEditorIDPrefix: "te_", // if present, many TableEditor elements are assigned IDs with this prefix
    defaultPageUpDnAmount: 15, // number of rows to move cursor on PgUp/PgDn keys (numeric)
 
@@ -223,7 +235,7 @@ SocialCalc.Constants = {
    s_statusline_sum: "SUM",
    s_statusline_recalcneeded: '<span style="color:#999;">(Recalc needed)</span>',
    s_statusline_circref: '<span style="color:red;">Circular reference: ',
-
+   s_statusline_sendemail: "Sending Email ",  // eddy
    //** SocialCalc.InputBoxDisplayCellContents
 
    s_inputboxdisplaymultilinetext: "[Multi-line text: Click icon on right to edit]",
@@ -605,7 +617,7 @@ SocialCalc.Constants = {
    s_circularnameref: "Circular name reference to name",
    s_calcerrunknownname: "Unknown name",
    s_calcerrincorrectargstofunction: "Incorrect arguments to function",
-   s_sheetfuncunknownfunction: "Unknown function",
+   s_sheetfuncunknownfunction: "Unknown function ",
    s_sheetfunclnarg: "LN argument must be greater than 0",
    s_sheetfunclog10arg: "LOG10 argument must be greater than 0",
    s_sheetfunclogsecondarg: "LOG second argument must be numeric greater than 0",
@@ -768,7 +780,7 @@ SocialCalc.Constants = {
    s_farg_rangen: "range1, range2, ...",
    s_farg_vsig: 'value, [significance]',
 
-   function_classlist: ["all", "stat", "lookup", "datetime", "financial", "test", "math", "text"], // order of function classes
+   function_classlist: ["all", "stat", "lookup", "datetime", "financial", "test", "math", "text", "gui", "action"], // order of function classes
 
    s_fclass_all: "All",
    s_fclass_stat: "Statistics",
@@ -778,6 +790,8 @@ SocialCalc.Constants = {
    s_fclass_test: "Test",
    s_fclass_math: "Math",
    s_fclass_text: "Text",
+   s_fclass_action: "Email & Copy",
+   s_fclass_gui: "Button & Input",
 
    lastone: null
 

@@ -68,7 +68,7 @@
   "defaultFormatt": "[h]:mm:ss",
   "defaultDisplayTRUE": "TRUE",
   "defaultDisplayFALSE": "FALSE",
-  "defaultImagePrefix": "images/sc_",
+  "_comment": "use socialcalcconstants defaultImagePrefix",
   "defaultTableEditorIDPrefix": "te_",
   "defaultPageUpDnAmount": 15,
   "AllowCtrlS": true,
@@ -555,7 +555,9 @@
     "financial",
     "test",
     "math",
-    "text"
+    "text",
+    "gui",
+    "action"
   ],
   "s_fclass_all": "All",
   "s_fclass_stat": "Statistics",

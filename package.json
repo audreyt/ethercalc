@@ -16,7 +16,9 @@
     "livescript": "1.4.x",
     "csv-parse": "^0.0.6",
     "j": "0.4.x",
-    "minimatch" : "*"  
+    "minimatch" : "*",
+    "nodemailer": "*",
+    "xoauth2": "*"
   },
   "optionalDependencies": {
     "webworker-threads": "0.6.x"

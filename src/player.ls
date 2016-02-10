@@ -5,9 +5,11 @@
     window.SocialCalc ?= {}
     SocialCalc._username = Math.random!toString!
     SocialCalc.isConnected = true
-    if /\?auth=/.test window.location.search
-      SocialCalc._auth = window.location.search?replace /\??auth=/ ''
-    SocialCalc._view = SocialCalc._auth is \0
+    requestParams = SocialCalc.requestParams
+    SocialCalc._auth = requestParams[\auth] if requestParams[\auth]?
+    SocialCalc._app = true if requestParams[\app]?    
+    SocialCalc._view = true if requestParams[\view]?
+    #SocialCalc._view = SocialCalc._auth is \0     
     SocialCalc._room ?= window.location.hash.replace \# ''
     SocialCalc._room = "#{SocialCalc._room}".replace /^_+/ '' .replace /\?.*/ ''
 
@@ -26,6 +28,7 @@
         <- setTimeout _, 100ms
         window.history.pushState {} '' "./#{ SocialCalc._room }#{
           switch
+          | SocialCalc._app  => '/app'
           | SocialCalc._view  => '/view'
           | SocialCalc._auth  => '/edit'
           | otherwise     => ''
@@ -71,7 +74,7 @@
     SocialCalc.Callbacks.broadcast = (type, data={}) ~>
       return unless SocialCalc.isConnected
       data.user = SocialCalc._username
-      data.room = SocialCalc._room
+      data.room = SocialCalc._room if !data.room?        
       data.type = type
       data.auth = SocialCalc._auth if SocialCalc._auth
       emit data
@@ -85,23 +88,28 @@
 
     @on data: !->
       return unless SocialCalc?isConnected
-      return if @data.user == SocialCalc._username
+      return if @data.user == SocialCalc._username and @data.room == SocialCalc._room     #ignore self calls to main spreadsheet, but formdata calls will still be processed
       return if @data.to and @data.to != SocialCalc._username
-      return if @data.room and @data.room != SocialCalc._room and @data.type != "recalc"
-
       ss = window.spreadsheet
       return unless ss
+      return if @data.room and @data.room != SocialCalc._room and ss.formDataViewer?._room != @data.room and @data.type == "log"
+      if @data.room and @data.room != SocialCalc._room and @data.type != "recalc" and @data.type != "log"
+        return if ss.formDataViewer?._room != @data.room     
+        ss = ss.formDataViewer   # process the form data sheet event
       editor = ss.editor
       switch @data.type
+      | \confirmemailsent => SocialCalc.EditorSheetStatusCallback(null, "confirmemailsent", @data.message, editor);
       | \chat   => window.addmsg? @data.msg
-      | \ecells   => for user, ecell of @data.ecells
-        continue if user is SocialCalc._username
-        peerClass = " #user defaultPeer"
-        find = new RegExp peerClass, \g
-        cr   = SocialCalc.coordToCr ecell
-        cell = SocialCalc.GetEditorCellElement editor, cr.row, cr.col
-        if cell?element.className.search(find) == -1
-          cell.element.className += peerClass
+      | \ecells   
+        break if SocialCalc._app 
+        do => for user, ecell of @data.ecells
+          continue if user is SocialCalc._username
+          peerClass = " #user defaultPeer"
+          find = new RegExp peerClass, \g
+          cr   = SocialCalc.coordToCr ecell
+          cell = SocialCalc.GetEditorCellElement editor, cr.row, cr.col
+          if cell?element.className.search(find) == -1
+            cell.element.className += peerClass
       | \ecell
         peerClass = " #{@data.user} defaultPeer"
         find = new RegExp peerClass, \g
@@ -113,6 +121,7 @@
             SocialCalc.Callbacks.broadcast \ecell,
               to: @data.user
               ecell: editor.ecell.coord
+        break if SocialCalc._app 
         cr = SocialCalc.coordToCr @data.ecell
         cell = SocialCalc.GetEditorCellElement editor, cr.row, cr.col
         cell.element.className += peerClass if cell?element?className.search(find) == -1
@@ -121,7 +130,30 @@
           to: @data.user
           ecell: editor.ecell.coord
       | \log
+        ss = window.spreadsheet #
         vex?closeAll!
+        #eddy
+        if ss.formDataViewer?._room is @data.room
+          if @data.snapshot
+            parts = ss.DecodeSpreadsheetSave @data.snapshot
+          ss.formDataViewer.sheet.ResetSheet!
+          ss.formDataViewer.loaded = true
+          SocialCalc.Callbacks.broadcast \ask.log
+          # if formData sheet already exists
+          if parts?sheet
+            ss.formDataViewer.ParseSheetSave( @data.snapshot.substring( parts.sheet.start, parts.sheet.end))
+            ss.formDataViewer.context.sheetobj.ScheduleSheetCommands "recalc\n", false, true
+            # request the spreadsheet data
+            # show formdata if not blank
+            #if !SocialCalc._app? && (ss.formDataViewer.sheet.attribs.lastcol != 1 ||  ss.formDataViewer.sheet.attribs.lastrow != 1)
+              #ss.formDataViewer.parentNode.style.visibility = "visible"
+              #ss.formDataViewer.parentNode.style.display = "inline"
+              #SocialCalc.CalculateSheetNonViewHeight(ss)
+              #ss.nonviewheight = 324
+              #ss.height = 0;
+              #ss.DoOnResize!              
+          break
+        #}
         break if SocialCalc.hadSnapshot
         SocialCalc.hadSnapshot = true
         if @data.snapshot
@@ -210,17 +242,39 @@ Check the activity stream to see the newly edited page!
 
   onLoad = (ssInstance=SocialCalc.CurrentSpreadsheetControlObject) ->
     window.spreadsheet = ss = ssInstance || (
-      if SocialCalc._view
+      if SocialCalc._view || SocialCalc._app
         new SocialCalc.SpreadsheetViewer!
       else
         new SocialCalc.SpreadsheetControl!
     )
-    SocialCalc.Callbacks.broadcast \ask.log
-
-    return unless window.GraphOnClick
+    
+    # eddy {
+    if !window.GraphOnClick?
+      SocialCalc.Callbacks.broadcast \ask.log 
+      return 
+    # } eddy       
 
     ss.ExportCallback = (s) ->
       alert SocialCalc.ConvertSaveToOtherFormat(SocialCalc.Clipboard.clipboard, "csv")
+
+    # eddy {
+    # add Form tab as first tab
+    #ss.tabs?[0]?html = ss.tabs?[0]?html.replace("style=\"", "style=\"display:none;")
+    SocialCalc.Constants.s_loc_form = "Form"    
+    ss.tabnums.form = ss.tabs.length if ss.tabs
+    ss.tabs?push do
+      name: \form
+      text: SocialCalc.Constants.s_loc_form
+      html: """
+        <div id="%id.formtools" style="display:none;"><div style="%tbt."><table cellspacing="0" cellpadding="0">
+        <tr><td style="vertical-align:middle;padding-right:32px;padding-left:16px;"><div style="%tbt.">
+        <input type="button" value="Live Form" onclick="parent.location='#{SocialCalc._room}/form'" style="background-color: #5cb85c;border-color: #4cae4c;cursor: pointer;"> #{document.location.origin}/#{SocialCalc._room}/form </div></td>
+        </tr></table></div></div>
+      """
+      view: \sheet
+      onclick: null
+      onclickFocus: true  
+    # }
 
     ss.tabnums.graph = ss.tabs.length if ss.tabs
     ss.tabs?push do
@@ -245,11 +299,21 @@ Check the activity stream to see the newly edited page!
 
     ss.InitializeSpreadsheetViewer? \tableeditor, 0, 0, 0
     ss.InitializeSpreadsheetControl? \tableeditor, 0, 0, 0
+    # eddy {
+    if !SocialCalc._view? && ss.formDataViewer?
+      # request formData and then the spreadsheet data
+      ss.formDataViewer.sheet._room = ss.formDataViewer._room = SocialCalc._room + "_formdata"      
+      SocialCalc.Callbacks.broadcast \ask.log {room: ss.formDataViewer._room}
+    else 
+      # request the spreadsheet data
+      SocialCalc.Callbacks.broadcast \ask.log 
+    # } eddy 
+    
     ss.ExecuteCommand? \redisplay, ''
     ss.ExecuteCommand? 'set sheet defaulttextvalueformat text-wiki'
-    $ document .on \mouseover '#te_fullgrid tr:nth-child(2) td:first' ->
+    $ document .on \mouseover '.te_download tr:nth-child(2) td:first' ->
       $ @ .attr title: 'Export...'
-    $ document .on \click '#te_fullgrid tr:nth-child(2) td:first' ->
+    $ document .on \click '.te_download tr:nth-child(2) td:first' ->
       SocialCalc.Keyboard.passThru = yes if vex?dialog.open
       isMultiple = (window.__MULTI__ or SocialCalc._room is /\.[1-9]\d*$/)
       vex?defaultOptions.className = 'vex-theme-flat-attack'
