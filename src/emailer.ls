@@ -33,7 +33,7 @@
     #debug return before sending
   emailer.sendemail = (emailTo, emailSubject, emailBody, callback) !->
     mailOptions = 
-      from: process.env.i3pqpufosc_user
+      from: process.env.gmail_user
       to: emailTo               #// to address
       subject: emailSubject     #// Subject line
       text: emailBody           #// plaintext body

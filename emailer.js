@@ -30,7 +30,7 @@
     emailer.sendemail = function(emailTo, emailSubject, emailBody, callback){
       var mailOptions;
       mailOptions = {
-        from: process.env.i3pqpufosc_user,
+        from: process.env.gmail_user,
         to: emailTo,
         subject: emailSubject,
         text: emailBody,
