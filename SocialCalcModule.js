@@ -211,7 +211,7 @@ SocialCalc.Constants = {
 
    //*** SocialCalc.TableEditor
 
-   defaultImagePrefix: "/images/sc_", // URL prefix for images (e.g., "/images/sc")
+   defaultImagePrefix: "images/sc_", // URL prefix for images (e.g., "images/sc")
    defaultTableEditorIDPrefix: "te_", // if present, many TableEditor elements are assigned IDs with this prefix
    defaultPageUpDnAmount: 15, // number of rows to move cursor on PgUp/PgDn keys (numeric)
 
@@ -26195,6 +26195,7 @@ SocialCalc.SpreadsheetViewer = function(idPrefix) {
    this.sheet = new SocialCalc.Sheet();
    this.context = new SocialCalc.RenderContext(this.sheet);
    // eddy SpreadsheetViewer {
+   if(SocialCalc._app == true || SocialCalc._view == true) scc.defaultImagePrefix = this.imagePrefix = "../"+ this.imagePrefix;
    if(SocialCalc._app == true) {
      this.context.showGrid= false; 
      this.context.showRCHeaders= false;
