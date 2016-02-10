@@ -897,7 +897,7 @@
         scc.ISCButtonBorderHover = '#99' + b4;
         scc.ISCButtonBorderDown = '#FFF';
         scc.ISCButtonDownBackground = '#88' + b5;
-        scc.defaultImagePrefix = './images/sc_';
+        scc.defaultImagePrefix = '/images/sc_';
         SocialCalc.Popup.LocalizeString = SocialCalc.LocalizeString;
         scc.defaultColnameStyle = 'font-size:small;text-align:center;color:#' + hightLightForegoundColour + ';background-color:#' + unselectedbg + ';cursor:e-resize;';
         scc.defaultSelectedColnameStyle = 'font-size:small;text-align:center;color:#' + hightLightForegoundColour + ';background-color:#' + selectedbg + ';cursor:e-resize;';
