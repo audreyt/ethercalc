@@ -35,7 +35,8 @@
   const DevMode = fs.existsSync "#RealBin/.git"
   #Time Triggered Email - contains next send time 
   dataDir = process.env.OPENSHIFT_DATA_DIR   
-
+  #dataDir = ".."  
+  
   sendFile = (file) -> ->
     @response.type Html
     @response.sendfile "#RealBin/#file"
