@@ -147,6 +147,7 @@ SocialCalc.SpreadsheetViewer = function(idPrefix) {
    this.sheet = new SocialCalc.Sheet();
    this.context = new SocialCalc.RenderContext(this.sheet);
    // eddy SpreadsheetViewer {
+   if(SocialCalc._app == true || SocialCalc._view == true) scc.defaultImagePrefix = this.imagePrefix = "../"+ this.imagePrefix;
    if(SocialCalc._app == true) {
      this.context.showGrid= false; 
      this.context.showRCHeaders= false;
