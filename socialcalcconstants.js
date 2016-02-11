@@ -211,7 +211,7 @@ SocialCalc.Constants = {
 
    //*** SocialCalc.TableEditor
 
-   defaultImagePrefix: "images/sc_", // URL prefix for images (e.g., "images/sc")
+   defaultImagePrefix: "images/sc_", // URL prefix for images (e.g., "/images/sc")
    defaultTableEditorIDPrefix: "te_", // if present, many TableEditor elements are assigned IDs with this prefix
    defaultPageUpDnAmount: 15, // number of rows to move cursor on PgUp/PgDn keys (numeric)
 
@@ -617,7 +617,7 @@ SocialCalc.Constants = {
    s_circularnameref: "Circular name reference to name",
    s_calcerrunknownname: "Unknown name",
    s_calcerrincorrectargstofunction: "Incorrect arguments to function",
-   s_sheetfuncunknownfunction: "Unknown function ",
+   s_sheetfuncunknownfunction: "Unknown function",
    s_sheetfunclnarg: "LN argument must be greater than 0",
    s_sheetfunclog10arg: "LOG10 argument must be greater than 0",
    s_sheetfunclogsecondarg: "LOG second argument must be numeric greater than 0",
