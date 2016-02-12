@@ -45,7 +45,7 @@ Send email
     
     OAuth2 - Set environment vars 
     1) Tutorial: follow the tutorial to get the 4 environment vars http://masashi-k.blogspot.com.au/2013/06/sending-mail-with-gmail-using-xoauth2.html 
-    2) Set 4 environment vars - see "src/emailer.ls"] vars: user, clientId, clientSecret, refreshToken
+    2) Set 4 environment vars - see [src/emailer.ls] vars: user, clientId, clientSecret, refreshToken
     Tested using gmail, have not tested with other providors
 
     Cron - Required for emailAt formulas.
