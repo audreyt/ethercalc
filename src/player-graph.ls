@@ -686,21 +686,19 @@
   b4 = \9
   b5 = \8
   #eddy
-  selectedbg = \4044A0
-  unselectedbg = \383953  
-  cursorgb = \8E91D3
+  selectedbg = '404040'
+  unselectedbg = '808080'
+  cursorbg = \A6A6A6
   hightLightForegoundColour = \FFF
   if SocialCalc.requestParams[\app]?  
-    cursorgb = \FFF
+    cursorbg = \FFF
     hightLightForegoundColour = \000
         
-  #scc.SCToolbarbackground = 'background-color:#4040' + b1 + '0;'
   scc.SCToolbarbackground = 'background-color:#' + selectedbg + ';'
   scc.SCTabbackground = 'background-color:#' + unselectedbg + ';'
   scc.SCTabselectedCSS = 'font-size:small;padding:6px 30px 6px 8px;color:#FFF;background-color:#' + selectedbg + ';cursor:default;border-right:1px solid #CC' + b2 + ';'
   scc.SCTabplainCSS = 'font-size:small;padding:6px 30px 6px 8px;color:#FFF;background-color:#' + unselectedbg + ';cursor:default;border-right:1px solid #CC' + b2 + ';'
   scc.SCToolbartext = 'font-size:x-small;font-weight:bold;color:#FFF;padding-bottom:4px;'
-  #scc.ISCButtonBorderNormal = '#4040' + b1 + '0'
   scc.ISCButtonBorderNormal = '#'+selectedbg
   scc.ISCButtonBorderHover = '#99' + b4
   scc.ISCButtonBorderDown = '#FFF'
@@ -712,5 +710,5 @@
   scc.defaultSelectedColnameStyle = 'font-size:small;text-align:center;color:#' + hightLightForegoundColour + ';background-color:#' + selectedbg + ';cursor:e-resize;'
   scc.defaultRownameStyle = 'font-size:small;text-align:right;color:#' + hightLightForegoundColour + ';background-color:#' + unselectedbg + ';direction:rtl;'
   scc.defaultSelectedRownameStyle = 'font-size:small;text-align:right;color:#' + hightLightForegoundColour + ';background-color:#' + selectedbg + ';'
-  scc.defaultHighlightTypeCursorStyle = 'color:#' + hightLightForegoundColour + ';backgroundColor:#' + cursorgb + ';'
+  scc.defaultHighlightTypeCursorStyle = 'color:#' + hightLightForegoundColour + ';backgroundColor:#' + cursorbg + ';'
   
