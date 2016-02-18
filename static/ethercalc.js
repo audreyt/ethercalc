@@ -3630,6 +3630,7 @@ SocialCalc.GridMousePosition = function(a, b, c) {
   return null;
 };
 SocialCalc.GetEditorCellElement = function(a, b, c) {
+  !1 == a.context.showRCHeaders && (b--, c--);
   var d, e, f, g, h = 0, l = 0;
   for (d = 0;d < a.context.rowpanes.length;d++) {
     if (b >= a.context.rowpanes[d].first && b <= a.context.rowpanes[d].last) {

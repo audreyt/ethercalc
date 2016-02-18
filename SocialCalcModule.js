@@ -9754,6 +9754,10 @@ SocialCalc.GridMousePosition = function(editor, clientX, clientY) {
 
 SocialCalc.GetEditorCellElement = function(editor, row, col) {
 
+   if (editor.context.showRCHeaders == false) {   // Adjust for row/col headers  
+     row --;
+     col --;
+   }
    var rowpane, colpane, c, coord;
    var rowindex = 0;
    var colindex = 0;
