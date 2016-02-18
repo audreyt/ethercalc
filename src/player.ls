@@ -126,6 +126,7 @@
         cell = SocialCalc.GetEditorCellElement editor, cr.row, cr.col
         cell.element.className += peerClass if cell?element?className.search(find) == -1
       | \ask.ecell
+        break if SocialCalc._app 
         SocialCalc.Callbacks.broadcast \ecell do
           to: @data.user
           ecell: editor.ecell.coord

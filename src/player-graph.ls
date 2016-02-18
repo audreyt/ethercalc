@@ -73,7 +73,9 @@
   window.DoGraph = DoGraph = (helpflag, isResize) ->
     colorIndex = 0
     spreadsheet = SocialCalc.GetSpreadsheetControlObject!
-    editor = spreadsheet.editor
+    # exit if view only mode 
+    if !spreadsheet?
+      then return
     gview = spreadsheet.views.graph.element
     ginfo = SocialCalc.GraphTypesInfo[spreadsheet.graphtype]
     gfunc = ginfo.func
