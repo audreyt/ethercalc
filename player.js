@@ -214,7 +214,9 @@
                 if (this.data.original) {
                   origCR = SocialCalc.coordToCr(this.data.original);
                   origCell = SocialCalc.GetEditorCellElement(editor, origCR.row, origCR.col);
-                  origCell.element.className = origCell.element.className.replace(find, '');
+                  if (origCell != null) {
+                    origCell.element.className = origCell.element.className.replace(find, '');
+                  }
                   if (this.data.original === editor.ecell.coord || this.data.ecell === editor.ecell.coord) {
                     SocialCalc.Callbacks.broadcast('ecell', {
                       to: this.data.user,

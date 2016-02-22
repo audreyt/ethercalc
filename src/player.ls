@@ -116,7 +116,7 @@
         if @data.original
           origCR   = SocialCalc.coordToCr @data.original
           origCell = SocialCalc.GetEditorCellElement editor, origCR.row, origCR.col
-          origCell.element.className = origCell.element.className.replace find, ''
+          origCell?.element.className = origCell.element.className.replace find, ''
           if @data.original is editor.ecell.coord or @data.ecell is editor.ecell.coord
             SocialCalc.Callbacks.broadcast \ecell,
               to: @data.user
