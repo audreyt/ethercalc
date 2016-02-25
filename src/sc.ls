@@ -37,9 +37,6 @@ bootSC += """;(#{->
 IsThreaded = true
 Worker = try
   throw \vm if argv.vm
-  if parseInt(process.versions.node.slice(2)) > 10 or parseInt(process.versions.node[0])
-    console.log "Note: Threading with Node #{ process.versions.node } is work in progress.\n=>> https://github.com/audreyt/node-webworker-threads/issues/48"
-    throw \too-new
   console.log "Starting backend using webworker-threads"
   (require \webworker-threads).Worker
 catch
