@@ -7706,8 +7706,8 @@ SocialCalc.Formula.FunctionList.EMAILAT = [SocialCalc.Formula.IoFunctions, -4, "
 SocialCalc.Formula.FunctionList.EMAILONEDITIF = [SocialCalc.Formula.IoFunctions, -5, "editRange, condition, to_range subject_range, body_range", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "EventTree"];
 SocialCalc.Formula.FunctionList.EMAILATIF = [SocialCalc.Formula.IoFunctions, -5, "datetime_value, condition, to_range subject_range, body_range", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "TimeTrigger"];
 SocialCalc.Formula.FunctionList.SUBMIT = [SocialCalc.Formula.IoFunctions, 100, "[label]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Submit('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList"];
-SocialCalc.Formula.FunctionList.TEXTBOX = [SocialCalc.Formula.IoFunctions, 1, "label", "", "gui", "<input type='text' id='TEXTBOX_<%=cell_reference%>' onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.TextBox('<%=cell_reference%>')\" value='<%=display_value%>' >", "Input"];
-SocialCalc.Formula.FunctionList.CHECKBOX = [SocialCalc.Formula.IoFunctions, 1, "label", "", "gui", "<input type='checkbox' id='CHECKBOX_<%=cell_reference%>' <%=checked%> onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.CheckBox('<%=cell_reference%>')\" >", "Input"];
+SocialCalc.Formula.FunctionList.TEXTBOX = [SocialCalc.Formula.IoFunctions, 1, "label", "", "gui", "<input type='text' id='TEXTBOX_<%=cell_reference%>' onblur='SocialCalc.TriggerIoAction.RunPendingCellCommand();SocialCalc.CmdGotFocus(null);' onchange=\"SocialCalc.TriggerIoAction.TextBox('<%=cell_reference%>')\" value='<%=display_value%>' >", "Input"];
+SocialCalc.Formula.FunctionList.CHECKBOX = [SocialCalc.Formula.IoFunctions, 1, "label", "", "gui", "<input type='checkbox' id='CHECKBOX_<%=cell_reference%>' <%=checked%> onblur='SocialCalc.TriggerIoAction.RunPendingCellCommand();SocialCalc.CmdGotFocus(null);' onchange=\"SocialCalc.TriggerIoAction.CheckBox('<%=cell_reference%>')\" >", "Input"];
 SocialCalc.Formula.FunctionList.COPYVALUE = [SocialCalc.Formula.IoFunctions, 3, "trigger_cell, value_range, destinationCell(s)", "", "action", "", "EventTree"];
 SocialCalc.Formula.FunctionList.COPYFORMULA = [SocialCalc.Formula.IoFunctions, 3, "trigger_cell, formula_range, destinationCell(s)", "", "action", "", "EventTree"];
 SocialCalc.TriggerIoAction.Button = function(a) {
@@ -7796,6 +7796,7 @@ SocialCalc.TriggerIoAction.Email = function(a, b) {
 SocialCalc.TriggerIoAction.Submit = function(a) {
   a = null != SocialCalc.CurrentSpreadsheetControlObject ? SocialCalc.CurrentSpreadsheetControlObject.formDataViewer : SocialCalc.CurrentSpreadsheetViewerObject.formDataViewer;
   if (null != a && !0 == a.loaded) {
+    SocialCalc.TriggerIoAction.RunPendingCellCommand();
     for (var b = window.spreadsheet.sheet, c = new Date, c = "" + c.getFullYear() + "-" + (c.getMonth() + 1) + "-" + c.getDate() + " " + c.getHours() + ":" + c.getMinutes() + ":" + c.getSeconds(), d = 2;d <= a.formFieldsLength + 1;d++) {
       var e = SocialCalc.crToCoord(d, 2), c = c + ("\r" + a.sheet.cells[e].datavalue)
     }
@@ -7817,8 +7818,12 @@ SocialCalc.TriggerIoAction.updateInputWidgetFormula = function(a, b, c) {
   b = document.getElementById(a + "_" + b);
   c = c(b);
   c = SocialCalc.encodeForSave(c);
-  d.editor.EditorScheduleSheetCommands("set " + e.coord + " formula " + a + '("' + c + '")', !0, !1);
+  d.editor.pendingCellCommand = "set " + e.coord + " formula " + a + '("' + c + '")';
   SocialCalc.TriggerIoAction.UpdateFormDataSheet(a, e.coord, c);
+};
+SocialCalc.TriggerIoAction.RunPendingCellCommand = function() {
+  var a = window.spreadsheet.editor;
+  "undefined" != typeof a.pendingCellCommand && null !== a.pendingCellCommand && (a.EditorScheduleSheetCommands(a.pendingCellCommand, !0, !1), a.pendingCellCommand = null);
 };
 SocialCalc.TriggerIoAction.UpdateFormDataSheet = function(a, b, c) {
   var d = null != SocialCalc.CurrentSpreadsheetControlObject ? SocialCalc.CurrentSpreadsheetControlObject.formDataViewer : SocialCalc.CurrentSpreadsheetViewerObject.formDataViewer;
