@@ -444,7 +444,9 @@
         SC[room] = SC._init snapshot, log, DB, room, @io
       # eddy @on data {
       if commandParameters[0].trim() is \submitform
-        room_data = room.replace(/_[a-zA-Z0-9]*$/i,"_formdata")
+        room_data = if room.indexOf('_') == -1  # store data in <templatesheet>_formdata
+          then room + "_formdata"
+          else room.replace(/_[a-zA-Z0-9]*$/i,"_formdata") # get formdata sheet of cloned template
         console.log "test SC[#{room_data}] submitform..."      
         unless SC["#{room_data}"]?
           console.log "Submitform. loading... SC[#{room_data}]"
