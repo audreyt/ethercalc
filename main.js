@@ -725,7 +725,9 @@
               });
             }
             if (commandParameters[0].trim() === 'submitform') {
-              room_data = room.replace(/_[a-zA-Z0-9]*$/i, "_formdata");
+              room_data = room.indexOf('_') === -1
+                ? room + "_formdata"
+                : room.replace(/_[a-zA-Z0-9]*$/i, "_formdata");
               console.log("test SC[" + room_data + "] submitform...");
               if (SC[room_data + ""] == null) {
                 console.log("Submitform. loading... SC[" + room_data + "]");
