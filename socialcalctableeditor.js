@@ -914,7 +914,11 @@ SocialCalc.EditorSheetStatusCallback = function(recalcdata, status, arg, editor)
 
       case "calcfinished":
          signalstatus(status);
-         editor.ScheduleRender();
+         if(editor.skipNextRender!=true) { // onclick workaround: button mousedown event so skip next HTML render to allow onclick event to fire
+           editor.ScheduleRender();
+         } else {
+           editor.skipNextRender = false;
+         }
          return;
 
       case "schedrender":

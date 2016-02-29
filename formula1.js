@@ -5029,9 +5029,9 @@ SocialCalc.Formula.FunctionList["EMAILONEDIT"] = [SocialCalc.Formula.IoFunctions
 SocialCalc.Formula.FunctionList["EMAILAT"] = [SocialCalc.Formula.IoFunctions, -4, "datetime_value, to_range subject_range, body_range", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "TimeTrigger" ];
 SocialCalc.Formula.FunctionList["EMAILONEDITIF"] = [SocialCalc.Formula.IoFunctions, -5, "editRange, condition, to_range subject_range, body_range", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "EventTree" ];
 SocialCalc.Formula.FunctionList["EMAILATIF"] = [SocialCalc.Formula.IoFunctions, -5, "datetime_value, condition, to_range subject_range, body_range", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "TimeTrigger" ];
-SocialCalc.Formula.FunctionList["SUBMIT"] = [SocialCalc.Formula.IoFunctions, 100, "[label]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Submit('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList" ];
-SocialCalc.Formula.FunctionList["TEXTBOX"] = [SocialCalc.Formula.IoFunctions, 1, "value", "", "gui", "<input type='text' id='TEXTBOX_<%=cell_reference%>' onblur='SocialCalc.TriggerIoAction.RunPendingCellCommand();SocialCalc.CmdGotFocus(null);' onchange=\"SocialCalc.TriggerIoAction.TextBox('<%=cell_reference%>')\" value='<%=display_value%>' >", "Input" ];
-SocialCalc.Formula.FunctionList["CHECKBOX"] = [SocialCalc.Formula.IoFunctions, 1, "value", "", "gui", "<input type='checkbox' id='CHECKBOX_<%=cell_reference%>' <%=checked%> onblur='SocialCalc.TriggerIoAction.RunPendingCellCommand();SocialCalc.CmdGotFocus(null);' onchange=\"SocialCalc.TriggerIoAction.CheckBox('<%=cell_reference%>')\" >", "Input" ];
+SocialCalc.Formula.FunctionList["SUBMIT"] = [SocialCalc.Formula.IoFunctions, 100, "[label]", "", "action", "<button type='button' onmousedown=\"window.spreadsheet.editor.skipNextRender=true;\" onclick=\"SocialCalc.TriggerIoAction.Submit('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList" ];
+SocialCalc.Formula.FunctionList["TEXTBOX"] = [SocialCalc.Formula.IoFunctions, 1, "value", "", "gui", "<input type='text' id='TEXTBOX_<%=cell_reference%>' onblur='SocialCalc.CmdGotFocus(null);' onchange=\"SocialCalc.TriggerIoAction.TextBox('<%=cell_reference%>')\" value='<%=display_value%>' >", "Input" ];
+SocialCalc.Formula.FunctionList["CHECKBOX"] = [SocialCalc.Formula.IoFunctions, 1, "value", "", "gui", "<input type='checkbox' id='CHECKBOX_<%=cell_reference%>' <%=checked%> onblur='SocialCalc.CmdGotFocus(null);' onchange=\"SocialCalc.TriggerIoAction.CheckBox('<%=cell_reference%>')\" >", "Input" ];
 
 SocialCalc.Formula.FunctionList["COPYVALUE"] = [SocialCalc.Formula.IoFunctions, 3, "trigger_cell, value_range, destinationCell(s)", "", "action", "", "EventTree"];
 SocialCalc.Formula.FunctionList["COPYFORMULA"] = [SocialCalc.Formula.IoFunctions, 3, "trigger_cell, formula_range, destinationCell(s)", "", "action", "", "EventTree"];
@@ -5257,7 +5257,6 @@ SocialCalc.TriggerIoAction.Submit = function(triggerCellId) {
   : SocialCalc.CurrentSpreadsheetViewerObject.formDataViewer;
 
   if(formDataViewer != null && formDataViewer.loaded == true) {
-    SocialCalc.TriggerIoAction.RunPendingCellCommand(); // onclick workaround: onClick has triggered so OK to update HTML of widget 
 
     var spreadsheet =  window.spreadsheet;
     var sheet = spreadsheet.sheet;
@@ -5273,6 +5272,7 @@ SocialCalc.TriggerIoAction.Submit = function(triggerCellId) {
     }  
     
     sheet.ScheduleSheetCommands('submitform \r'+formDataValues,  false);
+    spreadsheet.editor.ScheduleRender();
   }
 }
 
@@ -5303,17 +5303,9 @@ SocialCalc.TriggerIoAction.updateInputWidgetFormula = function(function_name, wi
  var sheetCommand = 'set '+cell.coord+ ' formula ' + function_name+'("' +inputValue+'")'
  //SocialCalc.CmdGotFocus(cell_textbox);
 
- spreadsheet.editor.pendingCellCommand = sheetCommand;
+ spreadsheet.editor.EditorScheduleSheetCommands(sheetCommand,  true, false);
  
  SocialCalc.TriggerIoAction.UpdateFormDataSheet(function_name, cell.coord, inputValue);
-}
-
-SocialCalc.TriggerIoAction.RunPendingCellCommand = function() {
-  var editor =  window.spreadsheet.editor;
-  if(typeof editor.pendingCellCommand!= 'undefined' && editor.pendingCellCommand!== null) {
-    editor.EditorScheduleSheetCommands(editor.pendingCellCommand,  true, false);
-    editor.pendingCellCommand = null;
-  }  
 }
 
 // On edit of Form Input widget - Update form data sheet 
