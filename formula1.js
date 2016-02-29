@@ -5045,7 +5045,7 @@ SocialCalc.TriggerIoAction.DelayRender = function() {
 }
 SocialCalc.TriggerIoAction.ActivateRender = function() {
   if(window.spreadsheet.editor.skipNextRender==false) { // if render skiped 
-    spreadsheet.editor.ScheduleRender();
+    window.spreadsheet.editor.ScheduleRender();
   }
   window.spreadsheet.editor.skipNextRender=null; // default - normal render
 }
