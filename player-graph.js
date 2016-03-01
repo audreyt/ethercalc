@@ -92,7 +92,7 @@
           var colorIndex, spreadsheet, gview, ginfo, gfunc, grange, nrange, rparts, prange, range;
           colorIndex = 0;
           spreadsheet = SocialCalc.GetSpreadsheetControlObject();
-          if (spreadsheet == null) {
+          if ((spreadsheet != null ? spreadsheet.graphtype : void 8) == null) {
             return;
           }
           gview = spreadsheet.views.graph.element;

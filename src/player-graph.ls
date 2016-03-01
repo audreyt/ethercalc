@@ -74,7 +74,7 @@
     colorIndex = 0
     spreadsheet = SocialCalc.GetSpreadsheetControlObject!
     # exit if view only mode 
-    if !spreadsheet?
+    if !spreadsheet?.graphtype? #
       then return
     gview = spreadsheet.views.graph.element
     ginfo = SocialCalc.GraphTypesInfo[spreadsheet.graphtype]
