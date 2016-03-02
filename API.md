@@ -116,6 +116,12 @@ Takes a CSV structure that contains fields to be appended to the first column af
 + Request (text/csv)
 + Response 200
 
+## Delete Room [DELETE]
+
+Deletes a room from the database
+
++ Response 201 OK
+
 # Page Cells [/_/{id}/cells]
 
 ## GET
@@ -186,3 +192,21 @@ Replace the page with a serialization in Excel XML format.
 
 + Request (application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)
 + Response 200
+
+# Rooms [/_rooms]
+
+## Index of rooms [GET]
+
+Get index of rooms.  Will fail with 403 if CORS is enabled.
+
++ Response 200
+
+# Page [/_exists/{id}]
+
+## Page Exists [GET]
+
+Check if page exists
+
++ Response 200 (application/json)
+
+

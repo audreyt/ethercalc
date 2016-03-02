@@ -2,6 +2,7 @@
   @use \json, @app.router, @express.static __dirname
   @app.use \/edit @express.static __dirname
   @app.use \/view @express.static __dirname
+  @app.use \/app @express.static __dirname
 
   @include \dotcloud
   @include \player-broadcast
@@ -32,7 +33,10 @@
   const RealBin = require \path .dirname do
     fs.realpathSync __filename
   const DevMode = fs.existsSync "#RealBin/.git"
-
+  #Time Triggered Email - contains next send time 
+  dataDir = process.env.OPENSHIFT_DATA_DIR   
+  #dataDir = ".."  
+  
   sendFile = (file) -> ->
     @response.type Html
     @response.sendfile "#RealBin/#file"
@@ -46,10 +50,11 @@
       return res.send(204) if req?method is \OPTIONS
       next!
 
-  new-room = -> require \uuid-pure .newId 10 36 .toLowerCase!
+  new-room = -> require \uuid-pure .newId 12 36 .toLowerCase!
 
   @get '/': sendFile \index.html
   @get '/favicon.ico': -> @response.send 404 ''
+  #@get '/favicon.ico': sendFile \favicon.ico  #return site icon
   @get '/manifest.appcache': ->
     @response.type \text/cache-manifest
     if DevMode
@@ -150,6 +155,41 @@
     rv = J.utils["to_#type"](input)
     [J-TypeMap[type], rv]
   )
+      
+  # Send time triggered email. Send due emails and schedule time of next send. Called from bash file:timetrigger in cron
+  @get '/_timetrigger': -> 
+      (, allTimeTriggers) <~ DB.hgetall "cron-list"
+      console.log "allTimeTriggers "  {...allTimeTriggers}
+      timeNowMins = Math.floor(new Date().getTime() / (1000 * 60))
+      nextTriggerTime = 2147483647   # set to max seconds possible (31^2)      
+      for cellID, timeList of allTimeTriggers
+        timeList = for triggerTimeMins in timeList.split(',')
+          if triggerTimeMins <= timeNowMins
+            [room, cell] = cellID.split('!')        
+            console.log "cellID #cellID triggerTimeMins #triggerTimeMins" 
+            do
+              {snapshot} <~ SC._get room, IO
+              SC[room].triggerActionCell cell, ->                
+            continue
+          else
+            if nextTriggerTime > triggerTimeMins 
+              nextTriggerTime = triggerTimeMins
+            triggerTimeMins
+        #console.log "timeList #timeList"
+        if timeList.length == 0 
+          DB.hdel "cron-list", cellID
+        else
+          DB.hset "cron-list", cellID, timeList.toString()      
+      <~ DB.multi!
+        .set "cron-nextTriggerTime" nextTriggerTime
+        .bgsave!exec!
+      fs.writeFileSync do
+        "#dataDir/nextTriggerTime.txt"
+        nextTriggerTime
+        \utf8                       
+      console.log "--- cron email sent ---"
+      @response.type Json
+      @response.send 200 allTimeTriggers
 
   ExportExcelXML = api ->
 
@@ -159,8 +199,15 @@
   #@get '/:room.ods': Export-J \ods
   @get '/:room.xlsx': Export-J \xlsx
   @get '/:room.md': Export-J \md
-
-
+  if @CORS
+     @get '/_rooms' : ->
+        @response.type Text
+        return @response.send 403 '_rooms not available with CORS'
+  else
+     @get '/_rooms' : ->
+        rooms <~ SC._rooms 
+        @response.type \application/json
+        @response.json 200 rooms
   @get '/_from/:template': ->
     room = new-room!
     template = @params.template
@@ -168,6 +215,10 @@
     {snapshot} <~ SC._get template, IO
     <~ SC._put room, snapshot
     @response.redirect if KEY then "#BASEPATH/#room/edit" else "#BASEPATH/#room"
+  @get '/_exists/:room' : ->
+    exists <~ SC._exists @params.room
+    @response.type \application/json
+    @response.json (exists === 1)
 
   @get '/:room': ->
     ui-file = if @params.room is /^=/ then \multi/index.html else \index.html
@@ -176,12 +227,27 @@
         sendFile(ui-file).call @
       else @response.redirect "#BASEPATH/#{ @params.room }?auth=0"
     else sendFile(ui-file).call @
+    
+  # Form/App - auto duplicate sheet for new user to input data 
+  @get '/:template/form': ->
+    template = @params.template
+    room = template + \_ + new-room!
+    delete SC[room]
+    {snapshot} <~ SC._get template, IO
+    <~ SC._put room, snapshot
+    @response.redirect "#BASEPATH/#room/app" 
+  @get '/:template/appeditor': sendFile \panels.html    
+
   @get '/:room/edit': ->
     room = @params.room
     @response.redirect "#BASEPATH/#room?auth=#{ hmac room }"
   @get '/:room/view': ->
     room = @params.room
-    @response.redirect "#BASEPATH/#room?auth=0"
+    #@response.redirect "#BASEPATH/#room?auth=0"
+    @response.redirect "#BASEPATH/#room?auth=#{ hmac room }&view=1"
+  @get '/:room/app': ->
+    room = @params.room
+    @response.redirect "#BASEPATH/#room?auth=#{ hmac room }&app=1"
   @get '/_/:room/cells/:cell': api -> [Json
     (sc, cb) ~> sc.exportCell @cell, cb
   ]
@@ -197,6 +263,7 @@
   @get '/_/:room': api -> [Text, it]
 
   request-to-command = (request, cb) ->
+    #console.log "request-to-command"
     if request.is \application/json
       command = request.body?command
       return cb command if command
@@ -215,6 +282,7 @@
       return cb "loadclipboard #save"
 
   request-to-save = (request, cb) ->
+    #console.log "request-to-save"
     if request.is \application/json
       snapshot = request.body?snapshot
       return cb snapshot if snapshot
@@ -254,6 +322,7 @@
     @response.send 201 \OK
 
   @put '/_/:room': ->
+    #console.log "put /_/:room"
     @response.type Text
     {room} = @params
     snapshot <~ request-to-save @request
@@ -265,6 +334,7 @@
     @response.send 201 \OK
 
   @post '/_/:room': ->
+    #console.log "post /_/:room"
     {room} = @params
     return if room is \Kaohsiung-explode-20140801
     command <~ request-to-command @request
@@ -305,6 +375,7 @@
     @response.json 202 {command}
 
   @post '/_': ->
+    #console.log "post /_/:room"
     snapshot <~ request-to-save @request
     room = @body?room || new-room!
     <~ SC._put room, snapshot
@@ -312,7 +383,16 @@
     @response.location "/_/#room"
     @response.send 201 "/#room"
 
+  @delete '/_/:room': ->
+    @response.type Text
+    {room} = @params
+    SC[room]?terminate!
+    delete SC[room]
+    <~ SC._del room
+    @response.send 201 \OK
+
   @on disconnect: !->
+    console.log "on disconnect"
     { id } = @socket
     if IO.sockets.manager?roomClients?
       # socket.io 0.9.x
@@ -332,13 +412,16 @@
 
   @on data: !->
     {room, msg, user, ecell, cmdstr, type, auth} = @data
+    # eddy
+    #console.log "on data: " {...@data} 
     room = "#room" - /^_+/ # preceding underscore is reserved
     DB.expire "snapshot-#room", EXPIRE if EXPIRE
     reply = (data) ~> @emit {data}
     broadcast = (data) ~>
       @socket.broadcast.to do
-        if @data.to then "user-#{@data.to}" else "log-#room"
+        if @data.to then "user-#{@data.to}" else "log-#{data.room}"
       .emit \data data
+      if data.include_self? == true then @emit \data data   #message from server, so send to self as well
     switch type
     | \chat
       <~ DB.rpush "chat-#room" msg
@@ -349,22 +432,50 @@
     | \my.ecell
       DB.hset "ecell-#room", user, ecell
     | \execute
-      return if auth is \0
       return if cmdstr is /^set sheet defaulttextvalueformat text-wiki\s*$/
-      if KEY and hmac(room) isnt auth
-        reply { type: \error, message: "Invalid session key. Modifications will not be saved." }
-        return
       <~ DB.multi!
         .rpush "log-#room" cmdstr
         .rpush "audit-#room" cmdstr
         .bgsave!.exec!
+      commandParameters = cmdstr.split("\r")       
       unless SC[room]?
         console.log "SC[#room] went away. Reloading..."
         _, [snapshot, log] <~ DB.multi!get("snapshot-#room").lrange("log-#room", 0, -1).exec
         SC[room] = SC._init snapshot, log, DB, room, @io
+      # eddy @on data {
+      if commandParameters[0].trim() is \submitform
+        console.log "test SC[#{room}] submitform..."      
+        unless SC["#{room}_formdata"]?
+          console.log "Submitform. loading... SC[#{room}_formdata]"
+          _, [snapshot, log] <~ DB.multi!get("snapshot-#{room}_formdata").lrange("log-#{room}_formdata", 0, -1).exec
+          SC["#{room}_formdata"] = SC._init snapshot, log, DB, "#{room}_formdata", @io   
+        # add form values to last row of formdata sheet
+        attribs <-! SC["#{room}_formdata"]?exportAttribs
+        console.log "sheet attribs:" { ...attribs }       
+        formrow = for let datavalue, formDataIndex in commandParameters when formDataIndex != 0
+          "set #{String.fromCharCode(64 + formDataIndex)+(attribs.lastrow+1)} text t #datavalue" 
+          #SocialCalc.crToCoord(formDataIndex, attribs.lastrow+1)}                   
+        #cmdstrformdata = "set A3 text t abc"   
+        cmdstrformdata = formrow.join("\n")
+        console.log "cmdstrformdata:"+cmdstrformdata        
+        <~ DB.multi!
+          .rpush "log-#{room}_formdata" cmdstrformdata
+          .rpush "audit-#{room}_formdata" cmdstrformdata
+          .bgsave!.exec!
+        SC["#{room}_formdata"]?ExecuteCommand cmdstrformdata
+        broadcast { room:"#{room}_formdata", user, type, auth, cmdstr: cmdstrformdata, +include_self }
+      # }eddy @on data 
       SC[room]?ExecuteCommand cmdstr
       broadcast @data
     | \ask.log
+      # eddy @on data {
+      #ignore requests for log if startup up database
+      if typeof DB.DB == 'undefined'
+        console.log "ignore connection request, no database yet!"      
+        reply { type: \ignore }
+        return
+      # } eddy @on data         
+      console.log "join [log-#{room}] [user-#user]"
       @socket.join "log-#room"
       @socket.join "user-#user"
       _, [snapshot, log, chat] <~ DB.multi!

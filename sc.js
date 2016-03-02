@@ -5,7 +5,9 @@
   fs = require('fs');
   path = require('path');
   bootSC = fs.readFileSync(path.dirname(fs.realpathSync(__filename)) + "/SocialCalcModule.js", 'utf8');
-  global.SC == null && (global.SC = {});
+  global.SC == null && (global.SC = {
+    console: console
+  });
   argv = (function(){
     try {
       return require('optimist').boolean(['vm', 'polling']).argv;
@@ -140,10 +142,6 @@
       if (argv.vm) {
         throw 'vm';
       }
-      if (parseInt(process.versions.node.slice(2)) > 10 || parseInt(process.versions.node[0])) {
-        console.log("Note: Threading with Node " + process.versions.node + " is work in progress.\n=>> https://github.com/audreyt/node-webworker-threads/issues/48");
-        throw 'too-new';
-      }
       console.log("Starting backend using webworker-threads");
       return require('webworker-threads').Worker;
     } catch (e$) {
@@ -207,10 +205,12 @@
     return Worker;
   }()));
   this.include = function(){
-    var DB, EXPIRE;
+    var DB, EXPIRE, emailer, dataDir;
     DB = this.include('db');
     EXPIRE = this.EXPIRE;
-    SC.csvToSave = function(csv, cb){
+    emailer = this.include('emailer');
+    dataDir = process.env.OPENSHIFT_DATA_DIR;
+    SC._csvToSave = function(csv, cb){
       var w;
       w = new Worker;
       return w.thread.eval(bootSC, function(){
@@ -253,6 +253,35 @@
         return typeof cb == 'function' ? cb() : void 8;
       });
     };
+    SC._del = function(room, cb){
+      var this$ = this;
+      return DB.multi().del(["snapshot-" + room, "log-" + room, "chat-" + room, "ecell-" + room, "audit-" + room]).bgsave().exec(function(){
+        return typeof cb == 'function' ? cb() : void 8;
+      });
+    };
+    SC._rooms = function(cb){
+      var this$ = this;
+      return DB.multi().keys('snapshot-*').exec(function(arg$, arg1$){
+        var rooms;
+        rooms = arg1$[0];
+        return cb((function(){
+          var i$, x$, ref$, len$, results$ = [];
+          for (i$ = 0, len$ = (ref$ = rooms).length; i$ < len$; ++i$) {
+            x$ = ref$[i$];
+            results$.push(x$.replace(/^snapshot-/, ""));
+          }
+          return results$;
+        }()));
+      });
+    };
+    SC._exists = function(room, cb){
+      var this$ = this;
+      return DB.multi().exists("snapshot-" + room).exec(function(arg$, arg1$){
+        var x;
+        x = arg1$[0];
+        return cb(x);
+      });
+    };
     SC._init = function(snapshot, log, DB, room, io){
       var w, this$ = this;
       log == null && (log = []);
@@ -262,12 +291,32 @@
       }
       w = new Worker(function(){
         return self.onmessage = function(arg$){
-          var ref$, type, ref, snapshot, command, room, log, ref1$, csv, alert, ss, parts, cmdstr, line;
+          var ref$, type, ref, snapshot, command, room, log, ref1$, commandParameters, csv, alert, ss, parts, cmdstr, line;
           ref$ = arg$.data, type = ref$.type, ref = ref$.ref, snapshot = ref$.snapshot, command = ref$.command, room = ref$.room, log = (ref1$ = ref$.log) != null
             ? ref1$
             : [];
           switch (type) {
           case 'cmd':
+            commandParameters = command.split(" ");
+            if (commandParameters[0] === 'settimetrigger') {
+              postMessage({
+                type: 'setcrontrigger',
+                timetriggerdata: {
+                  cell: commandParameters[1],
+                  times: commandParameters[2]
+                }
+              });
+            }
+            if (commandParameters[0] === 'sendemail') {
+              postMessage({
+                type: 'sendemailout',
+                emaildata: {
+                  to: commandParameters[1].replace(/%20/g, ' '),
+                  subject: commandParameters[2].replace(/%20/g, ' '),
+                  body: commandParameters[3].replace(/%20/g, ' ')
+                }
+              });
+            }
             return window.ss.ExecuteCommand(command);
           case 'recalc':
             return SocialCalc.RecalcLoadedSheet(ref, snapshot, true);
@@ -378,7 +427,6 @@
         });
         w._snapshot = newSnapshot;
         return DB.multi().set("snapshot-" + room, newSnapshot).del("log-" + room).bgsave().exec(function(){
-          console.log("==> Regenerated snapshot for " + room);
           if (EXPIRE) {
             return DB.expire("snapshot-" + room, EXPIRE);
           }
@@ -388,8 +436,8 @@
         return console.log(it);
       };
       w.onmessage = function(arg$){
-        var ref$, type, snapshot, html, csv, ref, parts, save;
-        ref$ = arg$.data, type = ref$.type, snapshot = ref$.snapshot, html = ref$.html, csv = ref$.csv, ref = ref$.ref, parts = ref$.parts, save = ref$.save;
+        var ref$, type, snapshot, html, csv, ref, parts, save, emaildata, timetriggerdata, this$ = this;
+        ref$ = arg$.data, type = ref$.type, snapshot = ref$.snapshot, html = ref$.html, csv = ref$.csv, ref = ref$.ref, parts = ref$.parts, save = ref$.save, emaildata = ref$.emaildata, timetriggerdata = ref$.timetriggerdata;
         switch (type) {
         case 'snapshot':
           return w.onSnapshot(snapshot);
@@ -399,6 +447,46 @@
           return w.onHtml(html);
         case 'csv':
           return w.onCsv(csv);
+        case 'setcrontrigger':
+          console.log("set cron " + room);
+          return DB.get("cron-nextTriggerTime", function(arg$, nextTriggerTime){
+            var scheduledNextTriggerTime, timeNowMins, triggerTimeList, res$, i$, ref$, len$, nextTime;
+            scheduledNextTriggerTime = nextTriggerTime;
+            timeNowMins = Math.floor(new Date().getTime() / (1000 * 60));
+            console.log("timeNowMins " + timeNowMins + " .dataDir " + dataDir);
+            nextTriggerTime == null && (nextTriggerTime = 2147483647);
+            res$ = [];
+            for (i$ = 0, len$ = (ref$ = timetriggerdata.times.split(",")).length; i$ < len$; ++i$) {
+              nextTime = ref$[i$];
+              if (nextTime >= timeNowMins) {
+                if (nextTriggerTime > nextTime) {
+                  nextTriggerTime = nextTime;
+                }
+                res$.push(nextTime);
+              }
+            }
+            triggerTimeList = res$;
+            if (scheduledNextTriggerTime !== nextTriggerTime) {
+              fs.writeFileSync(dataDir + "/nextTriggerTime.txt", nextTriggerTime, 'utf8');
+            }
+            if (triggerTimeList.length === 0) {
+              return DB.hdel("cron-list", room + "!" + timetriggerdata.cell, function(){});
+            } else {
+              return DB.multi().hset("cron-list", room + "!" + timetriggerdata.cell, triggerTimeList.toString()).set("cron-nextTriggerTime", nextTriggerTime).bgsave().exec(function(){
+                return DB.hgetall("cron-list", function(arg$, allTimeTriggers){
+                  return console.log("allTimeTriggers", (import$({}, allTimeTriggers)), " nextTriggerTime " + nextTriggerTime);
+                });
+              });
+            }
+          });
+        case 'sendemailout':
+          console.log("onmessage " + emaildata.to);
+          return emailer.sendemail(emaildata.to, emaildata.subject, emaildata.body, function(message){
+            return io.sockets['in']("log-" + room).emit('data', {
+              type: 'confirmemailsent',
+              message: message
+            });
+          });
         case 'load-sheet':
           return SC._get(ref, io, function(){
             if (SC[ref]) {
@@ -577,14 +665,16 @@
         };
       }
       w._eval = function(code, cb){
-        return w.thread.eval(code, function(arg$, rv){
-          if (rv != null) {
-            return cb(rv);
-          }
+        return setTimeout(function(){
           return w.thread.eval(code, function(arg$, rv){
-            return cb(rv);
+            if (rv != null) {
+              return cb(rv);
+            }
+            return w.thread.eval(code, function(arg$, rv){
+              return cb(rv);
+            });
           });
-        });
+        }, 100);
       };
       if (IsThreaded) {
         w._eval = function(code, cb){
@@ -669,6 +759,27 @@
       w.exportCells = function(cb){
         return w._eval("JSON.stringify(window.ss.sheet.cells)", cb);
       };
+      w.exportAttribs = function(cb){
+        return w._eval("window.ss.sheet.attribs", cb);
+      };
+      w.triggerActionCell = function(coord, cb){
+        return w._eval("window.ss.SocialCalc.TriggerIoAction.Email('" + coord + "')", function(emailcmd){
+          var i$, len$, nextEmail, res$, j$, len1$, addSpaces, emailto, subject, body;
+          for (i$ = 0, len$ = emailcmd.length; i$ < len$; ++i$) {
+            nextEmail = emailcmd[i$];
+            res$ = [];
+            for (j$ = 0, len1$ = nextEmail.length; j$ < len1$; ++j$) {
+              addSpaces = nextEmail[j$];
+              res$.push(addSpaces.replace(/%20/g, ' '));
+            }
+            nextEmail = res$;
+            emailto = nextEmail[0], subject = nextEmail[1], body = nextEmail[2];
+            emailer.sendemail(emailto, subject, body, fn$);
+          }
+          return cb(emailcmd);
+          function fn$(message){}
+        });
+      };
       w.thread.eval(bootSC, function(){
         return w.postMessage({
           type: 'init',
@@ -681,6 +792,9 @@
     };
     return SC;
   };
+  function import$(obj, src){
+    var own = {}.hasOwnProperty;
+    for (var key in src) if (own.call(src, key)) obj[key] = src[key];
+    return obj;
+  }
 }).call(this);
-
-//# sourceMappingURL=sc.js.map

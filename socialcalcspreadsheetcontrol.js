@@ -199,6 +199,10 @@ SocialCalc.SpreadsheetControl = function(idPrefix) {
 
    // Initialization Code:
 
+   // eddy Initialization {
+   if(typeof SocialCalc.debug_log === 'undefined') SocialCalc.debug_log = [];   
+   // }   
+   
    this.sheet = new SocialCalc.Sheet();
    this.context = new SocialCalc.RenderContext(this.sheet);
    this.context.showGrid=true;
@@ -766,6 +770,42 @@ SocialCalc.SpreadsheetControl = function(idPrefix) {
                   str += SocialCalc.special_chars(stack[i].command[j]) + "<br>";
                   }
                }
+			// --------------------------------------------   
+ 		    // eddy log {
+
+			// --------------------------------------------   
+			var ObjToSource = function(o){
+				if (typeof(o) == "string") return o;
+				if (!o) return 'null';
+				if (typeof(o) == "object") {
+					if (!ObjToSource.check) ObjToSource.check = new Array();
+					for (var i=0, k=ObjToSource.check.length ; i<k ; ++i) {
+						if (ObjToSource.check[i] == o) {return '{}';}
+					}
+					ObjToSource.check.push(o);
+				}
+				var k="",na=typeof(o.length)=="undefined"?1:0,str="";
+				for(var p in o){
+					if (na) k = "'"+p+ "':";
+					if (typeof o[p] == "string") str += k + "'" + o[p]+"',";
+					else if (typeof o[p] == "object") str += k + ObjToSource(o[p])+",";
+					else str += k + o[p] + ",";
+				}
+				if (typeof(o) == "object") ObjToSource.check.pop();
+				if (na) return "{"+str.slice(0,-1)+"}";
+				else return "["+str.slice(0,-1)+"]";
+			}
+			
+			// --------------------------------------------   
+			
+		    if(typeof SocialCalc.debug_log != 'undefined') {
+				for(var index in SocialCalc.debug_log) { 
+					str += ObjToSource(SocialCalc.debug_log[index]) + "<br>";
+				}
+			}
+		    // }   
+			// --------------------------------------------   
+			   
             s.views.audit.element.innerHTML = str+"</td></tr></table>";
             SocialCalc.CmdGotFocus(true);
             },
@@ -866,6 +906,7 @@ SocialCalc.SpreadsheetControl = function(idPrefix) {
 
    }
 
+   
 // Methods:
 
 SocialCalc.SpreadsheetControl.prototype.InitializeSpreadsheetControl =
@@ -1028,7 +1069,7 @@ spreadsheet.Buttons = {
    spreadsheet.formulabarDiv.innerHTML = '<input type="text" size="60" value="">&nbsp;'; //'<textarea rows="4" cols="60" style="z-index:5;background-color:white;position:relative;"></textarea>&nbsp;';
    spreadsheet.spreadsheetDiv.appendChild(spreadsheet.formulabarDiv);
    var inputbox = new SocialCalc.InputBox(spreadsheet.formulabarDiv.firstChild, spreadsheet.editor);
-
+   
    for (button in spreadsheet.formulabuttons) {
       bele = document.createElement("img");
       bele.id = spreadsheet.idPrefix+button;
@@ -1094,14 +1135,37 @@ spreadsheet.Buttons = {
 
    // create sheet view and others
 
-   spreadsheet.nonviewheight = spreadsheet.statuslineheight +
-      spreadsheet.spreadsheetDiv.firstChild.offsetHeight +
-      spreadsheet.spreadsheetDiv.lastChild.offsetHeight;
+   // InitializeSpreadsheetControl eddy {
+   SocialCalc.CalculateSheetNonViewHeight(spreadsheet);
+   // } InitializeSpreadsheetControl
    spreadsheet.viewheight = spreadsheet.height-spreadsheet.nonviewheight;
    spreadsheet.editorDiv=spreadsheet.editor.CreateTableEditor(spreadsheet.width, spreadsheet.viewheight);
 
+// eddy test add input 
+   var appViewDiv = document.createElement("div");
+   appViewDiv.id = "te_appView";
+   
+   appViewDiv.appendChild(spreadsheet.editorDiv)
+   spreadsheet.editorDiv = appViewDiv;
+
+   var formDataDiv = document.createElement("div");
+   formDataDiv.id = "te_formData";
+   //formDataDiv.style.visibility = "hidden";
+   formDataDiv.style.display = "none";
+   //formDataDiv.style.display = "inline";
+   
+  // spreadsheet.spreadsheetDiv.appendChild(formDataDiv);   
+   spreadsheet.editorDiv.appendChild(formDataDiv);
+       
+// }
+      
    spreadsheet.spreadsheetDiv.appendChild(spreadsheet.editorDiv);
 
+// eddy test add input 
+   spreadsheet.formDataViewer = new SocialCalc.SpreadsheetViewer("te_FormData-"); // should end with -
+   spreadsheet.formDataViewer.InitializeSpreadsheetViewer(formDataDiv.id, 180, 0, 200);
+// end
+   
    for (vname in views) {
       html = views[vname].html;
       for (style in views[vname].replacements) {
@@ -1159,6 +1223,20 @@ spreadsheet.Buttons = {
    return;
 
    }
+
+
+// eddy CalculateSheetNonViewHeight {
+SocialCalc.CalculateSheetNonViewHeight = function(spreadsheet) {
+  spreadsheet.nonviewheight = spreadsheet.statuslineheight;
+  for(var nodeIndex = 0;  nodeIndex < spreadsheet.spreadsheetDiv.childNodes.length;  nodeIndex++ ) {
+    if(spreadsheet.spreadsheetDiv.childNodes[nodeIndex].id == "SocialCalc-statusline") continue;
+    spreadsheet.nonviewheight += spreadsheet.spreadsheetDiv.childNodes[nodeIndex].offsetHeight;
+  }
+  
+}
+
+// }
+
 
 //
 // outstr = SocialCalc.LocalizeString(str)
@@ -1637,7 +1715,6 @@ SocialCalc.DoCmd = function(obj, which) {
                 var cells = spreadsheet.sheet.cells; 
                 var min_col = -1, max_col = -1, min_row = -1, max_row = -1;
                 for (var cell_id in cells) {
-                    cell = cells[cell_id];
                     var cr = SocialCalc.coordToCr(cell_id);
                     if (min_row == -1 || cr.row < min_row) {
                         min_row = cr.row;

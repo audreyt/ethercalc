@@ -17,28 +17,31 @@ ETHERCALC_FILES=\
 	static/jquery.js \
 	static/vex.combined.min.js
 
-JS_FILES=\
-	app.js dotcloud.js player.js main.js sc.js db.js
+LS_FILES=$(wildcard src/*.ls)
+
+JS_FILES=$(LS_FILES:src/%.ls=%.js)
 
 UGLIFYJS_ARGS = -c -m
 ifdef DEBUG
   UGLIFYJS_ARGS += -b
 endif
 
-all :: depends
-	env PATH="$$PATH:./node_modules/livescript/bin" lsc -m linked --c -o . src
-	node app.js $(ETHERCALC_ARGS) --cors
+run: all
+	node app.js --cors $(ETHERCALC_ARGS)
+
+vm: all
+	node app.js --vm $(ETHERCALC_ARGS)
+
+expire: all
+	node app.js --expire 10 $(ETHERCALC_ARGS)
+
+all: SocialCalcModule.js depends $(JS_FILES)
+
+$(JS_FILES): %.js: src/%.ls
+	env PATH="$$PATH:./node_modules/livescript/bin" lsc -c -o . $<
 
 manifest ::
 	perl -pi -e 's/# [A-Z].*\n/# @{[`date`]}/m' manifest.appcache
-
-vm :: SocialCalcModule.js
-	env PATH="$$PATH:./node_modules/livescript/bin" lsc -m linked -c -o . src
-	node app.js --vm $(ETHERCALC_ARGS)
-
-expire :: SocialCalcModule.js
-	env PATH="$$PATH:./node_modules/livescript/bin" lsc -m linked -c -o . src
-	node app.js --expire 10 $(ETHERCALC_ARGS)
 
 ./node_modules/streamline/bin/_node :
 	npm i --dev
@@ -46,9 +49,9 @@ expire :: SocialCalcModule.js
 static/multi.js :: multi/main.ls multi/styles.styl
 	webpack --optimize-minimize
 
-depends :: app.js static/ethercalc.js static/start.css static/multi.js
+depends: app.js static/ethercalc.js static/start.css static/multi.js
 
-SocialCalcModule.js :: $(SOCIALCALC_FILES) exports.js
+SocialCalcModule.js: $(SOCIALCALC_FILES) exports.js
 	cat $(SOCIALCALC_FILES) exports.js > $@
 
 static/ethercalc.js: $(ETHERCALC_FILES) SocialCalcModule.js
@@ -66,7 +69,5 @@ static/ethercalc.js: $(ETHERCALC_FILES) SocialCalcModule.js
 clean ::
 	@-rm $(JS_FILES)
 
-push ::
-	dotcloud push ethercalc
-
-.SUFFIXES: .js .coffee .css .sass .ls
+.SUFFIXES: .js .css .sass .ls
+.PHONY: run vm expire all clean depends

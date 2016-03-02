@@ -68,7 +68,7 @@
   "defaultFormatt": "[h]:mm:ss",
   "defaultDisplayTRUE": "VRAI",
   "defaultDisplayFALSE": "FAUX",
-  "defaultImagePrefix": "images/sc_",
+  "_comment": "use socialcalcconstants defaultImagePrefix",
   "defaultTableEditorIDPrefix": "te_",
   "defaultPageUpDnAmount": 15,
   "AllowCtrlS": true,
@@ -555,7 +555,9 @@
     "financial",
     "test",
     "math",
-    "text"
+    "text",
+    "gui",
+    "action"
   ],
   "s_fclass_all": "Tout",
   "s_fclass_stat": "Statistiques",
@@ -565,6 +567,8 @@
   "s_fclass_test": "Test",
   "s_fclass_math": "Maths",
   "s_fclass_text": "Texte",
+  "s_fclass_action": "Email & Copy", 
+  "s_fclass_gui": "Button & Input",
   "lastone": null,
 
   "s_loc_plain": "Uni",
