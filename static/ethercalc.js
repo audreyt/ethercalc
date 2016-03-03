@@ -1545,6 +1545,7 @@ SocialCalc.RecalcTimerRoutine = function() {
             }
           }
           l.inrecalc = !1;
+          h.reRenderCellList = h.recalcdata.celllist;
           delete h.recalcdata;
           delete h.attribs.needsrecalc;
           g.sheet = h.previousrecalcsheet || null;
@@ -2638,7 +2639,7 @@ SocialCalc.TableEditor.prototype.MoveECellWithKey = function(a) {
   return SocialCalc.MoveECellWithKey(this, a);
 };
 SocialCalc.TableEditor.prototype.MoveECell = function(a) {
-  return SocialCalc.MoveECell(this, a);
+  return SocialCalc._app ? "A1" : SocialCalc.MoveECell(this, a);
 };
 SocialCalc.TableEditor.prototype.ReplaceCell = function(a, b, c) {
   SocialCalc.ReplaceCell(this, a, b, c);
@@ -2875,7 +2876,15 @@ SocialCalc.LoadEditorSettings = function(a, b, c) {
 };
 SocialCalc.EditorRenderSheet = function(a) {
   a.EditorMouseUnregister();
-  a.fullgrid = a.context.RenderSheet(a.fullgrid);
+  var b = a.context.sheetobj;
+  if (null != b.reRenderCellList && SocialCalc._app && 2 < a.griddiv.firstChild.lastChild.childNodes.length) {
+    for (var c in b.reRenderCellList) {
+      var d = b.reRenderCellList[c];
+      "i" != b.cells[d].valuetype.charAt(1) && (cr = SocialCalc.coordToCr(d), cell = SocialCalc.GetEditorCellElement(a, cr.row, cr.col), a.ReplaceCell(cell, cr.row, cr.col));
+    }
+  } else {
+    a.fullgrid = a.context.RenderSheet(a.fullgrid);
+  }
   a.ecell && a.SetECellHeaders("selected");
   SocialCalc.AssignID(a, a.fullgrid, "fullgrid");
   SocialCalc._app || (a.fullgrid.className = "te_download");
@@ -2927,7 +2936,7 @@ SocialCalc.EditorSheetStatusCallback = function(a, b, c, d) {
     case "cmdend":
       f(b);
       a.changedrendervalues && (d.context.PrecomputeSheetFontsAndLayouts(), d.context.CalculateCellSkipData(), a.changedrendervalues = !1);
-      a.celldisplayneeded && !a.renderneeded && (cr = SocialCalc.coordToCr(a.celldisplayneeded), b = SocialCalc.GetEditorCellElement(d, cr.row, cr.col), d.ReplaceCell(b, cr.row, cr.col));
+      a.celldisplayneeded && !a.renderneeded && "e#N/A" != a.cells[a.celldisplayneeded].valuetype && (cr = SocialCalc.coordToCr(a.celldisplayneeded), b = SocialCalc.GetEditorCellElement(d, cr.row, cr.col), d.ReplaceCell(b, cr.row, cr.col));
       if (d.deferredCommands.length) {
         a = d.deferredCommands.shift();
         d.EditorScheduleSheetCommands(a.cmdstr, a.saveundo, !0);
@@ -2966,7 +2975,7 @@ SocialCalc.EditorSheetStatusCallback = function(a, b, c, d) {
       break;
     case "calcfinished":
       f(b);
-      !0 != d.skipNextRender ? d.ScheduleRender() : d.skipNextRender = !1;
+      d.ScheduleRender();
       return;
     case "schedrender":
       d.busy = !0;
@@ -5259,7 +5268,7 @@ SocialCalc.ProcessKeyDown = function(a) {
   b.statusFromProcessKey = !1;
   b.repeatingKeyPress = !1;
   var c = "", d = !0;
-  if (!SocialCalc.Keyboard.passThru) {
+  if (!SocialCalc._app && !SocialCalc.Keyboard.passThru) {
     a = a || window.event;
     if (void 0 == a.which) {
       c = b.specialKeysCommon[a.keyCode];
@@ -5289,7 +5298,7 @@ SocialCalc.ProcessKeyDown = function(a) {
 SocialCalc.ProcessKeyPress = function(a) {
   var b = SocialCalc.keyboardTables, c = "";
   a = a || window.event;
-  if (!SocialCalc.Keyboard.passThru) {
+  if (!SocialCalc._app && !SocialCalc.Keyboard.passThru) {
     if (b.didProcessKey) {
       if (b.repeatingKeyPress) {
         return SocialCalc.ProcessKey(b.chForProcessKey, a);
@@ -7698,25 +7707,18 @@ SocialCalc.Formula.IoFunctions = function(a, b, c, d) {
   }
   g.PushOperand(b, l, h);
 };
-SocialCalc.Formula.FunctionList.BUTTON = [SocialCalc.Formula.IoFunctions, 1, "label", "", "gui", '<button type=\'button\' onmouseleave="SocialCalc.TriggerIoAction.ActivateRender();" onmousedown="SocialCalc.TriggerIoAction.DelayRender();" onclick="SocialCalc.TriggerIoAction.Button(\'<%=cell_reference%>\');SocialCalc.TriggerIoAction.ActivateRender();"><%=formated_value%></button>'];
-SocialCalc.Formula.FunctionList.EMAIL = [SocialCalc.Formula.IoFunctions, -3, "to_range subject_range, body_range", "", "action", '<button type=\'button\' onmouseleave="SocialCalc.TriggerIoAction.ActivateRender();" onmousedown="SocialCalc.TriggerIoAction.DelayRender();" onclick="SocialCalc.TriggerIoAction.Email(\'<%=cell_reference%>\');SocialCalc.TriggerIoAction.ActivateRender();"><%=formated_value%></button>', "ParameterList"];
-SocialCalc.Formula.FunctionList.EMAILIF = [SocialCalc.Formula.IoFunctions, -4, "condition_range, to_range subject_range, body_range", "", "action", '<button type=\'button\' onmouseleave="SocialCalc.TriggerIoAction.ActivateRender();" onmousedown="SocialCalc.TriggerIoAction.DelayRender();" onclick="SocialCalc.TriggerIoAction.Email(\'<%=cell_reference%>\');SocialCalc.TriggerIoAction.ActivateRender();"><%=formated_value%></button>', "ParameterList"];
-SocialCalc.Formula.FunctionList.EMAILONEDIT = [SocialCalc.Formula.IoFunctions, -4, "editRange, to_range subject_range, body_range", "", "action", '<button type=\'button\' onmouseleave="SocialCalc.TriggerIoAction.ActivateRender();" onmousedown="SocialCalc.TriggerIoAction.DelayRender();" onclick="SocialCalc.TriggerIoAction.Email(\'<%=cell_reference%>\');SocialCalc.TriggerIoAction.ActivateRender();"><%=formated_value%></button>', "EventTree"];
-SocialCalc.Formula.FunctionList.EMAILAT = [SocialCalc.Formula.IoFunctions, -4, "datetime_value, to_range subject_range, body_range", "", "action", '<button type=\'button\' onmouseleave="SocialCalc.TriggerIoAction.ActivateRender();" onmousedown="SocialCalc.TriggerIoAction.DelayRender();" onclick="SocialCalc.TriggerIoAction.Email(\'<%=cell_reference%>\');SocialCalc.TriggerIoAction.ActivateRender();"><%=formated_value%></button>', "TimeTrigger"];
-SocialCalc.Formula.FunctionList.EMAILONEDITIF = [SocialCalc.Formula.IoFunctions, -5, "editRange, condition, to_range subject_range, body_range", "", "action", '<button type=\'button\' onmouseleave="SocialCalc.TriggerIoAction.ActivateRender();" onmousedown="SocialCalc.TriggerIoAction.DelayRender();" onclick="SocialCalc.TriggerIoAction.Email(\'<%=cell_reference%>\');SocialCalc.TriggerIoAction.ActivateRender();"><%=formated_value%></button>', "EventTree"];
-SocialCalc.Formula.FunctionList.EMAILATIF = [SocialCalc.Formula.IoFunctions, -5, "datetime_value, condition, to_range subject_range, body_range", "", "action", '<button type=\'button\' onmouseleave="SocialCalc.TriggerIoAction.ActivateRender();" onmousedown="SocialCalc.TriggerIoAction.DelayRender();" onclick="SocialCalc.TriggerIoAction.Email(\'<%=cell_reference%>\');SocialCalc.TriggerIoAction.ActivateRender();"><%=formated_value%></button>', "TimeTrigger"];
-SocialCalc.Formula.FunctionList.SUBMIT = [SocialCalc.Formula.IoFunctions, 100, "[label]", "", "action", '<button type=\'button\' onmouseleave="SocialCalc.TriggerIoAction.ActivateRender();" onmousedown="SocialCalc.TriggerIoAction.DelayRender();" onclick="SocialCalc.TriggerIoAction.Submit(\'<%=cell_reference%>\');SocialCalc.TriggerIoAction.ActivateRender();"><%=formated_value%></button>', "ParameterList"];
+SocialCalc.Formula.FunctionList.BUTTON = [SocialCalc.Formula.IoFunctions, 1, "label", "", "gui", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Button('<%=cell_reference%>');\"><%=formated_value%></button>"];
+SocialCalc.Formula.FunctionList.EMAIL = [SocialCalc.Formula.IoFunctions, -3, "to_range subject_range, body_range", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList"];
+SocialCalc.Formula.FunctionList.EMAILIF = [SocialCalc.Formula.IoFunctions, -4, "condition_range, to_range subject_range, body_range", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList"];
+SocialCalc.Formula.FunctionList.EMAILONEDIT = [SocialCalc.Formula.IoFunctions, -4, "editRange, to_range subject_range, body_range", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "EventTree"];
+SocialCalc.Formula.FunctionList.EMAILAT = [SocialCalc.Formula.IoFunctions, -4, "datetime_value, to_range subject_range, body_range", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "TimeTrigger"];
+SocialCalc.Formula.FunctionList.EMAILONEDITIF = [SocialCalc.Formula.IoFunctions, -5, "editRange, condition, to_range subject_range, body_range", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "EventTree"];
+SocialCalc.Formula.FunctionList.EMAILATIF = [SocialCalc.Formula.IoFunctions, -5, "datetime_value, condition, to_range subject_range, body_range", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "TimeTrigger"];
+SocialCalc.Formula.FunctionList.SUBMIT = [SocialCalc.Formula.IoFunctions, 100, "[label]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Submit('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList"];
 SocialCalc.Formula.FunctionList.TEXTBOX = [SocialCalc.Formula.IoFunctions, 1, "value", "", "gui", "<input type='text' id='TEXTBOX_<%=cell_reference%>' onblur='SocialCalc.CmdGotFocus(null);' onchange=\"SocialCalc.TriggerIoAction.TextBox('<%=cell_reference%>')\" value='<%=display_value%>' >", "Input"];
 SocialCalc.Formula.FunctionList.CHECKBOX = [SocialCalc.Formula.IoFunctions, 1, "value", "", "gui", "<input type='checkbox' id='CHECKBOX_<%=cell_reference%>' <%=checked%> onblur='SocialCalc.CmdGotFocus(null);' onchange=\"SocialCalc.TriggerIoAction.CheckBox('<%=cell_reference%>')\" >", "Input"];
 SocialCalc.Formula.FunctionList.COPYVALUE = [SocialCalc.Formula.IoFunctions, 3, "trigger_cell, value_range, destinationCell(s)", "", "action", "", "EventTree"];
 SocialCalc.Formula.FunctionList.COPYFORMULA = [SocialCalc.Formula.IoFunctions, 3, "trigger_cell, formula_range, destinationCell(s)", "", "action", "", "EventTree"];
-SocialCalc.TriggerIoAction.DelayRender = function() {
-  window.spreadsheet.editor.skipNextRender = !0;
-};
-SocialCalc.TriggerIoAction.ActivateRender = function() {
-  !1 == window.spreadsheet.editor.skipNextRender && window.spreadsheet.editor.ScheduleRender();
-  window.spreadsheet.editor.skipNextRender = null;
-};
 SocialCalc.TriggerIoAction.Button = function(a) {
   var b = window.spreadsheet, c = b.sheet;
   if ("undefined" !== typeof c.ioEventTree && "undefined" !== typeof c.ioParameterList && "undefined" !== c.ioEventTree[a]) {
