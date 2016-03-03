@@ -414,7 +414,7 @@ SocialCalc.TableEditor.prototype.EditorSaveEdit = function(text) {return SocialC
 SocialCalc.TableEditor.prototype.EditorApplySetCommandsToRange = function(cmdline, type) {return SocialCalc.EditorApplySetCommandsToRange(this, cmdline, type);};
 
 SocialCalc.TableEditor.prototype.MoveECellWithKey = function(ch) {return SocialCalc.MoveECellWithKey(this, ch);};
-SocialCalc.TableEditor.prototype.MoveECell = function(newcell) {return SocialCalc.MoveECell(this, newcell);};
+SocialCalc.TableEditor.prototype.MoveECell = function(newcell) { if (SocialCalc._app) return "A1"; return SocialCalc.MoveECell(this, newcell);};
 SocialCalc.TableEditor.prototype.ReplaceCell = function(cell, row, col) {SocialCalc.ReplaceCell(this, cell, row, col);};
 SocialCalc.TableEditor.prototype.UpdateCellCSS = function(cell, row, col) {SocialCalc.UpdateCellCSS(this, cell, row, col);};
 SocialCalc.TableEditor.prototype.SetECellHeaders = function(selected) {SocialCalc.SetECellHeaders(this, selected);};
@@ -748,8 +748,20 @@ SocialCalc.EditorRenderSheet = function(editor) {
 
    editor.EditorMouseUnregister();
 
-   editor.fullgrid = editor.context.RenderSheet(editor.fullgrid);
-
+   var sheetobj = editor.context.sheetobj;
+   if(sheetobj.reRenderCellList != null && SocialCalc._app && editor.griddiv.firstChild.lastChild.childNodes.length >2) {
+     for(var index in sheetobj.reRenderCellList) {
+       var coord = sheetobj.reRenderCellList[index];
+       if(sheetobj.cells[coord].valuetype.charAt(1) != "i") {
+         cr = SocialCalc.coordToCr(coord);
+         cell = SocialCalc.GetEditorCellElement(editor, cr.row, cr.col);
+         editor.ReplaceCell(cell, cr.row, cr.col);
+       }
+     }
+   } else {
+      editor.fullgrid = editor.context.RenderSheet(editor.fullgrid);
+   }
+   
    if (editor.ecell) editor.SetECellHeaders("selected");
 
    SocialCalc.AssignID(editor, editor.fullgrid, "fullgrid"); // give it an id
@@ -847,10 +859,12 @@ SocialCalc.EditorSheetStatusCallback = function(recalcdata, status, arg, editor)
             }
 
          if (sheetobj.celldisplayneeded && !sheetobj.renderneeded) {
-            cr = SocialCalc.coordToCr(sheetobj.celldisplayneeded);
-            cell = SocialCalc.GetEditorCellElement(editor, cr.row, cr.col);
-            editor.ReplaceCell(cell, cr.row, cr.col);
-            }
+             if (sheetobj.cells[sheetobj.celldisplayneeded].valuetype != "e#N/A") {
+                cr = SocialCalc.coordToCr(sheetobj.celldisplayneeded);
+                cell = SocialCalc.GetEditorCellElement(editor, cr.row, cr.col);
+                editor.ReplaceCell(cell, cr.row, cr.col); // if no value set, wait for recalc and render . 
+                }
+             }
          if (editor.deferredCommands.length) {
             dcmd = editor.deferredCommands.shift();
             editor.EditorScheduleSheetCommands(dcmd.cmdstr, dcmd.saveundo, true);
@@ -914,11 +928,7 @@ SocialCalc.EditorSheetStatusCallback = function(recalcdata, status, arg, editor)
 
       case "calcfinished":
          signalstatus(status);
-         if(editor.skipNextRender!=true) { // onclick workaround: button mousedown event so skip next HTML render to allow onclick event to fire
-           editor.ScheduleRender();
-         } else {
-           editor.skipNextRender = false;
-         }
+         editor.ScheduleRender();                        
          return;
 
       case "schedrender":
@@ -6450,6 +6460,7 @@ SocialCalc.ProcessKeyDown = function(e) {
    var ch="";
    var status=true;
 
+   if (SocialCalc._app) return; // // ignore in app - widgets need control
    if (SocialCalc.Keyboard.passThru) return; // ignore
 
    e = e || window.event;
@@ -6499,7 +6510,8 @@ SocialCalc.ProcessKeyPress = function(e) {
    var ch="";
 
    e = e || window.event;
-
+   if (SocialCalc._app) return; // // ignore in app - widgets need control
+   
    if (SocialCalc.Keyboard.passThru) return; // ignore
    if (kt.didProcessKey) { // already processed this key
       if (kt.repeatingKeyPress) {

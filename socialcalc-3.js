@@ -3817,6 +3817,7 @@ SocialCalc.RecalcTimerRoutine = function() {
 
    recalcdata.inrecalc = false;
 
+   sheet.reRenderCellList = sheet.recalcdata.celllist;
    delete sheet.recalcdata; // save memory and clear out for name lookup formula evaluation
 
    delete sheet.attribs.needsrecalc; // remember recalc done
