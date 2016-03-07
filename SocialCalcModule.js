@@ -8092,24 +8092,28 @@ SocialCalc.EditorSheetStatusCallback = function(recalcdata, status, arg, editor)
 
          // Handle hidden column.
          if (sheetobj.hiddencolrow == "col") {
-            var col = editor.ecell.col;
-            while (sheetobj.colattribs.hide[SocialCalc.rcColname(col)] == "yes") {
-               col++;
+            if (editor.ecell !== null) {
+               var col = editor.ecell.col;
+               while (sheetobj.colattribs.hide[SocialCalc.rcColname(col)] == "yes") {
+                  col++;
+                  }
+               var coord = SocialCalc.crToCoord(col, editor.ecell.row);
+               editor.MoveECell(coord);
+               sheetobj.hiddencolrow = "";
                }
-            var coord = SocialCalc.crToCoord(col, editor.ecell.row);
-            editor.MoveECell(coord);
-            sheetobj.hiddencolrow = "";
             }
 
          // Handle hidden row.
          if (sheetobj.hiddencolrow == "row") {
-            var row = editor.ecell.row;
-            while (sheetobj.rowattribs.hide[row] == "yes") {
-               row++;
+            if (editor.ecell !== null) {
+               var row = editor.ecell.row;
+               while (sheetobj.rowattribs.hide[row] == "yes") {
+                  row++;
+                  }
+               var coord = SocialCalc.crToCoord(editor.ecell.col, row);
+               editor.MoveECell(coord);
+               sheetobj.hiddencolrow = "";
                }
-            var coord = SocialCalc.crToCoord(editor.ecell.col, row);
-            editor.MoveECell(coord);
-            sheetobj.hiddencolrow = "";
             }
 
          return;
@@ -10041,12 +10045,14 @@ SocialCalc.SetECellHeaders = function(editor, selected) {
       first = context.rowpanes[rowpane].first;
       last = context.rowpanes[rowpane].last;
       if (ecell.row >= first && ecell.row <= last) {
-         headercell = editor.fullgrid.childNodes[1].childNodes[2+rowindex+ecell.row-first].childNodes[0];
-         if (headercell) {
-            if (context.classnames) headercell.className=context.classnames[selected+"rowname"];
-            if (context.explicitStyles) headercell.style.cssText=context.explicitStyles[selected+"rowname"];
-            headercell.style.verticalAlign="top"; // to get around Safari making top of centered row number be
-                                                  // considered top of row (and can't get <row> position in Safari)
+         if (editor.fullgrid !== null) {
+            headercell = editor.fullgrid.childNodes[1].childNodes[2+rowindex+ecell.row-first].childNodes[0];
+            if (headercell) {
+               if (context.classnames) headercell.className=context.classnames[selected+"rowname"];
+               if (context.explicitStyles) headercell.style.cssText=context.explicitStyles[selected+"rowname"];
+               headercell.style.verticalAlign="top"; // to get around Safari making top of centered row number be
+                                                     // considered top of row (and can't get <row> position in Safari)
+               }
             }
          }
       rowindex += last - first + 1 + 1;
@@ -10056,10 +10062,12 @@ SocialCalc.SetECellHeaders = function(editor, selected) {
       first = context.colpanes[colpane].first;
       last = context.colpanes[colpane].last;
       if (ecell.col >= first && ecell.col <= last) {
-         headercell = editor.fullgrid.childNodes[1].childNodes[1].childNodes[1+colindex+ecell.col-first];
-         if (headercell) {
-            if (context.classnames) headercell.className=context.classnames[selected+"colname"];
-            if (context.explicitStyles) headercell.style.cssText=context.explicitStyles[selected+"colname"];
+         if (editor.fullgrid !== null) {
+            headercell = editor.fullgrid.childNodes[1].childNodes[1].childNodes[1+colindex+ecell.col-first];
+            if (headercell) {
+               if (context.classnames) headercell.className=context.classnames[selected+"colname"];
+               if (context.explicitStyles) headercell.style.cssText=context.explicitStyles[selected+"colname"];
+               }
             }
          }
       colindex += last - first + 1 + 1;
