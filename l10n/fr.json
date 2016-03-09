@@ -29,7 +29,7 @@
   "defaultReadonlyStyle": "background-repeat:no-repeat;background-position:top right;background-image:url(images/sc_lockbg.gif);",
   "defaultReadonlyNoGridClass": "",
   "defaultReadonlyNoGridStyle": "",
-  "defaultReadonlyComment": "Locked cell",
+  "defaultReadonlyComment": "Cellule vérouillée",
   "defaultColWidth": "80",
   "defaultMinimumColWidth": 10,
   "defaultHighlightTypeCursorClass": "",
