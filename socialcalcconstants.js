@@ -493,7 +493,7 @@ SocialCalc.Constants = {
    s_loc_lock_cell: "Lock Cell",
    s_loc_major_sort: "Major Sort",
    s_loc_manual: "Manual",
-   s_loc_merge_cells: "Merge Cells",
+   s_loc_merge_cells: "Merge/Unmerge Cells",
    s_loc_middle: "Middle",
    s_loc_minor_sort: "Minor Sort",
    s_loc_move_insert: "Move Insert",
