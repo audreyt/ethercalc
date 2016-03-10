@@ -479,6 +479,8 @@ SocialCalc.Constants = {
    s_loc_functions: "Functions",
    s_loc_grid: "Grid",
    s_loc_hidden: "Hidden",
+   s_loc_hide_column: "Hide Column",
+   s_loc_hide_row: "Hide Row",
    s_loc_horizontal: "Horizontal",
    s_loc_insert_column: "Insert Column Before",
    s_loc_insert_row: "Insert Row Before",
