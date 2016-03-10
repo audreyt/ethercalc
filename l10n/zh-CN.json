@@ -242,6 +242,8 @@
   "s_loc_grid": "格",
   "s_loc_graph": "图表",
   "s_loc_hidden": "隐藏",
+  "s_loc_hide_column": "Hide Column",
+  "s_loc_hide_row": "Hide Row",
   "s_loc_horizontal": "水平",
   "s_loc_insert_column": "插入一栏",
   "s_loc_insert_row": "插入一列",
