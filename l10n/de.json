@@ -242,6 +242,8 @@
   "s_loc_grid": "Gitter",
   "s_loc_graph": "Graphen",
   "s_loc_hidden": "Versteckt",
+  "s_loc_hide_column": "Hide Column",
+  "s_loc_hide_row": "Hide Row",
   "s_loc_horizontal": "Horizontal",
   "s_loc_insert_column": "Spalte einfügen",
   "s_loc_insert_row": "Zeile einfügen",
