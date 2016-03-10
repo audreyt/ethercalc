@@ -242,6 +242,8 @@
   "s_loc_grid": "Grille",
   "s_loc_graph": "Graphique",
   "s_loc_hidden": "Caché",
+  "s_loc_hide_column": "Masquer les colonnes",
+  "s_loc_hide_row": "Masquer les lignes",
   "s_loc_horizontal": "Horizontal",
   "s_loc_insert_column": "Ajouter une colonne avant",
   "s_loc_insert_row": "Ajouter une ligne avant",
