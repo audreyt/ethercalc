@@ -73,6 +73,7 @@ Worker ||= class => (code) ->
   
   #eddy dataDir {
   dataDir = process.env.OPENSHIFT_DATA_DIR
+  #dataDir = ".."  
   # }
 
 

@@ -42,7 +42,6 @@
           console.dir(info);
           callback(" EMAIL ERROR - " + error);
         } else {
-          console.log('Message sent to:' + info.accepted);
           callback(" [E-mail Sent]");
           return info.accepted;
         }
