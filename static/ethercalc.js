@@ -1545,6 +1545,7 @@ SocialCalc.RecalcTimerRoutine = function() {
             }
           }
           l.inrecalc = !1;
+          h.reRenderCellList = h.recalcdata.celllist;
           delete h.recalcdata;
           delete h.attribs.needsrecalc;
           g.sheet = h.previousrecalcsheet || null;
@@ -2638,7 +2639,7 @@ SocialCalc.TableEditor.prototype.MoveECellWithKey = function(a) {
   return SocialCalc.MoveECellWithKey(this, a);
 };
 SocialCalc.TableEditor.prototype.MoveECell = function(a) {
-  return SocialCalc.MoveECell(this, a);
+  return SocialCalc._app ? "A1" : SocialCalc.MoveECell(this, a);
 };
 SocialCalc.TableEditor.prototype.ReplaceCell = function(a, b, c) {
   SocialCalc.ReplaceCell(this, a, b, c);
@@ -2808,6 +2809,7 @@ SocialCalc.ResizeTableEditor = function(a, b, c) {
   a.verticaltablecontrol.main.style.height = a.tableheight + "px";
   a.horizontaltablecontrol.main.style.width = a.tablewidth + "px";
   a.FitToEditTable();
+  SocialCalc._app && (a.context.sheetobj.widgetsRendered = !1);
   a.ScheduleRender();
 };
 SocialCalc.SaveEditorSettings = function(a) {
@@ -2875,7 +2877,16 @@ SocialCalc.LoadEditorSettings = function(a, b, c) {
 };
 SocialCalc.EditorRenderSheet = function(a) {
   a.EditorMouseUnregister();
-  a.fullgrid = a.context.RenderSheet(a.fullgrid);
+  var b = a.context.sheetobj;
+  if (null != b.reRenderCellList && SocialCalc._app && b.widgetsRendered) {
+    for (var c in b.reRenderCellList) {
+      var d = b.reRenderCellList[c];
+      "i" != b.cells[d].valuetype.charAt(1) && (cr = SocialCalc.coordToCr(d), cell = SocialCalc.GetEditorCellElement(a, cr.row, cr.col), null != cell && a.ReplaceCell(cell, cr.row, cr.col));
+    }
+    b.reRenderCellList = [];
+  } else {
+    a.fullgrid = a.context.RenderSheet(a.fullgrid), null != b.reRenderCellList && SocialCalc._app && (b.widgetsRendered = !0, b.reRenderCellList = []);
+  }
   a.ecell && a.SetECellHeaders("selected");
   SocialCalc.AssignID(a, a.fullgrid, "fullgrid");
   SocialCalc._app || (a.fullgrid.className = "te_download");
@@ -2927,7 +2938,7 @@ SocialCalc.EditorSheetStatusCallback = function(a, b, c, d) {
     case "cmdend":
       f(b);
       a.changedrendervalues && (d.context.PrecomputeSheetFontsAndLayouts(), d.context.CalculateCellSkipData(), a.changedrendervalues = !1);
-      a.celldisplayneeded && !a.renderneeded && (cr = SocialCalc.coordToCr(a.celldisplayneeded), b = SocialCalc.GetEditorCellElement(d, cr.row, cr.col), d.ReplaceCell(b, cr.row, cr.col));
+      a.celldisplayneeded && !a.renderneeded && "e#N/A" != a.cells[a.celldisplayneeded].valuetype && (cr = SocialCalc.coordToCr(a.celldisplayneeded), b = SocialCalc.GetEditorCellElement(d, cr.row, cr.col), d.ReplaceCell(b, cr.row, cr.col));
       if (d.deferredCommands.length) {
         a = d.deferredCommands.shift();
         d.EditorScheduleSheetCommands(a.cmdstr, a.saveundo, !0);
@@ -3630,6 +3641,7 @@ SocialCalc.GridMousePosition = function(a, b, c) {
   return null;
 };
 SocialCalc.GetEditorCellElement = function(a, b, c) {
+  !1 == a.context.showRCHeaders && (b--, c--);
   var d, e, f, g, h = 0, l = 0;
   for (d = 0;d < a.context.rowpanes.length;d++) {
     if (b >= a.context.rowpanes[d].first && b <= a.context.rowpanes[d].last) {
@@ -3741,7 +3753,7 @@ SocialCalc.EnsureECellVisible = function(a) {
 };
 SocialCalc.ReplaceCell = function(a, b, c, d) {
   var e;
-  if (b && (a = a.context.RenderCell(c, d, b.rowpane, b.colpane, !0, null))) {
+  if (b && (a = a.context.RenderCell(c, d, b.rowpane, b.colpane, !0, null)) && b.element) {
     for (e in b.element.innerHTML = a.innerHTML, b.element.style.cssText = "", b.element.className = a.className, a.style) {
       "cssText" != a.style[e] && (b.element.style[e] = a.style[e]);
     }
@@ -5258,7 +5270,7 @@ SocialCalc.ProcessKeyDown = function(a) {
   b.statusFromProcessKey = !1;
   b.repeatingKeyPress = !1;
   var c = "", d = !0;
-  if (!SocialCalc.Keyboard.passThru) {
+  if (!SocialCalc._app && !SocialCalc.Keyboard.passThru) {
     a = a || window.event;
     if (void 0 == a.which) {
       c = b.specialKeysCommon[a.keyCode];
@@ -5288,7 +5300,7 @@ SocialCalc.ProcessKeyDown = function(a) {
 SocialCalc.ProcessKeyPress = function(a) {
   var b = SocialCalc.keyboardTables, c = "";
   a = a || window.event;
-  if (!SocialCalc.Keyboard.passThru) {
+  if (!SocialCalc._app && !SocialCalc.Keyboard.passThru) {
     if (b.didProcessKey) {
       if (b.repeatingKeyPress) {
         return SocialCalc.ProcessKey(b.chForProcessKey, a);
@@ -7705,8 +7717,8 @@ SocialCalc.Formula.FunctionList.EMAILAT = [SocialCalc.Formula.IoFunctions, -4, "
 SocialCalc.Formula.FunctionList.EMAILONEDITIF = [SocialCalc.Formula.IoFunctions, -5, "editRange, condition, to_range subject_range, body_range", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "EventTree"];
 SocialCalc.Formula.FunctionList.EMAILATIF = [SocialCalc.Formula.IoFunctions, -5, "datetime_value, condition, to_range subject_range, body_range", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "TimeTrigger"];
 SocialCalc.Formula.FunctionList.SUBMIT = [SocialCalc.Formula.IoFunctions, 100, "[label]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Submit('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList"];
-SocialCalc.Formula.FunctionList.TEXTBOX = [SocialCalc.Formula.IoFunctions, 1, "label", "", "gui", "<input type='text' id='TEXTBOX_<%=cell_reference%>' onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.TextBox('<%=cell_reference%>')\" value='<%=display_value%>' >", "Input"];
-SocialCalc.Formula.FunctionList.CHECKBOX = [SocialCalc.Formula.IoFunctions, 1, "label", "", "gui", "<input type='checkbox' id='CHECKBOX_<%=cell_reference%>' <%=checked%> onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.CheckBox('<%=cell_reference%>')\" >", "Input"];
+SocialCalc.Formula.FunctionList.TEXTBOX = [SocialCalc.Formula.IoFunctions, 1, "value", "", "gui", "<input type='text' id='TEXTBOX_<%=cell_reference%>' onblur='SocialCalc.CmdGotFocus(null);' onchange=\"SocialCalc.TriggerIoAction.TextBox('<%=cell_reference%>')\" value='<%=display_value%>' >", "Input"];
+SocialCalc.Formula.FunctionList.CHECKBOX = [SocialCalc.Formula.IoFunctions, 1, "value", "", "gui", "<input type='checkbox' id='CHECKBOX_<%=cell_reference%>' <%=checked%> onblur='SocialCalc.CmdGotFocus(null);' onchange=\"SocialCalc.TriggerIoAction.CheckBox('<%=cell_reference%>')\" >", "Input"];
 SocialCalc.Formula.FunctionList.COPYVALUE = [SocialCalc.Formula.IoFunctions, 3, "trigger_cell, value_range, destinationCell(s)", "", "action", "", "EventTree"];
 SocialCalc.Formula.FunctionList.COPYFORMULA = [SocialCalc.Formula.IoFunctions, 3, "trigger_cell, formula_range, destinationCell(s)", "", "action", "", "EventTree"];
 SocialCalc.TriggerIoAction.Button = function(a) {
