@@ -3817,7 +3817,7 @@ SocialCalc.RecalcTimerRoutine = function() {
 
    recalcdata.inrecalc = false;
 
-   sheet.reRenderCellList = sheet.recalcdata.celllist;
+   sheet.reRenderCellList = sheet.recalcdata.celllist; // GUI widgets need focus - if app then only re-render non-widget cells
    delete sheet.recalcdata; // save memory and clear out for name lookup formula evaluation
 
    delete sheet.attribs.needsrecalc; // remember recalc done

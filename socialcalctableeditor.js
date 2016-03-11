@@ -599,6 +599,9 @@ SocialCalc.ResizeTableEditor = function(editor, width, height) {
 
    editor.FitToEditTable();
 
+   // App widgets need focus - so only render widgets on load/resize 
+   if(SocialCalc._app) editor.context.sheetobj.widgetsRendered = false;
+     
    editor.ScheduleRender();
 
    return;
@@ -749,17 +752,23 @@ SocialCalc.EditorRenderSheet = function(editor) {
    editor.EditorMouseUnregister();
 
    var sheetobj = editor.context.sheetobj;
-   if(sheetobj.reRenderCellList != null && SocialCalc._app && editor.griddiv.firstChild.lastChild.childNodes.length >2) {
+   // App widgets need to keep focus - so only render widgets on load/resize
+   if(sheetobj.reRenderCellList != null && SocialCalc._app && sheetobj.widgetsRendered) {
      for(var index in sheetobj.reRenderCellList) {
        var coord = sheetobj.reRenderCellList[index];
        if(sheetobj.cells[coord].valuetype.charAt(1) != "i") {
          cr = SocialCalc.coordToCr(coord);
          cell = SocialCalc.GetEditorCellElement(editor, cr.row, cr.col);
-         editor.ReplaceCell(cell, cr.row, cr.col);
+         if(cell!=null) editor.ReplaceCell(cell, cr.row, cr.col);
        }
      }
+     sheetobj.reRenderCellList = [];
    } else {
       editor.fullgrid = editor.context.RenderSheet(editor.fullgrid);
+      if (sheetobj.reRenderCellList != null && SocialCalc._app) {
+        sheetobj.widgetsRendered = true;
+        sheetobj.reRenderCellList = [];        
+      }
    }
    
    if (editor.ecell) editor.SetECellHeaders("selected");
@@ -2788,7 +2797,7 @@ SocialCalc.ReplaceCell = function(editor, cell, row, col) {
    var newelement, a;
    if (!cell) return;
    newelement = editor.context.RenderCell(row, col, cell.rowpane, cell.colpane, true, null);
-   if (newelement) {
+   if (newelement && cell.element) { // skip hidden cells
       // Don't use a real element and replaceChild, which seems to have focus issues with IE, Firefox, and speed issues
       cell.element.innerHTML = newelement.innerHTML;
       cell.element.style.cssText = "";
