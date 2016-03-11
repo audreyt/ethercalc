@@ -2809,6 +2809,7 @@ SocialCalc.ResizeTableEditor = function(a, b, c) {
   a.verticaltablecontrol.main.style.height = a.tableheight + "px";
   a.horizontaltablecontrol.main.style.width = a.tablewidth + "px";
   a.FitToEditTable();
+  SocialCalc._app && (a.context.sheetobj.widgetsRendered = !1);
   a.ScheduleRender();
 };
 SocialCalc.SaveEditorSettings = function(a) {
@@ -2877,13 +2878,14 @@ SocialCalc.LoadEditorSettings = function(a, b, c) {
 SocialCalc.EditorRenderSheet = function(a) {
   a.EditorMouseUnregister();
   var b = a.context.sheetobj;
-  if (null != b.reRenderCellList && SocialCalc._app && 2 < a.griddiv.firstChild.lastChild.childNodes.length) {
+  if (null != b.reRenderCellList && SocialCalc._app && b.widgetsRendered) {
     for (var c in b.reRenderCellList) {
       var d = b.reRenderCellList[c];
-      "i" != b.cells[d].valuetype.charAt(1) && (cr = SocialCalc.coordToCr(d), cell = SocialCalc.GetEditorCellElement(a, cr.row, cr.col), a.ReplaceCell(cell, cr.row, cr.col));
+      "i" != b.cells[d].valuetype.charAt(1) && (cr = SocialCalc.coordToCr(d), cell = SocialCalc.GetEditorCellElement(a, cr.row, cr.col), null != cell && a.ReplaceCell(cell, cr.row, cr.col));
     }
+    b.reRenderCellList = [];
   } else {
-    a.fullgrid = a.context.RenderSheet(a.fullgrid);
+    a.fullgrid = a.context.RenderSheet(a.fullgrid), null != b.reRenderCellList && SocialCalc._app && (b.widgetsRendered = !0, b.reRenderCellList = []);
   }
   a.ecell && a.SetECellHeaders("selected");
   SocialCalc.AssignID(a, a.fullgrid, "fullgrid");
@@ -3751,7 +3753,7 @@ SocialCalc.EnsureECellVisible = function(a) {
 };
 SocialCalc.ReplaceCell = function(a, b, c, d) {
   var e;
-  if (b && (a = a.context.RenderCell(c, d, b.rowpane, b.colpane, !0, null))) {
+  if (b && (a = a.context.RenderCell(c, d, b.rowpane, b.colpane, !0, null)) && b.element) {
     for (e in b.element.innerHTML = a.innerHTML, b.element.style.cssText = "", b.element.className = a.className, a.style) {
       "cssText" != a.style[e] && (b.element.style[e] = a.style[e]);
     }
