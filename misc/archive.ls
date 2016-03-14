@@ -4,9 +4,9 @@ r = redis.createClient!
 env = process.env
 [redisDb, putInHistory] = env<[ REDIS_DB PUT_IN_HISTORY ]>
 d = Math.floor (Date.now() / 1000)
-if !fs.exists 'raw'
+if !(fs.existsSync 'raw')
   fs.mkdir 'raw'
-if putInHistory && !fs.exists '../static/history/'
+if putInHistory && !fs.existsSync '../static/history/'
   fs.mkdir '../static/history/'
 if redisDb
   r.select redisDb
@@ -25,6 +25,7 @@ step = ->
     dir = '../static/history/' + k - /snapshot-/
     exists <- fs.exists dir
     fs.mkdir dir if !exists
-    <- fs.writeFile dir+"/"+d+".txt", v
+    err <- fs.writeFile dir+"/"+d+".txt", v
+    console.log err if err
   step!
 step!
