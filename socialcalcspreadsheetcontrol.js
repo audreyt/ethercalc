@@ -1082,7 +1082,7 @@ spreadsheet.Buttons = {
       SocialCalc.TooltipRegister(bele, SCLoc(spreadsheet.formulabuttons[button].tooltip), {}, spreadsheet.spreadsheetDiv);
       SocialCalc.ButtonRegister(spreadsheet.editor, bele,
          {normalstyle: "border:1px solid #FFF;backgroundColor:#FFF;",
-          hoverstyle: "border:1px solid #CCC;backgroundColor:#FFF;",
+          hoverstyle: "border:1px solid #FFFFFF;backgroundColor:#FFF;",
           downstyle: "border:1px solid #000;backgroundColor:#FFF;"}, 
          {MouseDown: spreadsheet.formulabuttons[button].command, Disabled: function() {return spreadsheet.editor.ECellReadonly();}});
    spreadsheet.formulabarDiv.appendChild(bele);
@@ -1103,7 +1103,7 @@ spreadsheet.Buttons = {
       SocialCalc.TooltipRegister(bele, SCLoc(spreadsheet.findbuttons[button].tooltip), {}, spreadsheet.formulabardiv);
       SocialCalc.ButtonRegister(spreadsheet.editor, bele,
          {normalstyle: "border:1px solid #FFF;backgroundColor:#FFF;",
-          hoverstyle: "border:1px solid #CCC;backgroundColor:#FFF;",
+          hoverstyle: "border:1px solid #FFFFFF;backgroundColor:#FFF;",
           downstyle: "border:1px solid #000;backgroundColor:#FFF;"}, 
          {MouseDown: spreadsheet.findbuttons[button].command, Disabled: function() {return false;}});
       searchBar[0].appendChild(bele);
