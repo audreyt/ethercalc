@@ -1782,7 +1782,7 @@ SocialCalc.DoCmd = function(obj, which) {
             editor.RangeRemove();
             }
          break;
-
+/* REDUNDANT ACTION
       case "movefrom":
          if (editor.range2.hasrange) { // toggle if already there
             spreadsheet.context.cursorsuffix = "";
@@ -1832,7 +1832,7 @@ SocialCalc.DoCmd = function(obj, which) {
             ele.src=spreadsheet.imagePrefix+"moveinsertoff.gif";
             }
          break;
-
+*/
       case "swapcolors":
          sheet = spreadsheet.sheet;
          cell = sheet.GetAssuredCell(editor.ecell.coord);
