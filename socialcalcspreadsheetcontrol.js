@@ -1031,9 +1031,11 @@ spreadsheet.Buttons = {
    button_delete: {tooltip: "Delete Cell Contents", command: "delete"},
    button_filldown: {tooltip: "Fill Down", command: "filldown"},
    button_fillright: {tooltip: "Fill Right", command: "fillright"},
+   /* REDUNDANT BUTTONS
    button_movefrom: {tooltip: "Set/Clear Move From", command: "movefrom"},
    button_movepaste: {tooltip: "Move Paste", command: "movepaste"},
    button_moveinsert: {tooltip: "Move Insert", command: "moveinsert"},
+   */
    button_alignleft: {tooltip: "Align Left", command: "align-left"},
    button_aligncenter: {tooltip: "Align Center", command: "align-center"},
    button_alignright: {tooltip: "Align Right", command: "align-right"},
