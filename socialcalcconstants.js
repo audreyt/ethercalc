@@ -172,7 +172,7 @@ SocialCalc.Constants = {
    defaultUpperLeftClass: "", // Corner cell in upper left
    defaultUpperLeftStyle: "font-size:small;",
    defaultSkippedCellClass: "", // used if present for spanned cells peeking into a pane (at least one of class/style needed)
-   defaultSkippedCellStyle: "font-size:small;background-color:#CCC", // used if present
+   defaultSkippedCellStyle: "font-size:small;background-color:#FFFFFF", // used if present
    defaultPaneDividerClass: "", // used if present for the look of the space between panes (at least one of class/style needed)
    defaultPaneDividerStyle: "font-size:small;background-color:#C0C0C0;padding:0px;", // used if present
    defaultUnhideLeftClass: "",
@@ -301,7 +301,7 @@ SocialCalc.Constants = {
    TCscrollareaRepeatWait: 500, // in milliseconds
    TCscrollareaRepeatInterval: 100, // in milliseconds
    TCthumbClass: "",
-   TCthumbStyle: "backgroundColor:#CCC;",
+   TCthumbStyle: "backgroundColor:#FFFFFF;",
 
    //*** SocialCalc.TCPSDragFunctionStart
 
@@ -355,9 +355,9 @@ SocialCalc.Constants = {
    //*** SocialCalc.SpreadsheetControl
 
    SCToolbarbackground: "background-color:#404040;",
-   SCTabbackground: "background-color:#CCC;",
-   SCTabselectedCSS: "font-size:small;padding:6px 30px 6px 8px;color:#FFF;background-color:#404040;cursor:default;border-right:1px solid #CCC;",
-   SCTabplainCSS: "font-size:small;padding:6px 30px 6px 8px;color:#FFF;background-color:#808080;cursor:default;border-right:1px solid #CCC;",
+   SCTabbackground: "background-color:#FFFFFF;",
+   SCTabselectedCSS: "font-size:small;padding:6px 30px 6px 8px;color:#FFF;background-color:#404040;cursor:default;border-right:1px solid #FFFFFF;",
+   SCTabplainCSS: "font-size:small;padding:6px 30px 6px 8px;color:#FFF;background-color:#808080;cursor:default;border-right:1px solid #FFFFFF;",
    SCToolbartext: "font-size:x-small;font-weight:bold;color:#FFF",
 
    SCFormulabarheight: 30, // in pixels, will contain a text input box
