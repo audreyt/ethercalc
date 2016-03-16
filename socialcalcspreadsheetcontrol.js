@@ -273,11 +273,11 @@ SocialCalc.SpreadsheetControl = function(idPrefix) {
 ' &nbsp;<img src="%img.divider1.png" style="vertical-align:bottom;">&nbsp;</span> '+
 '<img id="%id.button_filldown" src="%img.filldown.png" style="vertical-align:bottom;">'+
 ' <img id="%id.button_fillright" src="%img.fillright.png" style="vertical-align:bottom;">'+
-' &nbsp;<img src="%img.divider1.png" style="vertical-align:bottom;">&nbsp; '+
+' &nbsp;<img src="%img.divider1.png" style="vertical-align:bottom;">&nbsp; '/*+
 '<img id="%id.button_movefrom" src="%img.movefromoff.gif" style="vertical-align:bottom;">'+
 ' <img id="%id.button_movepaste" src="%img.movepasteoff.gif" style="vertical-align:bottom;">'+
 ' <img id="%id.button_moveinsert" src="%img.moveinsertoff.gif" style="vertical-align:bottom;">'+
-' &nbsp;<img src="%img.divider1.png" style="vertical-align:bottom;">&nbsp; '+
+' &nbsp;<img src="%img.divider1.png" style="vertical-align:bottom;">&nbsp; '*/+
 '<img id="%id.button_alignleft" src="%img.alignleft.png" style="vertical-align:bottom;">'+
 ' <img id="%id.button_aligncenter" src="%img.aligncenter.png" style="vertical-align:bottom;">'+
 ' <img id="%id.button_alignright" src="%img.alignright.png" style="vertical-align:bottom;">'+
