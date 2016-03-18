@@ -6,7 +6,7 @@
 * REST API: http://docs.ethercalc.apiary.io/
 
 * Language: [LiveScript](http://livescript.net/)
-* Runtime: [Node.js](http://nodejs.org/) (0.8+ preferred)
+* Runtime: [Node.js](http://nodejs.org/) (4.x preferred, should work with 0.8+)
 * Services: [Redis](http://redis.io) (2.4+; fall-back to on-disk JSON storage if not present)
     * Multi-server is supported _only_ when running with Redis
     * Note to Redis 2.2 users (e.g. on Ubuntu 12.04): Please disable the `timeout 300` setting in `/etc/redis.conf`, or upgrade to Redis 2.4+ if possible at all. For more details, see [#49](https://github.com/audreyt/ethercalc/issues/49#issuecomment-25331595).
