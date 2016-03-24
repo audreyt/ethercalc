@@ -2568,18 +2568,23 @@ SocialCalc.GridMousePosition = function(editor, clientX, clientY) {
 
 SocialCalc.GetEditorCellElement = function(editor, row, col) {
 
-   if (editor.context.showRCHeaders == false) {   // Adjust for row/col headers  
+  var lastColOffset = 0;
+  var lastRowOffset = 0;
+   //Adjust for row/col headers
+   if (editor.context.showRCHeaders == false) {     
      row --;
      col --;
+     var lastColOffset = -1;
+     var lastRowOffset = -1;
    }
    var rowpane, colpane, c, coord;
    var rowindex = 0;
    var colindex = 0;
 
    for (rowpane=0; rowpane<editor.context.rowpanes.length; rowpane++) {
-      if (row >= editor.context.rowpanes[rowpane].first && row <= editor.context.rowpanes[rowpane].last) {
+      if (row >= editor.context.rowpanes[rowpane].first && row <= editor.context.rowpanes[rowpane].last + lastRowOffset) {
          for (colpane=0; colpane<editor.context.colpanes.length; colpane++) {
-            if (col >= editor.context.colpanes[colpane].first && col <= editor.context.colpanes[colpane].last) {
+            if (col >= editor.context.colpanes[colpane].first && col <= editor.context.colpanes[colpane].last + lastColOffset) {
                rowindex += row - editor.context.rowpanes[rowpane].first + 2;
                for (c=editor.context.colpanes[colpane].first; c<=col; c++) {
                   coord=editor.context.cellskip[SocialCalc.crToCoord(c,row)];

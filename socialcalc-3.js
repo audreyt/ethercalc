@@ -3771,8 +3771,11 @@ SocialCalc.RecalcTimerRoutine = function() {
    coord = sheet.recalcdata.nextcalc;
    while (coord) {
       cell = sheet.cells[coord];
-	  // eddy RecalcTimerRoutine {
-	   cell.parseinfo.coord = coord;
+	  // app widgets need cell ID so store in parseinfo {
+      if (!cell.parseinfo) { // cache parsed formula
+        cell.parseinfo = scf.ParseFormulaIntoTokens(cell.formula);
+        }
+      cell.parseinfo.coord = coord;
 	  // }
       eresult = scf.evaluate_parsed_formula(cell.parseinfo, sheet, false);
       if (scf.SheetCache.waitingForLoading) { // wait until restarted
