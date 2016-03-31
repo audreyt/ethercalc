@@ -1,7 +1,7 @@
 {
   "name": "ethercalc",
   "description": "Multi-User Spreadsheet Server",
-  "version": "0.20160210.0",
+  "version": "0.20160314.0",
   "homepage": "http://ethercalc.net/",
   "repository": {
     "type": "git",

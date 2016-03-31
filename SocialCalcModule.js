@@ -11074,7 +11074,8 @@ SocialCalc.InputBoxDisplayCellContents = function(inputbox, coord) {
 
    if (!inputbox) return;
    if (!coord) {
-     if(!inputbox.editor.ecell) return; // not initilized yet
+     if (!inputbox.editor) return; // not initialized yet
+     if (!inputbox.editor.ecell) return; // not initialized yet
      coord = inputbox.editor.ecell.coord;
    }
    var text = SocialCalc.GetCellContents(inputbox.editor.context.sheetobj, coord);
@@ -11383,6 +11384,7 @@ SocialCalc.ShowCellHandles = function(cellhandles, show, moveshow) {
    var colinc = 1, rowinc = 1;
 
    if (!editor) return;
+   if (!editor.ecell) return;
 
    do { // a block that can you can "break" out of easily
 
