@@ -860,10 +860,10 @@ SocialCalc.ExecuteSheetCommand = function(a, b, c) {
               for (s(), p.row != r.row || p.col != r.col || a.celldisplayneeded || a.renderneeded ? (a.renderneeded = !0, a.celldisplayneeded = "") : a.celldisplayneeded = SocialCalc.crToCoord(p.col, p.row), b = p.row;b <= r.row;b++) {
                 for (s = p.col;s <= r.col;s++) {
                   l = SocialCalc.crToCoord(s, b), q = a.GetAssuredCell(l), q.readonly && "readonly" != h || (c && D.AddUndo("set " + l + " all", a.CellToString(q)), "value" == h ? (l = f.indexOf(" "), q.datavalue = f.substring(l + 1) - 0, delete q.errors, q.datatype = "v", q.valuetype = f.substring(0, l), delete q.displaystring, delete q.parseinfo, B.needsrecalc = "yes") : "text" == h ? (l = f.indexOf(" "), q.datavalue = SocialCalc.decodeFromSave(f.substring(l + 1)), delete q.errors, q.datatype = 
-                  "t", q.valuetype = f.substring(0, l), delete q.displaystring, delete q.parseinfo, B.needsrecalc = "yes") : "formula" == h ? (q.datavalue = 0, delete q.errors, q.datatype = "f", q.valuetype = "e#N/A", q.formula = f, delete q.displaystring, delete q.parseinfo, B.needsrecalc = "yes") : "constant" == h ? (l = f.indexOf(" "), e = f.substring(l + 1).indexOf(" "), q.datavalue = f.substring(l + 1, l + 1 + e) - 0, q.valuetype = f.substring(0, l), "e" == q.valuetype.charAt(0) ? q.errors = 
-                  q.valuetype.substring(1) : delete q.errors, q.datatype = "c", q.formula = f.substring(l + e + 2), delete q.displaystring, delete q.parseinfo, B.needsrecalc = "yes") : "empty" == h ? (q.datavalue = "", delete q.errors, q.datatype = null, q.formula = "", q.valuetype = "b", delete q.displaystring, delete q.parseinfo, B.needsrecalc = "yes") : "all" == h ? (0 < f.length ? (q = new SocialCalc.Cell(l), a.CellFromStringParts(q, f.split(":"), 1), a.cells[l] = q) : delete a.cells[l], B.needsrecalc = 
-                  "yes") : /^b[trbl]$/.test(h) ? (q[h] = a.GetStyleNum("borderstyle", f), a.renderneeded = !0) : "color" == h || "bgcolor" == h ? q[h] = a.GetStyleNum("color", f) : "layout" == h || "cellformat" == h ? q[h] = a.GetStyleNum(h, f) : "font" == h ? ("* * *" == f && (f = ""), q[h] = a.GetStyleNum("font", f)) : "textvalueformat" == h || "nontextvalueformat" == h ? (q[h] = a.GetStyleNum("valueformat", f), delete q.displaystring) : "cssc" == h ? (f = f.replace(/[^a-zA-Z0-9\-]/g, ""), q.cssc = 
-                  f) : "csss" == h ? (f = f.replace(/\n/g, ""), q.csss = f) : "mod" == h ? (f = f.replace(/[^yY]/g, "").toLowerCase(), q.mod = f) : "comment" == h ? q.comment = SocialCalc.decodeFromSave(f) : "readonly" == h ? q.readonly = "yes" == f.toLowerCase() : n = A.s_escUnknownSetCoordCmd + d);
+                  "t", q.valuetype = f.substring(0, l), delete q.displaystring, delete q.parseinfo, B.needsrecalc = "yes") : "formula" == h ? (q.datavalue = 0, delete q.errors, q.datatype = "f", SocialCalc._app && "e#N/A" != q.valuetype && (q.prevvaluetype = q.valuetype), q.valuetype = "e#N/A", q.formula = f, delete q.displaystring, delete q.parseinfo, B.needsrecalc = "yes") : "constant" == h ? (l = f.indexOf(" "), e = f.substring(l + 1).indexOf(" "), q.datavalue = f.substring(l + 1, l + 1 + e) - 
+                  0, q.valuetype = f.substring(0, l), "e" == q.valuetype.charAt(0) ? q.errors = q.valuetype.substring(1) : delete q.errors, q.datatype = "c", q.formula = f.substring(l + e + 2), delete q.displaystring, delete q.parseinfo, B.needsrecalc = "yes") : "empty" == h ? (q.datavalue = "", delete q.errors, q.datatype = null, q.formula = "", q.valuetype = "b", delete q.displaystring, delete q.parseinfo, B.needsrecalc = "yes") : "all" == h ? (0 < f.length ? (q = new SocialCalc.Cell(l), a.CellFromStringParts(q, 
+                  f.split(":"), 1), a.cells[l] = q) : delete a.cells[l], B.needsrecalc = "yes") : /^b[trbl]$/.test(h) ? (q[h] = a.GetStyleNum("borderstyle", f), a.renderneeded = !0) : "color" == h || "bgcolor" == h ? q[h] = a.GetStyleNum("color", f) : "layout" == h || "cellformat" == h ? q[h] = a.GetStyleNum(h, f) : "font" == h ? ("* * *" == f && (f = ""), q[h] = a.GetStyleNum("font", f)) : "textvalueformat" == h || "nontextvalueformat" == h ? (q[h] = a.GetStyleNum("valueformat", f), delete q.displaystring) : 
+                  "cssc" == h ? (f = f.replace(/[^a-zA-Z0-9\-]/g, ""), q.cssc = f) : "csss" == h ? (f = f.replace(/\n/g, ""), q.csss = f) : "mod" == h ? (f = f.replace(/[^yY]/g, "").toLowerCase(), q.mod = f) : "comment" == h ? q.comment = SocialCalc.decodeFromSave(f) : "readonly" == h ? q.readonly = "yes" == f.toLowerCase() : n = A.s_escUnknownSetCoordCmd + d);
                 }
               }
             }
@@ -1513,6 +1513,7 @@ SocialCalc.RecalcTimerRoutine = function() {
           g.currentState != g.state.calc && alert("Recalc state error: " + g.currentState + ". Error in SocialCalc code.");
           for (c = h.recalcdata.nextcalc;c;) {
             b = h.cells[c];
+            b.parseinfo || (b.parseinfo = f.ParseFormulaIntoTokens(b.formula));
             b.parseinfo.coord = c;
             a = f.evaluate_parsed_formula(b.parseinfo, h, !1);
             if (f.SheetCache.waitingForLoading) {
@@ -2880,8 +2881,10 @@ SocialCalc.EditorRenderSheet = function(a) {
   var b = a.context.sheetobj;
   if (null != b.reRenderCellList && SocialCalc._app && b.widgetsRendered) {
     for (var c in b.reRenderCellList) {
-      var d = b.reRenderCellList[c];
-      "i" != b.cells[d].valuetype.charAt(1) && (cr = SocialCalc.coordToCr(d), cell = SocialCalc.GetEditorCellElement(a, cr.row, cr.col), null != cell && a.ReplaceCell(cell, cr.row, cr.col));
+      var d = b.reRenderCellList[c], e = b.cells[d].valuetype;
+      if ("i" != e.charAt(1) || e != b.cells[d].prevvaluetype) {
+        cr = SocialCalc.coordToCr(d), cell = SocialCalc.GetEditorCellElement(a, cr.row, cr.col), null != cell && a.ReplaceCell(cell, cr.row, cr.col);
+      }
     }
     b.reRenderCellList = [];
   } else {
@@ -3641,25 +3644,26 @@ SocialCalc.GridMousePosition = function(a, b, c) {
   return null;
 };
 SocialCalc.GetEditorCellElement = function(a, b, c) {
-  !1 == a.context.showRCHeaders && (b--, c--);
-  var d, e, f, g, h = 0, l = 0;
-  for (d = 0;d < a.context.rowpanes.length;d++) {
-    if (b >= a.context.rowpanes[d].first && b <= a.context.rowpanes[d].last) {
-      for (e = 0;e < a.context.colpanes.length;e++) {
-        if (c >= a.context.colpanes[e].first && c <= a.context.colpanes[e].last) {
-          h += b - a.context.rowpanes[d].first + 2;
-          for (f = a.context.colpanes[e].first;f <= c;f++) {
-            (g = a.context.cellskip[SocialCalc.crToCoord(f, b)]) && a.context.CoordInPane(g, d, e) || l++;
+  var d = 0, e = 0;
+  !1 == a.context.showRCHeaders && (b--, c--, e = d = -1);
+  var f, g, h, l, n = 0, p = 0;
+  for (f = 0;f < a.context.rowpanes.length;f++) {
+    if (b >= a.context.rowpanes[f].first && b <= a.context.rowpanes[f].last + e) {
+      for (g = 0;g < a.context.colpanes.length;g++) {
+        if (c >= a.context.colpanes[g].first && c <= a.context.colpanes[g].last + d) {
+          n += b - a.context.rowpanes[f].first + 2;
+          for (h = a.context.colpanes[g].first;h <= c;h++) {
+            (l = a.context.cellskip[SocialCalc.crToCoord(h, b)]) && a.context.CoordInPane(l, f, g) || p++;
           }
-          return{element:a.griddiv.firstChild.lastChild.childNodes[h].childNodes[l], rowpane:d, colpane:e};
+          return{element:a.griddiv.firstChild.lastChild.childNodes[n].childNodes[p], rowpane:f, colpane:g};
         }
-        for (f = a.context.colpanes[e].first;f <= a.context.colpanes[e].last;f++) {
-          (g = a.context.cellskip[SocialCalc.crToCoord(f, b)]) && a.context.CoordInPane(g, d, e) || l++;
+        for (h = a.context.colpanes[g].first;h <= a.context.colpanes[g].last;h++) {
+          (l = a.context.cellskip[SocialCalc.crToCoord(h, b)]) && a.context.CoordInPane(l, f, g) || p++;
         }
-        l += 1;
+        p += 1;
       }
     }
-    h += a.context.rowpanes[d].last - a.context.rowpanes[d].first + 2;
+    n += a.context.rowpanes[f].last - a.context.rowpanes[f].first + 2;
   }
   return null;
 };
@@ -8801,7 +8805,7 @@ SocialCalc.LocalizeSubstrings = function(a) {
   });
 };
 SocialCalc.GetSpreadsheetControlObject = function() {
-  var a = SocialCalc.CurrentSpreadsheetControlObject;
+  var a = null != SocialCalc.CurrentSpreadsheetControlObject ? SocialCalc.CurrentSpreadsheetControlObject : SocialCalc.CurrentSpreadsheetViewerObject;
   if (a) {
     return a;
   }

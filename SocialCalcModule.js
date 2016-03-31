@@ -2859,6 +2859,7 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
                      cell.datavalue = 0; // until recalc
                      delete cell.errors;
                      cell.datatype = "f";
+                     if(SocialCalc._app && cell.valuetype != "e#N/A") cell.prevvaluetype = cell.valuetype;  // repaint when widgets added/removed 
                      cell.valuetype = "e#N/A"; // until recalc
                      cell.formula = rest;
                      delete cell.displaystring;
@@ -4652,8 +4653,11 @@ SocialCalc.RecalcTimerRoutine = function() {
    coord = sheet.recalcdata.nextcalc;
    while (coord) {
       cell = sheet.cells[coord];
-	  // eddy RecalcTimerRoutine {
-	   cell.parseinfo.coord = coord;
+	  // app widgets need cell ID so store in parseinfo {
+      if (!cell.parseinfo) { // cache parsed formula
+        cell.parseinfo = scf.ParseFormulaIntoTokens(cell.formula);
+        }
+      cell.parseinfo.coord = coord;
 	  // }
       eresult = scf.evaluate_parsed_formula(cell.parseinfo, sheet, false);
       if (scf.SheetCache.waitingForLoading) { // wait until restarted
@@ -7974,7 +7978,8 @@ SocialCalc.EditorRenderSheet = function(editor) {
    if(sheetobj.reRenderCellList != null && SocialCalc._app && sheetobj.widgetsRendered) {
      for(var index in sheetobj.reRenderCellList) {
        var coord = sheetobj.reRenderCellList[index];
-       if(sheetobj.cells[coord].valuetype.charAt(1) != "i") {
+       var valuetype = sheetobj.cells[coord].valuetype;
+       if(valuetype.charAt(1) != "i" || valuetype !=  sheetobj.cells[coord].prevvaluetype) { // skip widgets - but paint when added/replaced
          cr = SocialCalc.coordToCr(coord);
          cell = SocialCalc.GetEditorCellElement(editor, cr.row, cr.col);
          if(cell!=null) editor.ReplaceCell(cell, cr.row, cr.col);
@@ -9786,18 +9791,23 @@ SocialCalc.GridMousePosition = function(editor, clientX, clientY) {
 
 SocialCalc.GetEditorCellElement = function(editor, row, col) {
 
-   if (editor.context.showRCHeaders == false) {   // Adjust for row/col headers  
+  var lastColOffset = 0;
+  var lastRowOffset = 0;
+   //Adjust for row/col headers
+   if (editor.context.showRCHeaders == false) {     
      row --;
      col --;
+     var lastColOffset = -1;
+     var lastRowOffset = -1;
    }
    var rowpane, colpane, c, coord;
    var rowindex = 0;
    var colindex = 0;
 
    for (rowpane=0; rowpane<editor.context.rowpanes.length; rowpane++) {
-      if (row >= editor.context.rowpanes[rowpane].first && row <= editor.context.rowpanes[rowpane].last) {
+      if (row >= editor.context.rowpanes[rowpane].first && row <= editor.context.rowpanes[rowpane].last + lastRowOffset) {
          for (colpane=0; colpane<editor.context.colpanes.length; colpane++) {
-            if (col >= editor.context.colpanes[colpane].first && col <= editor.context.colpanes[colpane].last) {
+            if (col >= editor.context.colpanes[colpane].first && col <= editor.context.colpanes[colpane].last + lastColOffset) {
                rowindex += row - editor.context.rowpanes[rowpane].first + 2;
                for (c=editor.context.colpanes[colpane].first; c<=col; c++) {
                   coord=editor.context.cellskip[SocialCalc.crToCoord(c,row)];
@@ -23499,7 +23509,9 @@ SocialCalc.LocalizeSubstrings = function(str) {
 
 SocialCalc.GetSpreadsheetControlObject = function() {
 
-   var csco = SocialCalc.CurrentSpreadsheetControlObject;
+  // if in viewer mode return CurrentSpreadsheetViewerObject because CurrentSpreadsheetControlObject is null (bug fix) 
+   var csco = (SocialCalc.CurrentSpreadsheetControlObject != null) 
+   ? SocialCalc.CurrentSpreadsheetControlObject : SocialCalc.CurrentSpreadsheetViewerObject;
    if (csco) return csco;
 
 //   throw ("No current SpreadsheetControl object.");
