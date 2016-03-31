@@ -1978,6 +1978,7 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
                      cell.datavalue = 0; // until recalc
                      delete cell.errors;
                      cell.datatype = "f";
+                     if(SocialCalc._app && cell.valuetype != "e#N/A") cell.prevvaluetype = cell.valuetype;  // repaint when widgets added/removed 
                      cell.valuetype = "e#N/A"; // until recalc
                      cell.formula = rest;
                      delete cell.displaystring;

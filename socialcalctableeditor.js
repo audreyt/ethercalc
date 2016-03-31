@@ -756,7 +756,8 @@ SocialCalc.EditorRenderSheet = function(editor) {
    if(sheetobj.reRenderCellList != null && SocialCalc._app && sheetobj.widgetsRendered) {
      for(var index in sheetobj.reRenderCellList) {
        var coord = sheetobj.reRenderCellList[index];
-       if(sheetobj.cells[coord].valuetype.charAt(1) != "i") {
+       var valuetype = sheetobj.cells[coord].valuetype;
+       if(valuetype.charAt(1) != "i" || valuetype !=  sheetobj.cells[coord].prevvaluetype) { // skip widgets - but paint when added/replaced
          cr = SocialCalc.coordToCr(coord);
          cell = SocialCalc.GetEditorCellElement(editor, cr.row, cr.col);
          if(cell!=null) editor.ReplaceCell(cell, cr.row, cr.col);
