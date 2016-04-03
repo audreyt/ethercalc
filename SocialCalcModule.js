@@ -7471,14 +7471,22 @@ SocialCalc.TableEditor = function(context) {
                ta.blur();
                ta.style.display = "none";
                var cmd = "";
-               var clipstr = SocialCalc.ConvertSaveToOtherFormat(SocialCalc.Clipboard.clipboard, "tab");
-               value = value.replace(/\r\n/g, "\n");
-               // pastes SocialCalc clipboard if did a Ctrl-C and contents still the same
-               // Webkit adds an extra blank line, so need to allow for that
-               if (value != clipstr && (value.length-clipstr.length!=1 || value.substring(0,value.length-1)!=clipstr)) {
-                  cmd = "loadclipboard "+
-                  SocialCalc.encodeForSave(SocialCalc.ConvertOtherFormatToSave(value, "tab")) + "\n";
-                  }
+               if(editor.pastescclipboard) {
+                 // Clipboard loaded from "clipboard tab" - see  SpreadsheetControlClipboardLoad 
+                 // ignore windows clipboard contents
+                 editor.pastescclipboard = false;
+                 } 
+               else {
+                 // Use windows clipboard contents if value does not match last copy
+                 var clipstr = SocialCalc.ConvertSaveToOtherFormat(SocialCalc.Clipboard.clipboard, "tab");
+                 value = value.replace(/\r\n/g, "\n");
+                 // pastes SocialCalc clipboard if did a Ctrl-C and contents still the same
+                 // Webkit adds an extra blank line, so need to allow for that
+                 if (value != clipstr && (value.length-clipstr.length!=1 || value.substring(0,value.length-1)!=clipstr)) {
+                    cmd = "loadclipboard "+
+                    SocialCalc.encodeForSave(SocialCalc.ConvertOtherFormatToSave(value, "tab")) + "\n";
+                    }
+                 }
                var cr;
                if (editor.range.hasrange) {
                   var clipsheet = new SocialCalc.Sheet();
@@ -8091,7 +8099,7 @@ SocialCalc.EditorSheetStatusCallback = function(recalcdata, status, arg, editor)
             }
 
          if (sheetobj.celldisplayneeded && !sheetobj.renderneeded) {
-             if (sheetobj.cells[sheetobj.celldisplayneeded].valuetype != "e#N/A") {
+             if (sheetobj.cells[sheetobj.celldisplayneeded] && sheetobj.cells[sheetobj.celldisplayneeded].valuetype != "e#N/A") {
                 cr = SocialCalc.coordToCr(sheetobj.celldisplayneeded);
                 cell = SocialCalc.GetEditorCellElement(editor, cr.row, cr.col);
                 editor.ReplaceCell(cell, cr.row, cr.col); // if no value set, wait for recalc and render . 
@@ -9791,23 +9799,21 @@ SocialCalc.GridMousePosition = function(editor, clientX, clientY) {
 
 SocialCalc.GetEditorCellElement = function(editor, row, col) {
 
-  var lastColOffset = 0;
-  var lastRowOffset = 0;
+  var headerColOffset = 0;
+  var headerRowOffset = 0;
    //Adjust for row/col headers
    if (editor.context.showRCHeaders == false) {     
-     row --;
-     col --;
-     var lastColOffset = -1;
-     var lastRowOffset = -1;
+     var headerColOffset = -1;
+     var headerRowOffset = -1;
    }
    var rowpane, colpane, c, coord;
    var rowindex = 0;
    var colindex = 0;
 
    for (rowpane=0; rowpane<editor.context.rowpanes.length; rowpane++) {
-      if (row >= editor.context.rowpanes[rowpane].first && row <= editor.context.rowpanes[rowpane].last + lastRowOffset) {
+      if (row >= editor.context.rowpanes[rowpane].first && row <= editor.context.rowpanes[rowpane].last) {
          for (colpane=0; colpane<editor.context.colpanes.length; colpane++) {
-            if (col >= editor.context.colpanes[colpane].first && col <= editor.context.colpanes[colpane].last + lastColOffset) {
+            if (col >= editor.context.colpanes[colpane].first && col <= editor.context.colpanes[colpane].last) {
                rowindex += row - editor.context.rowpanes[rowpane].first + 2;
                for (c=editor.context.colpanes[colpane].first; c<=col; c++) {
                   coord=editor.context.cellskip[SocialCalc.crToCoord(c,row)];
@@ -9815,7 +9821,7 @@ SocialCalc.GetEditorCellElement = function(editor, row, col) {
                      colindex++;
                   }
                return {
-                  element: editor.griddiv.firstChild.lastChild.childNodes[rowindex].childNodes[colindex],
+                  element: editor.griddiv.firstChild.lastChild.childNodes[rowindex +headerRowOffset].childNodes[colindex + headerColOffset],
                   rowpane: rowpane, colpane: colpane};
                }
             for (c=editor.context.colpanes[colpane].first; c<=editor.context.colpanes[colpane].last; c++) {
@@ -25364,6 +25370,8 @@ SocialCalc.SpreadsheetControlClipboardLoad = function() {
    else if (document.getElementById(s.idPrefix+"clipboardformat-scsave").checked) {
       savetype = "scsave";
       }
+   // control+v ignores ignore windows clipboard - see ctrlkeyFunction(editor, charname)
+   s.editor.pastescclipboard = true;
    s.editor.EditorScheduleSheetCommands("loadclipboard "+
       SocialCalc.encodeForSave(
          SocialCalc.ConvertOtherFormatToSave(document.getElementById(s.idPrefix+"clipboardtext").value, savetype)), true, false);
