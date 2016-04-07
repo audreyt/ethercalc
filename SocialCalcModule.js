@@ -2661,6 +2661,7 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
    var changes = sheet.changes;
    var cellProperties = SocialCalc.CellProperties;
    var scc = SocialCalc.Constants;
+   var cellChanged = false;
 
    var ParseRange =
       function() {
@@ -2750,6 +2751,7 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
 
          else if (/^[a-z]{1,2}(:[a-z]{1,2})?$/i.test(what)) { // col attributes
             sheet.renderneeded = true;
+            
             what = what.toUpperCase();
             pos = what.indexOf(":");
             if (pos>=0) {
@@ -2821,6 +2823,7 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
             }
 
          else if (/^[a-z]{1,2}\d+(:[a-z]{1,2}\d+)?$/i.test(what)) { // cell attributes
+           cellChanged = true;
             ParseRange();
             if (cr1.row!=cr2.row || cr1.col!=cr2.col || sheet.celldisplayneeded || sheet.renderneeded) { // not one cell
                sheet.renderneeded = true;
@@ -4093,7 +4096,17 @@ for (var i=0;i<sheet.changes.stack.length;i++) {
    }
 alert(cmdstr+"|"+sheet.changes.stack.length+"--"+ustack);
 */
-
+   if(SocialCalc._app) {
+     // widgets need focus. In app mode, render widgets only when required. Rather than default of render everything
+     if(cellChanged) {
+       if(sheet.renderneeded == true && attrib!="value" && attrib!="text" && attrib!="formula" && attrib!="constant" && attrib!="empty") sheet.widgetsClean = false;  // force widgets to render
+       else if(attrib=="all") sheet.widgetsClean = false;  // force widgets to render - because of undo
+       } 
+     else {
+       if(sheet.renderneeded == true) sheet.widgetsClean = false;  // force widgets to render
+       }
+     }
+   
    return errortext;
 
    }
@@ -7657,7 +7670,12 @@ SocialCalc.TableEditor.prototype.Range2Remove = function() {SocialCalc.Range2Rem
 
 SocialCalc.TableEditor.prototype.FitToEditTable = function() {SocialCalc.FitToEditTable(this);};
 SocialCalc.TableEditor.prototype.CalculateEditorPositions = function() {SocialCalc.CalculateEditorPositions(this);};
-SocialCalc.TableEditor.prototype.ScheduleRender = function() {SocialCalc.ScheduleRender(this);};
+SocialCalc.TableEditor.prototype.ScheduleRender = function() {this.ScheduleRender(true);};
+SocialCalc.TableEditor.prototype.ScheduleRender = function(renderwidgets) {    
+  // App widgets need focus - so only render widgets when needed, rather than the default of rendering everything. 
+  if(SocialCalc._app && renderwidgets == true) this.context.sheetobj.widgetsClean = false;  
+  SocialCalc.ScheduleRender(this);
+  };
 SocialCalc.TableEditor.prototype.DoRenderStep = function() {SocialCalc.DoRenderStep(this);};
 SocialCalc.TableEditor.prototype.SchedulePositionCalculations = function() {SocialCalc.SchedulePositionCalculations(this);};
 SocialCalc.TableEditor.prototype.DoPositionCalculations = function() {SocialCalc.DoPositionCalculations(this);};
@@ -7829,9 +7847,6 @@ SocialCalc.ResizeTableEditor = function(editor, width, height) {
 
    editor.FitToEditTable();
 
-   // App widgets need focus - so only render widgets on load/resize 
-   if(SocialCalc._app) editor.context.sheetobj.widgetsRendered = false;
-     
    editor.ScheduleRender();
 
    return;
@@ -7982,8 +7997,9 @@ SocialCalc.EditorRenderSheet = function(editor) {
    editor.EditorMouseUnregister();
 
    var sheetobj = editor.context.sheetobj;
-   // App widgets need to keep focus - so only render widgets on load/resize
-   if(sheetobj.reRenderCellList != null && SocialCalc._app && sheetobj.widgetsRendered) {
+   // App widgets need to keep focus -  only render widgets if needed 
+   if(sheetobj.reRenderCellList != null && SocialCalc._app && sheetobj.widgetsClean === true) {
+     // re-render each individual cells - but not widget with focus 
      for(var index in sheetobj.reRenderCellList) {
        var coord = sheetobj.reRenderCellList[index];
        var valuetype = sheetobj.cells[coord].valuetype;
@@ -7997,7 +8013,7 @@ SocialCalc.EditorRenderSheet = function(editor) {
    } else {
       editor.fullgrid = editor.context.RenderSheet(editor.fullgrid);
       if (sheetobj.reRenderCellList != null && SocialCalc._app) {
-        sheetobj.widgetsRendered = true;
+        sheetobj.widgetsClean = true; // widgets have been rendered
         sheetobj.reRenderCellList = [];        
       }
    }
@@ -8038,10 +8054,12 @@ SocialCalc.EditorScheduleSheetCommands = function(editor, cmdstr, saveundo, igno
          break;
 
       case "undo":
+         if(SocialCalc._app ) editor.context.sheetobj.widgetsClean = false;     // force app widgets to render     
          editor.SheetUndo();
          break;
 
       case "redo":
+         if(SocialCalc._app ) editor.context.sheetobj.widgetsClean = false;     // force app widgets to render
          editor.SheetRedo();
          break;
          
@@ -8122,7 +8140,7 @@ SocialCalc.EditorSheetStatusCallback = function(recalcdata, status, arg, editor)
             if (sheetobj.renderneeded) {
                editor.FitToEditTable();
                sheetobj.renderneeded = false;
-               editor.ScheduleRender();
+               editor.ScheduleRender(false);
                }
             else {
                editor.SchedulePositionCalculations(); // just in case command changed positions
@@ -8172,7 +8190,7 @@ SocialCalc.EditorSheetStatusCallback = function(recalcdata, status, arg, editor)
 
       case "calcfinished":
          signalstatus(status);
-         editor.ScheduleRender();                        
+         editor.ScheduleRender(false);                        
          return;
 
       case "schedrender":
