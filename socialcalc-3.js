@@ -1780,6 +1780,7 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
    var changes = sheet.changes;
    var cellProperties = SocialCalc.CellProperties;
    var scc = SocialCalc.Constants;
+   var cellChanged = false;
 
    var ParseRange =
       function() {
@@ -1869,6 +1870,7 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
 
          else if (/^[a-z]{1,2}(:[a-z]{1,2})?$/i.test(what)) { // col attributes
             sheet.renderneeded = true;
+            
             what = what.toUpperCase();
             pos = what.indexOf(":");
             if (pos>=0) {
@@ -1940,6 +1942,7 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
             }
 
          else if (/^[a-z]{1,2}\d+(:[a-z]{1,2}\d+)?$/i.test(what)) { // cell attributes
+           cellChanged = true;
             ParseRange();
             if (cr1.row!=cr2.row || cr1.col!=cr2.col || sheet.celldisplayneeded || sheet.renderneeded) { // not one cell
                sheet.renderneeded = true;
@@ -1978,6 +1981,7 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
                      cell.datavalue = 0; // until recalc
                      delete cell.errors;
                      cell.datatype = "f";
+                     if(SocialCalc._app && cell.valuetype != "e#N/A") cell.prevvaluetype = cell.valuetype;  // repaint when widgets added/removed 
                      cell.valuetype = "e#N/A"; // until recalc
                      cell.formula = rest;
                      delete cell.displaystring;
@@ -3211,7 +3215,17 @@ for (var i=0;i<sheet.changes.stack.length;i++) {
    }
 alert(cmdstr+"|"+sheet.changes.stack.length+"--"+ustack);
 */
-
+   if(SocialCalc._app) {
+     // widgets need focus. In app mode, render widgets only when required. Rather than default of render everything
+     if(cellChanged) {
+       if(sheet.renderneeded == true && attrib!="value" && attrib!="text" && attrib!="formula" && attrib!="constant" && attrib!="empty") sheet.widgetsClean = false;  // force widgets to render
+       else if(attrib=="all") sheet.widgetsClean = false;  // force widgets to render - because of undo
+       } 
+     else {
+       if(sheet.renderneeded == true) sheet.widgetsClean = false;  // force widgets to render
+       }
+     }
+   
    return errortext;
 
    }
@@ -3771,8 +3785,11 @@ SocialCalc.RecalcTimerRoutine = function() {
    coord = sheet.recalcdata.nextcalc;
    while (coord) {
       cell = sheet.cells[coord];
-	  // eddy RecalcTimerRoutine {
-	   cell.parseinfo.coord = coord;
+	  // app widgets need cell ID so store in parseinfo {
+      if (!cell.parseinfo) { // cache parsed formula
+        cell.parseinfo = scf.ParseFormulaIntoTokens(cell.formula);
+        }
+      cell.parseinfo.coord = coord;
 	  // }
       eresult = scf.evaluate_parsed_formula(cell.parseinfo, sheet, false);
       if (scf.SheetCache.waitingForLoading) { // wait until restarted
@@ -3817,6 +3834,7 @@ SocialCalc.RecalcTimerRoutine = function() {
 
    recalcdata.inrecalc = false;
 
+   sheet.reRenderCellList = sheet.recalcdata.celllist; // GUI widgets need focus - if app then only re-render non-widget cells
    delete sheet.recalcdata; // save memory and clear out for name lookup formula evaluation
 
    delete sheet.attribs.needsrecalc; // remember recalc done

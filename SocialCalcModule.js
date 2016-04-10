@@ -2661,6 +2661,7 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
    var changes = sheet.changes;
    var cellProperties = SocialCalc.CellProperties;
    var scc = SocialCalc.Constants;
+   var cellChanged = false;
 
    var ParseRange =
       function() {
@@ -2750,6 +2751,7 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
 
          else if (/^[a-z]{1,2}(:[a-z]{1,2})?$/i.test(what)) { // col attributes
             sheet.renderneeded = true;
+            
             what = what.toUpperCase();
             pos = what.indexOf(":");
             if (pos>=0) {
@@ -2821,6 +2823,7 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
             }
 
          else if (/^[a-z]{1,2}\d+(:[a-z]{1,2}\d+)?$/i.test(what)) { // cell attributes
+           cellChanged = true;
             ParseRange();
             if (cr1.row!=cr2.row || cr1.col!=cr2.col || sheet.celldisplayneeded || sheet.renderneeded) { // not one cell
                sheet.renderneeded = true;
@@ -2859,6 +2862,7 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
                      cell.datavalue = 0; // until recalc
                      delete cell.errors;
                      cell.datatype = "f";
+                     if(SocialCalc._app && cell.valuetype != "e#N/A") cell.prevvaluetype = cell.valuetype;  // repaint when widgets added/removed 
                      cell.valuetype = "e#N/A"; // until recalc
                      cell.formula = rest;
                      delete cell.displaystring;
@@ -4092,7 +4096,17 @@ for (var i=0;i<sheet.changes.stack.length;i++) {
    }
 alert(cmdstr+"|"+sheet.changes.stack.length+"--"+ustack);
 */
-
+   if(SocialCalc._app) {
+     // widgets need focus. In app mode, render widgets only when required. Rather than default of render everything
+     if(cellChanged) {
+       if(sheet.renderneeded == true && attrib!="value" && attrib!="text" && attrib!="formula" && attrib!="constant" && attrib!="empty") sheet.widgetsClean = false;  // force widgets to render
+       else if(attrib=="all") sheet.widgetsClean = false;  // force widgets to render - because of undo
+       } 
+     else {
+       if(sheet.renderneeded == true) sheet.widgetsClean = false;  // force widgets to render
+       }
+     }
+   
    return errortext;
 
    }
@@ -4652,8 +4666,11 @@ SocialCalc.RecalcTimerRoutine = function() {
    coord = sheet.recalcdata.nextcalc;
    while (coord) {
       cell = sheet.cells[coord];
-	  // eddy RecalcTimerRoutine {
-	   cell.parseinfo.coord = coord;
+	  // app widgets need cell ID so store in parseinfo {
+      if (!cell.parseinfo) { // cache parsed formula
+        cell.parseinfo = scf.ParseFormulaIntoTokens(cell.formula);
+        }
+      cell.parseinfo.coord = coord;
 	  // }
       eresult = scf.evaluate_parsed_formula(cell.parseinfo, sheet, false);
       if (scf.SheetCache.waitingForLoading) { // wait until restarted
@@ -4698,6 +4715,7 @@ SocialCalc.RecalcTimerRoutine = function() {
 
    recalcdata.inrecalc = false;
 
+   sheet.reRenderCellList = sheet.recalcdata.celllist; // GUI widgets need focus - if app then only re-render non-widget cells
    delete sheet.recalcdata; // save memory and clear out for name lookup formula evaluation
 
    delete sheet.attribs.needsrecalc; // remember recalc done
@@ -7466,14 +7484,22 @@ SocialCalc.TableEditor = function(context) {
                ta.blur();
                ta.style.display = "none";
                var cmd = "";
-               var clipstr = SocialCalc.ConvertSaveToOtherFormat(SocialCalc.Clipboard.clipboard, "tab");
-               value = value.replace(/\r\n/g, "\n");
-               // pastes SocialCalc clipboard if did a Ctrl-C and contents still the same
-               // Webkit adds an extra blank line, so need to allow for that
-               if (value != clipstr && (value.length-clipstr.length!=1 || value.substring(0,value.length-1)!=clipstr)) {
-                  cmd = "loadclipboard "+
-                  SocialCalc.encodeForSave(SocialCalc.ConvertOtherFormatToSave(value, "tab")) + "\n";
-                  }
+               if(editor.pastescclipboard) {
+                 // Clipboard loaded from "clipboard tab" - see  SpreadsheetControlClipboardLoad 
+                 // ignore windows clipboard contents
+                 editor.pastescclipboard = false;
+                 } 
+               else {
+                 // Use windows clipboard contents if value does not match last copy
+                 var clipstr = SocialCalc.ConvertSaveToOtherFormat(SocialCalc.Clipboard.clipboard, "tab");
+                 value = value.replace(/\r\n/g, "\n");
+                 // pastes SocialCalc clipboard if did a Ctrl-C and contents still the same
+                 // Webkit adds an extra blank line, so need to allow for that
+                 if (value != clipstr && (value.length-clipstr.length!=1 || value.substring(0,value.length-1)!=clipstr)) {
+                    cmd = "loadclipboard "+
+                    SocialCalc.encodeForSave(SocialCalc.ConvertOtherFormatToSave(value, "tab")) + "\n";
+                    }
+                 }
                var cr;
                if (editor.range.hasrange) {
                   var clipsheet = new SocialCalc.Sheet();
@@ -7631,7 +7657,7 @@ SocialCalc.TableEditor.prototype.EditorSaveEdit = function(text) {return SocialC
 SocialCalc.TableEditor.prototype.EditorApplySetCommandsToRange = function(cmdline, type) {return SocialCalc.EditorApplySetCommandsToRange(this, cmdline, type);};
 
 SocialCalc.TableEditor.prototype.MoveECellWithKey = function(ch) {return SocialCalc.MoveECellWithKey(this, ch);};
-SocialCalc.TableEditor.prototype.MoveECell = function(newcell) {return SocialCalc.MoveECell(this, newcell);};
+SocialCalc.TableEditor.prototype.MoveECell = function(newcell) { if (SocialCalc._app) return "A1"; return SocialCalc.MoveECell(this, newcell);};
 SocialCalc.TableEditor.prototype.ReplaceCell = function(cell, row, col) {SocialCalc.ReplaceCell(this, cell, row, col);};
 SocialCalc.TableEditor.prototype.UpdateCellCSS = function(cell, row, col) {SocialCalc.UpdateCellCSS(this, cell, row, col);};
 SocialCalc.TableEditor.prototype.SetECellHeaders = function(selected) {SocialCalc.SetECellHeaders(this, selected);};
@@ -7644,7 +7670,12 @@ SocialCalc.TableEditor.prototype.Range2Remove = function() {SocialCalc.Range2Rem
 
 SocialCalc.TableEditor.prototype.FitToEditTable = function() {SocialCalc.FitToEditTable(this);};
 SocialCalc.TableEditor.prototype.CalculateEditorPositions = function() {SocialCalc.CalculateEditorPositions(this);};
-SocialCalc.TableEditor.prototype.ScheduleRender = function() {SocialCalc.ScheduleRender(this);};
+SocialCalc.TableEditor.prototype.ScheduleRender = function() {this.ScheduleRender(true);};
+SocialCalc.TableEditor.prototype.ScheduleRender = function(renderwidgets) {    
+  // App widgets need focus - so only render widgets when needed, rather than the default of rendering everything. 
+  if(SocialCalc._app && renderwidgets == true) this.context.sheetobj.widgetsClean = false;  
+  SocialCalc.ScheduleRender(this);
+  };
 SocialCalc.TableEditor.prototype.DoRenderStep = function() {SocialCalc.DoRenderStep(this);};
 SocialCalc.TableEditor.prototype.SchedulePositionCalculations = function() {SocialCalc.SchedulePositionCalculations(this);};
 SocialCalc.TableEditor.prototype.DoPositionCalculations = function() {SocialCalc.DoPositionCalculations(this);};
@@ -7965,8 +7996,28 @@ SocialCalc.EditorRenderSheet = function(editor) {
 
    editor.EditorMouseUnregister();
 
-   editor.fullgrid = editor.context.RenderSheet(editor.fullgrid);
-
+   var sheetobj = editor.context.sheetobj;
+   // App widgets need to keep focus -  only render widgets if needed 
+   if(sheetobj.reRenderCellList != null && SocialCalc._app && sheetobj.widgetsClean === true) {
+     // re-render each individual cells - but not widget with focus 
+     for(var index in sheetobj.reRenderCellList) {
+       var coord = sheetobj.reRenderCellList[index];
+       var valuetype = sheetobj.cells[coord].valuetype;
+       if(valuetype.charAt(1) != "i" || valuetype !=  sheetobj.cells[coord].prevvaluetype) { // skip widgets - but paint when added/replaced
+         cr = SocialCalc.coordToCr(coord);
+         cell = SocialCalc.GetEditorCellElement(editor, cr.row, cr.col);
+         if(cell!=null) editor.ReplaceCell(cell, cr.row, cr.col);
+       }
+     }
+     sheetobj.reRenderCellList = [];
+   } else {
+      editor.fullgrid = editor.context.RenderSheet(editor.fullgrid);
+      if (sheetobj.reRenderCellList != null && SocialCalc._app) {
+        sheetobj.widgetsClean = true; // widgets have been rendered
+        sheetobj.reRenderCellList = [];        
+      }
+   }
+   
    if (editor.ecell) editor.SetECellHeaders("selected");
 
    SocialCalc.AssignID(editor, editor.fullgrid, "fullgrid"); // give it an id
@@ -8003,10 +8054,12 @@ SocialCalc.EditorScheduleSheetCommands = function(editor, cmdstr, saveundo, igno
          break;
 
       case "undo":
+         if(SocialCalc._app ) editor.context.sheetobj.widgetsClean = false;     // force app widgets to render     
          editor.SheetUndo();
          break;
 
       case "redo":
+         if(SocialCalc._app ) editor.context.sheetobj.widgetsClean = false;     // force app widgets to render
          editor.SheetRedo();
          break;
          
@@ -8064,10 +8117,12 @@ SocialCalc.EditorSheetStatusCallback = function(recalcdata, status, arg, editor)
             }
 
          if (sheetobj.celldisplayneeded && !sheetobj.renderneeded) {
-            cr = SocialCalc.coordToCr(sheetobj.celldisplayneeded);
-            cell = SocialCalc.GetEditorCellElement(editor, cr.row, cr.col);
-            editor.ReplaceCell(cell, cr.row, cr.col);
-            }
+             if (sheetobj.cells[sheetobj.celldisplayneeded] && sheetobj.cells[sheetobj.celldisplayneeded].valuetype != "e#N/A") {
+                cr = SocialCalc.coordToCr(sheetobj.celldisplayneeded);
+                cell = SocialCalc.GetEditorCellElement(editor, cr.row, cr.col);
+                editor.ReplaceCell(cell, cr.row, cr.col); // if no value set, wait for recalc and render . 
+                }
+             }
          if (editor.deferredCommands.length) {
             dcmd = editor.deferredCommands.shift();
             editor.EditorScheduleSheetCommands(dcmd.cmdstr, dcmd.saveundo, true);
@@ -8085,7 +8140,7 @@ SocialCalc.EditorSheetStatusCallback = function(recalcdata, status, arg, editor)
             if (sheetobj.renderneeded) {
                editor.FitToEditTable();
                sheetobj.renderneeded = false;
-               editor.ScheduleRender();
+               editor.ScheduleRender(false);
                }
             else {
                editor.SchedulePositionCalculations(); // just in case command changed positions
@@ -8135,7 +8190,7 @@ SocialCalc.EditorSheetStatusCallback = function(recalcdata, status, arg, editor)
 
       case "calcfinished":
          signalstatus(status);
-         editor.ScheduleRender();
+         editor.ScheduleRender(false);                        
          return;
 
       case "schedrender":
@@ -9762,6 +9817,13 @@ SocialCalc.GridMousePosition = function(editor, clientX, clientY) {
 
 SocialCalc.GetEditorCellElement = function(editor, row, col) {
 
+  var headerColOffset = 0;
+  var headerRowOffset = 0;
+   //Adjust for row/col headers
+   if (editor.context.showRCHeaders == false) {     
+     var headerColOffset = -1;
+     var headerRowOffset = -1;
+   }
    var rowpane, colpane, c, coord;
    var rowindex = 0;
    var colindex = 0;
@@ -9777,7 +9839,7 @@ SocialCalc.GetEditorCellElement = function(editor, row, col) {
                      colindex++;
                   }
                return {
-                  element: editor.griddiv.firstChild.lastChild.childNodes[rowindex].childNodes[colindex],
+                  element: editor.griddiv.firstChild.lastChild.childNodes[rowindex +headerRowOffset].childNodes[colindex + headerColOffset],
                   rowpane: rowpane, colpane: colpane};
                }
             for (c=editor.context.colpanes[colpane].first; c<=editor.context.colpanes[colpane].last; c++) {
@@ -9991,7 +10053,7 @@ SocialCalc.ReplaceCell = function(editor, cell, row, col) {
    var newelement, a;
    if (!cell) return;
    newelement = editor.context.RenderCell(row, col, cell.rowpane, cell.colpane, true, null);
-   if (newelement) {
+   if (newelement && cell.element) { // skip hidden cells
       // Don't use a real element and replaceChild, which seems to have focus issues with IE, Firefox, and speed issues
       cell.element.innerHTML = newelement.innerHTML;
       cell.element.style.cssText = "";
@@ -12273,7 +12335,8 @@ SocialCalc.CreateTableControl = function(control) {
 
    functions.control = control; // make sure this is there
 
-   SocialCalc.DragRegister(control.paneslider, control.vertical, !control.vertical, functions, control.editor.toplevel);
+   // Drag pane slider - every thing but app view
+   if (SocialCalc._app != true) SocialCalc.DragRegister(control.paneslider, control.vertical, !control.vertical, functions, control.editor.toplevel);
 
    control.main.appendChild(control.paneslider);
 
@@ -12363,7 +12426,9 @@ SocialCalc.CreateTableControl = function(control) {
                 MouseUp: SocialCalc.TCTDragFunctionStop,
                 Disabled: function() {return control.editor.busy;}};
    functions.control = control; // make sure this is there
-   SocialCalc.DragRegister(control.thumb, control.vertical, !control.vertical, functions, control.editor.toplevel);
+   
+   // Drag pane slider - every thing but app view
+   if (SocialCalc._app != true) SocialCalc.DragRegister(control.thumb, control.vertical, !control.vertical, functions, control.editor.toplevel);
 
    params = {normalstyle: "backgroundImage:url("+imageprefix+"thumb-"+vh+"n.gif)", name:"Thumb",
              downstyle:  "backgroundImage:url("+imageprefix+"thumb-"+vh+"d.gif)",
@@ -13669,6 +13734,7 @@ SocialCalc.ProcessKeyDown = function(e) {
    var ch="";
    var status=true;
 
+   if (SocialCalc._app) return; // // ignore in app - widgets need control
    if (SocialCalc.Keyboard.passThru) return; // ignore
 
    e = e || window.event;
@@ -13718,7 +13784,8 @@ SocialCalc.ProcessKeyPress = function(e) {
    var ch="";
 
    e = e || window.event;
-
+   if (SocialCalc._app) return; // // ignore in app - widgets need control
+   
    if (SocialCalc.Keyboard.passThru) return; // ignore
    if (kt.didProcessKey) { // already processed this key
       if (kt.repeatingKeyPress) {
@@ -19836,7 +19903,7 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
 			result = (operand_value[1] == 0) ? 0 : 1;
 			}
 		//result = "true"; 
-         resulttype = "ni"+fname; // (t)ext value with (i)nterface (CHECKBOX) 
+         resulttype = "ni"+fname; // (n)umber value with (i)nterface (CHECKBOX) 
 
          break;
 		 
@@ -19875,19 +19942,12 @@ SocialCalc.Formula.FunctionList["EMAILAT"] = [SocialCalc.Formula.IoFunctions, -4
 SocialCalc.Formula.FunctionList["EMAILONEDITIF"] = [SocialCalc.Formula.IoFunctions, -5, "editRange, condition, to_range subject_range, body_range", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "EventTree" ];
 SocialCalc.Formula.FunctionList["EMAILATIF"] = [SocialCalc.Formula.IoFunctions, -5, "datetime_value, condition, to_range subject_range, body_range", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "TimeTrigger" ];
 SocialCalc.Formula.FunctionList["SUBMIT"] = [SocialCalc.Formula.IoFunctions, 100, "[label]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Submit('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList" ];
-SocialCalc.Formula.FunctionList["TEXTBOX"] = [SocialCalc.Formula.IoFunctions, 1, "label", "", "gui", "<input type='text' id='TEXTBOX_<%=cell_reference%>' onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.TextBox('<%=cell_reference%>')\" value='<%=display_value%>' >", "Input" ];
-SocialCalc.Formula.FunctionList["CHECKBOX"] = [SocialCalc.Formula.IoFunctions, 1, "label", "", "gui", "<input type='checkbox' id='CHECKBOX_<%=cell_reference%>' <%=checked%> onblur='SocialCalc.CmdGotFocus(null)' onchange=\"SocialCalc.TriggerIoAction.CheckBox('<%=cell_reference%>')\" >", "Input" ];
+SocialCalc.Formula.FunctionList["TEXTBOX"] = [SocialCalc.Formula.IoFunctions, 1, "value", "", "gui", "<input type='text' id='TEXTBOX_<%=cell_reference%>' onblur='SocialCalc.CmdGotFocus(null);' oninput=\"SocialCalc.TriggerIoAction.TextBox('<%=cell_reference%>')\" value='<%=display_value%>' >", "Input" ];
+SocialCalc.Formula.FunctionList["CHECKBOX"] = [SocialCalc.Formula.IoFunctions, 1, "value", "", "gui", "<input type='checkbox' id='CHECKBOX_<%=cell_reference%>' <%=checked%> onblur='SocialCalc.CmdGotFocus(null);' onchange=\"SocialCalc.TriggerIoAction.CheckBox('<%=cell_reference%>')\" >", "Input" ];
 
 SocialCalc.Formula.FunctionList["COPYVALUE"] = [SocialCalc.Formula.IoFunctions, 3, "trigger_cell, value_range, destinationCell(s)", "", "action", "", "EventTree"];
 SocialCalc.Formula.FunctionList["COPYFORMULA"] = [SocialCalc.Formula.IoFunctions, 3, "trigger_cell, formula_range, destinationCell(s)", "", "action", "", "EventTree"];
   
-
-// -----------------------------------------
-// }
-// -----------------------------------------
-
-
-
 // Event triggered, e.g. button clicked. - call linked action formulas 
 // eddy TriggerIoAction {
 SocialCalc.TriggerIoAction.Button = function(triggerCellId) {
@@ -20148,7 +20208,6 @@ SocialCalc.TriggerIoAction.updateInputWidgetFormula = function(function_name, wi
  //SocialCalc.CmdGotFocus(cell_textbox);
 
  spreadsheet.editor.EditorScheduleSheetCommands(sheetCommand,  true, false);
- // var cell_textbox=document.getElementById('TEXTBOX_'+widgetCellId).focus(); 
  
  SocialCalc.TriggerIoAction.UpdateFormDataSheet(function_name, cell.coord, inputValue);
 }
@@ -23479,7 +23538,9 @@ SocialCalc.LocalizeSubstrings = function(str) {
 
 SocialCalc.GetSpreadsheetControlObject = function() {
 
-   var csco = SocialCalc.CurrentSpreadsheetControlObject;
+  // if in viewer mode return CurrentSpreadsheetViewerObject because CurrentSpreadsheetControlObject is null (bug fix) 
+   var csco = (SocialCalc.CurrentSpreadsheetControlObject != null) 
+   ? SocialCalc.CurrentSpreadsheetControlObject : SocialCalc.CurrentSpreadsheetViewerObject;
    if (csco) return csco;
 
 //   throw ("No current SpreadsheetControl object.");
@@ -25330,6 +25391,8 @@ SocialCalc.SpreadsheetControlClipboardLoad = function() {
    else if (document.getElementById(s.idPrefix+"clipboardformat-scsave").checked) {
       savetype = "scsave";
       }
+   // control+v ignores ignore windows clipboard - see ctrlkeyFunction(editor, charname)
+   s.editor.pastescclipboard = true;
    s.editor.EditorScheduleSheetCommands("loadclipboard "+
       SocialCalc.encodeForSave(
          SocialCalc.ConvertOtherFormatToSave(document.getElementById(s.idPrefix+"clipboardtext").value, savetype)), true, false);

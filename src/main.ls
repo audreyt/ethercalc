@@ -444,13 +444,16 @@
         SC[room] = SC._init snapshot, log, DB, room, @io
       # eddy @on data {
       if commandParameters[0].trim() is \submitform
-        console.log "test SC[#{room}] submitform..."      
-        unless SC["#{room}_formdata"]?
-          console.log "Submitform. loading... SC[#{room}_formdata]"
-          _, [snapshot, log] <~ DB.multi!get("snapshot-#{room}_formdata").lrange("log-#{room}_formdata", 0, -1).exec
-          SC["#{room}_formdata"] = SC._init snapshot, log, DB, "#{room}_formdata", @io   
+        room_data = if room.indexOf('_') == -1  # store data in <templatesheet>_formdata
+          then room + "_formdata"
+          else room.replace(/_[a-zA-Z0-9]*$/i,"_formdata") # get formdata sheet of cloned template
+        console.log "test SC[#{room_data}] submitform..."      
+        unless SC["#{room_data}"]?
+          console.log "Submitform. loading... SC[#{room_data}]"
+          _, [snapshot, log] <~ DB.multi!get("snapshot-#{room_data}").lrange("log-#{room_data}", 0, -1).exec
+          SC["#{room_data}"] = SC._init snapshot, log, DB, "#{room_data}", @io   
         # add form values to last row of formdata sheet
-        attribs <-! SC["#{room}_formdata"]?exportAttribs
+        attribs <-! SC["#{room_data}"]?exportAttribs
         console.log "sheet attribs:" { ...attribs }       
         formrow = for let datavalue, formDataIndex in commandParameters when formDataIndex != 0
           "set #{String.fromCharCode(64 + formDataIndex)+(attribs.lastrow+1)} text t #datavalue" 
@@ -459,11 +462,11 @@
         cmdstrformdata = formrow.join("\n")
         console.log "cmdstrformdata:"+cmdstrformdata        
         <~ DB.multi!
-          .rpush "log-#{room}_formdata" cmdstrformdata
-          .rpush "audit-#{room}_formdata" cmdstrformdata
+          .rpush "log-#{room_data}" cmdstrformdata
+          .rpush "audit-#{room_data}" cmdstrformdata
           .bgsave!.exec!
-        SC["#{room}_formdata"]?ExecuteCommand cmdstrformdata
-        broadcast { room:"#{room}_formdata", user, type, auth, cmdstr: cmdstrformdata, +include_self }
+        SC["#{room_data}"]?ExecuteCommand cmdstrformdata
+        broadcast { room:"#{room_data}", user, type, auth, cmdstr: cmdstrformdata, +include_self }
       # }eddy @on data 
       SC[room]?ExecuteCommand cmdstr
       broadcast @data

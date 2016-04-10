@@ -45,7 +45,7 @@
         console.dir info
         callback " EMAIL ERROR - "+error        
       else
-        console.log 'Message sent to:'+(info.accepted)
+        #console.log 'Message sent to:'+(info.accepted)
         #//console.dir(info);
         callback " [E-mail Sent]" 
         return info.accepted

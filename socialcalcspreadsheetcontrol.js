@@ -1306,7 +1306,9 @@ SocialCalc.LocalizeSubstrings = function(str) {
 
 SocialCalc.GetSpreadsheetControlObject = function() {
 
-   var csco = SocialCalc.CurrentSpreadsheetControlObject;
+  // if in viewer mode return CurrentSpreadsheetViewerObject because CurrentSpreadsheetControlObject is null (bug fix) 
+   var csco = (SocialCalc.CurrentSpreadsheetControlObject != null) 
+   ? SocialCalc.CurrentSpreadsheetControlObject : SocialCalc.CurrentSpreadsheetViewerObject;
    if (csco) return csco;
 
 //   throw ("No current SpreadsheetControl object.");
@@ -3157,6 +3159,8 @@ SocialCalc.SpreadsheetControlClipboardLoad = function() {
    else if (document.getElementById(s.idPrefix+"clipboardformat-scsave").checked) {
       savetype = "scsave";
       }
+   // control+v ignores ignore windows clipboard - see ctrlkeyFunction(editor, charname)
+   s.editor.pastescclipboard = true;
    s.editor.EditorScheduleSheetCommands("loadclipboard "+
       SocialCalc.encodeForSave(
          SocialCalc.ConvertOtherFormatToSave(document.getElementById(s.idPrefix+"clipboardtext").value, savetype)), true, false);

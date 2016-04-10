@@ -714,7 +714,7 @@
             return;
           }
           DB.multi().rpush("log-" + room, cmdstr).rpush("audit-" + room, cmdstr).bgsave().exec(function(){
-            var commandParameters, ref$, ref1$;
+            var commandParameters, room_data, ref$, ref1$;
             commandParameters = cmdstr.split("\r");
             if (SC[room] == null) {
               console.log("SC[" + room + "] went away. Reloading...");
@@ -725,16 +725,19 @@
               });
             }
             if (commandParameters[0].trim() === 'submitform') {
-              console.log("test SC[" + room + "] submitform...");
-              if (SC[room + "_formdata"] == null) {
-                console.log("Submitform. loading... SC[" + room + "_formdata]");
-                DB.multi().get("snapshot-" + room + "_formdata").lrange("log-" + room + "_formdata", 0, -1).exec(function(_, arg$){
+              room_data = room.indexOf('_') === -1
+                ? room + "_formdata"
+                : room.replace(/_[a-zA-Z0-9]*$/i, "_formdata");
+              console.log("test SC[" + room_data + "] submitform...");
+              if (SC[room_data + ""] == null) {
+                console.log("Submitform. loading... SC[" + room_data + "]");
+                DB.multi().get("snapshot-" + room_data).lrange("log-" + room_data, 0, -1).exec(function(_, arg$){
                   var snapshot, log;
                   snapshot = arg$[0], log = arg$[1];
-                  return SC[room + "_formdata"] = SC._init(snapshot, log, DB, room + "_formdata", this$.io);
+                  return SC[room_data + ""] = SC._init(snapshot, log, DB, room_data + "", this$.io);
                 });
               }
-              if ((ref$ = SC[room + "_formdata"]) != null) {
+              if ((ref$ = SC[room_data + ""]) != null) {
                 ref$.exportAttribs(function(attribs){
                   var formrow, res$, i$, ref$, len$, cmdstrformdata, this$ = this;
                   console.log("sheet attribs:", (import$({}, attribs)));
@@ -747,13 +750,13 @@
                   formrow = res$;
                   cmdstrformdata = formrow.join("\n");
                   console.log("cmdstrformdata:" + cmdstrformdata);
-                  DB.multi().rpush("log-" + room + "_formdata", cmdstrformdata).rpush("audit-" + room + "_formdata", cmdstrformdata).bgsave().exec(function(){
+                  DB.multi().rpush("log-" + room_data, cmdstrformdata).rpush("audit-" + room_data, cmdstrformdata).bgsave().exec(function(){
                     var ref$;
-                    if ((ref$ = SC[room + "_formdata"]) != null) {
+                    if ((ref$ = SC[room_data + ""]) != null) {
                       ref$.ExecuteCommand(cmdstrformdata);
                     }
                     return broadcast({
-                      room: room + "_formdata",
+                      room: room_data + "",
                       user: user,
                       type: type,
                       auth: auth,

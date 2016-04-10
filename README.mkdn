@@ -39,15 +39,17 @@ support for webworker-threads:
     # Run ethercalc on custom port 80
     sudo docker run -d -p 80:8000 --link redis:redis audreyt/ethercalc
 
-Send email - Optional - Send email formulas requires OAuth2 & cron  e.g. =email(to, subject, body), =emailAt(time, to, subject, body) 
+Send email  
 
+    Optional - Send email formulas requires OAuth2 & cron  e.g. =email(to, subject, body), =emailAt(time, to, subject, body) 
+    
     OAuth2 - Set environment vars 
     1) Tutorial: follow the tutorial to get the 4 environment vars http://masashi-k.blogspot.com.au/2013/06/sending-mail-with-gmail-using-xoauth2.html 
-    2) Set 4 environment vars - see [src/emailer.ls](src/emailer.ls) vars: user, clientId, clientSecret, refreshToken
+    2) Set 4 environment vars - see [src/emailer.ls] vars: user, clientId, clientSecret, refreshToken
     Tested using gmail, have not tested with other providors
 
     Cron - Required for emailAt formulas.
-    See *curl* in [.openshift/cron/minutely/timetrigger](.openshift/cron/minutely/timetrigger) for openshift version (openshift](openshift.redhat.com) 
+    See *curl* in [.openshift/cron/minutely/timetrigger] for openshift version (openshift](openshift.redhat.com) 
     The curl checks the database for unsent emails and updates the database after sending. 
 
 ## REST API

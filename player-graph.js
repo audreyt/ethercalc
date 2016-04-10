@@ -3,7 +3,7 @@
   this.include = function(){
     return this.client({
       '/player/graph.js': function(){
-        var $, SocialCalc, colorIndex, getBarColor, getDrawColor, UpdateGraphRangeProposal, GraphSetCells, DoGraph, GraphChanged, MinMaxChanged, GraphSave, GraphLoad, GraphVerticalBar, GraphHorizontalBar, MakePieChart, MakeLineChart, MakeScatterChart, scc, b1, b2, b3, b4, b5, selectedbg, unselectedbg, cursorgb, hightLightForegoundColour;
+        var $, SocialCalc, colorIndex, getBarColor, getDrawColor, UpdateGraphRangeProposal, GraphSetCells, DoGraph, GraphChanged, MinMaxChanged, GraphSave, GraphLoad, GraphVerticalBar, GraphHorizontalBar, MakePieChart, MakeLineChart, MakeScatterChart, scc, b1, b2, b3, b4, b5, selectedbg, unselectedbg, cursorbg, hightLightForegoundColour;
         $ = window.jQuery || window.$;
         if (!$) {
           return location.reload();
@@ -89,10 +89,12 @@
           DoGraph(false, false);
         };
         window.DoGraph = DoGraph = function(helpflag, isResize){
-          var colorIndex, spreadsheet, editor, gview, ginfo, gfunc, grange, nrange, rparts, prange, range;
+          var colorIndex, spreadsheet, gview, ginfo, gfunc, grange, nrange, rparts, prange, range;
           colorIndex = 0;
           spreadsheet = SocialCalc.GetSpreadsheetControlObject();
-          editor = spreadsheet.editor;
+          if ((spreadsheet != null ? spreadsheet.graphtype : void 8) == null) {
+            return;
+          }
           gview = spreadsheet.views.graph.element;
           ginfo = SocialCalc.GraphTypesInfo[spreadsheet.graphtype];
           gfunc = ginfo.func;
@@ -880,12 +882,12 @@
         b3 = '8';
         b4 = '9';
         b5 = '8';
-        selectedbg = '4044A0';
-        unselectedbg = '383953';
-        cursorgb = '8E91D3';
+        selectedbg = '404040';
+        unselectedbg = '808080';
+        cursorbg = 'A6A6A6';
         hightLightForegoundColour = 'FFF';
         if (SocialCalc.requestParams['app'] != null) {
-          cursorgb = 'FFF';
+          cursorbg = 'FFF';
           hightLightForegoundColour = '000';
         }
         scc.SCToolbarbackground = 'background-color:#' + selectedbg + ';';
@@ -903,7 +905,7 @@
         scc.defaultSelectedColnameStyle = 'font-size:small;text-align:center;color:#' + hightLightForegoundColour + ';background-color:#' + selectedbg + ';cursor:e-resize;';
         scc.defaultRownameStyle = 'font-size:small;text-align:right;color:#' + hightLightForegoundColour + ';background-color:#' + unselectedbg + ';direction:rtl;';
         scc.defaultSelectedRownameStyle = 'font-size:small;text-align:right;color:#' + hightLightForegoundColour + ';background-color:#' + selectedbg + ';';
-        return scc.defaultHighlightTypeCursorStyle = 'color:#' + hightLightForegoundColour + ';backgroundColor:#' + cursorgb + ';';
+        return scc.defaultHighlightTypeCursorStyle = 'color:#' + hightLightForegoundColour + ';backgroundColor:#' + cursorbg + ';';
       }
     });
   };
