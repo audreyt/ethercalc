@@ -9346,6 +9346,7 @@ SocialCalc.EditorProcessKey = function(editor, ch, e) {
          if (ch=="[f2]") {
             if (editor.noEdit || editor.ECellReadonly()) return true;
             SocialCalc.EditorOpenCellEdit(editor);
+            editor.state="inputboxdirect"; // arrow keys move left and right, rather than select cells
             return false;
             }
 
@@ -9427,7 +9428,10 @@ SocialCalc.EditorProcessKey = function(editor, ch, e) {
             editor.inputBox.ShowInputBox(true); // make sure it's moved back if necessary
             return false;
             }
-         if (ch=="[f2]") return false;
+         if (ch=="[f2]") {
+           editor.state = "inputboxdirect"; 
+           return false;
+           }
          if (range.hasrange) {
             editor.RangeRemove();
             }
@@ -9461,7 +9465,10 @@ SocialCalc.EditorProcessKey = function(editor, ch, e) {
                }
             break;
             }
-         if (ch=="[f2]") return false;
+         if (ch=="[f2]") { 
+           editor.state = "input"; // arrow keys add range/coord to inputbox formula
+           return false;
+           }
          return true;
 
       case "skip-and-start":
