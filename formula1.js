@@ -4870,6 +4870,7 @@ SocialCalc.Formula.FunctionList["IRR"] = [SocialCalc.Formula.IRRFunction, -1, "i
 #
 # BUTTON(string) // 
 # TEXTBOX(string) // 
+# AUTOCOMPLETE(string, range)
 # CHECKBOX(string) // 
 # COPYVALUE(range, value, destinationCell(s)) // 
 # COPYFORMULA(range, formula(s), destinationCell(s)) // 
@@ -4901,12 +4902,13 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
 				,EMAILONEDITIF: [4, 4, 4, 4, 4, 4]
 				,EMAILATIF: [4, 4, 4, 4, 4, 4]
         ,SUBMIT: [1]
-				,TEXTBOX: [1]
+        ,TEXTBOX: [1]
+        ,AUTOCOMPLETE: [1, 4]
 				,CHECKBOX: [-1]
 				,COPYVALUE: [2, -1, 3]
 				,COPYFORMULA: [2, -1,3]
    };
-
+   
    var i, value, offset, len, start, count;
    var scf = SocialCalc.Formula;
    var result = 0;
@@ -4963,13 +4965,14 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
          result = "Submit";
      case "BUTTON":
      case "TEXTBOX":
+     case "AUTOCOMPLETE":
          if (numargs>0) result = operand_value[1];
-         resulttype = "ti"+fname; // (t)ext value with (i)nterface (BUTTON,TEXTBOX,) 
+         resulttype = "ti"+fname; // (t)ext value with (i)nterface (BUTTON,TEXTBOX,AUTOCOMPLETE) 
          break;
 
       case "EMAIL":
       case "EMAILIF":
-          resulttype = "ti"+fname; // (t)ext value with (i)nterface (BUTTON,TEXTBOX,) 
+          resulttype = "ti"+fname; // (t)ext value with (i)nterface (,) 
           result = "Send";
           break;
       case "EMAILONEDIT":
@@ -4980,7 +4983,7 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
     	  
       case "EMAILAT":
       case "EMAILATIF":
-          resulttype = "ti"+fname; // (t)ext value with (i)nterface (BUTTON,TEXTBOX,) 
+          resulttype = "ti"+fname; // (t)ext value with (i)nterface (,) 
           result = "Send Now";
           break;
 		 
@@ -5031,11 +5034,54 @@ SocialCalc.Formula.FunctionList["EMAILONEDITIF"] = [SocialCalc.Formula.IoFunctio
 SocialCalc.Formula.FunctionList["EMAILATIF"] = [SocialCalc.Formula.IoFunctions, -5, "datetime_value, condition, to_range subject_range, body_range", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "TimeTrigger" ];
 SocialCalc.Formula.FunctionList["SUBMIT"] = [SocialCalc.Formula.IoFunctions, 100, "[label]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Submit('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList" ];
 SocialCalc.Formula.FunctionList["TEXTBOX"] = [SocialCalc.Formula.IoFunctions, 1, "value", "", "gui", "<input type='text' id='TEXTBOX_<%=cell_reference%>' onblur='SocialCalc.CmdGotFocus(null);' oninput=\"SocialCalc.TriggerIoAction.TextBox('<%=cell_reference%>')\" value='<%=display_value%>' >", "Input" ];
+SocialCalc.Formula.FunctionList["AUTOCOMPLETE"] = [SocialCalc.Formula.IoFunctions, 2, "value, range or csv_text", "", "gui", "<input type='text' id='AUTOCOMPLETE_<%=cell_reference%>' onfocus=\"SocialCalc.TriggerIoAction.AddAutocomplete('<%=cell_reference%>');\" onblur='SocialCalc.CmdGotFocus(null);' value='<%=display_value%>' >", "Input" ];
 SocialCalc.Formula.FunctionList["CHECKBOX"] = [SocialCalc.Formula.IoFunctions, 1, "value", "", "gui", "<input type='checkbox' id='CHECKBOX_<%=cell_reference%>' <%=checked%> onblur='SocialCalc.CmdGotFocus(null);' onchange=\"SocialCalc.TriggerIoAction.CheckBox('<%=cell_reference%>')\" >", "Input" ];
 
 SocialCalc.Formula.FunctionList["COPYVALUE"] = [SocialCalc.Formula.IoFunctions, 3, "trigger_cell, value_range, destinationCell(s)", "", "action", "", "EventTree"];
 SocialCalc.Formula.FunctionList["COPYFORMULA"] = [SocialCalc.Formula.IoFunctions, 3, "trigger_cell, formula_range, destinationCell(s)", "", "action", "", "EventTree"];
+ 
+// on enter input box refresh the auto complete list
+SocialCalc.TriggerIoAction.AddAutocomplete = function(triggerCellId) {
+  var spreadsheet =  window.spreadsheet;
+  if (spreadsheet == null) spreadsheet = window.ss
+  var sheet = spreadsheet.sheet;
+  var scf = SocialCalc.Formula; 
   
+  var parameters = sheet.ioParameterList[triggerCellId];
+  if(typeof parameters === 'undefined') return;
+  
+  var autocompleteSource = [];
+  if(parameters[1].type.charAt(0) == 't') {
+    autocompleteSource = String(parameters[1].value).split(',');
+  }
+  if(parameters[1].type == 'range') {
+    var rangeinfo = scf.DecodeRangeParts(sheet, parameters[1].value);
+    for (var i=0; i<rangeinfo.ncols; i++) {
+       for (var j=0; j<rangeinfo.nrows; j++) {
+
+          var cellcr = SocialCalc.crToCoord(rangeinfo.col1num + i, rangeinfo.row1num + j);
+          var cell = rangeinfo.sheetdata.GetAssuredCell(cellcr);
+          autocompleteSource.push(cell.datavalue.toString());
+       }
+    }
+  }
+
+  
+  $("#AUTOCOMPLETE_"+triggerCellId).autocomplete({
+    source: autocompleteSource,
+    minLength: 1,
+    autoFocus: true,
+    select: function(event, ui) {
+      SocialCalc.TriggerIoAction.AutoComplete(triggerCellId);
+    },
+    change: function (event, ui) {
+      if (ui.item === null) {
+          $(this).val('');
+      }
+      SocialCalc.TriggerIoAction.AutoComplete(triggerCellId);
+    }
+  });  
+}
 // Event triggered, e.g. button clicked. - call linked action formulas 
 // eddy TriggerIoAction {
 SocialCalc.TriggerIoAction.Button = function(triggerCellId) {
@@ -5268,6 +5314,13 @@ SocialCalc.TriggerIoAction.Submit = function(triggerCellId) {
   }
 }
 
+//onKeyUp=AutoComplete
+SocialCalc.TriggerIoAction.AutoComplete = function(autoCompleteCellId) {
+  var getHTMLAutoCompleteCellValue = function( autoCompleteWidget ) { return autoCompleteWidget.value; };
+  var function_name = "AUTOCOMPLETE";
+  SocialCalc.TriggerIoAction.updateInputWidgetFormula(function_name, autoCompleteCellId, getHTMLAutoCompleteCellValue );
+}
+
 // onKeyUp=TextBox 
 SocialCalc.TriggerIoAction.TextBox = function(textBoxCellId) {
   var getHTMLTextBoxCellValue = function( textBoxWidget ) { return textBoxWidget.value; };
@@ -5287,13 +5340,34 @@ SocialCalc.TriggerIoAction.updateInputWidgetFormula = function(function_name, wi
  var spreadsheet =  window.spreadsheet;
  var sheet = spreadsheet.sheet;
  var cell = sheet.cells[widgetCellId];
+ var parameters = sheet.ioParameterList[widgetCellId];
+ if(typeof parameters === 'undefined') return;
  
- var cell_textbox=document.getElementById(function_name+'_'+widgetCellId);
- var inputValue = getHTMLWidgetCellValue(cell_textbox);
+ var cell_widget=document.getElementById(function_name+'_'+widgetCellId);
+ var inputValue = getHTMLWidgetCellValue(cell_widget);
  inputValue = SocialCalc.encodeForSave(inputValue);
 
- var sheetCommand = 'set '+cell.coord+ ' formula ' + function_name+'("' +inputValue+'")'
- //SocialCalc.CmdGotFocus(cell_textbox);
+ var sheetCommand = 'set '+cell.coord+ ' formula '+ function_name+'("' +inputValue+'"';
+ for(var paramIndex = 1; paramIndex < parameters.length; paramIndex++) {
+   if(parameters[paramIndex].type.charAt(0) == 't') {
+     sheetCommand += ',"' + parameters[paramIndex].value + '"';
+   }
+   if(parameters[paramIndex].type == 'range') {
+     // convert:     E5!TO0DB4GSXZJ3|E8|   -> E5!TO0DB4GSXZJ3|E8|
+     // convert:     E5|E8|   -> E5:E8
+     sheetCommand += ',' + parameters[paramIndex].value.toString().replace(/([A-Z]+[0-9]+)([!]?)([^|]*)[|]([A-Z]+[0-9]+)[|]/i,"$3$2$1:$4"); ;
+   }
+   if(parameters[paramIndex].type == 'coord') {
+     sheetCommand += ',' + parameters[paramIndex].value;
+   }   
+ }
+
+   // for(var parseIndex = 3; parseIndex < cell.parseinfo.length -1; parseIndex++) {
+//   if(cell.parseinfo[parseIndex].type == 6)   sheetCommand += '"' + cell.parseinfo[parseIndex].text + '"';
+//   else sheetCommand +=  cell.parseinfo[parseIndex].text ;
+// }
+ sheetCommand += ')';
+ //SocialCalc.CmdGotFocus(cell_widget);
 
  spreadsheet.editor.EditorScheduleSheetCommands(sheetCommand,  true, false);
  
