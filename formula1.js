@@ -5040,6 +5040,7 @@ SocialCalc.Formula.FunctionList["CHECKBOX"] = [SocialCalc.Formula.IoFunctions, 1
 SocialCalc.Formula.FunctionList["COPYVALUE"] = [SocialCalc.Formula.IoFunctions, 3, "trigger_cell, value_range, destinationCell(s)", "", "action", "", "EventTree"];
 SocialCalc.Formula.FunctionList["COPYFORMULA"] = [SocialCalc.Formula.IoFunctions, 3, "trigger_cell, formula_range, destinationCell(s)", "", "action", "", "EventTree"];
  
+
 // on enter input box refresh the auto complete list
 SocialCalc.TriggerIoAction.AddAutocomplete = function(triggerCellId) {
   var spreadsheet =  window.spreadsheet;
@@ -5066,12 +5067,21 @@ SocialCalc.TriggerIoAction.AddAutocomplete = function(triggerCellId) {
     }
   }
 
+  //Overrides the default autocomplete filter function to search only from the beginning of the string
+  $.ui.autocomplete.filter = function (array, term) {
+    var matcher = new RegExp("^" + $.ui.autocomplete.escapeRegex(term), "i");
+    return $.grep(array, function (value) {
+        return matcher.test(value.label || value.value || value);
+    });
+  };
+
   
   $("#AUTOCOMPLETE_"+triggerCellId).autocomplete({
     source: autocompleteSource,
     minLength: 1,
     autoFocus: true,
     select: function(event, ui) {
+      $(this).val(ui.item.label);
       SocialCalc.TriggerIoAction.AutoComplete(triggerCellId);
     },
     change: function (event, ui) {
