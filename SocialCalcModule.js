@@ -20602,7 +20602,11 @@ SocialCalc.Formula.TestCriteria = function(value, type, criteria) {
             break;
 
          case "regex":
-            cond = value.search(new RegExp(basevalue.value)) != -1;
+            try {
+              cond = value.search(new RegExp(basevalue.value)) != -1;
+            } catch(e) {
+              cond = false; // regex invalid (e.g., error value) is always false
+            }
             break;
          }
       }
