@@ -584,7 +584,7 @@ SocialCalc.Formula.ConvertInfixToPolish = function(parseinfo) {
 if(typeof SocialCalc.debug_log === 'undefined') SocialCalc.debug_log = [];
 
 SocialCalc.DebugLog = function(logObject) {	
-	SocialCalc.debug_log.push(logObject);
+//	SocialCalc.debug_log.push(logObject);
 }
 
 
@@ -4869,6 +4869,7 @@ SocialCalc.Formula.FunctionList["IRR"] = [SocialCalc.Formula.IRRFunction, -1, "i
 /*
 #
 # BUTTON(string) // 
+# IMAGEBUTTON(string) 
 # TEXTBOX(string) // 
 # AUTOCOMPLETE(string, range)
 # CHECKBOX(string) // 
@@ -4894,8 +4895,9 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
 // Text values are manipulated as UTF-8, converting from and back to byte strings
 
    var argList = {
-				 BUTTON: [1]
-   				,EMAIL: [4, 4, 4, 4]
+				 BUTTON: [4]
+        ,IMAGEBUTTON: [4]
+   			,EMAIL: [4, 4, 4, 4]
 				,EMAILIF: [4, 4, 4, 4, 4]
 				,EMAILONEDIT: [4, 4, 4, 4, 4]
 				,EMAILAT: [4, 4, 4, 4, 4]
@@ -4964,10 +4966,11 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
      case "SUBMIT":
          result = "Submit";
      case "BUTTON":
+     case "IMAGEBUTTON":
      case "TEXTBOX":
      case "AUTOCOMPLETE":
          if (numargs>0) result = operand_value[1];
-         resulttype = "ti"+fname; // (t)ext value with (i)nterface (BUTTON,TEXTBOX,AUTOCOMPLETE) 
+         resulttype = "ti"+fname; // (t)ext value with (i)nterface (BUTTON,IMAGEBUTTON,TEXTBOX,AUTOCOMPLETE) 
          break;
 
       case "EMAIL":
@@ -5026,6 +5029,7 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
 
 
 SocialCalc.Formula.FunctionList["BUTTON"] = [SocialCalc.Formula.IoFunctions, 1, "label", "", "gui", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Button('<%=cell_reference%>');\"><%=formated_value%></button>" ];
+SocialCalc.Formula.FunctionList["IMAGEBUTTON"] = [SocialCalc.Formula.IoFunctions, 1, "imageurl", "", "gui", "<input type='image' src='<%=display_value%>' alt='Submit' onclick=\"SocialCalc.TriggerIoAction.Button('<%=cell_reference%>');\">" ];
 SocialCalc.Formula.FunctionList["EMAIL"] = [SocialCalc.Formula.IoFunctions, -3, "to_range subject_range, body_range", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList" ];
 SocialCalc.Formula.FunctionList["EMAILIF"] = [SocialCalc.Formula.IoFunctions, -4, "condition_range, to_range subject_range, body_range", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList" ];
 SocialCalc.Formula.FunctionList["EMAILONEDIT"] = [SocialCalc.Formula.IoFunctions, -4, "editRange, to_range subject_range, body_range", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "EventTree"];
@@ -5037,8 +5041,8 @@ SocialCalc.Formula.FunctionList["TEXTBOX"] = [SocialCalc.Formula.IoFunctions, 1,
 SocialCalc.Formula.FunctionList["AUTOCOMPLETE"] = [SocialCalc.Formula.IoFunctions, 2, "value, range or csv_text", "", "gui", "<input type='text' id='AUTOCOMPLETE_<%=cell_reference%>' onfocus=\"SocialCalc.TriggerIoAction.AddAutocomplete('<%=cell_reference%>');\" onblur='SocialCalc.CmdGotFocus(null);' value='<%=display_value%>' >", "Input" ];
 SocialCalc.Formula.FunctionList["CHECKBOX"] = [SocialCalc.Formula.IoFunctions, 1, "value", "", "gui", "<input type='checkbox' id='CHECKBOX_<%=cell_reference%>' <%=checked%> onblur='SocialCalc.CmdGotFocus(null);' onchange=\"SocialCalc.TriggerIoAction.CheckBox('<%=cell_reference%>')\" >", "Input" ];
 
-SocialCalc.Formula.FunctionList["COPYVALUE"] = [SocialCalc.Formula.IoFunctions, 3, "trigger_cell, value_range, destinationCell(s)", "", "action", "", "EventTree"];
-SocialCalc.Formula.FunctionList["COPYFORMULA"] = [SocialCalc.Formula.IoFunctions, 3, "trigger_cell, formula_range, destinationCell(s)", "", "action", "", "EventTree"];
+SocialCalc.Formula.FunctionList["COPYVALUE"] = [SocialCalc.Formula.IoFunctions, 3, "trigger_cell, value_range, destinationCell", "", "action", "", "EventTree"];
+SocialCalc.Formula.FunctionList["COPYFORMULA"] = [SocialCalc.Formula.IoFunctions, 3, "trigger_cell, formula_range, destinationCell", "", "action", "", "EventTree"];
  
 
 // on enter input box refresh the auto complete list
@@ -5092,11 +5096,12 @@ SocialCalc.TriggerIoAction.AddAutocomplete = function(triggerCellId) {
     }
   });  
 }
-// Event triggered, e.g. button clicked. - call linked action formulas 
+// Event triggered, e.g. button/imagebutton clicked. - call linked action formulas 
 // eddy TriggerIoAction {
 SocialCalc.TriggerIoAction.Button = function(triggerCellId) {
  var spreadsheet =  window.spreadsheet;
  var sheet = spreadsheet.sheet;
+ var scf = SocialCalc.Formula; 
  //spreadsheet.editor.EditorScheduleSheetCommands('set A2 value n 10',  true, false);
  
  //spreadsheet.editor.EditorScheduleSheetCommands('sendemail to eddy.nihon',  false, false); 
@@ -5124,34 +5129,72 @@ SocialCalc.TriggerIoAction.Button = function(triggerCellId) {
      */
 	  
 	  case "COPYVALUE" :
-	    //
-	    // e.g. set D3 text t push me 
-	    // e.g. set D3 value v 10		
-		//      set D5 constant n% 0.1 10%
-		//      set D6 constant nd 41922 10/10/2014
-    	var cell = sheet.cells[SocialCalc.Formula.PlainCoord(parameters[1].value)];		
-		  var sheetCommand; 
-    	if (typeof cell !== 'undefined' && cell.valuetype != 'b') { // if not blank get cell data
-    		var cellDataType = cell.datatype;
-    		var cellValueType = cell.valuetype; 		
-    		var cellDataValue = cell.datavalue;		
-    		var cellFormula = cell.formula;
-    		
-    		if(cellDataType == 'f') {
-          cellFormula = "";
-    		  cellDataType = cellValueType;
-    		  if(cellValueType == "nd") {
-    		    cellDataType = "c"; // for Date type etc 
-    		    cellFormula = cell.displaystring;
-    		  }
-    		  if(cellValueType.charAt(0) == "t") cellDataType = "t";    		  
-    		}
-    		sheetCommand = 'set '+parameters[2].value+ ' ' + SocialCalc.Constants.cellDataType[cellDataType] + ' ' +cellValueType + ' '+ SocialCalc.encodeForSave(cellDataValue) + ' ' + SocialCalc.encodeForSave(cellFormula);
-    		
-    	} else { 
-			sheetCommand = 'set '+parameters[2].value+ ' empty';    		
+
+      // get source cells or range    	
+      var sourcerangeinfo = null;
+    	if(parameters[1].type  == 'coord') {    	  
+    	  var sourceCoord = SocialCalc.Formula.PlainCoord(parameters[1].value);
+    	  sourcerangeinfo = scf.DecodeRangeParts(sheet, sourceCoord + "|"+ sourceCoord +"|" );
     	}
-	    spreadsheet.editor.EditorScheduleSheetCommands(sheetCommand.trim(),  true, false);
+    	
+   	  if(parameters[1].type == 'range') {
+    	    sourcerangeinfo = scf.DecodeRangeParts(sheet, parameters[1].value);
+   	  }
+
+      // get row and col of dest cell
+   	  var destcr = SocialCalc.coordToCr(parameters[2].value);
+   	 
+      // set command list to empty
+      var sheetCommandList = "";
+      var sheetCommand;
+     
+      // FOR each source cell
+      for (var i=0; i<sourcerangeinfo.ncols; i++) {
+        for (var j=0; j<sourcerangeinfo.nrows; j++) {
+
+          var cellcoord = SocialCalc.crToCoord(sourcerangeinfo.col1num + i, sourcerangeinfo.row1num + j);
+          var cell = sourcerangeinfo.sheetdata.GetAssuredCell(cellcoord);
+          // destination cell coord
+          var destCellCoord = SocialCalc.crToCoord(destcr.col + i, destcr.row + j);
+
+     
+          // IF after first source cell THEN  add new line to command list
+          if (i != 0 || j != 0 ) sheetCommandList = sheetCommandList + "\n";
+   	  
+   	  
+    	    // copyvalue to set command
+    	    // take the cell from copyvalue source and convert it to a set command to set the destination
+          // e.g. set D3 text t push me 
+          // e.g. set D3 value v 10   
+          // e.g. set D5 constant n% 0.1 10%
+          // e.g. set D6 constant nd 41922 10/10/2014
+        	if (typeof cell !== 'undefined' && cell.valuetype != 'b') { // if not blank get cell data
+        		var cellDataType = cell.datatype;
+        		var cellValueType = cell.valuetype; 		
+        		var cellDataValue = cell.datavalue;		
+        		var cellFormula = cell.formula;
+        		
+        		if(cellDataType == 'f') {
+              cellFormula = "";
+        		  cellDataType = cellValueType;
+        		  if(cellValueType == "nd") {
+        		    cellDataType = "c"; // for Date type etc 
+        		    cellFormula = cell.displaystring;
+        		  }
+        		  if(cellValueType.charAt(0) == "t") cellDataType = "t";    		  
+        		}
+        		
+
+        		sheetCommand = 'set '+destCellCoord+ ' ' + SocialCalc.Constants.cellDataType[cellDataType] + ' ' +cellValueType + ' '+ SocialCalc.encodeForSave(cellDataValue) + ' ' + SocialCalc.encodeForSave(cellFormula);
+        		
+        	} else { 
+    			  sheetCommand = 'set '+destCellCoord+ ' empty';    		
+        	}
+        	sheetCommandList += sheetCommand.trim();
+        }
+      }
+      
+	    spreadsheet.editor.EditorScheduleSheetCommands(sheetCommandList,  true, false);
 	    break;
 	  case "COPYFORMULA" : 
       var cell = sheet.cells[SocialCalc.Formula.PlainCoord(parameters[1].value)];   
