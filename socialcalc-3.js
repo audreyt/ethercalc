@@ -5599,7 +5599,9 @@ SocialCalc.FormatValueForDisplay = function(sheetobj, value, cr, linkstyle) {
 
    // eddy display cell HTML {      
    if(valueinputwidget=="i" && html_display_value!=null && html_formated_value!=null) {
-	 var formula_details = SocialCalc.Formula.FunctionList[formula_name]; 
+     var parameters = sheetobj.ioParameterList[cr];
+    
+	   var formula_details = SocialCalc.Formula.FunctionList[formula_name]; 
 //	 var ecell = SocialCalc.GetSpreadsheetControlObject().editor.ecell; // check if widget has focus
 //	 SocialCalc.GetSpreadsheetControlObject().debug.push({formula_name:formula_name});
 		 if( formula_details) {
@@ -5609,7 +5611,24 @@ SocialCalc.FormatValueForDisplay = function(sheetobj, value, cr, linkstyle) {
 			 var checkedValue = (html_display_value == 0) ? "" : "checked"; // for checkbox
 			 cell_html = cell_html.replace(/<%=checked%>/g, checkedValue);
 			 cell_html = cell_html.replace(/<%=formated_value%>/g, html_formated_value);
-			 cell_html = cell_html.replace(/<%=display_value%>/g, html_display_value);
+       cell_html = cell_html.replace(/<%=display_value%>/g, html_display_value);
+       // replace widget HTML with parameter 
+       // FOR each parameter
+       var parameterValue; // set to value of param for if coord, value of cell
+       if(parameters) { 
+         for(var index=0; index < parameters.length; index ++) {
+           // IF coord THEN replace with cell value
+           if(parameters[index].type == 'coord') {
+             parameterValue = sheetobj.GetAssuredCell(parameters[index].value).datavalue;
+           } else {
+             // ELSE with param value 
+             parameterValue = parameters[index].value;
+           }
+           var paramRegExp = new RegExp("<%=parameter"+index+"_value%>",'g');
+           cell_html = cell_html.replace(paramRegExp, parameterValue);
+         }
+       }
+       
 			 return cell_html.replace(/<%=cell_reference%>/g, cr);
 			 }
 		 return "error:Widget HTML missing";
