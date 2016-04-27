@@ -6480,7 +6480,9 @@ SocialCalc.FormatValueForDisplay = function(sheetobj, value, cr, linkstyle) {
 
    // eddy display cell HTML {      
    if(valueinputwidget=="i" && html_display_value!=null && html_formated_value!=null) {
-	 var formula_details = SocialCalc.Formula.FunctionList[formula_name]; 
+     var parameters = sheetobj.ioParameterList[cr];
+    
+	   var formula_details = SocialCalc.Formula.FunctionList[formula_name]; 
 //	 var ecell = SocialCalc.GetSpreadsheetControlObject().editor.ecell; // check if widget has focus
 //	 SocialCalc.GetSpreadsheetControlObject().debug.push({formula_name:formula_name});
 		 if( formula_details) {
@@ -6490,7 +6492,24 @@ SocialCalc.FormatValueForDisplay = function(sheetobj, value, cr, linkstyle) {
 			 var checkedValue = (html_display_value == 0) ? "" : "checked"; // for checkbox
 			 cell_html = cell_html.replace(/<%=checked%>/g, checkedValue);
 			 cell_html = cell_html.replace(/<%=formated_value%>/g, html_formated_value);
-			 cell_html = cell_html.replace(/<%=display_value%>/g, html_display_value);
+       cell_html = cell_html.replace(/<%=display_value%>/g, html_display_value);
+       // replace widget HTML with parameter 
+       // FOR each parameter
+       var parameterValue; // set to value of param for if coord, value of cell
+       if(parameters) { 
+         for(var index=0; index < parameters.length; index ++) {
+           // IF coord THEN replace with cell value
+           if(parameters[index].type == 'coord') {
+             parameterValue = sheetobj.GetAssuredCell(parameters[index].value).datavalue;
+           } else {
+             // ELSE with param value 
+             parameterValue = parameters[index].value;
+           }
+           var paramRegExp = new RegExp("<%=parameter"+index+"_value%>",'g');
+           cell_html = cell_html.replace(paramRegExp, parameterValue);
+         }
+       }
+       
 			 return cell_html.replace(/<%=cell_reference%>/g, cr);
 			 }
 		 return "error:Widget HTML missing";
@@ -16536,21 +16555,30 @@ SocialCalc.Formula.StoreIoEventFormula = function(function_name, coord, operand_
     operand.reverse(); // normal parameter order
     if(operand.length == 0) return;
 	
-	// add radio buttons to list - so radio group can be updated
-	if(function_name == "RADIOBUTTON") {
-		if(typeof sheet.ioEventTree === 'undefined') sheet.ioEventTree = {};	
-		
-	}
 	
 
-  if(typeof sheet.ioEventTree === 'undefined') sheet.ioEventTree = {};	
-  if(typeof sheet.ioParameterList === 'undefined') sheet.ioParameterList = {};
-  if(typeof sheet.ioTimeTriggerList === 'undefined') sheet.ioTimeTriggerList = {}; 
+  if(typeof sheet.ioEventTree === 'undefined') sheet.ioEventTree = {};	// action formulas - e.g. COPYVALUE, COPYFORMULA  - these action formulas are triggered by a trigger formula 
+  if(typeof sheet.ioParameterList === 'undefined') sheet.ioParameterList = {}; // widget parameters - e.g. BUTTON, TEXTBOX - this is updated when the widget state changes
+  if(typeof sheet.ioTimeTriggerList === 'undefined') sheet.ioTimeTriggerList = {}; // 
+  if(typeof sheet.radioGroupList === 'undefined') sheet.radioGroupList = {}; // 
 
   // store parameters of each action formulas 
   if(typeof sheet.ioParameterList[coord] === 'undefined') sheet.ioParameterList[coord] = {};
   sheet.ioParameterList[coord] = operand;
   sheet.ioParameterList[coord].function_name = function_name;
+  
+  // add radio buttons to list - so radio group can be updated
+//  if(function_name == "RADIOBUTTON") {
+//    
+//    if(operand.length > 1) {
+//      if (sheet.radioGroupList[]) {
+//        sheet.radioGroup.push()
+//      } else {
+//        
+//      } 
+//    }
+//  }
+
   
   // send trigger times to server if changed
   if(io_parameters == "TimeTrigger") { // timer trigger formula exists   
@@ -19785,6 +19813,7 @@ SocialCalc.Formula.FunctionList["IRR"] = [SocialCalc.Formula.IRRFunction, -1, "i
 # TEXTBOX(string) // 
 # AUTOCOMPLETE(string, range)
 # CHECKBOX(string) // 
+# RADIOBUTTON(string,groupname)
 # COPYVALUE(range, value, destinationCell(s)) // 
 # COPYFORMULA(range, formula(s), destinationCell(s)) // 
 #
@@ -19818,7 +19847,8 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
         ,SUBMIT: [1]
         ,TEXTBOX: [1]
         ,AUTOCOMPLETE: [1, 4]
-				,CHECKBOX: [-1]
+        ,CHECKBOX: [-1]
+        ,RADIOBUTTON: [-1, 4]
 				,COPYVALUE: [2, -1, 3]
 				,COPYFORMULA: [2, -1,3]
    };
@@ -19903,13 +19933,14 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
           break;
 		 
       case "CHECKBOX":
+      case "RADIOBUTTON":
 	     if(operand_type[1].charAt(0) == 't') {
 			result = (operand_value[1].toUpperCase() == 'TRUE') ? 1 : 0;
 			} else {
 			result = (operand_value[1] == 0) ? 0 : 1;
 			}
 		//result = "true"; 
-         resulttype = "ni"+fname; // (n)umber value with (i)nterface (CHECKBOX) 
+         resulttype = "ni"+fname; // (n)umber value with (i)nterface (CHECKBOX, RADIOBUTTON)
 
          break;
 		 
@@ -19952,6 +19983,7 @@ SocialCalc.Formula.FunctionList["SUBMIT"] = [SocialCalc.Formula.IoFunctions, 100
 SocialCalc.Formula.FunctionList["TEXTBOX"] = [SocialCalc.Formula.IoFunctions, 1, "value", "", "gui", "<input type='text' id='TEXTBOX_<%=cell_reference%>' onblur='SocialCalc.CmdGotFocus(null);' oninput=\"SocialCalc.TriggerIoAction.TextBox('<%=cell_reference%>')\" value='<%=display_value%>' >", "Input" ];
 SocialCalc.Formula.FunctionList["AUTOCOMPLETE"] = [SocialCalc.Formula.IoFunctions, 2, "value, range or csv_text", "", "gui", "<input type='text' id='AUTOCOMPLETE_<%=cell_reference%>' onfocus=\"SocialCalc.TriggerIoAction.AddAutocomplete('<%=cell_reference%>');\" onblur='SocialCalc.CmdGotFocus(null);' value='<%=display_value%>' >", "Input" ];
 SocialCalc.Formula.FunctionList["CHECKBOX"] = [SocialCalc.Formula.IoFunctions, 1, "value", "", "gui", "<input type='checkbox' id='CHECKBOX_<%=cell_reference%>' <%=checked%> onblur='SocialCalc.CmdGotFocus(null);' onchange=\"SocialCalc.TriggerIoAction.CheckBox('<%=cell_reference%>')\" >", "Input" ];
+SocialCalc.Formula.FunctionList["RADIOBUTTON"] = [SocialCalc.Formula.IoFunctions, 2, "value, groupname", "", "gui", "<input type='radio' value='<%=cell_reference%>' id='RADIOBUTTON_<%=cell_reference%>' <%=checked%> name='<%=parameter1_value%>' onblur=\"SocialCalc.CmdGotFocus(null);\" onclick=\"SocialCalc.TriggerIoAction.RadioButton('<%=parameter1_value%>');\" >", "Input" ];
 
 SocialCalc.Formula.FunctionList["COPYVALUE"] = [SocialCalc.Formula.IoFunctions, 3, "trigger_cell, value_range, destinationCell", "", "action", "", "EventTree"];
 SocialCalc.Formula.FunctionList["COPYFORMULA"] = [SocialCalc.Formula.IoFunctions, 3, "trigger_cell, formula_range, destinationCell", "", "action", "", "EventTree"];
@@ -20299,6 +20331,21 @@ SocialCalc.TriggerIoAction.CheckBox = function(checkBoxCellId) {
   var function_name = "CHECKBOX"
   SocialCalc.TriggerIoAction.updateInputWidgetFormula(function_name, checkBoxCellId, getHTMLCheckBoxCellValue );
 }
+
+//Radio Button state changed
+// onclick when selected
+// onblur when deselected 
+SocialCalc.TriggerIoAction.RadioButton = function(radioButtonGroupName) {
+  var getHTMLRadioButtonValue = function( radioButtonWidget ) { return (radioButtonWidget.checked ? "TRUE" : "FALSE") };
+  var function_name = "RADIOBUTTON"
+    // for each radio button in group
+    $('input[name="'+radioButtonGroupName+'"]').each(function () {
+//    SocialCalc.TriggerIoAction.updateInputWidgetFormula(function_name, radioButtonCellId, getHTMLRadioButtonValue );
+       SocialCalc.TriggerIoAction.updateInputWidgetFormula(function_name,  $(this).attr('id').replace(/RADIOBUTTON_/,''), getHTMLRadioButtonValue );
+    });
+  // SocialCalc.TriggerIoAction.updateInputWidgetFormula(function_name, "C3", getHTMLRadioButtonValue );
+}
+
 
 SocialCalc.TriggerIoAction.updateInputWidgetFormula = function(function_name, widgetCellId, getHTMLWidgetCellValue ) {
 
