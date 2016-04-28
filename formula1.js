@@ -5468,6 +5468,137 @@ SocialCalc.TriggerIoAction.UpdateFormDataSheet = function(function_name, formCel
 }
 
 
+
+//getParameterValues(parameterData)  // gets cell data of range/coord OR param value as cell data
+// CALL getProcessedParameter  with request for values 
+SocialCalc.Formula.getParameterValues = function(sheet, parameterData) {
+  return SocialCalc.TriggerIoAction.getStandardisedParameter(sheet, parameterData, false, true);
+}  
+
+
+// getParameterCoords(parameterData)  // gets coord(s) of range/coord
+// CALL getProcessedParameter  with request for coord info
+SocialCalc.Formula.getParameterCoords = function(sheet, parameterData) {
+  return SocialCalc.TriggerIoAction.getStandardisedParameter(sheet, parameterData, true, false);
+}  
+
+
+/**************************
+ * getProcessedParameter(parameterData, includeCellCoord, includeCellData)
+ *
+ * Convert formula parameter to standard data structure and return it.
+ * 
+ * Formula parameters can be value/string/coord/range
+ * value/string: convert to celldata:  [[coord:A1, datatype:t/c/v/f, valuetype:t/nd/n/b, datavalue:string/value , formula:"test"&B3]] 
+ * coord/range: get celldata from cell
+ * 
+ *  return:
+ ******  data structure returned
+  { value:A1:B2/A1/string/value,
+     type:range/coord/t/n/b/eErrorType,
+     celldata: [[coord:A1, datatype:t/c/v/f, valuetype:t/nd/n/b, datavalue:string/value , formula:"sum(A1)"]],  // if requested
+     cellcoord: [[A1]],   // if requested
+     ncols:n,
+     nrows:n
+     col1num:n
+     row1num:n
+   }
+
+ *
+ * ------------------- type ----------------- 
+ * From docs for SocialCalc.Formula.EvaluatePolish  
+ * type: can have these values (many are type and sub-type as two or more letters):
+ *   "tw", "th", "t", "n", "nt", "coord", "range", "eErrorType", "b" (blank) - removed: "start"
+ * valuetype: is set to type if the parameter is constant and not a cell reference
+ * ------------------------------------------
+ *
+ *
+ *******************************/
+SocialCalc.Formula.getStandardisedParameter = function(sheet, parameterData, includeCellCoord, includeCellData) {
+
+  //SET result = {}
+  //SET store param values in result (.value .type)
+  var result = { type: parameterData.type, value:parameterData.value};
+  
+  //IF parameter is not a cell reference i.e.  type is: "tw", "th", "t", "n", "nt"  THEN    
+  if(parameterData.type != 'coord' && parameterData.type != 'range') {
+    // Setup dummy cell reference information
+    // SET rows and cols to 1 cell -   ncols:n,       nrows:n       col1num:n      row1num:n
+    result.ncols = 1;
+    result.nrows = 1;
+    result.col1num = 1;
+    result.row1num = 1;
+    
+    // IF requested: cell coord value THEN
+    if(includeCellCoord) {
+      // SET coord to default empty value - as dummy value = result.cellcoord = [[]] 
+      result.cellcoord[0] = [];
+    } // END IF
+    
+    // IF requested: cell data  THEN
+    if(includeCellData) {
+      // SET data values to dummy cell data using parameter 
+      // result.celldata = [[ 
+      //   coord to default null value - as illegal request
+      //   datatype  - leave as empty - because not range/coord 
+      //   valuetype (n/b/e/t)  - set to same as parameterData.type - check date/time types don't cause issue
+      //   datavalue set to parameterData.type 
+      //   formula set to empty -  because not range/coord
+      // ] ] 
+      result.celldata[0] = [{coord:null,datatype:null,valuetype: parameterData.type,datavalue:parameterData.value }];
+    } // END IF
+    
+  } else {
+    // param type is "coord" or "range" 
+    
+    var sourcerangeinfo;
+    if(parameterData.type != 'coord') { 
+      var sourceCoord = SocialCalc.Formula.PlainCoord(parameterData.value);
+      sourcerangeinfo = scf.DecodeRangeParts(sheet, sourceCoord + "|"+ sourceCoord +"|" );
+    }
+    
+    if(parameterData.type == 'range') {
+      sourcerangeinfo = scf.DecodeRangeParts(sheet, parameterData.value);
+    }
+
+    
+    for (var i=0; i<sourcerangeinfo.ncols; i++) {
+        for (var j=0; j<sourcerangeinfo.nrows; j++) {
+          var cellcoord = SocialCalc.crToCoord(sourcerangeinfo.col1num + i, sourcerangeinfo.row1num + j);
+           // IF requested: cell coord value THEN
+          if(includeCellCoord) {           
+             // SET coord in array to coord of cell
+            if(typeof result.cellcoord[i] === 'undefined') result.cellcoord[i] = [];            
+            result.cellcoord[i][j] = cellcoord;            
+          } // END IF
+
+          // IF requested: cell data  THEN
+          if(includeCellData) {
+          
+            // SET get cell from sheet and store values 
+            if(typeof result.celldata[i] === 'undefined') result.celldata[i] = [];                        
+            var cell = sourcerangeinfo.sheetdata.GetAssuredCell(cellcoord);
+            result.celldata[i][j] = cell; 
+          } // END IF
+        }
+    }
+    // SET rows and cols to range - i.e. sourcerangeinfo -   ncols:n,       nrows:n       col1num:n      row1num:n
+    result.ncols = sourcerangeinfo.ncols;
+    result.nrows = sourcerangeinfo.nrows;
+    result.col1num = sourcerangeinfo.col1num;
+    result.row1num = sourcerangeinfo.row1num;
+    
+  }  //END IF
+    
+  //RETURN 
+  return result;
+}
+
+
+
+
+
+
 // -----------------------------------------
 // }
 // -----------------------------------------
