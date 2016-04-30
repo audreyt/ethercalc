@@ -3,11 +3,25 @@
   this.include = function(){
     return this.client({
       '/player/broadcast.js': function(){
-        var SocialCalc, md5;
+        var SocialCalc, parseQuery, md5;
         SocialCalc = window.SocialCalc || alert('Cannot find window.SocialCalc');
         if (SocialCalc != null && SocialCalc.OrigDoPositionCalculations) {
           return;
         }
+        parseQuery = function(qstr){
+          var query, params, index, pair;
+          if (qstr.charAt(0) === '?') {
+            qstr = qstr.substr(1);
+          }
+          query = {};
+          params = qstr.split('&');
+          for (index in params) {
+            pair = params[index].split('=');
+            query[decodeURIComponent(pair[0])] = decodeURIComponent(pair[1]);
+          }
+          return query;
+        };
+        SocialCalc.requestParams = parseQuery(window.location.search);
         SocialCalc.OrigDoPositionCalculations = SocialCalc.DoPositionCalculations;
         SocialCalc.DoPositionCalculations = function(){
           var ref$;
@@ -70,7 +84,8 @@
             if (typeof (ref2$ = SocialCalc.Callbacks).broadcast == 'function') {
               ref2$.broadcast('execute', {
                 cmdstr: cmdstr,
-                saveundo: saveundo
+                saveundo: saveundo,
+                room: sheet._room
               });
             }
           }

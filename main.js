@@ -2,10 +2,11 @@
 (function(){
   var join$ = [].join;
   this.include = function(){
-    var J, csvParse, DB, SC, KEY, BASEPATH, EXPIRE, HMAC_CACHE, hmac, ref$, Text, Html, Csv, Json, fs, RealBin, DevMode, sendFile, newRoom, IO, api, ExportCSVJSON, ExportCSV, ExportHTML, JTypeMap, ExportJ, ExportExcelXML, requestToCommand, requestToSave, i$, len$, route, ref1$;
+    var J, csvParse, DB, SC, KEY, BASEPATH, EXPIRE, HMAC_CACHE, hmac, ref$, Text, Html, Csv, Json, fs, RealBin, DevMode, dataDir, sendFile, newRoom, IO, api, ExportCSVJSON, ExportCSV, ExportHTML, JTypeMap, ExportJ, ExportExcelXML, requestToCommand, requestToSave, i$, len$, route, ref1$;
     this.use('json', this.app.router, this.express['static'](__dirname));
     this.app.use('/edit', this.express['static'](__dirname));
     this.app.use('/view', this.express['static'](__dirname));
+    this.app.use('/app', this.express['static'](__dirname));
     this.include('dotcloud');
     this.include('player-broadcast');
     this.include('player-graph');
@@ -32,6 +33,7 @@
     fs = require('fs');
     RealBin = require('path').dirname(fs.realpathSync(__filename));
     DevMode = fs.existsSync(RealBin + "/.git");
+    dataDir = process.env.OPENSHIFT_DATA_DIR;
     sendFile = function(file){
       return function(){
         this.response.type(Html);
@@ -239,6 +241,52 @@
         return [JTypeMap[type], rv];
       });
     };
+    this.get({
+      '/_timetrigger': function(){
+        var this$ = this;
+        return DB.hgetall("cron-list", function(arg$, allTimeTriggers){
+          var timeNowMins, nextTriggerTime, cellID, timeList, res$, i$, ref$, len$, triggerTimeMins, ref1$, room, cell;
+          console.log("allTimeTriggers ", (import$({}, allTimeTriggers)));
+          timeNowMins = Math.floor(new Date().getTime() / (1000 * 60));
+          nextTriggerTime = 2147483647;
+          for (cellID in allTimeTriggers) {
+            timeList = allTimeTriggers[cellID];
+            res$ = [];
+            for (i$ = 0, len$ = (ref$ = timeList.split(',')).length; i$ < len$; ++i$) {
+              triggerTimeMins = ref$[i$];
+              if (triggerTimeMins <= timeNowMins) {
+                ref1$ = cellID.split('!'), room = ref1$[0], cell = ref1$[1];
+                console.log("cellID " + cellID + " triggerTimeMins " + triggerTimeMins);
+                SC._get(room, IO, fn$);
+                continue;
+              } else {
+                if (nextTriggerTime > triggerTimeMins) {
+                  nextTriggerTime = triggerTimeMins;
+                }
+                res$.push(triggerTimeMins);
+              }
+            }
+            timeList = res$;
+            if (timeList.length === 0) {
+              DB.hdel("cron-list", cellID);
+            } else {
+              DB.hset("cron-list", cellID, timeList.toString());
+            }
+          }
+          return DB.multi().set("cron-nextTriggerTime", nextTriggerTime).bgsave().exec(function(){
+            fs.writeFileSync(dataDir + "/nextTriggerTime.txt", nextTriggerTime, 'utf8');
+            console.log("--- cron email sent ---");
+            this$.response.type(Json);
+            return this$.response.send(200, allTimeTriggers);
+          });
+          function fn$(arg$){
+            var snapshot;
+            snapshot = arg$.snapshot;
+            return SC[room].triggerActionCell(cell, function(){});
+          }
+        });
+      }
+    });
     ExportExcelXML = api(function(){});
     this.get({
       '/:room.csv': ExportCSV
@@ -318,6 +366,24 @@
       }
     });
     this.get({
+      '/:template/form': function(){
+        var template, room, this$ = this;
+        template = this.params.template;
+        room = template + '_' + newRoom();
+        delete SC[room];
+        return SC._get(template, IO, function(arg$){
+          var snapshot;
+          snapshot = arg$.snapshot;
+          return SC._put(room, snapshot, function(){
+            return this$.response.redirect(BASEPATH + "/" + room + "/app");
+          });
+        });
+      }
+    });
+    this.get({
+      '/:template/appeditor': sendFile('panels.html')
+    });
+    this.get({
       '/:room/edit': function(){
         var room;
         room = this.params.room;
@@ -328,7 +394,14 @@
       '/:room/view': function(){
         var room;
         room = this.params.room;
-        return this.response.redirect(BASEPATH + "/" + room + "?auth=0");
+        return this.response.redirect(BASEPATH + "/" + room + "?auth=" + hmac(room) + "&view=1");
+      }
+    });
+    this.get({
+      '/:room/app': function(){
+        var room;
+        room = this.params.room;
+        return this.response.redirect(BASEPATH + "/" + room + "?auth=" + hmac(room) + "&app=1");
       }
     });
     this.get({
@@ -567,6 +640,7 @@
     this.on({
       disconnect: function(){
         var id, ref$, key, i$, ref1$, len$, client, room, ref2$, val, isConnected, ref3$;
+        console.log("on disconnect");
         id = this.socket.id;
         if (((ref$ = IO.sockets.manager) != null ? ref$.roomClients : void 8) != null) {
           CleanRoomLegacy: for (key in IO.sockets.manager.roomClients[id]) {
@@ -618,9 +692,12 @@
           });
         };
         broadcast = function(data){
-          return this$.socket.broadcast.to(this$.data.to
+          this$.socket.broadcast.to(this$.data.to
             ? "user-" + this$.data.to
-            : "log-" + room).emit('data', data);
+            : "log-" + data.room).emit('data', data);
+          if ((data.include_self != null) === true) {
+            return this$.emit('data', data);
+          }
         };
         switch (type) {
         case 'chat':
@@ -641,21 +718,12 @@
           DB.hset("ecell-" + room, user, ecell);
           break;
         case 'execute':
-          if (auth === '0') {
-            return;
-          }
           if (/^set sheet defaulttextvalueformat text-wiki\s*$/.exec(cmdstr)) {
             return;
           }
-          if (KEY && hmac(room) !== auth) {
-            reply({
-              type: 'error',
-              message: "Invalid session key. Modifications will not be saved."
-            });
-            return;
-          }
           DB.multi().rpush("log-" + room, cmdstr).rpush("audit-" + room, cmdstr).bgsave().exec(function(){
-            var ref$;
+            var commandParameters, room_data, ref$, ref1$;
+            commandParameters = cmdstr.split("\r");
             if (SC[room] == null) {
               console.log("SC[" + room + "] went away. Reloading...");
               DB.multi().get("snapshot-" + room).lrange("log-" + room, 0, -1).exec(function(_, arg$){
@@ -664,13 +732,67 @@
                 return SC[room] = SC._init(snapshot, log, DB, room, this$.io);
               });
             }
-            if ((ref$ = SC[room]) != null) {
-              ref$.ExecuteCommand(cmdstr);
+            if (commandParameters[0].trim() === 'submitform') {
+              room_data = room.indexOf('_') === -1
+                ? room + "_formdata"
+                : room.replace(/_[a-zA-Z0-9]*$/i, "_formdata");
+              console.log("test SC[" + room_data + "] submitform...");
+              if (SC[room_data + ""] == null) {
+                console.log("Submitform. loading... SC[" + room_data + "]");
+                DB.multi().get("snapshot-" + room_data).lrange("log-" + room_data, 0, -1).exec(function(_, arg$){
+                  var snapshot, log;
+                  snapshot = arg$[0], log = arg$[1];
+                  return SC[room_data + ""] = SC._init(snapshot, log, DB, room_data + "", this$.io);
+                });
+              }
+              if ((ref$ = SC[room_data + ""]) != null) {
+                ref$.exportAttribs(function(attribs){
+                  var formrow, res$, i$, ref$, len$, cmdstrformdata, this$ = this;
+                  console.log("sheet attribs:", (import$({}, attribs)));
+                  res$ = [];
+                  for (i$ = 0, len$ = (ref$ = commandParameters).length; i$ < len$; ++i$) {
+                    if (i$ !== 0) {
+                      res$.push((fn$.call(this, i$, ref$[i$])));
+                    }
+                  }
+                  formrow = res$;
+                  cmdstrformdata = formrow.join("\n");
+                  console.log("cmdstrformdata:" + cmdstrformdata);
+                  DB.multi().rpush("log-" + room_data, cmdstrformdata).rpush("audit-" + room_data, cmdstrformdata).bgsave().exec(function(){
+                    var ref$;
+                    if ((ref$ = SC[room_data + ""]) != null) {
+                      ref$.ExecuteCommand(cmdstrformdata);
+                    }
+                    return broadcast({
+                      room: room_data + "",
+                      user: user,
+                      type: type,
+                      auth: auth,
+                      cmdstr: cmdstrformdata,
+                      include_self: true
+                    });
+                  });
+                  function fn$(formDataIndex, datavalue){
+                    return "set " + (String.fromCharCode(64 + formDataIndex) + (attribs.lastrow + 1)) + " text t " + datavalue;
+                  }
+                });
+              }
+            }
+            if ((ref1$ = SC[room]) != null) {
+              ref1$.ExecuteCommand(cmdstr);
             }
             return broadcast(this$.data);
           });
           break;
         case 'ask.log':
+          if (typeof DB.DB === 'undefined') {
+            console.log("ignore connection request, no database yet!");
+            reply({
+              type: 'ignore'
+            });
+            return;
+          }
+          console.log("join [log-" + room + "] [user-" + user + "]");
           this.socket.join("log-" + room);
           this.socket.join("user-" + user);
           DB.multi().get("snapshot-" + room).lrange("log-" + room, 0, -1).lrange("chat-" + room, 0, -1).exec(function(_, arg$){
@@ -767,6 +889,11 @@
       });
     }
   };
+  function import$(obj, src){
+    var own = {}.hasOwnProperty;
+    for (var key in src) if (own.call(src, key)) obj[key] = src[key];
+    return obj;
+  }
   function deepEq$(x, y, type){
     var toString = {}.toString, hasOwnProperty = {}.hasOwnProperty,
         has = function (obj, key) { return hasOwnProperty.call(obj, key); };
