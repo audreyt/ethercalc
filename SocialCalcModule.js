@@ -16524,7 +16524,7 @@ SocialCalc.Formula.DecodeRangeParts = function(sheetdata, range) {
 //   io_parameters, if present, 
 //        "ParameterList" is used with =CopyValue() etc, used to collect parameters of the formula, for use trigger/action formulas, 
 //        "EventTree" is used with =Button() etc, used to store trigger cell lookup table
-//        "Input" for input style GUI widgets - textbox/radio buttons etc - 
+//        "Input" store copy of value in formdata sheet -- for input style GUI widgets - textbox/radio buttons etc - 
 //
 // To add a function, just add it to this object.
 
@@ -16547,7 +16547,7 @@ SocialCalc.Formula.DecodeRangeParts = function(sheetdata, range) {
 
 /*
 #
-# SocialCalc.Formula.StoreIoEventFormula(coord, operand_reverse, sheet, io_parameters)
+# SocialCalc.Formula.StoreIoEventFormula(function_name, coord, operand_reverse, sheet, io_parameters)
 # 
 # store forumla parameters of io event formulas
 #
@@ -19832,12 +19832,13 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
 // ArgList has an array for each function, one entry for each possible arg (up to max).
 // Min args are specified in SocialCalc.Formula.FunctionList.
 //   -2 = one or more number argument
-//   -1 = any type
+//   -1 = any type (not range)
 //   0 = number
 //   1 = text argument
 //   2 = coord argument
 //   3 = value/single coord cell 
-//   4 = text or cord 
+//   4 = text or coord or range
+//   5 = text or number or coord or range
 	
 // If array element is 1 then it's a text argument, if it's 0 then it's numeric, if -1 then just get whatever's there
 // Text values are manipulated as UTF-8, converting from and back to byte strings
@@ -19856,8 +19857,8 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
         ,AUTOCOMPLETE: [1, 4]
         ,CHECKBOX: [-1]
         ,RADIOBUTTON: [-1, 4]
-				,COPYVALUE: [2, -1, 3]
-				,COPYFORMULA: [2, -1,3]
+				,COPYVALUE: [2, 5, 2]
+				,COPYFORMULA: [2, 5, 2]
    };
    
    var i, value, offset, len, start, count;
@@ -19890,13 +19891,21 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
           }
       else if (argdef[i-1] == 4) {
 	    	  if(foperand[foperand.length -1].type == 'range') {
-	    	         value = scf.OperandAsRange(sheet, foperand);
+	    	     value = scf.OperandAsRange(sheet, foperand);
 	    			 value.value = value.value.replace(/\$/g,'');    		  
-	    	         // value.value = sheet.cells[value.value.split('|')[0]].datavalue
+	    	     // value.value = sheet.cells[value.value.split('|')[0]].datavalue
 	    	  } else {
 	    	         value = scf.OperandAsText(sheet, foperand);
 	    	  }
-          }
+      }
+      else if (argdef[i-1] == 5) {
+        if(foperand[foperand.length -1].type == 'range') {
+          value = scf.OperandAsRange(sheet, foperand);
+          value.value = value.value.replace(/\$/g,'');         
+        } else {
+          value = scf.OperandValueAndType(sheet, foperand);
+        }
+      }      
       else if (argdef[i-1] == -1) {
          value = scf.OperandValueAndType(sheet, foperand);
          }
@@ -19953,16 +19962,12 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
 		 
 		 
       case "COPYVALUE":
-         result = sheet.cells[operand_value[1]].datavalue;
-         resulttype = "t";
-         break;
-
       case "COPYFORMULA":
-         result = sheet.cells[operand_value[1]].datavalue;
+         var cell = sheet.cells[operand_value[1]];
+         if(typeof cell === 'undefined') break; // invalid trigger cell
+         result = cell.datavalue;
          resulttype = "t";
          break;
-
-		 
       }
 
    scf.PushOperand(operand, resulttype, result);
@@ -20007,19 +20012,17 @@ SocialCalc.TriggerIoAction.AddAutocomplete = function(triggerCellId) {
   if(typeof parameters === 'undefined') return;
   
   var autocompleteSource = [];
-  if(parameters[1].type.charAt(0) == 't') {
-    autocompleteSource = String(parameters[1].value).split(',');
-  }
-  if(parameters[1].type == 'range') {
-    var rangeinfo = scf.DecodeRangeParts(sheet, parameters[1].value);
-    for (var i=0; i<rangeinfo.ncols; i++) {
-       for (var j=0; j<rangeinfo.nrows; j++) {
-
-          var cellcr = SocialCalc.crToCoord(rangeinfo.col1num + i, rangeinfo.row1num + j);
-          var cell = rangeinfo.sheetdata.GetAssuredCell(cellcr);
-          autocompleteSource.push(cell.datavalue.toString());
-       }
-    }
+  var parameterdata = SocialCalc.Formula.getStandardizedValues(sheet, parameters[1]);
+  
+  if(parameterdata.ncols == 1 && parameterdata.nrows == 1) {
+    autocompleteSource = String(parameterdata.celldata[0][0].datavalue).split(',');
+  } else {
+    for (var i=0; i<parameterdata.ncols; i++) {
+      for (var j=0; j<parameterdata.nrows; j++) {
+         var cell = parameterdata.celldata[i][j];
+         autocompleteSource.push(cell.datavalue.toString());
+      }
+   }    
   }
 
   //Overrides the default autocomplete filter function to search only from the beginning of the string
@@ -20081,16 +20084,8 @@ SocialCalc.TriggerIoAction.Button = function(triggerCellId) {
 	  
 	  case "COPYVALUE" :
 
-      // get source cells or range    	
-      var sourcerangeinfo = null;
-    	if(parameters[1].type  == 'coord') {    	  
-    	  var sourceCoord = SocialCalc.Formula.PlainCoord(parameters[1].value);
-    	  sourcerangeinfo = scf.DecodeRangeParts(sheet, sourceCoord + "|"+ sourceCoord +"|" );
-    	}
-    	
-   	  if(parameters[1].type == 'range') {
-    	    sourcerangeinfo = scf.DecodeRangeParts(sheet, parameters[1].value);
-   	  }
+	    
+	    var parameterdata = SocialCalc.Formula.getStandardizedValues(sheet, parameters[1]);
 
       // get row and col of dest cell
    	  var destcr = SocialCalc.coordToCr(parameters[2].value);
@@ -20100,11 +20095,10 @@ SocialCalc.TriggerIoAction.Button = function(triggerCellId) {
       var sheetCommand;
      
       // FOR each source cell
-      for (var i=0; i<sourcerangeinfo.ncols; i++) {
-        for (var j=0; j<sourcerangeinfo.nrows; j++) {
+      for (var i=0; i<parameterdata.ncols; i++) {
+        for (var j=0; j<parameterdata.nrows; j++) {
 
-          var cellcoord = SocialCalc.crToCoord(sourcerangeinfo.col1num + i, sourcerangeinfo.row1num + j);
-          var cell = sourcerangeinfo.sheetdata.GetAssuredCell(cellcoord);
+          var cell = parameterdata.celldata[i][j];
           // destination cell coord
           var destCellCoord = SocialCalc.crToCoord(destcr.col + i, destcr.row + j);
 
@@ -20133,6 +20127,8 @@ SocialCalc.TriggerIoAction.Button = function(triggerCellId) {
         		    cellFormula = cell.displaystring;
         		  }
         		  if(cellValueType.charAt(0) == "t") cellDataType = "t";    		  
+        		} else {
+              if(cellValueType.charAt(0) == "t" || cellValueType == "n") cellFormula = "";          
         		}
         		
 
@@ -20148,27 +20144,51 @@ SocialCalc.TriggerIoAction.Button = function(triggerCellId) {
 	    spreadsheet.editor.EditorScheduleSheetCommands(sheetCommandList,  true, false);
 	    break;
 	  case "COPYFORMULA" : 
-      var cell = sheet.cells[SocialCalc.Formula.PlainCoord(parameters[1].value)];   
-      var sheetCommand; 
-      if (typeof cell !== 'undefined' && cell.valuetype != 'b') { // if not blank get cell data
-        var cellDataType = cell.datatype;
-        var cellValueType = cell.valuetype;     
-        var cellDataValue = cell.datavalue;   
-        var cellFormula = cell.formula;
-        
-        if(cellDataType == 'f') {
-          sourceCell = SocialCalc.coordToCr(parameters[1].value);
-          destinationCell = SocialCalc.coordToCr(parameters[2].value);
-          cellFormula = SocialCalc.OffsetFormulaCoords(cellFormula, destinationCell.col -  sourceCell.col, destinationCell.row -  sourceCell.row);
-          cellDataValue = "";
-          cellValueType = "";  
+      var parameterdata = SocialCalc.Formula.getStandardizedValues(sheet, parameters[1]);
+
+      // get row and col of dest cell
+      var destcr = SocialCalc.coordToCr(parameters[2].value);
+      
+      // set command list to empty
+      var sheetCommandList = "";
+      var sheetCommand;
+     
+      // FOR each source cell
+      for (var i=0; i<parameterdata.ncols; i++) {
+        for (var j=0; j<parameterdata.nrows; j++) {
+
+          var cell = parameterdata.celldata[i][j];
+          // destination cell coord
+          var destCellCoord = SocialCalc.crToCoord(destcr.col + i, destcr.row + j);
+
+     
+          // IF after first source cell THEN  add new line to command list
+          if (i != 0 || j != 0 ) sheetCommandList = sheetCommandList + "\n";
+	    
+	    
+          if (typeof cell !== 'undefined' && cell.valuetype != 'b') { // if not blank get cell data
+            var cellDataType = cell.datatype;
+            var cellValueType = cell.valuetype;     
+            var cellDataValue = cell.datavalue;   
+            var cellFormula = cell.formula;
+            
+            if(cellDataType == 'f') {
+              cellFormula = SocialCalc.OffsetFormulaCoords(cellFormula, destcr.col -  parameterdata.col1num, destcr.row -  parameterdata.row1num);
+              cellDataValue = "";
+              cellValueType = "";  
+            } else { 
+              if(cellValueType.charAt(0) == "t" || cellValueType.charAt(0) == "n") cellFormula = "";  // text and number types   but not date/time      
+            }
+            
+            sheetCommand = 'set '+destCellCoord+ ' ' + SocialCalc.Constants.cellDataType[cellDataType] + ' ' +cellValueType + ' '+ SocialCalc.encodeForSave(cellDataValue) + ' ' + SocialCalc.encodeForSave(cellFormula);            
+          } else { 
+            sheetCommand = 'set '+destCellCoord+ ' empty';        
+          }          
+          sheetCommandList += sheetCommand.trim();
         }
-        sheetCommand = 'set '+parameters[2].value+ ' ' + SocialCalc.Constants.cellDataType[cellDataType] + ' ' +cellValueType + ' '+ SocialCalc.encodeForSave(cellDataValue) + ' ' + SocialCalc.encodeForSave(cellFormula);
-        
-      } else { 
-      sheetCommand = 'set '+parameters[2].value+ ' empty';        
       }
-      spreadsheet.editor.EditorScheduleSheetCommands(sheetCommand.trim(),  true, false);
+        
+      spreadsheet.editor.EditorScheduleSheetCommands(sheetCommandList.trim(),  true, false);
       break;
 		break;
       }
@@ -20341,16 +20361,14 @@ SocialCalc.TriggerIoAction.CheckBox = function(checkBoxCellId) {
 
 //Radio Button state changed
 // onclick when selected
-// onblur when deselected 
+// update true/false in formula param
 SocialCalc.TriggerIoAction.RadioButton = function(radioButtonGroupName) {
   var getHTMLRadioButtonValue = function( radioButtonWidget ) { return (radioButtonWidget.checked ? "TRUE" : "FALSE") };
   var function_name = "RADIOBUTTON"
-    // for each radio button in group
-    $('input[name="'+radioButtonGroupName+'"]').each(function () {
-//    SocialCalc.TriggerIoAction.updateInputWidgetFormula(function_name, radioButtonCellId, getHTMLRadioButtonValue );
-       SocialCalc.TriggerIoAction.updateInputWidgetFormula(function_name,  $(this).attr('id').replace(/RADIOBUTTON_/,''), getHTMLRadioButtonValue );
-    });
-  // SocialCalc.TriggerIoAction.updateInputWidgetFormula(function_name, "C3", getHTMLRadioButtonValue );
+  // for each radio button in group
+  $('input[name="'+radioButtonGroupName+'"]').each(function () {
+     SocialCalc.TriggerIoAction.updateInputWidgetFormula(function_name,  $(this).attr('id').replace(/RADIOBUTTON_/,''), getHTMLRadioButtonValue );
+  });
 }
 
 
@@ -20372,7 +20390,7 @@ SocialCalc.TriggerIoAction.updateInputWidgetFormula = function(function_name, wi
      sheetCommand += ',"' + parameters[paramIndex].value + '"';
    }
    if(parameters[paramIndex].type == 'range') {
-     // convert:     E5!TO0DB4GSXZJ3|E8|   -> E5!TO0DB4GSXZJ3|E8|
+     // convert:     E5!TO0DB4GSXZJ3|E8|   -> TO0DB4GSXZJ3!E5:E8
      // convert:     E5|E8|   -> E5:E8
      sheetCommand += ',' + parameters[paramIndex].value.toString().replace(/([A-Z]+[0-9]+)([!]?)([^|]*)[|]([A-Z]+[0-9]+)[|]/i,"$3$2$1:$4"); ;
    }
@@ -20406,6 +20424,145 @@ SocialCalc.TriggerIoAction.UpdateFormDataSheet = function(function_name, formCel
     formDataViewer.sheet.ScheduleSheetCommands("set "+valueCoord+" text t "+inputValue, false);    
   }
 }
+
+
+
+//getStandardizedValues(parameterData)  // gets cell data of range/coord OR param value as cell data
+// CALL getProcessedParameter  with request for values 
+SocialCalc.Formula.getStandardizedValues = function(sheet, parameterData) {
+  return SocialCalc.Formula.getStandardizedParameter(sheet, parameterData, false, true);
+}  
+
+
+// getStandardizedCoords(parameterData)  // gets coord(s) of range/coord
+// CALL getProcessedParameter  with request for coord info
+SocialCalc.Formula.getStandardizedCoords = function(sheet, parameterData) {
+  return SocialCalc.Formula.getStandardizedParameter(sheet, parameterData, true, false);
+}  
+
+
+/**************************
+ * getStandardizedParameter(parameterData, includeCellCoord, includeCellData)
+ *
+ * Convert formula parameter to standard data structure and return it.
+ * 
+ * Formula parameters can be value/string/coord/range
+ * value/string: convert to celldata:  [[coord:A1, datatype:t/c/v/f, valuetype:t/nd/n/b, datavalue:string/value , formula:"test"&B3]] 
+ * coord/range: get celldata from cell
+ * 
+ *  return:
+ ******  data structure returned
+  { 
+     value:A1:B2/A1/string/value,
+     type:range/coord/t/n/b/eErrorType,
+     celldata: [[coord:A1, datatype:t/c/v/f, valuetype:t/nd/n/b, datavalue:string/value , formula:"sum(A1)"]],  // if requested
+     cellcoord: [[A1]],   // if requested
+     ncols:n,
+     nrows:n
+     col1num:n
+     row1num:n
+   }
+
+ *
+ * ------------------- type ----------------- 
+ * From docs for SocialCalc.Formula.EvaluatePolish  
+ * type: can have these values (many are type and sub-type as two or more letters):
+ *   "tw", "th", "t", "n", "nt", "coord", "range", "eErrorType", "b" (blank) - removed: "start"
+ * valuetype: is set to type if the parameter is constant and not a cell reference
+ * ------------------------------------------
+ *
+ *
+ *******************************/
+SocialCalc.Formula.getStandardizedParameter = function(sheet, parameterData, includeCellCoord, includeCellData) {
+  
+  //SET result = {}
+  //SET store param values in result (.value .type)
+  var result = { type: parameterData.type, value:parameterData.value};
+  if(includeCellData) result.celldata = [];
+           
+  //IF parameter is not a cell reference i.e.  type is: "tw", "th", "t", "n", "nt"  THEN    
+  if(parameterData.type != 'coord' && parameterData.type != 'range') {
+    // Setup dummy cell reference information
+    // SET rows and cols to 1 cell   
+    result.ncols = 1;
+    result.nrows = 1;
+    result.col1num = 1;
+    result.row1num = 1;
+    
+    // IF requested: cell coord value THEN
+    if(includeCellCoord) {
+      // SET coord to default empty value - 
+      result.cellcoord = null; 
+    } // END IF
+    
+    // IF requested: cell data  THEN
+    if(includeCellData) {
+      // SET data values to dummy cell data using parameter 
+      // result.celldata = [[ 
+      //   coord to default null value - as illegal request
+      //   datatype  - t/v  - const can only have 2 value types
+      //   valuetype (n/b/e/t)  - set to same as parameterData.type - check date/time types don't cause issue
+      //   datavalue set to parameterData.type 
+      //   formula set to empty -  because not range/coord
+      // ] ] 
+      result.celldata[0] = [];
+      var constantDatatype = (parameterData.type=="n") ? "v" : ((parameterData.type=="t") ? parameterData.type : "c");
+      result.celldata[0][0] = {coord:null,datatype:constantDatatype,valuetype: parameterData.type,datavalue:parameterData.value };
+    } // END IF
+    
+  } else {
+    // param type is "coord" or "range" 
+
+    var scf = SocialCalc.Formula; 
+    
+    var sourcerangeinfo;
+    if(parameterData.type == 'coord') { 
+      var sourceCoord = SocialCalc.Formula.PlainCoord(parameterData.value);
+      sourcerangeinfo = scf.DecodeRangeParts(sheet, sourceCoord + "|"+ sourceCoord +"|" );
+    }
+    
+    if(parameterData.type == 'range') {
+      sourcerangeinfo = scf.DecodeRangeParts(sheet, parameterData.value);
+    }
+    
+    // if coords requested,  init coord array
+    if(includeCellCoord) result.cellcoord = []; 
+    
+    for (var i=0; i<sourcerangeinfo.ncols; i++) {
+        for (var j=0; j<sourcerangeinfo.nrows; j++) {
+          var cellcoord = SocialCalc.crToCoord(sourcerangeinfo.col1num + i, sourcerangeinfo.row1num + j);
+           // IF requested: cell coord value THEN
+          if(includeCellCoord) {           
+             // SET coord in array to coord of cell
+            if(typeof result.cellcoord[i] === 'undefined') result.cellcoord[i] = [];            
+            result.cellcoord[i][j] = cellcoord;            
+          } // END IF
+
+          // IF requested: cell data  THEN
+          if(includeCellData) {
+          
+            // SET get cell from sheet and store values 
+            if(typeof result.celldata[i] === 'undefined') result.celldata[i] = [];                        
+            var cell = sourcerangeinfo.sheetdata.GetAssuredCell(cellcoord);
+            result.celldata[i][j] = cell; 
+          } // END IF
+        }
+    }
+    // SET rows and cols to range - i.e. sourcerangeinfo -   ncols:n,       nrows:n       col1num:n      row1num:n
+    result.ncols = sourcerangeinfo.ncols;
+    result.nrows = sourcerangeinfo.nrows;
+    result.col1num = sourcerangeinfo.col1num;
+    result.row1num = sourcerangeinfo.row1num;
+    
+  }  //END IF
+    
+  //RETURN 
+  return result;
+}
+
+
+
+
 
 
 // -----------------------------------------
