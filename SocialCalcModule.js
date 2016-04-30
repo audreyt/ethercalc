@@ -9991,7 +9991,7 @@ SocialCalc.MoveECell = function(editor, newcell) {
          }
       editor.UpdateCellCSS(cell, editor.ecell.row, editor.ecell.col);
       editor.SetECellHeaders(""); // set to regular col/rowname styles
-      editor.cellhandles.ShowCellHandles(false);
+      if(editor.cellhandles) editor.cellhandles.ShowCellHandles(false); // only if row/col visible 
       }
    newcell = editor.context.cellskip[newcell] || newcell;
    editor.ecell = SocialCalc.coordToCr(newcell);
