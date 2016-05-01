@@ -1,4 +1,4 @@
-# 20160501.0
+# 20160501.1
 
 - Fixed charting in Graph tab.
 - Add F2 for input mode toggle.
