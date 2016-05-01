@@ -124,7 +124,7 @@
           var ref$, ref1$;
           ((ref1$ = (ref$ = db.DB)[key]) != null
             ? ref1$
-            : ref$[key] = [])[idx] = val;
+            : ref$[key] = {})[idx] = val;
           return typeof cb == 'function' ? cb() : void 8;
         },
         hgetall: function(key, cb){
@@ -132,6 +132,12 @@
           return typeof cb == 'function' ? cb(null, (ref1$ = (ref$ = db.DB)[key]) != null
             ? ref1$
             : ref$[key] = {}) : void 8;
+        },
+        hdel: function(key, idx){
+          if (db.DB[key] != null) {
+            delete db.DB[key][idx];
+          }
+          return typeof cb == 'function' ? cb() : void 8;
         },
         rename: function(key, key2, cb){
           var ref$, ref1$;

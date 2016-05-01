@@ -3,12 +3,18 @@
   this.include = function(){
     return this.client({
       '/player/graph.js': function(){
-        var $, SocialCalc, colorIndex, getBarColor, getDrawColor, UpdateGraphRangeProposal, GraphSetCells, DoGraph, GraphChanged, MinMaxChanged, GraphSave, GraphLoad, GraphVerticalBar, GraphHorizontalBar, MakePieChart, MakeLineChart, MakeScatterChart, scc, b1, b2, b3, b4, b5;
+        var $, SocialCalc, colorIndex, getBarColor, getDrawColor, UpdateGraphRangeProposal, GraphSetCells, DoGraph, GraphChanged, MinMaxChanged, GraphSave, GraphLoad, GraphVerticalBar, GraphHorizontalBar, MakePieChart, MakeLineChart, MakeScatterChart, scc, b1, b2, b3, b4, b5, selectedbg, unselectedbg, cursorbg, hightLightForegoundColour;
         $ = window.jQuery || window.$;
         if (!$) {
           return location.reload();
         }
         SocialCalc = window.SocialCalc || alert('Cannot find window.SocialCalc');
+        SocialCalc.Constants.s_loc_horizontal_bar = "Horizontal Bar";
+        SocialCalc.Constants.s_loc_vertical_bar = "Vertical Bar";
+        SocialCalc.Constants.s_loc_pie_chart = "Pie Chart";
+        SocialCalc.Constants.s_loc_line_chart = "Line Chart";
+        SocialCalc.Constants.s_loc_scatter_chart = "Scatter Chart";
+        SocialCalc.Constants.s_loc_hide_help = "Hide Help";
         colorIndex = 0;
         getBarColor = function(){
           var colors;
@@ -89,10 +95,12 @@
           DoGraph(false, false);
         };
         window.DoGraph = DoGraph = function(helpflag, isResize){
-          var colorIndex, spreadsheet, editor, gview, ginfo, gfunc, grange, nrange, rparts, prange, range;
+          var colorIndex, spreadsheet, gview, ginfo, gfunc, grange, nrange, rparts, prange, range;
           colorIndex = 0;
           spreadsheet = SocialCalc.GetSpreadsheetControlObject();
-          editor = spreadsheet.editor;
+          if ((spreadsheet != null ? spreadsheet.graphtype : void 8) == null) {
+            return;
+          }
           gview = spreadsheet.views.graph.element;
           ginfo = SocialCalc.GraphTypesInfo[spreadsheet.graphtype];
           gfunc = ginfo.func;
@@ -875,22 +883,35 @@
           }
         };
         scc = SocialCalc.Constants;
-        b1 = window.location.search ? 'A' : '4';
+        b1 = window.location.search ? 'A' : '6';
         b2 = 'C';
         b3 = '8';
         b4 = '9';
         b5 = '8';
-        scc.SCToolbarbackground = 'background-color:#4040' + b1 + '0;';
-        scc.SCTabbackground = 'background-color:#CC' + b2 + ';';
-        scc.SCTabselectedCSS = 'font-size:small;padding:6px 30px 6px 8px;color:#FFF;background-color:#4040' + b1 + '0;cursor:default;border-right:1px solid #CC' + b2 + ';';
-        scc.SCTabplainCSS = 'font-size:small;padding:6px 30px 6px 8px;color:#FFF;background-color:#8080' + b3 + '0;cursor:default;border-right:1px solid #CC' + b2 + ';';
+        selectedbg = '404040';
+        unselectedbg = '808080';
+        cursorbg = 'A6A6A6';
+        hightLightForegoundColour = 'FFF';
+        if (SocialCalc.requestParams['app'] != null) {
+          cursorbg = 'FFF';
+          hightLightForegoundColour = '000';
+        }
+        scc.SCToolbarbackground = 'background-color:#' + selectedbg + ';';
+        scc.SCTabbackground = 'background-color:#' + unselectedbg + ';';
+        scc.SCTabselectedCSS = 'font-size:small;padding:6px 30px 6px 8px;color:#FFF;background-color:#' + selectedbg + ';cursor:default;border-right:1px solid #CC' + b2 + ';';
+        scc.SCTabplainCSS = 'font-size:small;padding:6px 30px 6px 8px;color:#FFF;background-color:#' + unselectedbg + ';cursor:default;border-right:1px solid #CC' + b2 + ';';
         scc.SCToolbartext = 'font-size:x-small;font-weight:bold;color:#FFF;padding-bottom:4px;';
-        scc.ISCButtonBorderNormal = '#4040' + b1 + '0';
+        scc.ISCButtonBorderNormal = '#' + selectedbg;
         scc.ISCButtonBorderHover = '#99' + b4;
         scc.ISCButtonBorderDown = '#FFF';
         scc.ISCButtonDownBackground = '#88' + b5;
-        scc.defaultImagePrefix = './images/sc_';
-        return SocialCalc.Popup.LocalizeString = SocialCalc.LocalizeString;
+        scc.defaultImagePrefix = 'images/sc_';
+        SocialCalc.Popup.LocalizeString = SocialCalc.LocalizeString;
+        scc.defaultColnameStyle = 'font-size:small;text-align:center;color:#' + hightLightForegoundColour + ';background-color:#' + unselectedbg + ';cursor:e-resize;';
+        scc.defaultSelectedColnameStyle = 'font-size:small;text-align:center;color:#' + hightLightForegoundColour + ';background-color:#' + selectedbg + ';cursor:e-resize;';
+        scc.defaultRownameStyle = 'font-size:small;text-align:right;color:#' + hightLightForegoundColour + ';background-color:#' + unselectedbg + ';direction:rtl;';
+        scc.defaultSelectedRownameStyle = 'font-size:small;text-align:right;color:#' + hightLightForegoundColour + ';background-color:#' + selectedbg + ';';
+        return scc.defaultHighlightTypeCursorStyle = 'color:#' + hightLightForegoundColour + ';backgroundColor:#' + cursorbg + ';';
       }
     });
   };

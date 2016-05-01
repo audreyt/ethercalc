@@ -17,9 +17,9 @@ const pkgdef :Spk.PackageDefinition = (
     # This manifest is included in your app package to tell Sandstorm
     # about your app.
 
-    appVersion = 201601226,  # Increment this for every release.
+    appVersion = 201605010,  # Increment this for every release.
     appTitle = (defaultText = "EtherCalc"),
-    appMarketingVersion = (defaultText = "2016.01.22.6"),
+    appMarketingVersion = (defaultText = "2016.05.01.0"),
 
     actions = [
       # Define your "new document" handlers here.

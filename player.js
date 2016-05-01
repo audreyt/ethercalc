@@ -9,22 +9,28 @@
           return location.reload();
         }
         doPlay = function(){
-          var ref$, endpoint, ref1$, ref2$, ref3$, options, showError, x$, ref4$, emit;
+          var requestParams, endpoint, ref$, ref1$, ref2$, options, showError, x$, ref3$, emit;
           window.SocialCalc == null && (window.SocialCalc = {});
           SocialCalc._username = Math.random().toString();
           SocialCalc.isConnected = true;
-          if (/\?auth=/.test(window.location.search)) {
-            SocialCalc._auth = (ref$ = window.location.search) != null ? ref$.replace(/\??auth=/, '') : void 8;
+          requestParams = SocialCalc.requestParams;
+          if (requestParams['auth'] != null) {
+            SocialCalc._auth = requestParams['auth'];
           }
-          SocialCalc._view = SocialCalc._auth === '0';
+          if (requestParams['app'] != null) {
+            SocialCalc._app = true;
+          }
+          if (requestParams['view'] != null) {
+            SocialCalc._view = true;
+          }
           SocialCalc._room == null && (SocialCalc._room = window.location.hash.replace('#', ''));
           SocialCalc._room = (SocialCalc._room + "").replace(/^_+/, '').replace(/\?.*/, '');
-          endpoint = (ref1$ = $('script[src*="/socket.io/socket.io.js"]')) != null ? (ref2$ = ref1$.attr('src')) != null ? ref2$.replace(/\.?\/socket.io\/socket.io.js.*/, '') : void 8 : void 8;
+          endpoint = (ref$ = $('script[src*="/socket.io/socket.io.js"]')) != null ? (ref1$ = ref$.attr('src')) != null ? ref1$.replace(/\.?\/socket.io\/socket.io.js.*/, '') : void 8 : void 8;
           if (endpoint === '') {
             endpoint = location.pathname.replace(/\/(view|edit)$/, '');
             endpoint = endpoint.replace(RegExp('' + SocialCalc._room + '$'), '');
           }
-          if ((ref3$ = window.Drupal) != null && ref3$.sheetnode) {
+          if ((ref2$ = window.Drupal) != null && ref2$.sheetnode) {
             if (/overlay=node\/\d+/.test(window.location.hash)) {
               SocialCalc._room = window.location.hash.match(/=node\/(\d+)/)[1];
             } else if (/\/node\/\d+/.test(window.location.href)) {
@@ -35,6 +41,8 @@
               setTimeout(function(){
                 window.history.pushState({}, '', "./" + SocialCalc._room + (function(){
                   switch (false) {
+                  case !SocialCalc._app:
+                    return '/app';
                   case !SocialCalc._view:
                     return '/view';
                   case !SocialCalc._auth:
@@ -81,7 +89,7 @@
           window.addEventListener('offline', function(){
             return showError('Disconnected from server. please check network connection and refresh.');
           });
-          x$ = (ref4$ = this$.connect('/', options)) != null ? ref4$.io : void 8;
+          x$ = (ref3$ = this$.connect('/', options)) != null ? ref3$.io : void 8;
           if (x$ != null) {
             x$.on('reconnect', function(){
               if (!((typeof SocialCalc != 'undefined' && SocialCalc !== null) && SocialCalc.isConnected)) {
@@ -125,7 +133,9 @@
               return;
             }
             data.user = SocialCalc._username;
-            data.room = SocialCalc._room;
+            if (data.room == null) {
+              data.room = SocialCalc._room;
+            }
             data.type = type;
             if (SocialCalc._auth) {
               data.auth = SocialCalc._auth;
@@ -147,33 +157,45 @@
           };
           return this$.on({
             data: function(){
-              var ss, editor, user, ref$, ecell, peerClass, find, cr, cell, origCR, origCell, parts, cmdstr, line, refreshCmd, sheetdata, ref1$;
+              var ss, ref$, ref1$, editor, user, ref2$, ecell, peerClass, find, cr, cell, origCR, origCell, ref3$, parts, cmdstr, line, refreshCmd, sheetdata, ref4$;
               if (!((typeof SocialCalc != 'undefined' && SocialCalc !== null) && SocialCalc.isConnected)) {
                 return;
               }
-              if (this.data.user === SocialCalc._username) {
+              if (this.data.user === SocialCalc._username && this.data.room === SocialCalc._room) {
                 return;
               }
               if (this.data.to && this.data.to !== SocialCalc._username) {
-                return;
-              }
-              if (this.data.room && this.data.room !== SocialCalc._room && this.data.type !== "recalc") {
                 return;
               }
               ss = window.spreadsheet;
               if (!ss) {
                 return;
               }
+              if (this.data.room && this.data.room !== SocialCalc._room && ((ref$ = ss.formDataViewer) != null ? ref$._room : void 8) !== this.data.room && this.data.type === "log") {
+                return;
+              }
+              if (this.data.room && this.data.room !== SocialCalc._room && this.data.type !== "recalc" && this.data.type !== "log") {
+                if (((ref1$ = ss.formDataViewer) != null ? ref1$._room : void 8) !== this.data.room) {
+                  return;
+                }
+                ss = ss.formDataViewer;
+              }
               editor = ss.editor;
               switch (this.data.type) {
+              case 'confirmemailsent':
+                SocialCalc.EditorSheetStatusCallback(null, "confirmemailsent", this.data.message, editor);
+                break;
               case 'chat':
                 if (typeof window.addmsg == 'function') {
                   window.addmsg(this.data.msg);
                 }
                 break;
               case 'ecells':
-                for (user in ref$ = this.data.ecells) {
-                  ecell = ref$[user];
+                if (SocialCalc._app) {
+                  break;
+                }
+                for (user in ref2$ = this.data.ecells) {
+                  ecell = ref2$[user];
                   if (user === SocialCalc._username) {
                     continue;
                   }
@@ -192,7 +214,9 @@
                 if (this.data.original) {
                   origCR = SocialCalc.coordToCr(this.data.original);
                   origCell = SocialCalc.GetEditorCellElement(editor, origCR.row, origCR.col);
-                  origCell.element.className = origCell.element.className.replace(find, '');
+                  if (origCell != null) {
+                    origCell.element.className = origCell.element.className.replace(find, '');
+                  }
                   if (this.data.original === editor.ecell.coord || this.data.ecell === editor.ecell.coord) {
                     SocialCalc.Callbacks.broadcast('ecell', {
                       to: this.data.user,
@@ -200,21 +224,41 @@
                     });
                   }
                 }
+                if (SocialCalc._app) {
+                  break;
+                }
                 cr = SocialCalc.coordToCr(this.data.ecell);
                 cell = SocialCalc.GetEditorCellElement(editor, cr.row, cr.col);
-                if ((cell != null ? (ref$ = cell.element) != null ? ref$.className.search(find) : void 8 : void 8) === -1) {
+                if ((cell != null ? (ref2$ = cell.element) != null ? ref2$.className.search(find) : void 8 : void 8) === -1) {
                   cell.element.className += peerClass;
                 }
                 break;
               case 'ask.ecell':
+                if (SocialCalc._app) {
+                  break;
+                }
                 SocialCalc.Callbacks.broadcast('ecell', {
                   to: this.data.user,
                   ecell: editor.ecell.coord
                 });
                 break;
               case 'log':
+                ss = window.spreadsheet;
                 if (typeof vex != 'undefined' && vex !== null) {
                   vex.closeAll();
+                }
+                if (((ref3$ = ss.formDataViewer) != null ? ref3$._room : void 8) === this.data.room) {
+                  if (this.data.snapshot) {
+                    parts = ss.DecodeSpreadsheetSave(this.data.snapshot);
+                  }
+                  ss.formDataViewer.sheet.ResetSheet();
+                  ss.formDataViewer.loaded = true;
+                  SocialCalc.Callbacks.broadcast('ask.log');
+                  if (parts != null && parts.sheet) {
+                    ss.formDataViewer.ParseSheetSave(this.data.snapshot.substring(parts.sheet.start, parts.sheet.end));
+                    ss.formDataViewer.context.sheetobj.ScheduleSheetCommands("recalc\n", false, true);
+                  }
+                  break;
                 }
                 if (SocialCalc.hadSnapshot) {
                   break;
@@ -290,7 +334,7 @@
                 break;
               case 'execute':
                 ss.context.sheetobj.ScheduleSheetCommands(this.data.cmdstr, this.data.saveundo, true);
-                if (ss.currentTab === ((ref1$ = ss.tabnums) != null ? ref1$.graph : void 8)) {
+                if (ss.currentTab === ((ref4$ = ss.tabnums) != null ? ref4$.graph : void 8)) {
                   setTimeout(function(){
                     return window.DoGraph(false, false);
                   }, 100);
@@ -353,23 +397,37 @@
           return setTimeout(onReady, 1);
         });
         onLoad = function(ssInstance){
-          var ss, ref$, ref1$, ref2$;
+          var ss, ref$, ref1$, ref2$, ref3$;
           ssInstance == null && (ssInstance = SocialCalc.CurrentSpreadsheetControlObject);
-          window.spreadsheet = ss = ssInstance || (SocialCalc._view
+          window.spreadsheet = ss = ssInstance || (SocialCalc._view || SocialCalc._app
             ? new SocialCalc.SpreadsheetViewer()
             : new SocialCalc.SpreadsheetControl());
-          SocialCalc.Callbacks.broadcast('ask.log');
-          if (!window.GraphOnClick) {
+          if (window.GraphOnClick == null) {
+            SocialCalc.Callbacks.broadcast('ask.log');
             return;
           }
           ss.ExportCallback = function(s){
             return alert(SocialCalc.ConvertSaveToOtherFormat(SocialCalc.Clipboard.clipboard, "csv"));
           };
+          SocialCalc.Constants.s_loc_form = "Form";
           if (ss.tabs) {
-            ss.tabnums.graph = ss.tabs.length;
+            ss.tabnums.form = ss.tabs.length;
           }
           if ((ref$ = ss.tabs) != null) {
             ref$.push({
+              name: 'form',
+              text: SocialCalc.Constants.s_loc_form,
+              html: "<div id=\"%id.formtools\" style=\"display:none;\"><div style=\"%tbt.\"><table cellspacing=\"0\" cellpadding=\"0\">\n<tr><td style=\"vertical-align:middle;padding-right:32px;padding-left:16px;\"><div style=\"%tbt.\">\n<input type=\"button\" value=\"Live Form\" onclick=\"parent.location='" + SocialCalc._room + "/form'\" style=\"background-color: #5cb85c;border-color: #4cae4c;cursor: pointer;\"> " + document.location.origin + "/" + SocialCalc._room + "/form </div></td>\n</tr></table></div></div>",
+              view: 'sheet',
+              onclick: null,
+              onclickFocus: true
+            });
+          }
+          if (ss.tabs) {
+            ss.tabnums.graph = ss.tabs.length;
+          }
+          if ((ref1$ = ss.tabs) != null) {
+            ref1$.push({
               name: 'graph',
               text: SocialCalc.Constants.s_loc_graph,
               html: "<div id=\"%id.graphtools\" style=\"display:none;\"><div style=\"%tbt.\"><table cellspacing=\"0\" cellpadding=\"0\"><tr><td style=\"vertical-align:middle;padding-right:32px;padding-left:16px;\"><div style=\"%tbt.\">Cells to Graph</div><div id=\"%id.graphrange\" style=\"font-weight:bold;\">Not Set</div></td><td style=\"vertical-align:top;padding-right:32px;\"><div style=\"%tbt.\">Set Cells To Graph</div><select id=\"%id.graphlist\" size=\"1\" onfocus=\"%s.CmdGotFocus(this);\"><option selected>[select range]</option><option>Select all</option></select></td><td style=\"vertical-align:middle;padding-right:4px;\"><div style=\"%tbt.\">Graph Type</div><select id=\"%id.graphtype\" size=\"1\" onchange=\"window.GraphChanged(this);\" onfocus=\"%s.CmdGotFocus(this);\"></select><input type=\"button\" value=\"OK\" onclick=\"window.GraphSetCells();\" style=\"font-size:x-small;\"></div></td><td style=\"vertical-align:middle;padding-right:16px;\"><div style=\"%tbt.\">&nbsp;</div><input id=\"%id.graphhelp\" type=\"button\" onclick=\"DoGraph(true);\" value=\"Help\" style=\"font-size:x-small;\"></div></td><td style=\"vertical-align:middle;padding-right:16px;\">Min X <input id=\"%id.graphMinX\" onchange=\"window.MinMaxChanged(this,0);\" onfocus=\"%s.CmdGotFocus(this);\" size=5/>Max X <input id=\"%id.graphMaxX\" onchange=\"window.MinMaxChanged(this,1);\" onfocus=\"%s.CmdGotFocus(this);\" size=5/><br/>Min Y <input id=\"%id.graphMinY\" onchange=\"window.MinMaxChanged(this,2);\" onfocus=\"%s.CmdGotFocus(this);\" size=5/>Max Y <input id=\"%id.graphMaxY\" onchange=\"window.MinMaxChanged(this,3);\" onfocus=\"%s.CmdGotFocus(this);\" size=5/></div></td></tr></table></div></div>",
@@ -378,16 +436,16 @@
               onclickFocus: true
             });
           }
-          if ((ref1$ = ss.views) != null) {
-            ref1$.graph = {
+          if ((ref2$ = ss.views) != null) {
+            ref2$.graph = {
               name: 'graph',
               divStyle: "overflow:auto;",
               values: {},
               html: '<div style="padding:6px;">Graph View</div>'
             };
           }
-          if ((ref2$ = ss.editor) != null) {
-            ref2$.SettingsCallbacks.graph = {
+          if ((ref3$ = ss.editor) != null) {
+            ref3$.SettingsCallbacks.graph = {
               save: window.GraphSave,
               load: window.GraphLoad
             };
@@ -398,18 +456,26 @@
           if (typeof ss.InitializeSpreadsheetControl == 'function') {
             ss.InitializeSpreadsheetControl('tableeditor', 0, 0, 0);
           }
+          if (SocialCalc._view == null && ss.formDataViewer != null) {
+            ss.formDataViewer.sheet._room = ss.formDataViewer._room = SocialCalc._room + "_formdata";
+            SocialCalc.Callbacks.broadcast('ask.log', {
+              room: ss.formDataViewer._room
+            });
+          } else {
+            SocialCalc.Callbacks.broadcast('ask.log');
+          }
           if (typeof ss.ExecuteCommand == 'function') {
             ss.ExecuteCommand('redisplay', '');
           }
           if (typeof ss.ExecuteCommand == 'function') {
             ss.ExecuteCommand('set sheet defaulttextvalueformat text-wiki');
           }
-          $(document).on('mouseover', '#te_fullgrid tr:nth-child(2) td:first', function(){
+          $(document).on('mouseover', '.te_download tr:nth-child(2) td:first', function(){
             return $(this).attr({
               title: 'Export...'
             });
           });
-          return $(document).on('click', '#te_fullgrid tr:nth-child(2) td:first', function(){
+          return $(document).on('click', '.te_download tr:nth-child(2) td:first', function(){
             var isMultiple;
             if ((typeof vex != 'undefined' && vex !== null) && vex.dialog.open) {
               SocialCalc.Keyboard.passThru = true;

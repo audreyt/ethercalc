@@ -27,7 +27,7 @@
 // JavaScript version of the code, not the SocialCalc Perl code.
 //
 */
-
+ 
 /*
 
 **** Overview ****
@@ -176,6 +176,8 @@ SocialCalc.Callbacks = {
 //    comment: cell comment string
 //
 
+// Eddy - SocialCalc.Cell
+
 SocialCalc.Cell = function(coord) {
 
    this.coord = coord;
@@ -310,6 +312,9 @@ SocialCalc.ResetSheet = function(sheet, reload) {
    sheet.hiddencolrow = ""; // "col" or "row" if it was hidden
 
    sheet.sci = new SocialCalc.SheetCommandInfo(sheet);
+
+   sheet.ioEventTree ={};
+   sheet.ioParameterList = {}; 
 
    }
 
@@ -1685,13 +1690,19 @@ SocialCalc.SheetCommandsTimerRoutine = function(sci, parseobj, saveundo) {
 
    var errortext;
    var starttime = new Date();
-
    sci.timerobj = null;
 
    while (!parseobj.EOF()) { // go through all commands (separated by newlines)
 
       errortext = SocialCalc.ExecuteSheetCommand(sci.sheetobj, parseobj, saveundo);
-      if (errortext) alert(errortext);
+      // Error - Use  log on server   OR  alert on client 
+      if (errortext) {
+        if (typeof(alert) == "function")  {
+          alert(errortext);
+        } else {
+          console.log(errortext)
+        }
+      }
 
       parseobj.NextLine();
 
@@ -1746,6 +1757,7 @@ SocialCalc.SheetCommandsTimerRoutine = function(sci, parseobj, saveundo) {
 //    redisplay
 //    changedrendervalues
 //    startcmdextension extension rest-of-command
+//    sendemail ??? eddy ???
 //
 // If saveundo is true, then undo information is saved in sheet.changes.
 //
@@ -1768,6 +1780,7 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
    var changes = sheet.changes;
    var cellProperties = SocialCalc.CellProperties;
    var scc = SocialCalc.Constants;
+   var cellChanged = false;
 
    var ParseRange =
       function() {
@@ -1786,7 +1799,6 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
       }
 
    cmd1 = cmd.NextToken();
-
    switch (cmd1) {
 
       case "set":
@@ -1858,6 +1870,7 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
 
          else if (/^[a-z]{1,2}(:[a-z]{1,2})?$/i.test(what)) { // col attributes
             sheet.renderneeded = true;
+            
             what = what.toUpperCase();
             pos = what.indexOf(":");
             if (pos>=0) {
@@ -1929,6 +1942,7 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
             }
 
          else if (/^[a-z]{1,2}\d+(:[a-z]{1,2}\d+)?$/i.test(what)) { // cell attributes
+           cellChanged = true;
             ParseRange();
             if (cr1.row!=cr2.row || cr1.col!=cr2.col || sheet.celldisplayneeded || sheet.renderneeded) { // not one cell
                sheet.renderneeded = true;
@@ -1967,6 +1981,7 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
                      cell.datavalue = 0; // until recalc
                      delete cell.errors;
                      cell.datatype = "f";
+                     if(SocialCalc._app && cell.valuetype != "e#N/A") cell.prevvaluetype = cell.valuetype;  // repaint when widgets added/removed 
                      cell.valuetype = "e#N/A"; // until recalc
                      cell.formula = rest;
                      delete cell.displaystring;
@@ -3177,6 +3192,17 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
             }
          break;
 
+         // eddy ExecuteSheetCommand {
+//      case "setemailparameters":    	  
+//    	  break;
+    	  
+      case "settimetrigger":    
+      case "sendemail":    
+      case "submitform":    
+    	  // email/form/timetrigger handled by server, so ignore here
+    	  break;
+         // } eddy ExecuteSheetCommand 
+    	  
       default:
          errortext = scc.s_escUnknownCmd+cmdstr;
          break;
@@ -3189,7 +3215,17 @@ for (var i=0;i<sheet.changes.stack.length;i++) {
    }
 alert(cmdstr+"|"+sheet.changes.stack.length+"--"+ustack);
 */
-
+   if(SocialCalc._app) {
+     // widgets need focus. In app mode, render widgets only when required. Rather than default of render everything
+     if(cellChanged) {
+       if(sheet.renderneeded == true && attrib!="value" && attrib!="text" && attrib!="formula" && attrib!="constant" && attrib!="empty") sheet.widgetsClean = false;  // force widgets to render
+       else if(attrib=="all") sheet.widgetsClean = false;  // force widgets to render - because of undo
+       } 
+     else {
+       if(sheet.renderneeded == true) sheet.widgetsClean = false;  // force widgets to render
+       }
+     }
+   
    return errortext;
 
    }
@@ -3632,7 +3668,7 @@ SocialCalc.RecalcClearTimeout = function() {
 
    }
 
-
+  
 //
 // SocialCalc.RecalcLoadedSheet(sheetname, str, recalcneeded, live)
 //
@@ -3749,6 +3785,12 @@ SocialCalc.RecalcTimerRoutine = function() {
    coord = sheet.recalcdata.nextcalc;
    while (coord) {
       cell = sheet.cells[coord];
+	  // app widgets need cell ID so store in parseinfo {
+      if (!cell.parseinfo) { // cache parsed formula
+        cell.parseinfo = scf.ParseFormulaIntoTokens(cell.formula);
+        }
+      cell.parseinfo.coord = coord;
+	  // }
       eresult = scf.evaluate_parsed_formula(cell.parseinfo, sheet, false);
       if (scf.SheetCache.waitingForLoading) { // wait until restarted
          recalcdata.nextcalc = coord; // start with this cell again
@@ -3792,6 +3834,7 @@ SocialCalc.RecalcTimerRoutine = function() {
 
    recalcdata.inrecalc = false;
 
+   sheet.reRenderCellList = sheet.recalcdata.celllist; // GUI widgets need focus - if app then only re-render non-widget cells
    delete sheet.recalcdata; // save memory and clear out for name lookup formula evaluation
 
    delete sheet.attribs.needsrecalc; // remember recalc done
@@ -4791,6 +4834,14 @@ SocialCalc.RenderColHeaders = function(context) {
          result.appendChild(newcol);
          }
       }
+   // eddy {
+//   if(context.formColNames != null) {
+//     for(var nodeIndex = 0;  nodeIndex < result.childNodes.length;  nodeIndex++ ) {
+//       var currentCol = result.childNodes[nodeIndex];
+//       if(context.formColNames[currentCol.innerText] != null) currentCol.innerText = context.formColNames[currentCol.innerText];
+//     }
+//   }
+   // }
    return result;
    }
 
@@ -4928,8 +4979,9 @@ SocialCalc.RenderCell = function(context, rownum, colnum, rowpane, colpane, noEl
    if (cell.displaystring==undefined) { // cache the display value
       cell.displaystring = SocialCalc.FormatValueForDisplay(sheetobj, cell.datavalue, coord, (linkstyle || context.defaultlinkstyle));
       }
+	
    result.innerHTML = cell.displaystring;
-
+	  
    num=cell.layout || sheetattribs.defaultlayout;
    if (num && typeof(context.layouts[num]) !== "undefined") {
       stylestr+=context.layouts[num]; // use precomputed layout with "*"'s filled in
@@ -5463,8 +5515,17 @@ SocialCalc.FormatValueForDisplay = function(sheetobj, value, cr, linkstyle) {
 
    valuetype = cell.valuetype || ""; // get type of value to determine formatting
    valuesubtype = valuetype.substring(1);
-   valuetype = valuetype.charAt(0);
+   
+   // eddy setup display cell {
+   valueinputwidget = valuetype.charAt(1); 
+   var formula_name= valuetype.substring(2);
+   var html_display_value = null; 
+   var html_formated_value = null;
+   // }
 
+   valuetype = valuetype.charAt(0);
+   
+   
    if (cell.errors || valuetype=="e") {
       displayvalue = cell.errors || valuesubtype || "Error in cell";
       return displayvalue;
@@ -5484,7 +5545,10 @@ SocialCalc.FormatValueForDisplay = function(sheetobj, value, cr, linkstyle) {
             }
          return displayvalue;
          }
+	  var html_display_value = displayvalue; // eddy
       displayvalue = SocialCalc.format_text_for_display(displayvalue, cell.valuetype, valueformat, sheetobj, linkstyle, cell.nontextvalueformat);
+	  var html_formated_value = displayvalue; // eddy
+	  
       }
 
    else if (valuetype=="n") {
@@ -5496,6 +5560,8 @@ SocialCalc.FormatValueForDisplay = function(sheetobj, value, cr, linkstyle) {
       if (valueformat==null || valueformat=="none") {
          valueformat = "";
          }
+		 
+		 
       if (valueformat=="formula") {
          if (cell.datatype=="f") {
             displayvalue = SocialCalc.special_chars("="+cell.formula) || "&nbsp;";
@@ -5520,19 +5586,44 @@ SocialCalc.FormatValueForDisplay = function(sheetobj, value, cr, linkstyle) {
             }
          return displayvalue;
          }
-
+		 
+	  var html_display_value = displayvalue; // eddy
       displayvalue = SocialCalc.format_number_for_display(displayvalue, cell.valuetype, valueformat);
+	  var html_formated_value = displayvalue; // eddy
 
       }
    else { // unknown type - probably blank
       displayvalue = "&nbsp;";
       }
 
+
+   // eddy display cell HTML {      
+   if(valueinputwidget=="i" && html_display_value!=null && html_formated_value!=null) {
+	 var formula_details = SocialCalc.Formula.FunctionList[formula_name]; 
+//	 var ecell = SocialCalc.GetSpreadsheetControlObject().editor.ecell; // check if widget has focus
+//	 SocialCalc.GetSpreadsheetControlObject().debug.push({formula_name:formula_name});
+		 if( formula_details) {
+			 var cell_html = formula_details[5];
+			 // var cell_html = "<button type='button' onclick=\"SocialCalc.TriggerIoAction('<%=cell_reference%>');\"><%=display_value%></button>";
+			 
+			 var checkedValue = (html_display_value == 0) ? "" : "checked"; // for checkbox
+			 cell_html = cell_html.replace(/<%=checked%>/g, checkedValue);
+			 cell_html = cell_html.replace(/<%=formated_value%>/g, html_formated_value);
+			 cell_html = cell_html.replace(/<%=display_value%>/g, html_display_value);
+			 return cell_html.replace(/<%=cell_reference%>/g, cr);
+			 }
+		 return "error:Widget HTML missing";
+	 }
+   // }
+	  
+	  
+	  
    return displayvalue;
 
    }
 
-
+ 
+   
 //
 // displayvalue = format_text_for_display(rawvalue, valuetype, valueformat, sheetobj, linkstyle, nontextvalueformat)
 //
@@ -5728,6 +5819,33 @@ SocialCalc.DetermineValueType = function(rawvalue) {
       value = SocialCalc.FormatNumber.convert_date_gregorian_to_julian(year, matches[2]-0, matches[3]-0)-2415019;
       type = "nd";
       }
+   else if (matches=value.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2}) (\d{1,2}):(\d{1,2})\s*$/)) { // YYYY-MM-DD, YYYY/MM/DD HH:MM
+     // eddy added YYYY-MM-DD, YYYY/MM/DD HH:MM
+     year = matches[1]-0;
+     year = year < 1000 ? year + 2000 : year;
+     hour = matches[4]-0;
+     minute = matches[5]-0;
+     value = SocialCalc.FormatNumber.convert_date_gregorian_to_julian(year, matches[2]-0, matches[3]-0)-2415019;
+     type = "nd";
+     if (hour < 24 && minute < 60) {
+       value += hour/24 + minute/(24*60);
+       type = "ndt";
+       }
+     }
+   else if (matches=value.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2}) (\d{1,2}):(\d{1,2}):(\d{1,2})\s*$/)) { // YYYY-MM-DD, YYYY/MM/DD HH:MM:SS
+     // eddy added YYYY-MM-DD, YYYY/MM/DD HH:MM:SS
+     year = matches[1]-0;
+     year = year < 1000 ? year + 2000 : year;
+     hour = matches[4]-0;
+     minute = matches[5]-0;
+     second = matches[6]-0;
+     value = SocialCalc.FormatNumber.convert_date_gregorian_to_julian(year, matches[2]-0, matches[3]-0)-2415019;
+     type = "nd";
+     if (hour < 24 && minute < 60 && second < 60) {
+       value += hour/24 + minute/(24*60) + second/(24*60*60);
+       type = "ndt";
+       }
+     }
    else if (matches=value.match(/^(\d{1,2}):(\d{1,2})\s*$/)) { // HH:MM
       hour = matches[1]-0;
       minute = matches[2]-0;
