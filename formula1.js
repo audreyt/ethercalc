@@ -2347,6 +2347,7 @@ SocialCalc.Formula.DSeriesFunctions = function(fname, operand, foperand, sheet) 
    var count = 0;
    var counta = 0;
    var countblank = 0;
+   var countmatches = 0;   
    var product = 1;
    var maxval;
    var minval;
@@ -2412,6 +2413,7 @@ CRITERIAROW:
       value1.value = cell.datavalue;
       value1.type = cell.valuetype;
       t = value1.type.charAt(0);
+      countmatches += 1;
       if (t == "n") count += 1;
       if (t != "b") counta += 1;
       if (t == "b") countblank += 1;
@@ -2512,10 +2514,10 @@ CRITERIAROW:
          break;
 
       case "DGET":
-         if (count == 1) {
-            PushOperand(resulttypesum, sum);
+         if (countmatches == 1) {
+            PushOperand(value1.type, value1.value);
             }
-         else if (count == 0) {
+         else if (countmatches == 0) {
             PushOperand("e#VALUE!", 0);
             }
          else {
