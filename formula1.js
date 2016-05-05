@@ -584,7 +584,7 @@ SocialCalc.Formula.ConvertInfixToPolish = function(parseinfo) {
 if(typeof SocialCalc.debug_log === 'undefined') SocialCalc.debug_log = [];
 
 SocialCalc.DebugLog = function(logObject) {	
-	SocialCalc.debug_log.push(logObject);
+//	SocialCalc.debug_log.push(logObject);
 }
 
 
@@ -1586,7 +1586,7 @@ SocialCalc.Formula.DecodeRangeParts = function(sheetdata, range) {
 //   io_parameters, if present, 
 //        "ParameterList" is used with =CopyValue() etc, used to collect parameters of the formula, for use trigger/action formulas, 
 //        "EventTree" is used with =Button() etc, used to store trigger cell lookup table
-//        "Input" for input style GUI widgets - textbox/radio buttons etc - 
+//        "Input" store copy of value in formdata sheet -- for input style GUI widgets - textbox/radio buttons etc - 
 //
 // To add a function, just add it to this object.
 
@@ -1609,7 +1609,7 @@ SocialCalc.Formula.DecodeRangeParts = function(sheetdata, range) {
 
 /*
 #
-# SocialCalc.Formula.StoreIoEventFormula(coord, operand_reverse, sheet, io_parameters)
+# SocialCalc.Formula.StoreIoEventFormula(function_name, coord, operand_reverse, sheet, io_parameters)
 # 
 # store forumla parameters of io event formulas
 #
@@ -1624,21 +1624,30 @@ SocialCalc.Formula.StoreIoEventFormula = function(function_name, coord, operand_
     operand.reverse(); // normal parameter order
     if(operand.length == 0) return;
 	
-	// add radio buttons to list - so radio group can be updated
-	if(function_name == "RADIOBUTTON") {
-		if(typeof sheet.ioEventTree === 'undefined') sheet.ioEventTree = {};	
-		
-	}
 	
 
-  if(typeof sheet.ioEventTree === 'undefined') sheet.ioEventTree = {};	
-  if(typeof sheet.ioParameterList === 'undefined') sheet.ioParameterList = {};
-  if(typeof sheet.ioTimeTriggerList === 'undefined') sheet.ioTimeTriggerList = {}; 
+  if(typeof sheet.ioEventTree === 'undefined') sheet.ioEventTree = {};	// action formulas - e.g. COPYVALUE, COPYFORMULA  - these action formulas are triggered by a trigger formula 
+  if(typeof sheet.ioParameterList === 'undefined') sheet.ioParameterList = {}; // widget parameters - e.g. BUTTON, TEXTBOX - this is updated when the widget state changes
+  if(typeof sheet.ioTimeTriggerList === 'undefined') sheet.ioTimeTriggerList = {}; // 
+  if(typeof sheet.radioGroupList === 'undefined') sheet.radioGroupList = {}; // 
 
   // store parameters of each action formulas 
   if(typeof sheet.ioParameterList[coord] === 'undefined') sheet.ioParameterList[coord] = {};
   sheet.ioParameterList[coord] = operand;
   sheet.ioParameterList[coord].function_name = function_name;
+  
+  // add radio buttons to list - so radio group can be updated
+//  if(function_name == "RADIOBUTTON") {
+//    
+//    if(operand.length > 1) {
+//      if (sheet.radioGroupList[]) {
+//        sheet.radioGroup.push()
+//      } else {
+//        
+//      } 
+//    }
+//  }
+
   
   // send trigger times to server if changed
   if(io_parameters == "TimeTrigger") { // timer trigger formula exists   
@@ -4871,10 +4880,13 @@ SocialCalc.Formula.FunctionList["IRR"] = [SocialCalc.Formula.IRRFunction, -1, "i
 /*
 #
 # BUTTON(string) // 
+# IMAGEBUTTON(string) 
 # TEXTBOX(string) // 
+# AUTOCOMPLETE(string, range)
 # CHECKBOX(string) // 
-# COPYVALUE(range, value, destinationCell(s)) // 
-# COPYFORMULA(range, formula(s), destinationCell(s)) // 
+# RADIOBUTTON(string,groupname)
+# COPYVALUE(range, value(s), destinationCell) // 
+# COPYFORMULA(range, formula(s), destinationCell) // 
 #
 */
 
@@ -4895,20 +4907,23 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
 // Text values are manipulated as UTF-8, converting from and back to byte strings
 
    var argList = {
-				 BUTTON: [1]
-   				,EMAIL: [4, 4, 4, 4]
+				 BUTTON: [4]
+        ,IMAGEBUTTON: [4]
+   			,EMAIL: [4, 4, 4, 4]
 				,EMAILIF: [4, 4, 4, 4, 4]
 				,EMAILONEDIT: [4, 4, 4, 4, 4]
 				,EMAILAT: [4, 4, 4, 4, 4]
 				,EMAILONEDITIF: [4, 4, 4, 4, 4, 4]
 				,EMAILATIF: [4, 4, 4, 4, 4, 4]
         ,SUBMIT: [1]
-				,TEXTBOX: [1]
-				,CHECKBOX: [-1]
+        ,TEXTBOX: [1]
+        ,AUTOCOMPLETE: [1, 4]
+        ,CHECKBOX: [-1]
+        ,RADIOBUTTON: [-1, 4]
 				,COPYVALUE: [2, -1, 3]
 				,COPYFORMULA: [2, -1,3]
    };
-
+   
    var i, value, offset, len, start, count;
    var scf = SocialCalc.Formula;
    var result = 0;
@@ -4964,14 +4979,16 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
      case "SUBMIT":
          result = "Submit";
      case "BUTTON":
+     case "IMAGEBUTTON":
      case "TEXTBOX":
+     case "AUTOCOMPLETE":
          if (numargs>0) result = operand_value[1];
-         resulttype = "ti"+fname; // (t)ext value with (i)nterface (BUTTON,TEXTBOX,) 
+         resulttype = "ti"+fname; // (t)ext value with (i)nterface (BUTTON,IMAGEBUTTON,TEXTBOX,AUTOCOMPLETE) 
          break;
 
       case "EMAIL":
       case "EMAILIF":
-          resulttype = "ti"+fname; // (t)ext value with (i)nterface (BUTTON,TEXTBOX,) 
+          resulttype = "ti"+fname; // (t)ext value with (i)nterface (,) 
           result = "Send";
           break;
       case "EMAILONEDIT":
@@ -4982,18 +4999,19 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
     	  
       case "EMAILAT":
       case "EMAILATIF":
-          resulttype = "ti"+fname; // (t)ext value with (i)nterface (BUTTON,TEXTBOX,) 
+          resulttype = "ti"+fname; // (t)ext value with (i)nterface (,) 
           result = "Send Now";
           break;
 		 
       case "CHECKBOX":
+      case "RADIOBUTTON":
 	     if(operand_type[1].charAt(0) == 't') {
 			result = (operand_value[1].toUpperCase() == 'TRUE') ? 1 : 0;
 			} else {
 			result = (operand_value[1] == 0) ? 0 : 1;
 			}
 		//result = "true"; 
-         resulttype = "ni"+fname; // (n)umber value with (i)nterface (CHECKBOX) 
+         resulttype = "ni"+fname; // (n)umber value with (i)nterface (CHECKBOX, RADIOBUTTON)
 
          break;
 		 
@@ -5025,6 +5043,7 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
 
 
 SocialCalc.Formula.FunctionList["BUTTON"] = [SocialCalc.Formula.IoFunctions, 1, "label", "", "gui", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Button('<%=cell_reference%>');\"><%=formated_value%></button>" ];
+SocialCalc.Formula.FunctionList["IMAGEBUTTON"] = [SocialCalc.Formula.IoFunctions, 1, "imageurl", "", "gui", "<input type='image' src='<%=display_value%>' alt='Submit' onclick=\"SocialCalc.TriggerIoAction.Button('<%=cell_reference%>');\">" ];
 SocialCalc.Formula.FunctionList["EMAIL"] = [SocialCalc.Formula.IoFunctions, -3, "to_range subject_range, body_range", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList" ];
 SocialCalc.Formula.FunctionList["EMAILIF"] = [SocialCalc.Formula.IoFunctions, -4, "condition_range, to_range subject_range, body_range", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList" ];
 SocialCalc.Formula.FunctionList["EMAILONEDIT"] = [SocialCalc.Formula.IoFunctions, -4, "editRange, to_range subject_range, body_range", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "EventTree"];
@@ -5033,16 +5052,71 @@ SocialCalc.Formula.FunctionList["EMAILONEDITIF"] = [SocialCalc.Formula.IoFunctio
 SocialCalc.Formula.FunctionList["EMAILATIF"] = [SocialCalc.Formula.IoFunctions, -5, "datetime_value, condition, to_range subject_range, body_range", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "TimeTrigger" ];
 SocialCalc.Formula.FunctionList["SUBMIT"] = [SocialCalc.Formula.IoFunctions, 100, "[label]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Submit('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList" ];
 SocialCalc.Formula.FunctionList["TEXTBOX"] = [SocialCalc.Formula.IoFunctions, 1, "value", "", "gui", "<input type='text' id='TEXTBOX_<%=cell_reference%>' onblur='SocialCalc.CmdGotFocus(null);' oninput=\"SocialCalc.TriggerIoAction.TextBox('<%=cell_reference%>')\" value='<%=display_value%>' >", "Input" ];
+SocialCalc.Formula.FunctionList["AUTOCOMPLETE"] = [SocialCalc.Formula.IoFunctions, 2, "value, range or csv_text", "", "gui", "<input type='text' id='AUTOCOMPLETE_<%=cell_reference%>' onfocus=\"SocialCalc.TriggerIoAction.AddAutocomplete('<%=cell_reference%>');\" onblur='SocialCalc.CmdGotFocus(null);' value='<%=display_value%>' >", "Input" ];
 SocialCalc.Formula.FunctionList["CHECKBOX"] = [SocialCalc.Formula.IoFunctions, 1, "value", "", "gui", "<input type='checkbox' id='CHECKBOX_<%=cell_reference%>' <%=checked%> onblur='SocialCalc.CmdGotFocus(null);' onchange=\"SocialCalc.TriggerIoAction.CheckBox('<%=cell_reference%>')\" >", "Input" ];
+SocialCalc.Formula.FunctionList["RADIOBUTTON"] = [SocialCalc.Formula.IoFunctions, 2, "value, groupname", "", "gui", "<input type='radio' value='<%=cell_reference%>' id='RADIOBUTTON_<%=cell_reference%>' <%=checked%> name='<%=parameter1_value%>' onblur=\"SocialCalc.CmdGotFocus(null);\" onclick=\"SocialCalc.TriggerIoAction.RadioButton('<%=parameter1_value%>');\" >", "Input" ];
 
-SocialCalc.Formula.FunctionList["COPYVALUE"] = [SocialCalc.Formula.IoFunctions, 3, "trigger_cell, value_range, destinationCell(s)", "", "action", "", "EventTree"];
-SocialCalc.Formula.FunctionList["COPYFORMULA"] = [SocialCalc.Formula.IoFunctions, 3, "trigger_cell, formula_range, destinationCell(s)", "", "action", "", "EventTree"];
+SocialCalc.Formula.FunctionList["COPYVALUE"] = [SocialCalc.Formula.IoFunctions, 3, "trigger_cell, value_range, destinationCell", "", "action", "", "EventTree"];
+SocialCalc.Formula.FunctionList["COPYFORMULA"] = [SocialCalc.Formula.IoFunctions, 3, "trigger_cell, formula_range, destinationCell", "", "action", "", "EventTree"];
+ 
+
+// on enter input box refresh the auto complete list
+SocialCalc.TriggerIoAction.AddAutocomplete = function(triggerCellId) {
+  var spreadsheet =  window.spreadsheet;
+  if (spreadsheet == null) spreadsheet = window.ss
+  var sheet = spreadsheet.sheet;
+  var scf = SocialCalc.Formula; 
   
-// Event triggered, e.g. button clicked. - call linked action formulas 
+  var parameters = sheet.ioParameterList[triggerCellId];
+  if(typeof parameters === 'undefined') return;
+  
+  var autocompleteSource = [];
+  if(parameters[1].type.charAt(0) == 't') {
+    autocompleteSource = String(parameters[1].value).split(',');
+  }
+  if(parameters[1].type == 'range') {
+    var rangeinfo = scf.DecodeRangeParts(sheet, parameters[1].value);
+    for (var i=0; i<rangeinfo.ncols; i++) {
+       for (var j=0; j<rangeinfo.nrows; j++) {
+
+          var cellcr = SocialCalc.crToCoord(rangeinfo.col1num + i, rangeinfo.row1num + j);
+          var cell = rangeinfo.sheetdata.GetAssuredCell(cellcr);
+          autocompleteSource.push(cell.datavalue.toString());
+       }
+    }
+  }
+
+  //Overrides the default autocomplete filter function to search only from the beginning of the string
+  $.ui.autocomplete.filter = function (array, term) {
+    var matcher = new RegExp("^" + $.ui.autocomplete.escapeRegex(term), "i");
+    return $.grep(array, function (value) {
+        return matcher.test(value.label || value.value || value);
+    });
+  };
+
+  
+  $("#AUTOCOMPLETE_"+triggerCellId).autocomplete({
+    source: autocompleteSource,
+    minLength: 1,
+    autoFocus: true,
+    select: function(event, ui) {
+      $(this).val(ui.item.label);
+      SocialCalc.TriggerIoAction.AutoComplete(triggerCellId);
+    },
+    change: function (event, ui) {
+      if (ui.item === null) {
+          $(this).val('');
+      }
+      SocialCalc.TriggerIoAction.AutoComplete(triggerCellId);
+    }
+  });  
+}
+// Event triggered, e.g. button/imagebutton clicked. - call linked action formulas 
 // eddy TriggerIoAction {
 SocialCalc.TriggerIoAction.Button = function(triggerCellId) {
  var spreadsheet =  window.spreadsheet;
  var sheet = spreadsheet.sheet;
+ var scf = SocialCalc.Formula; 
  //spreadsheet.editor.EditorScheduleSheetCommands('set A2 value n 10',  true, false);
  
  //spreadsheet.editor.EditorScheduleSheetCommands('sendemail to eddy.nihon',  false, false); 
@@ -5070,34 +5144,72 @@ SocialCalc.TriggerIoAction.Button = function(triggerCellId) {
      */
 	  
 	  case "COPYVALUE" :
-	    //
-	    // e.g. set D3 text t push me 
-	    // e.g. set D3 value v 10		
-		//      set D5 constant n% 0.1 10%
-		//      set D6 constant nd 41922 10/10/2014
-    	var cell = sheet.cells[SocialCalc.Formula.PlainCoord(parameters[1].value)];		
-		  var sheetCommand; 
-    	if (typeof cell !== 'undefined' && cell.valuetype != 'b') { // if not blank get cell data
-    		var cellDataType = cell.datatype;
-    		var cellValueType = cell.valuetype; 		
-    		var cellDataValue = cell.datavalue;		
-    		var cellFormula = cell.formula;
-    		
-    		if(cellDataType == 'f') {
-          cellFormula = "";
-    		  cellDataType = cellValueType;
-    		  if(cellValueType == "nd") {
-    		    cellDataType = "c"; // for Date type etc 
-    		    cellFormula = cell.displaystring;
-    		  }
-    		  if(cellValueType.charAt(0) == "t") cellDataType = "t";    		  
-    		}
-    		sheetCommand = 'set '+parameters[2].value+ ' ' + SocialCalc.Constants.cellDataType[cellDataType] + ' ' +cellValueType + ' '+ SocialCalc.encodeForSave(cellDataValue) + ' ' + SocialCalc.encodeForSave(cellFormula);
-    		
-    	} else { 
-			sheetCommand = 'set '+parameters[2].value+ ' empty';    		
+
+      // get source cells or range    	
+      var sourcerangeinfo = null;
+    	if(parameters[1].type  == 'coord') {    	  
+    	  var sourceCoord = SocialCalc.Formula.PlainCoord(parameters[1].value);
+    	  sourcerangeinfo = scf.DecodeRangeParts(sheet, sourceCoord + "|"+ sourceCoord +"|" );
     	}
-	    spreadsheet.editor.EditorScheduleSheetCommands(sheetCommand.trim(),  true, false);
+    	
+   	  if(parameters[1].type == 'range') {
+    	    sourcerangeinfo = scf.DecodeRangeParts(sheet, parameters[1].value);
+   	  }
+
+      // get row and col of dest cell
+   	  var destcr = SocialCalc.coordToCr(parameters[2].value);
+   	 
+      // set command list to empty
+      var sheetCommandList = "";
+      var sheetCommand;
+     
+      // FOR each source cell
+      for (var i=0; i<sourcerangeinfo.ncols; i++) {
+        for (var j=0; j<sourcerangeinfo.nrows; j++) {
+
+          var cellcoord = SocialCalc.crToCoord(sourcerangeinfo.col1num + i, sourcerangeinfo.row1num + j);
+          var cell = sourcerangeinfo.sheetdata.GetAssuredCell(cellcoord);
+          // destination cell coord
+          var destCellCoord = SocialCalc.crToCoord(destcr.col + i, destcr.row + j);
+
+     
+          // IF after first source cell THEN  add new line to command list
+          if (i != 0 || j != 0 ) sheetCommandList = sheetCommandList + "\n";
+   	  
+   	  
+    	    // copyvalue to set command
+    	    // take the cell from copyvalue source and convert it to a set command to set the destination
+          // e.g. set D3 text t push me 
+          // e.g. set D3 value v 10   
+          // e.g. set D5 constant n% 0.1 10%
+          // e.g. set D6 constant nd 41922 10/10/2014
+        	if (typeof cell !== 'undefined' && cell.valuetype != 'b') { // if not blank get cell data
+        		var cellDataType = cell.datatype;
+        		var cellValueType = cell.valuetype; 		
+        		var cellDataValue = cell.datavalue;		
+        		var cellFormula = cell.formula;
+        		
+        		if(cellDataType == 'f') {
+              cellFormula = "";
+        		  cellDataType = cellValueType;
+        		  if(cellValueType == "nd") {
+        		    cellDataType = "c"; // for Date type etc 
+        		    cellFormula = cell.displaystring;
+        		  }
+        		  if(cellValueType.charAt(0) == "t") cellDataType = "t";    		  
+        		}
+        		
+
+        		sheetCommand = 'set '+destCellCoord+ ' ' + SocialCalc.Constants.cellDataType[cellDataType] + ' ' +cellValueType + ' '+ SocialCalc.encodeForSave(cellDataValue) + ' ' + SocialCalc.encodeForSave(cellFormula);
+        		
+        	} else { 
+    			  sheetCommand = 'set '+destCellCoord+ ' empty';    		
+        	}
+        	sheetCommandList += sheetCommand.trim();
+        }
+      }
+      
+	    spreadsheet.editor.EditorScheduleSheetCommands(sheetCommandList,  true, false);
 	    break;
 	  case "COPYFORMULA" : 
       var cell = sheet.cells[SocialCalc.Formula.PlainCoord(parameters[1].value)];   
@@ -5270,6 +5382,13 @@ SocialCalc.TriggerIoAction.Submit = function(triggerCellId) {
   }
 }
 
+//onKeyUp=AutoComplete
+SocialCalc.TriggerIoAction.AutoComplete = function(autoCompleteCellId) {
+  var getHTMLAutoCompleteCellValue = function( autoCompleteWidget ) { return autoCompleteWidget.value; };
+  var function_name = "AUTOCOMPLETE";
+  SocialCalc.TriggerIoAction.updateInputWidgetFormula(function_name, autoCompleteCellId, getHTMLAutoCompleteCellValue );
+}
+
 // onKeyUp=TextBox 
 SocialCalc.TriggerIoAction.TextBox = function(textBoxCellId) {
   var getHTMLTextBoxCellValue = function( textBoxWidget ) { return textBoxWidget.value; };
@@ -5284,18 +5403,52 @@ SocialCalc.TriggerIoAction.CheckBox = function(checkBoxCellId) {
   SocialCalc.TriggerIoAction.updateInputWidgetFormula(function_name, checkBoxCellId, getHTMLCheckBoxCellValue );
 }
 
+//Radio Button state changed
+// onclick when selected
+// update true/false in formula param
+SocialCalc.TriggerIoAction.RadioButton = function(radioButtonGroupName) {
+  var getHTMLRadioButtonValue = function( radioButtonWidget ) { return (radioButtonWidget.checked ? "TRUE" : "FALSE") };
+  var function_name = "RADIOBUTTON"
+  // for each radio button in group
+  $('input[name="'+radioButtonGroupName+'"]').each(function () {
+     SocialCalc.TriggerIoAction.updateInputWidgetFormula(function_name,  $(this).attr('id').replace(/RADIOBUTTON_/,''), getHTMLRadioButtonValue );
+  });
+}
+
+
 SocialCalc.TriggerIoAction.updateInputWidgetFormula = function(function_name, widgetCellId, getHTMLWidgetCellValue ) {
 
  var spreadsheet =  window.spreadsheet;
  var sheet = spreadsheet.sheet;
  var cell = sheet.cells[widgetCellId];
+ var parameters = sheet.ioParameterList[widgetCellId];
+ if(typeof parameters === 'undefined') return;
  
- var cell_textbox=document.getElementById(function_name+'_'+widgetCellId);
- var inputValue = getHTMLWidgetCellValue(cell_textbox);
+ var cell_widget=document.getElementById(function_name+'_'+widgetCellId);
+ var inputValue = getHTMLWidgetCellValue(cell_widget);
  inputValue = SocialCalc.encodeForSave(inputValue);
 
- var sheetCommand = 'set '+cell.coord+ ' formula ' + function_name+'("' +inputValue+'")'
- //SocialCalc.CmdGotFocus(cell_textbox);
+ var sheetCommand = 'set '+cell.coord+ ' formula '+ function_name+'("' +inputValue+'"';
+ for(var paramIndex = 1; paramIndex < parameters.length; paramIndex++) {
+   if(parameters[paramIndex].type.charAt(0) == 't') {
+     sheetCommand += ',"' + parameters[paramIndex].value + '"';
+   }
+   if(parameters[paramIndex].type == 'range') {
+     // convert:     E5!TO0DB4GSXZJ3|E8|   -> TO0DB4GSXZJ3!E5:E8
+     // convert:     E5|E8|   -> E5:E8
+     sheetCommand += ',' + parameters[paramIndex].value.toString().replace(/([A-Z]+[0-9]+)([!]?)([^|]*)[|]([A-Z]+[0-9]+)[|]/i,"$3$2$1:$4"); ;
+   }
+   if(parameters[paramIndex].type == 'coord') {
+     sheetCommand += ',' + parameters[paramIndex].value;
+   }   
+ }
+
+   // for(var parseIndex = 3; parseIndex < cell.parseinfo.length -1; parseIndex++) {
+//   if(cell.parseinfo[parseIndex].type == 6)   sheetCommand += '"' + cell.parseinfo[parseIndex].text + '"';
+//   else sheetCommand +=  cell.parseinfo[parseIndex].text ;
+// }
+ sheetCommand += ')';
+ //SocialCalc.CmdGotFocus(cell_widget);
 
  spreadsheet.editor.EditorScheduleSheetCommands(sheetCommand,  true, false);
  
