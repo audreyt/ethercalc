@@ -5256,7 +5256,6 @@ SocialCalc.TriggerIoAction.Button = function(triggerCellId) {
         sourceDataIndex ++;
         
       }
-      
       spreadsheet.editor.EditorScheduleSheetCommands(sheetCommandList,  true, false);        
       
    		 break;
