@@ -16524,7 +16524,7 @@ SocialCalc.Formula.DecodeRangeParts = function(sheetdata, range) {
 //   io_parameters, if present, 
 //        "ParameterList" is used with =CopyValue() etc, used to collect parameters of the formula, for use trigger/action formulas, 
 //        "EventTree" is used with =Button() etc, used to store trigger cell lookup table
-//        "Input" for input style GUI widgets - textbox/radio buttons etc - 
+//        "Input" store copy of value in formdata sheet -- for input style GUI widgets - textbox/radio buttons etc - 
 //
 // To add a function, just add it to this object.
 
@@ -16547,7 +16547,7 @@ SocialCalc.Formula.DecodeRangeParts = function(sheetdata, range) {
 
 /*
 #
-# SocialCalc.Formula.StoreIoEventFormula(coord, operand_reverse, sheet, io_parameters)
+# SocialCalc.Formula.StoreIoEventFormula(function_name, coord, operand_reverse, sheet, io_parameters)
 # 
 # store forumla parameters of io event formulas
 #
@@ -20343,16 +20343,14 @@ SocialCalc.TriggerIoAction.CheckBox = function(checkBoxCellId) {
 
 //Radio Button state changed
 // onclick when selected
-// onblur when deselected 
+// update true/false in formula param
 SocialCalc.TriggerIoAction.RadioButton = function(radioButtonGroupName) {
   var getHTMLRadioButtonValue = function( radioButtonWidget ) { return (radioButtonWidget.checked ? "TRUE" : "FALSE") };
   var function_name = "RADIOBUTTON"
-    // for each radio button in group
-    $('input[name="'+radioButtonGroupName+'"]').each(function () {
-//    SocialCalc.TriggerIoAction.updateInputWidgetFormula(function_name, radioButtonCellId, getHTMLRadioButtonValue );
-       SocialCalc.TriggerIoAction.updateInputWidgetFormula(function_name,  $(this).attr('id').replace(/RADIOBUTTON_/,''), getHTMLRadioButtonValue );
-    });
-  // SocialCalc.TriggerIoAction.updateInputWidgetFormula(function_name, "C3", getHTMLRadioButtonValue );
+  // for each radio button in group
+  $('input[name="'+radioButtonGroupName+'"]').each(function () {
+     SocialCalc.TriggerIoAction.updateInputWidgetFormula(function_name,  $(this).attr('id').replace(/RADIOBUTTON_/,''), getHTMLRadioButtonValue );
+  });
 }
 
 
@@ -20374,7 +20372,7 @@ SocialCalc.TriggerIoAction.updateInputWidgetFormula = function(function_name, wi
      sheetCommand += ',"' + parameters[paramIndex].value + '"';
    }
    if(parameters[paramIndex].type == 'range') {
-     // convert:     E5!TO0DB4GSXZJ3|E8|   -> E5!TO0DB4GSXZJ3|E8|
+     // convert:     E5!TO0DB4GSXZJ3|E8|   -> TO0DB4GSXZJ3!E5:E8
      // convert:     E5|E8|   -> E5:E8
      sheetCommand += ',' + parameters[paramIndex].value.toString().replace(/([A-Z]+[0-9]+)([!]?)([^|]*)[|]([A-Z]+[0-9]+)[|]/i,"$3$2$1:$4"); ;
    }
