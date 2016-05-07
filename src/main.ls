@@ -208,6 +208,18 @@
         rooms <~ SC._rooms 
         @response.type \application/json
         @response.json 200 rooms
+  if @CORS
+     @get '/_roomlinks' : ->
+        @response.type Text
+        return @response.send 403 '_roomlinks not available with CORS'
+  else
+     @get '/_roomlinks' : ->
+        rooms <~ SC._rooms 
+        roomlinks = for room in rooms
+          "<a href=#BASEPATH/#room>#room</a>"
+        @response.type Html
+        @response.json 200 roomlinks
+
   @get '/_from/:template': ->
     room = new-room!
     template = @params.template
