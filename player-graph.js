@@ -9,6 +9,12 @@
           return location.reload();
         }
         SocialCalc = window.SocialCalc || alert('Cannot find window.SocialCalc');
+        SocialCalc.Constants.s_loc_horizontal_bar = "Horizontal Bar";
+        SocialCalc.Constants.s_loc_vertical_bar = "Vertical Bar";
+        SocialCalc.Constants.s_loc_pie_chart = "Pie Chart";
+        SocialCalc.Constants.s_loc_line_chart = "Line Chart";
+        SocialCalc.Constants.s_loc_scatter_chart = "Scatter Chart";
+        SocialCalc.Constants.s_loc_hide_help = "Hide Help";
         colorIndex = 0;
         getBarColor = function(){
           var colors;
