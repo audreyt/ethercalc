@@ -2300,7 +2300,7 @@ SocialCalc.Formula.SumProductFunction = function(fname, operand, foperand, sheet
             cellcr = SocialCalc.crToCoord(rangeinfo.col1num + i, rangeinfo.row1num + j);
             cell = rangeinfo.sheetdata.GetAssuredCell(cellcr);
             value = cell.valuetype == "n" ? cell.datavalue : 0;
-            products[k] = (products[k] || 1) * value;
+            products[k] = ((typeof products[k] !== 'undefined')? products[k] : 1) * value;
             }
          }
       }
