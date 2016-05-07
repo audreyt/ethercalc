@@ -3374,6 +3374,7 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
       case "insertrow":
          sheet.renderneeded = true;
          sheet.changedrendervalues = true;
+         sheet.widgetsClean = false; //  force widgets to repaint - update cell reference in widget HTML 
          what = cmd.NextToken();
          rest = cmd.RestOfString();
          ParseRange();
@@ -3492,6 +3493,7 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
       case "deleterow":
          sheet.renderneeded = true;
          sheet.changedrendervalues = true;
+         sheet.widgetsClean = false; // update cell reference in widget HTML - force widgets to repaint
          what = cmd.NextToken();
          rest = cmd.RestOfString();
          lastcol = attribs.lastcol; // save old values since ParseRange sets...
@@ -5857,7 +5859,7 @@ SocialCalc.RenderCell = function(context, rownum, colnum, rowpane, colpane, noEl
       result.rowSpan=span;
       }
 
-   if (cell.displaystring==undefined) { // cache the display value
+   if (cell.displaystring==undefined || sheetobj.widgetsClean == false) { // cache the display value
       cell.displaystring = SocialCalc.FormatValueForDisplay(sheetobj, cell.datavalue, coord, (linkstyle || context.defaultlinkstyle));
       }
 	
@@ -20194,7 +20196,6 @@ SocialCalc.TriggerIoAction.Button = function(triggerCellId) {
         sourceDataIndex ++;
         
       }
-      
       spreadsheet.editor.EditorScheduleSheetCommands(sheetCommandList,  true, false);        
       
    		 break;
