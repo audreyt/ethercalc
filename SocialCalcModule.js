@@ -19827,8 +19827,10 @@ SocialCalc.Formula.FunctionList["IRR"] = [SocialCalc.Formula.IRRFunction, -1, "i
 # RADIOBUTTON(string,groupname)
 # COPYVALUE(range, destinationCell, value_or_range) // 
 # COPYFORMULA(range, destinationCell, formula_range)) // 
-# INSERT(trigger_cell, destination_range [,formula_range,value_range,formula_range, ...]) // 
-# DELETEIF(trigger_cell, criteria , test_range) // 
+# INSERT(trigger_cell, destination_range [,formula_range,value_range,formula_range, ...])
+# DELETEIF(trigger_cell, criteria , test_range) 
+# COMMAND(trigger_cell, commands)
+# COMMANDIF(trigger_cell, condition, commands) 
 #
 */
 
@@ -19876,6 +19878,8 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
 				,COPYFORMULA: [4, 12, 12]
         ,INSERT: [4, 8, -12, -15]  // change code to allow unlimited 
         ,DELETEIF: [4,7,8]
+        ,COMMAND: [4, 14]
+        ,COMMANDIF: [4, 13, 14]
    };
    
    var i, parameter, offset, len, start, count;
@@ -20023,6 +20027,8 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
       case "COPYFORMULA":
       case "INSERT":
       case "DELETEIF":
+      case "COMMAND":
+      case "COMMANDIF":
          var cell = sheet.cells[operand_value[1]];
          if(typeof cell === 'undefined') break; // invalid trigger cell, return error
          result = cell.datavalue; // get trigger cell value
@@ -20065,6 +20071,8 @@ SocialCalc.Formula.FunctionList["COPYVALUE"] = [SocialCalc.Formula.IoFunctions, 
 SocialCalc.Formula.FunctionList["COPYFORMULA"] = [SocialCalc.Formula.IoFunctions, 3, "trigger_cell, destinationCell, formula_range", "", "action", "", "EventTree"];
 SocialCalc.Formula.FunctionList["INSERT"] = [SocialCalc.Formula.IoFunctions, -2, "trigger_cell, destination_range [,formula_range,value_or_range,formula_range, ...]", "", "action", "", "EventTree"];
 SocialCalc.Formula.FunctionList["DELETEIF"] = [SocialCalc.Formula.IoFunctions, -1, "trigger_cell, criteria , test_range", "", "action", "", "EventTree"];
+SocialCalc.Formula.FunctionList["COMMAND"] = [SocialCalc.Formula.IoFunctions, -1, "trigger_cell, commands", "", "action", "", "EventTree"];
+SocialCalc.Formula.FunctionList["COMMANDIF"] = [SocialCalc.Formula.IoFunctions, -1, "trigger_cell, conditions, commands", "", "action", "", "EventTree"];
 
 
 
@@ -20134,6 +20142,7 @@ SocialCalc.TriggerIoAction.Button = function(triggerCellId) {
  for(var actionCellId in sheet.ioEventTree[triggerCellId]) {
  
 	var parameters = sheet.ioParameterList[actionCellId];
+	var conditionsParameter = null;
 	
 	switch(parameters.function_name) {
 	  
@@ -20237,7 +20246,39 @@ SocialCalc.TriggerIoAction.Button = function(triggerCellId) {
       if (sheetCommandList != "" ) spreadsheet.editor.EditorScheduleSheetCommands(sheetCommandList,  true, false);        
       
       break;
-    }
+    case "COMMANDIF" :  //    # COMMANDIF(trigger_cell, condition, commands) 
+      conditionsParameter = SocialCalc.Formula.getStandardizedValues(sheet, parameters[1]); // commands 
+
+      
+    case "COMMAND" :  // COMMAND(trigger_cell, commands) 
+      var commandsParameter;
+      // set command list to empty
+      var sheetCommandList = "";
+      if( conditionsParameter != null) {
+        var commandsParameter = SocialCalc.Formula.getStandardizedValues(sheet, parameters[2]); // commands 
+        if (conditionsParameter.ncols != commandsParameter.ncols || conditionsParameter.nrows != commandsParameter.nrows) break;
+      } else {
+        commandsParameter = SocialCalc.Formula.getStandardizedValues(sheet, parameters[1]); // commands         
+      }
+      
+      for (var i=0; i<commandsParameter.ncols; i++) {
+        for (var j=0; j<commandsParameter.nrows; j++) {
+
+          if( conditionsParameter != null) {
+            var conditionCell = conditionsParameter.celldata[i][j];
+            if(conditionCell.datavalue == false) continue;
+          }
+          if (sheetCommandList != "" ) sheetCommandList = sheetCommandList + "\n";
+          var cellCommand = commandsParameter.celldata[i][j];  
+          sheetCommandList = sheetCommandList + cellCommand.datavalue.toString().trim();
+          
+        }
+      }
+      if (sheetCommandList != "" ) spreadsheet.editor.EditorScheduleSheetCommands(sheetCommandList,  true, false);        
+
+      break;
+      
+  }
 
  } 
 
