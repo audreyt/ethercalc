@@ -1876,7 +1876,7 @@ SocialCalc.Formula.CalculateFunction = function(fname, operand, sheet, coord) {
 
 		 
 	  
-      errortext = ffunc(fname, operand, foperand, sheet);
+      errortext = ffunc(fname, operand, foperand, sheet, coord);
       }
 
    else {
@@ -4883,6 +4883,7 @@ SocialCalc.Formula.FunctionList["IRR"] = [SocialCalc.Formula.IRRFunction, -1, "i
 # IMAGEBUTTON(string) 
 # TEXTBOX(string) // 
 # AUTOCOMPLETE(string, range)
+# SELECT(string, range [,size [,multiple]])
 # CHECKBOX(string) // 
 # RADIOBUTTON(string,groupname)
 # COPYVALUE(range, destinationCell, value_or_range) // 
@@ -4893,7 +4894,7 @@ SocialCalc.Formula.FunctionList["IRR"] = [SocialCalc.Formula.IRRFunction, -1, "i
 */
 
 
-SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
+SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet, coord) {
 
   
 // ArgList has an array for each function, one entry for each possible arg (up to max).
@@ -4930,6 +4931,7 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
         ,SUBMIT: [2]
         ,TEXTBOX: [2]
         ,AUTOCOMPLETE: [2, 14]
+        ,SELECT: [2, 14, 1, 1]   // # SELECT(string, range [,size [,multiple]])
         ,CHECKBOX: [3]
         ,RADIOBUTTON: [2, 2]
 				,COPYVALUE: [4, 12, 15]
@@ -5039,14 +5041,40 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
 
 
    switch (fname) {
+     case "SELECT":  // # SELECT(string, range [,size [,multiple]])
+         var parameters = sheet.ioParameterList[coord];
+         var optionSource = [];
+         var parameterdata = SocialCalc.Formula.getStandardizedValues(sheet, parameters[1]);
+         
+         if(parameterdata.ncols == 1 && parameterdata.nrows == 1) {
+           optionSource = String(parameterdata.celldata[0][0].datavalue).split(',');
+         } else {
+           for (var i=0; i<parameterdata.ncols; i++) {
+             for (var j=0; j<parameterdata.nrows; j++) {
+                var cell = parameterdata.celldata[i][j];
+                optionSource.push(cell.datavalue.toString());
+             }
+          }    
+         }
+         parameters.html = [];        
+         parameters.html[0] = (operand_value[4] == true) ? "multiple" : ""
+         parameters.html[1] = (operand_value[3]) ? ""+operand_value[3] : "1"
+         if(optionSource.length > 0 ) {
+           var options = "<option>" + optionSource.join("</option><option>") + "</option>";
+           var optionRegExp = new RegExp("<option>"+operand_value[1],'');
+           parameters.html[2] = options.replace(optionRegExp, "<option selected>"+operand_value[1] ); // select default, if any
+         }
+         result = operand_value[1];
+         resulttype = "ti"+fname;
+         break;
      case "SUBMIT":
-         result = "Submit";
+       result = "Submit";
      case "BUTTON":
      case "IMAGEBUTTON":
      case "TEXTBOX":
      case "AUTOCOMPLETE":
          if (numargs>0) result = operand_value[1];
-         resulttype = "ti"+fname; // (t)ext value with (i)nterface (BUTTON,IMAGEBUTTON,TEXTBOX,AUTOCOMPLETE) 
+         resulttype = "ti"+fname; // (t)ext value with (i)nterface (BUTTON,IMAGEBUTTON,TEXTBOX,AUTOCOMPLETE, SELECT) 
          break;
 
       case "EMAIL":
@@ -5118,6 +5146,7 @@ SocialCalc.Formula.FunctionList["EMAILATIF"] = [SocialCalc.Formula.IoFunctions, 
 SocialCalc.Formula.FunctionList["SUBMIT"] = [SocialCalc.Formula.IoFunctions, 100, "[label]", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Submit('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList" ];
 SocialCalc.Formula.FunctionList["TEXTBOX"] = [SocialCalc.Formula.IoFunctions, 1, "value", "", "gui", "<input type='text' id='TEXTBOX_<%=cell_reference%>' onblur='SocialCalc.CmdGotFocus(null);' oninput=\"SocialCalc.TriggerIoAction.TextBox('<%=cell_reference%>')\" value='<%=display_value%>' >", "Input" ];
 SocialCalc.Formula.FunctionList["AUTOCOMPLETE"] = [SocialCalc.Formula.IoFunctions, 2, "value, range or csv_text", "", "gui", "<input type='text' id='AUTOCOMPLETE_<%=cell_reference%>' onfocus=\"SocialCalc.TriggerIoAction.AddAutocomplete('<%=cell_reference%>');\" onblur='SocialCalc.CmdGotFocus(null);' value='<%=display_value%>' >", "Input" ];
+SocialCalc.Formula.FunctionList["SELECT"] = [SocialCalc.Formula.IoFunctions, -2, "value, range or csv_text [,size]", "", "gui", "<select size='<%=html1_value%>' id='SELECT_<%=cell_reference%>' onchange=\"SocialCalc.TriggerIoAction.SelectList('<%=cell_reference%>')\" <%=html0_value%>><%=html2_value%></select>", "Input" ];
 SocialCalc.Formula.FunctionList["CHECKBOX"] = [SocialCalc.Formula.IoFunctions, 1, "value", "", "gui", "<input type='checkbox' id='CHECKBOX_<%=cell_reference%>' <%=checked%> onblur='SocialCalc.CmdGotFocus(null);' onchange=\"SocialCalc.TriggerIoAction.CheckBox('<%=cell_reference%>')\" >", "Input" ];
 SocialCalc.Formula.FunctionList["RADIOBUTTON"] = [SocialCalc.Formula.IoFunctions, 2, "value, groupname", "", "gui", "<input type='radio' value='<%=cell_reference%>' id='RADIOBUTTON_<%=cell_reference%>' <%=checked%> name='<%=parameter1_value%>' onblur=\"SocialCalc.CmdGotFocus(null);\" onclick=\"SocialCalc.TriggerIoAction.RadioButton('<%=parameter1_value%>');\" >", "Input" ];
 
@@ -5582,6 +5611,13 @@ SocialCalc.TriggerIoAction.Submit = function(triggerCellId) {
   }
 }
 
+//onChange=select tag (combobox) 
+SocialCalc.TriggerIoAction.SelectList = function(selectListCellId) {
+  var getHTMLselectListCellValue = function( selectListWidget ) { return selectListWidget.value; };
+  var function_name = "SELECT";
+  SocialCalc.TriggerIoAction.updateInputWidgetFormula(function_name, selectListCellId, getHTMLselectListCellValue );
+}
+
 //onKeyUp=AutoComplete
 SocialCalc.TriggerIoAction.AutoComplete = function(autoCompleteCellId) {
   var getHTMLAutoCompleteCellValue = function( autoCompleteWidget ) { return autoCompleteWidget.value; };
@@ -5630,6 +5666,9 @@ SocialCalc.TriggerIoAction.updateInputWidgetFormula = function(function_name, wi
 
  var sheetCommand = 'set '+widgetCellId+ ' formula '+ function_name+'("' +inputValue+'"';
  for(var paramIndex = 1; paramIndex < parameters.length; paramIndex++) {
+   if(parameters[paramIndex].type.charAt(0) == 'n') {
+     sheetCommand += ',' + parameters[paramIndex].value;
+   }
    if(parameters[paramIndex].type.charAt(0) == 't') {
      sheetCommand += ',"' + parameters[paramIndex].value + '"';
    }
