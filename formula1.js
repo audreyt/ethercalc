@@ -5037,7 +5037,7 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
       }
    }
 
-
+   
    switch (fname) {
      case "SUBMIT":
          result = "Submit";
@@ -5091,6 +5091,11 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet) {
          result = result[result.length-1]; 
          resulttype = "t";
          break;
+      case "PANEL":
+        if(SocialCalc._app) { // panel only works in live app
+          if(typeof sheet.colattribs.hide["B"] == 'undefined') sheet.colattribs.hide["B"] ="yes";
+          sheet.renderneeded = true;
+        }
          
       }
 
