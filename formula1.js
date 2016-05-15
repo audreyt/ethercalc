@@ -5043,19 +5043,8 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet, coord
    switch (fname) {
      case "SELECT":  // # SELECT(string, range [,size [,multiple]])
          var parameters = sheet.ioParameterList[coord];
-         var optionSource = [];
-         var parameterdata = SocialCalc.Formula.getStandardizedValues(sheet, parameters[1]);
+         var optionSource = SocialCalc.Formula.getStandardizedList(sheet, parameters[1]);
          
-         if(parameterdata.ncols == 1 && parameterdata.nrows == 1) {
-           optionSource = String(parameterdata.celldata[0][0].datavalue).split(',');
-         } else {
-           for (var i=0; i<parameterdata.ncols; i++) {
-             for (var j=0; j<parameterdata.nrows; j++) {
-                var cell = parameterdata.celldata[i][j];
-                optionSource.push(cell.datavalue.toString());
-             }
-          }    
-         }
          parameters.html = [];        
          parameters.html[0] = (operand_value[4] == true) ? "multiple" : ""
          parameters.html[1] = (operand_value[3]) ? ""+operand_value[3] : "1"
@@ -5172,19 +5161,7 @@ SocialCalc.TriggerIoAction.AddAutocomplete = function(triggerCellId) {
   var parameters = sheet.ioParameterList[triggerCellId];
   if(typeof parameters === 'undefined') return;
   
-  var autocompleteSource = [];
-  var parameterdata = SocialCalc.Formula.getStandardizedValues(sheet, parameters[1]);
-  
-  if(parameterdata.ncols == 1 && parameterdata.nrows == 1) {
-    autocompleteSource = String(parameterdata.celldata[0][0].datavalue).split(',');
-  } else {
-    for (var i=0; i<parameterdata.ncols; i++) {
-      for (var j=0; j<parameterdata.nrows; j++) {
-         var cell = parameterdata.celldata[i][j];
-         autocompleteSource.push(cell.datavalue.toString());
-      }
-   }    
-  }
+  var autocompleteSource = SocialCalc.Formula.getStandardizedList(sheet, parameters[1])
 
   //Overrides the default autocomplete filter function to search only from the beginning of the string
   $.ui.autocomplete.filter = function (array, term) {
@@ -5729,6 +5706,23 @@ SocialCalc.Formula.getStandardizedCoords = function(sheet, parameterData) {
   return SocialCalc.Formula.getStandardizedParameter(sheet, parameterData, true, false);
 }  
 
+SocialCalc.Formula.getStandardizedList = function(sheet, listParameter) {
+  
+  var listValues = [];
+  var parameterdata = SocialCalc.Formula.getStandardizedValues(sheet, listParameter);
+  
+  if(parameterdata.ncols == 1 && parameterdata.nrows == 1) {
+    listValues = String(parameterdata.celldata[0][0].datavalue).split(',');
+  } else {
+    for (var i=0; i<parameterdata.ncols; i++) {
+      for (var j=0; j<parameterdata.nrows; j++) {
+         var cell = parameterdata.celldata[i][j];
+         listValues.push(cell.datavalue.toString());
+      }
+   }    
+  }
+  return listValues;
+}
 
 /**************************
  * getStandardizedParameter(parameterData, includeCellCoord, includeCellData)
