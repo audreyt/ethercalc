@@ -630,8 +630,8 @@ SocialCalc.Formula.EvaluatePolish = function(parseinfo, revpolish, sheet, allowr
 
 	  
 	  // eddy EvaluatePolish { 
-        SocialCalc.DebugLog({ revpolish: revpolish});
-        SocialCalc.DebugLog({ revpolish: revpolish});
+    //    SocialCalc.DebugLog({ revpolish: revpolish});
+    //    SocialCalc.DebugLog({ revpolish: revpolish});
 	  // }
 
 	// eddy EvaluatePolish {
