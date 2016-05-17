@@ -47,7 +47,7 @@ do
   fi
 
   #start the application
-  bin/run.sh >>${LOG} 2>>${LOG}
+  bin/run.sh $@ >>${LOG} 2>>${LOG}
   
   #Send email
   if [ $ERROR_HANDLIjNG = 1 ]; then
