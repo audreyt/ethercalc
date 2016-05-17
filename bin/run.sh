@@ -35,4 +35,4 @@ fi
 #Move to the node folder and start
 echo "Started Ethercalc..."
 
-bin/ethercalc
+bin/ethercalc $@
