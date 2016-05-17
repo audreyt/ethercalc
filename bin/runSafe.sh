@@ -22,10 +22,9 @@ LOG="$1"
 cd `dirname $0`
 
 #Was this script started in the bin folder? if yes move out
-# This is done by bin/ethercalc later
-#if [ -d "../bin" ]; then
-#  cd "../"
-#fi
+if [ -d "../bin" ]; then
+  cd "../"
+fi
 
 #check if a logfile parameter is set
 if [ -z "${LOG}" ]; then
@@ -48,7 +47,7 @@ do
   fi
 
   #start the application
-  ./run.sh >>${LOG} 2>>${LOG}
+  bin/run.sh >>${LOG} 2>>${LOG}
   
   #Send email
   if [ $ERROR_HANDLIjNG = 1 ]; then
