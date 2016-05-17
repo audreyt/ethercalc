@@ -4,9 +4,10 @@
 cd `dirname $0`
 
 #Was this script started in the bin folder? if yes move out
-if [ -d "../bin" ]; then
-  cd "../"
-fi
+# This is done by bin/ethercalc later
+#if [ -d "../bin" ]; then
+#  cd "../"
+#fi
 
 ignoreRoot=0
 for ARG in $*
@@ -28,15 +29,9 @@ if [ "$(id -u)" -eq 0 ] && [ $ignoreRoot -eq 0 ]; then
    fi
 fi
 
-# set port if specified
-port=7143
-if [ $# -ge 1 ]; then
-   port=$1
-fi
-
 #start redis server
-#Note: disable this if your redis server is already running!
-redis-server /etc/onetime/redis.conf
+#Note: enable this if your redis server is not already running!
+#redis-server /path/to/my/redis.conf
 
 #Move to the node folder and start
 echo "Started Ethercalc..."
