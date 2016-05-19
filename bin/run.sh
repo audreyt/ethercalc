@@ -32,7 +32,16 @@ fi
 #Note: enable this if your redis server is not already running!
 #redis-server /path/to/my/redis.conf
 
-#Move to the node folder and start
+# manual redis config
+
+#export REDIS_HOST=localhost
+#export REDIS_PORT=1234
+#export REDIS_PASS=mypassword
+#export REDIS_DB=0
+
+# When settings sensitive information here (redis password) remeber to secure the file to prevent other users from reading it!
+
+#finally start Ethercalc
 echo "Started Ethercalc..."
 
 bin/ethercalc $@
