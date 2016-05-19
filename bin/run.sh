@@ -41,6 +41,9 @@ fi
 
 # When settings sensitive information here (redis password) remeber to secure the file to prevent other users from reading it!
 
+# enable production mode
+export NODE_ENV=production
+
 #finally start Ethercalc
 echo "Started Ethercalc..."
 
