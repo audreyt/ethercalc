@@ -85,7 +85,15 @@ Useful when setting up EtherCalc as a public REST API server.
 
 ### URL Prefix: `--basepath /path/prefix`
 
-Useful when running under an URL rewriter.
+Useful when running under an URL rewriter. If running with a nginx reverse
+proxy, please add this section:
+
+```
+    location /zappa/socket/__local/ {
+        rewrite (.*) /path/prefix$1;
+    }
+```
+
 
 ### Access Control: `--key secret`
 
