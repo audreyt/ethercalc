@@ -21,7 +21,7 @@
 
   HMAC_CACHE = {}
   hmac = if !KEY then -> it else -> HMAC_CACHE[it] ||= do
-    encoder = require \crypto .createHmac \sha256 KEY
+    encoder = require \crypto .createHmac \sha256 (new Buffer KEY)
     encoder.update it.toString!
     encoder.digest \hex
 

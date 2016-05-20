@@ -25,7 +25,7 @@
       }
       : function(it){
         var encoder;
-        return HMAC_CACHE[it] || (HMAC_CACHE[it] = (encoder = require('crypto').createHmac('sha256', KEY), encoder.update(it.toString()), encoder.digest('hex')));
+        return HMAC_CACHE[it] || (HMAC_CACHE[it] = (encoder = require('crypto').createHmac('sha256', new Buffer(KEY)), encoder.update(it.toString()), encoder.digest('hex')));
       };
     ref$ = ['text/plain', 'text/html', 'text/csv', 'application/json'].map((function(it){
       return it + "; charset=utf-8";
