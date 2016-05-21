@@ -5629,6 +5629,12 @@ SocialCalc.FormatValueForDisplay = function(sheetobj, value, cr, linkstyle) {
            var paramRegExp = new RegExp("<%=parameter"+index+"_value%>",'g');
            cell_html = cell_html.replace(paramRegExp, parameterValue);
          }
+         if(parameters.html) { 
+           for(var htmlIndex=0; htmlIndex < parameters.html.length; htmlIndex ++) {
+             var paramRegExp = new RegExp("<%=html"+htmlIndex+"_value%>",'g');
+             cell_html = cell_html.replace(paramRegExp, parameters.html[htmlIndex]);
+           }
+         }
        }
        
 			 return cell_html.replace(/<%=cell_reference%>/g, cr);
