@@ -1303,6 +1303,9 @@ SocialCalc.ProcessEditorMouseDown = function(e) {
 
    var mouseinfo = SocialCalc.EditorMouseInfo;
    var ele = event.target || event.srcElement; // source object is often within what we want
+   var target = ele; 
+   if (target.nodeType == 3) target = target.parentNode; // defeat Safari bug
+     
    var mobj;
 
    if (mouseinfo.ignore) return; // ignore this
@@ -1361,10 +1364,12 @@ SocialCalc.ProcessEditorMouseDown = function(e) {
    var clickedCell = editor.context.sheetobj.cells[coord];
    if(clickedCell) {
      if(clickedCell.valuetype.charAt(1) == 'i') { // IF cell contains ioWidget
-        var formula_name= clickedCell.valuetype.substring(2);	 
-	    var cell_widget=document.getElementById(formula_name+'_'+coord);
-		SocialCalc.CmdGotFocus(cell_widget); // cell widgets need to keep focus 
-		// SocialCalc.Keyboard.FocusWidget = coord;
+       var formula_name= clickedCell.valuetype.substring(2);
+       var widget_id = formula_name+'_'+coord;
+       if(target && widget_id == target.id) { // if widget was clicked (rather than cell containing widget) 
+         var cell_widget=document.getElementById(widget_id);
+         SocialCalc.CmdGotFocus(cell_widget); // cell widgets need to keep focus 
+       }
 		return; // let ioWidget keep the focus 
 		}
 	 }
