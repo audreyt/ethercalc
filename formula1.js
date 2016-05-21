@@ -4890,6 +4890,7 @@ SocialCalc.Formula.FunctionList["IRR"] = [SocialCalc.Formula.IRRFunction, -1, "i
 # COPYFORMULA(range, destinationCell, formula_range)) // 
 # INSERT(trigger_cell, destination_range [,formula_range,value_range,formula_range, ...]) // 
 # DELETEIF(trigger_cell, criteria , test_range) // 
+# PANEL(indices_or_csv, panel1_range [, panel2_range , ...])  
 #
 */
 
@@ -4938,6 +4939,7 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet, coord
 				,COPYFORMULA: [4, 12, 12]
         ,INSERT: [4, 8, -12, -15]  // change code to allow unlimited 
         ,DELETEIF: [4,7,8]
+        ,PANEL:[15, -12] // # PANEL(indices_or_csv, panel1_range [, panel2_range , ...])  
    };
    
    var i, parameter, offset, len, start, count;
@@ -5109,9 +5111,81 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet, coord
          resulttype = "t";
          break;
       case "PANEL":
+        //  - code to show/hide panel
+        //  --- get list of panels to show - "showindex_or_csv" 
+        //  --- get param details 
+        var showindices = SocialCalc.Formula.getStandardizedList(sheet, {value: operand_value[1], type: operand_type[1]});
+        
+        //  --- SET list of showrows TO empty
+        //  --- SET list of showcols TO empty
+        result = "Panels:"+ showindices; 
+        resulttype = "t";
         if(SocialCalc._app) { // panel only works in live app
-          if(typeof sheet.colattribs.hide["B"] == 'undefined') sheet.colattribs.hide["B"] ="yes";
-          sheet.renderneeded = true;
+          var showrows = [], showcols = [];
+          //  --- FOR each panel to show
+          for (var parameterIndex = 2; parameterIndex < operand_value.length; ++parameterIndex) { 
+            // show panel if its index is in the showindices list 
+            var showPanelFound = false;
+            for(var showIndex in showindices ) { 
+              if (showindices[showIndex] == parameterIndex-1) {
+                showPanelFound = true;
+                break;
+              }
+            }
+            if(showPanelFound === false) continue;
+            
+          
+            //  ----- get panel range rows & cols only
+            var panelCoordData = SocialCalc.Formula.getStandardizedCoords(sheet, {value: operand_value[parameterIndex], type: operand_type[parameterIndex]});
+            //  ----- FOR each row/col -- create function to do the loop
+            for (var i=0; i<panelCoordData.ncols; i++) {
+              //  ------- set showrows/col row/col to true
+              showcols[panelCoordData.col1num + i] = true;
+            }  //  ----- END FOR                        
+            for (var j=0; j<panelCoordData.nrows; j++) {
+              //  ------- set showrows/col row/col to true
+              showrows[panelCoordData.row1num + j] = true;
+            }
+          }   //  --- END FOR
+          
+          var showGridDimension =  function(sheet, lastIndex, sheetHideList, showList, getIndexOf) {
+            var forceRender = false;
+            //  --- hide all rows/col    up to sheet.attribs.lastrow/col         
+            //  --- FOR each row/col -- create function to do the loop          
+            for(var arrayIndex = 1; arrayIndex <= lastIndex; arrayIndex ++ ) { // start at col/row 1
+              //  ----- IF row hide/show state need updating
+              var sheetHideIndex = getIndexOf(arrayIndex); // gets col name if col
+              if(typeof sheetHideList[sheetHideIndex] == 'undefined') { 
+                // row/col is visible
+                if(showList[arrayIndex] !== true) { // if hide
+                  //  ------- SET the row state  
+                  sheetHideList[sheetHideIndex] ="yes";                
+                  //  ------- SET repaint flag
+                  forceRender = true;
+                }
+              } else {
+                // row/col is hidden 
+                if(showList[arrayIndex] === true) { // if show 
+                  //  ------- SET the row state  
+                  delete sheetHideList[sheetHideIndex];                
+                  //  ------- SET repaint flag
+                  forceRender = true;
+                }
+              }              
+              
+            }
+            if(forceRender) {
+              sheet.renderneeded = true;
+              sheet.widgetsClean = false; //  force widgets to repaint - update cell reference in widget HTML                   
+            }
+            
+          };
+
+          
+          var getRowIndex = function(row) { return row };
+          showGridDimension(sheet,  sheet.attribs.lastrow,  sheet.rowattribs.hide, showrows, getRowIndex);
+          showGridDimension(sheet,  sheet.attribs.lastcol,  sheet.colattribs.hide, showcols, SocialCalc.rcColname );
+          
         }
          
       }
@@ -5148,8 +5222,7 @@ SocialCalc.Formula.FunctionList["COPYVALUE"] = [SocialCalc.Formula.IoFunctions, 
 SocialCalc.Formula.FunctionList["COPYFORMULA"] = [SocialCalc.Formula.IoFunctions, 3, "trigger_cell, destinationCell, formula_range", "", "action", "", "EventTree"];
 SocialCalc.Formula.FunctionList["INSERT"] = [SocialCalc.Formula.IoFunctions, -2, "trigger_cell, destination_range [,formula_range,value_or_range,formula_range, ...]", "", "action", "", "EventTree"];
 SocialCalc.Formula.FunctionList["DELETEIF"] = [SocialCalc.Formula.IoFunctions, -1, "trigger_cell, criteria , test_range", "", "action", "", "EventTree"];
-
-
+SocialCalc.Formula.FunctionList["PANEL"] = [SocialCalc.Formula.IoFunctions, -1, "showindices_range_or_csv, panel1_range [, panel2_range , ...]", "", "action", "", "EventTree"];
 
 // on enter input box refresh the auto complete list
 SocialCalc.TriggerIoAction.AddAutocomplete = function(triggerCellId) {
@@ -5706,6 +5779,12 @@ SocialCalc.Formula.getStandardizedCoords = function(sheet, parameterData) {
   return SocialCalc.Formula.getStandardizedParameter(sheet, parameterData, true, false);
 }  
 
+/***************
+ * getStandardizedList
+ * @sheet spreadsheet sheet
+ * @listParameter csv or array or single value - convert into single array
+ * @return array of values - one dimension
+ ****************/
 SocialCalc.Formula.getStandardizedList = function(sheet, listParameter) {
   
   var listValues = [];
