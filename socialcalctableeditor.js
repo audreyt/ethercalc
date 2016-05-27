@@ -3232,7 +3232,14 @@ SocialCalc.FitToEditTable = function(editor) {
    context.colpanes[colpane].last = context.sheetobj.attribs.usermaxcol || colnum;
 
    // Calculate row height data
-
+   
+   // find first visible row
+   var firstRow = context.rowpanes[0].first;
+   var lastRow = context.sheetobj.attribs.lastrow;
+   while(sheetobj.rowattribs.hide[firstRow] == "yes" && firstRow <lastRow) firstRow++;
+   context.rowpanes[0].first = firstRow;
+   
+   // count visible rows in pane(s)
    totalrows=context.showRCHeaders ? 1 : 0;
    for (rowpane=0; rowpane<context.rowpanes.length-1; rowpane++) { // count all panes but last one
       totalrows += context.rowpanes[rowpane].last - context.rowpanes[rowpane].first + 1;

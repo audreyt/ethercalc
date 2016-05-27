@@ -5154,8 +5154,11 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet, coord
             }
           }   //  --- END FOR
           
+          var spreadsheet =  window.spreadsheet;
+          if (spreadsheet == null) spreadsheet = window.ss
+
+          var forceRender = false;
           var showGridDimension =  function(sheet, lastIndex, sheetHideList, showList, getIndexOf) {
-            var forceRender = false;
             //  --- hide all rows/col    up to sheet.attribs.lastrow/col         
             //  --- FOR each row/col -- create function to do the loop          
             for(var arrayIndex = 1; arrayIndex <= lastIndex; arrayIndex ++ ) { // start at col/row 1
@@ -5179,18 +5182,20 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet, coord
                 }
               }              
               
-            }
-            if(forceRender) {
-              sheet.renderneeded = true;
-              sheet.widgetsClean = false; //  force widgets to repaint - update cell reference in widget HTML                   
-            }
-            
+            }            
           };
 
           
           var getRowIndex = function(row) { return row };
           showGridDimension(sheet,  sheet.attribs.lastrow,  sheet.rowattribs.hide, showrows, getRowIndex);
           showGridDimension(sheet,  sheet.attribs.lastcol,  sheet.colattribs.hide, showcols, SocialCalc.rcColname );
+          
+          if(forceRender) {
+            sheet.renderneeded = true;
+            sheet.widgetsClean = false; //  force widgets to repaint - update cell reference in widget HTML    
+            spreadsheet.editor.context.rowpanes[0].first = 1; // reset scroll bar to first row  
+            spreadsheet.editor.FitToEditTable();
+          }
           
         }
          
@@ -5274,6 +5279,7 @@ SocialCalc.TriggerIoAction.AddAutocomplete = function(triggerCellId) {
 // eddy TriggerIoAction {
 SocialCalc.TriggerIoAction.Button = function(triggerCellId) {
  var spreadsheet =  window.spreadsheet;
+ if (spreadsheet == null) spreadsheet = window.ss
  var sheet = spreadsheet.sheet;
  var scf = SocialCalc.Formula; 
  //spreadsheet.editor.EditorScheduleSheetCommands('set A2 value n 10',  true, false);
@@ -5692,6 +5698,7 @@ SocialCalc.TriggerIoAction.Submit = function(triggerCellId) {
   if(formDataViewer != null && formDataViewer.loaded == true) {
 
     var spreadsheet =  window.spreadsheet;
+    if (spreadsheet == null) spreadsheet = window.ss
     var sheet = spreadsheet.sheet;
     
     
@@ -5752,6 +5759,7 @@ SocialCalc.TriggerIoAction.RadioButton = function(radioButtonGroupName) {
 SocialCalc.TriggerIoAction.updateInputWidgetFormula = function(function_name, widgetCellId, getHTMLWidgetCellValue ) {
 
  var spreadsheet =  window.spreadsheet;
+ if (spreadsheet == null) spreadsheet = window.ss
  var sheet = spreadsheet.sheet;
  var cell = sheet.cells[widgetCellId];
  var parameters = sheet.ioParameterList[widgetCellId];
