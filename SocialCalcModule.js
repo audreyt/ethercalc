@@ -20208,7 +20208,8 @@ SocialCalc.TriggerIoAction.AddAutocomplete = function(triggerCellId) {
 
   //Overrides the default autocomplete filter function to search only from the beginning of the string
   $.ui.autocomplete.filter = function (array, term) {
-    var matcher = new RegExp("^" + $.ui.autocomplete.escapeRegex(term), "i");
+    // * RegEx Unit Test - https://regex101.com/r/kO6eC4/1
+    var matcher = new RegExp("\\b" + $.ui.autocomplete.escapeRegex(term), "i");
     return $.grep(array, function (value) {
         return matcher.test(value.label || value.value || value);
     });
@@ -20736,7 +20737,9 @@ SocialCalc.TriggerIoAction.updateInputWidgetFormula = function(function_name, wi
    if(parameters[paramIndex].type == 'range') {
      // convert:     E5!TO0DB4GSXZJ3|E8|   -> TO0DB4GSXZJ3!E5:E8
      // convert:     E5|E8|   -> E5:E8
-     sheetCommand += ',' + parameters[paramIndex].value.toString().replace(/([A-Z]+[0-9]+)([!]?)([^|]*)[|]([A-Z]+[0-9]+)[|]/i,"$3$2$1:$4"); ;
+     
+     // * RegEx Unit Test **  https://regex101.com/r/zF1dA8/1
+     sheetCommand += ',' + parameters[paramIndex].value.toString().replace(/(\$?[A-Z]+\$?[0-9]+)([!]?)([^|]*)[|](\$?[A-Z]+\$?[0-9]+)[|]/i,"$3$2$1:$4"); ;
    }
    if(parameters[paramIndex].type == 'coord') {
      sheetCommand += ',' + parameters[paramIndex].value;
