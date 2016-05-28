@@ -2404,7 +2404,7 @@ CRITERIAROW:
             if (typeof criteria == "string" && criteria.length == 0) continue; // blank items are OK
             testcol = criteriafieldnums[k];
             testcr = SocialCalc.crToCoord(testcol, dbinfo.row1num + i); // cell to check
-            cell = criteriainfo.sheetdata.GetAssuredCell(testcr);
+            cell = dbinfo.sheetdata.GetAssuredCell(testcr); // get cell to check from dbinfo sheet
             if (!scf.TestCriteria(cell.datavalue, cell.valuetype || "b", criteria)) {
                continue CRITERIAROW; // does not meet criteria - check next row
                }
