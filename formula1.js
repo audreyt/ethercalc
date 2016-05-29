@@ -1587,6 +1587,7 @@ SocialCalc.Formula.DecodeRangeParts = function(sheetdata, range) {
 //        "ParameterList" is used with =CopyValue() etc, used to collect parameters of the formula, for use trigger/action formulas, 
 //        "EventTree" is used with =Button() etc, used to store trigger cell lookup table
 //        "Input" store copy of value in formdata sheet -- for input style GUI widgets - textbox/radio buttons etc - 
+//        "TimeTrigger" like button, but triggers an action at a time,  rather than on click
 //
 // To add a function, just add it to this object.
 
@@ -5047,6 +5048,15 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet, coord
 
    
    switch (fname) {
+     case "STYLE":  // # SELECT(string, range [,size [,multiple]])
+       var parameters = sheet.ioParameterList[coord];
+       if(parameters) {
+         operand_value[1];
+         
+         result = operand_value[1];
+         resulttype = "ti"+fname;
+       }
+       break;
      case "SELECT":  // # SELECT(string, range [,size [,multiple]])
          var parameters = sheet.ioParameterList[coord];
          var optionSource = SocialCalc.Formula.getStandardizedList(sheet, parameters[1]);
@@ -5236,7 +5246,8 @@ SocialCalc.Formula.FunctionList["DELETEIF"] = [SocialCalc.Formula.IoFunctions, -
 SocialCalc.Formula.FunctionList["COMMAND"] = [SocialCalc.Formula.IoFunctions, -1, "trigger_cell, commands", "", "action", "", "EventTree"];
 SocialCalc.Formula.FunctionList["COMMANDIF"] = [SocialCalc.Formula.IoFunctions, -1, "trigger_cell, conditions, commands", "", "action", "", "EventTree"];
 
-SocialCalc.Formula.FunctionList["PANEL"] = [SocialCalc.Formula.IoFunctions, -1, "showindices_range_or_csv, panel1_range [, panel2_range , ...]", "", "action", "", "EventTree"];
+SocialCalc.Formula.FunctionList["PANEL"] = [SocialCalc.Formula.IoFunctions, -1, "showindices_range_or_csv, panel1_range [, panel2_range , ...]", "", "gui", ""];
+SocialCalc.Formula.FunctionList["STYLE"] = [SocialCalc.Formula.IoFunctions, -1, "CSS", "", "gui", ""];
 
 // on enter input box refresh the auto complete list
 SocialCalc.TriggerIoAction.AddAutocomplete = function(triggerCellId) {
