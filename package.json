@@ -18,7 +18,8 @@
     "j": "0.4.x",
     "minimatch" : "*",
     "nodemailer": "*",
-    "xoauth2": "*"
+    "xoauth2": "*",
+    "socialcalc": "2.x"
   },
   "optionalDependencies": {
     "webworker-threads": "^0.7.1"
