@@ -61,10 +61,9 @@
       @response.send 200 "CACHE MANIFEST\n\n##{Date!}\n\nNETWORK:\n*\n"
     else
       @response.sendfile "#RealBin/manifest.appcache"
-  @get '/static/socialcalc:part.js': ->
-    part = @params.part
+  @get '/static/socialcalc.js': ->
     @response.type \application/javascript
-    @response.sendfile "#RealBin/socialcalc#part.js"
+    @response.sendfile "#RealBin/node_modules/socialcalc/SocialCalc.js"
   @get '/static/form:part.js': ->
     part = @params.part
     @response.type \application/javascript

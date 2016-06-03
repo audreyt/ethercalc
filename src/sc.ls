@@ -1,7 +1,7 @@
 require! <[ vm fs path ]>
 bootSC = fs.readFileSync "#{
   path.dirname fs.realpathSync __filename
-}/SocialCalcModule.js" \utf8
+}/node_modules/socialcalc/SocialCalc.js" \utf8
 
 global.SC ?= {console}
 
