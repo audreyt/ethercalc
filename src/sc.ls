@@ -2,12 +2,14 @@ require! <[ vm fs path ]>
 bootSC = fs.readFileSync "#{
   path.dirname fs.realpathSync __filename
 }/node_modules/socialcalc/SocialCalc.js" \utf8
+bootSC.=replace(/document\.createElement\(/g, 'SocialCalc.document.createElement(')
+bootSC.=replace(/alert\(/g, '(function(){})(')
 
 global.SC ?= {console}
 
 argv = (try require \optimist .boolean <[ vm polling ]> .argv) || {}
 
-bootSC += """;(#{->
+bootSC += """;var SocialCalc = this.SocialCalc; var window = this;(#{->
   class Node
     (@tag="div", @attrs={}, @style={}, @elems=[], @raw='')->
     id:     ~(@attrs.id)->
@@ -28,6 +30,7 @@ bootSC += """;(#{->
         [ " #k=\"#v\"" for k, v of attrs ].join('')
       }>#{ @innerHTML }</#tag>"
     appendChild: -> @elems.push it
+  SocialCalc.document ?= {}
   SocialCalc.document.createElement = -> new Node it
 })();"""
 

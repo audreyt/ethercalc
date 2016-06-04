@@ -9,7 +9,7 @@
 <script>
 if (!(window.location.hash.replace('#', ''))) {
     if (window.location.href.match(/\/([^_][^\*\$\/\?]*)(?:\?.*)?$/)) {
-        var SocialCalc = { _room: RegExp.$1 };
+        window.EtherCalc = window.SocialCalc = { _room: RegExp.$1 };
         document.title = SocialCalc._room + " – EtherCalc";
     }
     else {
