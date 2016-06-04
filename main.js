@@ -497,10 +497,16 @@
         return cs = cs.concat(chunk);
       });
       return request.on('end', function(){
-        var buf, k, ref$, save;
+        var buf, iconv, k, ref$, save;
         buf = Buffer.concat(cs);
         if (request.is('text/x-socialcalc')) {
           return cb(buf.toString('utf8'));
+        }
+        if (request.is('text/x-ethercalc-csv-double-encoded')) {
+          iconv = require('iconv-lite');
+          buf = iconv.decode(buf, 'utf8');
+          buf = iconv.encode(buf, 'latin1');
+          buf = iconv.decode(buf, 'utf8');
         }
         for (k in ref$ = J.utils.to_socialcalc(J.read(buf)) || {
           '': ''

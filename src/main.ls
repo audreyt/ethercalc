@@ -289,6 +289,11 @@
     <~ request.on \end
     buf = Buffer.concat cs
     return cb buf.toString(\utf8) if request.is \text/x-socialcalc
+    if request.is \text/x-ethercalc-csv-double-encoded
+      iconv = require \iconv-lite
+      buf = iconv.decode buf, \utf8
+      buf = iconv.encode buf, \latin1
+      buf = iconv.decode buf, \utf8
     # TODO: Move to thread
     for k, save of (J.utils.to_socialcalc(J.read buf) || {'': ''})
       return cb save

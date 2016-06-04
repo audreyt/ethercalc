@@ -8,18 +8,19 @@
     "url": "https://github.com/audreyt/ethercalc"
   },
   "dependencies": {
-    "redis": "0.12.x",
-    "uuid-pure": "*",
-    "optimist": "*",
-    "zappajs": "0.5.x",
     "cors": "*",
-    "livescript": "1.4.x",
     "csv-parse": "^0.0.6",
+    "iconv-lite": "^0.4.13",
     "j": "0.4.x",
-    "minimatch" : "*",
+    "livescript": "1.4.x",
+    "minimatch": "*",
     "nodemailer": "*",
+    "optimist": "*",
+    "redis": "0.12.x",
+    "socialcalc": "2.x",
+    "uuid-pure": "*",
     "xoauth2": "*",
-    "socialcalc": "2.x"
+    "zappajs": "0.5.x"
   },
   "optionalDependencies": {
     "webworker-threads": "^0.7.1"
