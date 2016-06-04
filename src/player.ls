@@ -82,7 +82,7 @@
     SocialCalc.isConnected = true
     SocialCalc.RecalcInfo.LoadSheetCache = {}
     SocialCalc.RecalcInfo.LoadSheet = (ref) ->
-      return if ref is /[^.a-zA-Z0-9]/
+      return if ref is /[^._a-zA-Z0-9]/
       ref.=toLowerCase!
       emit type: \ask.recalc, user: SocialCalc._username, room: ref
 
