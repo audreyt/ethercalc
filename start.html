@@ -13,317 +13,293 @@
     <div id="topnav_wrap">
       <div id="navigation"></div>
     </div>
-
     <div id="intro-left">
       <h1>EtherCalc</h1>
-
-      <h2><a target="_blank" style="border: none" title="Read the story of this project" href="https://ethercalc.net/">EtherCalc is a web spreadsheet.</a></h2>
-
+      <h2><a href="https://ethercalc.net/" style="border: none" target="_blank" title="Read the story of this project">EtherCalc is a web spreadsheet.</a></h2>
       <p>Your data is saved on the web, and people can edit the same document at the same time. Everybody's changes are instantly reflected on all screens.</p>
-
       <p>Work together on inventories, survey forms, list management, brainstorming sessions and more!</p>
-
       <div id="intro-links">
-        <a id="newpadbutton" href="./_new" alt="Create Spreadsheet"><span>Create Spreadsheet</span><br>
+        <a alt="Create Spreadsheet" href="./_new" id="newpadbutton"><span>Create Spreadsheet</span><br>
         <small>No sign-up, start editing instantly</small></a>
-      </div>
-      <a id="restore" target="_blank" href="https://ethercalc.org/log/"
-      title="View &amp; Restore Backups" class="btn btn-primary btn-fab
-      btn-raised mdi-action-restore" style="visibility: hidden; width: 28px; height: 28px; margin-left: 270px; margin-top: 10px"></a>
+      </div><a class="btn btn-primary btn-fab btn-raised mdi-action-restore" href="https://ethercalc.org/log/" id="restore" target="_blank" title="View &amp; Restore Backups"></a>
     </div>
-  </div>
-  <a href="https://github.com/audreyt/ethercalc"><img style="z-order: 9999;
-      position: absolute; top: 0; right: 0; border: 0"
-      src="./static/img/right-graphite@2x.png" alt="Fork me on GitHub"
-      width="120" height="120"></a>
+  </div><a href="https://github.com/audreyt/ethercalc" id="github-ribbon"><img alt="Fork me on GitHub!" height="120" src="./static/img/right-graphite@2x.png" width="120"></a>
   <script src="./static/jszip.js"></script>
   <script src="./static/xlsx.js"></script>
   <script src="./static/shim.js"></script>
   <script src="./static/jquery.js"></script>
-  <div id="drop">Drop a .csv, .ods, or a .xlsx file here to import it<div
-  style="display:block;font-size:60%;padding-top:0.5ex"><label style="cursor:pointer"><input type='checkbox' id='rename_sheet' name='rename_sheet'>Rename sheet(s) after upload</label></div></div>
-  <style>
-      #drop {
-          display: block;
-          clear: both;
-          margin-top: 40px;
-background: #eee;
-        border:2px dashed #bbb;
-        -moz-border-radius:5px;
-        -webkit-border-radius:5px;
-        border-radius:5px;
-        padding:20px;
-        text-align:center;
-        font:20pt bold,"Vollkorn";color:#bbb
+  <div id="drop">Drop a .csv, .ods, or a .xlsx file here to import it
+    <div>
+      <label><input id='rename_sheet' name='rename_sheet' type='checkbox'> Rename sheet(s) after upload</label>
+    </div>
+  </div>
+  <script>
+  if (/^(?:www\.)?ethercalc\.(?:org|com)$/.test(location.host)) {
+    $("head").append("<link rel='stylesheet' type='text/css' href='https://ethercalc.org/log/css/material.min.css' />");
+    $("#restore").css('visibility', 'visible');
+  }
+
+  var rABS = typeof FileReader !== "undefined" && typeof FileReader.prototype !== "undefined" && typeof FileReader.prototype.readAsBinaryString !== "undefined";
+  function fixdata(data) {
+      var o = "", l = 0, w = 10240;
+      for(; l<data.byteLength/w; ++l)
+          o+=String.fromCharCode.apply(null,new Uint8Array(data.slice(l*w,l*w+w)));
+      o+=String.fromCharCode.apply(null, new Uint8Array(data.slice(o.length)));
+      return o;
+  }
+
+  // cb is typically process_wb
+  function xlsxworker(data, cb, id) {
+      var worker = new Worker('./static/xlsxworker.js');
+      worker.onmessage = function(e) {
+          switch(e.data.t) {
+              case 'ready': break;
+              case 'e': console.error(e.data.d); break;
+              case 'xlsx': cb(JSON.parse(e.data.d), id); break;
+          }
+      };
+      var arr = rABS ? data : btoa(fixdata(data));
+      worker.postMessage({d:arr,b:rABS});
+  }
+
+  function get_radio_value( radioName ) {
+      var radios = document.getElementsByName( radioName );
+      for( var i = 0; i < radios.length; i++ ) {
+          if( radios[i].checked ) {
+              return radios[i].value;
+          }
       }
-  </style>
-<script>
-if (/^(?:www\.)?ethercalc\.(?:org|com)$/.test(location.host)) {
-  $("head").append("<link rel='stylesheet' type='text/css' href='https://ethercalc.org/log/css/material.min.css' />");
-  $("#restore").css('visibility', 'visible');
-}
+  }
 
-var rABS = typeof FileReader !== "undefined" && typeof FileReader.prototype !== "undefined" && typeof FileReader.prototype.readAsBinaryString !== "undefined";
-function fixdata(data) {
-	var o = "", l = 0, w = 10240;
-	for(; l<data.byteLength/w; ++l)
-		o+=String.fromCharCode.apply(null,new Uint8Array(data.slice(l*w,l*w+w)));
-	o+=String.fromCharCode.apply(null, new Uint8Array(data.slice(o.length)));
-	return o;
-}
+  function to_csv(workbook) {
+      var result = [];
+      workbook.SheetNames.forEach(function(sheetName) {
+          var csv = XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName]);
+          if(csv.length > 0){
+              result.push("SHEET: " + sheetName);
+              result.push("");
+                          result = [];
+              result.push(csv);
+          }
+      });
+      return result.join("\n").replace(/,+\n/g, '\n').replace(/[\s]+$/, '\n');
+  }
 
-// cb is typically process_wb
-function xlsxworker(data, cb, id) {
-	var worker = new Worker('./static/xlsxworker.js');
-	worker.onmessage = function(e) {
-		switch(e.data.t) {
-			case 'ready': break;
-			case 'e': console.error(e.data.d); break;
-			case 'xlsx': cb(JSON.parse(e.data.d), id); break;
-		}
-	};
-	var arr = rABS ? data : btoa(fixdata(data));
-	worker.postMessage({d:arr,b:rABS});
-}
+  /* xlsx2socialcalc.js (C) 2014 SheetJS -- http://sheetjs.com */
+  /* License: Apache 2.0 */
+  /* vim: set ts=2: */
+  var sheet_to_socialcalc = (function() {
+          var header = [
+                  "socialcalc:version:1.5",
+                  "MIME-Version: 1.0",
+                  "Content-Type: multipart/mixed; boundary=SocialCalcSpreadsheetControlSave"
+          ].join("\n");
 
-function get_radio_value( radioName ) {
-	var radios = document.getElementsByName( radioName );
-	for( var i = 0; i < radios.length; i++ ) {
-		if( radios[i].checked ) {
-			return radios[i].value;
-		}
-	}
-}
+          var sep = [
+                  "--SocialCalcSpreadsheetControlSave",
+                  "Content-type: text/plain; charset=UTF-8",
+                  ""
+          ].join("\n");
 
-function to_csv(workbook) {
-	var result = [];
-	workbook.SheetNames.forEach(function(sheetName) {
-		var csv = XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName]);
-		if(csv.length > 0){
-			result.push("SHEET: " + sheetName);
-			result.push("");
-                        result = [];
-			result.push(csv);
-		}
-	});
-	return result.join("\n").replace(/,+\n/g, '\n').replace(/[\s]+$/, '\n');
-}
+          /* TODO: the other parts */
+          var meta = [
+                  "# SocialCalc Spreadsheet Control Save",
+                  "part:sheet"
+          ].join("\n");
 
-/* xlsx2socialcalc.js (C) 2014 SheetJS -- http://sheetjs.com */
-/* License: Apache 2.0 */
-/* vim: set ts=2: */
-var sheet_to_socialcalc = (function() {
-        var header = [
-                "socialcalc:version:1.5",
-                "MIME-Version: 1.0",
-                "Content-Type: multipart/mixed; boundary=SocialCalcSpreadsheetControlSave"
-        ].join("\n");
+          var end = "--SocialCalcSpreadsheetControlSave--";
 
-        var sep = [
-                "--SocialCalcSpreadsheetControlSave",
-                "Content-type: text/plain; charset=UTF-8",
-                ""
-        ].join("\n");
+          var scencode = function(s) { return s.replace(/\\/g, "\\b").replace(/:/g, "\\c").replace(/\n/g,"\\n"); }
 
-        /* TODO: the other parts */
-        var meta = [
-                "# SocialCalc Spreadsheet Control Save",
-                "part:sheet"
-        ].join("\n");
+          var scsave = function scsave(ws) {
+                  if(!ws || !ws['!ref']) return "";
+                  var o = [], oo = [], cell, coord;
+                  var r = XLSX.utils.decode_range(ws['!ref']);
+                  for(var R = r.s.r; R <= r.e.r; ++R) {
+                          for(var C = r.s.c; C <= r.e.c; ++C) {
+                                  coord = XLSX.utils.encode_cell({r:R,c:C});
+                                  if(!(cell = ws[coord]) || cell.v == null) continue;
+                                  oo = ["cell", coord, 't'];
+                                  switch(cell.t) {
+                                          case 's': case 'str': oo.push(scencode(cell.v)); break;
+                                          case 'n':
+                                                  if(cell.f) {
+                                                          oo[2] = 'vtf';
+                                                          oo.push('n');
+                                                          oo.push(cell.v);
+                                                          oo.push(scencode(cell.f));
+                                                  }
+                                                  else {
+                                                          oo[2] = 'v';
+                                                          oo.push(cell.v);
+                                                  } break;
+                                  }
+                                  o.push(oo.join(":"));
+                          }
+                  }
+                  o.push("sheet:c:" + (r.e.c - r.s.c + 1) + ":r:" + (r.e.r - r.s.r + 1) + ":tvf:1");
+                  o.push("valueformat:1:text-wiki");
+                  o.push("copiedfrom:" + ws['!ref']);
+                  return o.join("\n");
+          };
 
-        var end = "--SocialCalcSpreadsheetControlSave--";
+          return function socialcalcify(ws, opts) {
+                  return [header, sep, meta, sep, scsave(ws), end].join("\n");
+                  //return ["version:1.5", scsave(ws)].join("\n");
+          };
+  })();
 
-        var scencode = function(s) { return s.replace(/\\/g, "\\b").replace(/:/g, "\\c").replace(/\n/g,"\\n"); }
+  function process_wb(wb, id) {
+      var output = "";
+          if (wb.SheetNames.length > 1) {
+              var toc = '"#url","#title"\n';
+              var names = [].concat(wb.SheetNames);
+              var idx = 0;
+              var res = [];
+              var sheetsToIdx = {}
+              for (var i = 0; i < names.length; i++) {
+                  sheetsToIdx[names[i]] = i+1;
+                  res.push(names[i].replace(/'/g, "''").replace(/(\W)/g, '\\$1'));
+              }
+              var step = function(){
+                  if (names.length) {
+                      idx++;
+                      var k = names.shift();
+                      output = sheet_to_socialcalc(wb.Sheets[k]);
+                      toc += '"/' + id + '.' + idx + '",';
+                      toc += '"' + k.replace(/"/g, '""') + '"\n';
+                      output = output.replace(
+                          RegExp('(\'?)\\b(' + res.join('|') + ')\\1!', 'g'),
+                          function(_0, _1, ref){ return "'" + id + "." + sheetsToIdx[ref.replace(/''/g, "'")] + "'!"; }
+                      );
+                      $.ajax({
+                          url: './_/' + id + '.' + idx,
+                          method: 'PUT',
+                          contentType: 'text/x-socialcalc; charset=utf-8',
+                          processData: false,
+                          data: output,
+                          success: function(data, msg, xhr) {
+                              step();
+                          }
+                      });
+                  }
+                  else {
+                      $.ajax({
+                          url: './_/' + id,
+                          method: 'PUT',
+                          contentType: 'text/csv; charset=utf-8',
+                          processData: false,
+                          data: toc,
+                          success: function(data, msg, xhr) {
+                              location.href = './=' + id
+                          }
+                      });
+                  }
+              };
+              step();
+              return;
+          }
+          output = sheet_to_socialcalc(wb.Sheets[wb.SheetNames[0]]);
+  $.ajax({
+      url: './_/' + id,
+      method: 'PUT',
+      contentType: 'text/x-socialcalc; charset=utf-8',
+      processData: false,
+      data: output,
+      success: function(data, msg, xhr) {
+          location.href = './' + id
+      }
+  });
+  }
 
-        var scsave = function scsave(ws) {
-                if(!ws || !ws['!ref']) return "";
-                var o = [], oo = [], cell, coord;
-                var r = XLSX.utils.decode_range(ws['!ref']);
-                for(var R = r.s.r; R <= r.e.r; ++R) {
-                        for(var C = r.s.c; C <= r.e.c; ++C) {
-                                coord = XLSX.utils.encode_cell({r:R,c:C});
-                                if(!(cell = ws[coord]) || cell.v == null) continue;
-                                oo = ["cell", coord, 't'];
-                                switch(cell.t) {
-                                        case 's': case 'str': oo.push(scencode(cell.v)); break;
-                                        case 'n':
-                                                if(cell.f) {
-                                                        oo[2] = 'vtf';
-                                                        oo.push('n');
-                                                        oo.push(cell.v);
-                                                        oo.push(scencode(cell.f));
-                                                }
-                                                else {
-                                                        oo[2] = 'v';
-                                                        oo.push(cell.v);
-                                                } break;
-                                }
-                                o.push(oo.join(":"));
-                        }
-                }
-                o.push("sheet:c:" + (r.e.c - r.s.c + 1) + ":r:" + (r.e.r - r.s.r + 1) + ":tvf:1");
-                o.push("valueformat:1:text-wiki");
-                o.push("copiedfrom:" + ws['!ref']);
-                return o.join("\n");
-        };
+  function post_csv (csv, id) {
+  $.ajax({
+      url: './_/' + id,
+      method: 'PUT',
+      contentType: 'text/x-ethercalc-csv-double-encoded',
+      processData: false,
+      data: csv,
+      success: function(data, msg, xhr) {
+          location.href = './' + id
+      }
+  });
+  }
 
-        return function socialcalcify(ws, opts) {
-                return [header, sep, meta, sep, scsave(ws), end].join("\n");
-                //return ["version:1.5", scsave(ws)].join("\n");
-        };
-})();
+  var BASE64URICHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_'.split('');
+  function newId (len, radix) {
+      var chars = BASE64URICHARS, newId = [], i=0;
+      radix = radix || chars.length;
+      len = len || 22;
 
-function process_wb(wb, id) {
-	var output = "";
-        if (wb.SheetNames.length > 1) {
-            var toc = '"#url","#title"\n';
-            var names = [].concat(wb.SheetNames);
-            var idx = 0;
-            var res = [];
-            var sheetsToIdx = {}
-            for (var i = 0; i < names.length; i++) {
-                sheetsToIdx[names[i]] = i+1;
-                res.push(names[i].replace(/'/g, "''").replace(/(\W)/g, '\\$1'));
-            }
-            var step = function(){
-                if (names.length) {
-                    idx++;
-                    var k = names.shift();
-                    output = sheet_to_socialcalc(wb.Sheets[k]);
-                    toc += '"/' + id + '.' + idx + '",';
-                    toc += '"' + k.replace(/"/g, '""') + '"\n';
-                    output = output.replace(
-                        RegExp('(\'?)\\b(' + res.join('|') + ')\\1!', 'g'),
-                        function(_0, _1, ref){ return "'" + id + "." + sheetsToIdx[ref.replace(/''/g, "'")] + "'!"; }
-                    );
-                    $.ajax({
-                        url: './_/' + id + '.' + idx,
-                        method: 'PUT',
-                        contentType: 'text/x-socialcalc; charset=utf-8',
-                        processData: false,
-                        data: output,
-                        success: function(data, msg, xhr) {
-                            step();
-                        }
-                    });
-                }
-                else {
-                    $.ajax({
-                        url: './_/' + id,
-                        method: 'PUT',
-                        contentType: 'text/csv; charset=utf-8',
-                        processData: false,
-                        data: toc,
-                        success: function(data, msg, xhr) {
-                            location.href = './=' + id
-                        }
-                    });
-                }
-            };
-            step();
-            return;
-        }
-        output = sheet_to_socialcalc(wb.Sheets[wb.SheetNames[0]]);
-$.ajax({
-    url: './_/' + id,
-    method: 'PUT',
-    contentType: 'text/x-socialcalc; charset=utf-8',
-    processData: false,
-    data: output,
-    success: function(data, msg, xhr) {
-        location.href = './' + id
-    }
-});
-}
+      for (i = 0; i < len; i++) newId[i] = chars[0 | Math.random()*radix];
 
-function post_csv (csv, id) {
-$.ajax({
-    url: './_/' + id,
-    method: 'PUT',
-    contentType: 'text/x-ethercalc-csv-double-encoded',
-    processData: false,
-    data: csv,
-    success: function(data, msg, xhr) {
-        location.href = './' + id
-    }
-});
-}
+      return newId.join('');
+  };
 
-var BASE64URICHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_'.split('');
-function newId (len, radix) {
-    var chars = BASE64URICHARS, newId = [], i=0;
-    radix = radix || chars.length;
-    len = len || 22;
+  function get_id(file, checked) {
+      var id = null;
+      if (checked) {
+          id = prompt("Enter a spreadsheet name for " + file + " (alphanumeric only)", "");
+          id = id.trim().toLowerCase().replace(/\s/g, "_");
+      }
+      if (id === null) {
+          id = newId(10, 36).toLowerCase();
+      }
+      return id;
+  }
 
-    for (i = 0; i < len; i++) newId[i] = chars[0 | Math.random()*radix];
+  var drop = document.getElementById('drop');
+  var renameSheetCheckbox = document.getElementById('rename_sheet');
+  function handleDrop(e) {
+      e.stopPropagation();
+      e.preventDefault();
+      var toggle = function(){
+          $(drop).fadeOut('fast', function(){ $(drop).fadeIn('fast', toggle) });
+      }
+      var files = e.dataTransfer.files;
+      var i,f;
+      $(drop).text('Working...');
+      for (i = 0, f = files[i]; i != files.length; ++i) {
+          var reader = new FileReader();
+          var name = f.name;
+          var id = get_id(name, $(renameSheetCheckbox).is(":checked"));
+          reader.onload = function(e) {
+              var data = e.target.result;
+              if (!/^PK\u0003\u0004/.test(data) && /^[^\n]+,(?:[^\n]+)*\n/.test(data)) {
+                  return post_csv(data, id);
+              }
+              if(typeof Worker !== 'undefined') {
+                  xlsxworker(data, process_wb, id);
+              } else {
+                  var wb;
+                  if(rABS) {
+                      wb = XLSX.read(data, {type: 'binary'});
+                  } else {
+                      var arr = fixdata(data);
+                      wb = XLSX.read(btoa(arr), {type: 'base64'});
+                  }
+                  process_wb(wb, id);
+              }
+          };
+          if(rABS) {
+              reader.readAsBinaryString(f);
+          } else {
+              reader.readAsArrayBuffer(f);
+          }
+      }
+  }
 
-    return newId.join('');
-};
+  function handleDragover(e) {
+      e.stopPropagation();
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+  }
 
-function get_id(file, checked) {
-	var id = null;
-	if (checked) {
-		id = prompt("Enter a spreadsheet name for " + file + " (alphanumeric only)", "");
-		id = id.trim().toLowerCase().replace(/\s/g, "_");
-	}
-	if (id === null) {
-		id = newId(10, 36).toLowerCase();
-	}
-	return id;
-}
-
-var drop = document.getElementById('drop');
-var renameSheetCheckbox = document.getElementById('rename_sheet');
-function handleDrop(e) {
-	e.stopPropagation();
-	e.preventDefault();
-	var toggle = function(){
-		$(drop).fadeOut('fast', function(){ $(drop).fadeIn('fast', toggle) });
-	}
-	var files = e.dataTransfer.files;
-	var i,f;
-	$(drop).text('Working...');
-	for (i = 0, f = files[i]; i != files.length; ++i) {
-		var reader = new FileReader();
-		var name = f.name;
-		var id = get_id(name, $(renameSheetCheckbox).is(":checked"));
-		reader.onload = function(e) {
-			var data = e.target.result;
-			if (!/^PK\u0003\u0004/.test(data) && /^[^\n]+,(?:[^\n]+)*\n/.test(data)) {
-				return post_csv(data, id);
-			}
-			if(typeof Worker !== 'undefined') {
-				xlsxworker(data, process_wb, id);
-			} else {
-				var wb;
-				if(rABS) {
-					wb = XLSX.read(data, {type: 'binary'});
-				} else {
-					var arr = fixdata(data);
-					wb = XLSX.read(btoa(arr), {type: 'base64'});
-				}
-				process_wb(wb, id);
-			}
-		};
-		if(rABS) {
-			reader.readAsBinaryString(f);
-		} else {
-			reader.readAsArrayBuffer(f);
-		}
-	}
-}
-
-function handleDragover(e) {
-	e.stopPropagation();
-	e.preventDefault();
-	e.dataTransfer.dropEffect = 'copy';
-}
-
-if(drop.addEventListener) {
-	drop.addEventListener('dragenter', handleDragover, false);
-	drop.addEventListener('dragover', handleDragover, false);
-	drop.addEventListener('drop', handleDrop, false);
-}
-</script>
+  if(drop.addEventListener) {
+      drop.addEventListener('dragenter', handleDragover, false);
+      drop.addEventListener('dragover', handleDragover, false);
+      drop.addEventListener('drop', handleDrop, false);
+  }
+  </script>
 </body>
 </html>
