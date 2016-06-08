@@ -1,0 +1,13 @@
+ethercalc:
+  image: audreyt/ethercalc
+  ports:
+    - "80:8000"
+  links:
+    - redis
+  restart: always
+redis:
+  image: redis:latest
+  volumes:
+    - /var/lib/redis:/data
+  command: redis-server --appendonly yes
+  restart: always
