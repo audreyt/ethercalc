@@ -33,7 +33,7 @@ support for webworker-threads:
     # Install docker and docker-compose
     sudo ./misc/linux-install-docker-and-compose.sh
 
-    # Run ethercalc on default port 8000
+    # Run ethercalc on port 80 ( http://localhost/ )
     docker-compose up -d
 
 Send email
