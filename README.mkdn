@@ -147,7 +147,7 @@ Deletes a spreadsheet's content after N seconds of inactivity. Activities includ
 
 * src/*.ls
 
-### Mozilla Public License Version 2.0
+### Mozilla Public License Version 2.0 (LibreOffice contributors)
 
 * images/sc_*.png
 
