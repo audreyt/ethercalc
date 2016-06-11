@@ -8,8 +8,8 @@
 <title>EtherCalc - Share the URL to your friends and edit together!</title>
 <script>
 if (!(window.location.hash.replace('#', ''))) {
-    if (window.location.href.match(/\/([^_][^\*\$\/]*)$/)) {
-        var SocialCalc = { _room: RegExp.$1 };
+    if (window.location.href.match(/\/([^_][^\*\$\/\?]*)(?:\?.*)?$/)) {
+        window.EtherCalc = window.SocialCalc = { _room: RegExp.$1 };
         document.title = SocialCalc._room + " – EtherCalc";
     }
     else {
@@ -59,6 +59,8 @@ body
 .smaller {font-size:smaller;}
 .hide {display:none;}
 </style>
+<link rel="stylesheet" type="text/css" href="./static/makeup.css">
+<script src="./static/makeup.js"></script>
 </head>
 <body onresize="if (typeof doresize != 'undefined') doresize();">
 <div id="msg" style="position:absolute;right:15px;top: 8px; bottom: 80px; display: none">

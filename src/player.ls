@@ -10,7 +10,7 @@
     SocialCalc._app = true if requestParams[\app]?    
     SocialCalc._view = true if requestParams[\view]?
     #SocialCalc._view = SocialCalc._auth is \0     
-    SocialCalc._room ?= window.location.hash.replace \# ''
+    SocialCalc._room ?= window.EtherCalc?_room || window.location.hash.replace \# ''
     SocialCalc._room = "#{SocialCalc._room}".replace /^_+/ '' .replace /\?.*/ ''
 
     endpoint = $('script[src*="/socket.io/socket.io.js"]')?attr(\src)?replace(/\.?\/socket.io\/socket.io.js.*/ '')
@@ -82,7 +82,7 @@
     SocialCalc.isConnected = true
     SocialCalc.RecalcInfo.LoadSheetCache = {}
     SocialCalc.RecalcInfo.LoadSheet = (ref) ->
-      return if ref is /[^.a-zA-Z0-9]/
+      return if ref is /[^._a-zA-Z0-9]/
       ref.=toLowerCase!
       emit type: \ask.recalc, user: SocialCalc._username, room: ref
 

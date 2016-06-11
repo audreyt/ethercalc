@@ -25,7 +25,7 @@
       }
       : function(it){
         var encoder;
-        return HMAC_CACHE[it] || (HMAC_CACHE[it] = (encoder = require('crypto').createHmac('sha256', KEY), encoder.update(it.toString()), encoder.digest('hex')));
+        return HMAC_CACHE[it] || (HMAC_CACHE[it] = (encoder = require('crypto').createHmac('sha256', new Buffer(KEY)), encoder.update(it.toString()), encoder.digest('hex')));
       };
     ref$ = ['text/plain', 'text/html', 'text/csv', 'application/json'].map((function(it){
       return it + "; charset=utf-8";
@@ -70,11 +70,9 @@
       }
     });
     this.get({
-      '/static/socialcalc:part.js': function(){
-        var part;
-        part = this.params.part;
+      '/static/socialcalc.js': function(){
         this.response.type('application/javascript');
-        return this.response.sendfile(RealBin + "/socialcalc" + part + ".js");
+        return this.response.sendfile(RealBin + "/node_modules/socialcalc/SocialCalc.js");
       }
     });
     this.get({
@@ -496,10 +494,16 @@
         return cs = cs.concat(chunk);
       });
       return request.on('end', function(){
-        var buf, k, ref$, save;
+        var buf, iconv, k, ref$, save;
         buf = Buffer.concat(cs);
         if (request.is('text/x-socialcalc')) {
           return cb(buf.toString('utf8'));
+        }
+        if (request.is('text/x-ethercalc-csv-double-encoded')) {
+          iconv = require('iconv-lite');
+          buf = iconv.decode(buf, 'utf8');
+          buf = iconv.encode(buf, 'latin1');
+          buf = iconv.decode(buf, 'utf8');
         }
         for (k in ref$ = J.utils.to_socialcalc(J.read(buf)) || {
           '': ''

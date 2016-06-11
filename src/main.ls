@@ -21,7 +21,7 @@
 
   HMAC_CACHE = {}
   hmac = if !KEY then -> it else -> HMAC_CACHE[it] ||= do
-    encoder = require \crypto .createHmac \sha256 KEY
+    encoder = require \crypto .createHmac \sha256 (new Buffer KEY)
     encoder.update it.toString!
     encoder.digest \hex
 
@@ -59,10 +59,9 @@
     # Sandstorm: Skip manifest appcache
     @response.type \text/cache-manifest
     @response.send 200 "CACHE MANIFEST\n\n##{Date!}\n\nNETWORK:\n*\n"
-  @get '/static/socialcalc:part.js': ->
-    part = @params.part
+  @get '/static/socialcalc.js': ->
     @response.type \application/javascript
-    @response.sendfile "#RealBin/socialcalc#part.js"
+    @response.sendfile "#RealBin/node_modules/socialcalc/SocialCalc.js"
   @get '/static/form:part.js': ->
     part = @params.part
     @response.type \application/javascript
@@ -291,6 +290,11 @@
     <~ request.on \end
     buf = Buffer.concat cs
     return cb buf.toString(\utf8) if request.is \text/x-socialcalc
+    if request.is \text/x-ethercalc-csv-double-encoded
+      iconv = require \iconv-lite
+      buf = iconv.decode buf, \utf8
+      buf = iconv.encode buf, \latin1
+      buf = iconv.decode buf, \utf8
     # TODO: Move to thread
     for k, save of (J.utils.to_socialcalc(J.read buf) || {'': ''})
       return cb save
