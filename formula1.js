@@ -115,7 +115,8 @@ SocialCalc.TriggerIoAction = {}; // eddy
                 'nl': '|n%:n|nd:n|nt:n|ndt:n|n$:n|n:n|n*:n|b:n|e*:2|t*:e#VALUE!|',
                 'n': '|n%:n|nd:nd|nt:nt|ndt:ndt|n$:n$|n:n|n*:n|b:n|e*:2|t*:e#VALUE!|',
                 'b': '|n%:n%|nd:nd|nt:nt|ndt:ndt|n$:n$|n:n|n*:n|b:n|e*:2|t*:e#VALUE!|',
-                't*': '|n*:e#VALUE!|t*:e#VALUE!|b:e#VALUE!|e*:2|',
+                't*': '|ni:1|n*:e#VALUE!|t*:e#VALUE!|b:e#VALUE!|e*:2|',
+                'n*': '|ni:1|e*:2|',
                 'e*': '|e*:1|n*:1|t*:1|b:1|'
                },
        concat: {
@@ -4894,6 +4895,7 @@ SocialCalc.Formula.FunctionList["IRR"] = [SocialCalc.Formula.IRRFunction, -1, "i
 # COMMAND(trigger_cell, commands)
 # COMMANDIF(trigger_cell, condition, commands) 
 # PANEL(indices_or_csv, panel1_range [, panel2_range , ...])  
+# STYLE(css)  
 #
 */
 
@@ -4945,6 +4947,7 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet, coord
         ,COMMAND: [4, 14]
         ,COMMANDIF: [4, 13, 14]
         ,PANEL:[15, -12] // # PANEL(indices_or_csv, panel1_range [, panel2_range , ...])  
+        ,STYLE:[6] // # STYLE(css)  
    };
    
    var i, parameter, offset, len, start, count;
@@ -5051,10 +5054,12 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet, coord
      case "STYLE":  // # SELECT(string, range [,size [,multiple]])
        var parameters = sheet.ioParameterList[coord];
        if(parameters) {
-         operand_value[1];
-         
-         result = operand_value[1];
-         resulttype = "ti"+fname;
+         var css = SocialCalc.Formula.getStandardizedList(sheet, {value: operand_value[1], type: operand_type[1]});
+         if(css.length > 0 ) {
+           parameters.css = css[0];
+         }
+         result = ""; // ensure return value does not get changed by style - will add this empty string to number or string
+         resulttype = "ni"; // important - allows widgets to keep type - use: TEXTBOX("")+STYLE(css)  - must add style to widget 
        }
        break;
      case "SELECT":  // # SELECT(string, range [,size [,multiple]])
@@ -5247,7 +5252,7 @@ SocialCalc.Formula.FunctionList["COMMAND"] = [SocialCalc.Formula.IoFunctions, -1
 SocialCalc.Formula.FunctionList["COMMANDIF"] = [SocialCalc.Formula.IoFunctions, -1, "trigger_cell, conditions, commands", "", "action", "", "EventTree"];
 
 SocialCalc.Formula.FunctionList["PANEL"] = [SocialCalc.Formula.IoFunctions, -1, "showindices_range_or_csv, panel1_range [, panel2_range , ...]", "", "gui", ""];
-SocialCalc.Formula.FunctionList["STYLE"] = [SocialCalc.Formula.IoFunctions, -1, "CSS", "", "gui", ""];
+SocialCalc.Formula.FunctionList["STYLE"] = [SocialCalc.Formula.IoFunctions, -1, "css", "", "gui", ""];
 
 // on enter input box refresh the auto complete list
 SocialCalc.TriggerIoAction.AddAutocomplete = function(triggerCellId) {
