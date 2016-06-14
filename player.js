@@ -145,7 +145,7 @@
           SocialCalc.isConnected = true;
           SocialCalc.RecalcInfo.LoadSheetCache = {};
           SocialCalc.RecalcInfo.LoadSheet = function(ref){
-            if (/[^._a-zA-Z0-9]/.exec(ref)) {
+            if (/[^.=_a-zA-Z0-9]/.exec(ref)) {
               return;
             }
             ref = ref.toLowerCase();

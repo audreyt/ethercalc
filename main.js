@@ -74,11 +74,9 @@
       }
     });
     this.get({
-      '/static/socialcalc:part.js': function(){
-        var part;
-        part = this.params.part;
+      '/static/socialcalc.js': function(){
         this.response.type('application/javascript');
-        return this.response.sendfile(RealBin + "/socialcalc" + part + ".js");
+        return this.response.sendfile(RealBin + "/node_modules/socialcalc/SocialCalc.js");
       }
     });
     this.get({
@@ -733,7 +731,7 @@
             if (commandParameters[0].trim() === 'submitform') {
               room_data = room.indexOf('_') === -1
                 ? room + "_formdata"
-                : room.replace(/_[a-zA-Z0-9]*$/i, "_formdata");
+                : room.replace(/_[.=_a-zA-Z0-9]*$/i, "_formdata");
               console.log("test SC[" + room_data + "] submitform...");
               if (SC[room_data + ""] == null) {
                 console.log("Submitform. loading... SC[" + room_data + "]");

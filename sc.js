@@ -355,7 +355,7 @@
             SocialCalc.Popup.Types.ColorChooser.Create = function(){};
             SocialCalc.Popup.Initialize = function(){};
             SocialCalc.RecalcInfo.LoadSheet = function(ref){
-              if (/[^.a-zA-Z0-9]/.exec(ref)) {
+              if (/[^.=_a-zA-Z0-9]/.exec(ref)) {
                 return;
               }
               ref = ref.toLowerCase();
