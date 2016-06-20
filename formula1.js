@@ -797,13 +797,18 @@ SocialCalc.Formula.EvaluatePolish = function(parseinfo, revpolish, sheet, allowr
                errortext = scc.s_parseerrmissingoperand; // remember error
                break;
                }
-            value2 = operand_as_number(sheet, operand);
-            value1 = operand_as_number(sheet, operand);
             if (ttext == '+') {
+               value2 = operand_value_and_type(sheet, operand);
+               value1 = operand_value_and_type(sheet, operand); // allow + to append style formula to widget
                resulttype = lookup_result_type(value1.type, value2.type, typelookup.plus);
                PushOperand(resulttype, value1.value + value2.value);
-               }
-            else if (ttext == '-') {
+               } 
+            else {
+              value2 = operand_as_number(sheet, operand);
+              value1 = operand_as_number(sheet, operand);              
+              }
+              
+            if (ttext == '-') {
                resulttype = lookup_result_type(value1.type, value2.type, typelookup.plus);
                PushOperand(resulttype, value1.value - value2.value);
                }
