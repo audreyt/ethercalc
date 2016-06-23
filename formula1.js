@@ -6063,7 +6063,7 @@ SocialCalc.Formula.FindInSheetCache = function(sheetname) {
    var nsheetname = SocialCalc.Formula.NormalizeSheetName(sheetname); // normalize different versions
 
    if (sfsc.sheets[nsheetname]) { // a sheet by that name is in the cache already
-      return sfsc.sheets[nsheetname].sheet; // return it
+      return sfsc.sheets[nsheetname].sheet; // return it.
       }
 
    if (sfsc.waitingForLoading) { // waiting already - only queue up one
