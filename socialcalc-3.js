@@ -5618,6 +5618,7 @@ SocialCalc.FormatValueForDisplay = function(sheetobj, value, cr, linkstyle) {
        // FOR each parameter
        var parameterValue; // set to value of param for if coord, value of cell
        if(parameters) { 
+         // add forumla parameters to widget html
          for(var index=0; index < parameters.length; index ++) {
            // IF coord THEN replace with cell value
            if(parameters[index].type == 'coord') {
@@ -5629,12 +5630,17 @@ SocialCalc.FormatValueForDisplay = function(sheetobj, value, cr, linkstyle) {
            var paramRegExp = new RegExp("<%=parameter"+index+"_value%>",'g');
            cell_html = cell_html.replace(paramRegExp, parameterValue);
          }
-         if(parameters.html) { 
+         if(parameters.html) { // add html created in formula1.js to widget
            for(var htmlIndex=0; htmlIndex < parameters.html.length; htmlIndex ++) {
              var paramRegExp = new RegExp("<%=html"+htmlIndex+"_value%>",'g');
              cell_html = cell_html.replace(paramRegExp, parameters.html[htmlIndex]);
            }
          }
+         if(parameters.css) { // add style(css) formula css value, if any - e.g. =textbox("")+style("margin: 8px 0;")
+           // * RegEx Unit Test **  https://regex101.com/r/oV7wU5/2
+           cell_html = cell_html.replace(/^(<\w+)(\W)/, "$1 style='"+parameters.css+ "'$2");
+         }
+
        }
        
 			 return cell_html.replace(/<%=cell_reference%>/g, cr);

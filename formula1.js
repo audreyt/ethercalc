@@ -1762,8 +1762,8 @@ SocialCalc.Formula.StoreIoEventFormula = function(function_name, coord, operand_
   }    
         
 
-	SocialCalc.DebugLog({ ioEventTree: sheet.ioEventTree});
-	SocialCalc.DebugLog({ ioParameterList: sheet.ioParameterList});
+	//SocialCalc.DebugLog({ ioEventTree: sheet.ioEventTree});
+	//SocialCalc.DebugLog({ ioParameterList: sheet.ioParameterList});
 }   
    
 
@@ -5056,12 +5056,13 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet, coord
 
    
    switch (fname) {
-     case "STYLE":  // # SELECT(string, range [,size [,multiple]])
+     case "STYLE":  
        var parameters = sheet.ioParameterList[coord];
        if(parameters) {
          var css = SocialCalc.Formula.getStandardizedList(sheet, {value: operand_value[1], type: operand_type[1]});
          if(css.length > 0 ) {
            parameters.css = css[0];
+           parameters.cssParameter = (operand_type[1] == "t") ? '"'+operand_value[1]+'"' : operand_value[1];
          }
          result = ""; // ensure return value does not get changed by style - will add this empty string to number or string
          resulttype = "ni"; // important - allows widgets to keep type - use: TEXTBOX("")+STYLE(css)  - must add style to widget 
@@ -5234,8 +5235,8 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet, coord
 
 
 
-SocialCalc.Formula.FunctionList["BUTTON"] = [SocialCalc.Formula.IoFunctions, 1, "label", "", "gui", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Button('<%=cell_reference%>');\"><%=formated_value%></button>" ];
-SocialCalc.Formula.FunctionList["IMAGEBUTTON"] = [SocialCalc.Formula.IoFunctions, 1, "imageurl", "", "gui", "<input type='image' src='<%=display_value%>' alt='Submit' onclick=\"SocialCalc.TriggerIoAction.Button('<%=cell_reference%>');\">" ];
+SocialCalc.Formula.FunctionList["BUTTON"] = [SocialCalc.Formula.IoFunctions, 1, "label", "", "gui", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Button('<%=cell_reference%>');\"><%=formated_value%></button>" , "ParameterList" ];
+SocialCalc.Formula.FunctionList["IMAGEBUTTON"] = [SocialCalc.Formula.IoFunctions, 1, "imageurl", "", "gui", "<input type='image' src='<%=display_value%>' alt='Submit' onclick=\"SocialCalc.TriggerIoAction.Button('<%=cell_reference%>');\">", "ParameterList"  ];
 SocialCalc.Formula.FunctionList["EMAIL"] = [SocialCalc.Formula.IoFunctions, -3, "to_range subject_range, body_range", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList" ];
 SocialCalc.Formula.FunctionList["EMAILIF"] = [SocialCalc.Formula.IoFunctions, -4, "condition_range, to_range subject_range, body_range", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "ParameterList" ];
 SocialCalc.Formula.FunctionList["EMAILONEDIT"] = [SocialCalc.Formula.IoFunctions, -4, "editRange, to_range subject_range, body_range", "", "action", "<button type='button' onclick=\"SocialCalc.TriggerIoAction.Email('<%=cell_reference%>');\"><%=formated_value%></button>", "EventTree"];
@@ -5816,6 +5817,10 @@ SocialCalc.TriggerIoAction.updateInputWidgetFormula = function(function_name, wi
 //   else sheetCommand +=  cell.parseinfo[parseIndex].text ;
 // }
  sheetCommand += ')';
+ // add style formula if css has been added
+ if(parameters.cssParameter) {
+   sheetCommand += "+style("+  parameters.cssParameter+ ")"; 
+ }
  //SocialCalc.CmdGotFocus(cell_widget);
 
  spreadsheet.editor.EditorScheduleSheetCommands(sheetCommand,  true, false);
