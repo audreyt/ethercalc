@@ -313,7 +313,7 @@
                 break;
               case 'recalc':
                 if (this.data.force) {
-                  SocialCalc.Formula.SheetCache.sheets = {};
+                  delete SocialCalc.Formula.SheetCache.sheets[this.data.room];
                   if (ss != null) {
                     ss.sheet.recalconce = true;
                   }

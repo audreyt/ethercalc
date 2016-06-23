@@ -176,7 +176,8 @@
           ss.context.sheetobj.ScheduleSheetCommands "recalc\n", false, true
       | \recalc
         if @data.force
-          SocialCalc.Formula.SheetCache.sheets = {}
+          # only remove updated sheet - fix cycle problem when using many sheets
+          delete SocialCalc.Formula.SheetCache.sheets[@data.room]
           ss?sheet.recalconce = true
         parts = ss.DecodeSpreadsheetSave @data.snapshot if @data.snapshot
         if parts?sheet
