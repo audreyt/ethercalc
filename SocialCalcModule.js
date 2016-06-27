@@ -4676,6 +4676,12 @@ SocialCalc.RecalcTimerRoutine = function() {
 	  // }
       eresult = scf.evaluate_parsed_formula(cell.parseinfo, sheet, false);
       if (scf.SheetCache.waitingForLoading) { // wait until restarted
+         // schedule render to run while waiting for dependent sheet to load - schedules first render of sheet
+         if (scri.firstRenderScheduled != true) {
+           var editor = SocialCalc.GetSpreadsheetControlObject().editor;
+           editor.ScheduleRender(false);    
+           scri.firstRenderScheduled = true; // stop more renders because done first render of sheet
+         }
          recalcdata.nextcalc = coord; // start with this cell again
          recalcdata.count += count;
          do_statuscallback("calcloading", {sheetname: scf.SheetCache.waitingForLoading});
@@ -10592,7 +10598,7 @@ SocialCalc.CalculateEditorPositions = function(editor) {
 //
 
 SocialCalc.ScheduleRender = function(editor) {
-
+   if(editor.ignoreRender == true) return; // formDataViewer is only used for "ExecuteSheetCommand" fumctions - so skip render 
    if (editor.timeout) window.clearTimeout(editor.timeout); // in case called more than once, just use latest
 
    SocialCalc.EditorSheetStatusCallback(null, "schedrender", null, editor);
@@ -21027,7 +21033,7 @@ SocialCalc.Formula.FindInSheetCache = function(sheetname) {
    var nsheetname = SocialCalc.Formula.NormalizeSheetName(sheetname); // normalize different versions
 
    if (sfsc.sheets[nsheetname]) { // a sheet by that name is in the cache already
-      return sfsc.sheets[nsheetname].sheet; // return it
+      return sfsc.sheets[nsheetname].sheet; // return it.
       }
 
    if (sfsc.waitingForLoading) { // waiting already - only queue up one
@@ -24140,9 +24146,10 @@ spreadsheet.Buttons = {
       
    spreadsheet.spreadsheetDiv.appendChild(spreadsheet.editorDiv);
 
-// eddy test add input 
+// form data sheet - all input formulas set values in this sheet as well as the loaded sheet
    spreadsheet.formDataViewer = new SocialCalc.SpreadsheetViewer("te_FormData-"); // should end with -
    spreadsheet.formDataViewer.InitializeSpreadsheetViewer(formDataDiv.id, 180, 0, 200);
+   spreadsheet.formDataViewer.editor.ignoreRender = true; // formDataViewer is used for ExecuteSheetCommand only - no need to render
 // end
    
    for (vname in views) {

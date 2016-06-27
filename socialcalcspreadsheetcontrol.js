@@ -1161,9 +1161,10 @@ spreadsheet.Buttons = {
       
    spreadsheet.spreadsheetDiv.appendChild(spreadsheet.editorDiv);
 
-// eddy test add input 
+// form data sheet - all input formulas set values in this sheet as well as the loaded sheet
    spreadsheet.formDataViewer = new SocialCalc.SpreadsheetViewer("te_FormData-"); // should end with -
    spreadsheet.formDataViewer.InitializeSpreadsheetViewer(formDataDiv.id, 180, 0, 200);
+   spreadsheet.formDataViewer.editor.ignoreRender = true; // formDataViewer is used for ExecuteSheetCommand only - no need to render
 // end
    
    for (vname in views) {

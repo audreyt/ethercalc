@@ -274,7 +274,6 @@
                   }
                   if (parts.edit) {
                     ss.editor.LoadEditorSettings(this.data.snapshot.substring(parts.edit.start, parts.edit.end));
-                    ss.editor.ScheduleRender();
                   }
                 }
                 if (typeof window.addmsg == 'function') {

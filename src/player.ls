@@ -156,7 +156,7 @@
             ss.ParseSheetSave @data.snapshot.substring parts.sheet.start, parts.sheet.end
           if parts.edit
             ss.editor.LoadEditorSettings @data.snapshot.substring parts.edit.start, parts.edit.end
-            ss.editor.ScheduleRender!
+            # render not needed, render is triggered by:  CreateTableEditor (empty) then RecalcTimerRoutine (sheet)
         window.addmsg? @data.chat.join(\\n), true
         cmdstr = [ line for line in @data.log
              | not /^re(calc|display)$/.test(line) ].join \\n

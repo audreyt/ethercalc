@@ -3795,6 +3795,12 @@ SocialCalc.RecalcTimerRoutine = function() {
 	  // }
       eresult = scf.evaluate_parsed_formula(cell.parseinfo, sheet, false);
       if (scf.SheetCache.waitingForLoading) { // wait until restarted
+         // schedule render to run while waiting for dependent sheet to load - schedules first render of sheet
+         if (scri.firstRenderScheduled != true) {
+           var editor = SocialCalc.GetSpreadsheetControlObject().editor;
+           editor.ScheduleRender(false);    
+           scri.firstRenderScheduled = true; // stop more renders because done first render of sheet
+         }
          recalcdata.nextcalc = coord; // start with this cell again
          recalcdata.count += count;
          do_statuscallback("calcloading", {sheetname: scf.SheetCache.waitingForLoading});

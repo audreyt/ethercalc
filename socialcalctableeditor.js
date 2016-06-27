@@ -3324,7 +3324,7 @@ SocialCalc.CalculateEditorPositions = function(editor) {
 //
 
 SocialCalc.ScheduleRender = function(editor) {
-
+   if(editor.ignoreRender == true) return; // formDataViewer is only used for "ExecuteSheetCommand" fumctions - so skip render 
    if (editor.timeout) window.clearTimeout(editor.timeout); // in case called more than once, just use latest
 
    SocialCalc.EditorSheetStatusCallback(null, "schedrender", null, editor);
