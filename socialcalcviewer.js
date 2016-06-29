@@ -151,6 +151,7 @@ SocialCalc.SpreadsheetViewer = function(idPrefix) {
    if(SocialCalc._app == true) {
      this.context.showGrid= false; 
      this.context.showRCHeaders= false;
+     this.context.highlightTypes.range.style = ""; // no cell highlighting in app mode
    } else {
      this.context.showGrid= true; 
      this.context.showRCHeaders= true;     
