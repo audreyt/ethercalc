@@ -4900,6 +4900,7 @@ SocialCalc.Formula.FunctionList["IRR"] = [SocialCalc.Formula.IRRFunction, -1, "i
 # COMMAND(trigger_cell, commands)
 # COMMANDIF(trigger_cell, condition, commands) 
 # PANEL(indices_or_csv, panel1_range [, panel2_range , ...])  
+# SPLASH(splash_panel_range)  // shows splash screen (range) - shows while loading dependant sheets from server  
 # STYLE(css)  
 #
 */
@@ -4952,6 +4953,7 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet, coord
         ,COMMAND: [4, 14]
         ,COMMANDIF: [4, 13, 14]
         ,PANEL:[15, -12] // # PANEL(indices_or_csv, panel1_range [, panel2_range , ...])  
+        ,SPLASH:[12]  // SPLASH(splash_panel_range)  // shows splash screen (range)
         ,STYLE:[6] // # STYLE(css)  
    };
    
@@ -5138,19 +5140,33 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet, coord
          resulttype = "t";
          break;
       case "PANEL":
+      case "SPLASH":
+        
         //  - code to show/hide panel
         //  --- get list of panels to show - "showindex_or_csv" 
         //  --- get param details 
-        var showindices = SocialCalc.Formula.getStandardizedList(sheet, {value: operand_value[1], type: operand_type[1]});
-        
+        var showindices;
+        var firstPanelIndex = 2;
+        if(fname == "SPLASH") {
+          result = "SPLASH:"+ operand_value[1]; 
+          resulttype = "t";
+          if (sheet.splashdone == true) break; // show splash scree onload, then skip
+          sheet.splashdone = true;
+          firstPanelIndex = 1;
+          showindices = [0]; // show panel at param 0 of splash formula
+          
+        } else {
+          // panel formula
+          showindices = SocialCalc.Formula.getStandardizedList(sheet, {value: operand_value[1], type: operand_type[1]});
+          result = fname+":"+ showindices; 
+        }
         //  --- SET list of showrows TO empty
         //  --- SET list of showcols TO empty
-        result = "Panels:"+ showindices; 
         resulttype = "t";
         if(SocialCalc._app) { // panel only works in live app
           var showrows = [], showcols = [];
           //  --- FOR each panel to show
-          for (var parameterIndex = 2; parameterIndex < operand_value.length; ++parameterIndex) { 
+          for (var parameterIndex = firstPanelIndex; parameterIndex < operand_value.length; ++parameterIndex) { 
             // show panel if its index is in the showindices list 
             var showPanelFound = false;
             for(var showIndex in showindices ) { 
@@ -5258,6 +5274,8 @@ SocialCalc.Formula.FunctionList["COMMAND"] = [SocialCalc.Formula.IoFunctions, -1
 SocialCalc.Formula.FunctionList["COMMANDIF"] = [SocialCalc.Formula.IoFunctions, -1, "trigger_cell, conditions, commands", "", "action", "", "EventTree"];
 
 SocialCalc.Formula.FunctionList["PANEL"] = [SocialCalc.Formula.IoFunctions, -1, "showindices_range_or_csv, panel1_range [, panel2_range , ...]", "", "gui", ""];
+SocialCalc.Formula.FunctionList["SPLASH"] = [SocialCalc.Formula.IoFunctions, -1, "splash_panel_range", "", "gui", ""];
+
 SocialCalc.Formula.FunctionList["STYLE"] = [SocialCalc.Formula.IoFunctions, -1, "css", "", "gui", ""];
 
 // on enter input box refresh the auto complete list

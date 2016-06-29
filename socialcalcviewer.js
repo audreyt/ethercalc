@@ -152,6 +152,11 @@ SocialCalc.SpreadsheetViewer = function(idPrefix) {
      this.context.showGrid= false; 
      this.context.showRCHeaders= false;
      this.context.highlightTypes.range.style = ""; // no cell highlighting in app mode
+     
+     // Loading Message - add to cell A1 - shows when app is loading a large sheet or from a slow server
+     this.context.sheetobj.cells["A1"] = new SocialCalc.Cell("A1");
+     this.context.sheetobj.cells["A1"].displaystring = "Loading ... "; // will display until recalc issues a render request - auto reset by recalc on load
+     
    } else {
      this.context.showGrid= true; 
      this.context.showRCHeaders= true;     
