@@ -340,7 +340,6 @@
   @post '/_/:room': ->
     #console.log "post /_/:room"
     {room} = @params
-    return if room is \Kaohsiung-explode-20140801
     command <~ request-to-command @request
     unless command
       @response.type Text
