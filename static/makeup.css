@@ -1,0 +1,343 @@
+/* Classes Bootstrap used and added via jQuery */
+
+    .btn {
+    display: inline-block;
+    padding: 6px 12px;
+    margin-bottom: 0;
+    font-size: 14px;
+    font-weight: normal;
+    line-height: 1.42857143;
+    text-align: center;
+    white-space: nowrap;
+    vertical-align: middle;
+    -ms-touch-action: manipulation;
+      touch-action: manipulation;
+    cursor: pointer;
+    -webkit-user-select: none;
+     -moz-user-select: none;
+      -ms-user-select: none;
+          user-select: none;
+    background-image: none;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    }
+
+    .btn-link {
+      font-weight: normal;
+      color: #337ab7;
+      border-radius: 0;
+    }
+    .btn-link,
+    .btn-link:active {
+      background-color: transparent;
+      -webkit-box-shadow: none;
+              box-shadow: none;
+    }
+    .btn-link,
+    .btn-link:hover,
+    .btn-link:focus,
+    .btn-link:active {
+      border-color: transparent;
+    }
+    .btn-link:hover,
+    .btn-link:focus {
+      color: #23527c;
+      text-decoration: underline;
+      background-color: transparent;
+    }
+
+    .btn-default {
+      color: #333;
+      background-color: #fff;
+      border-color: #ccc;
+    }
+    .btn-default:focus {
+      color: #333;
+      background-color: #e6e6e6;
+      border-color: #8c8c8c;
+    }
+    .btn-default:hover {
+      color: #333;
+      background-color: #e6e6e6;
+      border-color: #adadad;
+    }
+    .btn-default:active {
+      color: #333;
+      background-color: #e6e6e6;
+      border-color: #adadad;
+    }
+    .btn-default:active:hover
+    .btn-default:active:focus {
+      color: #333;
+      background-color: #d4d4d4;
+      border-color: #8c8c8c;
+    }
+    .btn-default:active {
+      background-image: none;
+    }
+
+    .btn-primary {
+      color: #fff;
+      background-color: #337ab7;
+      border-color: #2e6da4;
+    }
+    .btn-primary:focus {
+      color: #fff;
+      background-color: #286090;
+      border-color: #122b40;
+    }
+    .btn-primary:hover {
+      color: #fff;
+      background-color: #286090;
+      border-color: #204d74;
+    }
+    .btn-primary:active {
+      color: #fff;
+      background-color: #286090;
+      border-color: #204d74;
+    }
+    .btn-primary:active:hover
+    .btn-primary:active:focus {
+      color: #fff;
+      background-color: #204d74;
+      border-color: #122b40;
+    }
+    .btn-primary:active {
+      background-image: none;
+    }
+    .btn-xs {
+      padding: 1px 5px;
+      font-size: 12px;
+      line-height: 1.5;
+      border-radius: 3px;
+    }
+
+    .form-control {
+      display: block;
+      width: 100%;
+      height: 34px;
+      padding: 6px 12px;
+      font-size: 14px;
+      line-height: 1.42857143;
+      color: #555;
+      background-color: #fff;
+      background-image: none;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      -webkit-box-shadow: inset 0 1px 1px rgba(0, 0, 0, .075);
+              box-shadow: inset 0 1px 1px rgba(0, 0, 0, .075);
+      -webkit-transition: border-color ease-in-out .15s, -webkit-box-shadow ease-in-out .15s;
+           -o-transition: border-color ease-in-out .15s, box-shadow ease-in-out .15s;
+              transition: border-color ease-in-out .15s, box-shadow ease-in-out .15s;
+    }
+    .form-control:focus {
+      border-color: #66afe9;
+      outline: 0;
+      -webkit-box-shadow: inset 0 1px 1px rgba(0,0,0,.075), 0 0 8px rgba(102, 175, 233, .6);
+              box-shadow: inset 0 1px 1px rgba(0,0,0,.075), 0 0 8px rgba(102, 175, 233, .6);
+    }
+    .form-control::-moz-placeholder {
+      color: #999;
+      opacity: 1;
+    }
+    .form-control:-ms-input-placeholder {
+      color: #999;
+    }
+    .form-control::-webkit-input-placeholder {
+      color: #999;
+    }
+    .form-control::-ms-expand {
+      background-color: transparent;
+      border: 0;
+    }
+    textarea.form-control {
+      height: auto;
+    }
+    .input-sm {
+      height: 30px;
+      padding: 5px 10px;
+      font-size: 12px;
+      line-height: 1.5;
+      border-radius: 3px;
+    }
+
+/* End Bootstrap */
+
+/* Framacss https://framalab.org/framacss/
+   (only custom .btn-primary) */
+    .btn-primary {
+        color: #fff;
+        text-shadow: 0 0 3px rgba(0, 0, 0, 0.7);
+        background-color: #6A5687 !important;
+        border-color: #6A5687 !important;
+    }
+    .btn-primary:hover,
+    .btn-primary:focus,
+    .btn-primary:active {
+        color: #fff !important;
+        background-color: #635182 !important;
+        border-color: #635182 !important;
+    }
+/* End Framacss */
+
+#tableeditor{
+    margin: 0px 0px 10px 12px;
+}
+
+/* Tools container = div 2 */
+#tableeditor > div:nth-child(1) > div:nth-child(1) > div:nth-child(2) {
+    background:transparent !important;
+    padding:10px 0px !important;
+    height:40px !important;
+    border-top:1px solid #ccc;
+}
+
+/* Toolbar */
+#SocialCalc-edittools {
+    padding: 5px 0 !important;
+    margin: 0 -8px 4px -4px;
+}
+
+/* Toolbar buttons */
+/* .btn.btn-link.btn-xs */
+#SocialCalc-edittools img[id]{
+    border: none !important;
+    background-color:transparent !important;
+    padding: 1px 3px;
+    margin:0;
+    width:26px;
+    height:26px;
+    border-radius:5px;
+}
+
+#SocialCalc-edittools img[id]:hover,
+#SocialCalc-formulafunctions:hover,
+#SocialCalc-multilineinput:hover,
+#SocialCalc-link:hover,
+#SocialCalc-sum:hover,
+#SocialCalc-last:hover,
+#SocialCalc-next:hover {
+    -webkit-box-shadow:  0px 0px 10px 1px rgba(102, 175, 233, .4);
+    box-shadow: 0px 0px 10px 1px rgba(102, 175, 233, .4);
+    background-color:rgba(102, 175, 233, .2) !important;
+    border-color:transparent !important;
+}
+
+/* Tabs container  = div 2 */
+#tableeditor > div:nth-child(1) > div:nth-child(1) > div:nth-child(1) {
+    background-color:transparent !important;
+    margin:0px !important;
+    height:24px !important;
+    padding:10px 0 !important;
+}
+
+/* Tabs */
+#tableeditor td[id$="tab"] {
+    border-right:none !important;
+    background-color:transparent !important;
+    padding:4px 12px 8px 8px !important;
+}
+
+/* Current active tab */
+#tableeditor td[id$="tab"][style*="#404040"],
+#tableeditor td[id$="tab"][style*="rgb(64"] {
+    color:#333 !important;
+    border-bottom:3px solid #6A5687 !important;
+}
+
+/* Other tabs */
+#tableeditor td[id$="tab"][style*="#808080"],
+#tableeditor td[id$="tab"][style*="rgb(128"]{
+    color:#767676 !important;
+    border-bottom:3px solid white !important;
+}
+#tableeditor td[id$="tab"][style*="#808080"]:hover,
+#tableeditor td[id$="tab"][style*="rgb(128"]:hover{
+    color:#767676 !important;
+    border-bottom:3px solid #B49CD9 !important;
+}
+
+/* Forms in Views and Tools */
+
+    /* Inputs
+       .btn.btn-default.btn-xs */
+#SocialCalc-cellsettingstoolbar input[type!="checkbox"],
+#SocialCalc-settingsview input[type!="checkbox"],
+#SocialCalc-sorttools input[type!="checkbox"], #SocialCalc-sorttools select,
+#SocialCalc-commenttools input,
+#SocialCalc-namestools input[type!="checkbox"], #SocialCalc-namestools select,
+#SocialCalc-clipboardview input,
+#SocialCalc-graphtools input, #SocialCalc-graphtools select {
+
+}
+    /* Action buttons
+       .btn.btn-primary.btn-xs + color from Framasoft's graphic charter */
+#SocialCalc-settings-savecell,
+#SocialCalc-settings-savesheet,
+input[value="OK"],
+input[value="Live Form"] {
+
+}
+    /* Textarea
+       .form-control */
+#SocialCalc-commenttools textarea, #SocialCalc-clipboardview textarea {
+
+}
+
+    /* Views (after tabs)*/
+#SocialCalc-settingsview,
+#SocialCalc-auditview,
+#SocialCalc-clipboardview {
+    border:1px solid #ccc !important;
+    margin-top:1px !important;
+}
+
+#SocialCalc-clipboardview{
+    padding:5px;
+    width:auto !important;
+}
+
+#SocialCalc-clipboardview > div {
+    font-size:small !important;
+}
+
+SocialCalc-clipboardtext {
+    margin-top :10px;
+}
+
+    /* Tools (before tabs ~ toolbar) */
+#SocialCalc-sorttools td[style*="160px"] {
+    /* "Ok" button and select field are on the same line */
+    width: 200px !important;
+}
+
+#SocialCalc-sorttools  select {
+    margin-right:8px;
+}
+
+/* Main input (for the calc)
+   .form-control.input-sm */
+#tableeditor > div:nth-child(1) > div:nth-child(2) > input {
+    width: 500px;
+    height: 22px;
+    display: inline;
+    padding: 2px 10px;
+    line-height:1;
+}
+
+/* Search bar
+   .form-control.input-sm */
+#searchbarinput{
+    height: 22px;
+    display: inline;
+    padding: 2px 10px;
+    line-height:1;
+}
+
+#tableeditor > div:nth-child(1) > div:nth-child(2) {
+    margin-bottom:3px;
+}
+
+.te_download tr:nth-child(2) td:nth-child(1):hover {
+    border: none;
+}

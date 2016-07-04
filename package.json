@@ -1,24 +1,26 @@
 {
   "name": "ethercalc",
   "description": "Multi-User Spreadsheet Server",
-  "version": "0.20160314.0",
+  "version": "0.20160612.0",
   "homepage": "http://ethercalc.net/",
   "repository": {
     "type": "git",
     "url": "https://github.com/audreyt/ethercalc"
   },
   "dependencies": {
-    "redis": "0.12.x",
-    "uuid-pure": "*",
-    "optimist": "*",
-    "zappajs": "0.5.x",
     "cors": "*",
-    "livescript": "1.4.x",
     "csv-parse": "^0.0.6",
+    "iconv-lite": "^0.4.13",
     "j": "0.4.x",
-    "minimatch" : "*",
+    "livescript": "1.4.x",
+    "minimatch": "*",
     "nodemailer": "*",
-    "xoauth2": "*"
+    "optimist": "*",
+    "redis": "0.12.x",
+    "socialcalc": "2.x",
+    "uuid-pure": "*",
+    "xoauth2": "*",
+    "zappajs": "0.5.x"
   },
   "optionalDependencies": {
     "webworker-threads": "^0.7.1"

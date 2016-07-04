@@ -4,7 +4,9 @@
   vm = require('vm');
   fs = require('fs');
   path = require('path');
-  bootSC = fs.readFileSync(path.dirname(fs.realpathSync(__filename)) + "/SocialCalcModule.js", 'utf8');
+  bootSC = fs.readFileSync(path.dirname(fs.realpathSync(__filename)) + "/node_modules/socialcalc/SocialCalc.js", 'utf8');
+  bootSC = bootSC.replace(/document\.createElement\(/g, 'SocialCalc.document.createElement(');
+  bootSC = bootSC.replace(/alert\(/g, '(function(){})(');
   global.SC == null && (global.SC = {
     console: console
   });
@@ -13,7 +15,7 @@
       return require('optimist').boolean(['vm', 'polling']).argv;
     } catch (e$) {}
   }()) || {};
-  bootSC += ";(" + function(){
+  bootSC += ";var SocialCalc = this.SocialCalc; var window = this;(" + function(){
     var Node;
     Node = (function(){
       Node.displayName = 'Node';
@@ -132,6 +134,7 @@
       };
       return Node;
     }());
+    SocialCalc.document == null && (SocialCalc.document = {});
     return SocialCalc.document.createElement = function(it){
       return new Node(it);
     };
@@ -352,7 +355,7 @@
             SocialCalc.Popup.Types.ColorChooser.Create = function(){};
             SocialCalc.Popup.Initialize = function(){};
             SocialCalc.RecalcInfo.LoadSheet = function(ref){
-              if (/[^.a-zA-Z0-9]/.exec(ref)) {
+              if (/[^.=_a-zA-Z0-9]/.exec(ref)) {
                 return;
               }
               ref = ref.toLowerCase();

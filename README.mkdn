@@ -22,7 +22,7 @@ For global installation (may need root)
     npm i -g ethercalc
     ethercalc
 
-For local non-root installation 
+For local non-root installation
 
     npm i
     make
@@ -30,30 +30,24 @@ For local non-root installation
 Or install with our [Docker](http://www.docker.io/) image, which comes with
 support for webworker-threads:
 
-    # Run a redis Docker using the official redis Docker image with persistant database in <host-directory>
-    sudo docker run --name redis -d -v <host-directory>:/data redis:latest redis-server --appendonly yes
+    # Install docker and docker-compose
+    sudo ./misc/linux-install-docker-and-compose.sh
 
-    # ...wait for a few seconds for redis to start up...
-    sleep 5 # alternately, use redis-cli to check
+    # Run ethercalc on port 80 ( http://localhost/ )
+    docker-compose up -d
 
-    # Run ethercalc on default port 8000
-    sudo docker run -d -p 8000:8000 --link redis:redis audreyt/ethercalc
+Send email
 
-    # Run ethercalc on custom port 80
-    sudo docker run -d -p 80:8000 --link redis:redis audreyt/ethercalc
+    Optional - Send email formulas requires OAuth2 & cron  e.g. =email(to, subject, body), =emailAt(time, to, subject, body)
 
-Send email  
-
-    Optional - Send email formulas requires OAuth2 & cron  e.g. =email(to, subject, body), =emailAt(time, to, subject, body) 
-    
-    OAuth2 - Set environment vars 
-    1) Tutorial: follow the tutorial to get the 4 environment vars http://masashi-k.blogspot.com.au/2013/06/sending-mail-with-gmail-using-xoauth2.html 
+    OAuth2 - Set environment vars
+    1) Tutorial: follow the tutorial to get the 4 environment vars http://masashi-k.blogspot.com.au/2013/06/sending-mail-with-gmail-using-xoauth2.html
     2) Set 4 environment vars - see [src/emailer.ls] vars: user, clientId, clientSecret, refreshToken
     Tested using gmail, have not tested with other providors
 
     Cron - Required for emailAt formulas.
-    See *curl* in [.openshift/cron/minutely/timetrigger] for openshift version (openshift](openshift.redhat.com) 
-    The curl checks the database for unsent emails and updates the database after sending. 
+    See *curl* in [.openshift/cron/minutely/timetrigger] for openshift version (openshift](openshift.redhat.com)
+    The curl checks the database for unsent emails and updates the database after sending.
 
 ## REST API
 
@@ -85,7 +79,15 @@ Useful when setting up EtherCalc as a public REST API server.
 
 ### URL Prefix: `--basepath /path/prefix`
 
-Useful when running under an URL rewriter.
+Useful when running under an URL rewriter. If running with a nginx reverse
+proxy, please add this section:
+
+```
+    location /zappa/socket/__local/ {
+        rewrite (.*) /path/prefix$1;
+    }
+```
+
 
 ### Access Control: `--key secret`
 
@@ -110,11 +112,11 @@ Deletes a spreadsheet's content after N seconds of inactivity. Activities includ
 
 ### Artistic License 2.0 (Socialtext Inc.)
 
-* formatnumber2.js 
-* formula1.js 
-* socialcalc-3.js 
-* socialcalcconstants.js 
-* socialcalcpopup.js 
+* formatnumber2.js
+* formula1.js
+* socialcalc-3.js
+* socialcalcconstants.js
+* socialcalcpopup.js
 
 #### Artistic License 2.0 (Framasoft)
 
@@ -122,7 +124,7 @@ Deletes a spreadsheet's content after N seconds of inactivity. Activities includ
 
 ### MIT License (John Resig, The Dojo Foundation)
 
-* static/jquery.js 
+* static/jquery.js
 
 ### MIT License (HubSpot, Inc.)
 
@@ -145,7 +147,7 @@ Deletes a spreadsheet's content after N seconds of inactivity. Activities includ
 
 * src/*.ls
 
-### Mozilla Public License Version 2.0
+### Mozilla Public License Version 2.0 (LibreOffice contributors)
 
 * images/sc_*.png
 

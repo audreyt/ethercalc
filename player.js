@@ -9,7 +9,7 @@
           return location.reload();
         }
         doPlay = function(){
-          var requestParams, endpoint, ref$, ref1$, ref2$, options, showError, x$, ref3$, emit;
+          var requestParams, ref$, endpoint, ref1$, ref2$, ref3$, options, showError, x$, ref4$, emit;
           window.SocialCalc == null && (window.SocialCalc = {});
           SocialCalc._username = Math.random().toString();
           SocialCalc.isConnected = true;
@@ -23,14 +23,14 @@
           if (requestParams['view'] != null) {
             SocialCalc._view = true;
           }
-          SocialCalc._room == null && (SocialCalc._room = window.location.hash.replace('#', ''));
+          SocialCalc._room == null && (SocialCalc._room = ((ref$ = window.EtherCalc) != null ? ref$._room : void 8) || window.location.hash.replace('#', ''));
           SocialCalc._room = (SocialCalc._room + "").replace(/^_+/, '').replace(/\?.*/, '');
-          endpoint = (ref$ = $('script[src*="/socket.io/socket.io.js"]')) != null ? (ref1$ = ref$.attr('src')) != null ? ref1$.replace(/\.?\/socket.io\/socket.io.js.*/, '') : void 8 : void 8;
+          endpoint = (ref1$ = $('script[src*="/socket.io/socket.io.js"]')) != null ? (ref2$ = ref1$.attr('src')) != null ? ref2$.replace(/\.?\/socket.io\/socket.io.js.*/, '') : void 8 : void 8;
           if (endpoint === '') {
             endpoint = location.pathname.replace(/\/(view|edit)$/, '');
             endpoint = endpoint.replace(RegExp('' + SocialCalc._room + '$'), '');
           }
-          if ((ref2$ = window.Drupal) != null && ref2$.sheetnode) {
+          if ((ref3$ = window.Drupal) != null && ref3$.sheetnode) {
             if (/overlay=node\/\d+/.test(window.location.hash)) {
               SocialCalc._room = window.location.hash.match(/=node\/(\d+)/)[1];
             } else if (/\/node\/\d+/.test(window.location.href)) {
@@ -89,7 +89,7 @@
           window.addEventListener('offline', function(){
             return showError('Disconnected from server. please check network connection and refresh.');
           });
-          x$ = (ref3$ = this$.connect('/', options)) != null ? ref3$.io : void 8;
+          x$ = (ref4$ = this$.connect('/', options)) != null ? ref4$.io : void 8;
           if (x$ != null) {
             x$.on('reconnect', function(){
               if (!((typeof SocialCalc != 'undefined' && SocialCalc !== null) && SocialCalc.isConnected)) {
@@ -145,7 +145,7 @@
           SocialCalc.isConnected = true;
           SocialCalc.RecalcInfo.LoadSheetCache = {};
           SocialCalc.RecalcInfo.LoadSheet = function(ref){
-            if (/[^.a-zA-Z0-9]/.exec(ref)) {
+            if (/[^.=_a-zA-Z0-9]/.exec(ref)) {
               return;
             }
             ref = ref.toLowerCase();
