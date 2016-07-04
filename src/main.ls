@@ -53,8 +53,18 @@
   new-room = -> require \uuid-pure .newId 12 36 .toLowerCase!
 
   @get '/': sendFile \index.html
-  @get '/favicon.ico': -> @response.send 404 ''
-  #@get '/favicon.ico': sendFile \favicon.ico  #return site icon
+  #@get '/favicon.ico': -> @response.send 404 ''
+  #return site icons
+  @get '/favicon.ico': sendFile \favicon.ico
+  @get '/android-chrome-192x192.png': sendFile \android-chrome-192x192.png
+  @get '/apple-touch-icon.png': sendFile \apple-touch-icon.png
+  @get '/browserconfig.xml': sendFile \browserconfig.xml
+  @get '/favicon-16x16.png': sendFile \favicon-16x16.png
+  @get '/favicon-32x32.png': sendFile \favicon-32x32.png
+  @get '/favicon-32x32.png': sendFile \favicon-32x32.png
+  @get '/mstile-150x150.png': sendFile \mstile-150x150.png
+  @get '/mstile-310x310.png': sendFile \mstile-310x310.png
+  @get '/safari-pinned-tab.svg': sendFile \safari-pinned-tab.svg
   @get '/manifest.appcache': ->
     @response.type \text/cache-manifest
     if DevMode
