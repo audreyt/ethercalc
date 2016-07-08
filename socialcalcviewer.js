@@ -492,6 +492,7 @@ SocialCalc.DoOnResize = function(spreadsheet) {
       v.style.height = (spreadsheet.height-spreadsheet.nonviewheight) + "px";
       }
 
+   if(SocialCalc._app) return; // app has no scroll bars and keep normal HTML style page scroll - for mobile
    spreadsheet.editor.ResizeTableEditor(spreadsheet.width, spreadsheet.height-spreadsheet.nonviewheight);
 
    }

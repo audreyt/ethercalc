@@ -5195,6 +5195,7 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet, coord
           if (spreadsheet == null) spreadsheet = window.ss
 
           var forceRender = false;
+          var lastShowDimension = 0;
           var showGridDimension =  function(sheet, lastIndex, sheetHideList, showList, getIndexOf) {
             //  --- hide all rows/col    up to sheet.attribs.lastrow/col         
             //  --- FOR each row/col -- create function to do the loop          
@@ -5208,7 +5209,7 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet, coord
                   sheetHideList[sheetHideIndex] ="yes";                
                   //  ------- SET repaint flag
                   forceRender = true;
-                }
+                } else {lastShowDimension = arrayIndex;}
               } else {
                 // row/col is hidden 
                 if(showList[arrayIndex] === true) { // if show 
@@ -5216,6 +5217,7 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet, coord
                   delete sheetHideList[sheetHideIndex];                
                   //  ------- SET repaint flag
                   forceRender = true;
+                  lastShowDimension = arrayIndex;
                 }
               }              
               
@@ -5225,13 +5227,20 @@ SocialCalc.Formula.IoFunctions = function(fname, operand, foperand, sheet, coord
           
           var getRowIndex = function(row) { return row };
           showGridDimension(sheet,  sheet.attribs.lastrow,  sheet.rowattribs.hide, showrows, getRowIndex);
+          lastShowDimension = 0;
           showGridDimension(sheet,  sheet.attribs.lastcol,  sheet.colattribs.hide, showcols, SocialCalc.rcColname );
+          // control width of html - for mobile app - as better to use native scroll rather than SocialCalc scroll bar - colpanes[length].last = usermaxcol - see FitToEditTable
+          sheet.attribs.usermaxcol = lastShowDimension;
           
           if(forceRender) {
             sheet.renderneeded = true;
             sheet.widgetsClean = false; //  force widgets to repaint - update cell reference in widget HTML    
             spreadsheet.editor.context.rowpanes[0].first = 1; // reset scroll bar to first row  
-            spreadsheet.editor.FitToEditTable();
+            spreadsheet.editor.context.CalculateColWidthData();
+            
+            spreadsheet.width = spreadsheet.editor.context.totalwidth;
+            spreadsheet.height = 2500;
+            spreadsheet.editor.ResizeTableEditor(spreadsheet.editor.context.totalwidth,2500);  // 2500 is page height constant - fix issue with mobile device - Used constant because could not see an easy way to pre-calculate height 
           }
           
         }
