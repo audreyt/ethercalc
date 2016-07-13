@@ -348,6 +348,31 @@
         }
       });
     }
+    if (this.CORS) {
+      this.get({
+        '/_roomlinks': function(){
+          this.response.type(Text);
+          return this.response.send(403, '_roomlinks not available with CORS');
+        }
+      });
+    } else {
+      this.get({
+        '/_roomlinks': function(){
+          var this$ = this;
+          return SC._rooms(function(rooms){
+            var roomlinks, res$, i$, len$, room;
+            res$ = [];
+            for (i$ = 0, len$ = rooms.length; i$ < len$; ++i$) {
+              room = rooms[i$];
+              res$.push("<a href=" + BASEPATH + "/" + room + ">" + room + "</a>");
+            }
+            roomlinks = res$;
+            this$.response.type(Html);
+            return this$.response.json(200, roomlinks);
+          });
+        }
+      });
+    }
     this.get({
       '/_from/:template': function(){
         var room, template, this$ = this;

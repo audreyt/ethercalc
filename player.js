@@ -274,7 +274,6 @@
                   }
                   if (parts.edit) {
                     ss.editor.LoadEditorSettings(this.data.snapshot.substring(parts.edit.start, parts.edit.end));
-                    ss.editor.ScheduleRender();
                   }
                 }
                 if (typeof window.addmsg == 'function') {
@@ -313,7 +312,7 @@
                 break;
               case 'recalc':
                 if (this.data.force) {
-                  SocialCalc.Formula.SheetCache.sheets = {};
+                  delete SocialCalc.Formula.SheetCache.sheets[this.data.room];
                   if (ss != null) {
                     ss.sheet.recalconce = true;
                   }
