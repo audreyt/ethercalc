@@ -11,6 +11,10 @@ LS_FILES=$(wildcard src/*.ls)
 
 JS_FILES=$(LS_FILES:src/%.ls=%.js)
 
+ifneq ("$(wildcard static/jquery-ui.min.js)","")
+	ETHERCALC_FILES += static/jquery-ui.min.js
+endif
+
 UGLIFYJS_ARGS = -c -m
 ifdef DEBUG
   UGLIFYJS_ARGS += -b
@@ -18,6 +22,10 @@ endif
 
 run: all
 	node app.js --cors $(ETHERCALC_ARGS)
+
+only: all
+	@echo -e '\a'
+	@read -p "Press [Enter]"
 
 vm: all
 	node app.js --vm $(ETHERCALC_ARGS)

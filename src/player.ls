@@ -156,7 +156,7 @@
             ss.ParseSheetSave @data.snapshot.substring parts.sheet.start, parts.sheet.end
           if parts.edit
             ss.editor.LoadEditorSettings @data.snapshot.substring parts.edit.start, parts.edit.end
-            ss.editor.ScheduleRender!
+            # render not needed, render is triggered by:  CreateTableEditor (renders empty sheet) then RecalcTimerRoutine (renders loaded sheet)
         window.addmsg? @data.chat.join(\\n), true
         cmdstr = [ line for line in @data.log
              | not /^re(calc|display)$/.test(line) ].join \\n
@@ -176,7 +176,8 @@
           ss.context.sheetobj.ScheduleSheetCommands "recalc\n", false, true
       | \recalc
         if @data.force
-          SocialCalc.Formula.SheetCache.sheets = {}
+          # only remove updated sheet - fix cycle problem when using many sheets
+          delete SocialCalc.Formula.SheetCache.sheets[@data.room]
           ss?sheet.recalconce = true
         parts = ss.DecodeSpreadsheetSave @data.snapshot if @data.snapshot
         if parts?sheet
