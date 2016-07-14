@@ -23,10 +23,6 @@ endif
 run: all
 	node app.js --cors $(ETHERCALC_ARGS)
 
-only: all
-	@echo -e '\a'
-	@read -p "Press [Enter]"
-
 vm: all
 	node app.js --vm $(ETHERCALC_ARGS)
 
