@@ -21,7 +21,7 @@ if [ "$(id -u)" -eq 0 ] && [ $ignoreRoot -eq 0 ]; then
    echo "You shouldn't start Ethercalc as root!"
    echo "Please type 'Ethercalc rocks my socks' or supply the '--root' argument if you still want to start it as root"
    read rocks
-   if [ ! "$rocks" == "Ethercalc rocks my socks" ]
+   if [ "$rocks" != "Ethercalc rocks my socks" ]
    then
      echo "Your input was incorrect"
      exit 1

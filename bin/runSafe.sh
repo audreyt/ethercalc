@@ -50,7 +50,7 @@ do
   bin/run.sh $@ >>${LOG} 2>>${LOG}
   
   #Send email
-  if [ $ERROR_HANDLIjNG = 1 ]; then
+  if [ $ERROR_HANDLING = 1 ]; then
     TIME_NOW=$(date +%s)
     TIME_SINCE_LAST_SEND=$(($TIME_NOW - $LAST_EMAIL_SEND))
     
