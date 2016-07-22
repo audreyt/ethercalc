@@ -11,6 +11,10 @@ LS_FILES=$(wildcard src/*.ls)
 
 JS_FILES=$(LS_FILES:src/%.ls=%.js)
 
+ifneq ("$(wildcard static/jquery-ui.min.js)","")
+	ETHERCALC_FILES += static/jquery-ui.min.js
+endif
+
 UGLIFYJS_ARGS = -c -m
 ifdef DEBUG
   UGLIFYJS_ARGS += -b
