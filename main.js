@@ -603,7 +603,7 @@
           return SC._get(room, IO, function(arg$){
             var log, snapshot, row, cmdstr;
             log = arg$.log, snapshot = arg$.snapshot;
-            if (/^loadclipboard\s*/.exec(command)) {
+            if (!this$.request.is('application/json') && /^loadclipboard\s*/.exec(command)) {
               row = 1;
               if (/\nsheet:c:\d+:r:(\d+):/.exec(snapshot)) {
                 row += Number(RegExp.$1);
