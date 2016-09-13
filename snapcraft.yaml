@@ -1,0 +1,23 @@
+name: ethercalc
+version: 0.20151108.1+
+summary: EtherCalc is a web spreadsheet.
+description: |
+   Your data is saved on the web, and people can edit the same document at
+   the same time. Everybody's changes are instantly reflected on all screens.
+   .
+   Work together on inventories, survey forms, list management, brainstorming
+   sessions and more! 
+confinement: strict
+grade: devel # use "stable" to assert the snap quality
+
+apps:
+  ethercald:
+    daemon: simple
+    command: bin/ethercalc
+    plugs: [network, network-bind]
+
+
+parts:
+  ethercalc:
+    source: .
+    plugin: nodejs
