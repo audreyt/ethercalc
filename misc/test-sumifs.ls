@@ -87,7 +87,7 @@ do ->
     <~ DB.multi!
       .set "snapshot-#room", snapshot
       .del ["log-#room" "chat-#room" "ecell-#room" "audit-#room"]
-      .bgsave!exec!
+      .exec!
     DB.expire "snapshot-#room", EXPIRE if EXPIRE
     cb?!
 
@@ -159,7 +159,6 @@ do ->
       <~ DB.multi!
         .set "snapshot-#room" newSnapshot
         .del "log-#room"
-        .bgsave!
         .exec!
       console.log "==> Regenerated snapshot for #room"
       DB.expire "snapshot-#room", EXPIRE if EXPIRE

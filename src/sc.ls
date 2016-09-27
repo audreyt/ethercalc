@@ -101,13 +101,13 @@ Worker ||= class => (code) ->
     <~ DB.multi!
       .set "snapshot-#room", snapshot
       .del ["log-#room" "chat-#room" "ecell-#room" "audit-#room"]
-      .bgsave!exec!
+      .exec!
     DB.expire "snapshot-#room", EXPIRE if EXPIRE
     cb?!
   SC._del = (room, cb) ->
     <~ DB.multi!
        .del ["snapshot-#room", "log-#room" "chat-#room" "ecell-#room" "audit-#room"]
-       .bgsave!exec!
+       .exec!
     cb?!
   SC._rooms = (cb) ->
     (, [rooms]) <~ DB.multi!
@@ -204,7 +204,6 @@ Worker ||= class => (code) ->
         .set "snapshot-#room" newSnapshot
         .hset \timestamps "timestamp-#room" Date.now()
         .del "log-#room"
-        .bgsave!
         .exec!
       #logdate = new Date() 
       #console.log "==> Regenerated snapshot #{logdate.getFullYear() }-#{(logdate.getMonth()) + 1 }-#{logdate.getDate()} #{logdate.getHours()}:#{logdate.getMinutes()}:#{logdate.getSeconds()} for #room"
@@ -239,7 +238,7 @@ Worker ||= class => (code) ->
         <~ DB.multi!
           .hset "cron-list" "#{room}!#{timetriggerdata.cell}" triggerTimeList.toString()
           .set "cron-nextTriggerTime" nextTriggerTime
-          .bgsave!exec!
+          .exec!
         (, allTimeTriggers) <~ DB.hgetall "cron-list"
         console.log "allTimeTriggers" {...allTimeTriggers} " nextTriggerTime #nextTriggerTime"
     | \sendemailout 
