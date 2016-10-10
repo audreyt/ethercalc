@@ -3,7 +3,7 @@ ethercalc:
   ports:
     - "80:8000"
   links:
-    - redis
+    - redis:redis
   restart: always
 redis:
   image: redis:latest
