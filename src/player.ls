@@ -321,13 +321,13 @@ Check the activity stream to see the newly edited page!
               if window.parent.location.href.match(/(^.*\/=[^?/]+)/)
                 window.open "#{ RegExp.$1 }.xlsx"
               else
-                window.open "./=#{ SocialCalc._room.replace(/\.[1-9]\d*$/, '') }.xlsx"
+                window.open ".#{if window.parent.location.pathname.match('\/.*\/view$') || window.parent.location.pathname.match('\/.*\/edit$') then '.' else ''}/=#{ SocialCalc._room.replace(/\.[1-9]\d*$/, '') }.xlsx"
             else
-              window.open "./#{ SocialCalc._room }.xlsx"
+              window.open ".#{if window.parent.location.pathname.match('\/.*\/view$') || window.parent.location.pathname.match('\/.*\/edit$') then '.' else ''}/#{ SocialCalc._room }.xlsx"
           $.extend {}, vex?dialog.buttons.YES, text: 'CSV', click: ->
-            window.open "./#{ SocialCalc._room }.csv"
+            window.open ".#{if window.parent.location.pathname.match('\/.*\/view$') || window.parent.location.pathname.match('\/.*\/edit$') then '.' else ''}/#{ SocialCalc._room }.csv"
           $.extend {}, vex?dialog.buttons.YES, text: 'HTML', click: ->
-            window.open "./#{ SocialCalc._room }.html"
+            window.open ".#{if window.parent.location.pathname.match('\/.*\/view$') || window.parent.location.pathname.match('\/.*\/edit$') then '.' else ''}/#{ SocialCalc._room }.html"
           $.extend {}, vex?dialog.buttons.NO, text: 'Cancel'
         ]
 
