@@ -290,8 +290,13 @@ Check the activity stream to see the newly edited page!
       save: window.GraphSave
       load: window.GraphLoad
 
+    # Spinner - shows when sheet data is loading
+    ss.sheet.cells["A1"] = new SocialCalc.Cell("A1")
+    ss.sheet.cells["A1"].displaystring = '<div class="loader"></div>'
+    
     ss.InitializeSpreadsheetViewer? \tableeditor, 0, 0, 0
     ss.InitializeSpreadsheetControl? \tableeditor, 0, 0, 0
+
     # eddy {
     if !SocialCalc._view? && ss.formDataViewer?
       # request formData and then the spreadsheet data

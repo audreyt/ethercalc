@@ -449,6 +449,8 @@
               load: window.GraphLoad
             };
           }
+          ss.sheet.cells["A1"] = new SocialCalc.Cell("A1");
+          ss.sheet.cells["A1"].displaystring = '<div class="loader"></div>';
           if (typeof ss.InitializeSpreadsheetViewer == 'function') {
             ss.InitializeSpreadsheetViewer('tableeditor', 0, 0, 0);
           }

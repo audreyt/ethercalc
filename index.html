@@ -80,6 +80,6 @@ body
 <input type="submit" style="font-size:x-small;" value="Add a line" onclick="val = document.getElementById('msgout').value; if (/\S/.test(val)) {SocialCalc.Callbacks.broadcast('chat', {msg: val}); addmsg(val, false); document.getElementById('msgout').value = ''}; return false"><br>
 </form>
 </div>
-<div id="tableeditor">&nbsp;</div>
+<div id="tableeditor">&nbsp;<div class="loader"></div></div>
 </body>
 </html>
