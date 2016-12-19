@@ -159,7 +159,7 @@ Worker ||= class => (code) ->
         SocialCalc.Popup.Types.ColorChooser.Create = ->
         SocialCalc.Popup.Initialize = ->
         SocialCalc.RecalcInfo.LoadSheet = (ref) ->
-          return if ref is /[^.a-zA-Z0-9]/
+          return if ref is /[^.=_a-zA-Z0-9]/
           ref.=toLowerCase!
           postMessage { type: \load-sheet, ref }
           return true

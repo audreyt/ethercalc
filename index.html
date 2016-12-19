@@ -4,6 +4,14 @@
 <meta charset="utf-8" />
 <meta content="IE=edge" http-equiv="X-UA-Compatible"/>
 <meta name="referrer" content="no-referrer"/>
+<link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
+<link rel="icon" type="image/png" href="./favicon-32x32.png" sizes="32x32">
+<link rel="icon" type="image/png" href="./favicon-16x16.png" sizes="16x16">
+<link rel="manifest" href="./manifest.json">
+<link rel="mask-icon" href="./safari-pinned-tab.svg" color="#0c3159">
+<meta name="apple-mobile-web-app-title" content="Ethercalc">
+<meta name="application-name" content="Ethercalc">
+<meta name="theme-color" content="#0c3159">
 <base target="_blank"/>
 <title>EtherCalc - Share the URL to your friends and edit together!</title>
 <script>
@@ -34,7 +42,7 @@ var readl10nfile = function(data) {
         SocialCalc.Constants[k] = data[k];
     }
 }
-$.ajax({url: ("./l10n/" + navigator.language + ".json").replace(/de_\w+/, 'de').replace(/zh-Hant/i, 'zh-TW').replace(/fr_\w+/, 'fr'),
+$.ajax({url: ("./l10n/" + navigator.language + ".json").replace(/de-\w+/, 'de').replace(/zh-Hant/i, 'zh-TW').replace(/fr-\w+/, 'fr').replace(/en-\w+/, 'en'),
         async: false,
         success: function(data){readl10nfile(data)},
         error: function() {
@@ -51,6 +59,7 @@ $.ajax({url: ("./l10n/" + navigator.language + ".json").replace(/de_\w+/, 'de').
 <link rel="stylesheet" type="text/css" href="./static/index.css">
 <link rel="stylesheet" type="text/css" href="./static/vex.css">
 <link rel="stylesheet" type="text/css" href="./static/vex-theme-flat-attack.css">
+<link rel="stylesheet" type="text/css" href="./static/jquery-ui.min.css">
 <style>
 body
  {font-family:verdana,helvetica,sans-serif;font-size:small;}
@@ -71,6 +80,6 @@ body
 <input type="submit" style="font-size:x-small;" value="Add a line" onclick="val = document.getElementById('msgout').value; if (/\S/.test(val)) {SocialCalc.Callbacks.broadcast('chat', {msg: val}); addmsg(val, false); document.getElementById('msgout').value = ''}; return false"><br>
 </form>
 </div>
-<div id="tableeditor">&nbsp;</div>
+<div id="tableeditor">&nbsp;<div class="loader"></div></div>
 </body>
 </html>

@@ -82,7 +82,7 @@
     SocialCalc.isConnected = true
     SocialCalc.RecalcInfo.LoadSheetCache = {}
     SocialCalc.RecalcInfo.LoadSheet = (ref) ->
-      return if ref is /[^._a-zA-Z0-9]/
+      return if ref is /[^.=_a-zA-Z0-9]/
       ref.=toLowerCase!
       emit type: \ask.recalc, user: SocialCalc._username, room: ref
 
@@ -156,7 +156,7 @@
             ss.ParseSheetSave @data.snapshot.substring parts.sheet.start, parts.sheet.end
           if parts.edit
             ss.editor.LoadEditorSettings @data.snapshot.substring parts.edit.start, parts.edit.end
-            ss.editor.ScheduleRender!
+            # render not needed, render is triggered by:  CreateTableEditor (renders empty sheet) then RecalcTimerRoutine (renders loaded sheet)
         window.addmsg? @data.chat.join(\\n), true
         cmdstr = [ line for line in @data.log
              | not /^re(calc|display)$/.test(line) ].join \\n
@@ -176,7 +176,8 @@
           ss.context.sheetobj.ScheduleSheetCommands "recalc\n", false, true
       | \recalc
         if @data.force
-          SocialCalc.Formula.SheetCache.sheets = {}
+          # only remove updated sheet - fix cycle problem when using many sheets
+          delete SocialCalc.Formula.SheetCache.sheets[@data.room]
           ss?sheet.recalconce = true
         parts = ss.DecodeSpreadsheetSave @data.snapshot if @data.snapshot
         if parts?sheet
@@ -289,8 +290,13 @@ Check the activity stream to see the newly edited page!
       save: window.GraphSave
       load: window.GraphLoad
 
+    # Spinner - shows when sheet data is loading
+    ss.sheet.cells["A1"] = new SocialCalc.Cell("A1")
+    ss.sheet.cells["A1"].displaystring = '<div class="loader"></div>'
+    
     ss.InitializeSpreadsheetViewer? \tableeditor, 0, 0, 0
     ss.InitializeSpreadsheetControl? \tableeditor, 0, 0, 0
+
     # eddy {
     if !SocialCalc._view? && ss.formDataViewer?
       # request formData and then the spreadsheet data
@@ -320,13 +326,13 @@ Check the activity stream to see the newly edited page!
               if window.parent.location.href.match(/(^.*\/=[^?/]+)/)
                 window.open "#{ RegExp.$1 }.xlsx"
               else
-                window.open "./=#{ SocialCalc._room.replace(/\.[1-9]\d*$/, '') }.xlsx"
+                window.open ".#{if window.parent.location.pathname.match('\/.*\/view$') || window.parent.location.pathname.match('\/.*\/edit$') then '.' else ''}/=#{ SocialCalc._room.replace(/\.[1-9]\d*$/, '') }.xlsx"
             else
-              window.open "./#{ SocialCalc._room }.xlsx"
+              window.open ".#{if window.parent.location.pathname.match('\/.*\/view$') || window.parent.location.pathname.match('\/.*\/edit$') then '.' else ''}/#{ SocialCalc._room }.xlsx"
           $.extend {}, vex?dialog.buttons.YES, text: 'CSV', click: ->
-            window.open "./#{ SocialCalc._room }.csv"
+            window.open ".#{if window.parent.location.pathname.match('\/.*\/view$') || window.parent.location.pathname.match('\/.*\/edit$') then '.' else ''}/#{ SocialCalc._room }.csv"
           $.extend {}, vex?dialog.buttons.YES, text: 'HTML', click: ->
-            window.open "./#{ SocialCalc._room }.html"
+            window.open ".#{if window.parent.location.pathname.match('\/.*\/view$') || window.parent.location.pathname.match('\/.*\/edit$') then '.' else ''}/#{ SocialCalc._room }.html"
           $.extend {}, vex?dialog.buttons.NO, text: 'Cancel'
         ]
 

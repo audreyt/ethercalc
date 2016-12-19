@@ -184,17 +184,18 @@
     margin: 0px 0px 10px 12px;
 }
 
-/* Tools container = div 1 */
-#tableeditor > div:nth-child(1) > div:nth-child(1) > div:nth-child(1) {
+/* Tools container = div 2 */
+#tableeditor > div:nth-child(1) > div:nth-child(1) > div:nth-child(2) {
     background:transparent !important;
     padding:10px 0px !important;
     height:40px !important;
+    border-top:1px solid #ccc;
 }
 
 /* Toolbar */
 #SocialCalc-edittools {
     padding: 5px 0 !important;
-    margin: 4px -8px 0 -4px;
+    margin: 0 -8px 4px -4px;
 }
 
 /* Toolbar buttons */
@@ -206,20 +207,35 @@
     margin:0;
     width:26px;
     height:26px;
+    border-radius:5px;
+}
+
+#SocialCalc-edittools img[id]:hover,
+#SocialCalc-formulafunctions:hover,
+#SocialCalc-multilineinput:hover,
+#SocialCalc-link:hover,
+#SocialCalc-sum:hover,
+#SocialCalc-last:hover,
+#SocialCalc-next:hover {
+    -webkit-box-shadow:  0px 0px 10px 1px rgba(102, 175, 233, .4);
+    box-shadow: 0px 0px 10px 1px rgba(102, 175, 233, .4);
+    background-color:rgba(102, 175, 233, .2) !important;
+    border-color:transparent !important;
 }
 
 /* Tabs container  = div 2 */
-#tableeditor > div:nth-child(1) > div:nth-child(1) > div:nth-child(2) {
+#tableeditor > div:nth-child(1) > div:nth-child(1) > div:nth-child(1) {
     background-color:transparent !important;
-    margin:0px 0px 3px 0px !important;
-    border-top:1px solid #ccc;
+    margin:0px !important;
+    height:24px !important;
+    padding:10px 0 !important;
 }
 
 /* Tabs */
 #tableeditor td[id$="tab"] {
     border-right:none !important;
     background-color:transparent !important;
-    padding:6px 12px 6px 8px !important;
+    padding:4px 12px 8px 8px !important;
 }
 
 /* Current active tab */
@@ -235,7 +251,11 @@
     color:#767676 !important;
     border-bottom:3px solid white !important;
 }
-
+#tableeditor td[id$="tab"][style*="#808080"]:hover,
+#tableeditor td[id$="tab"][style*="rgb(128"]:hover{
+    color:#767676 !important;
+    border-bottom:3px solid #B49CD9 !important;
+}
 
 /* Forms in Views and Tools */
 
@@ -314,3 +334,10 @@ SocialCalc-clipboardtext {
     line-height:1;
 }
 
+#tableeditor > div:nth-child(1) > div:nth-child(2) {
+    margin-bottom:3px;
+}
+
+.te_download tr:nth-child(2) td:nth-child(1):hover {
+    border: none;
+}

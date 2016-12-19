@@ -53,8 +53,18 @@
   new-room = -> "sheet1"
 
   @get '/': sendFile \index.html
-  @get '/favicon.ico': -> @response.send 404 ''
-  #@get '/favicon.ico': sendFile \favicon.ico  #return site icon
+  #@get '/favicon.ico': -> @response.send 404 ''
+  #return site icons
+  @get '/favicon.ico': sendFile \favicon.ico
+  @get '/android-chrome-192x192.png': sendFile \android-chrome-192x192.png
+  @get '/apple-touch-icon.png': sendFile \apple-touch-icon.png
+  @get '/browserconfig.xml': sendFile \browserconfig.xml
+  @get '/favicon-16x16.png': sendFile \favicon-16x16.png
+  @get '/favicon-32x32.png': sendFile \favicon-32x32.png
+  @get '/favicon-32x32.png': sendFile \favicon-32x32.png
+  @get '/mstile-150x150.png': sendFile \mstile-150x150.png
+  @get '/mstile-310x310.png': sendFile \mstile-310x310.png
+  @get '/safari-pinned-tab.svg': sendFile \safari-pinned-tab.svg
   @get '/manifest.appcache': ->
     # Sandstorm: Skip manifest appcache
     @response.type \text/cache-manifest
@@ -205,6 +215,18 @@
         rooms <~ SC._rooms 
         @response.type \application/json
         @response.json 200 rooms
+  if @CORS
+     @get '/_roomlinks' : ->
+        @response.type Text
+        return @response.send 403 '_roomlinks not available with CORS'
+  else
+     @get '/_roomlinks' : ->
+        rooms <~ SC._rooms 
+        roomlinks = for room in rooms
+          "<a href=#BASEPATH/#room>#room</a>"
+        @response.type Html
+        @response.json 200 roomlinks
+
   @get '/_from/:template': ->
     room = new-room!
     template = @params.template
@@ -343,13 +365,12 @@
     return if @request.get(\x-sandstorm-permissions) isnt /modify/
     #console.log "post /_/:room"
     {room} = @params
-    return if room is \Kaohsiung-explode-20140801
     command <~ request-to-command @request
     unless command
       @response.type Text
       return @response.send 400 'Please send command'
     {log, snapshot} <~ SC._get room, IO
-    if command is /^loadclipboard\s*/
+    if not (@request.is \application/json) and command is /^loadclipboard\s*/
       row = 1
       if snapshot is /\nsheet:c:\d+:r:(\d+):/
         row += Number(RegExp.$1)
@@ -454,7 +475,7 @@
       if commandParameters[0].trim() is \submitform
         room_data = if room.indexOf('_') == -1  # store data in <templatesheet>_formdata
           then room + "_formdata"
-          else room.replace(/_[a-zA-Z0-9]*$/i,"_formdata") # get formdata sheet of cloned template
+          else room.replace(/_[.=_a-zA-Z0-9]*$/i,"_formdata") # get formdata sheet of cloned template
         console.log "test SC[#{room_data}] submitform..."      
         unless SC["#{room_data}"]?
           console.log "Submitform. loading... SC[#{room_data}]"

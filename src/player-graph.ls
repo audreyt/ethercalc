@@ -715,9 +715,8 @@
   scc.defaultImagePrefix = 'images/sc_'
   SocialCalc.Popup.LocalizeString = SocialCalc.LocalizeString
   #row and col header colours
-  scc.defaultColnameStyle = 'font-size:small;text-align:center;color:#' + hightLightForegoundColour + ';background-color:#' + unselectedbg + ';cursor:e-resize;' 
-  scc.defaultSelectedColnameStyle = 'font-size:small;text-align:center;color:#' + hightLightForegoundColour + ';background-color:#' + selectedbg + ';cursor:e-resize;'
-  scc.defaultRownameStyle = 'font-size:small;text-align:right;color:#' + hightLightForegoundColour + ';background-color:#' + unselectedbg + ';direction:rtl;'
-  scc.defaultSelectedRownameStyle = 'font-size:small;text-align:right;color:#' + hightLightForegoundColour + ';background-color:#' + selectedbg + ';'
+  scc.defaultColnameStyle = 'overflow:visible;font-size:small;text-align:center;color:#' + hightLightForegoundColour + ';background-color:#' + unselectedbg
+  scc.defaultSelectedColnameStyle = 'overflow:visible;font-size:small;text-align:center;color:#' + hightLightForegoundColour + ';background-color:#' + selectedbg
+  scc.defaultRownameStyle = 'position:relative;overflow:visible;font-size:small;text-align:center;vertical-align:middle;color:#' + hightLightForegoundColour + ';background-color:#' + unselectedbg + ';direction:rtl;'
+  scc.defaultSelectedRownameStyle = 'position:relative;overflow:visible;font-size:small;text-align:center;vertical-align:middle;color:#' + hightLightForegoundColour + ';background-color:#' + selectedbg + ';'
   scc.defaultHighlightTypeCursorStyle = 'color:#' + hightLightForegoundColour + ';backgroundColor:#' + cursorbg + ';'
-  
