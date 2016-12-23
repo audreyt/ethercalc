@@ -46,7 +46,6 @@
   db = make-client ~>
     db.DB = true
     if redisSockpath
-      client = redis.createClient redisSockpath
       console.log "Connected to Redis Server: unix:#redisSockpath"
     else
       console.log "Connected to Redis Server: #redisHost:#redisPort"
