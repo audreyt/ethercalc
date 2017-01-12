@@ -3,12 +3,12 @@
   var slice$ = [].slice;
   this.__DB__ = null;
   this.include = function(){
-    var env, ref$, redisPort, redisHost, redisPass, redisDb, dataDir, services, name, items, ref1$, redis, makeClient, RedisStore, db, EXPIRE, this$ = this;
+    var env, ref$, redisPort, redisHost, redisSockpath, redisPass, redisDb, dataDir, services, name, items, ref1$, redis, makeClient, RedisStore, db, EXPIRE, this$ = this;
     if (this.__DB__) {
       return this.__DB__;
     }
     env = process.env;
-    ref$ = [env['REDIS_PORT'], env['REDIS_HOST'], env['REDIS_PASS'], env['REDIS_DB'], env['OPENSHIFT_DATA_DIR']], redisPort = ref$[0], redisHost = ref$[1], redisPass = ref$[2], redisDb = ref$[3], dataDir = ref$[4];
+    ref$ = [env['REDIS_PORT'], env['REDIS_HOST'], env['REDIS_SOCKPATH'], env['REDIS_PASS'], env['REDIS_DB'], env['OPENSHIFT_DATA_DIR']], redisPort = ref$[0], redisHost = ref$[1], redisSockpath = ref$[2], redisPass = ref$[3], redisDb = ref$[4], dataDir = ref$[5];
     services = JSON.parse(process.env.VCAP_SERVICES || '{}');
     for (name in services) {
       items = services[name];
@@ -22,7 +22,11 @@
     redis = require('redis');
     makeClient = function(cb){
       var client;
-      client = redis.createClient(redisPort, redisHost);
+      if (redisSockpath) {
+        client = redis.createClient(redisSockpath);
+      } else {
+        client = redis.createClient(redisPort, redisHost);
+      }
       if (redisPass) {
         client.auth(redisPass, function(){
           return console.log.apply(console, arguments);
@@ -63,7 +67,11 @@
     } catch (e$) {}
     db = makeClient(function(){
       db.DB = true;
-      return console.log("Connected to Redis Server: " + redisHost + ":" + redisPort);
+      if (redisSockpath) {
+        return console.log("Connected to Redis Server: unix:" + redisSockpath);
+      } else {
+        return console.log("Connected to Redis Server: " + redisHost + ":" + redisPort);
+      }
     });
     EXPIRE = this.EXPIRE;
     db.on('error', function(err){

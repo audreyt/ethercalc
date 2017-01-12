@@ -3,7 +3,7 @@
   return @__DB__ if @__DB__
 
   env = process.env
-  [redisPort, redisHost, redisPass, redisDb, dataDir] = env<[ REDIS_PORT REDIS_HOST REDIS_PASS REDIS_DB OPENSHIFT_DATA_DIR ]>
+  [redisPort, redisHost, redisSockpath, redisPass, redisDb, dataDir] = env<[ REDIS_PORT REDIS_HOST REDIS_SOCKPATH REDIS_PASS REDIS_DB OPENSHIFT_DATA_DIR ]>
 
   services = JSON.parse do
     process.env.VCAP_SERVICES or '{}'
@@ -18,7 +18,10 @@
 
   require! \redis
   make-client = (cb) ->
-    client = redis.createClient redisPort, redisHost
+    if redisSockpath
+      client = redis.createClient redisSockpath
+    else
+      client = redis.createClient redisPort, redisHost
     if redisPass
       client.auth redisPass, -> console.log ...arguments
     if redisDb
@@ -42,7 +45,10 @@
 
   db = make-client ~>
     db.DB = true
-    console.log "Connected to Redis Server: #redisHost:#redisPort"
+    if redisSockpath
+      console.log "Connected to Redis Server: unix:#redisSockpath"
+    else
+      console.log "Connected to Redis Server: #redisHost:#redisPort"
 
   EXPIRE = @EXPIRE
   db.on \error (err) ->
