@@ -434,6 +434,10 @@
     this.get({
       '/:room/edit': function(){
         var room;
+        if (!/modify/.test(this.request.get('x-sandstorm-permissions'))) {
+          this.response.redirect(BASEPATH + "/" + this.params.room + "?auth=0");
+          return;
+        }
         room = this.params.room;
         return this.response.redirect(BASEPATH + "/" + room + "?auth=" + hmac(room));
       }
@@ -769,6 +773,9 @@
           DB.hset("ecell-" + room, user, ecell);
           break;
         case 'execute':
+          if (!/modify/.test(this.socket.request.get('x-sandstorm-permissions'))) {
+            return;
+          }
           if (/^set sheet defaulttextvalueformat text-wiki\s*$/.exec(cmdstr)) {
             return;
           }
@@ -859,38 +866,6 @@
             });
           });
           break;
-        case 'ask.recalc':
-          this.socket.join("recalc." + room);
-          if ((ref$ = SC[room]) != null) {
-            ref$.terminate();
-          }
-          delete SC[room];
-          SC._get(room, this.io, function(arg$){
-            var log, snapshot;
-            log = arg$.log, snapshot = arg$.snapshot;
-            return reply({
-              type: 'recalc',
-              room: room,
-              log: log,
-              snapshot: snapshot
-            });
-          });
-          break;
-        case 'stopHuddle':
-          if (this.KEY && KEY !== this.KEY) {
-            return;
-          }
-          DB.del(['audit', 'log', 'chat', 'ecell', 'snapshot'].map(function(it){
-            return it + "-" + room;
-          }), function(){
-            var ref$;
-            if ((ref$ = SC[room]) != null) {
-              ref$.terminate();
-            }
-            delete SC[room];
-            return broadcast(this$.data);
-          });
-          break;
         case 'ecell':
           if (auth === '0' || KEY && auth !== hmac(room)) {
             return;
@@ -898,6 +873,9 @@
           broadcast(this.data);
           break;
         default:
+          if (!/modify/.test(this.socket.request.get('x-sandstorm-permissions'))) {
+            return;
+          }
           broadcast(this.data);
         }
       }
