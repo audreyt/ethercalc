@@ -19,7 +19,7 @@ const pkgdef :Spk.PackageDefinition = (
 
     appVersion = 201606120,  # Increment this for every release.
     appTitle = (defaultText = "EtherCalc"),
-    appMarketingVersion = (defaultText = "2016.06.12.0"),
+    appMarketingVersion = (defaultText = "2017.02.20.0"),
 
     actions = [
       # Define your "new document" handlers here.
