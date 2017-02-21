@@ -464,7 +464,7 @@
     | \my.ecell
       DB.hset "ecell-#room", user, ecell
     | \execute
-      return if @socket.handshake.headers['x-sandstorm-permissions'] isnt /modify/
+      return if @socket?handshake?headers['x-sandstorm-permissions'] isnt /modify/
       return if cmdstr is /^set sheet defaulttextvalueformat text-wiki\s*$/
       <~ DB.multi!
         .rpush "log-#room" cmdstr
@@ -531,5 +531,5 @@
       return if auth is \0 or KEY and auth isnt hmac room
       broadcast @data
     | otherwise
-      return if @socket.request.get(\x-sandstorm-permissions) isnt /modify/
+      return if @socket?handshake?headers['x-sandstorm-permissions'] isnt /modify/
       broadcast @data
