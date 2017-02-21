@@ -773,7 +773,7 @@
           DB.hset("ecell-" + room, user, ecell);
           break;
         case 'execute':
-          if (!/modify/.test(this.socket.request.get('x-sandstorm-permissions'))) {
+          if (!/modify/.test(this.socket.handshake.headers['x-sandstorm-permissions'])) {
             return;
           }
           if (/^set sheet defaulttextvalueformat text-wiki\s*$/.exec(cmdstr)) {

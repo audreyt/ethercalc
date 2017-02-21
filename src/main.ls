@@ -464,7 +464,7 @@
     | \my.ecell
       DB.hset "ecell-#room", user, ecell
     | \execute
-      return if @socket.request.get(\x-sandstorm-permissions) isnt /modify/
+      return if @socket.handshake.headers['x-sandstorm-permissions'] isnt /modify/
       return if cmdstr is /^set sheet defaulttextvalueformat text-wiki\s*$/
       <~ DB.multi!
         .rpush "log-#room" cmdstr
