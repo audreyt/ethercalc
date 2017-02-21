@@ -521,6 +521,12 @@
         .exec!
       SC[room] = SC._init snapshot, log, DB, room, @io
       reply { type: \log, room, log, chat, snapshot }
+    | \ask.recalc
+      @socket.join "recalc.#room"
+      SC[room]?terminate!
+      delete SC[room]
+      {log, snapshot} <~ SC._get room, @io
+      reply { type: \recalc, room, log, snapshot }
     | \ecell
       return if auth is \0 or KEY and auth isnt hmac room
       broadcast @data
