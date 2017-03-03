@@ -761,6 +761,9 @@
           DB.hset("ecell-" + room, user, ecell);
           break;
         case 'execute':
+          if (auth === '0' || KEY && auth !== hmac(room)) {
+            return;
+          }
           if (/^set sheet defaulttextvalueformat text-wiki\s*$/.exec(cmdstr)) {
             return;
           }
@@ -869,7 +872,7 @@
           });
           break;
         case 'stopHuddle':
-          if (this.KEY && KEY !== this.KEY) {
+          if (auth === '0' || KEY && auth !== hmac(room)) {
             return;
           }
           DB.del(['audit', 'log', 'chat', 'ecell', 'snapshot'].map(function(it){
