@@ -53,6 +53,8 @@
   new-room = -> "sheet1"
 
   @get '/': sendFile \index.html
+  @get '/etc/*': -> @response.send 404 ''
+  @get '/var/*': -> @response.send 404 ''
   #@get '/favicon.ico': -> @response.send 404 ''
   #return site icons
   @get '/favicon.ico': sendFile \favicon.ico
