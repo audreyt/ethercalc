@@ -59,6 +59,16 @@
       '/': sendFile('index.html')
     });
     this.get({
+      '/etc/*': function(){
+        return this.response.send(404, '');
+      }
+    });
+    this.get({
+      '/var/*': function(){
+        return this.response.send(404, '');
+      }
+    });
+    this.get({
       '/favicon.ico': sendFile('favicon.ico')
     });
     this.get({
