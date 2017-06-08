@@ -167,31 +167,36 @@
                 this$.response.send(200, content);
               });
             }
-            return SC[room].exportCSV(function(csv){
-              return csvParse(csv, {
-                delimiter: ','
-              }, function(_, body){
-                var todo, names, i$, len$, idx, ref$, link, title;
-                body.shift();
-                todo = DB.multi();
-                names = [];
-                for (i$ = 0, len$ = body.length; i$ < len$; ++i$) {
-                  idx = i$;
-                  ref$ = body[i$], link = ref$[0], title = ref$[1];
-                  if (link && title && /^\//.exec(link)) {
-                    names = names.concat(title);
-                    todo = todo.get("snapshot-" + link.slice(1));
+            if (!deepEq$(SC[room], undefined, '===')) {
+              return SC[room].exportCSV(function(csv){
+                return csvParse(csv, {
+                  delimiter: ','
+                }, function(_, body){
+                  var todo, names, i$, len$, idx, ref$, link, title;
+                  body.shift();
+                  todo = DB.multi();
+                  names = [];
+                  for (i$ = 0, len$ = body.length; i$ < len$; ++i$) {
+                    idx = i$;
+                    ref$ = body[i$], link = ref$[0], title = ref$[1];
+                    if (link && title && /^\//.exec(link)) {
+                      names = names.concat(title);
+                      todo = todo.get("snapshot-" + link.slice(1));
+                    }
                   }
-                }
-                return todo.exec(function(_, saves){
-                  var ref$, type, content;
-                  ref$ = cbMultiple.call(this$.params, names, saves), type = ref$[0], content = ref$[1];
-                  this$.response.type(type);
-                  this$.response.set('Content-Disposition', "attachment; filename=\"" + room + ".xlsx\"");
-                  return this$.response.send(200, content);
+                  return todo.exec(function(_, saves){
+                    var ref$, type, content;
+                    ref$ = cbMultiple.call(this$.params, names, saves), type = ref$[0], content = ref$[1];
+                    this$.response.type(type);
+                    this$.response.set('Content-Disposition', "attachment; filename=\"" + room + ".xlsx\"");
+                    return this$.response.send(200, content);
+                  });
                 });
               });
-            });
+            } else {
+              this$.response.type(Text);
+              return this$.response.send(404, '');
+            }
           });
         } else {
           return SC._get(room, IO, function(arg$){
@@ -945,11 +950,6 @@
       });
     }
   };
-  function import$(obj, src){
-    var own = {}.hasOwnProperty;
-    for (var key in src) if (own.call(src, key)) obj[key] = src[key];
-    return obj;
-  }
   function deepEq$(x, y, type){
     var toString = {}.toString, hasOwnProperty = {}.hasOwnProperty,
         has = function (obj, key) { return hasOwnProperty.call(obj, key); };
@@ -1033,5 +1033,10 @@
       stack.pop();
       return result;
     }
+  }
+  function import$(obj, src){
+    var own = {}.hasOwnProperty;
+    for (var key in src) if (own.call(src, key)) obj[key] = src[key];
+    return obj;
   }
 }).call(this);

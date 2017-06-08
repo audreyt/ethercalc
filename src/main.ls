@@ -107,21 +107,25 @@
         """
         @response.send 200 content
         return
-      csv <~ SC[room].exportCSV
-      _, body <~ csv-parse(csv, delimiter: \,)
-      body.shift! # header
-      todo = DB.multi!
-      names = []
-      for [link, title], idx in body | link and title and link is /^\//
-        names ++= title
-        todo.=get "snapshot-#{ link.slice(1) }"
-      _, saves <~ todo.exec!
-      [type, content] = cb-multiple.call @params, names, saves
-      @response.type type
-      @response.set \Content-Disposition """
-        attachment; filename="#room.xlsx"
-      """
-      @response.send 200 content
+      if SC[room] != undefined
+        csv <~ SC[room].exportCSV
+        _, body <~ csv-parse(csv, delimiter: \,)
+        body.shift! # header
+        todo = DB.multi!
+        names = []
+        for [link, title], idx in body | link and title and link is /^\//
+          names ++= title
+          todo.=get "snapshot-#{ link.slice(1) }"
+        _, saves <~ todo.exec!
+        [type, content] = cb-multiple.call @params, names, saves
+        @response.type type
+        @response.set \Content-Disposition """
+          attachment; filename="#room.xlsx"
+        """
+        @response.send 200 content
+      else
+        @response.type Text
+        @response.send 404 ''
     else
       {snapshot} <~ SC._get room, IO
       if snapshot
