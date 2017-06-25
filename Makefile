@@ -37,7 +37,8 @@ $(JS_FILES): %.js: src/%.ls
 manifest ::
 	perl -pi -e 's/# [A-Z].*\n/# @{[`date`]}/m' manifest.appcache
 
-./node_modules/streamline/bin/_node :
+./node_modules/streamline/bin/_node \
+./node_modules/uglify-js/bin/uglifyjs :
 	npm i --dev
 
 static/multi.js :: multi/main.ls multi/styles.styl
@@ -45,16 +46,26 @@ static/multi.js :: multi/main.ls multi/styles.styl
 
 depends: app.js static/ethercalc.js static/start.css static/multi.js
 
-static/ethercalc.js: $(ETHERCALC_FILES) ./node_modules/socialcalc/SocialCalc.js
-	@-mkdir .git
+static/ethercalc.js: $(ETHERCALC_FILES) \
+     ./node_modules/socialcalc/SocialCalc.js \
+     ./node_modules/uglify-js/bin/uglifyjs
+	@-mkdir -p .git
 	@echo '// Auto-generated from "make depends"; ALL CHANGES HERE WILL BE LOST!' > $@
-	node node_modules/zappajs/node_modules/.bin/uglifyjs node_modules/socialcalc/SocialCalc.js $(ETHERCALC_FILES) $(UGLIFYJS_ARGS) --source-map ethercalc.js.map --source-map-include-sources >> $@
+	node node_modules/uglify-js/bin/uglifyjs node_modules/socialcalc/SocialCalc.js $(ETHERCALC_FILES) $(UGLIFYJS_ARGS) --source-map ethercalc.js.map --source-map-include-sources >> $@
 	mv ethercalc.js.map static
 
+COFFEE := $(shell command -v coffee 2> /dev/null)
 .coffee.js:
+ifndef COFFEE
+	$(error "coffee is not available please install sass")
+endif
 	coffee -c $<
 
+SASS := $(shell command -v sass 2> /dev/null)
 .sass.css:
+ifndef SASS
+	$(error "sass is not available please install sass")
+endif
 	sass -t compressed $< > $@
 
 clean ::
