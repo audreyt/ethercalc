@@ -234,6 +234,15 @@
           "<a href=#BASEPATH/#room>#room</a>"
         @response.type Html
         @response.json 200 roomlinks
+  if @CORS
+     @get '/_roomtimes' : ->
+        @response.type Text
+        return @response.send 403 '_roomtimes not available with CORS'
+  else
+     @get '/_roomtimes' : ->
+        roomtimes <~ SC._roomtimes
+        @response.type \application/json
+        @response.json 200 roomtimes
 
   @get '/_from/:template': ->
     room = new-room!

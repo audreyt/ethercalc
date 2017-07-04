@@ -114,6 +114,9 @@ Worker ||= class => (code) ->
        .keys \snapshot-*
        .exec!
     cb [ ..replace(/^snapshot-/, "") for rooms]
+  SC._roomtimes = (cb) ->
+    (_, res) <~ DB.hgetall "timestamps"
+    cb res
   SC._exists = (room, cb) ->
     (, [x]) <~ DB.multi!
        .exists "snapshot-#room"
@@ -199,6 +202,7 @@ Worker ||= class => (code) ->
       w._snapshot = newSnapshot
       <~ DB.multi!
         .set "snapshot-#room" newSnapshot
+        .hset \timestamps "timestamp-#room" Date.now()
         .del "log-#room"
         .bgsave!
         .exec!
