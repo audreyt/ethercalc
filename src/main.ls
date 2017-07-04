@@ -240,9 +240,16 @@
         return @response.send 403 '_roomtimes not available with CORS'
   else
      @get '/_roomtimes' : ->
+        # Get roomtimes
         roomtimes <~ SC._roomtimes
+        # Sort roomtimes
+        rooms = [r for r, time of roomtimes]
+        sorted_rooms = rooms.sort (a, b) -> roomtimes[b] - roomtimes[a]
+        sorted_times = {}
+        for r in sorted_rooms
+           sorted_times[r] = roomtimes[r]
         @response.type \application/json
-        @response.json 200 roomtimes
+        @response.json 200 sorted_times
 
   @get '/_from/:template': ->
     room = new-room!
