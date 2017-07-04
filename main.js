@@ -167,7 +167,7 @@
                 this$.response.send(200, content);
               });
             }
-            if (!deepEq$(SC[room], undefined, '===')) {
+            if (SC[room] !== undefined) {
               return SC[room].exportCSV(function(csv){
                 return csvParse(csv, {
                   delimiter: ','
@@ -384,6 +384,39 @@
             roomlinks = res$;
             this$.response.type(Html);
             return this$.response.json(200, roomlinks);
+          });
+        }
+      });
+    }
+    if (this.CORS) {
+      this.get({
+        '/_roomtimes': function(){
+          this.response.type(Text);
+          return this.response.send(403, '_roomtimes not available with CORS');
+        }
+      });
+    } else {
+      this.get({
+        '/_roomtimes': function(){
+          var this$ = this;
+          return SC._roomtimes(function(roomtimes){
+            var rooms, res$, r, time, sorted_rooms, sorted_times, i$, len$;
+            res$ = [];
+            for (r in roomtimes) {
+              time = roomtimes[r];
+              res$.push(r);
+            }
+            rooms = res$;
+            sorted_rooms = rooms.sort(function(a, b){
+              return roomtimes[b] - roomtimes[a];
+            });
+            sorted_times = {};
+            for (i$ = 0, len$ = sorted_rooms.length; i$ < len$; ++i$) {
+              r = sorted_rooms[i$];
+              sorted_times[r] = roomtimes[r];
+            }
+            this$.response.type('application/json');
+            return this$.response.json(200, sorted_times);
           });
         }
       });
@@ -950,6 +983,11 @@
       });
     }
   };
+  function import$(obj, src){
+    var own = {}.hasOwnProperty;
+    for (var key in src) if (own.call(src, key)) obj[key] = src[key];
+    return obj;
+  }
   function deepEq$(x, y, type){
     var toString = {}.toString, hasOwnProperty = {}.hasOwnProperty,
         has = function (obj, key) { return hasOwnProperty.call(obj, key); };
@@ -1033,10 +1071,5 @@
       stack.pop();
       return result;
     }
-  }
-  function import$(obj, src){
-    var own = {}.hasOwnProperty;
-    for (var key in src) if (own.call(src, key)) obj[key] = src[key];
-    return obj;
   }
 }).call(this);
