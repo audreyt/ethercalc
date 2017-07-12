@@ -100,10 +100,10 @@
           @response.type Text
           @response.send 404 ''
           return
-        [type, content] = cb-multiple.call @params, <[ Sheet1 ]>, [ default-snapshot ]
+        [type, content, ext] = cb-multiple.call @params, <[ Sheet1 ]>, [ default-snapshot ]
         @response.type type
         @response.set \Content-Disposition """
-          attachment; filename="#room.xlsx"
+          attachment; filename="#room.#ext"
         """
         @response.send 200 content
         return
@@ -117,10 +117,10 @@
           names ++= title
           todo.=get "snapshot-#{ link.slice(1) }"
         _, saves <~ todo.exec!
-        [type, content] = cb-multiple.call @params, names, saves
+        [type, content, ext] = cb-multiple.call @params, names, saves
         @response.type type
         @response.set \Content-Disposition """
-          attachment; filename="#room.xlsx"
+          attachment; filename="#room.#ext"
         """
         @response.send 200 content
       else
@@ -168,7 +168,7 @@
       input.0 ||= harb
       input.1.Sheets[names[idx]] = Sheet1
     rv = J.utils["to_#type"](input)
-    [J-TypeMap[type], rv]
+    [J-TypeMap[type], rv, type]
   )
       
   # Send time triggered email. Send due emails and schedule time of next send. Called from bash file:timetrigger in cron
@@ -211,7 +211,7 @@
   @get '/:room.csv': ExportCSV
   @get '/:room.csv.json': ExportCSV-JSON
   @get '/:room.html': ExportHTML
-  #@get '/:room.ods': Export-J \ods
+  @get '/:room.ods': Export-J \ods
   @get '/:room.xlsx': Export-J \xlsx
   @get '/:room.md': Export-J \md
   if @CORS
@@ -300,7 +300,7 @@
   @get '/_/:room/html': ExportHTML
   @get '/_/:room/csv': ExportCSV
   @get '/_/:room/csv.json': ExportCSV-JSON
-  #@get '/_/:room/ods': Export-J \ods
+  @get '/_/:room/ods': Export-J \ods
   @get '/_/:room/xlsx': Export-J \xlsx
   @get '/_/:room/md': Export-J \md
   @get '/_/:room': api -> [Text, it]
@@ -342,7 +342,10 @@
     for k, save of (J.utils.to_socialcalc(J.read buf) || {'': ''})
       return cb save
 
-  for route in <[ /=:room.xlsx /_/=:room/xlsx ]> => @put "#route": ->
+  for route in <[
+    /=:room.xlsx /_/=:room/xlsx 
+    /=:room.ods /_/=:room/ods 
+  ]> => @put "#route": ->
     room = encodeURIComponent(@params.room).replace(/%3A/g \:)
     cs = []; @request.on \data (chunk) ~> cs ++= chunk
     <~ @request.on \end

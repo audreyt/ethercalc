@@ -486,7 +486,7 @@
               vex.defaultOptions.className = 'vex-theme-flat-attack';
             }
             return typeof vex != 'undefined' && vex !== null ? vex.dialog.open({
-              message: "Please choose an export format." + (isMultiple ? "<br><small>(EXCEL supports multiple sheets.)</small>" : ""),
+              message: "Please choose an export format." + (isMultiple ? "<br><small>(ODS and EXCEL support multiple sheets.)</small>" : ""),
               callback: function(){
                 return SocialCalc.Keyboard.passThru = false;
               },
@@ -513,6 +513,19 @@
                   text: 'HTML',
                   click: function(){
                     return window.open("." + (window.parent.location.pathname.match('/.*/view$') || window.parent.location.pathname.match('/.*/edit$') ? '.' : '') + "/" + SocialCalc._room + ".html");
+                  }
+                }), $.extend({}, typeof vex != 'undefined' && vex !== null ? vex.dialog.buttons.YES : void 8, {
+                  text: 'ODS',
+                  click: function(){
+                    if (isMultiple) {
+                      if (window.parent.location.href.match(/(^.*\/=[^?/]+)/)) {
+                        return window.open(RegExp.$1 + ".ods");
+                      } else {
+                        return window.open("." + (window.parent.location.pathname.match('/.*/view$') || window.parent.location.pathname.match('/.*/edit$') ? '.' : '') + "/=" + SocialCalc._room.replace(/\.[1-9]\d*$/, '') + ".ods");
+                      }
+                    } else {
+                      return window.open("." + (window.parent.location.pathname.match('/.*/view$') || window.parent.location.pathname.match('/.*/edit$') ? '.' : '') + "/" + SocialCalc._room + ".ods");
+                    }
                   }
                 }), $.extend({}, typeof vex != 'undefined' && vex !== null ? vex.dialog.buttons.NO : void 8, {
                   text: 'Cancel'
