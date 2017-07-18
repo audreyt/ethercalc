@@ -197,7 +197,7 @@
           DB.hset "cron-list", cellID, timeList.toString()      
       <~ DB.multi!
         .set "cron-nextTriggerTime" nextTriggerTime
-        .bgsave!exec!
+        .exec!
       fs.writeFileSync do
         "#dataDir/nextTriggerTime.txt"
         nextTriggerTime
@@ -369,7 +369,7 @@
         "'#{ @params.room.replace(/'/g, "''") }.#{
           sheets-to-idx[ref.replace(/''/g, "'")] }'!"
       todo.=set("snapshot-#room.#idx", save)
-    todo.bgsave!.exec!
+    todo.exec!
     @response.send 201 \OK
 
   @put '/_/:room': ->
@@ -413,13 +413,13 @@
               .del("snapshot-#backupKey").rename("snapshot-#removeKey", "snapshot-#backupKey")
               .del("log-#backupKey").rename("log-#removeKey", "log-#backupKey")
               .del("audit-#backupKey").rename("audit-#removeKey", "audit-#backupKey")
-              .bgsave!.exec
+              .exec
     command := [command] unless Array.isArray command
     cmdstr = command * \\n
     <~ DB.multi!
       .rpush "log-#room" cmdstr
       .rpush "audit-#room" cmdstr
-      .bgsave!.exec!
+      .exec!
     SC[room]?ExecuteCommand cmdstr
     IO.sockets.in "log-#room" .emit \data { cmdstr, room, type: \execute }
     @response.json 202 {command}
@@ -487,7 +487,7 @@
       <~ DB.multi!
         .rpush "log-#room" cmdstr
         .rpush "audit-#room" cmdstr
-        .bgsave!.exec!
+        .exec!
       commandParameters = cmdstr.split("\r")       
       unless SC[room]?
         console.log "SC[#room] went away. Reloading..."
@@ -515,7 +515,7 @@
         <~ DB.multi!
           .rpush "log-#{room_data}" cmdstrformdata
           .rpush "audit-#{room_data}" cmdstrformdata
-          .bgsave!.exec!
+          .exec!
         SC["#{room_data}"]?ExecuteCommand cmdstrformdata
         broadcast { room:"#{room_data}", user, type, auth, cmdstr: cmdstrformdata, +include_self }
       # }eddy @on data 
