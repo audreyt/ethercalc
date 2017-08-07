@@ -39,7 +39,7 @@ fi
 #export REDIS_PASS=mypassword
 #export REDIS_DB=0
 
-# When settings sensitive information here (redis password) remeber to secure the file to prevent other users from reading it!
+# When settings sensitive information here (redis password) remember to secure the file to prevent other users from reading it!
 
 # enable production mode
 export NODE_ENV=production
