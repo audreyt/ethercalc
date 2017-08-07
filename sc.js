@@ -277,6 +277,12 @@
         }()));
       });
     };
+    SC._roomtimes = function(cb){
+      var this$ = this;
+      return DB.hgetall("timestamps", function(_, res){
+        return cb(res);
+      });
+    };
     SC._exists = function(room, cb){
       var this$ = this;
       return DB.multi().exists("snapshot-" + room).exec(function(arg$, arg1$){
@@ -429,7 +435,7 @@
           room: room
         });
         w._snapshot = newSnapshot;
-        return DB.multi().set("snapshot-" + room, newSnapshot).del("log-" + room).bgsave().exec(function(){
+        return DB.multi().set("snapshot-" + room, newSnapshot).hset('timestamps', "timestamp-" + room, Date.now()).del("log-" + room).bgsave().exec(function(){
           if (EXPIRE) {
             return DB.expire("snapshot-" + room, EXPIRE);
           }

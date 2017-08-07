@@ -16,16 +16,17 @@ step = ->
   k = ks.shift!
   file = encodeURIComponent k
   _, v <- r.get k
-  return step! if v.length is 593 # empty spreadsheet
+  return step! if (v == null || v.length is 593) # empty spreadsheet
   _, orig <- fs.readFile "raw/#file.txt" \utf-8
   return step! if orig is v
   console.log file
   <- fs.writeFile "raw/#file.txt", v
   if putInHistory
     dir = '../static/history/' + k - /snapshot-/
-    exists <- fs.exists dir
-    fs.mkdir dir if !exists
-    err <- fs.writeFile dir+"/"+d+".txt", v
-    console.log err if err
+    if k.length <= 255
+      exists <- fs.exists dir
+      fs.mkdir dir if !exists
+      err <- fs.writeFile dir+"/"+d+".txt", v
+      console.log err if err
   step!
 step!

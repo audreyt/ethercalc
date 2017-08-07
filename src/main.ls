@@ -98,28 +98,32 @@
           @response.type Text
           @response.send 404 ''
           return
-        [type, content] = cb-multiple.call @params, <[ Sheet1 ]>, [ default-snapshot ]
+        [type, content, ext] = cb-multiple.call @params, <[ Sheet1 ]>, [ default-snapshot ]
         @response.type type
         @response.set \Content-Disposition """
-          attachment; filename="#room.xlsx"
+          attachment; filename="#room.#ext"
         """
         @response.send 200 content
         return
-      csv <~ SC[room].exportCSV
-      _, body <~ csv-parse(csv, delimiter: \,)
-      body.shift! # header
-      todo = DB.multi!
-      names = []
-      for [link, title], idx in body | link and title and link is /^\//
-        names ++= title
-        todo.=get "snapshot-#{ link.slice(1) }"
-      _, saves <~ todo.exec!
-      [type, content] = cb-multiple.call @params, names, saves
-      @response.type type
-      @response.set \Content-Disposition """
-        attachment; filename="#room.xlsx"
-      """
-      @response.send 200 content
+      if SC[room] != undefined
+        csv <~ SC[room].exportCSV
+        _, body <~ csv-parse(csv, delimiter: \,)
+        body.shift! # header
+        todo = DB.multi!
+        names = []
+        for [link, title], idx in body | link and title and link is /^\//
+          names ++= title
+          todo.=get "snapshot-#{ link.slice(1) }"
+        _, saves <~ todo.exec!
+        [type, content, ext] = cb-multiple.call @params, names, saves
+        @response.type type
+        @response.set \Content-Disposition """
+          attachment; filename="#room.#ext"
+        """
+        @response.send 200 content
+      else
+        @response.type Text
+        @response.send 404 ''
     else
       {snapshot} <~ SC._get room, IO
       if snapshot
@@ -162,7 +166,7 @@
       input.0 ||= harb
       input.1.Sheets[names[idx]] = Sheet1
     rv = J.utils["to_#type"](input)
-    [J-TypeMap[type], rv]
+    [J-TypeMap[type], rv, type]
   )
       
   # Send time triggered email. Send due emails and schedule time of next send. Called from bash file:timetrigger in cron
@@ -205,7 +209,7 @@
   @get '/:room.csv': ExportCSV
   @get '/:room.csv.json': ExportCSV-JSON
   @get '/:room.html': ExportHTML
-  #@get '/:room.ods': Export-J \ods
+  @get '/:room.ods': Export-J \ods
   @get '/:room.xlsx': Export-J \xlsx
   @get '/:room.md': Export-J \md
   if @CORS
@@ -228,6 +232,22 @@
           "<a href=#BASEPATH/#room>#room</a>"
         @response.type Html
         @response.json 200 roomlinks
+  if @CORS
+     @get '/_roomtimes' : ->
+        @response.type Text
+        return @response.send 403 '_roomtimes not available with CORS'
+  else
+     @get '/_roomtimes' : ->
+        # Get roomtimes
+        roomtimes <~ SC._roomtimes
+        # Sort roomtimes
+        rooms = [r for r, time of roomtimes]
+        sorted_rooms = rooms.sort (a, b) -> roomtimes[b] - roomtimes[a]
+        sorted_times = {}
+        for r in sorted_rooms
+           sorted_times[r] = roomtimes[r]
+        @response.type \application/json
+        @response.json 200 sorted_times
 
   @get '/_from/:template': ->
     room = new-room!
@@ -284,7 +304,7 @@
   @get '/_/:room/html': ExportHTML
   @get '/_/:room/csv': ExportCSV
   @get '/_/:room/csv.json': ExportCSV-JSON
-  #@get '/_/:room/ods': Export-J \ods
+  @get '/_/:room/ods': Export-J \ods
   @get '/_/:room/xlsx': Export-J \xlsx
   @get '/_/:room/md': Export-J \md
   @get '/_/:room': api -> [Text, it]
@@ -326,7 +346,10 @@
     for k, save of (J.utils.to_socialcalc(J.read buf) || {'': ''})
       return cb save
 
-  for route in <[ /=:room.xlsx /_/=:room/xlsx ]> => @put "#route": ->
+  for route in <[
+    /=:room.xlsx /_/=:room/xlsx 
+    /=:room.ods /_/=:room/ods 
+  ]> => @put "#route": ->
     room = encodeURIComponent(@params.room).replace(/%3A/g \:)
     cs = []; @request.on \data (chunk) ~> cs ++= chunk
     <~ @request.on \end

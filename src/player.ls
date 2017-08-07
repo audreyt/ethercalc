@@ -317,7 +317,7 @@ Check the activity stream to see the newly edited page!
       vex?defaultOptions.className = 'vex-theme-flat-attack'
       vex?dialog.open do
         message: "Please choose an export format.#{
-          if isMultiple then "<br><small>(EXCEL supports multiple sheets.)</small>" else ""
+          if isMultiple then "<br><small>(ODS and EXCEL support multiple sheets.)</small>" else ""
         }"
         callback: -> SocialCalc.Keyboard.passThru = no
         buttons: [
@@ -333,6 +333,14 @@ Check the activity stream to see the newly edited page!
             window.open ".#{if window.parent.location.pathname.match('\/.*\/view$') || window.parent.location.pathname.match('\/.*\/edit$') then '.' else ''}/#{ SocialCalc._room }.csv"
           $.extend {}, vex?dialog.buttons.YES, text: 'HTML', click: ->
             window.open ".#{if window.parent.location.pathname.match('\/.*\/view$') || window.parent.location.pathname.match('\/.*\/edit$') then '.' else ''}/#{ SocialCalc._room }.html"
+          $.extend {}, vex?dialog.buttons.YES, text: 'ODS', click: ->
+            if isMultiple
+              if window.parent.location.href.match(/(^.*\/=[^?/]+)/)
+                window.open "#{ RegExp.$1 }.ods"
+              else
+                window.open ".#{if window.parent.location.pathname.match('\/.*\/view$') || window.parent.location.pathname.match('\/.*\/edit$') then '.' else ''}/=#{ SocialCalc._room.replace(/\.[1-9]\d*$/, '') }.ods"
+            else
+              window.open ".#{if window.parent.location.pathname.match('\/.*\/view$') || window.parent.location.pathname.match('\/.*\/edit$') then '.' else ''}/#{ SocialCalc._room }.ods"
           $.extend {}, vex?dialog.buttons.NO, text: 'Cancel'
         ]
 

@@ -151,43 +151,48 @@
             snapshot = arg$.snapshot;
             if (!snapshot) {
               DB.get("snapshot-" + room + "1", function(_, defaultSnapshot){
-                var ref$, type, content;
+                var ref$, type, content, ext;
                 if (!defaultSnapshot) {
                   this$.response.type(Text);
                   this$.response.send(404, '');
                   return;
                 }
-                ref$ = cbMultiple.call(this$.params, ['Sheet1'], [defaultSnapshot]), type = ref$[0], content = ref$[1];
+                ref$ = cbMultiple.call(this$.params, ['Sheet1'], [defaultSnapshot]), type = ref$[0], content = ref$[1], ext = ref$[2];
                 this$.response.type(type);
-                this$.response.set('Content-Disposition', "attachment; filename=\"" + room + ".xlsx\"");
+                this$.response.set('Content-Disposition', "attachment; filename=\"" + room + "." + ext + "\"");
                 this$.response.send(200, content);
               });
             }
-            return SC[room].exportCSV(function(csv){
-              return csvParse(csv, {
-                delimiter: ','
-              }, function(_, body){
-                var todo, names, i$, len$, idx, ref$, link, title;
-                body.shift();
-                todo = DB.multi();
-                names = [];
-                for (i$ = 0, len$ = body.length; i$ < len$; ++i$) {
-                  idx = i$;
-                  ref$ = body[i$], link = ref$[0], title = ref$[1];
-                  if (link && title && /^\//.exec(link)) {
-                    names = names.concat(title);
-                    todo = todo.get("snapshot-" + link.slice(1));
+            if (SC[room] !== undefined) {
+              return SC[room].exportCSV(function(csv){
+                return csvParse(csv, {
+                  delimiter: ','
+                }, function(_, body){
+                  var todo, names, i$, len$, idx, ref$, link, title;
+                  body.shift();
+                  todo = DB.multi();
+                  names = [];
+                  for (i$ = 0, len$ = body.length; i$ < len$; ++i$) {
+                    idx = i$;
+                    ref$ = body[i$], link = ref$[0], title = ref$[1];
+                    if (link && title && /^\//.exec(link)) {
+                      names = names.concat(title);
+                      todo = todo.get("snapshot-" + link.slice(1));
+                    }
                   }
-                }
-                return todo.exec(function(_, saves){
-                  var ref$, type, content;
-                  ref$ = cbMultiple.call(this$.params, names, saves), type = ref$[0], content = ref$[1];
-                  this$.response.type(type);
-                  this$.response.set('Content-Disposition', "attachment; filename=\"" + room + ".xlsx\"");
-                  return this$.response.send(200, content);
+                  return todo.exec(function(_, saves){
+                    var ref$, type, content, ext;
+                    ref$ = cbMultiple.call(this$.params, names, saves), type = ref$[0], content = ref$[1], ext = ref$[2];
+                    this$.response.type(type);
+                    this$.response.set('Content-Disposition', "attachment; filename=\"" + room + "." + ext + "\"");
+                    return this$.response.send(200, content);
+                  });
                 });
               });
-            });
+            } else {
+              this$.response.type(Text);
+              return this$.response.send(404, '');
+            }
           });
         } else {
           return SC._get(room, IO, function(arg$){
@@ -271,7 +276,7 @@
           input[1].Sheets[names[idx]] = Sheet1;
         }
         rv = J.utils["to_" + type](input);
-        return [JTypeMap[type], rv];
+        return [JTypeMap[type], rv, type];
       });
     };
     this.get({
@@ -331,6 +336,9 @@
       '/:room.html': ExportHTML
     });
     this.get({
+      '/:room.ods': ExportJ('ods')
+    });
+    this.get({
       '/:room.xlsx': ExportJ('xlsx')
     });
     this.get({
@@ -375,6 +383,39 @@
             roomlinks = res$;
             this$.response.type(Html);
             return this$.response.json(200, roomlinks);
+          });
+        }
+      });
+    }
+    if (this.CORS) {
+      this.get({
+        '/_roomtimes': function(){
+          this.response.type(Text);
+          return this.response.send(403, '_roomtimes not available with CORS');
+        }
+      });
+    } else {
+      this.get({
+        '/_roomtimes': function(){
+          var this$ = this;
+          return SC._roomtimes(function(roomtimes){
+            var rooms, res$, r, time, sorted_rooms, sorted_times, i$, len$;
+            res$ = [];
+            for (r in roomtimes) {
+              time = roomtimes[r];
+              res$.push(r);
+            }
+            rooms = res$;
+            sorted_rooms = rooms.sort(function(a, b){
+              return roomtimes[b] - roomtimes[a];
+            });
+            sorted_times = {};
+            for (i$ = 0, len$ = sorted_rooms.length; i$ < len$; ++i$) {
+              r = sorted_rooms[i$];
+              sorted_times[r] = roomtimes[r];
+            }
+            this$.response.type('application/json');
+            return this$.response.json(200, sorted_times);
           });
         }
       });
@@ -495,6 +536,9 @@
       '/_/:room/csv.json': ExportCSVJSON
     });
     this.get({
+      '/_/:room/ods': ExportJ('ods')
+    });
+    this.get({
       '/_/:room/xlsx': ExportJ('xlsx')
     });
     this.get({
@@ -577,7 +621,7 @@
         }
       });
     };
-    for (i$ = 0, len$ = (ref$ = ['/=:room.xlsx', '/_/=:room/xlsx']).length; i$ < len$; ++i$) {
+    for (i$ = 0, len$ = (ref$ = ['/=:room.xlsx', '/_/=:room/xlsx', '/=:room.ods', '/_/=:room/ods']).length; i$ < len$; ++i$) {
       route = ref$[i$];
       this.put((ref1$ = {}, ref1$[route + ""] = fn$, ref1$));
     }
