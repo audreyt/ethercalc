@@ -1,10 +1,8 @@
 /* xlsx.js (C) 2013-2014 SheetJS -- http://sheetjs.com */
 /* uncomment the next line for encoding support */
 //importScripts('dist/cpexcel.js');
-importScripts('jszip.js');
-importScripts('xlsx.js');
-/* uncomment the next line for ODS support */
-importScripts('dist/ods.js');
+//importScripts('jszip.js');
+importScripts('xlsx.core.min.js');
 postMessage({t:"ready"});
 
 onmessage = function (oEvent) {
