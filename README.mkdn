@@ -27,6 +27,10 @@ For local non-root installation
     npm i
     make
 
+Nodejs older than 6.0
+
+    downgrade Nodemailer to v2.7.2
+
 Or install with our [Docker](http://www.docker.io/) image, which comes with
 support for webworker-threads:
 
