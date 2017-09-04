@@ -9,7 +9,7 @@ ERROR_HANDLING=0
 # Your email address which should receive the error messages
 EMAIL_ADDRESS="no-reply@example.com"
 # Sets the minimum amount of time betweens the sending of error emails. 
-# This ensures you not get spamed while a endless reboot loop 
+# This ensures you not get spammed while a endless reboot loop 
 # It's the time in seconds
 TIME_BETWEEN_EMAILS=600 # 10 minutes
 
