@@ -87,7 +87,7 @@
             }) : void 8;
           };
           window.addEventListener('offline', function(){
-            return showError('Disconnected from server. please check network connection and refresh.');
+            return showError(SocialCalc.Constants.s_loc_error_offline);
           });
           x$ = (ref4$ = this$.connect('/', options)) != null ? ref4$.io : void 8;
           if (x$ != null) {
@@ -100,12 +100,12 @@
           }
           if (x$ != null) {
             x$.on('connect_error', function(){
-              return showError('Connection error; please refresh to try again.');
+              return showError(SocialCalc.Constants.s_loc_error_connection);
             });
           }
           if (x$ != null) {
             x$.on('connect_timeout', function(){
-              return showError('Connection timeout; please refresh to try again.');
+              return showError(SocialCalc.Constants.s_loc_timeout_connection);
             });
           }
           if (x$ != null) {
@@ -114,12 +114,12 @@
                 return;
               }
               SocialCalc.hadSnapshot = false;
-              return showError('Disconnected from server. Reconnecting....');
+              return showError(SocialCalc.Constants.s_loc_error_reconnecting);
             });
           }
           if (x$ != null) {
             x$.on('connect_failed', function(){
-              return showError('Reconnection Failed.');
+              return showError(SocialCalc.Constants.s_loc_error_reconnection_failed);
             });
           }
           emit = function(data){
@@ -408,7 +408,6 @@
           ss.ExportCallback = function(s){
             return alert(SocialCalc.ConvertSaveToOtherFormat(SocialCalc.Clipboard.clipboard, "csv"));
           };
-          SocialCalc.Constants.s_loc_form = "Form";
           if (ss.tabs) {
             ss.tabnums.form = ss.tabs.length;
           }
@@ -416,7 +415,7 @@
             ref$.push({
               name: 'form',
               text: SocialCalc.Constants.s_loc_form,
-              html: "<div id=\"%id.formtools\" style=\"display:none;\"><div style=\"%tbt.\"><table cellspacing=\"0\" cellpadding=\"0\">\n<tr><td style=\"vertical-align:middle;padding-right:32px;padding-left:16px;\"><div style=\"%tbt.\">\n<input type=\"button\" value=\"Live Form\" onclick=\"parent.location='" + SocialCalc._room + "/form'\" style=\"background-color: #5cb85c;border-color: #4cae4c;cursor: pointer;\"> " + document.location.origin + "/" + SocialCalc._room + "/form </div></td>\n</tr></table></div></div>",
+              html: "<div id=\"%id.formtools\" style=\"display:none;\"><div style=\"%tbt.\"><table cellspacing=\"0\" cellpadding=\"0\">\n<tr><td style=\"vertical-align:middle;padding-right:32px;padding-left:16px;\"><div style=\"%tbt.\">\n<input type=\"button\" value=\"%loc!Live Form!\" onclick=\"parent.location='" + SocialCalc._room + "/form'\" style=\"background-color: #5cb85c;border-color: #4cae4c;cursor: pointer;\"> " + document.location.origin + "/" + SocialCalc._room + "/form </div></td>\n</tr></table></div></div>",
               view: 'sheet',
               onclick: null,
               onclickFocus: true
@@ -429,7 +428,7 @@
             ref1$.push({
               name: 'graph',
               text: SocialCalc.Constants.s_loc_graph,
-              html: "<div id=\"%id.graphtools\" style=\"display:none;\"><div style=\"%tbt.\"><table cellspacing=\"0\" cellpadding=\"0\"><tr><td style=\"vertical-align:middle;padding-right:32px;padding-left:16px;\"><div style=\"%tbt.\">Cells to Graph</div><div id=\"%id.graphrange\" style=\"font-weight:bold;\">Not Set</div></td><td style=\"vertical-align:top;padding-right:32px;\"><div style=\"%tbt.\">Set Cells To Graph</div><select id=\"%id.graphlist\" size=\"1\" onfocus=\"%s.CmdGotFocus(this);\"><option selected>[select range]</option><option>Select all</option></select></td><td style=\"vertical-align:middle;padding-right:4px;\"><div style=\"%tbt.\">Graph Type</div><select id=\"%id.graphtype\" size=\"1\" onchange=\"window.GraphChanged(this);\" onfocus=\"%s.CmdGotFocus(this);\"></select><input type=\"button\" value=\"OK\" onclick=\"window.GraphSetCells();\" style=\"font-size:x-small;\"></div></td><td style=\"vertical-align:middle;padding-right:16px;\"><div style=\"%tbt.\">&nbsp;</div><input id=\"%id.graphhelp\" type=\"button\" onclick=\"DoGraph(true);\" value=\"Help\" style=\"font-size:x-small;\"></div></td><td style=\"vertical-align:middle;padding-right:16px;\">Min X <input id=\"%id.graphMinX\" onchange=\"window.MinMaxChanged(this,0);\" onfocus=\"%s.CmdGotFocus(this);\" size=5/>Max X <input id=\"%id.graphMaxX\" onchange=\"window.MinMaxChanged(this,1);\" onfocus=\"%s.CmdGotFocus(this);\" size=5/><br/>Min Y <input id=\"%id.graphMinY\" onchange=\"window.MinMaxChanged(this,2);\" onfocus=\"%s.CmdGotFocus(this);\" size=5/>Max Y <input id=\"%id.graphMaxY\" onchange=\"window.MinMaxChanged(this,3);\" onfocus=\"%s.CmdGotFocus(this);\" size=5/></div></td></tr></table></div></div>",
+              html: "<div id=\"%id.graphtools\" style=\"display:none;\"><div style=\"%tbt.\"><table cellspacing=\"0\" cellpadding=\"0\"><tr><td style=\"vertical-align:middle;padding-right:32px;padding-left:16px;\"><div style=\"%tbt.\">%loc!Cells to Graph!</div><div id=\"%id.graphrange\" style=\"font-weight:bold;\">%loc!Not Set!</div></td><td style=\"vertical-align:top;padding-right:32px;\"><div style=\"%tbt.\">%loc!Set Cells To Graph!</div><select id=\"%id.graphlist\" size=\"1\" onfocus=\"%s.CmdGotFocus(this);\"><option selected>[select range]</option><option>%loc!Select all!</option></select></td><td style=\"vertical-align:middle;padding-right:4px;\"><div style=\"%tbt.\">%loc!Graph Type!</div><select id=\"%id.graphtype\" size=\"1\" onchange=\"window.GraphChanged(this);\" onfocus=\"%s.CmdGotFocus(this);\"></select><input type=\"button\" value=\"%loc!OK!\" onclick=\"window.GraphSetCells();\" style=\"font-size:x-small;\"></div></td><td style=\"vertical-align:middle;padding-right:16px;\"><div style=\"%tbt.\">&nbsp;</div><input id=\"%id.graphhelp\" type=\"button\" onclick=\"DoGraph(true);\" value=\"%loc!Help!\" style=\"font-size:x-small;\"></div></td><td style=\"vertical-align:middle;padding-right:16px;\">%loc!Min X! <input id=\"%id.graphMinX\" onchange=\"window.MinMaxChanged(this,0);\" onfocus=\"%s.CmdGotFocus(this);\" size=5/>%loc!Max X! <input id=\"%id.graphMaxX\" onchange=\"window.MinMaxChanged(this,1);\" onfocus=\"%s.CmdGotFocus(this);\" size=5/><br/>%loc!Min Y! <input id=\"%id.graphMinY\" onchange=\"window.MinMaxChanged(this,2);\" onfocus=\"%s.CmdGotFocus(this);\" size=5/>%loc!Max Y! <input id=\"%id.graphMaxY\" onchange=\"window.MinMaxChanged(this,3);\" onfocus=\"%s.CmdGotFocus(this);\" size=5/></div></td></tr></table></div></div>",
               view: 'graph',
               onclick: window.GraphOnClick,
               onclickFocus: true
@@ -473,7 +472,7 @@
           }
           $(document).on('mouseover', '.te_download tr:nth-child(2) td:first', function(){
             return $(this).attr({
-              title: 'Export...'
+              title: SocialCalc.Constants.s_loc_export
             });
           });
           return $(document).on('click', '.te_download tr:nth-child(2) td:first', function(){
@@ -486,7 +485,7 @@
               vex.defaultOptions.className = 'vex-theme-flat-attack';
             }
             return typeof vex != 'undefined' && vex !== null ? vex.dialog.open({
-              message: "Please choose an export format." + (isMultiple ? "<br><small>(ODS and EXCEL support multiple sheets.)</small>" : ""),
+              message: SocialCalc.Constants.s_loc_export_format + ((isMultiple ? "<br><small>(ODS and EXCEL support multiple sheets.)</small>" : "") + ""),
               callback: function(){
                 return SocialCalc.Keyboard.passThru = false;
               },
@@ -528,7 +527,7 @@
                     }
                   }
                 }), $.extend({}, typeof vex != 'undefined' && vex !== null ? vex.dialog.buttons.NO : void 8, {
-                  text: 'Cancel'
+                  text: SocialCalc.Constants.s_loc_cancel
                 })
               ]
             }) : void 8;
