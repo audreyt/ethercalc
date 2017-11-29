@@ -53,22 +53,22 @@
         buttons: []
 
     window.addEventListener \offline ->
-      showError 'Disconnected from server. please check network connection and refresh.'
+      showError SocialCalc.Constants.s_loc_error_offline
 
     @connect('/', options)?io
       ..?on \reconnect ->
         return unless SocialCalc?isConnected
         SocialCalc.Callbacks.broadcast \ask.log
       ..?on \connect_error ->
-        showError 'Connection error; please refresh to try again.'
+        showError SocialCalc.Constants.s_loc_error_connection
       ..?on \connect_timeout ->
-        showError 'Connection timeout; please refresh to try again.'
+        showError SocialCalc.Constants.s_loc_timeout_connection
       ..?on \reconnect_error ->
         return unless SocialCalc?isConnected
         SocialCalc.hadSnapshot = false
-        showError 'Disconnected from server. Reconnecting....'
+        showError SocialCalc.Constants.s_loc_error_reconnecting
       ..?on \connect_failed ->
-        showError 'Reconnection Failed.'
+        showError SocialCalc.Constants.s_loc_error_reconnection_failed
 
     emit = (data) ~> @emit {data}
     SocialCalc.Callbacks.broadcast = (type, data={}) ~>
@@ -253,7 +253,6 @@ Check the activity stream to see the newly edited page!
     # eddy {
     # add Form tab as first tab
     #ss.tabs?[0]?html = ss.tabs?[0]?html.replace("style=\"", "style=\"display:none;")
-    SocialCalc.Constants.s_loc_form = "Form"    
     ss.tabnums.form = ss.tabs.length if ss.tabs
     ss.tabs?push do
       name: \form
@@ -261,7 +260,7 @@ Check the activity stream to see the newly edited page!
       html: """
         <div id="%id.formtools" style="display:none;"><div style="%tbt."><table cellspacing="0" cellpadding="0">
         <tr><td style="vertical-align:middle;padding-right:32px;padding-left:16px;"><div style="%tbt.">
-        <input type="button" value="Live Form" onclick="parent.location='#{SocialCalc._room}/form'" style="background-color: #5cb85c;border-color: #4cae4c;cursor: pointer;"> #{document.location.origin}/#{SocialCalc._room}/form </div></td>
+        <input type="button" value="%loc!Live Form!" onclick="parent.location='#{SocialCalc._room}/form'" style="background-color: #5cb85c;border-color: #4cae4c;cursor: pointer;"> #{document.location.origin}/#{SocialCalc._room}/form </div></td>
         </tr></table></div></div>
       """
       view: \sheet
@@ -274,7 +273,7 @@ Check the activity stream to see the newly edited page!
       name: \graph
       text: SocialCalc.Constants.s_loc_graph
       html: """
-        <div id="%id.graphtools" style="display:none;"><div style="%tbt."><table cellspacing="0" cellpadding="0"><tr><td style="vertical-align:middle;padding-right:32px;padding-left:16px;"><div style="%tbt.">Cells to Graph</div><div id="%id.graphrange" style="font-weight:bold;">Not Set</div></td><td style="vertical-align:top;padding-right:32px;"><div style="%tbt.">Set Cells To Graph</div><select id="%id.graphlist" size="1" onfocus="%s.CmdGotFocus(this);"><option selected>[select range]</option><option>Select all</option></select></td><td style="vertical-align:middle;padding-right:4px;"><div style="%tbt.">Graph Type</div><select id="%id.graphtype" size="1" onchange="window.GraphChanged(this);" onfocus="%s.CmdGotFocus(this);"></select><input type="button" value="OK" onclick="window.GraphSetCells();" style="font-size:x-small;"></div></td><td style="vertical-align:middle;padding-right:16px;"><div style="%tbt.">&nbsp;</div><input id="%id.graphhelp" type="button" onclick="DoGraph(true);" value="Help" style="font-size:x-small;"></div></td><td style="vertical-align:middle;padding-right:16px;">Min X <input id="%id.graphMinX" onchange="window.MinMaxChanged(this,0);" onfocus="%s.CmdGotFocus(this);" size=5/>Max X <input id="%id.graphMaxX" onchange="window.MinMaxChanged(this,1);" onfocus="%s.CmdGotFocus(this);" size=5/><br/>Min Y <input id="%id.graphMinY" onchange="window.MinMaxChanged(this,2);" onfocus="%s.CmdGotFocus(this);" size=5/>Max Y <input id="%id.graphMaxY" onchange="window.MinMaxChanged(this,3);" onfocus="%s.CmdGotFocus(this);" size=5/></div></td></tr></table></div></div>
+        <div id="%id.graphtools" style="display:none;"><div style="%tbt."><table cellspacing="0" cellpadding="0"><tr><td style="vertical-align:middle;padding-right:32px;padding-left:16px;"><div style="%tbt.">%loc!Cells to Graph!</div><div id="%id.graphrange" style="font-weight:bold;">%loc!Not Set!</div></td><td style="vertical-align:top;padding-right:32px;"><div style="%tbt.">%loc!Set Cells To Graph!</div><select id="%id.graphlist" size="1" onfocus="%s.CmdGotFocus(this);"><option selected>[select range]</option><option>%loc!Select all!</option></select></td><td style="vertical-align:middle;padding-right:4px;"><div style="%tbt.">%loc!Graph Type!</div><select id="%id.graphtype" size="1" onchange="window.GraphChanged(this);" onfocus="%s.CmdGotFocus(this);"></select><input type="button" value="%loc!OK!" onclick="window.GraphSetCells();" style="font-size:x-small;"></div></td><td style="vertical-align:middle;padding-right:16px;"><div style="%tbt.">&nbsp;</div><input id="%id.graphhelp" type="button" onclick="DoGraph(true);" value="%loc!Help!" style="font-size:x-small;"></div></td><td style="vertical-align:middle;padding-right:16px;">%loc!Min X! <input id="%id.graphMinX" onchange="window.MinMaxChanged(this,0);" onfocus="%s.CmdGotFocus(this);" size=5/>%loc!Max X! <input id="%id.graphMaxX" onchange="window.MinMaxChanged(this,1);" onfocus="%s.CmdGotFocus(this);" size=5/><br/>%loc!Min Y! <input id="%id.graphMinY" onchange="window.MinMaxChanged(this,2);" onfocus="%s.CmdGotFocus(this);" size=5/>%loc!Max Y! <input id="%id.graphMaxY" onchange="window.MinMaxChanged(this,3);" onfocus="%s.CmdGotFocus(this);" size=5/></div></td></tr></table></div></div>
       """
       view: \graph
       onclick: window.GraphOnClick
@@ -310,13 +309,13 @@ Check the activity stream to see the newly edited page!
     ss.ExecuteCommand? \redisplay, ''
     ss.ExecuteCommand? 'set sheet defaulttextvalueformat text-wiki'
     $ document .on \mouseover '.te_download tr:nth-child(2) td:first' ->
-      $ @ .attr title: 'Export...'
+      $ @ .attr title: SocialCalc.Constants.s_loc_export
     $ document .on \click '.te_download tr:nth-child(2) td:first' ->
       SocialCalc.Keyboard.passThru = yes if vex?dialog.open
       isMultiple = (window.__MULTI__ or SocialCalc._room is /\.[1-9]\d*$/)
       vex?defaultOptions.className = 'vex-theme-flat-attack'
       vex?dialog.open do
-        message: "Please choose an export format.#{
+        message: SocialCalc.Constants.s_loc_export_format+"#{
           if isMultiple then "<br><small>(ODS and EXCEL support multiple sheets.)</small>" else ""
         }"
         callback: -> SocialCalc.Keyboard.passThru = no
@@ -341,7 +340,7 @@ Check the activity stream to see the newly edited page!
                 window.open ".#{if window.parent.location.pathname.match('\/.*\/view$') || window.parent.location.pathname.match('\/.*\/edit$') then '.' else ''}/=#{ SocialCalc._room.replace(/\.[1-9]\d*$/, '') }.ods"
             else
               window.open ".#{if window.parent.location.pathname.match('\/.*\/view$') || window.parent.location.pathname.match('\/.*\/edit$') then '.' else ''}/#{ SocialCalc._room }.ods"
-          $.extend {}, vex?dialog.buttons.NO, text: 'Cancel'
+          $.extend {}, vex?dialog.buttons.NO, text: SocialCalc.Constants.s_loc_cancel
         ]
 
       # In-situ import courtesy of
