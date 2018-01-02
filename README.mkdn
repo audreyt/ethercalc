@@ -40,6 +40,22 @@ support for webworker-threads:
     # Run ethercalc on port 80 ( http://localhost/ )
     docker-compose up -d
 
+Config database
+
+    set env vars:
+      REDIS_PORT REDIS_HOST REDIS_SOCKPATH REDIS_PASS REDIS_DB OPENSHIFT_DATA_DIR
+
+    Defaults:
+      REDIS_HOST = localhost   
+      REDIS_PORT = 6379   
+      OPENSHIFT_DATA_DIR= process.cwd!
+
+    OPENSHIFT_DATA_DIR is used if redis is not Running.
+
+    Code is here:
+    https://github.com/audreyt/ethercalc/blob/df758d4c2f5cbcb00b50e9289a8ba237d4f8fa86/src/db.ls#L5
+
+
 Send email
 
     Optional - Send email formulas requires OAuth2 & cron  e.g. =email(to, subject, body), =emailAt(time, to, subject, body)
