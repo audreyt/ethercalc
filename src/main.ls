@@ -75,7 +75,7 @@
       @response.sendfile "#RealBin/manifest.appcache"
   @get '/static/socialcalc.js': ->
     @response.type \application/javascript
-    @response.sendfile "#RealBin/node_modules/socialcalc/SocialCalc.js"
+    @response.sendfile "#RealBin/node_modules/socialcalc/dist/SocialCalc.js"
   @get '/static/form:part.js': ->
     part = @params.part
     @response.type \application/javascript

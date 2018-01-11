@@ -47,11 +47,11 @@ static/multi.js :: multi/main.ls multi/styles.styl
 depends: app.js static/ethercalc.js static/start.css static/multi.js
 
 static/ethercalc.js: $(ETHERCALC_FILES) \
-     ./node_modules/socialcalc/SocialCalc.js \
+     ./node_modules/socialcalc/dist/SocialCalc.js \
      ./node_modules/uglify-js/bin/uglifyjs
 	@-mkdir -p .git
 	@echo '// Auto-generated from "make depends"; ALL CHANGES HERE WILL BE LOST!' > $@
-	node node_modules/uglify-js/bin/uglifyjs node_modules/socialcalc/SocialCalc.js $(ETHERCALC_FILES) $(UGLIFYJS_ARGS) --source-map ethercalc.js.map --source-map-include-sources >> $@
+	node node_modules/uglify-js/bin/uglifyjs node_modules/socialcalc/dist/SocialCalc.js $(ETHERCALC_FILES) $(UGLIFYJS_ARGS) --source-map ethercalc.js.map --source-map-include-sources >> $@
 	mv ethercalc.js.map static
 
 COFFEE := $(shell command -v coffee 2> /dev/null)

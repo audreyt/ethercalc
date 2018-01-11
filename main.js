@@ -111,7 +111,7 @@
     this.get({
       '/static/socialcalc.js': function(){
         this.response.type('application/javascript');
-        return this.response.sendfile(RealBin + "/node_modules/socialcalc/SocialCalc.js");
+        return this.response.sendfile(RealBin + "/node_modules/socialcalc/dist/SocialCalc.js");
       }
     });
     this.get({
