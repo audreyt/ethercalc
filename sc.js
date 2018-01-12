@@ -4,7 +4,7 @@
   vm = require('vm');
   fs = require('fs');
   path = require('path');
-  bootSC = fs.readFileSync(path.dirname(fs.realpathSync(__filename)) + "/node_modules/socialcalc/SocialCalc.js", 'utf8');
+  bootSC = fs.readFileSync(path.dirname(fs.realpathSync(__filename)) + "/node_modules/socialcalc/dist/SocialCalc.js", 'utf8');
   bootSC = bootSC.replace(/document\.createElement\(/g, 'SocialCalc.document.createElement(');
   bootSC = bootSC.replace(/alert\(/g, '(function(){})(');
   global.SC == null && (global.SC = {

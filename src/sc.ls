@@ -1,7 +1,7 @@
 require! <[ vm fs path ]>
 bootSC = fs.readFileSync "#{
   path.dirname fs.realpathSync __filename
-}/node_modules/socialcalc/SocialCalc.js" \utf8
+}/node_modules/socialcalc/dist/SocialCalc.js" \utf8
 bootSC.=replace(/document\.createElement\(/g, 'SocialCalc.document.createElement(')
 bootSC.=replace(/alert\(/g, '(function(){})(')
 
