@@ -85,7 +85,7 @@
 
       }
       console.log(err);
-      console.log("==> Falling back to JSON storage: " + dataDir + "/dump.json");
+      console.log("==> Falling back to JSON storage: " + dataDir + "/dump/");
       if (EXPIRE) {
         console.log("==> The --expire <seconds> option requires a Redis server; stopping!");
         process.exit();
@@ -94,15 +94,34 @@
       db.DB = {};
       minimatch = require('minimatch');
       try {
-        db.DB = JSON.parse(require('fs').readFileSync(dataDir + "/dump.json", 'utf8'));
-        console.log("==> Restored previous session from JSON file");
+        db.DB = {};
+        fs.readdirSync(dataDir + "/dump/").forEach(function(f){
+          return Object.assign(db.DB, JSON.parse(fs.readFileSync(dataDir + "/dump/" + f)));
+        });
+        console.log("==> Restored previous session from JSON files");
         if (db.DB === true) {
           db.DB = {};
         }
       } catch (e$) {}
       Commands = {
         bgsave: function(cb){
-          fs.writeFileSync(dataDir + "/dump.json", JSON.stringify(db.DB, void 8, 2), 'utf8');
+          var sheets, k, ref$, v, id;
+          if (!fs.existsSync(dataDir + "/dump/")) {
+            fs.mkdirSync(dataDir + "/dump/");
+          }
+          sheets = {};
+          for (k in ref$ = db.DB) {
+            v = ref$[k];
+            id = k.split("-").pop().split("_")[0];
+            if (!sheets[id]) {
+              sheets[id] = {};
+            }
+            sheets[id][k] = v;
+          }
+          for (k in sheets) {
+            v = sheets[k];
+            fs.writeFileSync(dataDir + "/dump/" + k + ".json", JSON.stringify(sheets[k], void 8, 2), 'utf8');
+          }
           return typeof cb == 'function' ? cb() : void 8;
         },
         get: function(key, cb){

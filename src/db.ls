@@ -58,7 +58,7 @@
     | db.DB => return false
     | otherwise
     console.log err
-    console.log "==> Falling back to JSON storage: #{ dataDir }/dump.json"
+    console.log "==> Falling back to JSON storage: #{ dataDir }/dump/"
     if EXPIRE
       console.log "==> The --expire <seconds> option requires a Redis server; stopping!"
       process.exit!
@@ -67,16 +67,28 @@
     db.DB = {}
     minimatch = require \minimatch
     try
-      db.DB = JSON.parse do
-        require \fs .readFileSync "#dataDir/dump.json" \utf8
-      console.log "==> Restored previous session from JSON file"
+      db.DB = {}
+      fs.readdirSync "#dataDir/dump/" .forEach (f) ->
+        Object.assign do
+          db.DB,
+          JSON.parse fs.readFileSync "#dataDir/dump/#f"
+      console.log "==> Restored previous session from JSON files"
       db.DB = {} if db.DB is true
     Commands =
       bgsave: (cb) ->
-        fs.writeFileSync do
-          "#dataDir/dump.json"
-          JSON.stringify db.DB,,2
-          \utf8
+        if !fs.existsSync "#dataDir/dump/"
+          fs.mkdirSync("#dataDir/dump/")
+        sheets = {}
+        for k, v of db.DB
+          id = k.split("-").pop!.split("_")[0]
+          if !sheets[id]
+            sheets[id] = {}
+          sheets[id][k] = v
+        for k, v of sheets
+          fs.writeFileSync do
+            "#dataDir/dump/#k.json"
+            JSON.stringify sheets[k],,2
+            \utf8
         cb?!
       get: (key, cb) -> cb?(null, db.DB[key])
       set: (key, val, cb) -> db.DB[key] = val; cb?!
