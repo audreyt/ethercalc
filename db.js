@@ -94,34 +94,78 @@
       db.DB = {};
       minimatch = require('minimatch');
       try {
-        db.DB = {};
-        fs.readdirSync(dataDir + "/dump/").forEach(function(f){
-          return Object.assign(db.DB, JSON.parse(fs.readFileSync(dataDir + "/dump/" + f)));
-        });
-        console.log("==> Restored previous session from JSON files");
+        if (fs.existsSync(dataDir + "/dump/")) {
+          fs.readdirSync(dataDir + "/dump/").forEach(function(f){
+            var key, type, k, ref$, v, results$ = [];
+            key = f.split(".")[0];
+            type = key.split("-")[0];
+            if (type === "timestamps") {
+              return db.DB.timestamps = JSON.parse(fs.readFileSync(dataDir + "/dump/timestamps.json", 'utf8'));
+            } else if (type === "snapshot") {
+              return db.DB[key] = fs.readFileSync(dataDir + "/dump/" + key + ".txt", 'utf8');
+            } else if (type === "audit") {
+              db.DB[key] = fs.readFileSync(dataDir + "/dump/" + key + ".txt", 'utf8').split("\n");
+              for (k in ref$ = db.DB[key]) {
+                v = ref$[k];
+                results$.push(db.DB[key][k] = db.DB[key][k].replace(/\\n/g, "\n").replace(/\\r/g, "\r").replace(/\\\\/g, "\\"));
+              }
+              return results$;
+            }
+          });
+        } else {
+          db.DB = JSON.parse(fs.readFileSync(dataDir + "/dump.json", 'utf8'));
+        }
+        console.log("==> Restored previous session from dump storage");
         if (db.DB === true) {
           db.DB = {};
         }
       } catch (e$) {}
       Commands = {
         bgsave: function(cb){
-          var sheets, k, ref$, v, id;
+          var oldTimestamps, k, ref$, v, id, newTimestamps, type, str, i$, len$, entry;
           if (!fs.existsSync(dataDir + "/dump/")) {
             fs.mkdirSync(dataDir + "/dump/");
           }
-          sheets = {};
+          oldTimestamps = {};
+          if (!fs.existsSync(dataDir + "/dump/timestamps.json")) {
+            for (k in ref$ = db.DB.timestamps) {
+              v = ref$[k];
+              id = k.split("-").pop();
+              oldTimestamps[id] = 0;
+            }
+          } else {
+            for (k in ref$ = JSON.parse(fs.readFileSync(dataDir + "/dump/timestamps.json", 'utf8'))) {
+              v = ref$[k];
+              id = k.split("-").pop();
+              oldTimestamps[id] = v;
+            }
+          }
+          newTimestamps = {};
+          for (k in ref$ = db.DB.timestamps) {
+            v = ref$[k];
+            id = k.split("-").pop();
+            newTimestamps[id] = v;
+          }
           for (k in ref$ = db.DB) {
             v = ref$[k];
-            id = k.split("-").pop().split("_")[0];
-            if (!sheets[id]) {
-              sheets[id] = {};
+            id = k.split("-").pop();
+            if (oldTimestamps[id] !== newTimestamps[id]) {
+              type = k.split("-")[0];
+              switch (type) {
+              case "snapshot":
+                fs.writeFileSync(dataDir + "/dump/" + k + ".txt", v, 'utf8');
+                break;
+              case "audit":
+                str = "";
+                for (i$ = 0, len$ = v.length; i$ < len$; ++i$) {
+                  entry = v[i$];
+                  str += entry.replace(/[\n]/g, "\\n").replace(/[\r]/g, "\\r").replace(/\\/g, "\\\\") + "\n";
+                }
+                fs.writeFileSync(dataDir + "/dump/" + k + ".txt", str, 'utf8');
+              }
             }
-            sheets[id][k] = v;
           }
-          for (k in sheets) {
-            v = sheets[k];
-            fs.writeFileSync(dataDir + "/dump/" + k + ".json", JSON.stringify(sheets[k], void 8, 2), 'utf8');
-          }
+          fs.writeFileSync(dataDir + "/dump/timestamps.json", JSON.stringify(db.DB.timestamps, void 8, 2), 'utf8');
           return typeof cb == 'function' ? cb() : void 8;
         },
         get: function(key, cb){
