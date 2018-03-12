@@ -75,7 +75,7 @@
     });
     EXPIRE = this.EXPIRE;
     db.on('error', function(err){
-      var fs, minimatch, Commands;
+      var fs, minimatch, k, ref$, v, Commands;
       switch (false) {
       case db.DB !== true:
         return console.log("==> Lost connection to Redis Server - attempting to reconnect...");
@@ -94,14 +94,19 @@
       db.DB = {};
       minimatch = require('minimatch');
       try {
+        db.DB = {
+          save_timestamps: {},
+          timestamps: {}
+        };
         if (fs.existsSync(dataDir + "/dump/")) {
           fs.readdirSync(dataDir + "/dump/").forEach(function(f){
-            var key, type, k, ref$, v, results$ = [];
+            var key, type, id, k, ref$, v, results$ = [];
             key = f.split(".")[0];
             type = key.split("-")[0];
-            if (type === "timestamps") {
-              return db.DB.timestamps = JSON.parse(fs.readFileSync(dataDir + "/dump/timestamps.json", 'utf8'));
-            } else if (type === "snapshot") {
+            id = key.split("-")[1];
+            db.DB.timestamps["timestamp-" + id] = 0;
+            db.DB.save_timestamps["timestamp-" + id] = 0;
+            if (type === "snapshot") {
               return db.DB[key] = fs.readFileSync(dataDir + "/dump/" + key + ".txt", 'utf8');
             } else if (type === "audit") {
               db.DB[key] = fs.readFileSync(dataDir + "/dump/" + key + ".txt", 'utf8').split("\n");
@@ -114,6 +119,11 @@
           });
         } else {
           db.DB = JSON.parse(fs.readFileSync(dataDir + "/dump.json", 'utf8'));
+          db.DB.save_timestamps = {};
+          for (k in ref$ = db.DB.timestamps) {
+            v = ref$[k];
+            db.DB.save_timestamps[k] = -1;
+          }
         }
         console.log("==> Restored previous session from dump storage");
         if (db.DB === true) {
@@ -127,24 +137,17 @@
             fs.mkdirSync(dataDir + "/dump/");
           }
           oldTimestamps = {};
-          if (!fs.existsSync(dataDir + "/dump/timestamps.json")) {
-            for (k in ref$ = db.DB.timestamps) {
-              v = ref$[k];
-              id = k.split("-").pop();
-              oldTimestamps[id] = 0;
-            }
-          } else {
-            for (k in ref$ = JSON.parse(fs.readFileSync(dataDir + "/dump/timestamps.json", 'utf8'))) {
-              v = ref$[k];
-              id = k.split("-").pop();
-              oldTimestamps[id] = v;
-            }
+          for (k in ref$ = db.DB.save_timestamps) {
+            v = ref$[k];
+            id = k.split("-").pop();
+            oldTimestamps[id] = v;
           }
           newTimestamps = {};
           for (k in ref$ = db.DB.timestamps) {
             v = ref$[k];
             id = k.split("-").pop();
             newTimestamps[id] = v;
+            db.DB.save_timestamps[k] = v;
           }
           for (k in ref$ = db.DB) {
             v = ref$[k];
@@ -165,7 +168,6 @@
               }
             }
           }
-          fs.writeFileSync(dataDir + "/dump/timestamps.json", JSON.stringify(db.DB.timestamps, void 8, 2), 'utf8');
           return typeof cb == 'function' ? cb() : void 8;
         },
         get: function(key, cb){

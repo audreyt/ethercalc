@@ -67,13 +67,17 @@
     db.DB = {}
     minimatch = require \minimatch
     try
+      db.DB =
+        save_timestamps: {}
+        timestamps: {}
       if fs.existsSync "#dataDir/dump/"
         fs.readdirSync("#dataDir/dump/").forEach (f) ->
           key = f.split(".")[0]
           type = key.split("-")[0]
-          if type is "timestamps"
-            db.DB.timestamps = JSON.parse(fs.readFileSync("#dataDir/dump/timestamps.json", \utf8))
-          else if type is "snapshot"
+          id = key.split("-")[1]
+          db.DB.timestamps["timestamp-#id"] = 0
+          db.DB.save_timestamps["timestamp-#id"] = 0
+          if type is "snapshot"
             db.DB[key] = fs.readFileSync("#dataDir/dump/#key.txt", \utf8)
           else if type is "audit"
             db.DB[key] = fs.readFileSync("#dataDir/dump/#key.txt", \utf8).split("\n")
@@ -81,6 +85,9 @@
               db.DB[key][k] = db.DB[key][k].replace(/\\n/g,"\n").replace(/\\r/g,"\r").replace(/\\\\/g,"\\")
       else
         db.DB = JSON.parse(fs.readFileSync "#dataDir/dump.json" \utf8)
+        db.DB.save_timestamps = {}
+        for k, v of db.DB.timestamps
+          db.DB.save_timestamps[k] = -1
 
       console.log "==> Restored previous session from dump storage"
       db.DB = {} if db.DB is true
@@ -90,12 +97,7 @@
           fs.mkdirSync "#dataDir/dump/"
 
         oldTimestamps = {}
-        if !fs.existsSync "#dataDir/dump/timestamps.json"
-          for k, v of db.DB.timestamps
-            id = k.split("-").pop!
-            oldTimestamps[id] = 0 #if no timestamp file is found, pretend the sheets haven't been saved in litteral decades
-        else
-          for k, v of (JSON.parse fs.readFileSync "#dataDir/dump/timestamps.json" \utf8)
+        for k, v of db.DB.save_timestamps
             id = k.split("-").pop!
             oldTimestamps[id] = v
 
@@ -103,6 +105,7 @@
         for k, v of db.DB.timestamps
           id = k.split("-").pop!
           newTimestamps[id] = v
+          db.DB.save_timestamps[k] = v
 
         for k, v of db.DB
           id = k.split("-").pop!
@@ -116,12 +119,6 @@
               for entry in v
                 str += entry.replace(/[\n]/g,"\\n").replace(/[\r]/g,"\\r").replace(/\\/g,"\\\\") + "\n"
               fs.writeFileSync("#dataDir/dump/#k.txt",str,\utf8)
-
-        fs.writeFileSync do
-          "#dataDir/dump/timestamps.json"
-          JSON.stringify db.DB.timestamps,,2
-          \utf8
-
         cb?!
       get: (key, cb) -> cb?(null, db.DB[key])
       set: (key, val, cb) -> db.DB[key] = val; cb?!
