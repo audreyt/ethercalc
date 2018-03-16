@@ -99,22 +99,21 @@
           timestamps: {}
         };
         if (fs.existsSync(dataDir + "/dump/")) {
-          fs.readdirSync(dataDir + "/dump/").forEach(function(f){
-            var key, type, id, k, ref$, v, results$ = [];
+          fs.readdirSync(dataDir + "/dump/").filter(partialize$.apply(/^[^.]/, [/^[^.]/.test, [void 8], [0]])).forEach(function(f){
+            var key, type, id, k, ref$, v;
             key = f.split(".")[0];
             type = key.split("-")[0];
             id = key.split("-")[1];
             db.DB.timestamps["timestamp-" + id] = 0;
             db.DB.save_timestamps["timestamp-" + id] = 0;
             if (type === "snapshot") {
-              return db.DB[key] = fs.readFileSync(dataDir + "/dump/" + key + ".txt", 'utf8');
+              db.DB[key] = fs.readFileSync(dataDir + "/dump/" + key + ".txt", 'utf8');
             } else if (type === "audit") {
               db.DB[key] = fs.readFileSync(dataDir + "/dump/" + key + ".txt", 'utf8').split("\n");
               for (k in ref$ = db.DB[key]) {
                 v = ref$[k];
-                results$.push(db.DB[key][k] = db.DB[key][k].replace(/\\n/g, "\n").replace(/\\r/g, "\r").replace(/\\\\/g, "\\"));
+                db.DB[key][k] = db.DB[key][k].replace(/\\n/g, "\n").replace(/\\r/g, "\r").replace(/\\\\/g, "\\");
               }
-              return results$;
             }
           });
         } else {
@@ -276,6 +275,17 @@
     });
     return this.__DB__ = db;
   };
+  function partialize$(f, args, where){
+    var context = this;
+    return function(){
+      var params = slice$.call(arguments), i,
+          len = params.length, wlen = where.length,
+          ta = args ? args.concat() : [], tw = where ? where.concat() : [];
+      for(i = 0; i < len; ++i) { ta[tw[0]] = params[i]; tw.shift(); }
+      return len < wlen && len ?
+        partialize$.apply(context, [f, ta, tw]) : f.apply(context, ta);
+    };
+  }
   function importAll$(obj, src){
     for (var key in src) obj[key] = src[key];
     return obj;

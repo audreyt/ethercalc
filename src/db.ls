@@ -71,18 +71,20 @@
         save_timestamps: {}
         timestamps: {}
       if fs.existsSync "#dataDir/dump/"
-        fs.readdirSync("#dataDir/dump/").forEach (f) ->
-          key = f.split(".")[0]
-          type = key.split("-")[0]
-          id = key.split("-")[1]
-          db.DB.timestamps["timestamp-#id"] = 0
-          db.DB.save_timestamps["timestamp-#id"] = 0
-          if type is "snapshot"
-            db.DB[key] = fs.readFileSync("#dataDir/dump/#key.txt", \utf8)
-          else if type is "audit"
-            db.DB[key] = fs.readFileSync("#dataDir/dump/#key.txt", \utf8).split("\n")
-            for k, v of db.DB[key]
-              db.DB[key][k] = db.DB[key][k].replace(/\\n/g,"\n").replace(/\\r/g,"\r").replace(/\\\\/g,"\\")
+        f <-! fs.readdir-sync "#dataDir/dump/" \
+                .filter (/^[^.]/.test _) \
+                .for-each
+        key = f.split(".")[0]
+        type = key.split("-")[0]
+        id = key.split("-")[1]
+        db.DB.timestamps["timestamp-#id"] = 0
+        db.DB.save_timestamps["timestamp-#id"] = 0
+        if type is "snapshot"
+          db.DB[key] = fs.readFileSync("#dataDir/dump/#key.txt", \utf8)
+        else if type is "audit"
+          db.DB[key] = fs.readFileSync("#dataDir/dump/#key.txt", \utf8).split("\n")
+          for k, v of db.DB[key]
+            db.DB[key][k] = db.DB[key][k].replace(/\\n/g,"\n").replace(/\\r/g,"\r").replace(/\\\\/g,"\\")
       else
         db.DB = JSON.parse(fs.readFileSync "#dataDir/dump.json" \utf8)
         db.DB.save_timestamps = {}
