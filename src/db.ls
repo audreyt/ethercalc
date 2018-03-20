@@ -58,7 +58,7 @@
     | db.DB => return false
     | otherwise
     console.log err
-    console.log "==> Falling back to JSON storage: #{ dataDir }/dump/"
+    console.log "==> Falling back to file system storage: #{ dataDir }/dump/"
     if EXPIRE
       console.log "==> The --expire <seconds> option requires a Redis server; stopping!"
       process.exit!
