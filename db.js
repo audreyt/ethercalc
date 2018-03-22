@@ -100,7 +100,7 @@
         };
         if (fs.existsSync(dataDir + "/dump/")) {
           fs.readdirSync(dataDir + "/dump/").filter(partialize$.apply(/^[^.]/, [/^[^.]/.test, [void 8], [0]])).forEach(function(f){
-            var key, type, id, k, ref$, v;
+            var key, type, id, k, ref$, v, this$ = this;
             key = f.split(".")[0];
             type = key.split("-")[0];
             id = key.split("-")[1];
@@ -109,7 +109,9 @@
             if (type === "snapshot") {
               db.DB[key] = fs.readFileSync(dataDir + "/dump/" + key + ".txt", 'utf8');
             } else if (type === "audit") {
-              db.DB[key] = fs.readFileSync(dataDir + "/dump/" + key + ".txt", 'utf8').split("\n");
+              db.DB[key] = fs.readFileSync(dataDir + "/dump/" + key + ".txt", 'utf8').split("\n").filter(function(it){
+                return it.length;
+              });
               for (k in ref$ = db.DB[key]) {
                 v = ref$[k];
                 db.DB[key][k] = db.DB[key][k].replace(/\\n/g, "\n").replace(/\\r/g, "\r").replace(/\\\\/g, "\\");
