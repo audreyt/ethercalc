@@ -82,7 +82,9 @@
         if type is "snapshot"
           db.DB[key] = fs.readFileSync("#dataDir/dump/#key.txt", \utf8)
         else if type is "audit"
-          db.DB[key] = fs.readFileSync("#dataDir/dump/#key.txt", \utf8).split("\n")
+          db.DB[key] = fs.readFileSync("#dataDir/dump/#key.txt", \utf8)
+                         .split "\n"
+                         .filter (.length) # remove any blanks
           for k, v of db.DB[key]
             db.DB[key][k] = db.DB[key][k].replace(/\\n/g,"\n").replace(/\\r/g,"\r").replace(/\\\\/g,"\\")
       else
