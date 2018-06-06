@@ -34,7 +34,7 @@
           | otherwise     => ''
         }"
         if location.host is /^(?:www\.)?ethercalc\.(?:org|com)$/
-          $('<a />', {
+          $ -> $('<a />', {
             id: "restore", target: "_blank"
             href: "https://ethercalc.org/log/?#{ SocialCalc._room }"
             title: "View & Restore Backups"
