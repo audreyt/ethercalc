@@ -52,12 +52,14 @@
                   }
                 }()));
                 if (/^(?:www\.)?ethercalc\.(?:org|com)$/.exec(location.host)) {
-                  return $('<a />', {
-                    id: "restore",
-                    target: "_blank",
-                    href: "https://ethercalc.org/log/?" + SocialCalc._room,
-                    title: "View & Restore Backups"
-                  }).text("↻").appendTo('body');
+                  return $(function(){
+                    return $('<a />', {
+                      id: "restore",
+                      target: "_blank",
+                      href: "https://ethercalc.org/log/?" + SocialCalc._room,
+                      title: "View & Restore Backups"
+                    }).text("↻").appendTo('body');
+                  });
                 }
               }, 100);
             }
