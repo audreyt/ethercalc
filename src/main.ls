@@ -73,9 +73,17 @@
       @response.send 200 "CACHE MANIFEST\n\n##{Date!}\n\nNETWORK:\n*\n"
     else
       @response.sendfile "#RealBin/manifest.appcache"
-  @get '/static/socialcalc.js': ->
-    @response.type \application/javascript
-    @response.sendfile "#RealBin/node_modules/socialcalc/dist/SocialCalc.js"
+
+  if fs.existsSync "#RealBin/node_modules/socialcalc/dist/SocialCalc.js"
+    @get '/static/socialcalc.js': ->
+      @response.type \application/javascript
+      @response.sendfile "#RealBin/node_modules/socialcalc/dist/SocialCalc.js"
+  else if fs.existsSync "#RealBin/node_modules/socialcalc/SocialCalc.js"
+    @get '/static/socialcalc.js': ->
+      @response.type \application/javascript
+      @response.sendfile "#RealBin/node_modules/socialcalc/SocialCalc.js"
+  else throw "Cannot find SocialCalc.js"
+
   @get '/static/form:part.js': ->
     part = @params.part
     @response.type \application/javascript

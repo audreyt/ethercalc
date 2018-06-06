@@ -108,12 +108,23 @@
         }
       }
     });
-    this.get({
-      '/static/socialcalc.js': function(){
-        this.response.type('application/javascript');
-        return this.response.sendfile(RealBin + "/node_modules/socialcalc/dist/SocialCalc.js");
-      }
-    });
+    if (fs.existsSync(RealBin + "/node_modules/socialcalc/dist/SocialCalc.js")) {
+      this.get({
+        '/static/socialcalc.js': function(){
+          this.response.type('application/javascript');
+          return this.response.sendfile(RealBin + "/node_modules/socialcalc/dist/SocialCalc.js");
+        }
+      });
+    } else if (fs.existsSync(RealBin + "/node_modules/socialcalc/SocialCalc.js")) {
+      this.get({
+        '/static/socialcalc.js': function(){
+          this.response.type('application/javascript');
+          return this.response.sendfile(RealBin + "/node_modules/socialcalc/SocialCalc.js");
+        }
+      });
+    } else {
+      throw "Cannot find SocialCalc.js";
+    }
     this.get({
       '/static/form:part.js': function(){
         var part;
