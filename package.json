@@ -1,7 +1,7 @@
 {
   "name": "ethercalc",
   "description": "Multi-User Spreadsheet Server",
-  "version": "0.20180607.2",
+  "version": "0.20180607.3",
   "homepage": "http://ethercalc.net/",
   "repository": {
     "type": "git",
@@ -14,7 +14,6 @@
     "j": "^0.4.5",
     "livescript": "1.5.x",
     "minimatch": "*",
-    "nodemailer": "*",
     "optimist": "*",
     "redis": "0.12.x",
     "socialcalc": "2.x",
@@ -23,6 +22,7 @@
     "zappajs": "0.5.x"
   },
   "optionalDependencies": {
+    "nodemailer": "*",
     "webworker-threads": "^0.7.1"
   },
   "devDependencies": {
