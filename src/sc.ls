@@ -246,7 +246,7 @@ Worker ||= class => (code) ->
         console.log "allTimeTriggers" {...allTimeTriggers} " nextTriggerTime #nextTriggerTime"
     | \sendemailout 
       console.log "onmessage "+emaildata.to
-      emailer.sendemail emaildata.to, emaildata.subject, emaildata.body,  (message) ->
+      emailer?sendemail emaildata.to, emaildata.subject, emaildata.body,  (message) ->
         io.sockets.in "log-#room" .emit \data {
           type: \confirmemailsent
           message
@@ -367,7 +367,7 @@ Worker ||= class => (code) ->
         nextEmail = for addSpaces in nextEmail #replace %20 with spaces
           addSpaces.replace(/%20/g,' ')
         [emailto, subject, body] = nextEmail
-        emailer.sendemail emailto, subject, body,  (message) ->
+        emailer?sendemail emailto, subject, body,  (message) ->
       cb emailcmd
     #w.debug = (coord, cb) -> w._eval "window.ss.sheet.ioParameterList", cb
     # }

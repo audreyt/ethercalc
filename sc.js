@@ -495,12 +495,12 @@
           });
         case 'sendemailout':
           console.log("onmessage " + emaildata.to);
-          return emailer.sendemail(emaildata.to, emaildata.subject, emaildata.body, function(message){
+          return emailer != null ? emailer.sendemail(emaildata.to, emaildata.subject, emaildata.body, function(message){
             return io.sockets['in']("log-" + room).emit('data', {
               type: 'confirmemailsent',
               message: message
             });
-          });
+          }) : void 8;
         case 'load-sheet':
           return SC._get(ref, io, function(){
             if (SC[ref]) {
@@ -788,7 +788,9 @@
             }
             nextEmail = res$;
             emailto = nextEmail[0], subject = nextEmail[1], body = nextEmail[2];
-            emailer.sendemail(emailto, subject, body, fn$);
+            if (emailer != null) {
+              emailer.sendemail(emailto, subject, body, fn$);
+            }
           }
           return cb(emailcmd);
           function fn$(message){}

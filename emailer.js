@@ -10,7 +10,14 @@
     emailer.log = function(){
       return console.log("email tester");
     };
-    nodemailer = require('nodemailer');
+    nodemailer = (function(){
+      try {
+        return require('nodemailer');
+      } catch (e$) {}
+    }());
+    if (!nodemailer) {
+      return;
+    }
     generator = require('xoauth2').createXOAuth2Generator({
       user: process.env.gmail_user,
       clientId: process.env.gmail_clientId,
