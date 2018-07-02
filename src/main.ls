@@ -165,8 +165,9 @@
     md: \text/x-markdown
     xlsx: \application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
     ods: \application/vnd.oasis.opendocument.spreadsheet
+    fods: \application/vnd.oasis.opendocument.spreadsheet
   Export-J = (type) -> api (-> # single
-    rv = J.utils["to_#type"](J.read it)
+    rv = J.utils["to_#type"](J.read(new Buffer it))
     rv = rv.Sheet1 if rv?Sheet1?
     [J-TypeMap[type], rv]
   ), ((names, saves) -> # multi
@@ -220,6 +221,7 @@
   @get "#BASEPATH/:room.csv.json": ExportCSV-JSON
   @get "#BASEPATH/:room.html": ExportHTML
   @get "#BASEPATH/:room.ods": Export-J \ods
+  @get "#BASEPATH/:room.fods": Export-J \fods
   @get "#BASEPATH/:room.xlsx": Export-J \xlsx
   @get "#BASEPATH/:room.md": Export-J \md
   if @CORS
@@ -309,6 +311,7 @@
   @get "#BASEPATH/_/:room/csv": ExportCSV
   @get "#BASEPATH/_/:room/csv.json": ExportCSV-JSON
   @get "#BASEPATH/_/:room/ods": Export-J \ods
+  @get "#BASEPATH/_/:room/fods": Export-J \fods
   @get "#BASEPATH/_/:room/xlsx": Export-J \xlsx
   @get "#BASEPATH/_/:room/md": Export-J \md
   @get "#BASEPATH/_/:room": api -> [Text, it]
@@ -353,6 +356,7 @@
   for route in <[
     /=:room.xlsx /_/=:room/xlsx 
     /=:room.ods /_/=:room/ods 
+    /=:room.fods /_/=:room/fods
   ]> => @put "#route": ->
     room = encodeURIComponent(@params.room).replace(/%3A/g \:)
     cs = []; @request.on \data (chunk) ~> cs ++= chunk
