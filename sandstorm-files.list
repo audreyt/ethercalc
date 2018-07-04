@@ -14,6 +14,7 @@ app-graphics/ethercalc-128.svg
 app-graphics/ethercalc-150.svg
 app-graphics/ethercalc-24.svg
 app.js
+apple-touch-icon.png
 bin/bash
 bin/cp
 bin/dash
@@ -33,6 +34,7 @@ etc/nsswitch.conf
 etc/passwd
 etc/resolv.conf
 exports.js
+favicon-16x16.png
 images/sc_1x1.gif
 images/sc_aligncenter.png
 images/sc_alignleft.png
