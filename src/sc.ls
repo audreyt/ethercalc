@@ -1,7 +1,9 @@
 require! <[ vm fs path ]>
-bootSC = fs.readFileSync "#{
-  path.dirname fs.realpathSync __filename
-}/node_modules/socialcalc/SocialCalc.js" \utf8
+const FindBin = path.dirname fs.realpathSync __filename
+if fs.existsSync "#FindBin/node_modules/socialcalc/dist/SocialCalc.js" \utf8
+  bootSC = fs.readFileSync "#FindBin/node_modules/socialcalc/dist/SocialCalc.js" \utf8
+else
+  bootSC = fs.readFileSync "#FindBin/node_modules/socialcalc/SocialCalc.js" \utf8
 bootSC.=replace(/document\.createElement\(/g, 'SocialCalc.document.createElement(')
 bootSC.=replace(/alert\(/g, '(function(){})(')
 
@@ -244,7 +246,7 @@ Worker ||= class => (code) ->
         console.log "allTimeTriggers" {...allTimeTriggers} " nextTriggerTime #nextTriggerTime"
     | \sendemailout 
       console.log "onmessage "+emaildata.to
-      emailer.sendemail emaildata.to, emaildata.subject, emaildata.body,  (message) ->
+      emailer?sendemail emaildata.to, emaildata.subject, emaildata.body,  (message) ->
         io.sockets.in "log-#room" .emit \data {
           type: \confirmemailsent
           message
@@ -365,7 +367,7 @@ Worker ||= class => (code) ->
         nextEmail = for addSpaces in nextEmail #replace %20 with spaces
           addSpaces.replace(/%20/g,' ')
         [emailto, subject, body] = nextEmail
-        emailer.sendemail emailto, subject, body,  (message) ->
+        emailer?sendemail emailto, subject, body,  (message) ->
       cb emailcmd
     #w.debug = (coord, cb) -> w._eval "window.ss.sheet.ioParameterList", cb
     # }

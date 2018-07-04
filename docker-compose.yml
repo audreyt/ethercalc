@@ -2,6 +2,9 @@ ethercalc:
   image: audreyt/ethercalc
   ports:
     - "80:8000"
+  environment:
+    REDIS_PORT_6379_TCP_ADDR: redis
+    REDIS_PORT_6379_TCP_PORT: 6379
   links:
     - redis:redis
   restart: always

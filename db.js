@@ -75,7 +75,7 @@
     });
     EXPIRE = this.EXPIRE;
     db.on('error', function(err){
-      var fs, minimatch, Commands;
+      var fs, minimatch, k, ref$, v, Commands;
       switch (false) {
       case db.DB !== true:
         return console.log("==> Lost connection to Redis Server - attempting to reconnect...");
@@ -85,7 +85,7 @@
 
       }
       console.log(err);
-      console.log("==> Falling back to JSON storage: /var/dump.json");
+      console.log("==> Falling back to file system storage: " + dataDir + "/dump/");
       if (EXPIRE) {
         console.log("==> The --expire <seconds> option requires a Redis server; stopping!");
         process.exit();
@@ -94,15 +94,81 @@
       db.DB = {};
       minimatch = require('minimatch');
       try {
-        db.DB = JSON.parse(require('fs').readFileSync("/var/dump.json", 'utf8'));
-        console.log("==> Restored previous session from JSON file");
+        db.DB = {
+          save_timestamps: {},
+          timestamps: {}
+        };
+        if (fs.existsSync(dataDir + "/dump/")) {
+          fs.readdirSync(dataDir + "/dump/").filter(partialize$.apply(/^[^.]/, [/^[^.]/.test, [void 8], [0]])).forEach(function(f){
+            var key, type, id, k, ref$, v, this$ = this;
+            key = f.split(".")[0];
+            type = key.split("-")[0];
+            id = key.split("-")[1];
+            db.DB.timestamps["timestamp-" + id] = 0;
+            db.DB.save_timestamps["timestamp-" + id] = 0;
+            if (type === "snapshot") {
+              db.DB[key] = fs.readFileSync(dataDir + "/dump/" + key + ".txt", 'utf8');
+            } else if (type === "audit") {
+              db.DB[key] = fs.readFileSync(dataDir + "/dump/" + key + ".txt", 'utf8').split("\n").filter(function(it){
+                return it.length;
+              });
+              for (k in ref$ = db.DB[key]) {
+                v = ref$[k];
+                db.DB[key][k] = db.DB[key][k].replace(/\\n/g, "\n").replace(/\\r/g, "\r").replace(/\\\\/g, "\\");
+              }
+            }
+          });
+        } else {
+          db.DB = JSON.parse(fs.readFileSync(dataDir + "/dump.json", 'utf8'));
+          db.DB.save_timestamps = {};
+          for (k in ref$ = db.DB.timestamps) {
+            v = ref$[k];
+            db.DB.save_timestamps[k] = -1;
+          }
+        }
+        console.log("==> Restored previous session from dump storage");
         if (db.DB === true) {
           db.DB = {};
         }
       } catch (e$) {}
       Commands = {
         bgsave: function(cb){
-          fs.writeFileSync("/var/dump.json", JSON.stringify(db.DB, void 8, 2), 'utf8');
+          var oldTimestamps, k, ref$, v, id, newTimestamps, type, str, i$, len$, entry;
+          if (!fs.existsSync(dataDir + "/dump/")) {
+            fs.mkdirSync(dataDir + "/dump/");
+          }
+          oldTimestamps = {};
+          for (k in ref$ = db.DB.save_timestamps) {
+            v = ref$[k];
+            id = k.split("-").pop();
+            oldTimestamps[id] = v;
+          }
+          newTimestamps = {};
+          for (k in ref$ = db.DB.timestamps) {
+            v = ref$[k];
+            id = k.split("-").pop();
+            newTimestamps[id] = v;
+            db.DB.save_timestamps[k] = v;
+          }
+          for (k in ref$ = db.DB) {
+            v = ref$[k];
+            id = k.split("-").pop();
+            if (oldTimestamps[id] !== newTimestamps[id]) {
+              type = k.split("-")[0];
+              switch (type) {
+              case "snapshot":
+                fs.writeFileSync(dataDir + "/dump/" + k + ".txt", v, 'utf8');
+                break;
+              case "audit":
+                str = "";
+                for (i$ = 0, len$ = v.length; i$ < len$; ++i$) {
+                  entry = v[i$];
+                  str += entry.replace(/[\n]/g, "\\n").replace(/[\r]/g, "\\r").replace(/\\/g, "\\\\") + "\n";
+                }
+                fs.writeFileSync(dataDir + "/dump/" + k + ".txt", str, 'utf8');
+              }
+            }
+          }
           return typeof cb == 'function' ? cb() : void 8;
         },
         get: function(key, cb){
@@ -211,6 +277,17 @@
     });
     return this.__DB__ = db;
   };
+  function partialize$(f, args, where){
+    var context = this;
+    return function(){
+      var params = slice$.call(arguments), i,
+          len = params.length, wlen = where.length,
+          ta = args ? args.concat() : [], tw = where ? where.concat() : [];
+      for(i = 0; i < len; ++i) { ta[tw[0]] = params[i]; tw.shift(); }
+      return len < wlen && len ?
+        partialize$.apply(context, [f, ta, tw]) : f.apply(context, ta);
+    };
+  }
   function importAll$(obj, src){
     for (var key in src) obj[key] = src[key];
     return obj;

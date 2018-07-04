@@ -58,7 +58,7 @@
     | db.DB => return false
     | otherwise
     console.log err
-    console.log "==> Falling back to JSON storage: /var/dump.json"
+    console.log "==> Falling back to file system storage: #{ dataDir }/dump/"
     if EXPIRE
       console.log "==> The --expire <seconds> option requires a Redis server; stopping!"
       process.exit!
@@ -67,16 +67,62 @@
     db.DB = {}
     minimatch = require \minimatch
     try
-      db.DB = JSON.parse do
-        require \fs .readFileSync "/var/dump.json" \utf8
-      console.log "==> Restored previous session from JSON file"
+      db.DB =
+        save_timestamps: {}
+        timestamps: {}
+      if fs.existsSync "#dataDir/dump/"
+        f <-! fs.readdir-sync "#dataDir/dump/" \
+                .filter (/^[^.]/.test _) \
+                .for-each
+        key = f.split(".")[0]
+        type = key.split("-")[0]
+        id = key.split("-")[1]
+        db.DB.timestamps["timestamp-#id"] = 0
+        db.DB.save_timestamps["timestamp-#id"] = 0
+        if type is "snapshot"
+          db.DB[key] = fs.readFileSync("#dataDir/dump/#key.txt", \utf8)
+        else if type is "audit"
+          db.DB[key] = fs.readFileSync("#dataDir/dump/#key.txt", \utf8)
+                         .split "\n"
+                         .filter (.length) # remove any blanks
+          for k, v of db.DB[key]
+            db.DB[key][k] = db.DB[key][k].replace(/\\n/g,"\n").replace(/\\r/g,"\r").replace(/\\\\/g,"\\")
+      else
+        db.DB = JSON.parse(fs.readFileSync "#dataDir/dump.json" \utf8)
+        db.DB.save_timestamps = {}
+        for k, v of db.DB.timestamps
+          db.DB.save_timestamps[k] = -1
+
+      console.log "==> Restored previous session from dump storage"
       db.DB = {} if db.DB is true
     Commands =
       bgsave: (cb) ->
-        fs.writeFileSync do
-          "/var/dump.json"
-          JSON.stringify db.DB,,2
-          \utf8
+        if !fs.existsSync "#dataDir/dump/"
+          fs.mkdirSync "#dataDir/dump/"
+
+        oldTimestamps = {}
+        for k, v of db.DB.save_timestamps
+            id = k.split("-").pop!
+            oldTimestamps[id] = v
+
+        newTimestamps = {}
+        for k, v of db.DB.timestamps
+          id = k.split("-").pop!
+          newTimestamps[id] = v
+          db.DB.save_timestamps[k] = v
+
+        for k, v of db.DB
+          id = k.split("-").pop!
+          unless oldTimestamps[id] is newTimestamps[id]
+            type = k.split("-")[0]
+            switch type
+            case "snapshot"
+              fs.writeFileSync("#dataDir/dump/#k.txt",v,\utf8)
+            case "audit"
+              str = ""
+              for entry in v
+                str += entry.replace(/[\n]/g,"\\n").replace(/[\r]/g,"\\r").replace(/\\/g,"\\\\") + "\n"
+              fs.writeFileSync("#dataDir/dump/#k.txt",str,\utf8)
         cb?!
       get: (key, cb) -> cb?(null, db.DB[key])
       set: (key, val, cb) -> db.DB[key] = val; cb?!

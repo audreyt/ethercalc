@@ -52,39 +52,46 @@
 
   new-room = -> "sheet1"
 
-  @get '/': sendFile \index.html
-  @get '/etc/*': -> @response.send 404 ''
-  @get '/var/*': -> @response.send 404 ''
-  #@get '/favicon.ico': -> @response.send 404 ''
+  @get "#BASEPATH/": sendFile \index.html
+  @get "#BASEPATH/etc/*": -> @response.send 404 ''
+  @get "#BASEPATH/var/*": -> @response.send 404 ''
+  #@get "#BASEPATH/favicon.ico": -> @response.send 404 ''
   #return site icons
-  @get '/favicon.ico': sendFile \favicon.ico
-  @get '/android-chrome-192x192.png': sendFile \android-chrome-192x192.png
-  @get '/apple-touch-icon.png': sendFile \apple-touch-icon.png
-  @get '/browserconfig.xml': sendFile \browserconfig.xml
-  @get '/favicon-16x16.png': sendFile \favicon-16x16.png
-  @get '/favicon-32x32.png': sendFile \favicon-32x32.png
-  @get '/favicon-32x32.png': sendFile \favicon-32x32.png
-  @get '/mstile-150x150.png': sendFile \mstile-150x150.png
-  @get '/mstile-310x310.png': sendFile \mstile-310x310.png
-  @get '/safari-pinned-tab.svg': sendFile \safari-pinned-tab.svg
-  @get '/manifest.appcache': ->
+  @get "#BASEPATH/favicon.ico": sendFile \favicon.ico
+  @get "#BASEPATH/android-chrome-192x192.png": sendFile \android-chrome-192x192.png
+  @get "#BASEPATH/apple-touch-icon.png": sendFile \apple-touch-icon.png
+  @get "#BASEPATH/browserconfig.xml": sendFile \browserconfig.xml
+  @get "#BASEPATH/favicon-16x16.png": sendFile \favicon-16x16.png
+  @get "#BASEPATH/favicon-32x32.png": sendFile \favicon-32x32.png
+  @get "#BASEPATH/favicon-32x32.png": sendFile \favicon-32x32.png
+  @get "#BASEPATH/mstile-150x150.png": sendFile \mstile-150x150.png
+  @get "#BASEPATH/mstile-310x310.png": sendFile \mstile-310x310.png
+  @get "#BASEPATH/safari-pinned-tab.svg": sendFile \safari-pinned-tab.svg
+  @get '#BASEPATH/manifest.appcache': ->
     # Sandstorm: Skip manifest appcache
     @response.type \text/cache-manifest
     @response.send 200 "CACHE MANIFEST\n\n##{Date!}\n\nNETWORK:\n*\n"
-  @get '/static/socialcalc.js': ->
-    @response.type \application/javascript
-    @response.sendfile "#RealBin/node_modules/socialcalc/SocialCalc.js"
-  @get '/static/form:part.js': ->
+  if fs.existsSync "#RealBin/node_modules/socialcalc/dist/SocialCalc.js"
+    @get "#BASEPATH/static/socialcalc.js": ->
+      @response.type \application/javascript
+      @response.sendfile "#RealBin/node_modules/socialcalc/dist/SocialCalc.js"
+  else if fs.existsSync "#RealBin/node_modules/socialcalc/SocialCalc.js"
+    @get "#BASEPATH/static/socialcalc.js": ->
+      @response.type \application/javascript
+      @response.sendfile "#RealBin/node_modules/socialcalc/SocialCalc.js"
+  else throw "Cannot find SocialCalc.js"
+
+  @get "#BASEPATH/static/form:part.js": ->
     part = @params.part
     @response.type \application/javascript
     @response.sendfile "#RealBin/form#part.js"
-  @get '/=_new': ->
+  @get "#BASEPATH/=_new": ->
     room = new-room!
     @response.redirect if KEY then "#BASEPATH/=#room/edit" else "#BASEPATH/=#room"
-  @get '/_new': ->
+  @get "#BASEPATH/_new": ->
     room = new-room!
     @response.redirect if KEY then "#BASEPATH/#room/edit" else "#BASEPATH/#room"
-  @get '/_start': sendFile \start.html
+  @get "#BASEPATH/_start": sendFile \start.html
 
   IO = @io
   api = (cb, cb-multiple) -> ->
@@ -155,8 +162,9 @@
     md: \text/x-markdown
     xlsx: \application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
     ods: \application/vnd.oasis.opendocument.spreadsheet
+    fods: \application/vnd.oasis.opendocument.spreadsheet
   Export-J = (type) -> api (-> # single
-    rv = J.utils["to_#type"](J.read it)
+    rv = J.utils["to_#type"](J.read(new Buffer it))
     rv = rv.Sheet1 if rv?Sheet1?
     [J-TypeMap[type], rv]
   ), ((names, saves) -> # multi
@@ -170,7 +178,7 @@
   )
       
   # Send time triggered email. Send due emails and schedule time of next send. Called from bash file:timetrigger in cron
-  @get '/_timetrigger': -> 
+  @get "#BASEPATH/_timetrigger": -> 
       (, allTimeTriggers) <~ DB.hgetall "cron-list"
       console.log "allTimeTriggers "  {...allTimeTriggers}
       timeNowMins = Math.floor(new Date().getTime() / (1000 * 60))
@@ -206,38 +214,39 @@
 
   ExportExcelXML = api ->
 
-  @get '/:room.csv': ExportCSV
-  @get '/:room.csv.json': ExportCSV-JSON
-  @get '/:room.html': ExportHTML
-  @get '/:room.ods': Export-J \ods
-  @get '/:room.xlsx': Export-J \xlsx
-  @get '/:room.md': Export-J \md
+  @get "#BASEPATH/:room.csv": ExportCSV
+  @get "#BASEPATH/:room.csv.json": ExportCSV-JSON
+  @get "#BASEPATH/:room.html": ExportHTML
+  @get "#BASEPATH/:room.ods": Export-J \ods
+  @get "#BASEPATH/:room.fods": Export-J \fods
+  @get "#BASEPATH/:room.xlsx": Export-J \xlsx
+  @get "#BASEPATH/:room.md": Export-J \md
   if @CORS
-     @get '/_rooms' : ->
+     @get "#BASEPATH/_rooms" : ->
         @response.type Text
         return @response.send 403 '_rooms not available with CORS'
   else
-     @get '/_rooms' : ->
+     @get "#BASEPATH/_rooms" : ->
         rooms <~ SC._rooms 
         @response.type \application/json
         @response.json 200 rooms
   if @CORS
-     @get '/_roomlinks' : ->
+     @get "#BASEPATH/_roomlinks" : ->
         @response.type Text
         return @response.send 403 '_roomlinks not available with CORS'
   else
-     @get '/_roomlinks' : ->
+     @get "#BASEPATH/_roomlinks" : ->
         rooms <~ SC._rooms 
         roomlinks = for room in rooms
           "<a href=#BASEPATH/#room>#room</a>"
         @response.type Html
         @response.json 200 roomlinks
   if @CORS
-     @get '/_roomtimes' : ->
+     @get "#BASEPATH/_roomtimes" : ->
         @response.type Text
         return @response.send 403 '_roomtimes not available with CORS'
   else
-     @get '/_roomtimes' : ->
+     @get "#BASEPATH/_roomtimes" : ->
         # Get roomtimes
         roomtimes <~ SC._roomtimes
         # Sort roomtimes
@@ -249,19 +258,19 @@
         @response.type \application/json
         @response.json 200 sorted_times
 
-  @get '/_from/:template': ->
+  @get "#BASEPATH/_from/:template": ->
     room = new-room!
     template = @params.template
     delete SC[room]
     {snapshot} <~ SC._get template, IO
     <~ SC._put room, snapshot
     @response.redirect if KEY then "#BASEPATH/#room/edit" else "#BASEPATH/#room"
-  @get '/_exists/:room' : ->
+  @get "#BASEPATH/_exists/:room" : ->
     exists <~ SC._exists @params.room
     @response.type \application/json
     @response.json (exists === 1)
 
-  @get '/:room': ->
+  @get "#BASEPATH/:room": ->
     ui-file = if @params.room is /^=/ then \multi/index.html else \index.html
     if @request.get(\x-sandstorm-permissions) isnt /modify/ and not @query.auth?length
       @response.redirect "#BASEPATH/#{ @params.room }?auth=0"
@@ -273,41 +282,42 @@
     else sendFile(ui-file).call @
     
   # Form/App - auto duplicate sheet for new user to input data 
-  @get '/:template/form': ->
+  @get "#BASEPATH/:template/form": ->
     template = @params.template
     room = template + \_ + new-room!
     delete SC[room]
     {snapshot} <~ SC._get template, IO
     <~ SC._put room, snapshot
     @response.redirect "#BASEPATH/#room/app" 
-  @get '/:template/appeditor': sendFile \panels.html    
+  @get "#BASEPATH/:template/appeditor": sendFile \panels.html    
 
-  @get '/:room/edit': ->
+  @get '#BASEPATH/:room/edit': ->
     if @request.get(\x-sandstorm-permissions) isnt /modify/
       @response.redirect "#BASEPATH/#{ @params.room }?auth=0"
       return
     room = @params.room
     @response.redirect "#BASEPATH/#room?auth=#{ hmac room }"
-  @get '/:room/view': ->
+  @get "#BASEPATH/:room/view": ->
     room = @params.room
     #@response.redirect "#BASEPATH/#room?auth=0"
     @response.redirect "#BASEPATH/#room?auth=#{ hmac room }&view=1"
-  @get '/:room/app': ->
+  @get "#BASEPATH/:room/app": ->
     room = @params.room
     @response.redirect "#BASEPATH/#room?auth=#{ hmac room }&app=1"
-  @get '/_/:room/cells/:cell': api -> [Json
+  @get "#BASEPATH/_/:room/cells/:cell": api -> [Json
     (sc, cb) ~> sc.exportCell @cell, cb
   ]
-  @get '/_/:room/cells': api -> [Json
+  @get "#BASEPATH/_/:room/cells": api -> [Json
     (sc, cb) -> sc.exportCells cb
   ]
-  @get '/_/:room/html': ExportHTML
-  @get '/_/:room/csv': ExportCSV
-  @get '/_/:room/csv.json': ExportCSV-JSON
-  @get '/_/:room/ods': Export-J \ods
-  @get '/_/:room/xlsx': Export-J \xlsx
-  @get '/_/:room/md': Export-J \md
-  @get '/_/:room': api -> [Text, it]
+  @get "#BASEPATH/_/:room/html": ExportHTML
+  @get "#BASEPATH/_/:room/csv": ExportCSV
+  @get "#BASEPATH/_/:room/csv.json": ExportCSV-JSON
+  @get "#BASEPATH/_/:room/ods": Export-J \ods
+  @get "#BASEPATH/_/:room/fods": Export-J \fods
+  @get "#BASEPATH/_/:room/xlsx": Export-J \xlsx
+  @get "#BASEPATH/_/:room/md": Export-J \md
+  @get "#BASEPATH/_/:room": api -> [Text, it]
 
   request-to-command = (request, cb) ->
     #console.log "request-to-command"
@@ -349,6 +359,7 @@
   for route in <[
     /=:room.xlsx /_/=:room/xlsx 
     /=:room.ods /_/=:room/ods 
+    /=:room.fods /_/=:room/fods
   ]> => @put "#route": ->
     room = encodeURIComponent(@params.room).replace(/%3A/g \:)
     cs = []; @request.on \data (chunk) ~> cs ++= chunk
