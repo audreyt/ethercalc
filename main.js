@@ -75,7 +75,6 @@
     this.get((ref$ = {}, ref$[BASEPATH + "/manifest.appcache"] = function(){
         this.response.type('text/cache-manifest');
         return this.response.send(200, "CACHE MANIFEST\n\n#" + Date() + "\n\nNETWORK:\n*\n");
-      }
     }, ref$));
     if (fs.existsSync(RealBin + "/node_modules/socialcalc/dist/SocialCalc.js")) {
       this.get((ref$ = {}, ref$[BASEPATH + "/static/socialcalc.js"] = function(){
