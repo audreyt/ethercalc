@@ -16,7 +16,7 @@
     "minimatch": "*",
     "optimist": "*",
     "redis": "0.12.x",
-    "socialcalc": "2.x",
+    "socialcalc": "https://github.com/marcelklehr/socialcalc.git",
     "uuid-pure": "*",
     "xoauth2": "*",
     "zappajs": "0.5.x"
