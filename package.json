@@ -1,7 +1,7 @@
 {
   "name": "ethercalc",
   "description": "Multi-User Spreadsheet Server",
-  "version": "0.20180825.0",
+  "version": "0.20180825.1",
   "homepage": "http://ethercalc.net/",
   "repository": {
     "type": "git",
@@ -16,7 +16,7 @@
     "minimatch": "*",
     "optimist": "*",
     "redis": "0.12.x",
-    "socialcalc": "https://github.com/marcelklehr/socialcalc.git",
+    "socialcalc": "^2.3.0",
     "uuid-pure": "*",
     "xoauth2": "*",
     "zappajs": "0.5.x"
