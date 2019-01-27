@@ -39,7 +39,7 @@ manifest ::
 
 ./node_modules/streamline/bin/_node \
 ./node_modules/uglify-js/bin/uglifyjs :
-	npm i --dev
+	echo npm i --dev
 
 static/multi.js :: multi/main.ls multi/styles.styl
 	webpack --optimize-minimize

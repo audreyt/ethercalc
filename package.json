@@ -21,9 +21,6 @@
     "xoauth2": "*",
     "zappajs": "0.5.x"
   },
-  "optionalDependencies": {
-    "webworker-threads": "^0.7.1"
-  },
   "devDependencies": {
     "css-loader": "^0.9.0",
     "livescript-loader": "^0.1.5",

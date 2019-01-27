@@ -40,7 +40,48 @@ bootSC += """;var SocialCalc = this.SocialCalc; var window = this;(#{->
 ### WebWorker Threads Fallback ###
 ##################################
 IsThreaded = true
-Worker = try
+
+WorkerThread = try require \worker_threads
+console.log WorkerThread
+
+if WorkerThread
+  console.log "Starting backend using native worker_threads"
+  const self = {}
+  const noop = ->
+  const Boot = ->
+    WorkerThread.parentPort.on \message (msg) ->
+      if msg.eval and msg.port
+        console.log msg.eval
+        msg.port.postMessage eval.apply(@, [msg.eval])
+        msg.port.close!
+        return
+      self.onmessage { data: msg.data }
+  Worker = class => (code) ->
+    @worker-thread = worker-thread = new WorkerThread.Worker """
+      global.WorkerThread = require('worker_threads');
+      global.window = {
+        setTimeout: function(cb) { process.nextTick(cb) },
+        alert: #noop,
+        clearTimeout: #noop
+      };
+      global.self = { onmessage: #noop, thread: {} };
+      global.alert = #noop;
+      (#Boot)();
+      (#code)();
+    """, {+eval}
+    worker-thread.on \message, (data) ~> @onmessage? {data}
+    @postMessage = (data) -> worker-thread.postMessage {data}
+    @thread =
+      nextTick: (cb) -> process.nextTick cb
+      eval: (src, cb) ->
+        {port1, port2} = new WorkerThread.MessageChannel!
+        worker-thread.postMessage { eval: src, port: port1 }, [port1]
+        port2.on \message, (rv) -> cb? null, rv
+    @terminate = -> worker-thread.terminate!
+    return @
+
+
+Worker ||= try
   throw \vm if argv.vm
   console.log "Starting backend using webworker-threads"
   (require \webworker-threads).Worker
