@@ -41,11 +41,10 @@ bootSC += """;var SocialCalc = this.SocialCalc; var window = this;(#{->
 ##################################
 IsThreaded = true
 
-WorkerThread = try require \worker_threads
-console.log WorkerThread
-
-if WorkerThread
-  console.log "Starting backend using native worker_threads"
+if parseInt(process.versions.node - /\..*/) >= 8
+  WorkerJS = try require \worker
+if WorkerJS
+  console.log "Starting backend using worker.js"
   const self = {}
   const noop = ->
   const Boot = ->
@@ -82,9 +81,7 @@ if WorkerThread
 
 
 Worker ||= try
-  throw \vm if argv.vm
-  console.log "Starting backend using webworker-threads"
-  (require \webworker-threads).Worker
+  throw \vm
 catch
   console.log "Falling back to vm.CreateContext backend"
   IsThreaded = false
