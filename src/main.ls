@@ -328,11 +328,16 @@
     return cb buf.toString(\utf8) if request.is \text/plain
     # TODO: Move to thread
     for k, save of (J.utils.to_socialcalc(J.read buf) || {'': ''})
+      re = /\ncell:([A-Z]+[0-9]+)/g
+      while (m = re.exec save)
+        copied-start ||= m[1]
+        copied-end = m[1]
       save.=replace /[\d\D]*?\ncell:/ 'cell:'
       save.=replace /\s--SocialCalcSpreadsheetControlSave--[\d\D]*/ '\n'
       save.=replace /\\/g "\\b" if ~save.index-of "\\"
       save.=replace /:/g  "\\c" if ~save.index-of ":"
       save.=replace /\n/g "\\n" if ~save.index-of "\n"
+      save += "copiedfrom:#copied-start:#copied-end\\n"
       return cb "loadclipboard #save"
 
   request-to-save = (request, cb) ->
