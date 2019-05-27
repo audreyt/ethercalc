@@ -55,90 +55,61 @@
     newRoom = function(){
       return "sheet1";
     };
-    this.get({
-      '/': sendFile('index.html')
-    });
-    this.get({
-      '/etc/*': function(){
-        return this.response.send(404, '');
-      }
-    });
-    this.get({
-      '/var/*': function(){
-        return this.response.send(404, '');
-      }
-    });
-    this.get({
-      '/favicon.ico': sendFile('favicon.ico')
-    });
-    this.get({
-      '/android-chrome-192x192.png': sendFile('android-chrome-192x192.png')
-    });
-    this.get({
-      '/apple-touch-icon.png': sendFile('apple-touch-icon.png')
-    });
-    this.get({
-      '/browserconfig.xml': sendFile('browserconfig.xml')
-    });
-    this.get({
-      '/favicon-16x16.png': sendFile('favicon-16x16.png')
-    });
-    this.get({
-      '/favicon-32x32.png': sendFile('favicon-32x32.png')
-    });
-    this.get({
-      '/favicon-32x32.png': sendFile('favicon-32x32.png')
-    });
-    this.get({
-      '/mstile-150x150.png': sendFile('mstile-150x150.png')
-    });
-    this.get({
-      '/mstile-310x310.png': sendFile('mstile-310x310.png')
-    });
-    this.get({
-      '/safari-pinned-tab.svg': sendFile('safari-pinned-tab.svg')
-    });
-    this.get({
-      '/manifest.appcache': function(){
+    this.get((ref$ = {}, ref$[BASEPATH + "/"] = sendFile('index.html'), ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/etc/*"] = function(){
+      return this.response.send(404, '');
+    }, ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/var/*"] = function(){
+      return this.response.send(404, '');
+    }, ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/favicon.ico"] = sendFile('favicon.ico'), ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/android-chrome-192x192.png"] = sendFile('android-chrome-192x192.png'), ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/apple-touch-icon.png"] = sendFile('apple-touch-icon.png'), ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/browserconfig.xml"] = sendFile('browserconfig.xml'), ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/favicon-16x16.png"] = sendFile('favicon-16x16.png'), ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/favicon-32x32.png"] = sendFile('favicon-32x32.png'), ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/favicon-32x32.png"] = sendFile('favicon-32x32.png'), ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/mstile-150x150.png"] = sendFile('mstile-150x150.png'), ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/mstile-310x310.png"] = sendFile('mstile-310x310.png'), ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/safari-pinned-tab.svg"] = sendFile('safari-pinned-tab.svg'), ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/manifest.appcache"] = function(){
         this.response.type('text/cache-manifest');
         return this.response.send(200, "CACHE MANIFEST\n\n#" + Date() + "\n\nNETWORK:\n*\n");
-      }
-    });
-    this.get({
-      '/static/socialcalc.js': function(){
+    }, ref$));
+    if (fs.existsSync(RealBin + "/node_modules/socialcalc/dist/SocialCalc.js")) {
+      this.get((ref$ = {}, ref$[BASEPATH + "/static/socialcalc.js"] = function(){
+        this.response.type('application/javascript');
+        return this.response.sendfile(RealBin + "/node_modules/socialcalc/dist/SocialCalc.js");
+      }, ref$));
+    } else if (fs.existsSync(RealBin + "/node_modules/socialcalc/SocialCalc.js")) {
+      this.get((ref$ = {}, ref$[BASEPATH + "/static/socialcalc.js"] = function(){
         this.response.type('application/javascript');
         return this.response.sendfile(RealBin + "/node_modules/socialcalc/SocialCalc.js");
-      }
-    });
-    this.get({
-      '/static/form:part.js': function(){
-        var part;
-        part = this.params.part;
-        this.response.type('application/javascript');
-        return this.response.sendfile(RealBin + "/form" + part + ".js");
-      }
-    });
-    this.get({
-      '/=_new': function(){
-        var room;
-        room = newRoom();
-        return this.response.redirect(KEY
-          ? BASEPATH + "/=" + room + "/edit"
-          : BASEPATH + "/=" + room);
-      }
-    });
-    this.get({
-      '/_new': function(){
-        var room;
-        room = newRoom();
-        return this.response.redirect(KEY
-          ? BASEPATH + "/" + room + "/edit"
-          : BASEPATH + "/" + room);
-      }
-    });
-    this.get({
-      '/_start': sendFile('start.html')
-    });
+      }, ref$));
+    } else {
+      throw "Cannot find SocialCalc.js";
+    }
+    this.get((ref$ = {}, ref$[BASEPATH + "/static/form:part.js"] = function(){
+      var part;
+      part = this.params.part;
+      this.response.type('application/javascript');
+      return this.response.sendfile(RealBin + "/form" + part + ".js");
+    }, ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/=_new"] = function(){
+      var room;
+      room = newRoom();
+      return this.response.redirect(KEY
+        ? BASEPATH + "/=" + room + "/edit"
+        : BASEPATH + "/=" + room);
+    }, ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/_new"] = function(){
+      var room;
+      room = newRoom();
+      return this.response.redirect(KEY
+        ? BASEPATH + "/" + room + "/edit"
+        : BASEPATH + "/" + room);
+    }, ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/_start"] = sendFile('start.html'), ref$));
     IO = this.io;
     api = function(cb, cbMultiple){
       return function(){
@@ -250,12 +221,13 @@
     JTypeMap = {
       md: 'text/x-markdown',
       xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      ods: 'application/vnd.oasis.opendocument.spreadsheet'
+      ods: 'application/vnd.oasis.opendocument.spreadsheet',
+      fods: 'application/vnd.oasis.opendocument.spreadsheet'
     };
     ExportJ = function(type){
       return api(function(it){
         var rv;
-        rv = J.utils["to_" + type](J.read(it));
+        rv = J.utils["to_" + type](J.read(new Buffer(it)));
         if ((rv != null ? rv.Sheet1 : void 8) != null) {
           rv = rv.Sheet1;
         }
@@ -279,276 +251,218 @@
         return [JTypeMap[type], rv, type];
       });
     };
-    this.get({
-      '/_timetrigger': function(){
-        var this$ = this;
-        return DB.hgetall("cron-list", function(arg$, allTimeTriggers){
-          var timeNowMins, nextTriggerTime, cellID, timeList, res$, i$, ref$, len$, triggerTimeMins, ref1$, room, cell;
-          console.log("allTimeTriggers ", (import$({}, allTimeTriggers)));
-          timeNowMins = Math.floor(new Date().getTime() / (1000 * 60));
-          nextTriggerTime = 2147483647;
-          for (cellID in allTimeTriggers) {
-            timeList = allTimeTriggers[cellID];
-            res$ = [];
-            for (i$ = 0, len$ = (ref$ = timeList.split(',')).length; i$ < len$; ++i$) {
-              triggerTimeMins = ref$[i$];
-              if (triggerTimeMins <= timeNowMins) {
-                ref1$ = cellID.split('!'), room = ref1$[0], cell = ref1$[1];
-                console.log("cellID " + cellID + " triggerTimeMins " + triggerTimeMins);
-                SC._get(room, IO, fn$);
-                continue;
-              } else {
-                if (nextTriggerTime > triggerTimeMins) {
-                  nextTriggerTime = triggerTimeMins;
-                }
-                res$.push(triggerTimeMins);
-              }
-            }
-            timeList = res$;
-            if (timeList.length === 0) {
-              DB.hdel("cron-list", cellID);
+    this.get((ref$ = {}, ref$[BASEPATH + "/_timetrigger"] = function(){
+      var this$ = this;
+      return DB.hgetall("cron-list", function(arg$, allTimeTriggers){
+        var timeNowMins, nextTriggerTime, cellID, timeList, res$, i$, ref$, len$, triggerTimeMins, ref1$, room, cell;
+        console.log("allTimeTriggers ", (import$({}, allTimeTriggers)));
+        timeNowMins = Math.floor(new Date().getTime() / (1000 * 60));
+        nextTriggerTime = 2147483647;
+        for (cellID in allTimeTriggers) {
+          timeList = allTimeTriggers[cellID];
+          res$ = [];
+          for (i$ = 0, len$ = (ref$ = timeList.split(',')).length; i$ < len$; ++i$) {
+            triggerTimeMins = ref$[i$];
+            if (triggerTimeMins <= timeNowMins) {
+              ref1$ = cellID.split('!'), room = ref1$[0], cell = ref1$[1];
+              console.log("cellID " + cellID + " triggerTimeMins " + triggerTimeMins);
+              SC._get(room, IO, fn$);
+              continue;
             } else {
-              DB.hset("cron-list", cellID, timeList.toString());
+              if (nextTriggerTime > triggerTimeMins) {
+                nextTriggerTime = triggerTimeMins;
+              }
+              res$.push(triggerTimeMins);
             }
           }
-          return DB.multi().set("cron-nextTriggerTime", nextTriggerTime).bgsave().exec(function(){
-            fs.writeFileSync(dataDir + "/nextTriggerTime.txt", nextTriggerTime, 'utf8');
-            console.log("--- cron email sent ---");
-            this$.response.type(Json);
-            return this$.response.send(200, allTimeTriggers);
-          });
-          function fn$(arg$){
-            var snapshot;
-            snapshot = arg$.snapshot;
-            return SC[room].triggerActionCell(cell, function(){});
+          timeList = res$;
+          if (timeList.length === 0) {
+            DB.hdel("cron-list", cellID);
+          } else {
+            DB.hset("cron-list", cellID, timeList.toString());
           }
+        }
+        return DB.multi().set("cron-nextTriggerTime", nextTriggerTime).bgsave().exec(function(){
+          fs.writeFileSync(dataDir + "/nextTriggerTime.txt", nextTriggerTime, 'utf8');
+          console.log("--- cron email sent ---");
+          this$.response.type(Json);
+          return this$.response.send(200, allTimeTriggers);
         });
-      }
-    });
-    ExportExcelXML = api(function(){});
-    this.get({
-      '/:room.csv': ExportCSV
-    });
-    this.get({
-      '/:room.csv.json': ExportCSVJSON
-    });
-    this.get({
-      '/:room.html': ExportHTML
-    });
-    this.get({
-      '/:room.ods': ExportJ('ods')
-    });
-    this.get({
-      '/:room.xlsx': ExportJ('xlsx')
-    });
-    this.get({
-      '/:room.md': ExportJ('md')
-    });
-    if (this.CORS) {
-      this.get({
-        '/_rooms': function(){
-          this.response.type(Text);
-          return this.response.send(403, '_rooms not available with CORS');
-        }
-      });
-    } else {
-      this.get({
-        '/_rooms': function(){
-          var this$ = this;
-          return SC._rooms(function(rooms){
-            this$.response.type('application/json');
-            return this$.response.json(200, rooms);
-          });
-        }
-      });
-    }
-    if (this.CORS) {
-      this.get({
-        '/_roomlinks': function(){
-          this.response.type(Text);
-          return this.response.send(403, '_roomlinks not available with CORS');
-        }
-      });
-    } else {
-      this.get({
-        '/_roomlinks': function(){
-          var this$ = this;
-          return SC._rooms(function(rooms){
-            var roomlinks, res$, i$, len$, room;
-            res$ = [];
-            for (i$ = 0, len$ = rooms.length; i$ < len$; ++i$) {
-              room = rooms[i$];
-              res$.push("<a href=" + BASEPATH + "/" + room + ">" + room + "</a>");
-            }
-            roomlinks = res$;
-            this$.response.type(Html);
-            return this$.response.json(200, roomlinks);
-          });
-        }
-      });
-    }
-    if (this.CORS) {
-      this.get({
-        '/_roomtimes': function(){
-          this.response.type(Text);
-          return this.response.send(403, '_roomtimes not available with CORS');
-        }
-      });
-    } else {
-      this.get({
-        '/_roomtimes': function(){
-          var this$ = this;
-          return SC._roomtimes(function(roomtimes){
-            var rooms, res$, r, time, sorted_rooms, sorted_times, i$, len$;
-            res$ = [];
-            for (r in roomtimes) {
-              time = roomtimes[r];
-              res$.push(r);
-            }
-            rooms = res$;
-            sorted_rooms = rooms.sort(function(a, b){
-              return roomtimes[b] - roomtimes[a];
-            });
-            sorted_times = {};
-            for (i$ = 0, len$ = sorted_rooms.length; i$ < len$; ++i$) {
-              r = sorted_rooms[i$];
-              sorted_times[r] = roomtimes[r];
-            }
-            this$.response.type('application/json');
-            return this$.response.json(200, sorted_times);
-          });
-        }
-      });
-    }
-    this.get({
-      '/_from/:template': function(){
-        var room, template, this$ = this;
-        room = newRoom();
-        template = this.params.template;
-        delete SC[room];
-        return SC._get(template, IO, function(arg$){
+        function fn$(arg$){
           var snapshot;
           snapshot = arg$.snapshot;
-          return SC._put(room, snapshot, function(){
-            return this$.response.redirect(KEY
-              ? BASEPATH + "/" + room + "/edit"
-              : BASEPATH + "/" + room);
-          });
-        });
-      }
-    });
-    this.get({
-      '/_exists/:room': function(){
+          return SC[room].triggerActionCell(cell, function(){});
+        }
+      });
+    }, ref$));
+    ExportExcelXML = api(function(){});
+    this.get((ref$ = {}, ref$[BASEPATH + "/:room.csv"] = ExportCSV, ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/:room.csv.json"] = ExportCSVJSON, ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/:room.html"] = ExportHTML, ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/:room.ods"] = ExportJ('ods'), ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/:room.fods"] = ExportJ('fods'), ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/:room.xlsx"] = ExportJ('xlsx'), ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/:room.md"] = ExportJ('md'), ref$));
+    if (this.CORS) {
+      this.get((ref$ = {}, ref$[BASEPATH + "/_rooms"] = function(){
+        this.response.type(Text);
+        return this.response.send(403, '_rooms not available with CORS');
+      }, ref$));
+    } else {
+      this.get((ref$ = {}, ref$[BASEPATH + "/_rooms"] = function(){
         var this$ = this;
-        return SC._exists(this.params.room, function(exists){
+        return SC._rooms(function(rooms){
           this$.response.type('application/json');
-          return this$.response.json(deepEq$(exists, 1, '==='));
+          return this$.response.json(200, rooms);
         });
-      }
-    });
-    this.get({
-      '/:room': function(){
-        var uiFile, ref$, ref1$;
-        uiFile = /^=/.exec(this.params.room) ? 'multi/index.html' : 'index.html';
-        if (!/modify/.test(this.request.get('x-sandstorm-permissions')) && !((ref$ = this.query.auth) != null && ref$.length)) {
+      }, ref$));
+    }
+    if (this.CORS) {
+      this.get((ref$ = {}, ref$[BASEPATH + "/_roomlinks"] = function(){
+        this.response.type(Text);
+        return this.response.send(403, '_roomlinks not available with CORS');
+      }, ref$));
+    } else {
+      this.get((ref$ = {}, ref$[BASEPATH + "/_roomlinks"] = function(){
+        var this$ = this;
+        return SC._rooms(function(rooms){
+          var roomlinks, res$, i$, len$, room;
+          res$ = [];
+          for (i$ = 0, len$ = rooms.length; i$ < len$; ++i$) {
+            room = rooms[i$];
+            res$.push("<a href=" + BASEPATH + "/" + room + ">" + room + "</a>");
+          }
+          roomlinks = res$;
+          this$.response.type(Html);
+          return this$.response.json(200, roomlinks);
+        });
+      }, ref$));
+    }
+    if (this.CORS) {
+      this.get((ref$ = {}, ref$[BASEPATH + "/_roomtimes"] = function(){
+        this.response.type(Text);
+        return this.response.send(403, '_roomtimes not available with CORS');
+      }, ref$));
+    } else {
+      this.get((ref$ = {}, ref$[BASEPATH + "/_roomtimes"] = function(){
+        var this$ = this;
+        return SC._roomtimes(function(roomtimes){
+          var rooms, res$, r, time, sorted_rooms, sorted_times, i$, len$;
+          res$ = [];
+          for (r in roomtimes) {
+            time = roomtimes[r];
+            res$.push(r);
+          }
+          rooms = res$;
+          sorted_rooms = rooms.sort(function(a, b){
+            return roomtimes[b] - roomtimes[a];
+          });
+          sorted_times = {};
+          for (i$ = 0, len$ = sorted_rooms.length; i$ < len$; ++i$) {
+            r = sorted_rooms[i$];
+            sorted_times[r] = roomtimes[r];
+          }
+          this$.response.type('application/json');
+          return this$.response.json(200, sorted_times);
+        });
+      }, ref$));
+    }
+    this.get((ref$ = {}, ref$[BASEPATH + "/_from/:template"] = function(){
+      var room, template, this$ = this;
+      room = newRoom();
+      template = this.params.template;
+      delete SC[room];
+      return SC._get(template, IO, function(arg$){
+        var snapshot;
+        snapshot = arg$.snapshot;
+        return SC._put(room, snapshot, function(){
+          return this$.response.redirect(KEY
+            ? BASEPATH + "/" + room + "/edit"
+            : BASEPATH + "/" + room);
+        });
+      });
+    }, ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/_exists/:room"] = function(){
+      var this$ = this;
+      return SC._exists(this.params.room, function(exists){
+        this$.response.type('application/json');
+        return this$.response.json(deepEq$(exists, 1, '==='));
+      });
+    }, ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/:room"] = function(){
+      var uiFile, ref$;
+      uiFile = /^=/.exec(this.params.room) ? 'multi/index.html' : 'index.html';
+      if (!/modify/.test(this.request.get('x-sandstorm-permissions')) && !((ref$ = this.query.auth) != null && ref$.length)) {
           this.response.redirect(BASEPATH + "/" + this.params.room + "?auth=0");
         }
-        if (KEY) {
-          if ((ref1$ = this.query.auth) != null && ref1$.length) {
-            return sendFile(uiFile).call(this);
-          } else {
-            return this.response.redirect(BASEPATH + "/" + this.params.room + "?auth=0");
-          }
-        } else {
+      if (KEY) {
+        if ((ref$ = this.query.auth) != null && ref$.length) {
           return sendFile(uiFile).call(this);
+        } else {
+          return this.response.redirect(BASEPATH + "/" + this.params.room + "?auth=0");
         }
+      } else {
+        return sendFile(uiFile).call(this);
       }
-    });
-    this.get({
-      '/:template/form': function(){
-        var template, room, this$ = this;
-        template = this.params.template;
-        room = template + '_' + newRoom();
-        delete SC[room];
-        return SC._get(template, IO, function(arg$){
-          var snapshot;
-          snapshot = arg$.snapshot;
-          return SC._put(room, snapshot, function(){
-            return this$.response.redirect(BASEPATH + "/" + room + "/app");
-          });
+    }, ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/:template/form"] = function(){
+      var template, room, this$ = this;
+      template = this.params.template;
+      room = template + '_' + newRoom();
+      delete SC[room];
+      return SC._get(template, IO, function(arg$){
+        var snapshot;
+        snapshot = arg$.snapshot;
+        return SC._put(room, snapshot, function(){
+          return this$.response.redirect(BASEPATH + "/" + room + "/app");
         });
-      }
-    });
-    this.get({
-      '/:template/appeditor': sendFile('panels.html')
-    });
-    this.get({
-      '/:room/edit': function(){
-        var room;
-        if (!/modify/.test(this.request.get('x-sandstorm-permissions'))) {
+      });
+    }, ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/:template/appeditor"] = sendFile('panels.html'), ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/:room/edit"] = function(){
+      var room;
+      if (!/modify/.test(this.request.get('x-sandstorm-permissions'))) {
           this.response.redirect(BASEPATH + "/" + this.params.room + "?auth=0");
           return;
         }
-        room = this.params.room;
-        return this.response.redirect(BASEPATH + "/" + room + "?auth=" + hmac(room));
-      }
-    });
-    this.get({
-      '/:room/view': function(){
-        var room;
-        room = this.params.room;
-        return this.response.redirect(BASEPATH + "/" + room + "?auth=" + hmac(room) + "&view=1");
-      }
-    });
-    this.get({
-      '/:room/app': function(){
-        var room;
-        room = this.params.room;
-        return this.response.redirect(BASEPATH + "/" + room + "?auth=" + hmac(room) + "&app=1");
-      }
-    });
-    this.get({
-      '/_/:room/cells/:cell': api(function(){
-        var this$ = this;
-        return [
-          Json, function(sc, cb){
-            return sc.exportCell(this$.cell, cb);
-          }
-        ];
-      })
-    });
-    this.get({
-      '/_/:room/cells': api(function(){
-        return [
-          Json, function(sc, cb){
-            return sc.exportCells(cb);
-          }
-        ];
-      })
-    });
-    this.get({
-      '/_/:room/html': ExportHTML
-    });
-    this.get({
-      '/_/:room/csv': ExportCSV
-    });
-    this.get({
-      '/_/:room/csv.json': ExportCSVJSON
-    });
-    this.get({
-      '/_/:room/ods': ExportJ('ods')
-    });
-    this.get({
-      '/_/:room/xlsx': ExportJ('xlsx')
-    });
-    this.get({
-      '/_/:room/md': ExportJ('md')
-    });
-    this.get({
-      '/_/:room': api(function(it){
-        return [Text, it];
-      })
-    });
+      room = this.params.room;
+      return this.response.redirect(BASEPATH + "/" + room + "?auth=" + hmac(room));
+    }, ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/:room/view"] = function(){
+      var room;
+      room = this.params.room;
+      return this.response.redirect(BASEPATH + "/" + room + "?auth=" + hmac(room) + "&view=1");
+    }, ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/:room/app"] = function(){
+      var room;
+      room = this.params.room;
+      return this.response.redirect(BASEPATH + "/" + room + "?auth=" + hmac(room) + "&app=1");
+    }, ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/_/:room/cells/:cell"] = api(function(){
+      var this$ = this;
+      return [
+        Json, function(sc, cb){
+          return sc.exportCell(this$.cell, cb);
+        }
+      ];
+    }), ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/_/:room/cells"] = api(function(){
+      return [
+        Json, function(sc, cb){
+          return sc.exportCells(cb);
+        }
+      ];
+    }), ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/_/:room/html"] = ExportHTML, ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/_/:room/csv"] = ExportCSV, ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/_/:room/csv.json"] = ExportCSVJSON, ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/_/:room/ods"] = ExportJ('ods'), ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/_/:room/fods"] = ExportJ('fods'), ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/_/:room/xlsx"] = ExportJ('xlsx'), ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/_/:room/md"] = ExportJ('md'), ref$));
+    this.get((ref$ = {}, ref$[BASEPATH + "/_/:room"] = api(function(it){
+      return [Text, it];
+    }), ref$));
     requestToCommand = function(request, cb){
       var command, ref$, cs, this$ = this;
       if (request.is('application/json')) {
@@ -621,7 +535,7 @@
         }
       });
     };
-    for (i$ = 0, len$ = (ref$ = ['/=:room.xlsx', '/_/=:room/xlsx', '/=:room.ods', '/_/=:room/ods']).length; i$ < len$; ++i$) {
+    for (i$ = 0, len$ = (ref$ = ['/=:room.xlsx', '/_/=:room/xlsx', '/=:room.ods', '/_/=:room/ods', '/=:room.fods', '/_/=:room/fods']).length; i$ < len$; ++i$) {
       route = ref$[i$];
       this.put((ref1$ = {}, ref1$[route + ""] = fn$, ref1$));
     }

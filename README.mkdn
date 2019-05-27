@@ -1,6 +1,6 @@
 # EtherCalc
 
-* Overview: http://ethercalc.net/
+* Overview: https://ethercalc.net/
 * 中文版: http://tw.ethercalc.net/
 * 简体中文: http://cn.ethercalc.net/
 * REST API: http://docs.ethercalc.apiary.io/
@@ -27,6 +27,10 @@ For local non-root installation
     npm i
     make
 
+Nodejs older than 6.0
+
+    downgrade Nodemailer to v2.7.2
+
 Or install with our [Docker](http://www.docker.io/) image, which comes with
 support for webworker-threads:
 
@@ -35,6 +39,22 @@ support for webworker-threads:
 
     # Run ethercalc on port 80 ( http://localhost/ )
     docker-compose up -d
+
+Config database
+
+    set env vars:
+      REDIS_PORT REDIS_HOST REDIS_SOCKPATH REDIS_PASS REDIS_DB OPENSHIFT_DATA_DIR
+
+    Defaults:
+      REDIS_HOST = localhost   
+      REDIS_PORT = 6379   
+      OPENSHIFT_DATA_DIR= process.cwd!
+
+    OPENSHIFT_DATA_DIR is used if redis is not Running.
+
+    Code is here:
+    https://github.com/audreyt/ethercalc/blob/df758d4c2f5cbcb00b50e9289a8ba237d4f8fa86/src/db.ls#L5
+
 
 Send email
 

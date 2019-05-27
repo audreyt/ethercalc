@@ -3,7 +3,8 @@
   return @__emailer__ if @__emailer__
   emailer = {}
   emailer.log = -> console.log "email tester"
-  nodemailer = require \nodemailer
+  nodemailer = try require \nodemailer
+  return unless nodemailer
   generator = require \xoauth2 .createXOAuth2Generator do
     #// **********************************
     #//  Please add OAuth2 values 
