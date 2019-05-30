@@ -6,12 +6,12 @@ export class HackFoldr
     res <~ $.get "#{ @base }/_/#{ @id }/csv.json"
     if res.body?length
       res.body.shift! # header
-      @rows = [ { link, title, row: idx+2 } for [link, title], idx in res.body | link and title and link isnt /^#/ ]
+      @rows = [ { link, title, row: idx+2 } for [link, title], idx in res.body | link and link isnt /^#/ and title = if title then title else "Sheet"+ (idx+1) ]
     else
       @was-non-existent = true
     if !@rows?length
       @was-empty = true
-      return cb? @rows = [ { row: 2, link: "/#{ @id }.1", title: \Sheet1 } ]
+      return cb? @rows = [] , @.push({link: "/#{ @id }.1", title: \Sheet1 }) , cb(@)
     cb? @rows
   size: -> @rows.length
   lastIndex: -> @rows.length - 1

@@ -581,6 +581,8 @@
               row = 1;
               if (/\nsheet:c:\d+:r:(\d+):/.exec(snapshot)) {
                 row += Number(RegExp.$1);
+              } else {
+                row = 2;
               }
               if (parseInt(this$.query.row)) {
                 row = parseInt(this$.query.row);

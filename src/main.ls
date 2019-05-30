@@ -413,6 +413,8 @@
       row = 1
       if snapshot is /\nsheet:c:\d+:r:(\d+):/
         row += Number(RegExp.$1)
+      else
+        row = 2
       if parseInt(@query.row)
         row = parseInt(@query.row)
         command := [command, "insertrow A#row", "paste A#row all"]
