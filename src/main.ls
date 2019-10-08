@@ -118,7 +118,7 @@
         body.shift! # header
         todo = DB.multi!
         names = []
-        for [link, title], idx in body | link and title and link is /^\//
+        for [link, title], idx in body | link and title and link is /^\// and title not in names
           names ++= title
           todo.=get "snapshot-#{ link.slice(1) }"
         _, saves <~ todo.exec!
@@ -170,7 +170,7 @@
   ), ((names, saves) -> # multi
     input = [ null, { SheetNames: names, Sheets: {} } ]
     for save, idx in saves
-      [harb, { Sheets: { Sheet1 } }] = J.read save
+      [harb, { Sheets: { Sheet1 } }] = J.read(new Buffer save)
       input.0 ||= harb
       input.1.Sheets[names[idx]] = Sheet1
     rv = J.utils["to_#type"](input)
@@ -331,11 +331,16 @@
     return cb buf.toString(\utf8) if request.is \text/plain
     # TODO: Move to thread
     for k, save of (J.utils.to_socialcalc(J.read buf) || {'': ''})
+      re = /\ncell:([A-Z]+[0-9]+)/g
+      while (m = re.exec save)
+        copied-start ||= m[1]
+        copied-end = m[1]
       save.=replace /[\d\D]*?\ncell:/ 'cell:'
       save.=replace /\s--SocialCalcSpreadsheetControlSave--[\d\D]*/ '\n'
       save.=replace /\\/g "\\b" if ~save.index-of "\\"
       save.=replace /:/g  "\\c" if ~save.index-of ":"
       save.=replace /\n/g "\\n" if ~save.index-of "\n"
+      save += "copiedfrom:#copied-start:#copied-end\\n"
       return cb "loadclipboard #save"
 
   request-to-save = (request, cb) ->
@@ -413,6 +418,8 @@
       row = 1
       if snapshot is /\nsheet:c:\d+:r:(\d+):/
         row += Number(RegExp.$1)
+      else
+        row = 2
       if parseInt(@query.row)
         row = parseInt(@query.row)
         command := [command, "insertrow A#row", "paste A#row all"]

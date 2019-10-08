@@ -74,7 +74,7 @@
         f <-! fs.readdir-sync "#dataDir/dump/" \
                 .filter (/^[^.]/.test _) \
                 .for-each
-        key = f.split(".")[0]
+        key = f.slice(0, -4)
         type = key.split("-")[0]
         id = key.split("-")[1]
         db.DB.timestamps["timestamp-#id"] = 0
