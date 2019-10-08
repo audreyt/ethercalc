@@ -1,7 +1,7 @@
 {
   "name": "ethercalc",
   "description": "Multi-User Spreadsheet Server",
-  "version": "0.20190703.0",
+  "version": "0.20191008.0",
   "homepage": "http://ethercalc.net/",
   "repository": {
     "type": "git",
@@ -31,7 +31,7 @@
     "react-basic-tabs": "^1.0.3",
     "react-hot-loader": "^0.5.0",
     "style-loader": "^0.8.2",
-    "stylus-loader": "^0.4.0",
+    "stylus-loader": "^3.0.2",
     "superagent": "^0.21.0",
     "webpack": "^1.4.13",
     "webpack-dev-server": "^1.6.6"
