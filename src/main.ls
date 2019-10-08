@@ -121,7 +121,7 @@
         body.shift! # header
         todo = DB.multi!
         names = []
-        for [link, title], idx in body | link and title and link is /^\//
+        for [link, title], idx in body | link and title and link is /^\// and title not in names
           names ++= title
           todo.=get "snapshot-#{ link.slice(1) }"
         _, saves <~ todo.exec!
@@ -173,7 +173,7 @@
   ), ((names, saves) -> # multi
     input = [ null, { SheetNames: names, Sheets: {} } ]
     for save, idx in saves
-      [harb, { Sheets: { Sheet1 } }] = J.read save
+      [harb, { Sheets: { Sheet1 } }] = J.read(new Buffer save)
       input.0 ||= harb
       input.1.Sheets[names[idx]] = Sheet1
     rv = J.utils["to_#type"](input)

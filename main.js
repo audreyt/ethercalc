@@ -150,7 +150,7 @@
                   for (i$ = 0, len$ = body.length; i$ < len$; ++i$) {
                     idx = i$;
                     ref$ = body[i$], link = ref$[0], title = ref$[1];
-                    if (link && title && /^\//.exec(link)) {
+                    if (link && title && /^\//.exec(link) && !in$(title, names)) {
                       names = names.concat(title);
                       todo = todo.get("snapshot-" + link.slice(1));
                     }
@@ -247,7 +247,7 @@
         for (i$ = 0, len$ = saves.length; i$ < len$; ++i$) {
           idx = i$;
           save = saves[i$];
-          ref$ = J.read(save), harb = ref$[0], Sheet1 = ref$[1].Sheets.Sheet1;
+          ref$ = J.read(new Buffer(save)), harb = ref$[0], Sheet1 = ref$[1].Sheets.Sheet1;
           input[0] || (input[0] = harb);
           input[1].Sheets[names[idx]] = Sheet1;
         }
@@ -913,6 +913,11 @@
       });
     }
   };
+  function in$(x, xs){
+    var i = -1, l = xs.length >>> 0;
+    while (++i < l) if (x === xs[i]) return true;
+    return false;
+  }
   function import$(obj, src){
     var own = {}.hasOwnProperty;
     for (var key in src) if (own.call(src, key)) obj[key] = src[key];
