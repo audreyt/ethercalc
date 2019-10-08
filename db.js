@@ -101,7 +101,7 @@
         if (fs.existsSync(dataDir + "/dump/")) {
           fs.readdirSync(dataDir + "/dump/").filter(partialize$.apply(/^[^.]/, [/^[^.]/.test, [void 8], [0]])).forEach(function(f){
             var key, type, id, k, ref$, v;
-            key = f.split(".")[0];
+            key = f.slice(0, -4);
             type = key.split("-")[0];
             id = key.split("-")[1];
             db.DB.timestamps["timestamp-" + id] = 0;
