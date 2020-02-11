@@ -21,7 +21,7 @@ if (!(window.location.hash.replace('#', ''))) {
         document.title = SocialCalc._room + " – EtherCalc";
     }
     else {
-        window.location = './_start';
+        window.location = './=sheet';
     }
 }
 window.addEventListener("message", function(it){
@@ -31,7 +31,7 @@ window.addEventListener("message", function(it){
 }, false);
 </script>
 <script src="./static/ethercalc.js"></script>
-<script src="./socket.io/socket.io.js"></script>
+<script src="./static/socket.io.js"></script>
 <script src="./zappa/zappa.js"></script>
 <script src="./player/broadcast.js"></script>
 <script src="./player/graph.js"></script>

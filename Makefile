@@ -20,7 +20,7 @@ ifdef DEBUG
   UGLIFYJS_ARGS += -b
 endif
 
-run: all
+run:
 	node app.js --cors $(ETHERCALC_ARGS)
 
 vm: all

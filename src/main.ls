@@ -50,7 +50,7 @@
       return res.send(204) if req?method is \OPTIONS
       next!
 
-  new-room = -> require \uuid-pure .newId 12 36 .toLowerCase!
+  new-room = -> "sheet1"
 
   @get "#BASEPATH/": sendFile \index.html
   @get "#BASEPATH/etc/*": -> @response.send 404 ''
@@ -67,13 +67,10 @@
   @get "#BASEPATH/mstile-150x150.png": sendFile \mstile-150x150.png
   @get "#BASEPATH/mstile-310x310.png": sendFile \mstile-310x310.png
   @get "#BASEPATH/safari-pinned-tab.svg": sendFile \safari-pinned-tab.svg
-  @get "#BASEPATH/manifest.appcache": ->
+  @get '#BASEPATH/manifest.appcache': ->
+    # Sandstorm: Skip manifest appcache
     @response.type \text/cache-manifest
-    if DevMode
-      @response.send 200 "CACHE MANIFEST\n\n##{Date!}\n\nNETWORK:\n*\n"
-    else
-      @response.sendfile "#RealBin/manifest.appcache"
-
+    @response.send 200 "CACHE MANIFEST\n\n##{Date!}\n\nNETWORK:\n*\n"
   if fs.existsSync "#RealBin/node_modules/socialcalc/dist/SocialCalc.js"
     @get "#BASEPATH/static/socialcalc.js": ->
       @response.type \application/javascript
@@ -103,7 +100,7 @@
       room.=slice 3
       {snapshot} <~ SC._get room, IO
       unless snapshot
-        _, default-snapshot <~ DB.get "snapshot-#room.1"
+        _, default-snapshot <~ DB.get "snapshot-#{room}1"
         unless default-snapshot
           @response.type Text
           @response.send 404 ''
@@ -275,6 +272,9 @@
 
   @get "#BASEPATH/:room": ->
     ui-file = if @params.room is /^=/ then \multi/index.html else \index.html
+    if @request.get(\x-sandstorm-permissions) isnt /modify/ and not @query.auth?length
+      @response.redirect "#BASEPATH/#{ @params.room }?auth=0"
+    # Check header here and do a ?auth=0
     if KEY then
       if @query.auth?length
         sendFile(ui-file).call @
@@ -291,7 +291,10 @@
     @response.redirect "#BASEPATH/#room/app" 
   @get "#BASEPATH/:template/appeditor": sendFile \panels.html    
 
-  @get "#BASEPATH/:room/edit": ->
+  @get '#BASEPATH/:room/edit': ->
+    if @request.get(\x-sandstorm-permissions) isnt /modify/
+      @response.redirect "#BASEPATH/#{ @params.room }?auth=0"
+      return
     room = @params.room
     @response.redirect "#BASEPATH/#room?auth=#{ hmac room }"
   @get "#BASEPATH/:room/view": ->
@@ -390,6 +393,7 @@
     @response.send 201 \OK
 
   @put '/_/:room': ->
+    return if @request.get(\x-sandstorm-permissions) isnt /modify/
     #console.log "put /_/:room"
     @response.type Text
     {room} = @params
@@ -402,6 +406,7 @@
     @response.send 201 \OK
 
   @post '/_/:room': ->
+    return if @request.get(\x-sandstorm-permissions) isnt /modify/
     #console.log "post /_/:room"
     {room} = @params
     command <~ request-to-command @request
@@ -444,6 +449,7 @@
     @response.json 202 {command}
 
   @post '/_': ->
+    return if @request.get(\x-sandstorm-permissions) isnt /modify/
     #console.log "post /_/:room"
     snapshot <~ request-to-save @request
     room = @body?room || new-room!
@@ -501,7 +507,7 @@
     | \my.ecell
       DB.hset "ecell-#room", user, ecell
     | \execute
-      return if auth is \0 or KEY and auth isnt hmac room
+      return if @socket?handshake?headers['x-sandstorm-permissions'] isnt /modify/
       return if cmdstr is /^set sheet defaulttextvalueformat text-wiki\s*$/
       <~ DB.multi!
         .rpush "log-#room" cmdstr
@@ -564,14 +570,9 @@
       delete SC[room]
       {log, snapshot} <~ SC._get room, @io
       reply { type: \recalc, room, log, snapshot }
-    | \stopHuddle
-      return if auth is \0 or KEY and auth isnt hmac room
-      <~ DB.del <[ audit log chat ecell snapshot ]>.map -> "#it-#room"
-      SC[room]?terminate!
-      delete SC[room]
-      broadcast @data
     | \ecell
       return if auth is \0 or KEY and auth isnt hmac room
       broadcast @data
     | otherwise
+      return if @socket?handshake?headers['x-sandstorm-permissions'] isnt /modify/
       broadcast @data

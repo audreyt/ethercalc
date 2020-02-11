@@ -1,7 +1,7 @@
 require \./styles.styl
 React = require \react
 TabPanel = require \react-basic-tabs
-BasePath = if window.location.href is /(?:127.0.0.1|localhost|\.local):8080/ then \http://127.0.0.1:8000 else \.
+BasePath = \.
 Index = \foobar
 Index = RegExp.$1 if window.location.href is /\/=([^_][^\/?]*)(?:\?.*)?$/
 HackFoldr = require(\./foldr.ls).HackFoldr
@@ -36,7 +36,7 @@ App = createClass do
     { foldr } = @props
     prefix = \Sheet
     next-sheet = foldr.size! + 1
-    link-prefix = "/#Index."
+    link-prefix = "/#Index"
     if foldr.lastRow!title is /^([_a-zA-Z]+)(\d+)$/
       prefix = RegExp.$1
       next-sheet = parseInt RegExp.$2

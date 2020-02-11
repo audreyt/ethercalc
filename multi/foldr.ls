@@ -1,4 +1,5 @@
 $ = require \superagent
+const one = "1"
 
 export class HackFoldr
   (@base) -> @base -= /\/+$/
@@ -11,7 +12,7 @@ export class HackFoldr
       @was-non-existent = true
     if !@rows?length
       @was-empty = true
-      return cb? @rows = [] , @.push({link: "/#{ @id }.1", title: \Sheet1 }) , cb(@)
+      return cb? @rows = [] , @.push({link: "/#{ @id }#one", title: \Sheet1 }) , cb(@)
     cb? @rows
   size: -> @rows.length
   lastIndex: -> @rows.length - 1
@@ -43,13 +44,13 @@ export class HackFoldr
       row?row = 2
       @was-non-existent = false
       @was-empty = false
-      return @post-raw-csv '#url', '#title', "/#{ @id }.1", "Sheet1", cb unless row
-      return @post-init-csv '#url', '#title', "/#{ @id }.1", "Sheet1", row.link, row.title, cb
+      return @post-raw-csv '#url', '#title', "/#{ @id }#one", "Sheet1", cb unless row
+      return @post-init-csv '#url', '#title', "/#{ @id }#one", "Sheet1", row.link, row.title, cb
     else if @was-empty
       row?row = 2
       @was-empty = false
-      return @post-csv "/#{ @id }.1", "Sheet1", cb unless row
-      return @post-raw-csv "/#{ @id }.1", "Sheet1", row.link, row.title, cb
+      return @post-csv "/#{ @id }#one", "Sheet1", cb unless row
+      return @post-raw-csv "/#{ @id }#one", "Sheet1", row.link, row.title, cb
     cb!
   post-csv: (a="", b="", cb) ->
     $.post("#{ @base }/_/#{ @id }").type(\text/csv).accept(\application/json).send("""

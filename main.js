@@ -53,7 +53,7 @@
       });
     }
     newRoom = function(){
-      return require('uuid-pure').newId(12, 36).toLowerCase();
+      return "sheet1";
     };
     this.get((ref$ = {}, ref$[BASEPATH + "/"] = sendFile('index.html'), ref$));
     this.get((ref$ = {}, ref$[BASEPATH + "/etc/*"] = function(){
@@ -73,12 +73,8 @@
     this.get((ref$ = {}, ref$[BASEPATH + "/mstile-310x310.png"] = sendFile('mstile-310x310.png'), ref$));
     this.get((ref$ = {}, ref$[BASEPATH + "/safari-pinned-tab.svg"] = sendFile('safari-pinned-tab.svg'), ref$));
     this.get((ref$ = {}, ref$[BASEPATH + "/manifest.appcache"] = function(){
-      this.response.type('text/cache-manifest');
-      if (DevMode) {
+        this.response.type('text/cache-manifest');
         return this.response.send(200, "CACHE MANIFEST\n\n#" + Date() + "\n\nNETWORK:\n*\n");
-      } else {
-        return this.response.sendfile(RealBin + "/manifest.appcache");
-      }
     }, ref$));
     if (fs.existsSync(RealBin + "/node_modules/socialcalc/dist/SocialCalc.js")) {
       this.get((ref$ = {}, ref$[BASEPATH + "/static/socialcalc.js"] = function(){
@@ -125,7 +121,7 @@
             var snapshot;
             snapshot = arg$.snapshot;
             if (!snapshot) {
-              DB.get("snapshot-" + room + ".1", function(_, defaultSnapshot){
+              DB.get("snapshot-" + room + "1", function(_, defaultSnapshot){
                 var ref$, type, content, ext;
                 if (!defaultSnapshot) {
                   this$.response.type(Text);
@@ -396,6 +392,9 @@
     this.get((ref$ = {}, ref$[BASEPATH + "/:room"] = function(){
       var uiFile, ref$;
       uiFile = /^=/.exec(this.params.room) ? 'multi/index.html' : 'index.html';
+      if (!/modify/.test(this.request.get('x-sandstorm-permissions')) && !((ref$ = this.query.auth) != null && ref$.length)) {
+          this.response.redirect(BASEPATH + "/" + this.params.room + "?auth=0");
+        }
       if (KEY) {
         if ((ref$ = this.query.auth) != null && ref$.length) {
           return sendFile(uiFile).call(this);
@@ -422,6 +421,10 @@
     this.get((ref$ = {}, ref$[BASEPATH + "/:template/appeditor"] = sendFile('panels.html'), ref$));
     this.get((ref$ = {}, ref$[BASEPATH + "/:room/edit"] = function(){
       var room;
+      if (!/modify/.test(this.request.get('x-sandstorm-permissions'))) {
+          this.response.redirect(BASEPATH + "/" + this.params.room + "?auth=0");
+          return;
+        }
       room = this.params.room;
       return this.response.redirect(BASEPATH + "/" + room + "?auth=" + hmac(room));
     }, ref$));
@@ -545,6 +548,9 @@
     this.put({
       '/_/:room': function(){
         var room, this$ = this;
+        if (!/modify/.test(this.request.get('x-sandstorm-permissions'))) {
+          return;
+        }
         this.response.type(Text);
         room = this.params.room;
         return requestToSave(this.request, function(snapshot){
@@ -568,6 +574,9 @@
     this.post({
       '/_/:room': function(){
         var room, this$ = this;
+        if (!/modify/.test(this.request.get('x-sandstorm-permissions'))) {
+          return;
+        }
         room = this.params.room;
         return requestToCommand(this.request, function(command){
           if (!command) {
@@ -631,6 +640,9 @@
     this.post({
       '/_': function(){
         var this$ = this;
+        if (!/modify/.test(this.request.get('x-sandstorm-permissions'))) {
+          return;
+        }
         return requestToSave(this.request, function(snapshot){
           var room, ref$;
           room = ((ref$ = this$.body) != null ? ref$.room : void 8) || newRoom();
@@ -699,7 +711,7 @@
     });
     return this.on({
       data: function(){
-        var ref$, room, msg, user, ecell, cmdstr, type, auth, reply, broadcast, this$ = this;
+        var ref$, room, msg, user, ecell, cmdstr, type, auth, reply, broadcast, ref1$, ref2$, ref3$, ref4$, this$ = this;
         ref$ = this.data, room = ref$.room, msg = ref$.msg, user = ref$.user, ecell = ref$.ecell, cmdstr = ref$.cmdstr, type = ref$.type, auth = ref$.auth;
         room = (room + "").replace(/^_+/, '');
         if (EXPIRE) {
@@ -737,7 +749,7 @@
           DB.hset("ecell-" + room, user, ecell);
           break;
         case 'execute':
-          if (auth === '0' || KEY && auth !== hmac(room)) {
+          if (!/modify/.test((ref$ = this.socket) != null ? (ref1$ = ref$.handshake) != null ? ref1$.headers['x-sandstorm-permissions'] : void 8 : void 8)) {
             return;
           }
           if (/^set sheet defaulttextvalueformat text-wiki\s*$/.exec(cmdstr)) {
@@ -834,8 +846,8 @@
           break;
         case 'ask.recalc':
           this.socket.join("recalc." + room);
-          if ((ref$ = SC[room]) != null) {
-            ref$.terminate();
+          if ((ref2$ = SC[room]) != null) {
+            ref2$.terminate();
           }
           delete SC[room];
           SC._get(room, this.io, function(arg$){
@@ -849,21 +861,6 @@
             });
           });
           break;
-        case 'stopHuddle':
-          if (auth === '0' || KEY && auth !== hmac(room)) {
-            return;
-          }
-          DB.del(['audit', 'log', 'chat', 'ecell', 'snapshot'].map(function(it){
-            return it + "-" + room;
-          }), function(){
-            var ref$;
-            if ((ref$ = SC[room]) != null) {
-              ref$.terminate();
-            }
-            delete SC[room];
-            return broadcast(this$.data);
-          });
-          break;
         case 'ecell':
           if (auth === '0' || KEY && auth !== hmac(room)) {
             return;
@@ -871,6 +868,9 @@
           broadcast(this.data);
           break;
         default:
+          if (!/modify/.test((ref3$ = this.socket) != null ? (ref4$ = ref3$.handshake) != null ? ref4$.headers['x-sandstorm-permissions'] : void 8 : void 8)) {
+            return;
+          }
           broadcast(this.data);
         }
       }

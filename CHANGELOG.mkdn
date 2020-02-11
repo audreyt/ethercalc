@@ -1,0 +1,18 @@
+# 20160501.1
+
+- Fixed charting in Graph tab.
+- Add F2 for input mode toggle.
+- Add Russian translation; updated other translations.
+
+# 20160122.5
+
+- Fixed Excel multi-spreadsheet export.
+- Allow selecting entire rows and columns.
+
+# 20150901.1
+
+- Updated "Description" metadata as per Kenton.
+
+# 20150822.1
+
+- Initial release to Sandstorm App Market.
