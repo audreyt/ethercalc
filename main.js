@@ -118,8 +118,8 @@
     api = function(cb, cbMultiple){
       return function(){
         var room, this$ = this;
-        room = encodeURIComponent(this.params.room).replace(/%3A/g, ':');
-        if (/^%3D/.exec(room) && cbMultiple) {
+        room = encodeURI(this.params.room);
+        if (/^=/.exec(room) && cbMultiple) {
           room = room.slice(3);
           return SC._get(room, IO, function(arg$){
             var snapshot;
@@ -374,7 +374,7 @@
     this.get((ref$ = {}, ref$[BASEPATH + "/_from/:template"] = function(){
       var room, template, this$ = this;
       room = newRoom();
-      template = this.params.template;
+      template = encodeURI(this.params.template);
       delete SC[room];
       return SC._get(template, IO, function(arg$){
         var snapshot;
@@ -387,15 +387,17 @@
       });
     }, ref$));
     this.get((ref$ = {}, ref$[BASEPATH + "/_exists/:room"] = function(){
-      var this$ = this;
-      return SC._exists(this.params.room, function(exists){
+      var room, this$ = this;
+      room = encodeURI(this.params.room);
+      return SC._exists(room, function(exists){
         this$.response.type('application/json');
         return this$.response.json(deepEq$(exists, 1, '==='));
       });
     }, ref$));
     this.get((ref$ = {}, ref$[BASEPATH + "/:room"] = function(){
-      var uiFile, ref$;
-      uiFile = /^=/.exec(this.params.room) ? 'multi/index.html' : 'index.html';
+      var room, uiFile, ref$;
+      room = encodeURI(this.params.room);
+      uiFile = /^=/.exec(this.room) ? 'multi/index.html' : 'index.html';
       if (KEY) {
         if ((ref$ = this.query.auth) != null && ref$.length) {
           return sendFile(uiFile).call(this);
@@ -408,7 +410,7 @@
     }, ref$));
     this.get((ref$ = {}, ref$[BASEPATH + "/:template/form"] = function(){
       var template, room, this$ = this;
-      template = this.params.template;
+      template = encodeURI(this.params.template);
       room = template + '_' + newRoom();
       delete SC[room];
       return SC._get(template, IO, function(arg$){
@@ -422,17 +424,17 @@
     this.get((ref$ = {}, ref$[BASEPATH + "/:template/appeditor"] = sendFile('panels.html'), ref$));
     this.get((ref$ = {}, ref$[BASEPATH + "/:room/edit"] = function(){
       var room;
-      room = this.params.room;
+      room = encodeURI(this.params.room);
       return this.response.redirect(BASEPATH + "/" + room + "?auth=" + hmac(room));
     }, ref$));
     this.get((ref$ = {}, ref$[BASEPATH + "/:room/view"] = function(){
       var room;
-      room = this.params.room;
+      room = encodeURI(this.params.room);
       return this.response.redirect(BASEPATH + "/" + room + "?auth=" + hmac(room) + "&view=1");
     }, ref$));
     this.get((ref$ = {}, ref$[BASEPATH + "/:room/app"] = function(){
       var room;
-      room = this.params.room;
+      room = encodeURI(this.params.room);
       return this.response.redirect(BASEPATH + "/" + room + "?auth=" + hmac(room) + "&app=1");
     }, ref$));
     this.get((ref$ = {}, ref$[BASEPATH + "/_/:room/cells/:cell"] = api(function(){
@@ -545,8 +547,8 @@
     this.put({
       '/_/:room': function(){
         var room, this$ = this;
+        room = encodeURI(this.params.room);
         this.response.type(Text);
-        room = this.params.room;
         return requestToSave(this.request, function(snapshot){
           var ref$;
           if ((ref$ = SC[room]) != null) {
@@ -568,7 +570,7 @@
     this.post({
       '/_/:room': function(){
         var room, this$ = this;
-        room = this.params.room;
+        room = encodeURI(this.params.room);
         return requestToCommand(this.request, function(command){
           if (!command) {
             this$.response.type(Text);
@@ -645,8 +647,8 @@
     this['delete']({
       '/_/:room': function(){
         var room, ref$, this$ = this;
+        room = encodeURI(this.params.room);
         this.response.type(Text);
-        room = this.params.room;
         if ((ref$ = SC[room]) != null) {
           ref$.terminate();
         }
@@ -877,7 +879,7 @@
     });
     function fn$(){
       var room, cs, this$ = this;
-      room = encodeURIComponent(this.params.room).replace(/%3A/g, ':');
+      room = encodeURI(this.params.room);
       cs = [];
       this.request.on('data', function(chunk){
         return cs = cs.concat(chunk);

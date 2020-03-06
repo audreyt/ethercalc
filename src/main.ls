@@ -98,8 +98,8 @@
 
   IO = @io
   api = (cb, cb-multiple) -> ->
-    room = encodeURIComponent(@params.room).replace(/%3A/g \:)
-    if room is /^%3D/ and cb-multiple
+    room = encodeURI(@params.room)
+    if room is /^=/ and cb-multiple
       room.=slice 3
       {snapshot} <~ SC._get room, IO
       unless snapshot
@@ -263,18 +263,20 @@
 
   @get "#BASEPATH/_from/:template": ->
     room = new-room!
-    template = @params.template
+    template = encodeURI(@params.template)
     delete SC[room]
     {snapshot} <~ SC._get template, IO
     <~ SC._put room, snapshot
     @response.redirect if KEY then "#BASEPATH/#room/edit" else "#BASEPATH/#room"
   @get "#BASEPATH/_exists/:room" : ->
-    exists <~ SC._exists @params.room
+    room = encodeURI(@params.room)
+    exists <~ SC._exists room
     @response.type \application/json
     @response.json (exists === 1)
 
   @get "#BASEPATH/:room": ->
-    ui-file = if @params.room is /^=/ then \multi/index.html else \index.html
+    room = encodeURI(@params.room)
+    ui-file = if @room is /^=/ then \multi/index.html else \index.html
     if KEY then
       if @query.auth?length
         sendFile(ui-file).call @
@@ -283,7 +285,7 @@
     
   # Form/App - auto duplicate sheet for new user to input data 
   @get "#BASEPATH/:template/form": ->
-    template = @params.template
+    template = encodeURI(@params.template)
     room = template + \_ + new-room!
     delete SC[room]
     {snapshot} <~ SC._get template, IO
@@ -292,14 +294,14 @@
   @get "#BASEPATH/:template/appeditor": sendFile \panels.html    
 
   @get "#BASEPATH/:room/edit": ->
-    room = @params.room
+    room = encodeURI(@params.room)
     @response.redirect "#BASEPATH/#room?auth=#{ hmac room }"
   @get "#BASEPATH/:room/view": ->
-    room = @params.room
+    room = encodeURI(@params.room)
     #@response.redirect "#BASEPATH/#room?auth=0"
     @response.redirect "#BASEPATH/#room?auth=#{ hmac room }&view=1"
   @get "#BASEPATH/:room/app": ->
-    room = @params.room
+    room = encodeURI(@params.room)
     @response.redirect "#BASEPATH/#room?auth=#{ hmac room }&app=1"
   @get "#BASEPATH/_/:room/cells/:cell": api -> [Json
     (sc, cb) ~> sc.exportCell @cell, cb
@@ -363,7 +365,7 @@
     /=:room.ods /_/=:room/ods 
     /=:room.fods /_/=:room/fods
   ]> => @put "#route": ->
-    room = encodeURIComponent(@params.room).replace(/%3A/g \:)
+    room = encodeURI(@params.room)
     cs = []; @request.on \data (chunk) ~> cs ++= chunk
     <~ @request.on \end
     buf = Buffer.concat cs
@@ -391,8 +393,8 @@
 
   @put '/_/:room': ->
     #console.log "put /_/:room"
+    room = encodeURI(@params.room)
     @response.type Text
-    {room} = @params
     snapshot <~ request-to-save @request
     SC[room]?terminate!
     delete SC[room]
@@ -403,7 +405,7 @@
 
   @post '/_/:room': ->
     #console.log "post /_/:room"
-    {room} = @params
+    room = encodeURI(@params.room)
     command <~ request-to-command @request
     unless command
       @response.type Text
@@ -453,8 +455,8 @@
     @response.send 201 "/#room"
 
   @delete '/_/:room': ->
+    room = encodeURI(@params.room)
     @response.type Text
-    {room} = @params
     SC[room]?terminate!
     delete SC[room]
     <~ SC._del room
