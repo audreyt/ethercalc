@@ -33,7 +33,7 @@
     "stylus-loader": "^3.0.2",
     "superagent": "^0.21.0",
     "webpack": "^1.4.13",
-    "webpack-dev-server": "^1.6.6"
+    "webpack-dev-server": "^3.10.3"
   },
   "subdomain": "ethercalc",
   "bin": {
