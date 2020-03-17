@@ -20,7 +20,7 @@
     "socialcalc": "^2.3.0",
     "uuid-pure": "*",
     "xoauth2": "*",
-    "zappajs": "0.5.x"
+    "zappajs": "0.6.x"
   },
   "optionalDependencies": {},
   "devDependencies": {
