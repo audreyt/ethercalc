@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "cors": "*",
-    "csv-parse": "^0.0.6",
+    "csv-parse": "^4.8.8",
     "iconv-lite": "^0.4.13",
     "xlsx": "^0.14.5",
     "j": "^1.0.0",
