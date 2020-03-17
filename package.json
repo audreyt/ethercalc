@@ -13,7 +13,7 @@
     "iconv-lite": "^0.4.13",
     "xlsx": "^0.14.5",
     "j": "^1.0.0",
-    "livescript": "1.5.x",
+    "livescript": "1.6.x",
     "minimatch": "*",
     "optimist": "*",
     "redis": "0.12.x",
