@@ -397,7 +397,7 @@
     this.get((ref$ = {}, ref$[BASEPATH + "/:room"] = function(){
       var room, uiFile, ref$;
       room = encodeURI(this.params.room);
-      uiFile = /^=/.exec(this.room) ? 'multi/index.html' : 'index.html';
+      uiFile = /^=/.exec(room) ? 'multi/index.html' : 'index.html';
       if (KEY) {
         if ((ref$ = this.query.auth) != null && ref$.length) {
           return sendFile(uiFile).call(this);
