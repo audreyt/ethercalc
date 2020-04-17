@@ -276,7 +276,7 @@
 
   @get "#BASEPATH/:room": ->
     room = encodeURI(@params.room)
-    ui-file = if @room is /^=/ then \multi/index.html else \index.html
+    ui-file = if room is /^=/ then \multi/index.html else \index.html
     if KEY then
       if @query.auth?length
         sendFile(ui-file).call @
