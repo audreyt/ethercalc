@@ -24,6 +24,8 @@ For global installation (may need root)
 
 For local non-root installation
 
+    git clone git@github.com:audreyt/ethercalc.git
+    cd ethercalc
     npm i
     make
 
