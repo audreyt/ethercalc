@@ -1,7 +1,7 @@
 {
   "name": "ethercalc",
   "description": "Multi-User Spreadsheet Server",
-  "version": "0.20200306.0",
+  "version": "0.20200505.0",
   "homepage": "http://ethercalc.net/",
   "repository": {
     "type": "git",
@@ -12,7 +12,7 @@
     "csv-parse": "^0.0.6",
     "iconv-lite": "^0.4.13",
     "xlsx": "^0.14.5",
-    "j": "^1.0.0",
+    "j": "0.4.5",
     "livescript": "1.5.x",
     "minimatch": "*",
     "optimist": "*",
