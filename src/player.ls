@@ -33,10 +33,10 @@
           | SocialCalc._auth  => '/edit'
           | otherwise     => ''
         }"
-        if location.host is /^(?:www\.)?ethercalc\.(?:org|com)$/
+        if location.host is /^(?:www\.)?ethercalc\.net$/
           $ -> $('<a />', {
             id: "restore", target: "_blank"
-            href: "https://ethercalc.org/log/?#{ SocialCalc._room }"
+            href: "https://ethercalc.net/log/?#{ SocialCalc._room }"
             title: "View & Restore Backups"
           }).text("↻").appendTo('body')
     else
