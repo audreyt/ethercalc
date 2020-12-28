@@ -11,7 +11,7 @@ global.SC ?= {console}
 
 argv = (try require \optimist .boolean <[ vm polling ]> .argv) || {}
 
-bootSC += """;var SocialCalc = this.SocialCalc; var window = this;(#{->
+bootSC += """;var navigator = {}; var SocialCalc = this.SocialCalc; var window = this;(#{->
   class Node
     (@tag="div", @attrs={}, @style={}, @elems=[], @raw='')->
     id:     ~(@attrs.id)->
