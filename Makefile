@@ -37,26 +37,23 @@ $(JS_FILES): %.js: src/%.ls
 manifest ::
 	perl -pi -e 's/# [A-Z].*\n/# @{[`date`]}/m' manifest.appcache
 
-./node_modules/streamline/bin/_node \
 ./node_modules/uglify-js/bin/uglifyjs :
-	npm i --dev
+	npm install uglify-js
 
 static/multi.js :: multi/main.ls multi/styles.styl
 	webpack --optimize-minimize
 
 depends: app.js static/ethercalc.js static/start.css static/multi.js
 
-node_modules/socialcalc/dist/SocialCalc.js: ./node_modules/streamline/bin/_node
-	@-mkdir -p node_modules/socialcalc/dist
-	cp node_modules/socialcalc/SocialCalc.js node_modules/socialcalc/dist/SocialCalc.js || true
-
 static/ethercalc.js: $(ETHERCALC_FILES) \
      ./node_modules/socialcalc/dist/SocialCalc.js \
      ./node_modules/uglify-js/bin/uglifyjs
 	@-mkdir -p .git
 	@echo '// Auto-generated from "make depends"; ALL CHANGES HERE WILL BE LOST!' > $@
-	node node_modules/uglify-js/bin/uglifyjs node_modules/socialcalc/dist/SocialCalc.js $(ETHERCALC_FILES) $(UGLIFYJS_ARGS) --source-map ethercalc.js.map --source-map-include-sources >> $@
-	mv ethercalc.js.map static
+	node node_modules/uglify-js/bin/uglifyjs node_modules/socialcalc/dist/SocialCalc.js $(ETHERCALC_FILES) $(UGLIFYJS_ARGS) --source-map includeSources -o tmpec.js
+	cat tmpec.js >> $@
+	rm tmpec.js
+	mv tmpec.js.map static/ethercalc.js.map
 
 COFFEE := $(shell command -v coffee 2> /dev/null)
 .coffee.js:
@@ -74,6 +71,7 @@ endif
 
 clean ::
 	@-rm $(JS_FILES)
+	@-rm static/ethercalc.js static/ethercalc.js.map
 
 .SUFFIXES: .js .css .sass .ls
 .PHONY: run vm expire all clean depends
