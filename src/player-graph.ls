@@ -698,10 +698,10 @@
   selectedbg = '404040'
   unselectedbg = '808080'
   cursorbg = \A6A6A6
-  hightLightForegoundColour = \FFF
+  hightLightForegroundColour = \FFF
   if SocialCalc.requestParams[\app]?  
     cursorbg = \FFF
-    hightLightForegoundColour = \000
+    hightLightForegroundColour = \000
         
   scc.SCToolbarbackground = 'background-color:#' + selectedbg + ';'
   scc.SCTabbackground = 'background-color:#' + unselectedbg + ';'
@@ -715,8 +715,8 @@
   scc.defaultImagePrefix = 'images/sc_'
   SocialCalc.Popup.LocalizeString = SocialCalc.LocalizeString
   #row and col header colours
-  scc.defaultColnameStyle = 'overflow:visible;font-size:small;text-align:center;color:#' + hightLightForegoundColour + ';background-color:#' + unselectedbg
-  scc.defaultSelectedColnameStyle = 'overflow:visible;font-size:small;text-align:center;color:#' + hightLightForegoundColour + ';background-color:#' + selectedbg
-  scc.defaultRownameStyle = 'position:relative;overflow:visible;font-size:small;text-align:center;vertical-align:middle;color:#' + hightLightForegoundColour + ';background-color:#' + unselectedbg + ';direction:rtl;'
-  scc.defaultSelectedRownameStyle = 'position:relative;overflow:visible;font-size:small;text-align:center;vertical-align:middle;color:#' + hightLightForegoundColour + ';background-color:#' + selectedbg + ';'
-  scc.defaultHighlightTypeCursorStyle = 'color:#' + hightLightForegoundColour + ';backgroundColor:#' + cursorbg + ';'
+  scc.defaultColnameStyle = 'overflow:visible;font-size:small;text-align:center;color:#' + hightLightForegroundColour + ';background-color:#' + unselectedbg
+  scc.defaultSelectedColnameStyle = 'overflow:visible;font-size:small;text-align:center;color:#' + hightLightForegroundColour + ';background-color:#' + selectedbg
+  scc.defaultRownameStyle = 'position:relative;overflow:visible;font-size:small;text-align:center;vertical-align:middle;color:#' + hightLightForegroundColour + ';background-color:#' + unselectedbg + ';direction:rtl;'
+  scc.defaultSelectedRownameStyle = 'position:relative;overflow:visible;font-size:small;text-align:center;vertical-align:middle;color:#' + hightLightForegroundColour + ';background-color:#' + selectedbg + ';'
+  scc.defaultHighlightTypeCursorStyle = 'color:#' + hightLightForegroundColour + ';backgroundColor:#' + cursorbg + ';'
