@@ -20,7 +20,7 @@
       return require('optimist').boolean(['vm', 'polling']).argv;
     } catch (e$) {}
   }()) || {};
-  bootSC += ";var navigator = {}; var SocialCalc = this.SocialCalc; var window = this;(" + function(){
+  bootSC += ";var navigator = {language: '', userAgent: ''}; var SocialCalc = this.SocialCalc; var window = this;(" + function(){
     var Node;
     Node = (function(){
       Node.displayName = 'Node';
