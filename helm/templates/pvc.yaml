@@ -1,0 +1,24 @@
+{{- if and .Values.persistence.data.enabled (not .Values.persistence.data.existingClaim) -}}
+# Create a Persistent Volume Claim (PVC) to reserve and bind the EtherCalc PV
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: {{ include "ethercalc.fullname" . }}
+  labels:
+    app.kubernetes.io/name: {{ include "ethercalc.name" . }}
+    helm.sh/chart: {{ include "ethercalc.chart" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+
+spec:
+  # Only Redis server need to access these data
+  accessModes:
+    - {{ .Values.persistence.data.accessMode | quote }}
+
+  # Use Filesystem mode to store data
+  volumeMode: Filesystem
+  resources:
+    # Size needed to store ethercalc files, should match PV storage capacity
+    requests:
+      storage: {{ .Values.persistence.data.size | quote }}
+{{- end }}
