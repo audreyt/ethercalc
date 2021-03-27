@@ -7,9 +7,9 @@
     SocialCalc.isConnected = true
     requestParams = SocialCalc.requestParams
     SocialCalc._auth = requestParams[\auth] if requestParams[\auth]?
-    SocialCalc._app = true if requestParams[\app]?    
+    SocialCalc._app = true if requestParams[\app]?
     SocialCalc._view = true if requestParams[\view]?
-    #SocialCalc._view = SocialCalc._auth is \0     
+    #SocialCalc._view = SocialCalc._auth is \0
     SocialCalc._room ?= window.EtherCalc?_room || window.location.hash.replace \# ''
     SocialCalc._room = "#{SocialCalc._room}".replace /^_+/ '' .replace /\?.*/ ''
 
@@ -74,7 +74,7 @@
     SocialCalc.Callbacks.broadcast = (type, data={}) ~>
       return unless SocialCalc.isConnected
       data.user = SocialCalc._username
-      data.room = SocialCalc._room if !data.room?        
+      data.room = SocialCalc._room if !data.room?
       data.type = type
       data.auth = SocialCalc._auth if SocialCalc._auth
       emit data
@@ -94,14 +94,14 @@
       return unless ss
       return if @data.room and @data.room != SocialCalc._room and ss.formDataViewer?._room != @data.room and @data.type == "log"
       if @data.room and @data.room != SocialCalc._room and @data.type != "recalc" and @data.type != "log"
-        return if ss.formDataViewer?._room != @data.room     
+        return if ss.formDataViewer?._room != @data.room
         ss = ss.formDataViewer   # process the form data sheet event
       editor = ss.editor
       switch @data.type
       | \confirmemailsent => SocialCalc.EditorSheetStatusCallback(null, "confirmemailsent", @data.message, editor);
       | \chat   => window.addmsg? @data.msg
-      | \ecells   
-        break if SocialCalc._app 
+      | \ecells
+        break if SocialCalc._app
         do => for user, ecell of @data.ecells
           continue if user is SocialCalc._username
           peerClass = " #user defaultPeer"
@@ -121,12 +121,12 @@
             SocialCalc.Callbacks.broadcast \ecell,
               to: @data.user
               ecell: editor.ecell.coord
-        break if SocialCalc._app 
+        break if SocialCalc._app
         cr = SocialCalc.coordToCr @data.ecell
         cell = SocialCalc.GetEditorCellElement editor, cr.row, cr.col
         cell.element.className += peerClass if cell?element?className.search(find) == -1
       | \ask.ecell
-        break if SocialCalc._app 
+        break if SocialCalc._app
         SocialCalc.Callbacks.broadcast \ecell do
           to: @data.user
           ecell: editor.ecell.coord
@@ -240,12 +240,12 @@ Check the activity stream to see the newly edited page!
       else
         new SocialCalc.SpreadsheetControl!
     )
-    
+
     # eddy {
     if !window.GraphOnClick?
-      SocialCalc.Callbacks.broadcast \ask.log 
-      return 
-    # } eddy       
+      SocialCalc.Callbacks.broadcast \ask.log
+      return
+    # } eddy
 
     ss.ExportCallback = (s) ->
       alert SocialCalc.ConvertSaveToOtherFormat(SocialCalc.Clipboard.clipboard, "csv")
@@ -265,7 +265,7 @@ Check the activity stream to see the newly edited page!
       """
       view: \sheet
       onclick: null
-      onclickFocus: true  
+      onclickFocus: true
     # }
 
     ss.tabnums.graph = ss.tabs.length if ss.tabs
@@ -292,20 +292,20 @@ Check the activity stream to see the newly edited page!
     # Spinner - shows when sheet data is loading
     ss.sheet.cells["A1"] = new SocialCalc.Cell("A1")
     ss.sheet.cells["A1"].displaystring = '<div class="loader"></div>'
-    
+
     ss.InitializeSpreadsheetViewer? \tableeditor, 0, 0, 0
     ss.InitializeSpreadsheetControl? \tableeditor, 0, 0, 0
 
     # eddy {
     if !SocialCalc._view? && ss.formDataViewer?
       # request formData and then the spreadsheet data
-      ss.formDataViewer.sheet._room = ss.formDataViewer._room = SocialCalc._room + "_formdata"      
+      ss.formDataViewer.sheet._room = ss.formDataViewer._room = SocialCalc._room + "_formdata"
       SocialCalc.Callbacks.broadcast \ask.log {room: ss.formDataViewer._room}
-    else 
+    else
       # request the spreadsheet data
-      SocialCalc.Callbacks.broadcast \ask.log 
-    # } eddy 
-    
+      SocialCalc.Callbacks.broadcast \ask.log
+    # } eddy
+    const isFramed = window != window.top || document != top.document || self.location != top.location
     ss.ExecuteCommand? \redisplay, ''
     ss.ExecuteCommand? 'set sheet defaulttextvalueformat text-wiki'
     $ document .on \mouseover '.te_download tr:nth-child(2) td:first' ->
@@ -323,18 +323,30 @@ Check the activity stream to see the newly edited page!
           $.extend {}, vex?dialog.buttons.YES, text: 'Excel', click: ->
             if isMultiple
               if window.parent.location.href.match(/(^.*\/=[^?/]+)/)
-                window.open "#{ RegExp.$1 }.xlsx"
+                 window.open "#{ RegExp.$1 }.xlsx"
               else
-                window.open ".#{if window.parent.location.pathname.match('\/.*\/view$') || window.parent.location.pathname.match('\/.*\/edit$') then '.' else ''}/=#{ SocialCalc._room.replace(/\.[1-9]\d*$/, '') }.xlsx"
+                if isFramed
+                  window.open "#{ SocialCalc._room.replace(/\.[1-9]\d*$/, '') }.xlsx"
+                else
+                  window.open ".#{if window.parent.location.pathname.match('\/.*\/view$') || window.parent.location.pathname.match('\/.*\/edit$') then '.' else ''}/=#{ SocialCalc._room.replace(/\.[1-9]\d*$/, '') }.xlsx"
             else
-              window.open ".#{if window.parent.location.pathname.match('\/.*\/view$') || window.parent.location.pathname.match('\/.*\/edit$') then '.' else ''}/#{ SocialCalc._room }.xlsx"
+              if isFramed
+                window.open "#{ SocialCalc._room }.xlsx"
+              else
+                window.open ".#{if window.parent.location.pathname.match('\/.*\/view$') || window.parent.location.pathname.match('\/.*\/edit$') then '.' else ''}/#{ SocialCalc._room }.xlsx"
           $.extend {}, vex?dialog.buttons.YES, text: 'CSV', click: ->
-            window.open ".#{if window.parent.location.pathname.match('\/.*\/view$') || window.parent.location.pathname.match('\/.*\/edit$') then '.' else ''}/#{ SocialCalc._room }.csv"
+            if isFramed
+              window.open "#{ SocialCalc._room }.csv"
+            else
+              window.open ".#{if window.parent.location.pathname.match('\/.*\/view$') || window.parent.location.pathname.match('\/.*\/edit$') then '.' else ''}/#{ SocialCalc._room }.csv"
           $.extend {}, vex?dialog.buttons.YES, text: 'HTML', click: ->
-            window.open ".#{if window.parent.location.pathname.match('\/.*\/view$') || window.parent.location.pathname.match('\/.*\/edit$') then '.' else ''}/#{ SocialCalc._room }.html"
+            if isFramed
+              window.open "#{ SocialCalc._room }.html"
+            else
+              window.open ".#{if window.parent.location.pathname.match('\/.*\/view$') || window.parent.location.pathname.match('\/.*\/edit$') then '.' else ''}/#{ SocialCalc._room }.html"
           $.extend {}, vex?dialog.buttons.YES, text: 'ODS', click: ->
             if isMultiple
-              if window.parent.location.href.match(/(^.*\/=[^?/]+)/)
+              if isFramed || window.parent.location.href.match(/(^.*\/=[^?/]+)/)
                 window.open "#{ RegExp.$1 }.ods"
               else
                 window.open ".#{if window.parent.location.pathname.match('\/.*\/view$') || window.parent.location.pathname.match('\/.*\/edit$') then '.' else ''}/=#{ SocialCalc._room.replace(/\.[1-9]\d*$/, '') }.ods"
