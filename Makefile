@@ -46,7 +46,7 @@ static/multi.js :: multi/main.ls multi/styles.styl
 
 depends: app.js static/ethercalc.js static/start.css static/multi.js
 
-node_modules/socialcalc/dist/SocialCalc.js: ./node_modules/streamline/bin/_node
+node_modules/socialcalc/dist/SocialCalc.js:
 	@-mkdir -p node_modules/socialcalc/dist
 	cp node_modules/socialcalc/SocialCalc.js node_modules/socialcalc/dist/SocialCalc.js || true
 
