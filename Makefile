@@ -54,8 +54,9 @@ static/ethercalc.js: $(ETHERCALC_FILES) \
      ./node_modules/socialcalc/dist/SocialCalc.js \
      ./node_modules/uglify-js/bin/uglifyjs
 	@-mkdir -p .git
-	@echo '// Auto-generated from "make depends"; ALL CHANGES HERE WILL BE LOST!' > $@
-	node node_modules/uglify-js/bin/uglifyjs node_modules/socialcalc/dist/SocialCalc.js $(ETHERCALC_FILES) $(UGLIFYJS_ARGS) --source-map ethercalc.js.map --source-map-include-sources >> $@
+	@echo '// Auto-generated from "make depends"; ALL CHANGES HERE WILL BE LOST!' > ethercalc.js.tmp
+	node node_modules/uglify-js/bin/uglifyjs node_modules/socialcalc/dist/SocialCalc.js $(ETHERCALC_FILES) $(UGLIFYJS_ARGS) --source-map ethercalc.js.map --source-map-include-sources >> ethercalc.js.tmp
+	mv ethercalc.js.tmp $@
 	mv ethercalc.js.map static
 
 COFFEE := $(shell command -v coffee 2> /dev/null)
