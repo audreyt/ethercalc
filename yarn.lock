@@ -2912,6 +2912,11 @@
   "resolved" "https://registry.npmjs.org/typedarray/-/typedarray-0.0.6.tgz"
   "version" "0.0.6"
 
+"uglify-js@^3.15.3":
+  "integrity" "sha512-6iCVm2omGJbsu3JWac+p6kUiOpg3wFO2f8lIXjfEb8RrmLjzog1wTPMmwKB7swfzzqxj9YM+sGUM++u1qN4qJg=="
+  "resolved" "https://registry.npmjs.org/uglify-js/-/uglify-js-3.15.3.tgz"
+  "version" "3.15.3"
+
 "uglify-js@~2.7.3":
   "integrity" "sha1-RhLAx7qu4rp8SH3kkErhIgefLKg="
   "resolved" "https://registry.npmjs.org/uglify-js/-/uglify-js-2.7.5.tgz"
