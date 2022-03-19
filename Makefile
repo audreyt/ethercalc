@@ -46,7 +46,7 @@ static/multi.js :: multi/main.ls multi/styles.styl
 
 depends: app.js static/ethercalc.js static/start.css static/multi.js
 
-node_modules/socialcalc/dist/SocialCalc.js: ./node_modules/streamline/bin/_node
+node_modules/socialcalc/dist/SocialCalc.js:
 	@-mkdir -p node_modules/socialcalc/dist
 	cp node_modules/socialcalc/SocialCalc.js node_modules/socialcalc/dist/SocialCalc.js || true
 
@@ -54,9 +54,10 @@ static/ethercalc.js: $(ETHERCALC_FILES) \
      ./node_modules/socialcalc/dist/SocialCalc.js \
      ./node_modules/uglify-js/bin/uglifyjs
 	@-mkdir -p .git
-	@echo '// Auto-generated from "make depends"; ALL CHANGES HERE WILL BE LOST!' > $@
-	node node_modules/uglify-js/bin/uglifyjs node_modules/socialcalc/dist/SocialCalc.js $(ETHERCALC_FILES) $(UGLIFYJS_ARGS) --source-map ethercalc.js.map --source-map-include-sources >> $@
-	mv ethercalc.js.map static
+	@echo '// Auto-generated from "make depends"; ALL CHANGES HERE WILL BE LOST!' > ethercalc.js.tmp
+	node node_modules/uglify-js/bin/uglifyjs node_modules/socialcalc/dist/SocialCalc.js $(ETHERCALC_FILES) $(UGLIFYJS_ARGS) --source-map --output ethercalc.js.tmp
+	mv ethercalc.js.tmp $@
+	mv ethercalc.js.tmp.map static/ethercalc.js.map
 
 COFFEE := $(shell command -v coffee 2> /dev/null)
 .coffee.js:
