@@ -51,7 +51,8 @@
     SocialCalc.ScheduleSheetCommands.apply(SocialCalc, [@].concat([].slice.call(arguments)))
   SocialCalc.OrigScheduleSheetCommands = SocialCalc.ScheduleSheetCommands
   SocialCalc.ScheduleSheetCommands = (sheet, cmdstr, saveundo, isRemote) ->
-    cmdstr = cmdstr.replace /\n\n+/g '\n'
+    #cmdstr = cmdstr.replace /\n\n+/g '\n'
+    cmdstr = cmdstr.replace /\n\n+/g ''
     return unless /\S/.test cmdstr
     if not isRemote and cmdstr isnt \redisplay and cmdstr isnt \recalc
       # Multi-sheet: Rewrite $Title.A1 into "index.1"!A1

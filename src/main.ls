@@ -558,8 +558,10 @@
         .lrange "log-#room" 0 -1
         .lrange "chat-#room" 0 -1
         .exec!
-      SC[room] = SC._init snapshot, log, DB, room, @io
-      reply { type: \log, room, log, chat, snapshot }
+      SC[room] = SC._init(snapshot[1], log, DB, room, @io)
+      reply { type: \log, room, log, chat, snapshot:snapshot[1] }
+      #SC[room] = SC._init(snapshot, log, DB, room, @io)
+      #reply { type: \log, room, log, chat, snapshot:snapshot }
     | \ask.recalc
       @socket.join "recalc.#room"
       SC[room]?terminate!

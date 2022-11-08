@@ -11,7 +11,7 @@
     "cors": "*",
     "csv-parse": "^0.0.6",
     "iconv-lite": "^0.4.13",
-    "xlsx": "^0.14.5",
+    "ioredis": "^5.2.4",
     "j": "0.4.5",
     "livescript": "1.5.x",
     "minimatch": "*",
@@ -19,10 +19,10 @@
     "redis": "0.12.x",
     "socialcalc": "^2.3.0",
     "uuid-pure": "*",
+    "xlsx": "^0.14.5",
     "xoauth2": "*",
     "zappajs": "0.5.x"
   },
-  "optionalDependencies": {},
   "devDependencies": {
     "css-loader": "^0.9.0",
     "livescript-loader": "^0.1.5",

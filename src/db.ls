@@ -16,16 +16,26 @@
   redisPort ?= 6379
   dataDir ?= process.cwd!
 
-  require! \redis
+  #require! \redis
+  require! \ioredis
   make-client = (cb) ->
+    redisOptions = {}
     if redisSockpath
-      client = redis.createClient redisSockpath
+      #client = redis.createClient redisSockpath
+      #client = new ioredis redisSockpath
+      redisOptions.path = redisSockpath
     else
-      client = redis.createClient redisPort, redisHost
+      #client = redis.createClient redisPort, redisHost
+      #client = new ioredis redisPort, redisHost
+      redisOptions.port = redisPort
+      redisOptions.host = redisHost
     if redisPass
-      client.auth redisPass, -> console.log ...arguments
+      #client.auth redisPass, -> console.log ...arguments
+      redisOptions.password = redisPass
     if redisDb
-      client.select redisDb, -> console.log "Selecting Redis database #{redisDb}"
+      #client.select redisDb, -> console.log "Selecting Redis database #{redisDb}"
+      redisOptions.db = redisDb
+    client = new ioredis redisOptions
     client.on \connect cb if cb
     return client
 

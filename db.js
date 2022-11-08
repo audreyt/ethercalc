@@ -3,7 +3,7 @@
   var slice$ = [].slice, arrayFrom$ = Array.from || function(x){return slice$.call(x);};
   this.__DB__ = null;
   this.include = function(){
-    var env, ref$, redisPort, redisHost, redisSockpath, redisPass, redisDb, dataDir, services, name, items, ref1$, redis, makeClient, RedisStore, db, EXPIRE, this$ = this;
+    var env, ref$, redisPort, redisHost, redisSockpath, redisPass, redisDb, dataDir, services, name, items, ref1$, ioredis, makeClient, RedisStore, db, EXPIRE, this$ = this;
     if (this.__DB__) {
       return this.__DB__;
     }
@@ -19,24 +19,23 @@
     redisHost == null && (redisHost = 'localhost');
     redisPort == null && (redisPort = 6379);
     dataDir == null && (dataDir = process.cwd());
-    redis = require('redis');
+    ioredis = require('ioredis');
     makeClient = function(cb){
-      var client;
+      var redisOptions, client;
+      redisOptions = {};
       if (redisSockpath) {
-        client = redis.createClient(redisSockpath);
+        redisOptions.path = redisSockpath;
       } else {
-        client = redis.createClient(redisPort, redisHost);
+        redisOptions.port = redisPort;
+        redisOptions.host = redisHost;
       }
       if (redisPass) {
-        client.auth(redisPass, function(){
-          return console.log.apply(console, arguments);
-        });
+        redisOptions.password = redisPass;
       }
       if (redisDb) {
-        client.select(redisDb, function(){
-          return console.log("Selecting Redis database " + redisDb);
-        });
+        redisOptions.db = redisDb;
       }
+      client = new ioredis(redisOptions);
       if (cb) {
         client.on('connect', cb);
       }

@@ -1,7 +1,9 @@
-FROM node:4.8
+FROM node:18.12.0
 
 RUN useradd ethercalc --create-home
-RUN npm install -g ethercalc pm2 || true
+RUN npm config set user root
+RUN npm install -g ethercalc
+RUN npm install -g pm2 --unsafe
 RUN rm -rf /usr/local/lib/node_modules/ethercalc/node_modules/nodemailer/ || true
 
 USER ethercalc

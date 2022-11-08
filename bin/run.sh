@@ -34,8 +34,8 @@ fi
 
 # manual redis config
 
-#export REDIS_HOST=localhost
-#export REDIS_PORT=1234
+export REDIS_HOST=localhost
+export REDIS_PORT=6379
 #export REDIS_PASS=mypassword
 #export REDIS_DB=0
 

@@ -70,7 +70,7 @@
         SocialCalc.OrigScheduleSheetCommands = SocialCalc.ScheduleSheetCommands;
         SocialCalc.ScheduleSheetCommands = function(sheet, cmdstr, saveundo, isRemote){
           var ref$, ref1$, i$, ref2$, len$, ref3$, link, title;
-          cmdstr = cmdstr.replace(/\n\n+/g, '\n');
+          cmdstr = cmdstr.replace(/\n\n+/g, '');
           if (!/\S/.test(cmdstr)) {
             return;
           }
