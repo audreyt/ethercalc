@@ -1,0 +1,32 @@
+{
+  "test_migration_check": {
+    "spreadsheet": {
+      "id": "test_migration_check",
+      "metadata": {
+        "title": "Migration Test Spreadsheet",
+        "version": 1
+      },
+      "cells": {
+        "A1": {
+          "value": "Hello",
+          "type": "text"
+        },
+        "B1": {
+          "value": "World",
+          "type": "text"
+        },
+        "A2": {
+          "value": "42",
+          "type": "number"
+        }
+      }
+    },
+    "audit_log": [
+      {
+        "operation": "create",
+        "user": "migration_test",
+        "timestamp": "2025-07-31T10:13:00.162045"
+      }
+    ]
+  }
+}
