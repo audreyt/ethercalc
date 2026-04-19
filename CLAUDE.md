@@ -279,7 +279,7 @@ Add **StrykerJS** in a nightly job (not blocking) to catch coverage-without-asse
 | ------ | --------------------------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | GET    | `/`                               | → `index.html`                                           | Static page                                                                                                                   |
 | GET    | `/_start`                         | → `start.html`                                           |                                                                                                                               |
-| GET    | `/etc/*`, `/var/*`                | 404                                                      | Explicit block                                                                                                                |
+| GET    | `/etc/*`, `/var/*`                | 404 with `Content-Type: text/html; charset=utf-8`        | Explicit block. Legacy Express default is `text/html`, not `text/plain` — oracle recording confirms.                          |
 | GET    | `/favicon.ico` etc                | static icons                                             |                                                                                                                               |
 | GET    | `/manifest.appcache`              | `text/cache-manifest`                                    | DevMode returns dynamic stub                                                                                                  |
 | GET    | `/static/socialcalc.js`           | `application/javascript`                                 | Serves `node_modules/socialcalc/…/SocialCalc.js`                                                                              |
@@ -393,7 +393,7 @@ The TTL on `snapshot-<room>` is set when `EXPIRE` CLI flag is present.
 - `/:room/edit` → `?auth=<hmac>`.
 - `/:room/view` → `?auth=<hmac>&view=1`.
 - `/:room/app`  → `?auth=<hmac>&app=1`.
-- WS `execute`, `ecell`, `stopHuddle`: require `auth === hmac(room)` OR no KEY set; `auth === '0'` means view-only and must be rejected.
+- WS `execute`, `ecell`, `stopHuddle`: require `auth === hmac(room)` OR no KEY set; `auth === '0'` means view-only and **must be rejected unconditionally** (not just when KEY is set — when KEY is unset, identity-HMAC would otherwise make `computeAuth(undefined, '0') === '0'` permissive; `verifyAuth` must hard-reject `'0'` at the top).
 - HTTP endpoints do **not** require auth. (Known weakness; preserve.)
 
 ---
@@ -476,14 +476,15 @@ Goal: prove Plan A works (SocialCalc loads and executes in workerd).
 - [ ] Expand to the full endpoint inventory as subsequent phases land their port. Current 13 are the stateless subset.
 - [ ] `re:<regex>` header matcher convention: used for Location/Content-Length/Last-Modified. Considering promoting this pattern into `@ethercalc/shared`.
 
-### Phase 4 — Port pure/stateless endpoints
-- [ ] Static assets via Workers Assets.
-- [ ] GET `/`, `/_start`, icons, manifest.
-- [ ] `/etc/*`, `/var/*` → 404.
-- [ ] `/_new`, `/=_new` redirect generation.
-- [ ] `/:room/edit|view|app` redirects (HMAC logic).
-- [ ] `/:room` (HTML entry) with KEY-gated redirect.
-- [ ] Tests: oracle replay subset + direct unit tests. 100% coverage.
+### Phase 4 — Port pure/stateless endpoints — MOSTLY DONE
+- [x] `src/lib/auth.ts` (Web Crypto HMAC-SHA256, identity fallback) + `src/lib/room-name.ts` (12-char id via randomUUID) — 100% covered.
+- [x] `src/handlers/new-room.ts`, `src/handlers/room-redirects.ts`, `src/handlers/blocked-paths.ts` — 100% covered.
+- [x] `src/routes/stateless.ts` registers `/_new`, `/=_new`, `/:room/{edit,view,app}`, `/etc/*`, `/var/*`.
+- [x] `src/routes/assets.ts` scaffold (ASSETS binding, 404 fallback when unbound).
+- [x] `test/oracle-replay.test.ts` — replays recorded fixtures against `worker.fetch()`; 5 of 13 scenarios green (all Phase 4 scope).
+- [x] wrangler.toml scaffolds `ETHERCALC_KEY`, `BASEPATH`; `[assets]` commented (legacy repo root trips per-asset size limit — curated assets/ dir lands in Phase 11).
+- [ ] **`GET /:room` entry-page route deferred to Phase 4.1** — requires curated ASSETS dir AND careful ordering (will shadow `/_rooms`, `/_from/:template` etc without explicit priority).
+- [ ] Static asset content (icons, manifest.appcache dynamic stub) lands when Phase 11 finalizes the assets pipeline.
 
 ### Phase 5 — Port room CRUD (no live collab yet)
 - [ ] `RoomDO` with `snapshot/log/audit/chat/ecell` storage.
@@ -517,7 +518,8 @@ Goal: prove Plan A works (SocialCalc loads and executes in workerd).
 - [ ] `exportCells`, `exportCell`.
 - [ ] `xlsx`/`ods`/`fods`/`md` via `j` lib or `xlsx`+`ods` on nodejs_compat.
 - [ ] Multi-sheet `PUT /=:room.xlsx` and `GET /_/=:room/xlsx`.
-- [ ] Structural equality oracle tests.
+- [x] **Phase 8a (matchers) partial** — `html` matcher in `packages/oracle-harness/src/matchers.ts` via linkedom; 127 tests, 100% coverage. `xlsx`/`ods` still throw "not implemented" — agent in flight will complete.
+- [ ] Structural equality oracle tests wired to actual export responses (depends on Phase 5 room CRUD delivering `GET /_/:room/html` etc).
 
 ### Phase 9 — Cron & email
 - [ ] `scheduled()` handler replaces `/_timetrigger` polling.
@@ -526,13 +528,13 @@ Goal: prove Plan A works (SocialCalc loads and executes in workerd).
 - [ ] `sendemail` SocialCalc command routes through email binding.
 - [ ] `confirmemailsent` WS reply.
 
-### Phase 10 — Single-sheet client adapter — MOSTLY DONE
-- [x] `packages/client/` with Vite + TS. `src/{ws-adapter,socialcalc-callbacks,main,graph,types,boot}.ts`. 78/78 tests. Build: 20.3 kB JS.
+### Phase 10 — Single-sheet client adapter — DONE (except graph.ts + Playwright)
+- [x] `packages/client/` with Vite + TS. `src/{ws-adapter,socialcalc-callbacks,main,graph,types,boot}.ts`. 88 tests. Build: 20.3 kB JS.
 - [x] `ws-adapter.ts` replaces socket.io client; broadcast queueing during disconnect, backoff reconnect, frame validation via `@ethercalc/shared`.
 - [x] `socialcalc-callbacks.ts` preserves `window.SocialCalc.Callbacks.broadcast` public surface for external embeds.
 - [x] `main.ts` ports `player.ls` entry (URL query, history pushState, formDataViewer flow, ask.log handshake).
-- [ ] **Coverage gate temporarily relaxed** to 99/95/90/99 (was 100/100/100/100). Three uncovered paths: main.ts `parts.edit` fallback loader arrow, applyFormDataLog `parts.sheet`-false branch, callbacks `delete SocialCalc.LoadEditorSettings` branch. Close in Phase 10.1 follow-up PR — should be 3 targeted tests.
-- [ ] `src/graph.ts` (615 lines) ported but excluded from coverage gate. Add targeted tests in Phase 10.2.
+- [x] **Phase 10.1 done** — coverage gate restored to 100/100/100/100 on `ws-adapter.ts`, `socialcalc-callbacks.ts`, `main.ts`. Three edge branches covered by added tests.
+- [ ] **Phase 10.2** — `src/graph.ts` (615 lines) still excluded from coverage gate. Add targeted tests to bring it under the gate.
 - [ ] Served by Workers Assets — wire in Phase 11.
 - [ ] Playwright: open room, type, reload, export → passes. *(deferred to Phase 11)*
 
@@ -545,12 +547,16 @@ Goal: prove Plan A works (SocialCalc loads and executes in workerd).
 - [x] Preserved legacy quirks: `HackFoldr.push` double-seed-row write; `/=<room>` regex `[^_]` rule blocks `/=_*`; `init(null)` reachable via flag race.
 - [ ] Playwright: create multi-sheet, add/rename/delete sub-sheets, export all → passes. *(deferred to Phase 11)*
 
-### Phase 11 — Self-host & legacy compat
-- [ ] **Miniflare docker image** — new `Dockerfile` + `docker-compose.yml` running Miniflare with mounted volume for D1/KV/R2/DO persistence (§13 Q5).
-- [ ] `/socket.io/socket.io.js` serves the new adapter under that path for existing embed integrations (§13 Q4, Q8).
-- [ ] `bin/ethercalc` CLI — wraps `wrangler dev`/Miniflare, passes through `--key` → `ETHERCALC_KEY` env, `--cors`, `--port`, `--expire`, `--host`, `--basepath`, `--keyfile`, `--certfile` (§13 Q6).
-- [ ] Migration script: import existing Redis dump → D1 + KV (works for both CF and self-host).
-- [ ] Deploy target matrix: CF Workers + Miniflare-docker, both tested in CI.
+### Phase 11 — Self-host & legacy compat — MOSTLY DONE
+- [x] **Miniflare docker image** — `Dockerfile` + `docker-compose.yml` at repo root running Miniflare with `/data` volume mount for DO persistence (§13 Q5).
+- [x] `bin/ethercalc` CLI — bun/node shim translating legacy flags (`--key`, `--cors`, `--port`, `--host`, `--expire`, `--basepath`) to wrangler env + args (§13 Q6). TLS (`--keyfile`/`--certfile`) deferred — Miniflare lacks direct TLS support; documented in `packages/cli/` FINDINGS.
+- [x] `packages/cli/` — 55 tests, 100% coverage on `parse.ts`, `map.ts`, `help.ts`, `run.ts`.
+- [x] `scripts/smoke-selfhost.sh` — builds image, composes up, curls `/_health`, composes down.
+- [x] CI `build-selfhost` job wires the smoke script.
+- [x] README.mkdn — self-host section with env var table.
+- [ ] `/socket.io/socket.io.js` legacy adapter serving — depends on Phase 7 WS layer.
+- [ ] Migration script: import existing Redis dump → D1 + KV.
+- [ ] Playwright e2e against `wrangler dev` covering both single-sheet and `multi/` flows.
 
 ### Phase 12 — CI hardening
 - [ ] Nightly Stryker mutation job.
@@ -734,6 +740,7 @@ Append one entry per session you work on this. Keep it short. Use this for conte
 | 2026-04-19 | 10b   | **Phase 10b agent merged.** `packages/client-multi/` React 18 + Radix tabs + Vite. 89/89 tests, 100% coverage on all tracked. Vite build 163 kB JS / 1.6 kB CSS. Playwright deferred to Phase 11 per §8. Preserved three legacy quirks (documented in `packages/client-multi/FINDINGS.md`). | a0ecd20 |
 | 2026-04-19 | 3     | **Phase 3 agent merged.** `packages/oracle-harness/` + `tests/oracle/` docker stack pinned to `042b731`. 102/102 tests, 100% coverage. 13 stateless scenarios recorded (oracle self-replay green). 9 FINDINGS documented (identity-HMAC when KEY unset, bare boolean `/_exists/:room` response, semi-volatile `Last-Modified`, fetch auto-redirect gotcha). html/xlsx/ods matchers throw "not implemented — Phase 8". | 4a52b96, 2d06bc3, 99932e3 |
 | 2026-04-19 | 10    | **Phase 10 agent merged.** `packages/client/` Vite + TS port of `player*.ls`. Agent crashed mid-final-report but delivered: 78/78 tests, typecheck clean, Vite build 20.3 kB. Coverage gate temporarily relaxed to 99/95/90/99 on this package — three uncovered edge branches (main.ts `parts.edit` loader fallback, applyFormDataLog `parts.sheet`=false path, callbacks `delete` branch) to be closed in Phase 10.1 follow-up. | a203aeb |
+| 2026-04-19 | 4/8a/10.1/11a | **Second parallel wave merged.** Four agents ran in parallel worktrees: P4 stateless HTTP (Hono wiring + auth + redirects + 5/13 oracle scenarios, 45 Node tests at 100% coverage); P8a-partial html matcher via linkedom (127 tests total, 100%); P10c coverage closeout (client back to 100/100/100/100 on gated files); P11a Miniflare docker + `bin/ethercalc` CLI + `packages/cli` (55 tests, 100%) + CI build-selfhost job + README self-host section. 395+ tests green across 7 packages. §6.4 clarified: `verifyAuth('0')` must reject unconditionally because identity-HMAC makes `computeAuth(undefined,'0') === '0'`. §6.1 clarified: `/etc/*` 404 CT is `text/html` not `text/plain`. | many |
 
 ---
 
