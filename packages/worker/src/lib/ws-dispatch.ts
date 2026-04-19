@@ -53,7 +53,8 @@ export function isFilteredExecuteCommand(cmdstr: string): boolean {
  */
 export function isSubmitForm(cmdstr: string): boolean {
   if (typeof cmdstr !== 'string' || cmdstr.length === 0) return false;
-  const firstLine = cmdstr.split('\r')[0] ?? '';
+  // `split('\r')[0]` on a non-empty string always returns a string.
+  const firstLine = cmdstr.split('\r')[0] as string;
   return firstLine.trim() === 'submitform';
 }
 

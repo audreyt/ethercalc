@@ -21,8 +21,15 @@
 /* istanbul ignore file */
 import type { Hono } from 'hono';
 
+import { classifyCommandBody, joinCommands } from '../handlers/post-command.ts';
 import { classifyRequestBody } from '../handlers/rooms.ts';
 import { doFetch } from '../lib/do-dispatch.ts';
+import {
+  enrichLoadClipboard,
+  isBannedWikiFormat,
+  isLoadClipboard,
+  isMultiCascade,
+} from '../lib/loadclipboard.ts';
 import { generateRoomId } from '../lib/room-name.ts';
 import {
   listRooms,
@@ -209,5 +216,118 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
     const room = c.req.param('room') ?? '';
     await doFetch(c.env, room, '/_do/all', { method: 'DELETE' });
     return sizedResponse('OK', 201, TEXT_CT);
+  });
+
+  // ─── POST /_/:room (execute commands) ───────────────────────────────
+  //
+  // Phase 6 implementation. Direct port of src/main.ls:406-446:
+  //
+  //   1. classify body (JSON {command} / text / xlsx-deferred)
+  //   2. empty body -> 400 'Please send command'
+  //   3. xlsx -> 501 (J-lib decoder deferred to Phase 8)
+  //   4. apply text-wiki filter -- the banned command is silently
+  //      dropped at the top (sec 7 item 12); we return 202 with the
+  //      original command echoed so clients don't re-issue it.
+  //   5. if the command is loadclipboard AND it arrived as plain text,
+  //      auto-enrich per legacy:
+  //        row = ?row query if present and truthy, else derive from
+  //        the current snapshot's sheet dimension line
+  //        -> [cmd, insertrow A<row>, paste A<row> all] if ?row given
+  //        -> [cmd, paste A<row> all] otherwise
+  //   6. if the command matches `^set A\d+:B\d+ empty multi-cascade`,
+  //      read the referenced cell's t:-prefixed content out of the
+  //      current snapshot and rename that foreign room <ref> -> <ref>.bak
+  //      via POST /_do/rename on the source DO.
+  //   7. join the (possibly-array) command with newlines and
+  //      dispatch to POST /_do/commands on the room DO.
+  //   8. reply 202 application/json with body {command} -- command
+  //      may be a string or an array of strings.
+  //
+  // The WS broadcast (`{type: execute, cmdstr, room}`) is Phase 7's
+  // responsibility; this handler trusts the DO has already surfaced
+  // the change via its own WS fan-out when that layer lands.
+  app.post('/_/:room', async (c) => {
+    const room = c.req.param('room') ?? '';
+    const bytes = await readBodyBytes(c.req.raw);
+    const ct = c.req.header('content-type') ?? '';
+    const classified = classifyCommandBody(ct, bytes);
+
+    if (classified.kind === 'xlsx-deferred') return xlsxDeferredResponse();
+    if (classified.kind === 'empty') {
+      return sizedResponse('Please send command', 400, TEXT_CT);
+    }
+
+    // Apply text-wiki filter first (at the top per legacy sec 7 item 12).
+    // Single-string only -- the banned command is never an array member
+    // in practice; if a client ever nests it, the DO's own executor
+    // would still process it (we match legacy's surface-only filter).
+    if (
+      typeof classified.command === 'string' &&
+      isBannedWikiFormat(classified.command)
+    ) {
+      return new Response(
+        JSON.stringify({ command: classified.command }),
+        { status: 202, headers: { 'Content-Type': JSON_CT } },
+      );
+    }
+
+    // For plain-text bodies the legacy auto-enriches loadclipboard and
+    // handles multi-cascade renames. Those branches don't apply when
+    // the command arrived as JSON -- the client has already composed
+    // the array shape it wants.
+    let commandOut: string | readonly string[] = classified.command;
+
+    if (classified.kind === 'text-command') {
+      const textCmd = classified.command;
+
+      // Multi-cascade rename (src/main.ls:425-436). Reads the current
+      // snapshot out of this room's DO, matches the
+      // `cell:<ref>:t:/<foreignRoom>` line, and issues /_do/rename on
+      // the foreign room's DO. Errors (missing snapshot, missing cell
+      // line, rename 5xx) are swallowed: legacy proceeds to execute
+      // the command regardless.
+      const cascadeRef = isMultiCascade(textCmd);
+      if (cascadeRef !== null) {
+        const snapshotRes = await doFetch(c.env, room, '/_do/snapshot');
+        if (snapshotRes.ok) {
+          const snapshot = await snapshotRes.text();
+          const cellLine = new RegExp(`cell:${cascadeRef}:t:/(.+)`, 'i').exec(snapshot);
+          if (cellLine) {
+            const foreignRoom = cellLine[1]!.replace(/\r?$/, '');
+            await doFetch(c.env, foreignRoom, '/_do/rename', {
+              method: 'POST',
+              body: JSON.stringify({ to: `${foreignRoom}.bak` }),
+              headers: { 'Content-Type': 'application/json' },
+            });
+          }
+        }
+      }
+
+      // Loadclipboard auto-enrichment (src/main.ls:414-424).
+      if (isLoadClipboard(textCmd)) {
+        const rowQ = Number(c.req.query('row'));
+        const rowQueryParam = Number.isNaN(rowQ) ? null : rowQ;
+        // Snapshot is needed for the lastrow derivation. Treat 404 as empty.
+        const snapshotRes = await doFetch(c.env, room, '/_do/snapshot');
+        const snapshot = snapshotRes.ok ? await snapshotRes.text() : '';
+        commandOut = enrichLoadClipboard(textCmd, { rowQueryParam, snapshot });
+      }
+    }
+
+    // Dispatch the joined commands to the DO. Array commands become a
+    // single newline-separated batch (matches legacy
+    // `cmdstr = command * '\n'`).
+    const cmdstr = joinCommands(commandOut);
+    await doFetch(c.env, room, '/_do/commands', {
+      method: 'POST',
+      body: cmdstr,
+    });
+
+    // Legacy replies `@response.json 202 {command}` -- `command` is the
+    // post-enrichment value (string or array), not the raw body text.
+    return new Response(JSON.stringify({ command: commandOut }), {
+      status: 202,
+      headers: { 'Content-Type': JSON_CT },
+    });
   });
 }
