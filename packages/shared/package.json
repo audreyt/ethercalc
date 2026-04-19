@@ -1,0 +1,26 @@
+{
+  "name": "@ethercalc/shared",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Shared contracts between client, worker, and oracle harness",
+  "license": "CC0-1.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./messages": "./src/messages.ts",
+    "./storage-keys": "./src/storage-keys.ts",
+    "./oracle-scenarios": "./src/oracle-scenarios.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@vitest/coverage-istanbul": "^2.1.4",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  }
+}

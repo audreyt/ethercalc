@@ -5,6 +5,15 @@
     "": {
       "name": "ethercalc",
     },
+    "packages/shared": {
+      "name": "@ethercalc/shared",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@vitest/coverage-istanbul": "^2.1.4",
+        "typescript": "^5.6.3",
+        "vitest": "^2.1.4",
+      },
+    },
     "packages/socialcalc-headless": {
       "name": "@ethercalc/socialcalc-headless",
       "version": "0.0.0",
@@ -145,6 +154,8 @@
     "@esbuild/win32-ia32": ["@esbuild/win32-ia32@0.17.19", "", { "os": "win32", "cpu": "ia32" }, "sha512-eggDKanJszUtCdlVs0RB+h35wNlb5v4TWEkq4vZcmVt5u/HiDZrTXe2bWFQUez3RgNHwx/x4sk5++4NSSicKkw=="],
 
     "@esbuild/win32-x64": ["@esbuild/win32-x64@0.17.19", "", { "os": "win32", "cpu": "x64" }, "sha512-lAhycmKnVOuRYNtRtatQR1LPQf2oYCkRGkSFnseDAKPl8lu5SOsK/e1sXe5a0Pc5kHIHe6P2I/ilntNv2xf3cA=="],
+
+    "@ethercalc/shared": ["@ethercalc/shared@workspace:packages/shared"],
 
     "@ethercalc/socialcalc-headless": ["@ethercalc/socialcalc-headless@workspace:packages/socialcalc-headless"],
 
