@@ -115,6 +115,10 @@ const mockExportCells = vi.fn<() => Record<string, unknown>>(() => ({ A1: 1 }));
 const mockExportCell = vi.fn<(coord: string) => unknown>((coord) =>
   coord === 'A1' ? { v: 1 } : null,
 );
+const mockExportCSV = vi.fn<() => string>(() => 'a,b\n1,2\n');
+const mockCreateSheetHTML = vi.fn<() => string>(
+  () => '<table><tr><td>1</td></tr></table>',
+);
 
 vi.mock('@ethercalc/socialcalc-headless', () => ({
   HeadlessSpreadsheet: class MockSS {},
@@ -123,6 +127,8 @@ vi.mock('@ethercalc/socialcalc-headless', () => ({
     createSpreadsheetSave: () => mockSave(),
     exportCells: () => mockExportCells(),
     exportCell: (coord: string) => mockExportCell(coord),
+    exportCSV: () => mockExportCSV(),
+    createSheetHTML: () => mockCreateSheetHTML(),
   }),
 }));
 
@@ -137,6 +143,8 @@ describe('RoomDO (unit, direct construction)', () => {
     mockSave.mockClear();
     mockExportCells.mockClear();
     mockExportCell.mockClear();
+    mockExportCSV.mockClear();
+    mockCreateSheetHTML.mockClear();
   });
 
   it('ping echoes id and name', async () => {
@@ -382,6 +390,80 @@ describe('RoomDO (unit, direct construction)', () => {
     const res = await room.fetch(
       new Request('https://do/_do/exists', { method: 'POST' }),
     );
+    expect(res.status).toBe(501);
+  });
+
+  // ─── Phase 8 export handlers ─────────────────────────────────────────
+
+  it('GET /_do/html returns createSheetHTML with text/html', async () => {
+    const res = await room.fetch(new Request('https://do/_do/html'));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toBe('text/html; charset=utf-8');
+    expect(await res.text()).toBe('<table><tr><td>1</td></tr></table>');
+    expect(mockCreateSheetHTML).toHaveBeenCalled();
+  });
+
+  it('GET /_do/csv returns exportCSV with text/csv', async () => {
+    const res = await room.fetch(new Request('https://do/_do/csv'));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toBe('text/csv; charset=utf-8');
+    expect(await res.text()).toBe('a,b\n1,2\n');
+  });
+
+  it('GET /_do/csv.json parses CSV into a string[][] JSON', async () => {
+    const res = await room.fetch(new Request('https://do/_do/csv.json'));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toBe('application/json');
+    expect(await res.json()).toEqual([
+      ['a', 'b'],
+      ['1', '2'],
+    ]);
+  });
+
+  it('GET /_do/md returns a GFM markdown table', async () => {
+    const res = await room.fetch(new Request('https://do/_do/md'));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toBe('text/x-markdown; charset=utf-8');
+    expect(await res.text()).toBe('| a | b |\n| --- | --- |\n| 1 | 2 |');
+  });
+
+  it('GET /_do/xlsx returns binary with xlsx content type', async () => {
+    const res = await room.fetch(new Request('https://do/_do/xlsx'));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toContain('spreadsheetml');
+    const buf = new Uint8Array(await res.arrayBuffer());
+    expect(buf.byteLength).toBeGreaterThan(0);
+    // xlsx is a zip → starts with "PK"
+    expect(buf[0]).toBe(0x50);
+    expect(buf[1]).toBe(0x4b);
+  });
+
+  it('GET /_do/ods returns binary with opendocument content type', async () => {
+    const res = await room.fetch(new Request('https://do/_do/ods'));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toContain('opendocument');
+    const buf = new Uint8Array(await res.arrayBuffer());
+    expect(buf.byteLength).toBeGreaterThan(0);
+  });
+
+  it('GET /_do/fods returns flat-ODS XML with opendocument content type', async () => {
+    const res = await room.fetch(new Request('https://do/_do/fods'));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toContain('opendocument');
+    const text = await res.text();
+    expect(text.startsWith('<')).toBe(true);
+  });
+
+  it.each([
+    ['/_do/html', 'POST'],
+    ['/_do/csv', 'POST'],
+    ['/_do/csv.json', 'POST'],
+    ['/_do/md', 'POST'],
+    ['/_do/xlsx', 'POST'],
+    ['/_do/ods', 'POST'],
+    ['/_do/fods', 'POST'],
+  ])('wrong method on %s returns 501 (%s)', async (path, method) => {
+    const res = await room.fetch(new Request(`https://do${path}`, { method }));
     expect(res.status).toBe(501);
   });
 });

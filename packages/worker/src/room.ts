@@ -34,6 +34,13 @@ import {
   createSpreadsheet,
 } from '@ethercalc/socialcalc-headless';
 
+import { parseCSV } from './lib/csv-parse.ts';
+import { csvToMarkdown } from './lib/md.ts';
+import {
+  BINARY_CONTENT_TYPES,
+  type BinaryFormat,
+  csvToBinaryWorkbook,
+} from './lib/xlsx-build.ts';
 import type { Env } from './env.ts';
 
 /** Shape returned from `GET /_do/log`. */
@@ -45,6 +52,9 @@ export interface RoomLogSnapshot {
 /** Content type used for plain-text bodies returned from the DO. */
 const PLAIN_TEXT = 'text/plain; charset=utf-8';
 const APP_JSON = 'application/json';
+const TEXT_CSV = 'text/csv; charset=utf-8';
+const TEXT_HTML = 'text/html; charset=utf-8';
+const TEXT_MARKDOWN = 'text/x-markdown; charset=utf-8';
 
 function plainResponse(body: string, status = 200): Response {
   return new Response(body, {
@@ -62,6 +72,16 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 function notFound(): Response {
   return plainResponse('', 404);
+}
+
+function textResponse(body: string, contentType: string, status = 200): Response {
+  return new Response(body, { status, headers: { 'Content-Type': contentType } });
+}
+
+function binaryResponse(bytes: Uint8Array, contentType: string, status = 200): Response {
+  // Convert to an ArrayBuffer slice — the DO → worker hop stringifies Response
+  // bodies via streaming, and workerd treats Uint8Array as a valid BodyInit.
+  return new Response(bytes, { status, headers: { 'Content-Type': contentType } });
 }
 
 export class RoomDO implements DurableObject {
@@ -111,6 +131,28 @@ export class RoomDO implements DurableObject {
     const cellMatch = path.match(/^\/_do\/cells\/(.+)$/);
     if (cellMatch && request.method === 'GET') {
       return this.#getCell(decodeURIComponent(cellMatch[1]!));
+    }
+    // ─── Phase 8: export routes ────────────────────────────────────────
+    if (path === '/_do/html' && request.method === 'GET') {
+      return this.#getHtml();
+    }
+    if (path === '/_do/csv' && request.method === 'GET') {
+      return this.#getCsv();
+    }
+    if (path === '/_do/csv.json' && request.method === 'GET') {
+      return this.#getCsvJson();
+    }
+    if (path === '/_do/md' && request.method === 'GET') {
+      return this.#getMd();
+    }
+    if (path === '/_do/xlsx' && request.method === 'GET') {
+      return this.#getBinary('xlsx');
+    }
+    if (path === '/_do/ods' && request.method === 'GET') {
+      return this.#getBinary('ods');
+    }
+    if (path === '/_do/fods' && request.method === 'GET') {
+      return this.#getBinary('fods');
     }
     return new Response('Not implemented', { status: 501 });
   }
@@ -189,6 +231,38 @@ export class RoomDO implements DurableObject {
   async #getCell(coord: string): Promise<Response> {
     const ss = await this.#getSpreadsheet();
     return jsonResponse(ss.exportCell(coord));
+  }
+
+  // ─── Export handlers (Phase 8) ────────────────────────────────────────
+  //
+  // Every export derives from the in-memory `HeadlessSpreadsheet` — no
+  // caching beyond what the SocialCalc instance itself does. That keeps
+  // each GET deterministic after any mutation (POST /_do/commands).
+
+  async #getHtml(): Promise<Response> {
+    const ss = await this.#getSpreadsheet();
+    return textResponse(ss.createSheetHTML(), TEXT_HTML);
+  }
+
+  async #getCsv(): Promise<Response> {
+    const ss = await this.#getSpreadsheet();
+    return textResponse(ss.exportCSV(), TEXT_CSV);
+  }
+
+  async #getCsvJson(): Promise<Response> {
+    const ss = await this.#getSpreadsheet();
+    return jsonResponse(parseCSV(ss.exportCSV()));
+  }
+
+  async #getMd(): Promise<Response> {
+    const ss = await this.#getSpreadsheet();
+    return textResponse(csvToMarkdown(ss.exportCSV()), TEXT_MARKDOWN);
+  }
+
+  async #getBinary(format: BinaryFormat): Promise<Response> {
+    const ss = await this.#getSpreadsheet();
+    const bytes = csvToBinaryWorkbook(ss.exportCSV(), format);
+    return binaryResponse(bytes, BINARY_CONTENT_TYPES[format]);
   }
 
   // ─── Internals ─────────────────────────────────────────────────────────
