@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createSpreadsheet, loadSocialCalc } from '../src/index.js';
+import { createSpreadsheet, csvToSave, loadSocialCalc } from '../src/index.js';
 
 describe('socialcalc headless (Phase 1 spike — Plan A)', () => {
   it('loads SocialCalc namespace in workerd', () => {
@@ -57,5 +57,27 @@ describe('socialcalc headless (Phase 1 spike — Plan A)', () => {
       ].join('\n'),
     );
     expect(ss.exportCSV()).toBe('hello,10\n,20\n,30\n');
+  });
+
+  /**
+   * `csvToSave` round-trip. The PUT /_/:room handler stores this as the
+   * room snapshot; rehydrated, it must parse as a full spreadsheet save
+   * (including the multipart envelope) and export back to the same CSV.
+   *
+   * Regression guard: `ConvertOtherFormatToSave(csv, 'csv')` alone
+   * returns a clipboard-style snippet with a `copiedfrom:` trailer that
+   * DecodeSpreadsheetSave can't handle — rehydrated exports came back
+   * empty. Found by 2026-04-20 browser smoke PUT + GET CSV.
+   */
+  it('csvToSave produces a full save that round-trips through createSpreadsheet', () => {
+    const csv = 'a,b,c\n1,2,3\n';
+    const save = csvToSave(csv);
+    // Envelope markers legacy clients + our DecodeSpreadsheetSave expect.
+    expect(save).toContain('SocialCalcSpreadsheetControlSave');
+    expect(save).toContain('part:sheet');
+    // Round-trip: rehydrate and export CSV. Must match the input row
+    // shape (trailing newline is SocialCalc's convention).
+    const ss = createSpreadsheet({ snapshot: save });
+    expect(ss.exportCSV()).toBe('a,b,c\n1,2,3\n');
   });
 });

@@ -12,6 +12,7 @@ type SocialCalcNamespace = Record<string, unknown> & {
   ExecuteSheetCommand: (sheet: unknown, cmd: unknown, saveundo: boolean) => string | undefined;
   ScheduleSheetCommands: (sheet: unknown, cmdstr: string, saveundo: boolean) => void;
   RecalcSheet: (sheet: unknown) => void;
+  Clipboard: { clipboard: string };
   document: { createElement: (tag: string) => ShimNode };
 };
 
@@ -88,9 +89,46 @@ export class HeadlessSpreadsheet {
   exportCell(coord: string): unknown { const cell = this.#ss.sheet.cells[coord]; return cell === undefined ? null : cell; }
 }
 
+/**
+ * Convert CSV text into a FULL SocialCalc save (multipart envelope with
+ * sheet + edit + audit parts), suitable for storage as a room snapshot.
+ *
+ * `ConvertOtherFormatToSave(csv, 'csv')` alone only returns a clipboard-
+ * style bare-sheet snippet with a `copiedfrom:A1:C2` trailer — fine for
+ * paste but NOT a valid room snapshot (DecodeSpreadsheetSave can't parse
+ * it; exporters return empty CSV when rehydrating). Legacy used
+ * `J.utils.to_socialcalc(J.read(csv))` for this path, which delegated
+ * through a different decoder that produced a full save.
+ *
+ * We reproduce the legacy shape by: (a) parsing the CSV via SocialCalc's
+ * clipboard decoder, (b) pasting it into a fresh SpreadsheetControl at
+ * A1, (c) emitting `CreateSpreadsheetSave` — the same format a live
+ * client's PUT /_/:room would produce.
+ *
+ * Found while browser-smoke-testing PUT /_/room with CSV bodies on
+ * 2026-04-20: GET /_/:room/csv returned empty after a successful PUT
+ * because the rehydrated DO couldn't parse its own stored snapshot.
+ */
 export function csvToSave(csv: string): string {
   const SC = loadSocialCalc();
-  return SC.ConvertOtherFormatToSave(csv, 'csv');
+  const clipboardSave = SC.ConvertOtherFormatToSave(csv, 'csv');
+  const ss = new SC.SpreadsheetControl();
+  // The legacy `loadclipboard <encoded-save>` command decodes the save
+  // through `SocialCalc.decodeFromSave` then assigns Clipboard.clipboard.
+  // We skip the round-trip through encode/decode since we already have
+  // the decoded form; Clipboard is a plain namespace value (see socialcalc
+  // asset `Clipboard = { clipboard: "" }`).
+  SC.Clipboard.clipboard = clipboardSave;
+  const sheet = ss.context.sheetobj;
+  const parse = new SC.Parse('paste A1 all');
+  SC.ExecuteSheetCommand(sheet, parse, false);
+  if (sheet.attribs.needsrecalc === 'yes' || sheet.recalconce === true) {
+    try {
+      SC.RecalcSheet(sheet);
+    } catch (e) { console.error("Error in RecalcSheet:", e); }
+    sheet.attribs.needsrecalc = 'no';
+  }
+  return ss.CreateSpreadsheetSave();
 }
 
 export function createSpreadsheet(opts: HeadlessSpreadsheetOptions = {}): HeadlessSpreadsheet {
