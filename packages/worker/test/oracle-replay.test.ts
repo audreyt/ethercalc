@@ -171,16 +171,16 @@ async function replayAgainstWorker(scenario: HttpScenario): Promise<{
  * Scenarios that Phase 4 (stateless) and Phase 5 (room CRUD + index)
  * are expected to pass.
  *
- * The 3 `static/*` scenarios regressed during the P5 merge: P5's vitest
- * config inlined the DO binding (to dodge the `?raw` + `[[rules]]`
- * collision) and dropped `wrangler.configPath`, which also dropped the
- * `[assets]` binding. They pass against the real wrangler dev but not
- * in vitest-pool-workers. Tracked as Phase 5.2 follow-up — fix by
- * configuring miniflare's inline `assets` option.
+ * Phase 5.2 restores the `[assets]` binding inline via miniflare's
+ * `assets` plugin option in `vitest.config.ts`, re-enabling the three
+ * `static/*` scenarios that had regressed when the P5 config dropped
+ * `wrangler.configPath` to dodge the `?raw` + `[[rules]]` collision
+ * (§7 item 33).
  *
- * `static/get-favicon` is intentionally divergent: the legacy oracle
- * emits `Content-Type: text/html; charset=utf-8` for `.ico` bytes
- * (Express-static mime-table bug). Per §13 Q1 the rewrite corrects it.
+ * `static/get-favicon` remains intentionally divergent: the legacy
+ * oracle emits `Content-Type: text/html; charset=utf-8` for `.ico`
+ * bytes (Express-static mime-table bug). Per §13 Q1 the rewrite
+ * corrects it to `image/vnd.microsoft.icon`.
  */
 const PHASE5_EXPECTED_PASS = [
   // Phase 4 — stateless redirects + 404s
@@ -194,9 +194,13 @@ const PHASE5_EXPECTED_PASS = [
   'rooms-index/get-rooms-empty',
   'rooms-index/get-roomlinks-empty',
   'rooms-index/get-roomtimes-empty',
+  // Phase 5.2 — ASSETS restored via miniflare inline `assets` option
+  'static/get-root-index',
+  'static/get-start',
+  'static/get-socialcalc-js',
 ] as const;
 
-describe('oracle replay — Phase 4 + 5 subset (ASSETS in vitest pending 5.2)', () => {
+describe('oracle replay — Phase 4 + 5 + 5.1 + 5.2 subset (12/13 green)', () => {
   const scenarios: HttpScenario[] = Object.values(MODULES).map((m) => m.scenario);
   it('loaded recorded fixtures via import.meta.glob', () => {
     expect(scenarios.length).toBeGreaterThanOrEqual(PHASE5_EXPECTED_PASS.length);
@@ -221,10 +225,11 @@ describe('oracle replay — Phase 4 + 5 subset (ASSETS in vitest pending 5.2)', 
     });
   }
 
-  // Meta-check: floor temporarily 9 while Phase 5.2 restores ASSETS in
-  // vitest (the 3 static/* scenarios and static/get-favicon pass
-  // against wrangler dev but not under vitest-pool-workers).
-  it('at least 9 of the recorded scenarios pass against the new worker', async () => {
+  // Meta-check: floor is 12/13 — all scenarios except `static/get-favicon`
+  // pass. The favicon keeps diverging per §13 Q1 (sensible-fix
+  // allow-list — Express-static mime bug corrected to
+  // `image/vnd.microsoft.icon`).
+  it('at least 12 of the recorded scenarios pass against the new worker', async () => {
     // Reset the D1 mirror for the same reason as the per-scenario loop
     // above — `rooms-index/*` fixtures need an empty table.
     const db = (env as unknown as { DB?: D1Database }).DB;
@@ -234,7 +239,7 @@ describe('oracle replay — Phase 4 + 5 subset (ASSETS in vitest pending 5.2)', 
       const r = await replayAgainstWorker(scenario);
       if (r.ok) pass++;
     }
-    expect(pass).toBeGreaterThanOrEqual(9);
+    expect(pass).toBeGreaterThanOrEqual(12);
     expect(pass).toBeLessThanOrEqual(scenarios.length);
   });
 });
