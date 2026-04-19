@@ -1,0 +1,19 @@
+{
+  "scenario": {
+    "name": "rooms-index/get-roomtimes-empty",
+    "kind": "http",
+    "request": {
+      "method": "GET",
+      "path": "/_roomtimes"
+    },
+    "expect": {
+      "status": 200,
+      "headers": {
+        "content-length": "2",
+        "content-type": "application/json; charset=utf-8"
+      },
+      "bodyBase64": "e30=",
+      "bodyMatcher": "json"
+    }
+  }
+}

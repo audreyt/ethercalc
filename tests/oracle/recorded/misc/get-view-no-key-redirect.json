@@ -1,0 +1,21 @@
+{
+  "scenario": {
+    "name": "misc/get-view-no-key-redirect",
+    "kind": "http",
+    "request": {
+      "method": "GET",
+      "path": "/some-room/view"
+    },
+    "expect": {
+      "status": 302,
+      "headers": {
+        "content-length": "54",
+        "content-type": "text/plain; charset=UTF-8",
+        "location": "/some-room?auth=some-room&view=1",
+        "vary": "Accept"
+      },
+      "bodyBase64": "Rm91bmQuIFJlZGlyZWN0aW5nIHRvIC9zb21lLXJvb20/YXV0aD1zb21lLXJvb20mdmlldz0x",
+      "bodyMatcher": "ignore"
+    }
+  }
+}

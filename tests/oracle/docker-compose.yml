@@ -1,0 +1,39 @@
+# Oracle stack — EtherCalc (current main) + Redis, isolated from the
+# new worker. Pinned SHA captured at Phase 3 kickoff:
+#   oracle_sha: 042b731d9e98f1d30537e6cb656f65792afdecdf
+# That's the last legacy LiveScript/zappajs commit on origin/main
+# before the TypeScript rewrite scaffolding (Phases 1-2) landed on
+# local main. Bump this whenever the upstream oracle moves — all
+# recordings must be re-captured when it does.
+#
+# To bring it up:
+#   docker compose -f tests/oracle/docker-compose.yml up --build -d
+# To tear down:
+#   docker compose -f tests/oracle/docker-compose.yml down -v
+#
+# The oracle listens on host :8000. Redis stays internal-only on the
+# default bridge network.
+
+services:
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+
+  ethercalc:
+    build:
+      context: .
+      dockerfile: Dockerfile.oracle
+      args:
+        ORACLE_SHA: 042b731d9e98f1d30537e6cb656f65792afdecdf
+    depends_on:
+      - redis
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+    ports:
+      - "8000:8000"
+
+volumes:
+  redis-data:

@@ -1,0 +1,32 @@
+{
+  "name": "@ethercalc/oracle-harness",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Oracle recorder/replayer — captures the current main branch's HTTP/WS responses so the TypeScript rewrite can be proven equivalent.",
+  "license": "CC0-1.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./matchers": "./src/matchers.ts",
+    "./record": "./src/record.ts",
+    "./replay": "./src/replay.ts"
+  },
+  "scripts": {
+    "record": "bun run src/bin.ts record",
+    "replay": "bun run src/bin.ts replay",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ethercalc/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@vitest/coverage-istanbul": "^2.1.4",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  }
+}

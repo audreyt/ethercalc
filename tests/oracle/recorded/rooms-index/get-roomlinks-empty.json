@@ -1,0 +1,19 @@
+{
+  "scenario": {
+    "name": "rooms-index/get-roomlinks-empty",
+    "kind": "http",
+    "request": {
+      "method": "GET",
+      "path": "/_roomlinks"
+    },
+    "expect": {
+      "status": 200,
+      "headers": {
+        "content-length": "2",
+        "content-type": "text/html; charset=utf-8"
+      },
+      "bodyBase64": "W10=",
+      "bodyMatcher": "exact"
+    }
+  }
+}
