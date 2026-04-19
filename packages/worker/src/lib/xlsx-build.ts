@@ -26,9 +26,10 @@
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// @ts-expect-error — xlsx ships its own d.ts but the ESM surface we use
+// xlsx ships its own d.ts. We reach through `any` rather than importing
+// the individual typed symbols because the public ESM surface we use
 // (aoa_to_sheet + book_new + book_append_sheet + write) is typed more
-// liberally in the library than what we actually hit; we reach through any.
+// liberally in the library than what we actually hit.
 import * as XLSX from 'xlsx';
 
 import { parseCSV } from './csv-parse.ts';

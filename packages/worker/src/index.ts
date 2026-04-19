@@ -10,6 +10,7 @@ import { Hono } from 'hono';
 
 import { buildHealthBody } from './handlers/health.ts';
 import { registerAssets, registerRoomCatchAll } from './routes/assets.ts';
+import { registerExports } from './routes/exports.ts';
 import { registerRoomRoutes } from './routes/rooms.ts';
 import { registerStateless } from './routes/stateless.ts';
 import type { Env } from './env.ts';
@@ -37,6 +38,11 @@ export function buildApp(): Hono<{ Bindings: Env }> {
   // Room index + CRUD — register BEFORE stateless so `/_rooms`, `/_exists/:room`,
   // `/_from/:template` etc take precedence over any `/:room`-style catch-all.
   registerRoomRoutes(app);
+  // Exports — `/_/:room/<format>` and `/:room.<format>`. Registered after
+  // CRUD (so `/_/:room` itself still wins for raw-save) but before the
+  // `/:room` catch-all (so `/foo.csv` routes to the csv exporter rather
+  // than being treated as a room-entry request).
+  registerExports(app);
   registerStateless(app);
   registerAssets(app);
   registerRoomCatchAll(app);
