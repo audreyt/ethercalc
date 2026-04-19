@@ -1,0 +1,4 @@
+[test]
+pathIgnorePatterns = ["packages/**"]
+[run]
+bun = false
