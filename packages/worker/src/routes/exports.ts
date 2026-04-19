@@ -151,8 +151,19 @@ export function registerExports(app: Hono<{ Bindings: Env }>): void {
   // (CLAUDE.md §6.1 table entries).
   for (const [key, format] of Object.entries(FORMATS)) {
     // `/_/:room/<key>` form — explicit, no suffix-matching needed.
+    //
+    // Guard: if the room name starts with `=` we're actually in the
+    // multi-sheet path. Hono's `:room` matcher greedily consumes `=room`
+    // into the param so we peel it at runtime and hand back the 501 the
+    // explicit multi-sheet route above would have emitted.
     app.get(`/_/:room/${key}`, async (c) => {
       const room = c.req.param('room') ?? '';
+      if (room.startsWith('=')) {
+        return new Response(
+          `multi-sheet ${key} export: Phase 8.1 follow-up`,
+          { status: 501, headers: { 'Content-Type': TEXT_CT } },
+        );
+      }
       return dispatchExport(c.env, room, format);
     });
     // `/:room.<key>` form — the room name may NOT contain a dot-extension
@@ -165,6 +176,12 @@ export function registerExports(app: Hono<{ Bindings: Env }>): void {
     app.get(`/:room{.+\\.${key.replace('.', '\\.')}}`, async (c) => {
       const raw = c.req.param('room') ?? '';
       const room = raw.slice(0, raw.length - key.length - 1);
+      if (room.startsWith('=')) {
+        return new Response(
+          `multi-sheet ${key} export: Phase 8.1 follow-up`,
+          { status: 501, headers: { 'Content-Type': TEXT_CT } },
+        );
+      }
       return dispatchExport(c.env, room, format);
     });
   }
