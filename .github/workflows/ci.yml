@@ -43,6 +43,20 @@ jobs:
       - name: worker — Node tests + 100% coverage gate
         run: bun run --cwd packages/worker test:coverage
 
+      - name: client — Vite build (needed for assets/static/player.js)
+        run: bun run --cwd packages/client build
+
+      - name: client-multi — Vite build (needed for assets/multi/)
+        run: bun run --cwd packages/client-multi build
+
+      - name: Build curated assets/ dir (scripts/build-assets.sh)
+        # Phase 4.1/11: regenerates `assets/` at repo root from the
+        # client/client-multi dist output plus the legacy static files.
+        # Must run BEFORE worker integration tests (miniflare reads
+        # wrangler.toml `[assets]` at startup) and `wrangler deploy
+        # --dry-run` (validates the directory exists).
+        run: ./scripts/build-assets.sh
+
       - name: worker — integration tests (workerd via miniflare)
         run: bun run --cwd packages/worker test:workers
 
@@ -52,17 +66,11 @@ jobs:
       - name: socialcalc-headless — smoke tests (workerd)
         run: bun run --cwd packages/socialcalc-headless test
 
-      - name: client — tests + coverage gate (temporarily 99/95/90/99)
+      - name: client — tests + 100% coverage gate
         run: bun run --cwd packages/client test:coverage
-
-      - name: client — Vite build
-        run: bun run --cwd packages/client build
 
       - name: client-multi — tests + 100% coverage gate
         run: bun run --cwd packages/client-multi test:coverage
-
-      - name: client-multi — Vite build
-        run: bun run --cwd packages/client-multi build
 
       - name: oracle-harness — tests + 100% coverage gate
         run: bun run --cwd packages/oracle-harness test:coverage

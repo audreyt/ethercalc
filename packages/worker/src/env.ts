@@ -32,4 +32,15 @@ export interface Env {
    * consistent. Defaults to empty string.
    */
   readonly BASEPATH?: string;
+
+  /**
+   * DevMode flag. Legacy `src/main.ls` checked `fs.existsSync('.git')` to
+   * decide whether to serve the dynamic `manifest.appcache` stub. Under
+   * Workers we can't hit the filesystem, so we expose an explicit env
+   * var: any truthy string (`'1'` or `'true'`) enables the DevMode path
+   * which returns a fresh-timestamp CACHE MANIFEST body. Defaults to
+   * off; production asset serving goes through `env.ASSETS` for the
+   * static manifest file.
+   */
+  readonly DEVMODE?: string;
 }

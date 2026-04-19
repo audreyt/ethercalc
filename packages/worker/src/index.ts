@@ -9,7 +9,7 @@
 import { Hono } from 'hono';
 
 import { buildHealthBody } from './handlers/health.ts';
-import { registerAssets } from './routes/assets.ts';
+import { registerAssets, registerRoomCatchAll } from './routes/assets.ts';
 import { registerStateless } from './routes/stateless.ts';
 import type { Env } from './env.ts';
 
@@ -23,16 +23,19 @@ export { RoomDO } from './room.ts';
  * Route ordering rationale: Hono's radix/trie router matches static
  * prefixes before params, so the specific `/:room/edit` etc register
  * cleanly alongside static `/_new`, `/_start`, `/etc/*`, `/var/*`. The
- * generic `/:room` entry-page route is deliberately NOT registered here
- * — it requires Workers Assets integration to serve `index.html` and
- * would shadow future `/_rooms`, `/_from/:template`, etc. See the Phase
- * 4.1 note in FINDINGS for follow-up.
+ * generic `/:room` entry-page route registers LAST (via
+ * `registerRoomCatchAll`) so future `_rooms`, `_from/:template`, etc
+ * additions sit in front of it in the trie. Phase 5 work that lands
+ * new `/_*` routes should plug into `registerStateless` or a new
+ * `registerRoomCrud` between the two calls — never after
+ * `registerRoomCatchAll`.
  */
 export function buildApp(): Hono<{ Bindings: Env }> {
   const app = new Hono<{ Bindings: Env }>();
   app.get('/_health', (c) => c.json(buildHealthBody()));
   registerStateless(app);
   registerAssets(app);
+  registerRoomCatchAll(app);
   return app;
 }
 
