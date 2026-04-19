@@ -223,4 +223,89 @@ describe('Phase 5 routes — full round-trip', () => {
     // expected.
     expect(saved).toContain('cell:');
   });
+
+  // ─── Phase 6: POST /_/:room (commands) ───────────────────────────────
+
+  it('POST /_/:room JSON {command} executes and returns 202', async () => {
+    const res = await request('POST', '/_/post-json', {
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ command: 'set A1 value n 7' }),
+    });
+    expect(res.status).toBe(202);
+    expect(res.headers.get('content-type')).toBe('application/json; charset=utf-8');
+    const body = (await res.json()) as { command: string };
+    expect(body.command).toBe('set A1 value n 7');
+
+    // Snapshot now has the cell.
+    const snap = await request('GET', '/_/post-json');
+    expect(snap.status).toBe(200);
+    const snapText = await snap.text();
+    expect(snapText).toContain('cell:A1');
+  });
+
+  it('POST /_/:room with empty body returns 400 Please send command', async () => {
+    const res = await request('POST', '/_/post-empty', { method: 'POST' });
+    expect(res.status).toBe(400);
+    expect(res.headers.get('content-type')).toBe('text/plain; charset=utf-8');
+    expect(await res.text()).toBe('Please send command');
+  });
+
+  it('POST /_/:room filters set sheet defaulttextvalueformat text-wiki', async () => {
+    const res = await request('POST', '/_/post-wiki', {
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        command: 'set sheet defaulttextvalueformat text-wiki',
+      }),
+    });
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as { command: string };
+    expect(body.command).toBe('set sheet defaulttextvalueformat text-wiki');
+    // No snapshot was created -- filter short-circuits before DO dispatch.
+    const get = await request('GET', '/_/post-wiki');
+    expect(get.status).toBe(404);
+  });
+
+  it('POST /_/:room with text-command loadclipboard auto-enriches with paste', async () => {
+    // Seed an initial snapshot so computeLastRow returns a meaningful row.
+    await request('POST', '/_/post-lc', {
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ command: 'set A1 value n 1' }),
+    });
+
+    const res = await request('POST', '/_/post-lc', {
+      headers: { 'content-type': 'text/x-socialcalc' },
+      body: 'loadclipboard cell:B1:t:x\\ncopiedfrom:B1:B1\\n',
+    });
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as { command: string[] };
+    expect(body.command[0]).toBe('loadclipboard cell:B1:t:x\\ncopiedfrom:B1:B1\\n');
+    expect(body.command[body.command.length - 1]).toMatch(/^paste A\d+ all$/);
+  });
+
+  it('POST /_/:room with xlsx content-type returns 501', async () => {
+    const res = await request('POST', '/_/post-xlsx', {
+      headers: {
+        'content-type':
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      },
+      body: 'PK\x03\x04',
+    });
+    expect(res.status).toBe(501);
+  });
+
+  it('POST /_/:room with array command joins them for the DO batch', async () => {
+    const res = await request('POST', '/_/post-arr', {
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        command: ['set A1 value n 10', 'set B1 value n 20'],
+      }),
+    });
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as { command: string[] };
+    expect(body.command).toEqual(['set A1 value n 10', 'set B1 value n 20']);
+    const snap = await request('GET', '/_/post-arr');
+    const text = await snap.text();
+    expect(text).toContain('cell:A1');
+    expect(text).toContain('cell:B1');
+  });
 });
