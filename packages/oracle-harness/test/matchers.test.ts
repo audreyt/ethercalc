@@ -7,9 +7,7 @@ import {
   matchExact,
   matchIgnore,
   matchJson,
-  matchOds,
   matchScsave,
-  matchXlsx,
 } from '../src/matchers.ts';
 
 function b64(text: string): string {
@@ -156,16 +154,6 @@ describe('matchIgnore', () => {
   });
 });
 
-describe('deferred matchers', () => {
-  it('matchXlsx throws (Phase 8)', () => {
-    expect(() => matchXlsx({ expectedBase64: b64(''), actualBytes: bytes('') })).toThrow(/Phase 8/);
-  });
-
-  it('matchOds throws (Phase 8)', () => {
-    expect(() => matchOds({ expectedBase64: b64(''), actualBytes: bytes('') })).toThrow(/Phase 8/);
-  });
-});
-
 describe('dispatchMatcher', () => {
   it('routes by name', () => {
     expect(
@@ -181,15 +169,16 @@ describe('dispatchMatcher', () => {
       }),
     ).toBeNull();
     expect(dispatchMatcher('ignore', { expectedBase64: null, actualBytes: bytes('') })).toBeNull();
-    // html now routes to the real matcher; smoke-test a trivially-equal pair.
+    // html/xlsx/ods now route to real matchers. An obvious mismatch
+    // returns a descriptive diff rather than throwing.
     expect(
       dispatchMatcher('html', {
         expectedBase64: b64('<html><body><p>ok</p></body></html>'),
         actualBytes: bytes('<html><body><p>ok</p></body></html>'),
       }),
     ).toBeNull();
-    expect(() =>
+    expect(
       dispatchMatcher('xlsx', { expectedBase64: b64(''), actualBytes: bytes('') }),
-    ).toThrow(/Phase 8/);
+    ).toMatch(/xlsx mismatch/);
   });
 });
