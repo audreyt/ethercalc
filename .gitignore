@@ -7,3 +7,8 @@ coverage/
 .vitest-cache/
 *.log
 .claude/
+# Curated assets dir — rebuilt from sources by scripts/build-assets.sh.
+# Commit-ignored because it contains built JS (client/dist/player.js,
+# client-multi/dist/**) that goes stale. CI regenerates it before
+# `wrangler deploy --dry-run`. See CLAUDE.md §8 Phase 4.1/11.
+/assets/

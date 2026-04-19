@@ -25,17 +25,25 @@ new_sqlite_classes = ["RoomDO"]
 [vars]
 BASEPATH = ""
 
-# Workers Assets binding scaffold. Phase 4 wires the route layer but
-# does NOT attach a live `[assets]` directory — the legacy repo root
-# contains `node_modules/` and other >25 MiB files that trip Workers'
-# per-asset size limit. Phase 11 (§8) lands a curated `assets/`
-# directory (index.html, start.html, icons, manifest.appcache, l10n
-# bundles) and re-enables this block. See `src/routes/assets.ts` for
-# the runtime fallback that returns 404 when ASSETS is unbound.
+# Workers Assets binding (Phase 4.1/11). `directory` is resolved relative
+# to this wrangler.toml, so it points up two levels to the repo-root
+# `assets/` produced by `scripts/build-assets.sh`. That script copies the
+# curated set of static files (index.html, start.html, panels.html,
+# icons, manifest.appcache, manifest.json, l10n/*.json, the built
+# single-sheet client at static/player.js, the SocialCalc runtime at
+# static/socialcalc.js, and the multi-sheet React app under multi/).
 #
-# [assets]
-# directory = "./dist/assets"
-# binding = "ASSETS"
+# The legacy repo root contains `node_modules/` and other >25 MiB files
+# that trip Workers' per-asset size limit, so we point at the curated
+# directory instead of `./`. Also `assets/` is .gitignored — CI rebuilds
+# it before `wrangler deploy --dry-run`.
+#
+# Runtime fallback: when `ASSETS` is unbound (test env), the route layer
+# at `src/routes/assets.ts` returns 404. Integration tests stub the
+# binding with a mock Fetcher to exercise the proxied path.
+[assets]
+directory = "../../assets"
+binding = "ASSETS"
 
 # D1, KV, R2, cron, send_email bindings will be added in subsequent phases
 # as they are used. Scaffolding them eagerly would force empty bindings
