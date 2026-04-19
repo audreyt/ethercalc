@@ -19,10 +19,24 @@ export default defineWorkersConfig({
     poolOptions: {
       workers: {
         singleWorker: true,
-        wrangler: { configPath: './wrangler.toml' },
+        // Disable per-test isolated storage — we hit a Miniflare SQLite
+        // shm file tracking bug (AssertionError: Expected .sqlite, got
+        // …sqlite-shm) whenever a route test goes worker.fetch → DO →
+        // storage. Tests below use unique room names + deleteAll guards
+        // where shared state would cause false positives.
+        isolatedStorage: false,
+        // Don't point at wrangler.toml — its `[[rules]]` for `SocialCalc.js`
+        // (needed by `wrangler deploy --dry-run`) ends up merged into
+        // miniflare's modulesRules, which then mangles `?raw` imports via
+        // `?mf_vitest_force=Text`. Supply the DO binding + entry script
+        // directly instead.
+        main: './src/index.ts',
         miniflare: {
           compatibilityDate: '2024-11-12',
           compatibilityFlags: ['nodejs_compat'],
+          durableObjects: {
+            ROOM: { className: 'RoomDO', unsafeUniqueKey: 'RoomDO' },
+          },
         },
       },
     },

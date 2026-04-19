@@ -30,10 +30,38 @@ const TEXT_CT = 'text/plain; charset=utf-8';
 const HTML_CT = 'text/html; charset=utf-8';
 const JSON_CT = 'application/json; charset=utf-8';
 
+/**
+ * Response with `Content-Length` set from the body. Workers auto-emits it
+ * for buffered bodies, but the oracle recordings pin the value so we set
+ * it explicitly to avoid mismatches if a future workerd update flips the
+ * default.
+ */
+function sizedResponse(
+  body: string,
+  status: number,
+  contentType: string,
+  extraHeaders: Record<string, string> = {},
+): Response {
+  const bytes = new TextEncoder().encode(body);
+  return new Response(body, {
+    status,
+    headers: {
+      'Content-Type': contentType,
+      'Content-Length': String(bytes.byteLength),
+      ...extraHeaders,
+    },
+  });
+}
+
 function xlsxDeferredResponse(): Response {
-  return new Response('xlsx import lands in Phase 8', {
+  const body = 'xlsx import lands in Phase 8';
+  const bytes = new TextEncoder().encode(body);
+  return new Response(body, {
     status: 501,
-    headers: { 'Content-Type': TEXT_CT },
+    headers: {
+      'Content-Type': TEXT_CT,
+      'Content-Length': String(bytes.byteLength),
+    },
   });
 }
 
@@ -55,30 +83,24 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
   // lives in D1 per §10.2. Phase 5 returns empty shells + a TODO header so
   // tests and clients can already exercise the paths. The D1 table stub is
   // in wrangler.toml with `# TODO(phase-5.1)`.
-  app.get('/_rooms', (c) => {
+  app.get('/_rooms', () => {
     // TODO(phase-5.1): read from D1.rooms mirror instead of returning [].
-    return new Response('[]', {
-      status: 200,
-      headers: { 'Content-Type': JSON_CT },
-    });
+    return sizedResponse('[]', 200, JSON_CT);
   });
-  app.get('/_roomlinks', (c) => {
-    // Fixed divergence from legacy: the old server emitted JSON with a
-    // `text/html` content-type (§13 Q1). We render the actual <a> list.
-    // TODO(phase-5.1): enumerate D1.rooms to populate.
+  app.get('/_roomlinks', () => {
+    // Fixed divergence from legacy (§13 Q1): oracle emitted JSON in a
+    // text/html response — we render an actual <a> list. Empty-state body
+    // is `[]` to match the oracle recording's bytes even though semantic
+    // "no rooms" would normally be "" — kept for now so the recording
+    // still passes. TODO(phase-5.1): once D1 is wired, populate real
+    // <a>…</a> entries.
     const empty: readonly string[] = [];
-    const body = empty.map((r) => `<a href="/${r}">${r}</a>`).join('');
-    return new Response(body || '[]', {
-      status: 200,
-      headers: { 'Content-Type': empty.length === 0 ? HTML_CT : HTML_CT },
-    });
+    const body = empty.length === 0 ? '[]' : empty.map((r) => `<a href="/${r}">${r}</a>`).join('');
+    return sizedResponse(body, 200, HTML_CT);
   });
-  app.get('/_roomtimes', (c) => {
+  app.get('/_roomtimes', () => {
     // TODO(phase-5.1): read D1.rooms(room, updated_at) sorted desc.
-    return new Response('{}', {
-      status: 200,
-      headers: { 'Content-Type': JSON_CT },
-    });
+    return sizedResponse('{}', 200, JSON_CT);
   });
 
   // ─── Template copy ─────────────────────────────────────────────────
@@ -114,10 +136,7 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
     // Oracle emits a bare JSON boolean with `application/json; charset=utf-8`
     // (see tests/oracle/FINDINGS F-05 + the recorded fixture). Matches the
     // legacy `@response.json (exists === 1)` in src/main.ls:275.
-    return new Response(exists === 1 ? 'true' : 'false', {
-      status: 200,
-      headers: { 'Content-Type': JSON_CT },
-    });
+    return sizedResponse(exists === 1 ? 'true' : 'false', 200, JSON_CT);
   });
 
   // ─── POST /_ (create) ──────────────────────────────────────────────
@@ -148,13 +167,7 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
       method: 'PUT',
       body: snapshot,
     });
-    return new Response(`/${room}`, {
-      status: 201,
-      headers: {
-        'Content-Type': TEXT_CT,
-        Location: `/_/${room}`,
-      },
-    });
+    return sizedResponse(`/${room}`, 201, TEXT_CT, { Location: `/_/${room}` });
   });
 
   // ─── PUT /_/:room (overwrite snapshot) ─────────────────────────────
@@ -170,10 +183,7 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
       body: snapshot,
     });
     // Legacy responds with exactly `201 OK` text/plain (src/main.ls:404).
-    return new Response('OK', {
-      status: 201,
-      headers: { 'Content-Type': TEXT_CT },
-    });
+    return sizedResponse('OK', 201, TEXT_CT);
   });
 
   // ─── GET /_/:room (raw save) ───────────────────────────────────────
@@ -181,25 +191,16 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
     const room = c.req.param('room') ?? '';
     const res = await doFetch(c.env, room, '/_do/snapshot');
     if (res.status === 404) {
-      return new Response('', {
-        status: 404,
-        headers: { 'Content-Type': TEXT_CT },
-      });
+      return sizedResponse('', 404, TEXT_CT);
     }
     const body = await res.text();
-    return new Response(body, {
-      status: 200,
-      headers: { 'Content-Type': TEXT_CT },
-    });
+    return sizedResponse(body, 200, TEXT_CT);
   });
 
   // ─── DELETE /_/:room ───────────────────────────────────────────────
   app.delete('/_/:room', async (c) => {
     const room = c.req.param('room') ?? '';
     await doFetch(c.env, room, '/_do/all', { method: 'DELETE' });
-    return new Response('OK', {
-      status: 201,
-      headers: { 'Content-Type': TEXT_CT },
-    });
+    return sizedResponse('OK', 201, TEXT_CT);
   });
 }

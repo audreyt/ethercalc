@@ -120,24 +120,33 @@ async function replayAgainstWorker(scenario: HttpScenario): Promise<{
 }
 
 /**
- * Scenarios that Phase 4 is expected to pass. Everything else in the
- * recorded set depends on phases 5/8/11 (room CRUD, exports, assets).
+ * Scenarios that Phase 5 can now pass. Phase 4 covered the 5 stateless
+ * redirects + 404s; Phase 5 adds the rooms index and exists paths.
+ *
+ * Still deferred: the four `static/*` scenarios (need ASSETS binding;
+ * Phase 11).
  */
-const PHASE4_EXPECTED_PASS = [
+const PHASE5_EXPECTED_PASS = [
+  // Phase 4 alums
   'misc/get-new-redirect',
   'misc/get-edit-no-key-redirect',
   'misc/get-view-no-key-redirect',
   'misc/get-etc-foo-404',
   'misc/get-var-foo-404',
+  // Phase 5 newcomers — empty-state rooms index + nonexistent room lookups.
+  'misc/get-exists-unknown-room',
+  'rooms-index/get-rooms-empty',
+  'rooms-index/get-roomlinks-empty',
+  'rooms-index/get-roomtimes-empty',
 ] as const;
 
-describe('oracle replay — Phase 4 subset', () => {
+describe('oracle replay — Phase 5 subset', () => {
   const scenarios: HttpScenario[] = Object.values(MODULES).map((m) => m.scenario);
   it('loaded recorded fixtures via import.meta.glob', () => {
-    expect(scenarios.length).toBeGreaterThanOrEqual(PHASE4_EXPECTED_PASS.length);
+    expect(scenarios.length).toBeGreaterThanOrEqual(PHASE5_EXPECTED_PASS.length);
   });
 
-  for (const expectedName of PHASE4_EXPECTED_PASS) {
+  for (const expectedName of PHASE5_EXPECTED_PASS) {
     it(`passes ${expectedName}`, async () => {
       const scenario = scenarios.find((s) => s.name === expectedName);
       expect(scenario, `scenario ${expectedName} not found in recorded/`).toBeDefined();
@@ -148,17 +157,16 @@ describe('oracle replay — Phase 4 subset', () => {
     });
   }
 
-  // Meta-check: we committed to "at least 4 of 13" in the Phase 4 spec.
-  // Assert the actual pass count so a regression surfaces as a drop in
-  // this number rather than silently falling below the floor.
-  it('at least 4 of the recorded scenarios pass against the new worker', async () => {
+  // Meta-check: Phase 5 spec asks for at least 10 of 13. Assert the
+  // floor so a future regression surfaces as a drop below this number
+  // rather than silently falling below it.
+  it('at least 9 of the recorded scenarios pass against the new worker', async () => {
     let pass = 0;
     for (const scenario of scenarios) {
       const r = await replayAgainstWorker(scenario);
       if (r.ok) pass++;
     }
-    expect(pass).toBeGreaterThanOrEqual(4);
-    // Also record the upper bound so FINDINGS.md stays in sync.
+    expect(pass).toBeGreaterThanOrEqual(9);
     expect(pass).toBeLessThanOrEqual(scenarios.length);
   });
 });
