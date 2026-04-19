@@ -1,10 +1,7 @@
 /**
  * Graph / chart integration — port of `src/player-graph.ls`.
  *
- * TODO(phase-10b.1): full coverage
- *
- * This is the large (~720 LoC) legacy file that builds canvas charts.  The
- * public surface required by `index.html` is fully typed + ported here:
+ * Public surface required by `index.html`:
  *
  *   - `window.GraphOnClick`    — called when the "Graph" tab is focused
  *   - `window.GraphSetCells`   — "OK" button handler in the graph toolbar
@@ -16,10 +13,7 @@
  *   - `SocialCalc.GraphTypesInfo` + SCC styling tweaks
  *
  * Chart drawing bodies (vertical-bar, horizontal-bar, pie, line, scatter)
- * are included but cover a lot of canvas math that's test-hostile without
- * jsdom + a real 2d context.  They're marked `c8 ignore` at the body level
- * so the coverage gate on the *other* files still enforces 100% — the
- * TODO above covers re-enabling these in Phase 10b.1.
+ * are covered by `test/graph.test.ts` using a fake 2D canvas context.
  *
  * Everything is installed as a *registration* function that accepts the
  * SocialCalc + window stubs — mirrors `installGraph({ win, SocialCalc })`.
@@ -424,10 +418,7 @@ function applyPaletteConstants(SocialCalc: SocialCalcGlobal): void {
 }
 
 // ─── Chart drawing functions ─────────────────────────────────────────────
-// The bodies below port the canvas-math from the legacy file verbatim but
-// are coverage-excluded (see TODO at the top of the file).
-
-/* c8 ignore start */
+// The bodies below port the canvas-math from the legacy file verbatim.
 
 type Palette = ReturnType<typeof makePalette>;
 
@@ -511,7 +502,9 @@ function drawVerticalBar(host: GraphHost, palette: Palette): GraphDrawFn {
     for (let i = 0; i < values.length; i++) {
       ctx.fillStyle = '#' + palette.getBarColor();
       ctx.fillRect(i * eachwidth, zeroLine - yScale * values[i]!, eachwidth, yScale * values[i]!);
-      ctx.fillText(labels[i] ?? '', i * eachwidth + 4, zeroLine + 16);
+      // Labels are pushed in lockstep with values; the `?? ''` fallback is a
+      // defensive guard never triggered by collectValues.
+      ctx.fillText(/* istanbul ignore next */ labels[i] ?? '', i * eachwidth + 4, zeroLine + 16);
     }
   };
 }
@@ -538,7 +531,8 @@ function drawHorizontalBar(host: GraphHost, palette: Palette): GraphDrawFn {
       ctx.fillStyle = '#' + palette.getBarColor();
       ctx.fillRect(0, i * each, (values[i]! / (max || 1)) * (canv.width - 50), each);
       ctx.fillStyle = '#000';
-      ctx.fillText(labels[i] ?? '', 4, i * each + each / 2);
+      // Labels pushed 1:1 with values — `?? ''` is defensive-only.
+      ctx.fillText(/* istanbul ignore next */ labels[i] ?? '', 4, i * each + each / 2);
     }
   };
 }
@@ -568,7 +562,8 @@ function drawPieChart(host: GraphHost, palette: Palette): GraphDrawFn {
       ctx.closePath();
       ctx.fill();
       ctx.fillStyle = '#000';
-      ctx.fillText(labels[i] ?? '', centerX + Math.cos(last + arc / 2) * rad, centerY + Math.sin(last + arc / 2) * rad);
+      // Labels pushed 1:1 with values — `?? ''` is defensive-only.
+      ctx.fillText(/* istanbul ignore next */ labels[i] ?? '', centerX + Math.cos(last + arc / 2) * rad, centerY + Math.sin(last + arc / 2) * rad);
       last += arc;
     }
   };
@@ -612,4 +607,3 @@ function drawScatterChart(host: GraphHost, palette: Palette): GraphDrawFn {
     }
   };
 }
-/* c8 ignore stop */
