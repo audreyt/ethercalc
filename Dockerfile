@@ -17,8 +17,29 @@ WORKDIR /app
 COPY package.json bun.lock ./
 COPY packages ./packages
 COPY bin ./bin
+COPY scripts ./scripts
+
+# Static files required by the asset pipeline (§6.1, §7 item 24): HTML
+# pages, PWA manifests, icons, l10n bundles, manifest.appcache. The
+# `scripts/build-assets.sh` step collates these into `/app/assets` which
+# the worker's `[assets]` binding serves at runtime.
+COPY index.html start.html panels.html \
+     favicon.ico favicon-16x16.png favicon-32x32.png \
+     android-chrome-192x192.png apple-touch-icon.png \
+     mstile-150x150.png mstile-310x310.png \
+     safari-pinned-tab.svg browserconfig.xml \
+     manifest.json manifest.appcache \
+     ./
+COPY l10n ./l10n
 
 RUN bun install --frozen-lockfile
+
+# Build the client bundles and the curated assets/ directory. Must run
+# before `wrangler dev` starts or Miniflare fails to bind the ASSETS
+# service.
+RUN bun run --cwd packages/client build \
+ && bun run --cwd packages/client-multi build \
+ && ./scripts/build-assets.sh
 
 # Persistent storage for Miniflare-simulated D1/KV/R2/Durable Object state.
 # `bin/ethercalc --persist-to=/data` (the default CMD) writes here.
