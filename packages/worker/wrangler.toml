@@ -106,3 +106,8 @@ migrations_dir = "./migrations"
 type = "Text"
 globs = ["**/SocialCalc.js?raw", "**/SocialCalc.js"]
 fallthrough = true
+
+# Enable new Function eval
+[[unsafe.bindings]]
+name = "UNSAFE_EVAL"
+type = "unsafe_eval"

@@ -65,6 +65,12 @@ function makeState(idString: string, record: FakeStorageRecord): DurableObjectSt
     async blockConcurrencyWhile<T>(cb: () => Promise<T>): Promise<T> {
       return cb();
     },
+    // Broadcast handlers (fire-trigger, WS execute) call getWebSockets();
+    // with no peers connected in the direct-construction tests, an empty
+    // array keeps the broadcast a no-op without needing the hibernation API.
+    getWebSockets(): WebSocket[] {
+      return [];
+    },
   } as unknown as DurableObjectState;
 }
 
@@ -1274,5 +1280,74 @@ describe('RoomDO — WsContext storage plumbing', () => {
     expect(record.map.get(logKey(0))).toBe('set A1 value n 1');
     expect(record.map.get(auditKey(0))).toBe('set A1 value n 1');
     expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('SNAP');
+  });
+});
+
+describe('RoomDO — /_do/fire-trigger (Phase 9)', () => {
+  let record: FakeStorageRecord;
+  let room: RoomDO;
+
+  beforeEach(() => {
+    record = { map: new Map() };
+    room = new RoomDO(makeState('r', record), makeEnv());
+    mockExportCell.mockClear();
+  });
+
+  it('returns 200 and no-ops when cell query param is empty', async () => {
+    const res = await room.fetch(
+      new Request('https://do/_do/fire-trigger', { method: 'POST' }),
+    );
+    expect(res.status).toBe(200);
+    expect(mockExportCell).not.toHaveBeenCalled();
+  });
+
+  it('returns 200 and no-ops when the cell record is null', async () => {
+    mockExportCell.mockReturnValueOnce(null);
+    const res = await room.fetch(
+      new Request('https://do/_do/fire-trigger?cell=Z9', { method: 'POST' }),
+    );
+    expect(res.status).toBe(200);
+    expect(mockExportCell).toHaveBeenCalledWith('Z9');
+  });
+
+  it('returns 200 when the cell is present but not a valid sendemail payload', async () => {
+    mockExportCell.mockReturnValueOnce({ datavalue: 'hello' });
+    const res = await room.fetch(
+      new Request('https://do/_do/fire-trigger?cell=A1', { method: 'POST' }),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it('dispatches sendemail via stub and returns 200 (formula path)', async () => {
+    mockExportCell.mockReturnValueOnce({
+      formula: 'sendemail alice@example.test hello world',
+      datavalue: 'ignored',
+    });
+    const res = await room.fetch(
+      new Request('https://do/_do/fire-trigger?cell=A1', { method: 'POST' }),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it('dispatches sendemail via stub and returns 200 (datavalue fallback)', async () => {
+    mockExportCell.mockReturnValueOnce({
+      formula: '',
+      datavalue: 'sendemail bob@example.test subj body',
+    });
+    const res = await room.fetch(
+      new Request('https://do/_do/fire-trigger?cell=B2', { method: 'POST' }),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it('dispatches with non-string formula/datavalue → no-op', async () => {
+    mockExportCell.mockReturnValueOnce({
+      formula: 42 as unknown as string,
+      datavalue: 99 as unknown as string,
+    });
+    const res = await room.fetch(
+      new Request('https://do/_do/fire-trigger?cell=C3', { method: 'POST' }),
+    );
+    expect(res.status).toBe(200);
   });
 });
