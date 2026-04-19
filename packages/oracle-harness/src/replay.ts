@@ -65,7 +65,9 @@ export async function replayOne(
     return { scenario, ok: false, error: 'scenario has no `expect` — re-record against the oracle' };
   }
   const url = new URL(scenario.request.path, opts.targetUrl).toString();
-  const init: RequestInit = { method: scenario.request.method };
+  // `redirect: 'manual'` must match what the recorder did, or we'd
+  // observe a 200 for scenarios the oracle recorded as 302.
+  const init: RequestInit = { method: scenario.request.method, redirect: 'manual' };
   const requestHeaders = scenario.request.headers ?? {};
   if (Object.keys(requestHeaders).length > 0) init.headers = { ...requestHeaders };
   const response = await fetcher(url, init);

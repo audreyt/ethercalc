@@ -9,6 +9,7 @@ import type {
 
 import { encodeBase64 } from './matchers.ts';
 import { headersToRecord, normalizeHeaders } from './headers.ts';
+import { applyNormalizer } from './normalize.ts';
 
 /**
  * The JSON artifact format. A recorded scenario is just a cloned
@@ -103,7 +104,10 @@ export async function recordOne(
 
   const requestHeaders = scenario.request.headers ?? {};
   const url = new URL(scenario.request.path, opts.targetUrl).toString();
-  const init: RequestInit = { method: scenario.request.method };
+  // `redirect: 'manual'` is essential: the oracle often replies with a
+  // 302 (`/_new`, `/:room/edit`, ...), and we want to capture that
+  // verbatim — not silently follow the redirect and record a 200.
+  const init: RequestInit = { method: scenario.request.method, redirect: 'manual' };
   if (Object.keys(requestHeaders).length > 0) init.headers = { ...requestHeaders };
   if (scenario.request.bodyBase64 !== undefined) {
     init.body = new Uint8Array(
@@ -118,7 +122,7 @@ export async function recordOne(
   const bodyBase64 = await encodeResponseBody(response);
   const matcher = matcherFor(response.status, headers);
 
-  const recorded: HttpScenario = {
+  const raw: HttpScenario = {
     ...scenario,
     expect: {
       status: response.status,
@@ -127,6 +131,7 @@ export async function recordOne(
       bodyMatcher: matcher,
     },
   };
+  const recorded = applyNormalizer(raw);
   const path = scenarioPath(opts.outDir, scenario.name);
   await persistRecording(path, { scenario: recorded }, writer);
   opts.log?.(`recorded ${scenario.name} → ${response.status}`);
