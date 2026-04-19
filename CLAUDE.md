@@ -535,13 +535,13 @@ Goal: prove Plan A works (SocialCalc loads and executes in workerd).
 - [ ] `sendemail` SocialCalc command routes through email binding.
 - [ ] `confirmemailsent` WS reply.
 
-### Phase 10 — Single-sheet client adapter — DONE (except graph.ts + Playwright)
-- [x] `packages/client/` with Vite + TS. `src/{ws-adapter,socialcalc-callbacks,main,graph,types,boot}.ts`. 88 tests. Build: 20.3 kB JS.
+### Phase 10 — Single-sheet client adapter — DONE (except Playwright)
+- [x] `packages/client/` with Vite + TS. `src/{ws-adapter,socialcalc-callbacks,main,graph,types,boot}.ts`. 190 tests. Build: 20.3 kB JS.
 - [x] `ws-adapter.ts` replaces socket.io client; broadcast queueing during disconnect, backoff reconnect, frame validation via `@ethercalc/shared`.
 - [x] `socialcalc-callbacks.ts` preserves `window.SocialCalc.Callbacks.broadcast` public surface for external embeds.
 - [x] `main.ts` ports `player.ls` entry (URL query, history pushState, formDataViewer flow, ask.log handshake).
 - [x] **Phase 10.1 done** — coverage gate restored to 100/100/100/100 on `ws-adapter.ts`, `socialcalc-callbacks.ts`, `main.ts`. Three edge branches covered by added tests.
-- [ ] **Phase 10.2** — `src/graph.ts` (615 lines) still excluded from coverage gate. Add targeted tests to bring it under the gate.
+- [x] **Phase 10.2 done** — `src/graph.ts` (615 lines) covered to 100% via fake 2D canvas recorder + fake DOM in `test/mock-socialcalc.ts`. Three narrow `/* istanbul ignore next */` on `labels[i] ?? ''` fallbacks that `collectValues`' invariant makes dead code. Preserved legacy `GraphLoad` `split(':')` bug (would break on ranges like `A1:A3`) — bug-for-bug per §1.2 default.
 - [ ] Served by Workers Assets — wire in Phase 11.
 - [ ] Playwright: open room, type, reload, export → passes. *(deferred to Phase 11)*
 
@@ -749,6 +749,7 @@ Append one entry per session you work on this. Keep it short. Use this for conte
 | 2026-04-19 | 10    | **Phase 10 agent merged.** `packages/client/` Vite + TS port of `player*.ls`. Agent crashed mid-final-report but delivered: 78/78 tests, typecheck clean, Vite build 20.3 kB. Coverage gate temporarily relaxed to 99/95/90/99 on this package — three uncovered edge branches (main.ts `parts.edit` loader fallback, applyFormDataLog `parts.sheet`=false path, callbacks `delete` branch) to be closed in Phase 10.1 follow-up. | a203aeb |
 | 2026-04-19 | 4/8a/10.1/11a | **Second parallel wave merged.** Four agents ran in parallel worktrees: P4 stateless HTTP (Hono wiring + auth + redirects + 5/13 oracle scenarios, 45 Node tests at 100% coverage); P8a-partial html matcher via linkedom (127 tests total, 100%); P10c coverage closeout (client back to 100/100/100/100 on gated files); P11a Miniflare docker + `bin/ethercalc` CLI + `packages/cli` (55 tests, 100%) + CI build-selfhost job + README self-host section. 395+ tests green across 7 packages. §6.4 clarified: `verifyAuth('0')` must reject unconditionally because identity-HMAC makes `computeAuth(undefined,'0') === '0'`. §6.1 clarified: `/etc/*` 404 CT is `text/html` not `text/plain`. | many |
 | 2026-04-19 | 8a    | **Phase 8a DONE.** P8a agent merged the xlsx + ods matchers on top of the earlier html merge. fflate + canonicalize-each-XML pipeline. 158 oracle-harness tests, 100% coverage. Volatile element drop lists surfaced and documented in §4.4 (docProps/core.xml + app.xml for xlsx, meta.xml for ods, id referrers + comments + whitespace-only text for html). Unblocks Phase 8 export wiring. | db2d0a8, 413307a |
+| 2026-04-19 | 10.2  | **Phase 10.2 DONE.** P10c agent second round covered `src/graph.ts` (615 lines) to 100% with 102 new tests via fake 2D canvas recorder + fake DOM. Client package now 190 tests at 100/100/100/100 across ws-adapter, socialcalc-callbacks, main, graph. Three narrow `/* istanbul ignore next */` on dead `??` fallbacks. **587 tests total across 7 packages.** | 78fd477, 9640ee9 |
 
 ---
 
