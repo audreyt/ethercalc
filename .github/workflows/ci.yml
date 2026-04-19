@@ -176,3 +176,71 @@ jobs:
           path: packages/e2e/test-results/
           retention-days: 7
           if-no-files-found: ignore
+
+  mutation-gate:
+    name: mutation-gate — changed packages only
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: test
+    # Fast PR-gate mutation check. Runs Stryker only on packages whose
+    # `src/` changed in the PR, so docs/test/config-only PRs skip it and
+    # single-package PRs stay under ~2 minutes. The full matrix lives in
+    # nightly.yml; see CLAUDE.md §5.3 + docs/MUTATION_REPORT.md for the
+    # ratchet workflow.
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Detect changed packages
+        id: changed
+        # Override GH Actions' default `bash -eo pipefail` because grep
+        # exits non-zero when the pattern matches nothing, which is the
+        # expected case for docs/test/config-only PRs.
+        shell: bash {0}
+        run: |
+          # Compare the PR head against the merge-base with origin/main.
+          # On a push to main the base still resolves (merge-base with self
+          # is HEAD) — the diff is empty, so the Stryker step is skipped.
+          git fetch origin main --depth=1 || true
+          if git merge-base origin/main HEAD >/dev/null 2>&1; then
+            BASE=$(git merge-base origin/main HEAD)
+          else
+            BASE=HEAD~1
+          fi
+          changed=$(git diff --name-only "$BASE" HEAD \
+            | grep -oE '^packages/[^/]+/src/' \
+            | sort -u \
+            | sed 's|packages/||;s|/src/||' \
+            | tr '\n' ' ')
+          echo "packages=$changed" >> "$GITHUB_OUTPUT"
+          echo "Changed packages: ${changed:-<none>}"
+
+      - name: Run Stryker on changed packages
+        if: steps.changed.outputs.packages != ''
+        run: |
+          for pkg in ${{ steps.changed.outputs.packages }}; do
+            if [ -f "packages/$pkg/stryker.conf.json" ]; then
+              echo "::group::mutation test — $pkg"
+              bun run --cwd "packages/$pkg" mutation
+              echo "::endgroup::"
+            else
+              echo "skip: packages/$pkg has no stryker.conf.json"
+            fi
+          done
+
+      - name: Upload mutation reports on failure
+        if: failure() && steps.changed.outputs.packages != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-gate-reports
+          path: packages/*/reports/mutation/
+          retention-days: 7
+          if-no-files-found: ignore
