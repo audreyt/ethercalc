@@ -98,11 +98,8 @@ jobs:
             packages/client-multi/coverage/
             packages/oracle-harness/coverage/
             packages/cli/coverage/
-<<<<<<< HEAD
             packages/socketio-shim/coverage/
-=======
             packages/migrate/coverage/
->>>>>>> worktree-agent-aff4b66b
           retention-days: 7
           if-no-files-found: ignore
 

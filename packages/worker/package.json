@@ -13,7 +13,8 @@
     "test:workers": "vitest run",
     "test:coverage": "vitest run --config vitest.node.config.ts --coverage",
     "typecheck": "tsc --noEmit",
-    "build:dry": "wrangler deploy --dry-run"
+    "build:dry": "wrangler deploy --dry-run",
+    "mutation": "stryker run"
   },
   "dependencies": {
     "@ethercalc/socialcalc-headless": "workspace:*",
@@ -24,6 +25,8 @@
     "@cloudflare/workers-types": "^4.20241112.0",
     "@ethercalc/oracle-harness": "workspace:*",
     "@ethercalc/shared": "workspace:*",
+    "@stryker-mutator/core": "^9.6.1",
+    "@stryker-mutator/vitest-runner": "^9.6.1",
     "@vitest/coverage-istanbul": "^2.1.4",
     "@vitest/coverage-v8": "^2.1.4",
     "typescript": "^5.6.3",

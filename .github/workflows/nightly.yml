@@ -1,0 +1,187 @@
+name: Nightly
+
+# Phase 12 — see CLAUDE.md §5.3 + §11.2 + docs/MUTATION_REPORT.md.
+#
+# Runs StrykerJS mutation testing across the six Node-env packages where
+# istanbul coverage already works. Kept OUT of the PR-gate workflow
+# (ci.yml) because each package is tens of seconds to minutes, and the
+# full matrix is ~2 minutes total — too expensive to block merges on.
+#
+# Triggers:
+#   - schedule: 06:00 UTC daily (~midnight PT, ~09:00 TW)
+#   - workflow_dispatch: manual re-run for debugging / after config changes
+#
+# On `break` threshold crossing, the actions/github-script step opens a
+# GitHub issue (idempotent — dedups against an existing open one with the
+# matching label). Chose github-script over gh-commit-status because:
+#   - We want a persistent notification, not a commit status (the nightly
+#     doesn't run on a PR commit; it runs on `main`).
+#   - Inline JS keeps the trigger logic visible in this file, no extra
+#     action dependency.
+#   - Dedup-by-label is a 5-line script vs. an action.
+
+on:
+  schedule:
+    # 06:00 UTC daily — post-midnight on the US west coast, before most
+    # Europe / Asia standups. Adjust if flakiness correlates with
+    # contention against other nightly jobs.
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      packages:
+        description: 'Comma-separated list of packages to mutate (default: all)'
+        required: false
+        default: 'shared,socketio-shim,migrate,oracle-harness,client,worker'
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  mutation:
+    name: mutation (${{ matrix.package }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - shared
+          - socketio-shim
+          - migrate
+          - oracle-harness
+          - client
+          - worker
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # client requires a Vite build (player.js) to exist at
+      # ../../assets/, and worker's integration tests require the same.
+      # For mutation runs we only need the Node-env unit tests, so the
+      # build step is skipped — faster CI, smaller blast radius.
+
+      - name: Run Stryker — ${{ matrix.package }}
+        id: stryker
+        run: bun run --cwd packages/${{ matrix.package }} mutation
+        env:
+          # Stryker respects CI for non-interactive output.
+          CI: 'true'
+        continue-on-error: true
+
+      - name: Upload HTML + JSON reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report-${{ matrix.package }}
+          path: packages/${{ matrix.package }}/reports/mutation/
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Open issue on break-threshold regression
+        if: steps.stryker.outcome == 'failure'
+        uses: actions/github-script@v7
+        env:
+          PACKAGE: ${{ matrix.package }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        with:
+          script: |
+            const pkg = process.env.PACKAGE;
+            const runUrl = process.env.RUN_URL;
+            const label = `mutation-regression:${pkg}`;
+            const title = `[mutation] ${pkg} dropped below break threshold`;
+
+            // Ensure the label exists (idempotent).
+            try {
+              await github.rest.issues.createLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: label,
+                color: 'b60205',
+                description: `StrykerJS regression for packages/${pkg}`,
+              });
+            } catch (e) {
+              if (e.status !== 422) throw e; // 422 = label already exists
+            }
+
+            // Dedup: skip if an open issue with the label already exists.
+            const { data: existing } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: label,
+              state: 'open',
+              per_page: 1,
+            });
+            if (existing.length > 0) {
+              core.info(`Existing open issue #${existing[0].number}; not reopening.`);
+              // But do add a comment so the timeline shows the new failure.
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing[0].number,
+                body: `Another nightly run dropped below threshold: ${runUrl}`,
+              });
+              return;
+            }
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              labels: [label, 'ci', 'quality'],
+              body: [
+                `The nightly StrykerJS job for \`packages/${pkg}\` scored below`,
+                `the \`break\` threshold configured in`,
+                `\`packages/${pkg}/stryker.conf.json\`.`,
+                ``,
+                `- Run: ${runUrl}`,
+                `- Artifact: \`mutation-report-${pkg}\` (HTML report)`,
+                `- Baseline report: \`docs/MUTATION_REPORT.md\``,
+                ``,
+                `Next steps:`,
+                `1. Download the HTML artifact from the run above.`,
+                `2. Identify newly-surviving mutants vs. the baseline in`,
+                `   \`docs/MUTATION_REPORT.md\`.`,
+                `3. Either add tests to kill them, or update the baseline`,
+                `   report + threshold with a rationale.`,
+                ``,
+                `Close this issue once resolved; the label will let the`,
+                `next nightly run reopen a fresh one if the regression`,
+                `recurs.`,
+              ].join('\n'),
+            });
+
+      # Re-raise the Stryker failure so the matrix cell shows red.
+      # continue-on-error above only lets us reach the "open issue" step.
+      - name: Propagate Stryker exit code
+        if: steps.stryker.outcome == 'failure'
+        run: |
+          echo "Stryker failed for packages/${{ matrix.package }}; see uploaded report."
+          exit 1
+
+  # Summary step — a single cell at the top of the matrix report so the
+  # "Nightly" status on the main README badge is one-glance green/red.
+  summary:
+    name: nightly summary
+    runs-on: ubuntu-latest
+    needs: mutation
+    if: always()
+    steps:
+      - name: Report matrix outcome
+        run: |
+          echo "Nightly mutation matrix: ${{ needs.mutation.result }}"
+          # `result` is 'success' only if every matrix cell passed.
+          if [[ "${{ needs.mutation.result }}" == "success" ]]; then
+            echo "All packages cleared their break thresholds."
+            exit 0
+          else
+            echo "At least one package regressed; see per-package issues."
+            exit 1
+          fi

@@ -1,0 +1,29 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "_comment": "Phase 12 mutation testing — see CLAUDE.md §5.3 + docs/MUTATION_REPORT.md. graph.ts is large + canvas-heavy; drop for now, keep the ws/callbacks/main trio (the load-bearing protocol layer).",
+  "packageManager": "npm",
+  "testRunner": "vitest",
+  "plugins": ["@stryker-mutator/vitest-runner"],
+  "vitest_comment": "Stryker's vitest runner auto-detects vitest.config.ts from cwd.",
+  "reporters": ["html", "clear-text", "progress", "json"],
+  "htmlReporter": {
+    "fileName": "reports/mutation/mutation.html"
+  },
+  "jsonReporter": {
+    "fileName": "reports/mutation/mutation.json"
+  },
+  "mutate": [
+    "src/ws-adapter.ts",
+    "src/socialcalc-callbacks.ts",
+    "src/main.ts"
+  ],
+  "coverageAnalysis": "perTest",
+  "thresholds": {
+    "high": 80,
+    "low": 60,
+    "break": 70
+  },
+  "timeoutMS": 60000,
+  "concurrency": 4,
+  "tempDirName": ".stryker-tmp"
+}
