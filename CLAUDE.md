@@ -225,25 +225,43 @@ export interface WsScenario {
 
 ## 5. Testing strategy & coverage
 
-### 5.1 Test runners
+### 5.1 Test runners — split by environment
 
-- **Unit & integration**: Vitest with `@cloudflare/vitest-pool-workers` (runs tests inside workerd, same runtime as prod).
+Each code-bearing package has **two** vitest configs:
+
+- `vitest.config.ts` — uses `@cloudflare/vitest-pool-workers`. Runs tests inside workerd, which is the same runtime as prod. Used for integration tests that need DO bindings, Hono routing, WebSockets, etc. Test files: `*.test.ts`. **No coverage gate here** — neither istanbul nor v8 reliably track hits through the workerd bundle (verified Phase 2; documented below).
+- `vitest.node.config.ts` — vanilla Node environment. Istanbul coverage works. Test files: `*.node.test.ts`. **100% coverage gate enforced here.**
+
+All `src/**/*.ts` code is partitioned:
+
+| Path                 | Runs in | Test config              | Coverage gate |
+| -------------------- | ------- | ------------------------ | ------------- |
+| `src/handlers/**`    | Node OR workerd (pure) | `vitest.node.config.ts`  | **100%**      |
+| `src/lib/**`         | Node OR workerd (pure) | `vitest.node.config.ts`  | **100%**      |
+| `src/room.ts`        | Constructed directly in both | Node test: unit; Workers test: integration | **100%** (via Node direct-construction) |
+| `src/index.ts`       | workerd only (Hono glue) | `vitest.config.ts`       | excluded (Hono-invoked paths not traced) |
+| `src/env.ts`         | type-only                | — not a runtime file     | excluded      |
+
+### 5.2 Coverage — known limitation
+
+**`@cloudflare/vitest-pool-workers` does not play well with either istanbul or v8 coverage providers.** We verified both in Phase 2:
+
+- **v8 provider**: reports 0% across the board because workerd doesn't expose Node's inspector/profiler that v8 coverage relies on.
+- **Istanbul provider**: tracks instrumentation inconsistently — functions invoked via Hono's bundled router inside workerd aren't counted, even when the test file directly `import`s and calls them.
+
+Workaround (current): the two-config split above — pure logic is covered via Node env; Workers-only glue gets integration-tested without coverage enforcement. This has the nice side-effect of keeping handlers pure (dependency-injected clocks, no direct env access) which aids testability.
+
+### 5.3 Oracle replay & e2e
+
 - **Oracle replay**: dedicated Vitest project (`vitest.oracle.config.ts`) that spins up both the oracle (via `testcontainers` + docker) and the target (via `unstable_dev` from Wrangler), runs every scenario, asserts bytes.
 - **End-to-end**: Playwright scripted flows (open a room, edit, second tab sees update, reload, export). Runs against `wrangler dev`.
 
-### 5.2 Coverage
+### 5.4 Test file naming
 
-- Tool: **`@vitest/coverage-v8`** (istanbul fallback if v8 breaks in workerd — track as known risk).
-- Scope: everything under `packages/worker/src/**/*.ts` except `**/types.ts` and a specific `// c8 ignore-file — <reason>` list stored in `.c8ignorelist.txt`.
-- Gates (vitest config):
-  ```ts
-  coverage: {
-    thresholds: { lines: 100, functions: 100, branches: 100, statements: 100 },
-    reporter: ['text', 'lcov', 'json-summary'],
-    allowExternal: false,
-  }
-  ```
-- Any new file added must ship with tests that hit 100% or the CI job fails. No test-free merges.
+- `*.test.ts` — workers-pool integration tests.
+- `*.node.test.ts` — pure-logic unit tests (Node env, coverage-gated).
+
+`package.json`'s `test` script runs both in sequence.
 
 ### 5.3 Mutation testing (stretch goal)
 
@@ -421,18 +439,19 @@ Goal: prove Plan A works (SocialCalc loads and executes in workerd).
 - [x] Documented findings in §16.A (eval scaffold, three source transforms, sloppy-mode requirement).
 - [x] Plan A green — Plan B/C not needed.
 
-### Phase 2 — Repo scaffold
-- [ ] `pnpm-workspace.yaml` (or bun workspaces) with packages: `worker`, `socialcalc-headless`, `client`, `oracle-harness`, `shared`.
-- [ ] `packages/worker/`:
-  - `wrangler.toml` with DO binding, D1, KV, R2, assets, cron trigger, `nodejs_compat`.
-  - `tsconfig.json` strict, `verbatimModuleSyntax`, `moduleResolution: "bundler"`.
-  - `package.json` with Hono, `@cloudflare/workers-types`, `vitest`, `@cloudflare/vitest-pool-workers`, `@vitest/coverage-v8`.
-  - `src/index.ts` Hono app skeleton, health endpoint.
-  - `src/room.ts` RoomDO skeleton.
-  - `vitest.config.ts` with 100% thresholds.
-- [ ] `packages/oracle-harness/` with docker-compose + scenario runner stubs.
-- [ ] `.github/workflows/ci.yml`: lint, typecheck, test (workers pool), coverage gate, oracle replay.
-- [ ] Ensure CI is green with only the health endpoint + its test at 100% coverage.
+### Phase 2 — Repo scaffold — DONE
+- [x] Bun workspaces at the root (`packages/*`).
+- [x] `packages/worker/`:
+  - `wrangler.toml` with DO binding + `nodejs_compat`. D1/KV/R2/cron/send_email bindings deferred to the phase where they are first used.
+  - `tsconfig.json` strict, `moduleResolution: "bundler"`, `allowImportingTsExtensions: true`, `@cloudflare/workers-types` + `@cloudflare/vitest-pool-workers` typed.
+  - `package.json` with Hono, `@cloudflare/workers-types`, `vitest`, `@cloudflare/vitest-pool-workers`, `@vitest/coverage-istanbul`.
+  - `src/index.ts` Hono app (glue, excluded from coverage per §5.2).
+  - `src/handlers/health.ts` pure logic (100% covered).
+  - `src/room.ts` RoomDO skeleton (100% covered via Node direct construction + integration-tested via DO namespace).
+  - Two vitest configs (`vitest.config.ts` for workerd, `vitest.node.config.ts` with 100% gate) — see §5.1.
+- [x] `.github/workflows/ci.yml` — typecheck, Node unit tests + 100% coverage gate, workerd integration tests, socialcalc-headless smoke tests, wrangler build:dry, coverage artifact upload.
+- [x] CI is green end-to-end with the scaffolding.
+- [ ] `packages/oracle-harness/` with docker-compose + scenario runner stubs. *(deferred to Phase 3 — it's the natural owner)*
 
 ### Phase 3 — Oracle recorder
 - [ ] Docker-compose that boots Redis + current `main` on a known port.
@@ -686,6 +705,7 @@ Append one entry per session you work on this. Keep it short. Use this for conte
 | 2026-04-19 | 0     | Plan drafted. Audited LS source, Redis keys, socket events.                                          | —       |
 | 2026-04-19 | 0     | Renamed REWRITE.md → CLAUDE.md (auto-load). All §13 questions answered; §1/§3/§8/§9/§11 updated.     | —       |
 | 2026-04-19 | 1     | **Phase 1 done.** `packages/socialcalc-headless/` runs SocialCalc 2.3.0 in workerd. 6/6 smoke tests green. Three source transforms documented (§16.A); most important is rewriting UMD `factory.call(root, this)` → `factory.call(root, root)` to pin `window` to our host in sloppy-mode eval. Sync setTimeout shim lets recalc unroll inline. | —       |
+| 2026-04-19 | 2     | **Phase 2 done.** `packages/worker/` scaffolded: Hono + DO + bun workspaces + Wrangler + CI. Split testing strategy formalized (§5.1/5.2): `.node.test.ts` in Node env with 100% istanbul gate on `src/handlers/**`, `src/lib/**`, `src/room.ts`; `.test.ts` in workerd via vitest-pool-workers without coverage gate because neither istanbul nor v8 trace workerd-bundled code end-to-end. GitHub Actions CI wires typecheck + both test suites + wrangler dry-run. | —       |
 
 ---
 

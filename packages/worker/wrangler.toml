@@ -1,0 +1,19 @@
+name = "ethercalc"
+main = "src/index.ts"
+compatibility_date = "2024-11-12"
+compatibility_flags = ["nodejs_compat"]
+
+# Durable Object: one instance per spreadsheet room.
+# Holds live SocialCalc state, WebSocket clients, and the snapshot/log/audit
+# storage. See CLAUDE.md §3.2 and §3.3.
+[[durable_objects.bindings]]
+name = "ROOM"
+class_name = "RoomDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RoomDO"]
+
+# D1, KV, R2, cron, send_email bindings will be added in subsequent phases
+# as they are used. Scaffolding them eagerly would force empty bindings
+# into the local Miniflare state and muddy the test environment.

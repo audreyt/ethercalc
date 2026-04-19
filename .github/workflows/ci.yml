@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: typecheck + test + coverage gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck (all workspaces)
+        run: |
+          bun run --cwd packages/socialcalc-headless typecheck
+          bun run --cwd packages/worker typecheck
+
+      - name: Unit tests + 100% coverage gate (Node env)
+        run: bun run --cwd packages/worker test:coverage
+
+      - name: Worker integration tests (workerd via miniflare)
+        run: bun run --cwd packages/worker test:workers
+
+      - name: socialcalc-headless smoke tests (workerd)
+        run: bun run --cwd packages/socialcalc-headless test
+
+      - name: Wrangler dry-run build
+        run: bun run --cwd packages/worker build:dry
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-lcov
+          path: packages/worker/coverage/
+          retention-days: 7
+          if-no-files-found: ignore
