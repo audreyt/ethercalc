@@ -119,7 +119,7 @@
       "name": "@ethercalc/socialcalc-headless",
       "version": "0.0.0",
       "dependencies": {
-        "socialcalc": "^2.3.0",
+        "socialcalc": "github:audreyt/socialcalc#bf8038d",
       },
       "devDependencies": {
         "@cloudflare/vitest-pool-workers": "^0.6.0",
@@ -1061,7 +1061,7 @@
 
     "simple-swizzle": ["simple-swizzle@0.2.4", "", { "dependencies": { "is-arrayish": "^0.3.1" } }, "sha512-nAu1WFPQSMNr2Zn9PGSZK9AGn4t/y97lEm+MXTtUDwfP0ksAIX4nO+6ruD9Jwut4C49SB1Ws+fbXsm/yScWOHw=="],
 
-    "socialcalc": ["socialcalc@2.3.0", "", {}, "sha512-hkK5c7eRRGzOiRNPFCQ/kzv2wqOSFaD4AtYag962r0jV0mlyhTQ7xvs3r14MB3Xbo2hAWq5AKYddrtqvuWvDAA=="],
+    "socialcalc": ["socialcalc@github:audreyt/socialcalc#bf8038d", {}, "audreyt-socialcalc-bf8038d", "sha512-H5bGRew8C9/8GG+giS0sQ2omkpr+CZ5MWgiVKCRxqscMgb/A0JJ30DXK7/NwcZsKQyC1oJsegoLMKDoJxCxnzw=="],
 
     "source-map": ["source-map@0.7.6", "", {}, "sha512-i5uvt8C3ikiWeNZSVZNWcfZPItFQOsYTUAOkcUPGd8DqDy1uOUikjt5dG+uRlwyvR108Fb9DOd4GvXfT0N2/uQ=="],
 
