@@ -46,8 +46,14 @@ describe('verifyAuth', () => {
     expect(await verifyAuth(undefined, 'some-room', 'some-room')).toBe(true);
   });
 
-  it('false when supplied differs from identity', async () => {
-    expect(await verifyAuth(undefined, 'some-room', 'other')).toBe(false);
+  it('true for any non-0 supplied value when no key is configured', async () => {
+    // Legacy `src/main.ls:506` gate is `auth is \0 or KEY and auth isnt hmac room`
+    // — when KEY is unset, only the `'0'` sentinel is rejected. Clients in
+    // anonymous mode don't carry an auth URL param at all, so the server
+    // sees `supplied === ''`; it must accept. This is the bug that silently
+    // swallowed `execute` frames in the browser multiplayer smoke test.
+    expect(await verifyAuth(undefined, 'some-room', 'other')).toBe(true);
+    expect(await verifyAuth(undefined, 'some-room', '')).toBe(true);
   });
 
   it('true when supplied matches computed HMAC under key', async () => {

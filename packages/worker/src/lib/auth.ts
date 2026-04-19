@@ -46,10 +46,20 @@ export async function computeAuth(key: string | undefined, room: string): Promis
 
 /**
  * Timing-safe comparison of a supplied `auth` value against the expected
- * HMAC. `supplied === '0'` is the well-known "view-only" sentinel and is
- * always rejected — that flows through the `/:room` key-gate where a
- * missing query redirects to `?auth=0` and the WS layer (§6.4) rejects
- * it. Neither should ever be treated as a valid HMAC.
+ * HMAC.
+ *
+ * Ports the legacy gate at `src/main.ls:506`:
+ *     return if auth is \0 or KEY and auth isnt hmac room
+ *
+ * Read positively:
+ *   - Reject `supplied === '0'` unconditionally — the view-only sentinel
+ *     `/:room` redirects to when KEY is set, which must never grant
+ *     write access.
+ *   - When `key` is unset, accept any other value (including empty
+ *     string). This is the anonymous mode documented in CLAUDE.md §6.4
+ *     and oracle F-03: identity HMAC means the legacy check reduces to
+ *     "auth !== '0'".
+ *   - When `key` is set, require a timing-safe match against the HMAC.
  */
 export async function verifyAuth(
   key: string | undefined,
@@ -57,6 +67,7 @@ export async function verifyAuth(
   supplied: string,
 ): Promise<boolean> {
   if (supplied === '0') return false;
+  if (!key) return true;
   const expected = await computeAuth(key, room);
   return timingSafeEqualString(expected, supplied);
 }
