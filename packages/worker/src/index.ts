@@ -11,8 +11,10 @@ import { Hono } from 'hono';
 import { buildHealthBody } from './handlers/health.ts';
 import { registerAssets, registerRoomCatchAll } from './routes/assets.ts';
 import { registerExports } from './routes/exports.ts';
+import { registerLegacySocketIo } from './routes/legacy-socketio.ts';
 import { registerRoomRoutes } from './routes/rooms.ts';
 import { registerStateless } from './routes/stateless.ts';
+import { registerWs } from './routes/ws.ts';
 import type { Env } from './env.ts';
 
 export { RoomDO } from './room.ts';
@@ -35,6 +37,11 @@ export { RoomDO } from './room.ts';
 export function buildApp(): Hono<{ Bindings: Env }> {
   const app = new Hono<{ Bindings: Env }>();
   app.get('/_health', (c) => c.json(buildHealthBody()));
+  // Phase 7: native WS + legacy socket.io shim. Register early so their
+  // literal prefixes win against the `/:room` catch-all. `/_ws/:room` is
+  // the native transport; `/socket.io/*` covers the old embeds.
+  registerWs(app);
+  registerLegacySocketIo(app);
   // Room index + CRUD — register BEFORE stateless so `/_rooms`, `/_exists/:room`,
   // `/_from/:template` etc take precedence over any `/:room`-style catch-all.
   registerRoomRoutes(app);
