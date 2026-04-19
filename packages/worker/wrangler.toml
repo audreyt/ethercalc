@@ -45,9 +45,34 @@ BASEPATH = ""
 directory = "../../assets"
 binding = "ASSETS"
 
-# KV, R2, cron, send_email bindings will be added in subsequent phases
-# as they are used. Scaffolding them eagerly would force empty bindings
-# into the local Miniflare state and muddy the test environment.
+# Phase 9 — Cron Trigger. Replaces the legacy external-cron `GET
+# /_timetrigger` ping; Cloudflare invokes the Worker's `scheduled()`
+# handler every minute on this schedule. The backwards-compat HTTP
+# endpoint `/_timetrigger` is kept for self-host users whose external
+# cron still points at it (see `src/routes/timetrigger.ts`).
+[triggers]
+crons = ["*/1 * * * *"]
+
+# Phase 9 — Cloudflare `send_email` binding (§13 Q3). The actual
+# destination address must be verified in the Cloudflare dashboard
+# before `wrangler deploy`; see FINDINGS.md for the setup steps. Under
+# vitest-pool-workers / Miniflare this binding is UNBOUND — the
+# `EmailSender` constructor in `src/handlers/cron.ts` falls back to
+# `StubEmailSender` when `env.EMAIL` is undefined.
+#
+# The `name = "EMAIL"` key must match `Env.EMAIL` in src/env.ts.
+#
+# Commented out by default: miniflare + vitest-pool-workers currently
+# don't ship a `send_email` shim, and uncommenting this during tests
+# fails binding validation. Production deploys should uncomment this
+# section AND verify the destination address via the Cloudflare
+# dashboard. See FINDINGS.md "Phase 9 — send_email binding setup".
+# [[send_email]]
+# name = "EMAIL"
+
+# KV, R2 bindings will be added in subsequent phases as they are used.
+# Scaffolding them eagerly would force empty bindings into the local
+# Miniflare state and muddy the test environment.
 
 # D1 — cross-room index mirror (Phase 5.1). DO storage is the
 # authoritative source of truth for a single room; this table provides

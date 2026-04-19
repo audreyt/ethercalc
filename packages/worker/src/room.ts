@@ -40,8 +40,10 @@ import {
   createSpreadsheet,
 } from '@ethercalc/socialcalc-headless';
 
+import { buildEmailSender } from './handlers/cron.ts';
 import { verifyAuth } from './lib/auth.ts';
 import { parseCSV } from './lib/csv-parse.ts';
+import { parseSendemail } from './lib/email.ts';
 import { csvToMarkdown } from './lib/md.ts';
 import {
   deleteRoomFromD1,
@@ -205,6 +207,17 @@ export class RoomDO implements DurableObject {
     // ─── Phase 7: native WebSocket upgrade ───────────────────────────
     if (path === '/_do/ws' && request.method === 'GET') {
       return this.#acceptWebSocket(request);
+    }
+    // ─── Phase 9: cron fire-trigger hook ───────────────────────────────
+    // `POST /_do/fire-trigger?cell=<coord>` — called from the
+    // `scheduled()` handler (and from the backwards-compat
+    // /_timetrigger HTTP endpoint) for each due row. Reads the
+    // referenced cell's text, parses it as `sendemail <to> <subject>
+    // <body>`, dispatches through the injected EmailSender, and
+    // broadcasts the legacy `confirmemailsent` WS event to this
+    // room's peers.
+    if (path === '/_do/fire-trigger' && request.method === 'POST') {
+      return this.#fireTrigger(url.searchParams.get('cell') ?? '');
     }
     return new Response('Not implemented', { status: 501 });
   }
@@ -399,6 +412,59 @@ export class RoomDO implements DurableObject {
       this.#nextChatSeq = 0;
     });
     return plainResponse('OK', 201);
+  }
+
+  // ─── Cron fire-trigger (Phase 9) ───────────────────────────────────────
+
+  /**
+   * `POST /_do/fire-trigger?cell=<coord>` — fire one due cron trigger.
+   *
+   * Legacy flow (src/sc.ls:360-370 + src/main.ls:196 + src/sc.ls:247-253):
+   *   - `SC[room].triggerActionCell(cell, cb)` ran
+   *     `SocialCalc.TriggerIoAction.Email('<coord>')` against the
+   *     cell, which produced a URL-encoded `sendemail <to> <subject>
+   *     <body>` string and passed it back via `cb`.
+   *   - The server parsed that string, dispatched to `emailer.sendemail`,
+   *     and broadcast `{type: confirmemailsent, message}` on
+   *     `log-<room>`.
+   *
+   * We collapse all of that here:
+   *   1. Look up the cell's datavalue/formula/comment and derive a
+   *      `sendemail` command. SocialCalc's TriggerIoAction logic
+   *      stores the email payload directly in the cell's `datavalue`
+   *      (as a space-delimited, %20-encoded string starting with
+   *      `sendemail `). If the cell doesn't hold one, the trigger is
+   *      a no-op.
+   *   2. Parse via `parseSendemail`, dispatch through `buildEmailSender(env)`.
+   *   3. Broadcast `{type: 'confirmemailsent', message}` to every WS peer.
+   *
+   * Every failure path is swallowed into a `200 OK` so the cron
+   * runner never retries on a malformed cell — the legacy handler
+   * also moved on.
+   */
+  async #fireTrigger(cell: string): Promise<Response> {
+    if (cell.length === 0) return plainResponse('', 200);
+    const ss = await this.#getSpreadsheet();
+    const cellRecord = ss.exportCell(cell) as
+      | { datavalue?: unknown; formula?: unknown }
+      | null;
+    if (!cellRecord) return plainResponse('', 200);
+    // Legacy's TriggerIoAction.Email reconstructs the command from
+    // formula-like payload stored in the cell. In practice clients put
+    // the full `sendemail <to> <subject> <body>` URL-encoded string
+    // into `formula` (for triggered cells) or `datavalue` (for plain
+    // text). Try both.
+    const candidate =
+      (typeof cellRecord.formula === 'string' && cellRecord.formula.length > 0
+        ? cellRecord.formula
+        : '') ||
+      (typeof cellRecord.datavalue === 'string' ? cellRecord.datavalue : '');
+    const parsed = parseSendemail(candidate);
+    if (!parsed) return plainResponse('', 200);
+    const sender = buildEmailSender(this.#env);
+    const { message } = await sender.send(parsed.to, parsed.subject, parsed.body);
+    this.#broadcastAll({ type: 'confirmemailsent', message });
+    return plainResponse('', 200);
   }
 
   // ─── WebSocket acceptance ──────────────────────────────────────────────

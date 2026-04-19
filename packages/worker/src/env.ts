@@ -58,4 +58,28 @@ export interface Env {
    * static manifest file.
    */
   readonly DEVMODE?: string;
+
+  /**
+   * Cloudflare `send_email` binding (Phase 9, §13 Q3). When present,
+   * the cron/email layer wraps it via `BindingEmailSender`. When
+   * unbound (Node unit tests, or deployments that omit the
+   * `[[send_email]]` entry in wrangler.toml), callers fall back to
+   * `StubEmailSender`. Shape is structural — we only invoke `.send()`.
+   */
+  readonly EMAIL?: {
+    send(message: {
+      from: string;
+      to: string;
+      raw: string | ReadableStream<Uint8Array>;
+    }): Promise<unknown>;
+  };
+
+  /**
+   * Default "from" address for outgoing mail (Phase 9). Must be a
+   * verified sender in the Cloudflare dashboard for the bound zone.
+   * Defaults to `noreply@ethercalc.invalid` when unset — the stub
+   * sender ignores it entirely, so this only matters once `EMAIL` is
+   * bound.
+   */
+  readonly EMAIL_FROM?: string;
 }
