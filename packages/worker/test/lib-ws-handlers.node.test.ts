@@ -89,8 +89,6 @@ interface CallLog {
   broadcasts: Array<{ msg: ServerMessage; includeSelf: boolean }>;
   applied: string[];
   siblingFetches: Array<{ room: string; path: string; init: RequestInit | undefined }>;
-  spreadsheetExec: string[];
-  spreadsheetSaveCount: number;
 }
 
 interface MakeCtxOpts {
@@ -113,28 +111,19 @@ function makeCtx(opts: MakeCtxOpts = {}): { ctx: WsContext; calls: CallLog; stat
     broadcasts: [],
     applied: [],
     siblingFetches: [],
-    spreadsheetExec: [],
-    spreadsheetSaveCount: 0,
   };
   const ctx: WsContext = {
     room: 'r',
     user: 'u',
     auth: 'h',
     storage: makeStorage(state),
-    spreadsheet: {
-      executeCommand: (cmd) => {
-        calls.spreadsheetExec.push(cmd);
-      },
-      createSpreadsheetSave: () => {
-        calls.spreadsheetSaveCount += 1;
-        return 'SNAP';
-      },
-    },
     async applyCommand(cmdstr: string): Promise<void> {
       calls.applied.push(cmdstr);
-      await ctx.storage.appendLog('log:', cmdstr);
-      ctx.spreadsheet.executeCommand(cmdstr);
-      state.snapshot = ctx.spreadsheet.createSpreadsheetSave();
+      state.log.set(
+        `log:${String(state.log.size).padStart(10, '0')}`,
+        cmdstr,
+      );
+      state.snapshot = 'SNAP';
     },
     async broadcast(msg, includeSelf) {
       calls.broadcasts.push({ msg, includeSelf });

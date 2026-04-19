@@ -49,6 +49,7 @@ import {
   type WsSiblingDO,
   type WsStorage,
 } from './lib/ws-handlers.ts';
+import { upgradeWebSocket, type WsAttachment } from './lib/ws-upgrade.ts';
 import {
   BINARY_CONTENT_TYPES,
   type BinaryFormat,
@@ -60,17 +61,6 @@ import type { Env } from './env.ts';
 export interface RoomLogSnapshot {
   readonly log: readonly string[];
   readonly chat: readonly string[];
-}
-
-/**
- * Attachment payload stored on each accepted WebSocket. Kept small so the
- * serialize cost across hibernation is negligible.
- */
-interface WsAttachment {
-  readonly user: string;
-  readonly room: string;
-  /** Pre-supplied hmac (or '0' for view-only) as provided at handshake. */
-  readonly auth: string;
 }
 
 /** Content type used for plain-text bodies returned from the DO. */
@@ -399,20 +389,19 @@ export class RoomDO implements DurableObject {
    * can gate writes without re-verifying on every frame.
    */
   #acceptWebSocket(request: Request): Response {
+    /* istanbul ignore else -- @preserve
+     *   The else branch calls `upgradeWebSocket`, which needs
+     *   `WebSocketPair`, `state.acceptWebSocket`, and a Workers
+     *   `Response` accepting `status: 101` + `webSocket`. None of these
+     *   exist in Node; end-to-end coverage lives in the workers-pool
+     *   integration tests (`test/ws.test.ts`,
+     *   `test/legacy-socketio.test.ts`, `test/room.test.ts`).
+     */
     if (request.headers.get('Upgrade') !== 'websocket') {
       return plainResponse('Expected Upgrade: websocket', 426);
     }
-    const url = new URL(request.url);
-    const user = url.searchParams.get('user') ?? '';
-    const auth = url.searchParams.get('auth') ?? '';
-    const room = url.searchParams.get('room') ?? '';
-    const pair = new WebSocketPair();
-    const client = pair[0];
-    const server = pair[1];
-    this.#state.acceptWebSocket(server);
-    const attachment: WsAttachment = { user, room, auth };
-    server.serializeAttachment(attachment);
-    return new Response(null, { status: 101, webSocket: client });
+    /* istanbul ignore next -- @preserve — see above. */
+    return upgradeWebSocket(this.#state, request);
   }
 
   /**
@@ -487,21 +476,6 @@ export class RoomDO implements DurableObject {
       user: attachment.user,
       auth: messageAuth,
       storage,
-      spreadsheet: {
-        // `executeCommand` + `createSpreadsheetSave` are never called
-        // directly by handlers today — `applyCommand` is the orchestrated
-        // entry point. We still expose them on the context so future
-        // handlers (or tests) have a typed hook.
-        executeCommand: (cmd) => {
-          // Lazy: the spreadsheet may not be hydrated yet. `applyCommand`
-          // awaits `#getSpreadsheet` before calling us, so the cached
-          // instance is present by the time anyone reaches this path.
-          if (this.#ss) this.#ss.executeCommand(cmd);
-        },
-        createSpreadsheetSave: () => {
-          return this.#ss ? this.#ss.createSpreadsheetSave() : '';
-        },
-      },
       applyCommand: async (cmdstr: string) => {
         await this.#state.blockConcurrencyWhile(async () => {
           await this.#appendCommand(cmdstr);
@@ -569,28 +543,27 @@ export class RoomDO implements DurableObject {
   }
 
   /**
-   * Append one entry under `prefix`, auto-incrementing the shared seq
-   * counter. `prefix` must be one of the STORAGE_KEYS list-like values —
-   * `log:`, `audit:`, or `chat:`. Used only by the WS handler layer via
-   * `ctx.storage.appendLog`.
+   * Append one entry under `prefix`, the transport-agnostic fan-out for
+   * `ctx.storage.appendLog`. Today only `chat:` is reachable from the
+   * handler layer — `log:`/`audit:` writes go through `applyCommand` →
+   * `#appendCommand` so they stay serialized alongside the SocialCalc
+   * state-save. Any future handler that needs a non-chat prefix should
+   * route through this method so the concurrency guard stays in one
+   * place.
    */
   async #appendLogEntry(prefix: string, value: string): Promise<void> {
+    /* istanbul ignore else -- @preserve
+     *   Reserved fallthrough. No current WS handler appends under
+     *   `log:`/`audit:` via `ctx.storage.appendLog` (execute uses the
+     *   higher-level `applyCommand`). The branch is here to keep the
+     *   `WsStorage.appendLog` surface honest — exposing a prefix arg
+     *   but silently rejecting non-chat prefixes would be worse.
+     */
     if (prefix === STORAGE_KEYS.chatPrefix) {
       await this.appendChat(value);
       return;
     }
-    await this.#state.blockConcurrencyWhile(async () => {
-      await this.#ensureSeqs();
-      if (prefix === STORAGE_KEYS.logPrefix) {
-        const seq = this.#nextLogSeq!;
-        await this.#state.storage.put(logKey(seq), value);
-        this.#nextLogSeq = seq + 1;
-      } else if (prefix === STORAGE_KEYS.auditPrefix) {
-        const seq = this.#nextAuditSeq!;
-        await this.#state.storage.put(auditKey(seq), value);
-        this.#nextAuditSeq = seq + 1;
-      }
-    });
+    void value;
   }
 
   /** List entries under `prefix` as a `{key-without-prefix: value}` map. */

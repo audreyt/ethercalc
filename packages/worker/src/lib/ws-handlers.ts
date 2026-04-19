@@ -43,15 +43,6 @@ import {
 } from './ws-dispatch.ts';
 
 /**
- * Minimal spreadsheet surface the handlers touch. Room.ts hydrates a real
- * `HeadlessSpreadsheet`; tests swap in a stub with vi.fn spies.
- */
-export interface WsSpreadsheet {
-  executeCommand(cmd: string): void;
-  createSpreadsheetSave(): string;
-}
-
-/**
  * Storage surface for the handlers. Only the primitives the WS layer
  * actually uses — snapshot reads/writes, log/chat/audit/ecell list+put,
  * and the big "wipe everything" hammer that `stopHuddle` triggers.
@@ -89,7 +80,6 @@ export interface WsContext {
   readonly user: string;
   readonly auth: string;
   readonly storage: WsStorage;
-  readonly spreadsheet: WsSpreadsheet;
   /**
    * Append a command batch to the storage log + audit, run it through
    * SocialCalc, and rewrite the snapshot. The caller serializes this
