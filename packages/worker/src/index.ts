@@ -10,6 +10,7 @@ import { Hono } from 'hono';
 
 import { buildHealthBody } from './handlers/health.ts';
 import { registerAssets, registerRoomCatchAll } from './routes/assets.ts';
+import { registerRoomRoutes } from './routes/rooms.ts';
 import { registerStateless } from './routes/stateless.ts';
 import type { Env } from './env.ts';
 
@@ -33,6 +34,9 @@ export { RoomDO } from './room.ts';
 export function buildApp(): Hono<{ Bindings: Env }> {
   const app = new Hono<{ Bindings: Env }>();
   app.get('/_health', (c) => c.json(buildHealthBody()));
+  // Room index + CRUD — register BEFORE stateless so `/_rooms`, `/_exists/:room`,
+  // `/_from/:template` etc take precedence over any `/:room`-style catch-all.
+  registerRoomRoutes(app);
   registerStateless(app);
   registerAssets(app);
   registerRoomCatchAll(app);

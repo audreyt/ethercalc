@@ -48,3 +48,31 @@ binding = "ASSETS"
 # D1, KV, R2, cron, send_email bindings will be added in subsequent phases
 # as they are used. Scaffolding them eagerly would force empty bindings
 # into the local Miniflare state and muddy the test environment.
+
+# D1 scaffold — enumerate cross-room timestamps + CORS flags for the
+# `/_rooms`, `/_roomlinks`, `/_roomtimes` routes. Left commented so
+# Miniflare doesn't auto-create an empty database during tests; flip it
+# on once Phase 5.1 supplies a migration seed.
+#
+# TODO(phase-5.1): wire this and backfill the handlers in src/routes/rooms.ts.
+# [[d1_databases]]
+# binding = "ROOMS_DB"
+# database_name = "ethercalc_rooms"
+# database_id = "00000000-0000-0000-0000-000000000000"
+# migrations_dir = "./migrations"
+
+# Load SocialCalc.js as a Text module so `new Function(rawSource)` inside
+# `@ethercalc/socialcalc-headless` can eval it. The `?raw` Vite suffix
+# handles this under vitest-pool-workers (Vite resolves it directly);
+# wrangler's esbuild bundler needs an explicit rule, otherwise it tries
+# to parse the 27k-line UMD (sloppy-mode `delete varname;` that esbuild
+# rejects in strict ESM).
+#
+# Important: this rule is only consumed by `wrangler deploy`. The
+# `vitest.config.ts` sets its miniflare options directly (no `wrangler:
+# { configPath }`) so this rule doesn't leak into the vitest runner and
+# mangle `?raw` imports with `?mf_vitest_force=Text`.
+[[rules]]
+type = "Text"
+globs = ["**/SocialCalc.js?raw", "**/SocialCalc.js"]
+fallthrough = true

@@ -148,42 +148,41 @@ async function replayAgainstWorker(scenario: HttpScenario): Promise<{
 }
 
 /**
- * Scenarios that Phase 4 (stateless) and Phase 4.1/11 (curated assets)
- * are expected to pass. Everything else in the recorded set depends on
- * phases 5/8 (room CRUD, exports).
+ * Scenarios that Phase 4 (stateless), Phase 4.1/11 (curated assets),
+ * and Phase 5 (room CRUD + index) are expected to pass. Everything
+ * else in the recorded set depends on Phase 8 (exports) or needs
+ * populated D1 (Phase 5.1).
  *
- * The 3 static-asset scenarios below go green once the Phase 4.1/11
- * curated `assets/` dir + `[assets]` binding are wired in `wrangler.toml`
- * (vitest-pool-workers auto-populates `env.ASSETS` from the block). Body
- * matchers are `exact` for HTML pages and JS files; every fixture's
- * `Content-Type` matches the binding's own response headers.
- *
- * `static/get-favicon` is intentionally excluded. The legacy oracle
- * emits `Content-Type: text/html; charset=utf-8` for `.ico` bytes, which
- * is a known Express-static bug (it only registers `.html` in its mime
- * table and falls back to html for anything else not auto-detected). Our
- * Workers Assets correctly sends `image/vnd.microsoft.icon`. Per §13 Q1
- * (sensible fixes allowed), preserving the wrong CT would be
- * strict-preservation; we diverge on purpose and document in FINDINGS.
+ * `static/get-favicon` is intentionally excluded: the legacy oracle
+ * emits `Content-Type: text/html; charset=utf-8` for `.ico` bytes
+ * (Express-static mime-table bug). Per §13 Q1 the rewrite corrects
+ * this; the divergence is documented in FINDINGS.
  */
-const PHASE4_EXPECTED_PASS = [
+const PHASE5_EXPECTED_PASS = [
+  // Phase 4 — stateless redirects + 404s
   'misc/get-new-redirect',
   'misc/get-edit-no-key-redirect',
   'misc/get-view-no-key-redirect',
   'misc/get-etc-foo-404',
   'misc/get-var-foo-404',
+  // Phase 4.1/11 — curated assets
   'static/get-root-index',
   'static/get-start',
   'static/get-socialcalc-js',
+  // Phase 5 — empty-state rooms index + nonexistent room lookups
+  'misc/get-exists-unknown-room',
+  'rooms-index/get-rooms-empty',
+  'rooms-index/get-roomlinks-empty',
+  'rooms-index/get-roomtimes-empty',
 ] as const;
 
-describe('oracle replay — Phase 4 + 4.1/11 subset', () => {
+describe('oracle replay — Phase 4 + 4.1/11 + 5 subset', () => {
   const scenarios: HttpScenario[] = Object.values(MODULES).map((m) => m.scenario);
   it('loaded recorded fixtures via import.meta.glob', () => {
-    expect(scenarios.length).toBeGreaterThanOrEqual(PHASE4_EXPECTED_PASS.length);
+    expect(scenarios.length).toBeGreaterThanOrEqual(PHASE5_EXPECTED_PASS.length);
   });
 
-  for (const expectedName of PHASE4_EXPECTED_PASS) {
+  for (const expectedName of PHASE5_EXPECTED_PASS) {
     it(`passes ${expectedName}`, async () => {
       const scenario = scenarios.find((s) => s.name === expectedName);
       expect(scenario, `scenario ${expectedName} not found in recorded/`).toBeDefined();
@@ -194,17 +193,15 @@ describe('oracle replay — Phase 4 + 4.1/11 subset', () => {
     });
   }
 
-  // Meta-check: Phase 4.1/11 bumps the floor from 4 to 8. Any drop
-  // below that surfaces as a test failure rather than a silent
-  // regression.
-  it('at least 8 of the recorded scenarios pass against the new worker', async () => {
+  // Meta-check: with Phase 4 + 4.1/11 + 5 combined, we expect ≥12/13.
+  // Only static/get-favicon is intentionally divergent (§13 Q1 fix).
+  it('at least 12 of the recorded scenarios pass against the new worker', async () => {
     let pass = 0;
     for (const scenario of scenarios) {
       const r = await replayAgainstWorker(scenario);
       if (r.ok) pass++;
     }
-    expect(pass).toBeGreaterThanOrEqual(8);
-    // Also record the upper bound so FINDINGS.md stays in sync.
+    expect(pass).toBeGreaterThanOrEqual(12);
     expect(pass).toBeLessThanOrEqual(scenarios.length);
   });
 });

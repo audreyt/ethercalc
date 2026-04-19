@@ -27,6 +27,7 @@ import { ShimNode } from './dom-shim.js';
 type SocialCalcNamespace = Record<string, unknown> & {
   SpreadsheetControl: new (idPrefix?: string) => SpreadsheetControl;
   ConvertSaveToOtherFormat: (savestr: string, format: string, dorecalc?: boolean) => string;
+  ConvertOtherFormatToSave: (inputstr: string, inputformat: string) => string;
   Parse: new (cmdstr: string) => {
     EOF: () => boolean;
     NextLine: () => void;
@@ -182,6 +183,34 @@ export class HeadlessSpreadsheet {
     return this.#SC.ConvertSaveToOtherFormat(this.#ss.CreateSheetSave(), 'csv');
   }
 
+  /**
+   * JSON-string equivalent of the legacy `w.exportCells` (src/sc.ls:361).
+   * Returns a plain object mapping cell coordinate → cell record. Callers
+   * that want the legacy `JSON.stringify` shape can stringify the result.
+   */
+  exportCells(): Record<string, unknown> {
+    return this.#ss.sheet.cells;
+  }
+
+  /**
+   * Single-cell lookup. Legacy (`w.exportCell`, src/sc.ls:356) returned the
+   * literal string `"null"` when the cell was missing — we match that by
+   * returning `null` (the caller JSON-encodes the response).
+   */
+  exportCell(coord: string): unknown {
+    const cell = this.#ss.sheet.cells[coord];
+    return cell === undefined ? null : cell;
+  }
+}
+
+/**
+ * Convert a CSV string to a SocialCalc save string. Mirrors legacy
+ * `SocialCalc.ConvertOtherFormatToSave(csv, 'csv')` (see src/main.ls:332).
+ * Phase 5 uses this for `PUT /_/:room` with `text/csv` bodies.
+ */
+export function csvToSave(csv: string): string {
+  const SC = loadSocialCalc();
+  return SC.ConvertOtherFormatToSave(csv, 'csv');
 }
 
 export function createSpreadsheet(opts: HeadlessSpreadsheetOptions = {}): HeadlessSpreadsheet {
