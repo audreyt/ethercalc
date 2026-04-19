@@ -9,6 +9,8 @@
 # hood; bun provides a Node-compatible runtime for wrangler itself.
 FROM oven/bun:1.3
 
+RUN apt-get update && apt-get install -y nodejs npm && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Copy the workspace manifests first so `bun install --frozen-lockfile` is
@@ -31,6 +33,8 @@ COPY index.html start.html panels.html \
      manifest.json manifest.appcache \
      ./
 COPY l10n ./l10n
+COPY images ./images
+COPY static ./static
 
 RUN bun install --frozen-lockfile
 
