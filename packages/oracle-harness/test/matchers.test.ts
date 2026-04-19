@@ -7,7 +7,6 @@ import {
   matchExact,
   matchIgnore,
   matchJson,
-  matchHtml,
   matchOds,
   matchScsave,
   matchXlsx,
@@ -158,10 +157,6 @@ describe('matchIgnore', () => {
 });
 
 describe('deferred matchers', () => {
-  it('matchHtml throws (Phase 8)', () => {
-    expect(() => matchHtml({ expectedBase64: b64(''), actualBytes: bytes('') })).toThrow(/Phase 8/);
-  });
-
   it('matchXlsx throws (Phase 8)', () => {
     expect(() => matchXlsx({ expectedBase64: b64(''), actualBytes: bytes('') })).toThrow(/Phase 8/);
   });
@@ -186,8 +181,15 @@ describe('dispatchMatcher', () => {
       }),
     ).toBeNull();
     expect(dispatchMatcher('ignore', { expectedBase64: null, actualBytes: bytes('') })).toBeNull();
+    // html now routes to the real matcher; smoke-test a trivially-equal pair.
+    expect(
+      dispatchMatcher('html', {
+        expectedBase64: b64('<html><body><p>ok</p></body></html>'),
+        actualBytes: bytes('<html><body><p>ok</p></body></html>'),
+      }),
+    ).toBeNull();
     expect(() =>
-      dispatchMatcher('html', { expectedBase64: b64(''), actualBytes: bytes('') }),
+      dispatchMatcher('xlsx', { expectedBase64: b64(''), actualBytes: bytes('') }),
     ).toThrow(/Phase 8/);
   });
 });

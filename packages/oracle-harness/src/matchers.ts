@@ -1,16 +1,17 @@
 import type { BodyMatcher } from '@ethercalc/shared/oracle-scenarios';
 
+import { canonicalizeHtml } from './html-canonical.ts';
+
 /**
  * Body matchers used by `replay.ts`. Each matcher takes the expected
  * bytes (as base64) and the actual response body (as Uint8Array) and
  * returns `null` on success or a short explanation on failure.
  *
- * Phase 3 implements `exact`, `json`, `ignore`, and `scsave`. The
- * binary formats (`html`, `xlsx`, `ods`) are documented in CLAUDE.md
- * §4.4 but the structural comparators aren't yet written — they'll
- * land in Phase 8 along with the export endpoints that produce them.
- * Calling them before then throws loudly so a scenario author sees the
- * mismatch the moment they record against an unsupported matcher.
+ * Phase 3 implements `exact`, `json`, `ignore`, and `scsave`. Phase 8a
+ * adds `html` via linkedom; `xlsx` and `ods` follow in Phase 8b using
+ * the same linkedom XML path plus fflate unzip. See §4.4 of CLAUDE.md
+ * and the drop lists documented in `html-canonical.ts` (and, once it
+ * lands, `zip-canonical.ts`).
  */
 export type MatcherResult = string | null;
 
@@ -104,20 +105,40 @@ export function matchIgnore(_ctx: MatcherContext): MatcherResult {
 }
 
 /**
- * Structural HTML matcher. Deferred to Phase 8 when we have a real
- * linkedom normalizer; until then we fail loudly rather than silently
- * accept any two HTML strings as equivalent.
+ * Structural HTML matcher. Parses both sides with `linkedom`,
+ * canonicalizes (drop whitespace-only text nodes, sort attributes,
+ * strip volatile ids + dangling references, drop comments), and
+ * byte-compares the serialized result.
+ *
+ * See `html-canonical.ts` for the complete rule set.
  */
-export function matchHtml(_ctx: MatcherContext): MatcherResult {
-  throw new Error('not implemented — Phase 8');
+export function matchHtml(ctx: MatcherContext): MatcherResult {
+  if (ctx.expectedBase64 === null) return 'expected body is null but matcher is "html"';
+  const dec = new TextDecoder();
+  const expectedRaw = dec.decode(decodeBase64(ctx.expectedBase64));
+  const actualRaw = dec.decode(ctx.actualBytes);
+  let expected: string;
+  let actual: string;
+  try {
+    expected = canonicalizeHtml(expectedRaw).canonical;
+  } catch (err) {
+    return `html parse error in expected body: ${(err as Error).message}`;
+  }
+  try {
+    actual = canonicalizeHtml(actualRaw).canonical;
+  } catch (err) {
+    return `html parse error in actual body: ${(err as Error).message}`;
+  }
+  if (expected === actual) return null;
+  return `html mismatch:\n--- expected\n${expected}\n--- actual\n${actual}`;
 }
 
-/** Structural XLSX matcher. Deferred to Phase 8. */
+/** Structural XLSX matcher. Deferred to Phase 8b (after html lands). */
 export function matchXlsx(_ctx: MatcherContext): MatcherResult {
   throw new Error('not implemented — Phase 8');
 }
 
-/** Structural ODS matcher. Deferred to Phase 8. */
+/** Structural ODS matcher. Deferred to Phase 8b (after html lands). */
 export function matchOds(_ctx: MatcherContext): MatcherResult {
   throw new Error('not implemented — Phase 8');
 }
