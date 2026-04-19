@@ -13,7 +13,7 @@
     "packages/*"
   ],
   "scripts": {
-    "test": "bun run --filter '*' test",
+    "test": "npm run --workspaces --if-present test",
     "typecheck": "bun run --filter '*' typecheck",
     "lint": "bun run --filter '*' lint",
     "mutation": "bun run --filter '*' mutation"
