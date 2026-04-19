@@ -544,12 +544,14 @@ Goal: prove Plan A works (SocialCalc loads and executes in workerd).
 - [x] **Phase 8a (matchers) DONE** — `html` (linkedom), `xlsx` (fflate + xml canon), `ods` (same + meta.xml walk) in `packages/oracle-harness/src/matchers.ts`. 158 tests, 100% coverage. Drop lists documented in §4.4.
 - [ ] Structural equality oracle tests wired to actual export responses (depends on Phase 5 room CRUD delivering `GET /_/:room/html` etc).
 
-### Phase 9 — Cron & email
-- [ ] `scheduled()` handler replaces `/_timetrigger` polling.
-- [ ] D1 `cron_triggers` table replaces `cron-list` hash.
-- [ ] `send_email` binding wired (with stub fallback in tests).
-- [ ] `sendemail` SocialCalc command routes through email binding.
-- [ ] `confirmemailsent` WS reply.
+### Phase 9 — Cron & email — DONE
+- [x] `src/scheduled.ts` cron handler + `/_timetrigger` backwards-compat HTTP endpoint.
+- [x] D1 `cron_triggers(room, cell, fire_at)` table (compound PK allows multiple queued triggers per cell — legacy comma-list semantics).
+- [x] `src/lib/cron.ts` + `src/lib/email.ts` pure libs — 100% Node coverage.
+- [x] `StubEmailSender` + `BindingEmailSender` for `send_email` binding.
+- [x] `/_do/fire-trigger` on RoomDO dispatches sendemail; broadcasts `confirmemailsent` to WS peers.
+- [x] `settimetrigger` cmdstr detected at HTTP layer and upserted into D1 before DO dispatch.
+- [x] wrangler.toml `[triggers] crons = ["*/1 * * * *"]` + commented `[[send_email]]` (setup in FINDINGS).
 
 ### Phase 10 — Single-sheet client adapter — DONE (except Playwright)
 - [x] `packages/client/` with Vite + TS. `src/{ws-adapter,socialcalc-callbacks,main,graph,types,boot}.ts`. 190 tests. Build: 20.3 kB JS.
@@ -774,6 +776,7 @@ Append one entry per session you work on this. Keep it short. Use this for conte
 | 2026-04-19 | 5 | **Phase 5 merged.** P5 agent: RoomDO with full state.storage-backed snapshot/log/audit/chat/ecell; DO internal API `/_do/*`; POST/PUT/GET/DELETE room routes + `_exists`/`_rooms`/`_roomlinks`/`_roomtimes`/`_from/:template`. csv via SocialCalc; xlsx/ods 501 stubs. `/_roomlinks` ships sensible-fix (text/html + HTML body). Extended headless with exportCells/exportCell/csvToSave. Worker 70 node + 42 integration → 104 + 25 (129 total). Oracle replay 9/13. **§7 item 33 documents the `?raw` vs `[[rules]]` cross-toolchain trap** with the workaround (inline DO binding, drop wrangler.configPath); downside: ASSETS binding regresses in vitest, Phase 5.2 follow-up. **1011+ tests passing across 10 packages.** | 4af4ae3, cc2f31c, 2bfdcf2 |
 | 2026-04-19 | 5.1/5.2/6/7/8/12 | **Fifth wave merged (5 parallel agents + polish).** P5.1 D1 rooms index (live mirror); P5.2 ASSETS in vitest; P6 command execution (loadclipboard + multi-cascade via `/_do/rename` + `/_do/install` cross-DO transfer); P7 native WS at `/_ws/:room` with DO hibernation + `/socket.io/*` via socketio-shim + 22 WS unit + 11 integration tests; P8-wire exports (csv/html/xlsx/ods/fods/md via SheetJS + pure GFM); P12 StrykerJS baseline (83% weighted, nightly CI + MUTATION_REPORT.md). Topology got tangled — several resets + a reverted cherry-pick; ultimately unified by resetting main to bac7e85 and re-cherry-picking P5.1/P5.2 on top. `src/room.ts` Node coverage relaxed (Phase 7.1 will extract WS handlers). **1070 tests passing across 9 packages.** | many |
 | 2026-04-19 | ratchet | **Mutation ratchet merged.** Per-package `stryker.conf.json` floors pinned to measured scores (worker 92, migrate 90, shared 89, oracle-harness 84, socketio-shim 81, client 73). Fast `mutation-gate` CI job runs Stryker only on packages whose `src/` changed vs merge-base. `docs/MUTATION_REPORT.md` grows ratchet workflow + worked walkthrough raising `client` from 73.81→74.12%. `scripts/ratchet-verify.sh` local-dev audit. §5.5 documents the required-mutation policy. | 94b6850, d1c5920, 08234e5, 738859a |
+| 2026-04-19 | 9 + 8.1 | **Phase 9 merged.** Cron triggers + email binding: migrations/0002_cron.sql, scheduled(), /_timetrigger legacy endpoint, /_do/fire-trigger on RoomDO, StubEmailSender + BindingEmailSender, `settimetrigger` HTTP-layer upsert. cron_triggers PK is (room, cell, fire_at) not just (room, cell) so legacy's comma-list semantics survive. Also folded in P8.1 partial (multi-sheet xlsx/ods/fods — agent timed out mid-stream): parseMultiSheetWorkbook + buildMultiSheetWorkbook + sanitizeSheetName via DI readFn parameter. Worker tests 288→366; total **1154 tests passing across 9 packages** (worker 366, client 196, socketio-shim 168, oracle-harness 158, migrate 91, client-multi 89, cli 55, shared 25, socialcalc-headless 6) plus 10 Playwright specs. 100% Node coverage restored on worker package. | 2ec820b, ac15f0f, 3a8bd62, + P8.1 partials |
 
 ---
 
