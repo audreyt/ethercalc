@@ -439,6 +439,8 @@ Discovered during audit; each needs handling in the phase plan.
 28. **`multi/` iframe postMessage protocol** (multi/main.ls:90): parent React sends `postMessage({type: "multi", rows, index})` to each sub-sheet iframe. The single-sheet client port (Phase 10) must accept this message and update `window.__MULTI__.rows` (see src/player-broadcast.ls:58). Symmetric contract between the two client packages.
 29. **`manifest.appcache` dynamic DevMode stub** (src/main.ls:70-75): in dev mode, returns `CACHE MANIFEST\n\n#<timestamp>\n\nNETWORK:\n*\n` as `text/cache-manifest`; in prod, serves the static file. Worker must replicate both paths.
 30. **Offline/sessionStorage client behavior** (src/player.ls, `SocialCalc.hadSnapshot` flag): client caches last sheet to sessionStorage and restores on reconnect. Port preserves or drops — decide in Phase 10.
+31. **Docker Desktop on macOS/ARM + workerd networking quirk** (found in Phase 11a): `docker compose up` with the Miniflare image binds 0.0.0.0:8000 inside the container, but Docker Desktop's virtio networking on Apple Silicon returns zero bytes to host curls. Linux CI runners don't reproduce it. Dev-affordance only — doesn't block CI. If a contributor reports "docker compose up works but curl hangs", the answer is "run `bun run --cwd packages/worker dev` directly, or use Linux/WSL".
+32. **CLI env vars need worker-side reading** (Phase 11a deferral): `ETHERCALC_EXPIRE`, `ETHERCALC_CORS`, `ETHERCALC_BASEPATH` are set by `bin/ethercalc` into the Miniflare env, but the worker doesn't read them yet — Phase 5+ work. `ETHERCALC_KEY` IS read (by Phase 4's auth layer). Wire the others as their governing routes get ported.
 
 ---
 
