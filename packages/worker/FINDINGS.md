@@ -320,3 +320,69 @@ to stay robust to the Phase 5.1 `?name=<room>` query param that
 `do-dispatch.ts` now appends to every DO fetch URL. When future
 phases change the dispatch layer, this test file remains stable
 as long as the path string is preserved somewhere in the URL.
+
+## Phase 9
+
+### F-P9-01 — `send_email` binding commented out in wrangler.toml
+
+`[[send_email]] name = "EMAIL"` is committed but COMMENTED OUT.
+Rationale: miniflare (via `@cloudflare/vitest-pool-workers@0.6.16`)
+does not provide a `send_email` shim, and binding validation fails
+at test startup when the entry is active. The EmailSender factory
+in `src/handlers/cron.ts` falls back to `StubEmailSender` whenever
+`env.EMAIL` is undefined, so the test environment is deterministic
+without a live email provider.
+
+Production deploy steps (self-host / Cloudflare):
+  1. Uncomment `[[send_email]]` block in `packages/worker/wrangler.toml`.
+  2. In Cloudflare dashboard for the bound zone, open Email Routing →
+     Destination addresses → add the verified recipient address(es).
+  3. Set `EMAIL_FROM` as a Worker var (`wrangler secret put EMAIL_FROM`
+     or in `[vars]`) to a verified sender — commonly
+     `noreply@<your-domain>`. Required because Cloudflare's
+     `send_email` binding blocks unverified senders.
+  4. `wrangler deploy` (or `wrangler deploy --dry-run` to sanity-check).
+
+Reference: https://developers.cloudflare.com/email-routing/email-workers/send-email-workers/
+
+### F-P9-02 — Cron trigger cadence matches legacy external cron
+
+The legacy stack relied on a userspace cron running every minute to
+hit `GET /_timetrigger`. Our `[triggers] crons = ["*/1 * * * *"]`
+matches that exact cadence — one-minute resolution is the smallest
+granularity Cloudflare offers and it's what the legacy semantics
+implicitly require (triggers are measured in "epoch minutes",
+`Math.floor(Date.now()/60000)`).
+
+### F-P9-03 — `/_timetrigger` backwards-compat endpoint retained
+
+Even though Cloudflare's cron invokes `scheduled()` directly, we
+kept `GET /_timetrigger` wired as a Hono route that delegates to
+the same `runScheduled` helper. Self-host users with existing
+external cron jobs pointing at that URL continue to work without
+reconfiguration. The response body shape
+(`{<room>!<cell>: "t1,t2,..."}`) matches the legacy recording — it
+emits the REMAINING rows (i.e. post-prune state), not the fired
+ones.
+
+### F-P9-04 — `fire-trigger` uses cell formula OR datavalue
+
+Legacy's `SocialCalc.TriggerIoAction.Email(coord)` synthesized a
+`sendemail` command from the cell via SocialCalc's internal state
+machine. We short-circuit by reading the cell record directly:
+prefer `formula` (where the URL-encoded sendemail payload lives for
+triggered cells), fall back to `datavalue` (where plain-text
+payloads land). If neither parses as `sendemail`, the trigger is a
+silent no-op — same as legacy's "parse failed → skip" branch.
+
+### F-P9-05 — `settimetrigger` writes on POST /_/:room, not inside DO
+
+Legacy captured `settimetrigger` from inside the SocialCalc worker
+thread via `postMessage` (src/sc.ls:136-138 → sc.ls:220). In our
+architecture the DO's SocialCalc is stateful and private; hooking
+the same way would require synchronous cross-DO-to-Worker signaling
+that isn't ergonomic. Instead we detect the verb at the HTTP layer
+(`POST /_/:room`) and call `upsertCronTriggers(env.DB, room, cell,
+times)` BEFORE dispatching the command to the DO. The DO still runs
+the command normally (recorded in its log/audit); the scheduling
+side-effect is external. This keeps the DO free of D1 coupling.
