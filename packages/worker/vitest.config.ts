@@ -37,6 +37,31 @@ export default defineWorkersConfig({
           durableObjects: {
             ROOM: { className: 'RoomDO', unsafeUniqueKey: 'RoomDO' },
           },
+          // D1 binding (Phase 5.1). Miniflare provisions a fresh SQLite
+          // database under `env.DB`; tests run the `0001_rooms.sql` DDL
+          // explicitly from a `beforeAll` helper in
+          // `test/routes-rooms.test.ts` since miniflare does NOT auto-
+          // apply `migrations_dir` contents.
+          d1Databases: { DB: 'ethercalc_rooms' },
+          // Assets binding (Phase 5.2). The P5 config dropped
+          // `wrangler.configPath` to dodge the `?raw` + `[[rules]]`
+          // collision (§7 item 33), which also dropped the `[assets]`
+          // binding and regressed 3 static/* oracle scenarios. Re-bind
+          // inline here via the miniflare plugin option — `directory`
+          // is resolved relative to this config file. Keeps the oracle
+          // scenarios green without re-enabling the `?raw` mangling.
+          //
+          // `../../assets` points at the repo-root curated dir
+          // produced by `scripts/build-assets.sh`. That script MUST
+          // run before `test:workers` — CI wires it before the
+          // integration step; locally run
+          //   bun run --cwd packages/client build &&
+          //   bun run --cwd packages/client-multi build &&
+          //   ./scripts/build-assets.sh
+          assets: {
+            directory: '../../assets',
+            binding: 'ASSETS',
+          },
         },
       },
     },

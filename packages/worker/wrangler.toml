@@ -45,21 +45,26 @@ BASEPATH = ""
 directory = "../../assets"
 binding = "ASSETS"
 
-# D1, KV, R2, cron, send_email bindings will be added in subsequent phases
+# KV, R2, cron, send_email bindings will be added in subsequent phases
 # as they are used. Scaffolding them eagerly would force empty bindings
 # into the local Miniflare state and muddy the test environment.
 
-# D1 scaffold — enumerate cross-room timestamps + CORS flags for the
-# `/_rooms`, `/_roomlinks`, `/_roomtimes` routes. Left commented so
-# Miniflare doesn't auto-create an empty database during tests; flip it
-# on once Phase 5.1 supplies a migration seed.
+# D1 — cross-room index mirror (Phase 5.1). DO storage is the
+# authoritative source of truth for a single room; this table provides
+# the cross-room query surface needed by `/_rooms`, `/_roomlinks`,
+# `/_roomtimes`. Mirror writes land in `src/room.ts` after every
+# snapshot mutation; reads in `src/routes/rooms.ts` fall back to empty
+# when the binding is absent (Node unit tests without Miniflare).
 #
-# TODO(phase-5.1): wire this and backfill the handlers in src/routes/rooms.ts.
-# [[d1_databases]]
-# binding = "ROOMS_DB"
-# database_name = "ethercalc_rooms"
-# database_id = "00000000-0000-0000-0000-000000000000"
-# migrations_dir = "./migrations"
+# Binding name is `DB`. Schema at `migrations/0001_rooms.sql`. The
+# `database_id` placeholder is fine for local Miniflare and `wrangler
+# deploy --dry-run` — a real id is required only for an actual
+# `wrangler deploy`. See §10.2 for the Redis → D1 mapping table.
+[[d1_databases]]
+binding = "DB"
+database_name = "ethercalc_rooms"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "./migrations"
 
 # Load SocialCalc.js as a Text module so `new Function(rawSource)` inside
 # `@ethercalc/socialcalc-headless` can eval it. The `?raw` Vite suffix

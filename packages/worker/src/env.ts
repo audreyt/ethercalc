@@ -7,6 +7,21 @@ export interface Env {
   ROOM: DurableObjectNamespace;
 
   /**
+   * D1 binding — cross-room index mirror (Phase 5.1). Authoritative room
+   * state lives in the DO's own storage; this table provides the
+   * cross-room query surface used by `/_rooms`, `/_roomlinks`,
+   * `/_roomtimes`. Every snapshot mutation in `src/room.ts` upserts
+   * here via `mirrorRoomToD1`; `DELETE /_do/all` removes the row via
+   * `deleteRoomFromD1`. See CLAUDE.md §3.3 and §10.2.
+   *
+   * Optional because Node unit tests construct `RoomDO` and the Hono
+   * app without a Miniflare-bound D1; the mirror helpers (and the
+   * `/_rooms*` handlers) no-op / return empty when the binding is
+   * missing.
+   */
+  readonly DB?: D1Database;
+
+  /**
    * Static assets bound via Workers Assets. Used by the stateless route
    * layer to serve `index.html`, `start.html`, icons, `manifest.appcache`,
    * and so on. In local tests we may leave this undefined — routes fall

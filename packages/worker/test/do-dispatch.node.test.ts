@@ -19,7 +19,7 @@ describe('do-dispatch', () => {
     expect(stub).toBeDefined();
   });
 
-  it('doFetch composes the DO URL + init', async () => {
+  it('doFetch composes the DO URL + init and threads the room name', async () => {
     const fetchSpy = vi.fn(
       async (input: Request | string, init?: RequestInit) => {
         return new Response(
@@ -33,10 +33,12 @@ describe('do-dispatch', () => {
     const env: Env = {
       ROOM: { idFromName, get } as unknown as DurableObjectNamespace,
     };
+    // Room name is threaded as `?name=<encoded>` so the DO can self-
+    // identify for the D1 rooms-index mirror (Phase 5.1).
     const res = await doFetch(env, 'r', '/_do/snapshot', { method: 'PUT', body: 'x' });
     const body = (await res.json()) as { url: string };
-    expect(body.url).toBe('https://do.local/_do/snapshot');
-    expect(fetchSpy).toHaveBeenCalledWith('https://do.local/_do/snapshot', {
+    expect(body.url).toBe('https://do.local/_do/snapshot?name=r');
+    expect(fetchSpy).toHaveBeenCalledWith('https://do.local/_do/snapshot?name=r', {
       method: 'PUT',
       body: 'x',
     });
@@ -51,6 +53,36 @@ describe('do-dispatch', () => {
       } as unknown as DurableObjectNamespace,
     };
     await doFetch(env, 'r', '/_do/log');
-    expect(fetchSpy).toHaveBeenCalledWith('https://do.local/_do/log', {});
+    expect(fetchSpy).toHaveBeenCalledWith('https://do.local/_do/log?name=r', {});
+  });
+
+  it('doFetch appends with `&` when the path already carries a query string', async () => {
+    const fetchSpy = vi.fn(async () => new Response('x'));
+    const env: Env = {
+      ROOM: {
+        idFromName: () => ({}) as DurableObjectId,
+        get: () => ({ fetch: fetchSpy }),
+      } as unknown as DurableObjectNamespace,
+    };
+    await doFetch(env, 'r', '/_do/ping?probe=1');
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'https://do.local/_do/ping?probe=1&name=r',
+      {},
+    );
+  });
+
+  it('doFetch URL-encodes room names that contain spaces', async () => {
+    const fetchSpy = vi.fn(async () => new Response('x'));
+    const env: Env = {
+      ROOM: {
+        idFromName: () => ({}) as DurableObjectId,
+        get: () => ({ fetch: fetchSpy }),
+      } as unknown as DurableObjectNamespace,
+    };
+    await doFetch(env, 'some room', '/_do/log');
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'https://do.local/_do/log?name=some%20room',
+      {},
+    );
   });
 });

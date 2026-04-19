@@ -73,6 +73,39 @@ function makeEnv(): Env {
 }
 
 /**
+ * Build a fake D1Database that records every prepared statement plus
+ * bound params. Enough for the rooms-index mirror assertions below.
+ */
+interface D1Call {
+  sql: string;
+  params: unknown[];
+}
+function makeEnvWithDb(calls: D1Call[]): Env {
+  const prepare = (sql: string) => {
+    const params: unknown[] = [];
+    const stmt = {
+      bind(...more: unknown[]) {
+        params.push(...more);
+        return stmt;
+      },
+      async run() {
+        calls.push({ sql, params: [...params] });
+        return { success: true };
+      },
+      async all<T>() {
+        calls.push({ sql, params: [...params] });
+        return { results: [] as T[], success: true };
+      },
+    };
+    return stmt as unknown as D1PreparedStatement;
+  };
+  return {
+    ROOM: {} as DurableObjectNamespace,
+    DB: { prepare } as unknown as D1Database,
+  };
+}
+
+/**
  * Replace the internal HeadlessSpreadsheet factory hook before we call any
  * method that would otherwise instantiate one. We do this by monkey-patching
  * the private `#getSpreadsheet` via a subclass in individual tests.
@@ -465,5 +498,100 @@ describe('RoomDO (unit, direct construction)', () => {
   ])('wrong method on %s returns 501 (%s)', async (path, method) => {
     const res = await room.fetch(new Request(`https://do${path}`, { method }));
     expect(res.status).toBe(501);
+  });
+});
+
+/**
+ * Phase 5.1 — D1 rooms-index mirror wiring. Each state-changing DO
+ * endpoint (`PUT /_do/snapshot`, `POST /_do/commands`, `DELETE
+ * /_do/all`) must upsert/delete a row when `env.DB` is bound AND the
+ * caller passed `?name=<room>`. Both the binding and the name must be
+ * present — either missing short-circuits to a no-op.
+ */
+describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
+  let record: FakeStorageRecord;
+  let d1Calls: D1Call[];
+  let room: RoomDO;
+
+  beforeEach(() => {
+    record = { map: new Map() };
+    d1Calls = [];
+    room = new RoomDO(makeState('abc123', record), makeEnvWithDb(d1Calls));
+    mockExec.mockClear();
+    mockSave.mockClear();
+  });
+
+  it('PUT /_do/snapshot upserts the room into D1 when name + DB both present', async () => {
+    await room.fetch(
+      new Request('https://do/_do/snapshot?name=alpha', {
+        method: 'PUT',
+        body: 'save',
+      }),
+    );
+    expect(d1Calls).toHaveLength(1);
+    expect(d1Calls[0]!.sql).toContain('INSERT INTO rooms');
+    expect(d1Calls[0]!.params[0]).toBe('alpha');
+    expect(typeof d1Calls[0]!.params[1]).toBe('number');
+  });
+
+  it('POST /_do/commands upserts the room into D1 after applying a command', async () => {
+    await room.fetch(
+      new Request('https://do/_do/commands?name=beta', {
+        method: 'POST',
+        body: 'set A1 value n 1',
+      }),
+    );
+    expect(d1Calls).toHaveLength(1);
+    expect(d1Calls[0]!.sql).toContain('INSERT INTO rooms');
+    expect(d1Calls[0]!.params[0]).toBe('beta');
+  });
+
+  it('POST /_do/commands with empty body does NOT touch D1', async () => {
+    await room.fetch(
+      new Request('https://do/_do/commands?name=beta', {
+        method: 'POST',
+        body: '',
+      }),
+    );
+    expect(d1Calls).toHaveLength(0);
+  });
+
+  it('DELETE /_do/all deletes the room row from D1', async () => {
+    await room.fetch(
+      new Request('https://do/_do/all?name=gone', { method: 'DELETE' }),
+    );
+    expect(d1Calls).toHaveLength(1);
+    expect(d1Calls[0]!.sql).toContain('DELETE FROM rooms');
+    expect(d1Calls[0]!.params).toEqual(['gone']);
+  });
+
+  it('does NOT mirror when ?name is missing even if DB is bound', async () => {
+    await room.fetch(
+      new Request('https://do/_do/snapshot', { method: 'PUT', body: 'x' }),
+    );
+    expect(d1Calls).toHaveLength(0);
+  });
+
+  it('does NOT mirror when ?name is missing on DELETE /_do/all either', async () => {
+    await room.fetch(
+      new Request('https://do/_do/all', { method: 'DELETE' }),
+    );
+    expect(d1Calls).toHaveLength(0);
+  });
+
+  it('does NOT mirror on PUT /_do/snapshot when DB binding is unbound', async () => {
+    // Fresh DO without the DB binding — reuses `makeEnv()` from the top-
+    // level unit suite (exported from this file).
+    const noDbRoom = new RoomDO(makeState('x', { map: new Map() }), makeEnv());
+    // Also no entry in `d1Calls` because there's no shared DB — the
+    // absence is the point.
+    const res = await noDbRoom.fetch(
+      new Request('https://do/_do/snapshot?name=nodb', {
+        method: 'PUT',
+        body: 'x',
+      }),
+    );
+    expect(res.status).toBe(201);
+    expect(d1Calls).toHaveLength(0);
   });
 });

@@ -73,7 +73,9 @@ describe('route glue — env.ROOM dispatch shapes', () => {
       env as never,
     );
     expect(calls).toHaveLength(1);
-    expect(calls[0]!.url).toBe('https://do.local/_do/exists');
+    // `doFetch` threads `?name=<room>` so the DO can self-identify for
+    // the Phase 5.1 D1 rooms-index mirror.
+    expect(calls[0]!.url).toBe('https://do.local/_do/exists?name=foo');
     expect(calls[0]!.method).toBe('GET');
     expect(res.status).toBe(200);
     expect(await res.text()).toBe('false');
@@ -104,7 +106,7 @@ describe('route glue — env.ROOM dispatch shapes', () => {
       new Request('https://t.test/_/room42'),
       env as never,
     );
-    expect(calls[0]!.url).toBe('https://do.local/_do/snapshot');
+    expect(calls[0]!.url).toBe('https://do.local/_do/snapshot?name=room42');
     expect(calls[0]!.method).toBe('GET');
     expect(res.status).toBe(200);
     expect(await res.text()).toBe('SC-SAVE');
@@ -137,7 +139,7 @@ describe('route glue — env.ROOM dispatch shapes', () => {
       env as never,
     );
     expect(calls[0]!.method).toBe('PUT');
-    expect(calls[0]!.url).toBe('https://do.local/_do/snapshot');
+    expect(calls[0]!.url).toBe('https://do.local/_do/snapshot?name=r');
     expect(calls[0]!.bodyText).toBe('my-snapshot');
     expect(res.status).toBe(201);
     expect(await res.text()).toBe('OK');
@@ -153,7 +155,7 @@ describe('route glue — env.ROOM dispatch shapes', () => {
       env as never,
     );
     expect(calls[0]!.method).toBe('DELETE');
-    expect(calls[0]!.url).toBe('https://do.local/_do/all');
+    expect(calls[0]!.url).toBe('https://do.local/_do/all?name=r');
     expect(res.status).toBe(201);
   });
 
@@ -172,7 +174,8 @@ describe('route glue — env.ROOM dispatch shapes', () => {
     );
     expect(res.status).toBe(201);
     expect(calls[0]!.method).toBe('PUT');
-    expect(calls[0]!.url).toBe('https://do.local/_do/snapshot');
+    // Generated 12-char id, followed by ?name=<same-id>.
+    expect(calls[0]!.url).toMatch(/^https:\/\/do\.local\/_do\/snapshot\?name=[a-z0-9]{12}$/);
     const body = await res.text();
     expect(body).toMatch(/^\/[a-z0-9]{12}$/);
     expect(res.headers.get('location')).toBe(`/_${body}`);
@@ -218,7 +221,8 @@ describe('route glue — env.ROOM dispatch shapes', () => {
 
   it('GET /_from/:template copies template snapshot into a new room', async () => {
     const { env, calls } = makeFakeRoomNamespace((call) => {
-      if (call.url === 'https://do.local/_do/snapshot' && call.method === 'GET') {
+      // Path is `/_do/snapshot?name=<room>` — match the path prefix.
+      if (call.url.startsWith('https://do.local/_do/snapshot') && call.method === 'GET') {
         return new Response('TPL-SNAP');
       }
       return new Response('OK', { status: 201 });
@@ -231,9 +235,11 @@ describe('route glue — env.ROOM dispatch shapes', () => {
     expect(res.status).toBe(302);
     const loc = res.headers.get('location') ?? '';
     expect(loc).toMatch(/^\/[a-z0-9]{12}$/);
-    // First call GET, second PUT with template snapshot.
+    // First call GET (template), second PUT (new room) with copied snapshot.
     expect(calls[0]!.method).toBe('GET');
+    expect(calls[0]!.url).toBe('https://do.local/_do/snapshot?name=some-template');
     expect(calls[1]!.method).toBe('PUT');
+    expect(calls[1]!.url).toMatch(/^https:\/\/do\.local\/_do\/snapshot\?name=[a-z0-9]{12}$/);
     expect(calls[1]!.bodyText).toBe('TPL-SNAP');
   });
 
