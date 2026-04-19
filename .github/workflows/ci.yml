@@ -59,6 +59,18 @@ jobs:
         # --dry-run` (validates the directory exists).
         run: ./scripts/build-assets.sh
 
+      - name: Validate worker D1 migrations
+        # Phase 5.1: smoke-check each SQL file in packages/worker/migrations/
+        # by replaying it into a fresh in-memory SQLite DB. Catches syntax
+        # errors before they blow up at miniflare startup or on a real
+        # `wrangler d1 migrations apply` in prod. ubuntu-latest ships with
+        # sqlite3 preinstalled.
+        run: |
+          for f in packages/worker/migrations/*.sql; do
+            echo "applying $f"
+            sqlite3 :memory: < "$f"
+          done
+
       - name: worker — integration tests (workerd via miniflare)
         run: bun run --cwd packages/worker test:workers
 

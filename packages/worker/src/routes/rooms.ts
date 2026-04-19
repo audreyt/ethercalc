@@ -7,16 +7,16 @@
  *   GET    /_/:room           fetch SocialCalc save
  *   DELETE /_/:room           delete room
  *   GET    /_exists/:room     bare JSON boolean
- *   GET    /_rooms            JSON array   (D1 mirror — Phase 5.1 TODO)
+ *   GET    /_rooms            JSON array   (D1 mirror — Phase 5.1)
  *   GET    /_roomlinks        HTML <a> list (diverges from legacy bug, see
  *                             tests/oracle/FINDINGS.md and §6.1 §13 Q1)
- *   GET    /_roomtimes        JSON hash    (D1 mirror — Phase 5.1 TODO)
+ *   GET    /_roomtimes        JSON hash    (D1 mirror — Phase 5.1)
  *   GET    /_from/:template   302 → new room id (copies template snapshot)
  *
  * Excluded from coverage for the same reason as `src/index.ts` — workerd
  * istanbul can't reach hits here. Pure logic lives in
- * `src/handlers/rooms.ts` (request body classification) and
- * `src/lib/{csv,do-dispatch,room-name}.ts`.
+ * `src/handlers/rooms.ts` (request body classification),
+ * `src/lib/{csv,do-dispatch,room-name,rooms-index}.ts`.
  */
 /* istanbul ignore file */
 import type { Hono } from 'hono';
@@ -24,6 +24,11 @@ import type { Hono } from 'hono';
 import { classifyRequestBody } from '../handlers/rooms.ts';
 import { doFetch } from '../lib/do-dispatch.ts';
 import { generateRoomId } from '../lib/room-name.ts';
+import {
+  listRooms,
+  listRoomTimes,
+  renderRoomLinks,
+} from '../lib/rooms-index.ts';
 import type { Env } from '../env.ts';
 
 const TEXT_CT = 'text/plain; charset=utf-8';
@@ -77,30 +82,32 @@ async function readBodyBytes(request: Request): Promise<Uint8Array> {
  * `_` vs `_…` split in Hono's trie is exact-match-first).
  */
 export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
-  // ─── Index-style endpoints (deferred to D1; return empty scaffolds) ─
+  // ─── Cross-room index endpoints (Phase 5.1 — backed by D1) ─────────
   //
-  // `_rooms` / `_roomlinks` / `_roomtimes` need a cross-room index that
-  // lives in D1 per §10.2. Phase 5 returns empty shells + a TODO header so
-  // tests and clients can already exercise the paths. The D1 table stub is
-  // in wrangler.toml with `# TODO(phase-5.1)`.
-  app.get('/_rooms', () => {
-    // TODO(phase-5.1): read from D1.rooms mirror instead of returning [].
-    return sizedResponse('[]', 200, JSON_CT);
+  // The D1 `rooms` table (migrations/0001_rooms.sql) is maintained by
+  // the DO — every snapshot write upserts a row, every DELETE /_do/all
+  // removes one. These handlers read from that table. When `env.DB` is
+  // unbound (Node unit tests without Miniflare, or a deployment that
+  // opts out of the index) we short-circuit to the empty-state body
+  // shapes the oracle recorded.
+  app.get('/_rooms', async (c) => {
+    if (!c.env.DB) return sizedResponse('[]', 200, JSON_CT);
+    const rooms = await listRooms(c.env.DB);
+    return sizedResponse(JSON.stringify(rooms), 200, JSON_CT);
   });
-  app.get('/_roomlinks', () => {
-    // Fixed divergence from legacy (§13 Q1): oracle emitted JSON in a
-    // text/html response — we render an actual <a> list. Empty-state body
-    // is `[]` to match the oracle recording's bytes even though semantic
-    // "no rooms" would normally be "" — kept for now so the recording
-    // still passes. TODO(phase-5.1): once D1 is wired, populate real
-    // <a>…</a> entries.
-    const empty: readonly string[] = [];
-    const body = empty.length === 0 ? '[]' : empty.map((r) => `<a href="/${r}">${r}</a>`).join('');
+  app.get('/_roomlinks', async (c) => {
+    // Sensible-fix (§13 Q1): oracle emitted JSON in a text/html
+    // response — we render an actual <a> list. Empty-state body is
+    // still `[]` to keep the oracle's byte recording passing.
+    if (!c.env.DB) return sizedResponse('[]', 200, HTML_CT);
+    const rooms = await listRooms(c.env.DB);
+    const body = renderRoomLinks(rooms, c.env.BASEPATH ?? '');
     return sizedResponse(body, 200, HTML_CT);
   });
-  app.get('/_roomtimes', () => {
-    // TODO(phase-5.1): read D1.rooms(room, updated_at) sorted desc.
-    return sizedResponse('{}', 200, JSON_CT);
+  app.get('/_roomtimes', async (c) => {
+    if (!c.env.DB) return sizedResponse('{}', 200, JSON_CT);
+    const times = await listRoomTimes(c.env.DB);
+    return sizedResponse(JSON.stringify(times), 200, JSON_CT);
   });
 
   // ─── Template copy ─────────────────────────────────────────────────

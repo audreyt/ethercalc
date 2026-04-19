@@ -37,6 +37,12 @@ export default defineWorkersConfig({
           durableObjects: {
             ROOM: { className: 'RoomDO', unsafeUniqueKey: 'RoomDO' },
           },
+          // D1 binding (Phase 5.1). Miniflare provisions a fresh SQLite
+          // database under `env.DB`; tests run the `0001_rooms.sql` DDL
+          // explicitly from a `beforeAll` helper in
+          // `test/routes-rooms.test.ts` since miniflare does NOT auto-
+          // apply `migrations_dir` contents.
+          d1Databases: { DB: 'ethercalc_rooms' },
         },
       },
     },

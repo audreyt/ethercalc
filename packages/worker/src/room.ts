@@ -44,6 +44,10 @@ import { verifyAuth } from './lib/auth.ts';
 import { parseCSV } from './lib/csv-parse.ts';
 import { csvToMarkdown } from './lib/md.ts';
 import {
+  deleteRoomFromD1,
+  mirrorRoomToD1,
+} from './lib/rooms-index.ts';
+import {
   buildChatBroadcast,
   buildEcellBroadcast,
   buildEcellsReply,
@@ -131,25 +135,29 @@ export class RoomDO implements DurableObject {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname;
+    // Every `doFetch` caller now threads the room name through as
+    // `?name=…` so the DO can mirror to D1 without re-deriving it from
+    // its opaque id. `/_do/ping` already used the same param.
+    const roomName = url.searchParams.get('name');
 
     if (path === '/_do/ping') {
       return jsonResponse({
         id: this.#state.id.toString(),
-        name: url.searchParams.get('name'),
+        name: roomName,
       });
     }
     if (path === '/_do/snapshot') {
       if (request.method === 'GET') return this.#getSnapshot();
-      if (request.method === 'PUT') return this.#putSnapshot(request);
+      if (request.method === 'PUT') return this.#putSnapshot(request, roomName);
     }
     if (path === '/_do/log' && request.method === 'GET') {
       return this.#getLog();
     }
     if (path === '/_do/commands' && request.method === 'POST') {
-      return this.#postCommands(request);
+      return this.#postCommands(request, roomName);
     }
     if (path === '/_do/all' && request.method === 'DELETE') {
-      return this.#deleteAll();
+      return this.#deleteAll(roomName);
     }
     if (path === '/_do/exists' && request.method === 'GET') {
       return this.#getExists();
@@ -209,17 +217,20 @@ export class RoomDO implements DurableObject {
     return plainResponse(snapshot);
   }
 
-  async #putSnapshot(request: Request): Promise<Response> {
+  async #putSnapshot(request: Request, roomName: string | null): Promise<Response> {
     const body = await request.text();
+    let updatedAt = 0;
     await this.#state.blockConcurrencyWhile(async () => {
       await this.#state.storage.deleteAll();
       await this.#state.storage.put(STORAGE_KEYS.snapshot, body);
-      await this.#state.storage.put(STORAGE_KEYS.metaUpdatedAt, Date.now());
+      updatedAt = Date.now();
+      await this.#state.storage.put(STORAGE_KEYS.metaUpdatedAt, updatedAt);
       this.#ss = null;
       this.#nextLogSeq = 0;
       this.#nextAuditSeq = 0;
       this.#nextChatSeq = 0;
     });
+    await this.#mirrorIndex(roomName, updatedAt);
     return plainResponse('OK', 201);
   }
 
@@ -231,16 +242,19 @@ export class RoomDO implements DurableObject {
     return jsonResponse({ log, chat });
   }
 
-  async #postCommands(request: Request): Promise<Response> {
+  async #postCommands(request: Request, roomName: string | null): Promise<Response> {
     const body = await request.text();
     if (!body) return plainResponse('', 202);
+    let updatedAt = 0;
     await this.#state.blockConcurrencyWhile(async () => {
       await this.#appendCommand(body);
+      updatedAt = Date.now();
     });
+    await this.#mirrorIndex(roomName, updatedAt);
     return plainResponse('', 202);
   }
 
-  async #deleteAll(): Promise<Response> {
+  async #deleteAll(roomName: string | null): Promise<Response> {
     await this.#state.blockConcurrencyWhile(async () => {
       await this.#state.storage.deleteAll();
       this.#ss = null;
@@ -248,6 +262,7 @@ export class RoomDO implements DurableObject {
       this.#nextAuditSeq = 0;
       this.#nextChatSeq = 0;
     });
+    await this.#deleteIndex(roomName);
     return plainResponse('OK', 201);
   }
 
@@ -688,6 +703,24 @@ export class RoomDO implements DurableObject {
       const map = await this.#state.storage.list({ prefix: STORAGE_KEYS.chatPrefix });
       this.#nextChatSeq = map.size;
     }
+  }
+
+  /**
+   * Mirror this room's latest `updatedAt` to the D1 `rooms` table
+   * (Phase 5.1). No-ops when `env.DB` is unbound (Node unit tests
+   * construct the DO without Miniflare) or when the DO wasn't told
+   * its own room name (legacy `/_do/*` callers that pre-date the
+   * `?name=` convention — new code always threads it).
+   */
+  async #mirrorIndex(roomName: string | null, updatedAt: number): Promise<void> {
+    if (!this.#env.DB || !roomName) return;
+    await mirrorRoomToD1(this.#env.DB, roomName, updatedAt);
+  }
+
+  /** Symmetric delete for `#mirrorIndex`, used on `DELETE /_do/all`. */
+  async #deleteIndex(roomName: string | null): Promise<void> {
+    if (!this.#env.DB || !roomName) return;
+    await deleteRoomFromD1(this.#env.DB, roomName);
   }
 
   // ─── Hooks used by future phases (chat/ecell) ──────────────────────────

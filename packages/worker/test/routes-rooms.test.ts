@@ -3,7 +3,7 @@ import {
   env,
   waitOnExecutionContext,
 } from 'cloudflare:test';
-import { describe, it, expect } from 'vitest';
+import { beforeAll, describe, it, expect } from 'vitest';
 
 import worker from '../src/index.ts';
 
@@ -19,6 +19,25 @@ async function request(method: string, path: string, opts: RequestInit = {}) {
   await waitOnExecutionContext(ctx);
   return res;
 }
+
+/**
+ * Apply the `migrations/0001_rooms.sql` schema to the miniflare-bound
+ * D1 database. Miniflare doesn't auto-apply `migrations_dir` contents
+ * when invoked via vitest-pool-workers — we do it once before the
+ * suite so `/_rooms` etc. can read from the `rooms` table. Also clears
+ * any leftover rows between runs (singleWorker + isolatedStorage: false
+ * means all tests share the same DB).
+ */
+beforeAll(async () => {
+  const db = (env as unknown as { DB: D1Database }).DB;
+  await db.exec(
+    'CREATE TABLE IF NOT EXISTS rooms (room TEXT PRIMARY KEY, updated_at INTEGER NOT NULL, cors_public INTEGER NOT NULL DEFAULT 0)',
+  );
+  await db.exec(
+    'CREATE INDEX IF NOT EXISTS rooms_updated_at ON rooms(updated_at DESC)',
+  );
+  await db.exec('DELETE FROM rooms');
+});
 
 describe('Phase 5 routes — full round-trip', () => {
   it('POST /_ then GET /_/:room round-trips a save', async () => {
@@ -93,24 +112,67 @@ describe('Phase 5 routes — full round-trip', () => {
     expect(await b.text()).toBe('true');
   });
 
-  it('GET /_rooms returns []', async () => {
+  it('GET /_rooms returns a JSON array containing every room created via the write path', async () => {
+    // Create a unique room via POST /_ and assert it appears in /_rooms.
+    // Other tests in this file share the D1 table (singleWorker +
+    // isolatedStorage: false), so we assert containment rather than
+    // equality to stay order-independent.
+    const postRes = await request('POST', '/_', {
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ room: 'rooms-index-alpha', snapshot: 'x' }),
+    });
+    expect(postRes.status).toBe(201);
+
     const res = await request('GET', '/_rooms');
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toBe('application/json; charset=utf-8');
-    expect(await res.text()).toBe('[]');
+    const rooms = JSON.parse(await res.text()) as string[];
+    expect(Array.isArray(rooms)).toBe(true);
+    expect(rooms).toContain('rooms-index-alpha');
   });
 
-  it('GET /_roomlinks returns HTML content-type', async () => {
+  it('GET /_roomlinks renders an <a>-list HTML body containing every room', async () => {
+    await request('POST', '/_', {
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ room: 'roomlinks-alpha', snapshot: 'x' }),
+    });
     const res = await request('GET', '/_roomlinks');
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toBe('text/html; charset=utf-8');
+    const body = await res.text();
+    expect(body).toContain('<a href="/roomlinks-alpha">roomlinks-alpha</a>');
   });
 
-  it('GET /_roomtimes returns {}', async () => {
+  it('GET /_roomtimes returns a JSON hash keyed by room with numeric updated_at', async () => {
+    await request('POST', '/_', {
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ room: 'roomtimes-alpha', snapshot: 'x' }),
+    });
     const res = await request('GET', '/_roomtimes');
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toBe('application/json; charset=utf-8');
-    expect(await res.text()).toBe('{}');
+    const times = JSON.parse(await res.text()) as Record<string, number>;
+    expect(typeof times['roomtimes-alpha']).toBe('number');
+    expect(times['roomtimes-alpha']).toBeGreaterThan(0);
+  });
+
+  it('DELETE /_/:room removes the room from the D1 mirror index', async () => {
+    await request('POST', '/_', {
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ room: 'delete-me-from-index', snapshot: 'x' }),
+    });
+    const before = JSON.parse(
+      await (await request('GET', '/_rooms')).text(),
+    ) as string[];
+    expect(before).toContain('delete-me-from-index');
+
+    const del = await request('DELETE', '/_/delete-me-from-index');
+    expect(del.status).toBe(201);
+
+    const after = JSON.parse(
+      await (await request('GET', '/_rooms')).text(),
+    ) as string[];
+    expect(after).not.toContain('delete-me-from-index');
   });
 
   it('GET /_from/:template redirects to a new room with copied snapshot', async () => {

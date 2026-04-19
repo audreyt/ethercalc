@@ -1,10 +1,30 @@
 import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:test';
-import { describe, it, expect } from 'vitest';
+import { beforeAll, describe, it, expect } from 'vitest';
 
 import type { HttpScenario } from '@ethercalc/shared/oracle-scenarios';
 import { dispatchMatcher } from '@ethercalc/oracle-harness/matchers';
 
 import worker from '../src/index.ts';
+
+/**
+ * Apply the Phase 5.1 D1 schema and reset any rows left behind by
+ * earlier test files in the same singleWorker pool. The oracle
+ * fixtures for `/_rooms`, `/_roomlinks`, `/_roomtimes` were captured
+ * against a fresh Redis — the worker-side D1 has to start empty so
+ * the empty-state bodies match. `CREATE TABLE IF NOT EXISTS` is safe
+ * whether or not `routes-rooms.test.ts` ran first.
+ */
+beforeAll(async () => {
+  const db = (env as unknown as { DB?: D1Database }).DB;
+  if (!db) return;
+  await db.exec(
+    'CREATE TABLE IF NOT EXISTS rooms (room TEXT PRIMARY KEY, updated_at INTEGER NOT NULL, cors_public INTEGER NOT NULL DEFAULT 0)',
+  );
+  await db.exec(
+    'CREATE INDEX IF NOT EXISTS rooms_updated_at ON rooms(updated_at DESC)',
+  );
+  await db.exec('DELETE FROM rooms');
+});
 
 /**
  * Oracle replay for Phase 4 stateless routes.
@@ -184,6 +204,14 @@ describe('oracle replay — Phase 4 + 5 subset (ASSETS in vitest pending 5.2)', 
 
   for (const expectedName of PHASE5_EXPECTED_PASS) {
     it(`passes ${expectedName}`, async () => {
+      // The three `rooms-index/*` oracle fixtures were captured against a
+      // fresh Redis, so we reset the D1 mirror immediately before the
+      // replay to ensure the worker observes the empty-state baseline
+      // even when `routes-rooms.test.ts` ran first in the same pool.
+      if (expectedName.startsWith('rooms-index/')) {
+        const db = (env as unknown as { DB?: D1Database }).DB;
+        if (db) await db.exec('DELETE FROM rooms');
+      }
       const scenario = scenarios.find((s) => s.name === expectedName);
       expect(scenario, `scenario ${expectedName} not found in recorded/`).toBeDefined();
       const result = await replayAgainstWorker(scenario!);
@@ -197,6 +225,10 @@ describe('oracle replay — Phase 4 + 5 subset (ASSETS in vitest pending 5.2)', 
   // vitest (the 3 static/* scenarios and static/get-favicon pass
   // against wrangler dev but not under vitest-pool-workers).
   it('at least 9 of the recorded scenarios pass against the new worker', async () => {
+    // Reset the D1 mirror for the same reason as the per-scenario loop
+    // above — `rooms-index/*` fixtures need an empty table.
+    const db = (env as unknown as { DB?: D1Database }).DB;
+    if (db) await db.exec('DELETE FROM rooms');
     let pass = 0;
     for (const scenario of scenarios) {
       const r = await replayAgainstWorker(scenario);
