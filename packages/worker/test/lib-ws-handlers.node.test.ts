@@ -31,7 +31,7 @@ import type { ClientMessage, ServerMessage } from '@ethercalc/shared/messages';
 // ─── Fake context builders ─────────────────────────────────────────────────
 
 interface StorageState {
-  snapshot?: string;
+  snapshot: string | undefined;
   log: Map<string, string>;
   chat: Map<string, string>;
   ecell: Map<string, string>;
@@ -72,7 +72,7 @@ function makeStorage(state: StorageState): WsStorage {
       }
     },
     async getSnapshot(): Promise<string | undefined> {
-      return state.snapshot;
+      return state.snapshot as string | undefined;
     },
     async deleteAll(): Promise<void> {
       state.snapshot = undefined;
@@ -88,7 +88,7 @@ interface CallLog {
   replies: ServerMessage[];
   broadcasts: Array<{ msg: ServerMessage; includeSelf: boolean }>;
   applied: string[];
-  siblingFetches: Array<{ room: string; path: string; init?: RequestInit }>;
+  siblingFetches: Array<{ room: string; path: string; init: RequestInit | undefined }>;
   spreadsheetExec: string[];
   spreadsheetSaveCount: number;
 }
@@ -102,6 +102,7 @@ interface MakeCtxOpts {
 
 function makeCtx(opts: MakeCtxOpts = {}): { ctx: WsContext; calls: CallLog; state: StorageState } {
   const state: StorageState = opts.state ?? {
+    snapshot: undefined,
     log: new Map(),
     chat: new Map(),
     ecell: new Map(),
@@ -183,6 +184,7 @@ describe('handleChat', () => {
 describe('handleAskEcells', () => {
   it('replies with the full ecells map, no broadcast', async () => {
     const state: StorageState = {
+      snapshot: undefined,
       log: new Map(),
       chat: new Map(),
       ecell: new Map([['alice', 'A1'], ['bob', 'B2']]),
@@ -239,6 +241,7 @@ describe('handleMyEcell', () => {
 
   it('upserts an existing user to a new cell', async () => {
     const state: StorageState = {
+      snapshot: undefined,
       log: new Map(),
       chat: new Map(),
       ecell: new Map([['alice', 'A1']]),
