@@ -201,6 +201,10 @@ jobs:
 
       - name: Detect changed packages
         id: changed
+        # Override GH Actions' default `bash -eo pipefail` because grep
+        # exits non-zero when the pattern matches nothing, which is the
+        # expected case for docs/test/config-only PRs.
+        shell: bash {0}
         run: |
           # Compare the PR head against the merge-base with origin/main.
           # On a push to main the base still resolves (merge-base with self
@@ -211,9 +215,11 @@ jobs:
           else
             BASE=HEAD~1
           fi
-          changed=$(git diff --name-only "$BASE" HEAD | \
-            grep -oE '^packages/[^/]+/src/' | \
-            sort -u | sed 's|packages/||;s|/src/||' | tr '\n' ' ')
+          changed=$(git diff --name-only "$BASE" HEAD \
+            | grep -oE '^packages/[^/]+/src/' \
+            | sort -u \
+            | sed 's|packages/||;s|/src/||' \
+            | tr '\n' ' ')
           echo "packages=$changed" >> "$GITHUB_OUTPUT"
           echo "Changed packages: ${changed:-<none>}"
 
