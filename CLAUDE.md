@@ -526,13 +526,13 @@ Goal: prove Plan A works (SocialCalc loads and executes in workerd).
 - [ ] `sendemail` SocialCalc command routes through email binding.
 - [ ] `confirmemailsent` WS reply.
 
-### Phase 10 — Single-sheet client adapter — MOSTLY DONE
-- [x] `packages/client/` with Vite + TS. `src/{ws-adapter,socialcalc-callbacks,main,graph,types,boot}.ts`. 78/78 tests. Build: 20.3 kB JS.
+### Phase 10 — Single-sheet client adapter — DONE (except Playwright)
+- [x] `packages/client/` with Vite + TS. `src/{ws-adapter,socialcalc-callbacks,main,graph,types,boot}.ts`. 190/190 tests. Build: 20.3 kB JS.
 - [x] `ws-adapter.ts` replaces socket.io client; broadcast queueing during disconnect, backoff reconnect, frame validation via `@ethercalc/shared`.
 - [x] `socialcalc-callbacks.ts` preserves `window.SocialCalc.Callbacks.broadcast` public surface for external embeds.
 - [x] `main.ts` ports `player.ls` entry (URL query, history pushState, formDataViewer flow, ask.log handshake).
-- [ ] **Coverage gate temporarily relaxed** to 99/95/90/99 (was 100/100/100/100). Three uncovered paths: main.ts `parts.edit` fallback loader arrow, applyFormDataLog `parts.sheet`-false branch, callbacks `delete SocialCalc.LoadEditorSettings` branch. Close in Phase 10.1 follow-up PR — should be 3 targeted tests.
-- [ ] `src/graph.ts` (615 lines) ported but excluded from coverage gate. Add targeted tests in Phase 10.2.
+- [x] **Coverage gate restored to 100/100/100/100** (Phase 10.1). 10 tests added covering main.ts `parts.edit` fallback loader arrow, applyFormDataLog `parts.sheet`-false branch, and socialcalc-callbacks `else delete` branch.
+- [x] `src/graph.ts` (615 lines) covered (Phase 10.2). 102 new tests via fake 2D canvas recorder. 3 `/* istanbul ignore next */` markers on `labels[i] ?? ''` fallbacks that collectValues keeps in lockstep by construction.
 - [ ] Served by Workers Assets — wire in Phase 11.
 - [ ] Playwright: open room, type, reload, export → passes. *(deferred to Phase 11)*
 
@@ -734,6 +734,7 @@ Append one entry per session you work on this. Keep it short. Use this for conte
 | 2026-04-19 | 10b   | **Phase 10b agent merged.** `packages/client-multi/` React 18 + Radix tabs + Vite. 89/89 tests, 100% coverage on all tracked. Vite build 163 kB JS / 1.6 kB CSS. Playwright deferred to Phase 11 per §8. Preserved three legacy quirks (documented in `packages/client-multi/FINDINGS.md`). | a0ecd20 |
 | 2026-04-19 | 3     | **Phase 3 agent merged.** `packages/oracle-harness/` + `tests/oracle/` docker stack pinned to `042b731`. 102/102 tests, 100% coverage. 13 stateless scenarios recorded (oracle self-replay green). 9 FINDINGS documented (identity-HMAC when KEY unset, bare boolean `/_exists/:room` response, semi-volatile `Last-Modified`, fetch auto-redirect gotcha). html/xlsx/ods matchers throw "not implemented — Phase 8". | 4a52b96, 2d06bc3, 99932e3 |
 | 2026-04-19 | 10    | **Phase 10 agent merged.** `packages/client/` Vite + TS port of `player*.ls`. Agent crashed mid-final-report but delivered: 78/78 tests, typecheck clean, Vite build 20.3 kB. Coverage gate temporarily relaxed to 99/95/90/99 on this package — three uncovered edge branches (main.ts `parts.edit` loader fallback, applyFormDataLog `parts.sheet`=false path, callbacks `delete` branch) to be closed in Phase 10.1 follow-up. | a203aeb |
+| 2026-04-19 | 10.1/10.2 | **Coverage gap closed.** Added 10 tests for the three main/callbacks branches and 102 tests for `src/graph.ts` (via fake 2D canvas recorder in `test/mock-socialcalc.ts`). Thresholds restored to 100/100/100/100. 190/190 passing; typecheck + Vite build clean (20.3 kB). Three `/* istanbul ignore next */` markers on `labels[i] ?? ''` fallbacks in the chart drawers where `labels.length === values.length` by `collectValues` invariant. | 30916d8, 78fd477 |
 
 ---
 
