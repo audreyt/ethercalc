@@ -15,7 +15,44 @@
     * [Socialtext](http://www.socialtext.com/)
     * [Drupal](https://drupal.org/project/sheetnode)
 
-## Installation
+## Self-hosting without a Cloudflare account
+
+The TypeScript rewrite runs on the Cloudflare stack (Hono + Workers +
+Durable Objects + D1 + KV + R2) **but also self-hosts** via Miniflare in
+a single container. No Cloudflare account required.
+
+    git clone https://github.com/audreyt/ethercalc
+    cd ethercalc
+    docker compose up -d
+
+That boots the Miniflare-backed worker on `http://localhost:8000` and
+persists all spreadsheet state to `./ethercalc-data/` in the repo.
+
+### Environment variables
+
+Override defaults by exporting these before `docker compose up`:
+
+| Variable              | Default     | Effect                                            |
+| --------------------- | ----------- | ------------------------------------------------- |
+| `ETHERCALC_PORT`      | `8000`      | Listening port (remaps container bind).           |
+| `ETHERCALC_HOST`      | `0.0.0.0`   | Listening address.                                |
+| `ETHERCALC_KEY`       | *(unset)*   | HMAC secret; enables read-only vs. edit auth.     |
+| `ETHERCALC_CORS`      | *(unset)*   | `1` enables permissive CORS headers.              |
+| `ETHERCALC_BASEPATH`  | *(unset)*   | URL prefix, e.g. `/ethercalc` behind a proxy.     |
+| `ETHERCALC_EXPIRE`    | *(unset)*   | Seconds of inactivity before a room is pruned.    |
+
+### CLI usage
+
+For non-Docker runs (local dev, systemd, etc.) use the `bin/ethercalc`
+wrapper. It accepts the legacy `--key`/`--cors`/`--port`/`--host`/
+`--expire`/`--basepath` flags and forwards them to `wrangler dev` + the
+Miniflare env. Run `bin/ethercalc --help` for the full flag table.
+
+TLS flags `--keyfile`/`--certfile` print a warning — `wrangler dev` does
+not currently expose them. Terminate TLS at a reverse proxy in front of
+the container (nginx/caddy/traefik).
+
+## Installation (legacy — Redis-backed, pre-rewrite)
 
 For global installation (may need root)
 
