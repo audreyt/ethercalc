@@ -150,6 +150,8 @@ describe('buildTemplateFormRedirect', () => {
       idGen: fixedId,
       phase5Ready: true,
     });
-    if (r.status === 302) expect(r.headers.Location.startsWith('/t_')).toBe(true);
+    if (r.status === 302) {
+      expect((r.headers.Location ?? '').startsWith('/t_')).toBe(true);
+    }
   });
 });

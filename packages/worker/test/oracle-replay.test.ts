@@ -52,8 +52,36 @@ const MODULES = (import.meta as unknown as ImportMetaGlob).glob(
   { eager: true, import: 'default' },
 ) as Record<string, RecordedFile>;
 
-/** Mirror of oracle-harness `VOLATILE_HEADERS`. */
-const VOLATILE = new Set(['date', 'server', 'etag', 'x-powered-by', 'connection']);
+/**
+ * Mirror of oracle-harness `VOLATILE_HEADERS`, extended with a small
+ * set of Express-static / platform-static implementation-detail headers
+ * that aren't part of our compatibility contract:
+ *
+ *   - `accept-ranges`: Express emits `bytes` on every static file;
+ *     Workers Assets doesn't advertise range support and the spec says
+ *     the absence is equivalent to `none`. Not semantic.
+ *   - `cache-control`: Express emits `public, max-age=0`; Workers Assets
+ *     emits `public, max-age=0, must-revalidate`. Caching policy is a
+ *     deployment knob tuned to the serving platform.
+ *   - `last-modified`: already flagged "semi-volatile" in §4.4 (tied to
+ *     docker image build mtime). Dropping here keeps fixtures portable
+ *     across rebuilds.
+ *   - `content-length`: Express pre-computes from the file, Workers
+ *     Assets streams (no CL emitted). Body equivalence is asserted by
+ *     the body matcher — CL would be a duplicate check, not a semantic
+ *     one, and the lack of it is a transport-layer choice.
+ */
+const VOLATILE = new Set([
+  'date',
+  'server',
+  'etag',
+  'x-powered-by',
+  'connection',
+  'accept-ranges',
+  'cache-control',
+  'last-modified',
+  'content-length',
+]);
 
 function normalizeHeaders(h: Headers): Record<string, string> {
   const out: Record<string, string> = {};
@@ -120,8 +148,23 @@ async function replayAgainstWorker(scenario: HttpScenario): Promise<{
 }
 
 /**
- * Scenarios that Phase 4 is expected to pass. Everything else in the
- * recorded set depends on phases 5/8/11 (room CRUD, exports, assets).
+ * Scenarios that Phase 4 (stateless) and Phase 4.1/11 (curated assets)
+ * are expected to pass. Everything else in the recorded set depends on
+ * phases 5/8 (room CRUD, exports).
+ *
+ * The 3 static-asset scenarios below go green once the Phase 4.1/11
+ * curated `assets/` dir + `[assets]` binding are wired in `wrangler.toml`
+ * (vitest-pool-workers auto-populates `env.ASSETS` from the block). Body
+ * matchers are `exact` for HTML pages and JS files; every fixture's
+ * `Content-Type` matches the binding's own response headers.
+ *
+ * `static/get-favicon` is intentionally excluded. The legacy oracle
+ * emits `Content-Type: text/html; charset=utf-8` for `.ico` bytes, which
+ * is a known Express-static bug (it only registers `.html` in its mime
+ * table and falls back to html for anything else not auto-detected). Our
+ * Workers Assets correctly sends `image/vnd.microsoft.icon`. Per §13 Q1
+ * (sensible fixes allowed), preserving the wrong CT would be
+ * strict-preservation; we diverge on purpose and document in FINDINGS.
  */
 const PHASE4_EXPECTED_PASS = [
   'misc/get-new-redirect',
@@ -129,9 +172,12 @@ const PHASE4_EXPECTED_PASS = [
   'misc/get-view-no-key-redirect',
   'misc/get-etc-foo-404',
   'misc/get-var-foo-404',
+  'static/get-root-index',
+  'static/get-start',
+  'static/get-socialcalc-js',
 ] as const;
 
-describe('oracle replay — Phase 4 subset', () => {
+describe('oracle replay — Phase 4 + 4.1/11 subset', () => {
   const scenarios: HttpScenario[] = Object.values(MODULES).map((m) => m.scenario);
   it('loaded recorded fixtures via import.meta.glob', () => {
     expect(scenarios.length).toBeGreaterThanOrEqual(PHASE4_EXPECTED_PASS.length);
@@ -148,16 +194,16 @@ describe('oracle replay — Phase 4 subset', () => {
     });
   }
 
-  // Meta-check: we committed to "at least 4 of 13" in the Phase 4 spec.
-  // Assert the actual pass count so a regression surfaces as a drop in
-  // this number rather than silently falling below the floor.
-  it('at least 4 of the recorded scenarios pass against the new worker', async () => {
+  // Meta-check: Phase 4.1/11 bumps the floor from 4 to 8. Any drop
+  // below that surfaces as a test failure rather than a silent
+  // regression.
+  it('at least 8 of the recorded scenarios pass against the new worker', async () => {
     let pass = 0;
     for (const scenario of scenarios) {
       const r = await replayAgainstWorker(scenario);
       if (r.ok) pass++;
     }
-    expect(pass).toBeGreaterThanOrEqual(4);
+    expect(pass).toBeGreaterThanOrEqual(8);
     // Also record the upper bound so FINDINGS.md stays in sync.
     expect(pass).toBeLessThanOrEqual(scenarios.length);
   });
