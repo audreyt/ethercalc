@@ -239,3 +239,84 @@ Phase 5 enables the four rooms-index + exists fixtures:
 The 4 remaining (`static/*`) still need the ASSETS binding (Phase 11).
 `test/oracle-replay.test.ts` asserts ≥9 passes and explicitly names
 the 9 expected-pass scenarios.
+
+## Phase 6
+
+### F-P6-01 — xlsx POST body decoder deferred to Phase 8
+
+The legacy POST `/_/:room` path at src/main.ls:332-343 decoded xlsx/ods
+request bodies via `J.utils.to_socialcalc(J.read buf)` and emitted a
+synthetic `loadclipboard <...>` command that reused the
+clipboard-paste pipeline. Porting that decoder requires either:
+
+1. Use SheetJS (`xlsx` npm) under `nodejs_compat` to read the first
+   sheet and emit a SocialCalc clipboard-format string
+   `cell:A1:t:<v>\ncell:A2:t:<v>\n…\ncopiedfrom:A1:B3\n`. Prototyped
+   shape but not implemented.
+2. Defer the full xlsx decode pipeline to Phase 8 alongside the
+   EXPORT side (which also needs xlsx/ods).
+
+Phase 6 ships option (2): xlsx/ods POST bodies return 501 at the HTTP
+layer with "xlsx import lands in Phase 8" (same message as PUT).
+Tracked in `src/handlers/post-command.ts` kind `xlsx-deferred`.
+Phase 8 must port the J-lib decoder OR use SheetJS.
+
+### F-P6-02 — Multi-cascade rename is cross-DO
+
+Legacy's `set A\d+:B\d+ empty multi-cascade` (src/main.ls:425-436)
+ran inside one Redis — it's a pure key-rename. In the DO world each
+"room" IS its own DO, so the equivalent is a cross-DO state transfer.
+
+Design shipped in Phase 6 (two DO-internal endpoints on RoomDO):
+
+- **`POST /_do/rename`** (runs on source): reads own snapshot + log +
+  audit, fetches sibling `POST /_do/install`, then deleteAlls own
+  storage. Returns 201 on success, 204 if source had no snapshot
+  (legacy's `if snapshot` guard), 502 if sibling install failed.
+- **`POST /_do/install`** (target-side receiver): accepts
+  `{snapshot, log, audit}`, wipes own storage, re-indexes seq
+  counters. Never called by the Worker-level HTTP surface directly.
+
+Chat and ecell are NOT carried over — legacy kept those under
+distinct Redis key prefixes that stayed with the original room
+identity, and nothing in the rename trick referenced them.
+
+The Worker-level glue in `src/routes/rooms.ts` POST `/_/:room`
+reads the current room's snapshot, greps
+`cell:<ref>:t:/(.+)` out of it to find the foreign room name, and
+calls `/_do/rename {to: <foreign>.bak}` on that foreign DO. Errors
+(snapshot 404, cell line absent, rename 5xx) are swallowed —
+legacy's flow proceeds to execute the command either way.
+
+### F-P6-03 — text-wiki filter short-circuits DO dispatch
+
+Legacy's `set sheet defaulttextvalueformat text-wiki` filter lived
+on the WS `execute` path at src/main.ls:506-507. For symmetry (and
+because the POST endpoint executes the same command stream), the
+Phase 6 HTTP handler filters it too — returning 202 with the
+original command echoed but skipping the DO dispatch entirely.
+
+If a client nests the banned command inside a JSON array, the
+filter does NOT unpack and scan array members — only the string
+form gets caught. This matches legacy's surface-only behavior.
+
+### F-P6-04 — `?row=N` falsiness matches legacy `parseInt(...)`
+
+Legacy used `if parseInt(@query.row)` — falsy for `NaN`, `0`, and
+(LiveScript-idiom) empty string. The Phase 6 port uses
+`Number(c.req.query('row'))` then checks `Number.isFinite && !== 0`.
+That rejects NaN, 0, and Infinity/-Infinity, accepts negative
+finite numbers (as legacy did with `parseInt('-1')` === -1,
+truthy). `?row=notanumber` -> NaN -> fallback to snapshot-derived
+row. Covered by `test/lib-loadclipboard.node.test.ts`.
+
+### F-P6-05 — routes-rooms-post test discovery flakiness
+
+During Phase 6 development the test file
+`test/routes-rooms-post.node.test.ts` was renamed to `.skip` by
+automated harness runs that landed between commits. The restored
+file uses `.includes('/_do/commands')` rather than `.endsWith(...)`
+to stay robust to the Phase 5.1 `?name=<room>` query param that
+`do-dispatch.ts` now appends to every DO fetch URL. When future
+phases change the dispatch layer, this test file remains stable
+as long as the path string is preserved somewhere in the URL.
