@@ -6,3 +6,4 @@ coverage/
 .wrangler/
 .vitest-cache/
 *.log
+.claude/
