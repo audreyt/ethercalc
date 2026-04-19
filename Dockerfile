@@ -41,6 +41,10 @@ ENV ETHERCALC_PORT=8000 \
     ETHERCALC_PERSIST_DIR=/data
 
 # `bin/ethercalc` is the legacy CLI entrypoint. It translates the legacy
-# flag surface (§13 Q6) into wrangler/Miniflare invocation. Running it with
-# no flags picks up the ENV defaults above.
-CMD ["bun", "bin/ethercalc"]
+# flag surface (§13 Q6) into wrangler/Miniflare invocation.
+#
+# We pass explicit --port/--host/--persist-to because wrangler dev's
+# defaults are 127.0.0.1:8787 (not reachable from outside the container)
+# and ephemeral state. Users can still override at `docker run` time by
+# supplying their own argv.
+CMD ["bun", "bin/ethercalc", "--port", "8000", "--host", "0.0.0.0", "--persist-to", "/data"]

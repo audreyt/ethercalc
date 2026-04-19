@@ -34,6 +34,7 @@ jobs:
           bun run --cwd packages/client typecheck
           bun run --cwd packages/client-multi typecheck
           bun run --cwd packages/oracle-harness typecheck
+          bun run --cwd packages/cli typecheck
 
       - name: shared — tests + 100% coverage gate
         run: bun run --cwd packages/shared test:coverage
@@ -65,6 +66,9 @@ jobs:
       - name: oracle-harness — tests + 100% coverage gate
         run: bun run --cwd packages/oracle-harness test:coverage
 
+      - name: cli — tests + 100% coverage gate
+        run: bun run --cwd packages/cli test:coverage
+
       - name: Upload coverage artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -76,5 +80,22 @@ jobs:
             packages/client/coverage/
             packages/client-multi/coverage/
             packages/oracle-harness/coverage/
+            packages/cli/coverage/
           retention-days: 7
           if-no-files-found: ignore
+
+  build-selfhost:
+    name: build:selfhost — docker image + smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: test
+    # Mirrors CLAUDE.md §11.1 item 10. Uses the Dockerfile + docker-compose
+    # at the repo root and hits /_health via scripts/smoke-selfhost.sh.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Smoke — build image, compose up, curl /_health, compose down
+        run: ./scripts/smoke-selfhost.sh
