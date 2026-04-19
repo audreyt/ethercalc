@@ -370,11 +370,14 @@ describe('RoomDO (unit, direct construction)', () => {
     expect(body).toEqual({ exists: 1 });
   });
 
-  it('GET /_do/cells returns the full cells hash', async () => {
+  it('GET /_do/cells returns the full cells hash (unwrapped)', async () => {
+    // Legacy (src/sc.ls:361) returned `JSON.stringify(ss.sheet.cells)` —
+    // the cells map directly, not `{cells: ...}`. Clients destructure
+    // `response.A1.datavalue` etc.
     const res = await room.fetch(new Request('https://do/_do/cells'));
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { cells: Record<string, unknown> };
-    expect(body.cells).toEqual({ A1: 1 });
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toEqual({ A1: 1 });
   });
 
   it('GET /_do/cells/:cell returns a single cell record', async () => {

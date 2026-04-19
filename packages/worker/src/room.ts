@@ -288,7 +288,10 @@ export class RoomDO implements DurableObject {
 
   async #getCells(): Promise<Response> {
     const ss = await this.#getSpreadsheet();
-    return jsonResponse({ cells: ss.exportCells() });
+    // Legacy (src/sc.ls:361): `JSON.stringify(window.ss.sheet.cells)`.
+    // Unwrapped — not `{cells: ...}`. External clients parse the map
+    // directly as `response.A1.datavalue`, etc.
+    return jsonResponse(ss.exportCells());
   }
 
   async #getCell(coord: string): Promise<Response> {

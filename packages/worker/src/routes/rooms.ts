@@ -213,6 +213,34 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
     return sizedResponse(body, 200, TEXT_CT);
   });
 
+  // ─── GET /_/:room/cells (full cell map JSON) ───────────────────────
+  //
+  // Legacy `src/main.ls` mapped this to `JSON.stringify(ss.sheet.cells)`.
+  // The DO exposes the same via `/_do/cells`. Must register BEFORE the
+  // `/_/:room/cells/:cell` route so Hono picks the trailing-slashless
+  // literal before the param form.
+  app.get('/_/:room/cells', async (c) => {
+    const room = c.req.param('room') ?? '';
+    const res = await doFetch(c.env, room, '/_do/cells');
+    const body = await res.text();
+    return new Response(body, {
+      status: res.status,
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    });
+  });
+
+  // ─── GET /_/:room/cells/:cell (single cell JSON) ───────────────────
+  app.get('/_/:room/cells/:cell', async (c) => {
+    const room = c.req.param('room') ?? '';
+    const cell = c.req.param('cell') ?? '';
+    const res = await doFetch(c.env, room, `/_do/cells/${encodeURIComponent(cell)}`);
+    const body = await res.text();
+    return new Response(body, {
+      status: res.status,
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    });
+  });
+
   // ─── DELETE /_/:room ───────────────────────────────────────────────
   app.delete('/_/:room', async (c) => {
     const room = c.req.param('room') ?? '';

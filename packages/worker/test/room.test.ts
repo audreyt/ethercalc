@@ -109,7 +109,10 @@ describe('RoomDO (integration via DO namespace)', () => {
     });
     const cellsRes = await stub.fetch('https://do/_do/cells');
     expect(cellsRes.status).toBe(200);
-    const { cells } = (await cellsRes.json()) as { cells: Record<string, unknown> };
+    // Legacy (src/sc.ls:361) returns the cells map unwrapped — external
+    // API clients (sheetnode, ethercalc-cli) destructure `response.A1`,
+    // not `response.cells.A1`.
+    const cells = (await cellsRes.json()) as Record<string, unknown>;
     expect(cells['A1']).toBeDefined();
   });
 
