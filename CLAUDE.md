@@ -820,16 +820,17 @@ To resume work:
 ### 16.A — socialcalc-in-DO prototype — RESOLVED 2026-04-19; source swapped to `audreyt/socialcalc` 2026-04-20
 
 **2026-04-20 update.** The `socialcalc` dep now resolves to
-`github:audreyt/socialcalc#<sha>` — a strict-mode-clean, Bun + tsgo port of
+`github:audreyt/socialcalc#4463d50` — a strict-mode-clean, Bun + tsgo port of
 2.3.0. Upstream fixes subsume transform #3 (already emits
 `factory.call(root, root)`) and the ES5 `delete varname;` / reserved-`eval`
 rewrites the generator used to do by hand. `scripts/build.js` now applies only
 transforms #1 and #2 below plus one new wrapper rewrite (`globalThis` fallback
-→ `this`) so the host-binding IIFE still captures `root`. The implicit-globals
-var pre-declaration in the IIFE is retained as a runtime workaround: upstream
-is strict-mode clean at the build level (tsgo passes) but a handful of
-functions — notably the `paste` path — still assign to undeclared identifiers
-at runtime. Drop when those are fixed upstream.
+→ `this`) so the host-binding IIFE still captures `root`. **The
+implicit-globals pre-declaration workaround has been removed**: we fixed the
+underlying `var`-less assignments in the upstream source (paste cascade,
+render path, format parser, MIME decoder) so every undeclared identifier
+that previously leaked to globalThis now gets a proper per-function binding.
+See `audreyt/socialcalc@4463d50`.
 
 
 
