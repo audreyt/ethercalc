@@ -213,12 +213,19 @@ export interface WsScenario {
 
 ### 4.4 Normalization rules
 
-- Drop headers: `Date`, `Server`, `ETag`, `X-Powered-By`, `Connection`.
-- HTML: parse via `linkedom`, re-serialize, compare DOM tree ignoring whitespace-only text nodes.
-- XLSX: unzip, sort entries by name, compare each XML after canonical re-formatting.
-- ODS: same as XLSX.
-- SocialCalc save: ignore the `version:…` line and any ordering of metadata sections; compare the `sheet:` and `cell:` lines exactly.
-- CSV/JSON/Markdown: exact bytes.
+- Drop headers: `Date`, `Server`, `ETag`, `X-Powered-By`, `Connection`. `Last-Modified` is semi-volatile (tied to docker image build mtime) — relax via `re:<regex>` matcher when it shows up in a recording.
+- **HTML** (`packages/oracle-harness/src/html-canonical.ts`): parse via linkedom, then drop:
+  - HTML comments
+  - whitespace-only text nodes
+  - `id` attributes matching `/^(SocialCalc|[a-f0-9-]{32,})/`
+  - referrer attributes pointing at a dropped id: `for`, `aria-labelledby`, `aria-controls`, `aria-describedby`, `headers`, `form`, `list`, and `href="#volatileId"`.
+  - Attributes sorted alphabetically on re-serialization. Note: linkedom's `setAttribute` prepends, so sorting is done reverse-alpha before re-insertion.
+- **XLSX** (`packages/oracle-harness/src/zip-canonical.ts`): unzip via fflate, sort entries by path, canonicalize each XML, hex-compare binary entries. Volatile element drops:
+  - `docProps/core.xml`: `dcterms:created`, `dcterms:modified`, `cp:lastModifiedBy`, `cp:revision`
+  - `docProps/app.xml`: `AppVersion`, `TotalTime`
+- **ODS**: same pipeline as XLSX. `meta.xml` drops: `meta:creation-date`, `dc:date`, `meta:editing-duration`, `meta:editing-cycles`, `meta:generator`, `dc:creator`. Requires depth-walking since metadata nests under `<office:meta>`.
+- **SocialCalc save**: ignore the `version:…` line and any ordering of metadata sections; compare the `sheet:` and `cell:` lines exactly.
+- **CSV/JSON/Markdown**: exact bytes.
 - Socket IDs, timestamps, UUIDs, HMACs: replaced with `__PLACEHOLDER__` during comparison.
 
 ---
@@ -518,7 +525,7 @@ Goal: prove Plan A works (SocialCalc loads and executes in workerd).
 - [ ] `exportCells`, `exportCell`.
 - [ ] `xlsx`/`ods`/`fods`/`md` via `j` lib or `xlsx`+`ods` on nodejs_compat.
 - [ ] Multi-sheet `PUT /=:room.xlsx` and `GET /_/=:room/xlsx`.
-- [x] **Phase 8a (matchers) partial** — `html` matcher in `packages/oracle-harness/src/matchers.ts` via linkedom; 127 tests, 100% coverage. `xlsx`/`ods` still throw "not implemented" — agent in flight will complete.
+- [x] **Phase 8a (matchers) DONE** — `html` (linkedom), `xlsx` (fflate + xml canon), `ods` (same + meta.xml walk) in `packages/oracle-harness/src/matchers.ts`. 158 tests, 100% coverage. Drop lists documented in §4.4.
 - [ ] Structural equality oracle tests wired to actual export responses (depends on Phase 5 room CRUD delivering `GET /_/:room/html` etc).
 
 ### Phase 9 — Cron & email
@@ -741,6 +748,7 @@ Append one entry per session you work on this. Keep it short. Use this for conte
 | 2026-04-19 | 3     | **Phase 3 agent merged.** `packages/oracle-harness/` + `tests/oracle/` docker stack pinned to `042b731`. 102/102 tests, 100% coverage. 13 stateless scenarios recorded (oracle self-replay green). 9 FINDINGS documented (identity-HMAC when KEY unset, bare boolean `/_exists/:room` response, semi-volatile `Last-Modified`, fetch auto-redirect gotcha). html/xlsx/ods matchers throw "not implemented — Phase 8". | 4a52b96, 2d06bc3, 99932e3 |
 | 2026-04-19 | 10    | **Phase 10 agent merged.** `packages/client/` Vite + TS port of `player*.ls`. Agent crashed mid-final-report but delivered: 78/78 tests, typecheck clean, Vite build 20.3 kB. Coverage gate temporarily relaxed to 99/95/90/99 on this package — three uncovered edge branches (main.ts `parts.edit` loader fallback, applyFormDataLog `parts.sheet`=false path, callbacks `delete` branch) to be closed in Phase 10.1 follow-up. | a203aeb |
 | 2026-04-19 | 4/8a/10.1/11a | **Second parallel wave merged.** Four agents ran in parallel worktrees: P4 stateless HTTP (Hono wiring + auth + redirects + 5/13 oracle scenarios, 45 Node tests at 100% coverage); P8a-partial html matcher via linkedom (127 tests total, 100%); P10c coverage closeout (client back to 100/100/100/100 on gated files); P11a Miniflare docker + `bin/ethercalc` CLI + `packages/cli` (55 tests, 100%) + CI build-selfhost job + README self-host section. 395+ tests green across 7 packages. §6.4 clarified: `verifyAuth('0')` must reject unconditionally because identity-HMAC makes `computeAuth(undefined,'0') === '0'`. §6.1 clarified: `/etc/*` 404 CT is `text/html` not `text/plain`. | many |
+| 2026-04-19 | 8a    | **Phase 8a DONE.** P8a agent merged the xlsx + ods matchers on top of the earlier html merge. fflate + canonicalize-each-XML pipeline. 158 oracle-harness tests, 100% coverage. Volatile element drop lists surfaced and documented in §4.4 (docProps/core.xml + app.xml for xlsx, meta.xml for ods, id referrers + comments + whitespace-only text for html). Unblocks Phase 8 export wiring. | db2d0a8, 413307a |
 
 ---
 
