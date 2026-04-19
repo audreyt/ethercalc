@@ -86,7 +86,6 @@ function binaryResponse(bytes: Uint8Array, contentType: string, status = 200): R
 
 export class RoomDO implements DurableObject {
   readonly #state: DurableObjectState;
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   readonly #env: Env;
 
   #ss: HeadlessSpreadsheet | null = null;
@@ -153,6 +152,17 @@ export class RoomDO implements DurableObject {
     }
     if (path === '/_do/fods' && request.method === 'GET') {
       return this.#getBinary('fods');
+    }
+    // ─── Phase 6: cross-DO rename primitives ─────────────────────────
+    // `set A\d+:B\d+ empty multi-cascade` in the HTTP command layer
+    // moves snapshot/log/audit from <from> into <to> and wipes <from>.
+    // `rename` runs on the source DO; `install` is the target-side
+    // receiver. Both additive; no existing path shape changes.
+    if (path === '/_do/rename' && request.method === 'POST') {
+      return this.#postRename(request);
+    }
+    if (path === '/_do/install' && request.method === 'POST') {
+      return this.#postInstall(request);
     }
     return new Response('Not implemented', { status: 501 });
   }
@@ -263,6 +273,94 @@ export class RoomDO implements DurableObject {
     const ss = await this.#getSpreadsheet();
     const bytes = csvToBinaryWorkbook(ss.exportCSV(), format);
     return binaryResponse(bytes, BINARY_CONTENT_TYPES[format]);
+  }
+
+  // ─── Rename primitives (Phase 6) ─────────────────────────────────────
+  //
+  // Legacy `set A\d+:B\d+ empty multi-cascade` (src/main.ls:425-436)
+  // renamed the Redis keys `snapshot-<from>` -> `snapshot-<from>.bak`
+  // plus the `log-*` and `audit-*` siblings, then re-ran the command.
+  // In the DO world each "room" IS its own DO, so the equivalent is a
+  // cross-DO state transfer orchestrated by the source DO.
+  //
+  // Design:
+  //   POST /_do/rename body {to}  -- runs on source, dumps own
+  //     snapshot/log/audit, fetches target's POST /_do/install with
+  //     those as JSON, then deleteAll's own storage.
+  //   POST /_do/install body {snapshot, log, audit}  -- wipes own
+  //     storage and installs the payload verbatim.
+  //
+  // Chat and ecell are NOT carried over (legacy kept those under
+  // different Redis prefixes so they stayed with the original room's
+  // logical identity).
+
+  async #postRename(request: Request): Promise<Response> {
+    const parsed = (await request.json()) as { to?: unknown };
+    const to = parsed.to;
+    if (typeof to !== 'string' || to.length === 0) {
+      return new Response('rename body must be {to: string}', { status: 400 });
+    }
+    const [snapshot, log, audit] = await Promise.all([
+      this.#state.storage.get<string>(STORAGE_KEYS.snapshot),
+      this.#listPrefix(STORAGE_KEYS.logPrefix),
+      this.#listPrefix(STORAGE_KEYS.auditPrefix),
+    ]);
+    if (snapshot === undefined || snapshot === null) {
+      // No-op: legacy `if snapshot` guard at main.ls:427 -- nothing to rename.
+      return new Response(null, { status: 204 });
+    }
+    const targetStub = this.#env.ROOM.get(this.#env.ROOM.idFromName(to));
+    const installRes = await targetStub.fetch('https://do.local/_do/install', {
+      method: 'POST',
+      body: JSON.stringify({ snapshot, log, audit }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    if (!installRes.ok) {
+      return new Response(`install failed: ${installRes.status}`, { status: 502 });
+    }
+    await this.#state.blockConcurrencyWhile(async () => {
+      await this.#state.storage.deleteAll();
+      this.#ss = null;
+      this.#nextLogSeq = 0;
+      this.#nextAuditSeq = 0;
+      this.#nextChatSeq = 0;
+    });
+    return plainResponse('OK', 201);
+  }
+
+  async #postInstall(request: Request): Promise<Response> {
+    const parsed = (await request.json()) as {
+      snapshot?: unknown;
+      log?: unknown;
+      audit?: unknown;
+    };
+    if (typeof parsed.snapshot !== 'string') {
+      return new Response('install body.snapshot must be string', { status: 400 });
+    }
+    const log = Array.isArray(parsed.log) ? (parsed.log as unknown[]) : [];
+    const audit = Array.isArray(parsed.audit) ? (parsed.audit as unknown[]) : [];
+    if (!log.every((e) => typeof e === 'string')) {
+      return new Response('install body.log must be string[]', { status: 400 });
+    }
+    if (!audit.every((e) => typeof e === 'string')) {
+      return new Response('install body.audit must be string[]', { status: 400 });
+    }
+    await this.#state.blockConcurrencyWhile(async () => {
+      await this.#state.storage.deleteAll();
+      await this.#state.storage.put(STORAGE_KEYS.snapshot, parsed.snapshot as string);
+      await this.#state.storage.put(STORAGE_KEYS.metaUpdatedAt, Date.now());
+      for (let i = 0; i < log.length; i++) {
+        await this.#state.storage.put(logKey(i), log[i] as string);
+      }
+      for (let i = 0; i < audit.length; i++) {
+        await this.#state.storage.put(auditKey(i), audit[i] as string);
+      }
+      this.#ss = null;
+      this.#nextLogSeq = log.length;
+      this.#nextAuditSeq = audit.length;
+      this.#nextChatSeq = 0;
+    });
+    return plainResponse('OK', 201);
   }
 
   // ─── Internals ─────────────────────────────────────────────────────────
