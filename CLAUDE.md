@@ -528,12 +528,14 @@ Goal: prove Plan A works (SocialCalc loads and executes in workerd).
 - [ ] Served by Workers Assets.
 - [ ] Playwright: open room, type, reload, export → passes.
 
-### Phase 10b — `multi/` React 18 port (§13 Q2)
-- [ ] New package `packages/client-multi/` — React 18 + TypeScript + Vite.
-- [ ] Port `multi/main.ls`, `multi/foldr.ls`, `multi/styles.styl` to TSX + CSS modules.
-- [ ] Replace `react-basic-tabs` with a modern tabs library (Radix UI or similar).
-- [ ] Preserves `/=:room` URL scheme and TOC-sheet semantics from current impl.
-- [ ] Playwright: create multi-sheet, add/rename/delete sub-sheets, export all → passes.
+### Phase 10b — `multi/` React 18 port (§13 Q2) — DONE (except Playwright)
+- [x] New package `packages/client-multi/` — React 18 + TypeScript + Vite.
+- [x] Port `multi/main.ls`, `multi/foldr.ls`, `multi/styles.styl` to TSX + CSS modules (pixel-perfect).
+- [x] `@radix-ui/react-tabs` picked — `data-state` selectors let legacy class-based CSS map 1:1.
+- [x] `/=:room` URL scheme + readonly detection + `history.pushState` preserved.
+- [x] 89 tests, 100% coverage on `src/Foldr.ts`, `src/state.ts`, `src/url.ts`, `src/components/**`. `src/App.tsx` and `src/main.tsx` excluded from gate (exercised by Playwright in Phase 11).
+- [x] Preserved legacy quirks: `HackFoldr.push` double-seed-row write; `/=<room>` regex `[^_]` rule blocks `/=_*`; `init(null)` reachable via flag race.
+- [ ] Playwright: create multi-sheet, add/rename/delete sub-sheets, export all → passes. *(deferred to Phase 11)*
 
 ### Phase 11 — Self-host & legacy compat
 - [ ] **Miniflare docker image** — new `Dockerfile` + `docker-compose.yml` running Miniflare with mounted volume for D1/KV/R2/DO persistence (§13 Q5).
@@ -721,6 +723,7 @@ Append one entry per session you work on this. Keep it short. Use this for conte
 | 2026-04-19 | 2     | **Phase 2 done.** `packages/worker/` scaffolded: Hono + DO + bun workspaces + Wrangler + CI. Split testing strategy formalized (§5.1/5.2): `.node.test.ts` in Node env with 100% istanbul gate on `src/handlers/**`, `src/lib/**`, `src/room.ts`; `.test.ts` in workerd via vitest-pool-workers without coverage gate because neither istanbul nor v8 trace workerd-bundled code end-to-end. GitHub Actions CI wires typecheck + both test suites + wrangler dry-run. | —       |
 | 2026-04-19 | —     | `packages/shared/` contracts committed as the stable target for parallel agent work. WS messages, DO storage keys, oracle scenario schemas. 100% coverage. Dispatched 4 parallel worktree agents: P3 (oracle harness), P10 (single-sheet client), P10b (multi/ React 18), Research (LS audit). | —       |
 | 2026-04-19 | —     | **Research agent returned.** 30 findings integrated into §6.1/§6.2/§7 items 21-30: cross-sheet formula DO-to-DO wiring, submitform+`include_self`, 8-event socket.io reconnect shim, undocumented i18n (`l10n/` 7 locales, fallback chain in index.html), bundled third-party libs, `/static/form:part.js` colon route, `panels.html`/`appeditor`, multi→single iframe postMessage. Top-5 blockers flagged as gates on Phases 7/8/10. | —       |
+| 2026-04-19 | 10b   | **Phase 10b agent merged.** `packages/client-multi/` React 18 + Radix tabs + Vite. 89/89 tests, 100% coverage on all tracked. Vite build 163 kB JS / 1.6 kB CSS. Playwright deferred to Phase 11 per §8. Preserved three legacy quirks (documented in `packages/client-multi/FINDINGS.md`). | a0ecd20 |
 
 ---
 

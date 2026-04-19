@@ -26,28 +26,42 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Typecheck (all workspaces)
+      - name: Typecheck (all packages)
         run: |
+          bun run --cwd packages/shared typecheck
           bun run --cwd packages/socialcalc-headless typecheck
           bun run --cwd packages/worker typecheck
+          bun run --cwd packages/client-multi typecheck
 
-      - name: Unit tests + 100% coverage gate (Node env)
+      - name: shared — tests + 100% coverage gate
+        run: bun run --cwd packages/shared test:coverage
+
+      - name: worker — Node tests + 100% coverage gate
         run: bun run --cwd packages/worker test:coverage
 
-      - name: Worker integration tests (workerd via miniflare)
+      - name: worker — integration tests (workerd via miniflare)
         run: bun run --cwd packages/worker test:workers
 
-      - name: socialcalc-headless smoke tests (workerd)
-        run: bun run --cwd packages/socialcalc-headless test
-
-      - name: Wrangler dry-run build
+      - name: worker — wrangler dry-run build
         run: bun run --cwd packages/worker build:dry
 
-      - name: Upload coverage artifact
+      - name: socialcalc-headless — smoke tests (workerd)
+        run: bun run --cwd packages/socialcalc-headless test
+
+      - name: client-multi — tests + 100% coverage gate
+        run: bun run --cwd packages/client-multi test:coverage
+
+      - name: client-multi — Vite build
+        run: bun run --cwd packages/client-multi build
+
+      - name: Upload coverage artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-lcov
-          path: packages/worker/coverage/
+          path: |
+            packages/shared/coverage/
+            packages/worker/coverage/
+            packages/client-multi/coverage/
           retention-days: 7
           if-no-files-found: ignore
