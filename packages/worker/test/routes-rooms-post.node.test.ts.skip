@@ -164,7 +164,7 @@ describe('POST /_/:room — command execution', () => {
 
   it('forwards a text/x-socialcalc command body to /_do/commands', async () => {
     const { env, calls } = makeFakeRoomNamespace((call) => {
-      if (call.url.endsWith('/_do/snapshot')) {
+      if (call.url.includes("./_do/snapshot')) {
         return new Response('', { status: 404 });
       }
       return new Response(null, { status: 202 });
@@ -188,7 +188,7 @@ describe('POST /_/:room — command execution', () => {
 
   it('auto-enriches loadclipboard with paste A2 all when snapshot is empty', async () => {
     const { env, calls } = makeFakeRoomNamespace((call) => {
-      if (call.url.endsWith('/_do/snapshot')) return new Response('', { status: 404 });
+      if (call.url.includes("./_do/snapshot')) return new Response('', { status: 404 });
       return new Response(null, { status: 202 });
     });
     const app = buildApp();
@@ -214,7 +214,7 @@ describe('POST /_/:room — command execution', () => {
 
   it('auto-enriches loadclipboard with paste A(lastrow+1) when snapshot has sheet dim', async () => {
     const { env } = makeFakeRoomNamespace((call) => {
-      if (call.url.endsWith('/_do/snapshot')) {
+      if (call.url.includes("./_do/snapshot')) {
         return new Response('version:1.5\nsheet:c:3:r:5:tvf:g\n');
       }
       return new Response(null, { status: 202 });
@@ -234,7 +234,7 @@ describe('POST /_/:room — command execution', () => {
 
   it('loadclipboard with ?row=N prepends insertrow + paste at that row', async () => {
     const { env, calls } = makeFakeRoomNamespace((call) => {
-      if (call.url.endsWith('/_do/snapshot')) {
+      if (call.url.includes("./_do/snapshot')) {
         return new Response('version:1.5\nsheet:c:3:r:5:tvf:g\n');
       }
       return new Response(null, { status: 202 });
@@ -262,7 +262,7 @@ describe('POST /_/:room — command execution', () => {
 
   it('multi-cascade: reads snapshot, matches cell:<ref>:t:/<foreign>, renames', async () => {
     const { env, calls } = makeFakeRoomNamespace((call) => {
-      if (call.url.endsWith('/_do/snapshot') && call.method === 'GET') {
+      if (call.url.includes("./_do/snapshot') && call.method === 'GET') {
         return new Response(
           'version:1.5\n' +
             'sheet:c:2:r:5:tvf:g\n' +
@@ -282,7 +282,7 @@ describe('POST /_/:room — command execution', () => {
       env as never,
     );
     expect(res.status).toBe(202);
-    const renameCall = calls.find((c) => c.url.endsWith('/_do/rename'));
+    const renameCall = calls.find((c) => c.url.includes("./_do/rename'));
     expect(renameCall).toBeDefined();
     expect(renameCall!.method).toBe('POST');
     expect(JSON.parse(renameCall!.bodyText!)).toEqual({ to: 'foreign-room.bak' });
@@ -292,7 +292,7 @@ describe('POST /_/:room — command execution', () => {
 
   it('multi-cascade: proceeds without rename when snapshot has no matching cell', async () => {
     const { env, calls } = makeFakeRoomNamespace((call) => {
-      if (call.url.endsWith('/_do/snapshot') && call.method === 'GET') {
+      if (call.url.includes("./_do/snapshot') && call.method === 'GET') {
         return new Response('version:1.5\n');
       }
       return new Response(null, { status: 202 });
@@ -307,12 +307,12 @@ describe('POST /_/:room — command execution', () => {
       env as never,
     );
     expect(res.status).toBe(202);
-    expect(calls.find((c) => c.url.endsWith('/_do/rename'))).toBeUndefined();
+    expect(calls.find((c) => c.url.includes("./_do/rename'))).toBeUndefined();
   });
 
   it('multi-cascade: proceeds without rename when snapshot is absent', async () => {
     const { env, calls } = makeFakeRoomNamespace((call) => {
-      if (call.url.endsWith('/_do/snapshot') && call.method === 'GET') {
+      if (call.url.includes("./_do/snapshot') && call.method === 'GET') {
         return new Response('', { status: 404 });
       }
       return new Response(null, { status: 202 });
@@ -327,7 +327,7 @@ describe('POST /_/:room — command execution', () => {
       env as never,
     );
     expect(res.status).toBe(202);
-    expect(calls.find((c) => c.url.endsWith('/_do/rename'))).toBeUndefined();
+    expect(calls.find((c) => c.url.includes("./_do/rename'))).toBeUndefined();
   });
 
   it('empty JSON command body returns 400', async () => {
@@ -347,7 +347,7 @@ describe('POST /_/:room — command execution', () => {
 
   it('?row=abc (non-numeric) falls back to snapshot-derived row', async () => {
     const { env } = makeFakeRoomNamespace((call) => {
-      if (call.url.endsWith('/_do/snapshot')) {
+      if (call.url.includes("./_do/snapshot')) {
         return new Response('', { status: 404 });
       }
       return new Response(null, { status: 202 });
