@@ -44,6 +44,33 @@ describe('installCallbacks', () => {
     expect(broadcasts).toContain('ask.ecell');
   });
 
+  it('DoPositionCalculations wrapper still fires ask.ecell when no original existed', () => {
+    // Covers `if (origPos) SocialCalc.OrigDoPositionCalculations = origPos;`
+    // false branch in installCallbacks.
+    const sc = makeSocialCalc();
+    delete sc.DoPositionCalculations;
+    let broadcasts: string[] = [];
+    installBroadcast(sc, (t) => broadcasts.push(t));
+    installCallbacks(sc, { broadcast: () => {} });
+    expect(sc.OrigDoPositionCalculations).toBeUndefined();
+    sc.DoPositionCalculations!.call(sc, 'arg');
+    expect(broadcasts).toContain('ask.ecell');
+  });
+
+  it('ScheduleSheetCommands wrapper installs even when no original existed', () => {
+    // Covers `if (origSched) SocialCalc.OrigScheduleSheetCommands = origSched;`
+    // false branch — optional chaining on the original must handle undefined.
+    const sc = makeSocialCalc();
+    delete sc.ScheduleSheetCommands;
+    installBroadcast(sc, () => {});
+    installCallbacks(sc, { broadcast: () => {} });
+    expect(sc.OrigScheduleSheetCommands).toBeUndefined();
+    const sheet = makeSheet();
+    sheet._room = 'r';
+    // Valid broadcast does not throw even without an original.
+    expect(() => sc.ScheduleSheetCommands!(sheet, 'recalc', false, true)).not.toThrow();
+  });
+
   it('LoadEditorSettings wires ethercalc save/load when CryptoJS is present', () => {
     const sc = makeSocialCalc();
     installBroadcast(sc, () => {});
@@ -67,6 +94,24 @@ describe('installCallbacks', () => {
     installBroadcast(sc, () => {});
     installCallbacks(sc, { broadcast: () => {} });
     expect(sc.hadSnapshot).toBe(false);
+  });
+
+  it('LoadEditorSettings: when CryptoJS present but original is missing, invocation deletes the property', () => {
+    // Covers both the `if (origLoad)` false branch at install time AND the
+    // `else delete SocialCalc.LoadEditorSettings` branch inside the wrapper.
+    const sc = makeSocialCalc();
+    delete sc.LoadEditorSettings;
+    installBroadcast(sc, () => {});
+    const CryptoJS = { MD5: (s: string) => ({ toString: () => `md5(${s})` }) };
+    installCallbacks(sc, { broadcast: () => {}, win: { CryptoJS } });
+    // Sentinel wasn't captured (there was nothing to capture).
+    expect(sc.OrigLoadEditorSettings).toBeUndefined();
+    const editor = makeEditor();
+    sc.LoadEditorSettings!(editor, 'str', null);
+    // After invocation the wrapper deleted itself (no original to restore).
+    expect(sc.LoadEditorSettings).toBeUndefined();
+    // The callbacks it installed on the editor remain usable.
+    expect(editor.SettingsCallbacks['ethercalc']).toBeDefined();
   });
 
   it('SizeSSDiv guards null / missing parentNode', () => {
@@ -278,5 +323,18 @@ describe('uninstallCallbacks', () => {
     });
     uninstallCallbacks(sc);
     expect(sc.LoadEditorSettings).toBe(origLoad);
+  });
+
+  it('skips Orig* restoration when sentinels were never populated', () => {
+    // Covers the "false" arms of the `if (SocialCalc.Orig*)` guards in
+    // uninstallCallbacks — running it on a fresh SocialCalc exercises the
+    // empty-install branches without touching the happy path.
+    const sc = makeSocialCalc();
+    // Skip installCallbacks; all Orig* remain undefined.
+    expect(() => uninstallCallbacks(sc)).not.toThrow();
+    expect(sc.OrigDoPositionCalculations).toBeUndefined();
+    expect(sc.OrigLoadEditorSettings).toBeUndefined();
+    expect(sc.OrigSizeSSDiv).toBeUndefined();
+    expect(sc.OrigScheduleSheetCommands).toBeUndefined();
   });
 });

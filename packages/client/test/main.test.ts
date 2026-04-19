@@ -382,6 +382,31 @@ describe('createDispatcher', () => {
     ).not.toThrow();
   });
 
+  it('ecell: original cr resolves but GetEditorCellElement returns undefined', () => {
+    // Covers the `if (origCell)` false branch in applyEcell — original
+    // coordinate parses fine but the cell element lookup misses.
+    const { dispatch, sc, ss } = setup();
+    sc.coordToCr = (coord) => ({ coord, row: 1, col: 1 });
+    sc.GetEditorCellElement = () => undefined;
+    ss.editor.ecell = { coord: 'A1', row: 1, col: 1 };
+    expect(() =>
+      dispatch({ type: 'ecell', room: 'room1', user: 'u', ecell: 'B1', original: 'A1' }),
+    ).not.toThrow();
+  });
+
+  it('ecell: cell already has peer class (no double-add)', () => {
+    // Covers the `cell && className.search(find) === -1` false branch in
+    // applyEcell — the regex already matches the existing className.
+    const { dispatch, sc, ss } = setup();
+    const existing = { element: { className: ' u defaultPeer' } };
+    sc.GetEditorCellElement = () => existing;
+    sc.coordToCr = (coord) => ({ coord, row: 2, col: 2 });
+    ss.editor.ecell = { coord: 'A1', row: 1, col: 1 };
+    dispatch({ type: 'ecell', room: 'room1', user: 'u', ecell: 'B2' });
+    // unchanged
+    expect(existing.element.className).toBe(' u defaultPeer');
+  });
+
   it('log: applies snapshot, schedules commands, calls addmsg', () => {
     const { host, dispatch, sc, ss } = setup();
     sc.hadSnapshot = false;
@@ -474,6 +499,124 @@ describe('createDispatcher', () => {
     });
     expect(cmds[0]).toBe('recalc\n');
     expect(viewer.loaded).toBe(true);
+  });
+
+  it('log: formDataViewer with empty snapshot skips decoding', () => {
+    // Covers applyFormDataLog `msg.snapshot` falsy branch — no DecodeSpreadsheetSave call.
+    const { host, dispatch, ss } = setup();
+    let decoded = 0;
+    const viewer = {
+      ...ss,
+      _room: 'room1_formdata',
+      loaded: false,
+      sheet: { ...ss.sheet, ResetSheet: () => {} },
+      context: { sheetobj: { ...ss.context.sheetobj } },
+    } as unknown as NonNullable<SpreadsheetLike['formDataViewer']>;
+    ss.formDataViewer = viewer;
+    ss.DecodeSpreadsheetSave = () => {
+      decoded++;
+      return undefined;
+    };
+    host.SocialCalc.Callbacks.broadcast = () => {};
+    dispatch({
+      type: 'log',
+      room: 'room1_formdata',
+      log: [],
+      chat: [],
+      snapshot: '',
+    });
+    expect(decoded).toBe(0);
+    expect(viewer.loaded).toBe(true);
+  });
+
+  it('log: formDataViewer with parts but no .sheet key skips ParseSheetSave', () => {
+    // Covers applyFormDataLog `parts.sheet`-false branch — the
+    // spreadsheet decoder returns an object without a .sheet key (rare but
+    // observed when snapshot has only an edit section).
+    const { host, dispatch, ss } = setup();
+    const viewer = {
+      ...ss,
+      _room: 'room1_formdata',
+      loaded: false,
+      sheet: { ...ss.sheet, ResetSheet: () => {} },
+      context: { sheetobj: { ...ss.context.sheetobj } },
+      ParseSheetSave: () => {
+        parsed++;
+      },
+      DecodeSpreadsheetSave: () => ({ edit: { start: 0, end: 3 } }),
+    } as unknown as NonNullable<SpreadsheetLike['formDataViewer']>;
+    ss.formDataViewer = viewer;
+    // IMPORTANT: the `ss` host also needs the same override so applyFormDataLog
+    // sees `parts` without a sheet key.
+    ss.DecodeSpreadsheetSave = () => ({ edit: { start: 0, end: 3 } });
+    let parsed = 0;
+    const cmds: string[] = [];
+    viewer.context.sheetobj.ScheduleSheetCommands = (c: string) => {
+      cmds.push(c);
+    };
+    host.SocialCalc.Callbacks.broadcast = () => {};
+    dispatch({
+      type: 'log',
+      room: 'room1_formdata',
+      log: [],
+      chat: [],
+      snapshot: 'EDITonly',
+    });
+    // No ParseSheetSave and no recalc schedule because parts.sheet is absent.
+    expect(parsed).toBe(0);
+    expect(cmds).toHaveLength(0);
+    // But the viewer still flips loaded + ResetSheet runs.
+    expect(viewer.loaded).toBe(true);
+  });
+
+  it('log: applies edit section even when sheet section is absent', () => {
+    // Covers applyLog `parts.sheet`-false + `parts.edit`-true branch. Also
+    // asserts that the default LoadEditorSettings is used when present.
+    const { host, dispatch, sc, ss } = setup();
+    sc.hadSnapshot = false;
+    let loaderCalls = 0;
+    sc.LoadEditorSettings = () => {
+      loaderCalls++;
+    };
+    ss.DecodeSpreadsheetSave = () => ({ edit: { start: 2, end: 6 } });
+    let resetCount = 0;
+    ss.sheet.ResetSheet = () => {
+      resetCount++;
+    };
+    const cmds: string[] = [];
+    ss.context.sheetobj.ScheduleSheetCommands = (c) => cmds.push(c);
+    host.addmsg = () => {};
+    dispatch({
+      type: 'log',
+      room: 'room1',
+      log: [],
+      chat: [],
+      snapshot: 'EDITsection',
+    });
+    expect(loaderCalls).toBe(1);
+    expect(resetCount).toBe(0);
+    expect(cmds).toContain('recalc\n');
+  });
+
+  it('log: parts.edit with no SocialCalc.LoadEditorSettings falls back to noop arrow', () => {
+    // Covers the fallback `(() => {})` arrow on the `??` operator in
+    // `applyLog` when `SocialCalc.LoadEditorSettings` is undefined.
+    const { host, dispatch, sc, ss } = setup();
+    sc.hadSnapshot = false;
+    delete sc.LoadEditorSettings;
+    ss.DecodeSpreadsheetSave = () => ({ edit: { start: 0, end: 3 } });
+    const cmds: string[] = [];
+    ss.context.sheetobj.ScheduleSheetCommands = (c) => cmds.push(c);
+    host.addmsg = () => {};
+    dispatch({
+      type: 'log',
+      room: 'room1',
+      log: [],
+      chat: [],
+      snapshot: 'EDITonly',
+    });
+    // Fallback arrow is a no-op; schedule still fires.
+    expect(cmds).toContain('recalc\n');
   });
 
   it('snapshot: applies when a sheet section is decoded', () => {
