@@ -24,6 +24,7 @@ import {
   type EmailSender,
   StubEmailSender,
 } from '../lib/email.ts';
+import { withCronSchema } from '../lib/d1-schema.ts';
 import type { Env } from '../env.ts';
 
 /**
@@ -42,26 +43,28 @@ export async function upsertCronTriggers(
   cell: string,
   times: readonly number[],
 ): Promise<void> {
-  const del = db
-    .prepare('DELETE FROM cron_triggers WHERE room = ?1 AND cell = ?2')
-    .bind(room, cell);
-  // Deduplicate times to keep the PK stable under repeat values from
-  // the client. `Set` preserves insertion order; we only care about
-  // uniqueness here because the index ordering is applied at scan
-  // time by `scheduled()`.
-  const uniqueTimes = Array.from(new Set(times));
-  if (uniqueTimes.length === 0) {
-    await del.run();
-    return;
-  }
-  const insertStmt = db.prepare(
-    'INSERT OR IGNORE INTO cron_triggers (room, cell, fire_at) VALUES (?1, ?2, ?3)',
-  );
-  const batch: D1PreparedStatement[] = [del];
-  for (const t of uniqueTimes) {
-    batch.push(insertStmt.bind(room, cell, t));
-  }
-  await db.batch(batch);
+  await withCronSchema(db, async () => {
+    const del = db
+      .prepare('DELETE FROM cron_triggers WHERE room = ?1 AND cell = ?2')
+      .bind(room, cell);
+    // Deduplicate times to keep the PK stable under repeat values from
+    // the client. `Set` preserves insertion order; we only care about
+    // uniqueness here because the index ordering is applied at scan
+    // time by `scheduled()`.
+    const uniqueTimes = Array.from(new Set(times));
+    if (uniqueTimes.length === 0) {
+      await del.run();
+      return;
+    }
+    const insertStmt = db.prepare(
+      'INSERT OR IGNORE INTO cron_triggers (room, cell, fire_at) VALUES (?1, ?2, ?3)',
+    );
+    const batch: D1PreparedStatement[] = [del];
+    for (const t of uniqueTimes) {
+      batch.push(insertStmt.bind(room, cell, t));
+    }
+    await db.batch(batch);
+  });
 }
 
 /**

@@ -53,8 +53,5 @@ export function main(argv: readonly string[], deps: MainDeps): number {
   for (const w of plan.warnings) {
     deps.stderr(`${w}\n`);
   }
-  // `bunx --bun wrangler dev` keeps wrangler inside the bun runtime.
-  // Using bunx (not a direct bun run) means the user does not need to
-  // be inside `packages/worker`; bun walks up the workspace.
-  return deps.exec('bunx', ['--bun', 'wrangler', ...plan.wranglerArgs], plan.env);
+  return deps.exec('npx', ['wrangler', ...plan.wranglerArgs], plan.env);
 }

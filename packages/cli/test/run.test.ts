@@ -26,28 +26,37 @@ function makeDeps(execImpl?: MainDeps['exec']): {
 }
 
 describe('main — happy paths', () => {
-  it('runs wrangler with no flags when argv is empty', () => {
+  it('runs wrangler with the documented default bind when argv is empty', () => {
     const { deps, execCalls } = makeDeps();
     const code = main([], deps);
     expect(code).toBe(0);
     expect(execCalls).toHaveLength(1);
-    expect(execCalls[0]?.cmd).toBe('bunx');
-    expect(execCalls[0]?.args).toEqual(['--bun', 'wrangler', 'dev']);
-    expect(execCalls[0]?.env).toEqual({});
+    expect(execCalls[0]?.cmd).toBe('npx');
+    expect(execCalls[0]?.args).toEqual([
+      'wrangler', 'dev', '--port', '8000', '--ip', '0.0.0.0',
+    ]);
+    expect(execCalls[0]?.env).toEqual({
+      ETHERCALC_PORT: '8000',
+      ETHERCALC_HOST: '0.0.0.0',
+    });
   });
 
   it('forwards --port/--host to wrangler args', () => {
     const { deps, execCalls } = makeDeps();
     main(['--port', '8080', '--host', '127.0.0.1'], deps);
     expect(execCalls[0]?.args).toEqual([
-      '--bun', 'wrangler', 'dev', '--port', '8080', '--ip', '127.0.0.1',
+      'wrangler', 'dev', '--port', '8080', '--ip', '127.0.0.1',
     ]);
   });
 
   it('passes --key as ETHERCALC_KEY env', () => {
     const { deps, execCalls } = makeDeps();
     main(['--key', 'secret'], deps);
-    expect(execCalls[0]?.env).toEqual({ ETHERCALC_KEY: 'secret' });
+    expect(execCalls[0]?.env).toEqual({
+      ETHERCALC_PORT: '8000',
+      ETHERCALC_HOST: '0.0.0.0',
+      ETHERCALC_KEY: 'secret',
+    });
   });
 
   it('propagates the exec exit code', () => {

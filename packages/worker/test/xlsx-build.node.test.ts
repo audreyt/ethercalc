@@ -5,7 +5,10 @@ import * as XLSX from 'xlsx';
 
 import {
   BINARY_CONTENT_TYPES,
+  buildMultiSheetWorkbook,
   csvToBinaryWorkbook,
+  parseMultiSheetWorkbook,
+  sanitizeSheetName,
 } from '../src/lib/xlsx-build.ts';
 
 /**
@@ -107,5 +110,191 @@ describe('BINARY_CONTENT_TYPES', () => {
     expect(BINARY_CONTENT_TYPES.xlsx).toContain('spreadsheetml');
     expect(BINARY_CONTENT_TYPES.ods).toContain('opendocument');
     expect(BINARY_CONTENT_TYPES.fods).toContain('opendocument');
+  });
+});
+
+describe('sanitizeSheetName', () => {
+  it('leaves normal names untouched', () => {
+    expect(sanitizeSheetName('Sheet1')).toBe('Sheet1');
+    expect(sanitizeSheetName('My Tab')).toBe('My Tab');
+  });
+
+  it('replaces forbidden characters with underscore', () => {
+    expect(sanitizeSheetName('a/b')).toBe('a_b');
+    expect(sanitizeSheetName('a\\b')).toBe('a_b');
+    expect(sanitizeSheetName('a:b')).toBe('a_b');
+    expect(sanitizeSheetName('a?b')).toBe('a_b');
+    expect(sanitizeSheetName('a*b')).toBe('a_b');
+    expect(sanitizeSheetName('a[b')).toBe('a_b');
+    expect(sanitizeSheetName('a]b')).toBe('a_b');
+    expect(sanitizeSheetName(':\\/?*[]')).toBe('_______');
+  });
+
+  it('truncates names longer than 31 characters', () => {
+    const input = 'x'.repeat(50);
+    const out = sanitizeSheetName(input);
+    expect(out.length).toBe(31);
+    expect(out).toBe('x'.repeat(31));
+  });
+
+  it('falls back to "Sheet" when the input is empty', () => {
+    expect(sanitizeSheetName('')).toBe('Sheet');
+  });
+
+  it('deduplicates against an existing list', () => {
+    expect(sanitizeSheetName('Sheet1', ['Sheet1'])).toBe('Sheet1 (2)');
+    expect(sanitizeSheetName('Sheet1', ['Sheet1', 'Sheet1 (2)'])).toBe(
+      'Sheet1 (3)',
+    );
+  });
+
+  it('shortens long base names to make room for the dedupe suffix', () => {
+    const base = 'x'.repeat(31); // exactly the cap
+    const existing = [base]; // one collision already
+    const out = sanitizeSheetName(base, existing);
+    expect(out.length).toBeLessThanOrEqual(31);
+    expect(out.endsWith(' (2)')).toBe(true);
+  });
+
+  it('returns the original when it does not collide', () => {
+    expect(sanitizeSheetName('Alpha', ['Beta', 'Gamma'])).toBe('Alpha');
+  });
+});
+
+describe('buildMultiSheetWorkbook', () => {
+  it('builds a workbook with one worksheet per sheet', () => {
+    const bytes = buildMultiSheetWorkbook(
+      [
+        { name: 'Alpha', csv: 'a,b\n1,2\n' },
+        { name: 'Beta', csv: 'c,d\n3,4\n' },
+      ],
+      'xlsx',
+    );
+    const wb = (XLSX as any).read(bytes, { type: 'array' });
+    expect(wb.SheetNames).toEqual(['Alpha', 'Beta']);
+    const alpha = (XLSX as any).utils.sheet_to_json(wb.Sheets['Alpha'], {
+      header: 1,
+      blankrows: false,
+    });
+    expect(alpha[0]).toEqual(['a', 'b']);
+    expect(alpha[1]).toEqual([1, 2]);
+    const beta = (XLSX as any).utils.sheet_to_json(wb.Sheets['Beta'], {
+      header: 1,
+      blankrows: false,
+    });
+    expect(beta[1]).toEqual([3, 4]);
+  });
+
+  it('sanitizes sheet names containing forbidden characters', () => {
+    const bytes = buildMultiSheetWorkbook([{ name: 'A/B', csv: '1\n' }], 'xlsx');
+    const wb = (XLSX as any).read(bytes, { type: 'array' });
+    expect(wb.SheetNames).toEqual(['A_B']);
+  });
+
+  it('truncates sheet names longer than 31 characters', () => {
+    const long = 'This is a very long sheet name indeed-extra'; // > 31
+    const bytes = buildMultiSheetWorkbook([{ name: long, csv: '1\n' }], 'xlsx');
+    const wb = (XLSX as any).read(bytes, { type: 'array' });
+    expect(wb.SheetNames[0].length).toBeLessThanOrEqual(31);
+    expect(wb.SheetNames[0]).toBe(long.slice(0, 31));
+  });
+
+  it('deduplicates colliding sheet names', () => {
+    const bytes = buildMultiSheetWorkbook(
+      [
+        { name: 'Same', csv: '1\n' },
+        { name: 'Same', csv: '2\n' },
+        { name: 'Same', csv: '3\n' },
+      ],
+      'xlsx',
+    );
+    const wb = (XLSX as any).read(bytes, { type: 'array' });
+    expect(wb.SheetNames).toEqual(['Same', 'Same (2)', 'Same (3)']);
+  });
+
+  it('coerces empty CSVs to a 1x1 blank cell', () => {
+    const bytes = buildMultiSheetWorkbook(
+      [
+        { name: 'Empty', csv: '' },
+        { name: 'Full', csv: 'hi\n' },
+      ],
+      'xlsx',
+    );
+    const wb = (XLSX as any).read(bytes, { type: 'array' });
+    expect(wb.SheetNames).toEqual(['Empty', 'Full']);
+    expect(wb.Sheets['Full'].A1.v).toBe('hi');
+  });
+
+  it('falls back to a blank Sheet1 when given zero sheets', () => {
+    const bytes = buildMultiSheetWorkbook([], 'xlsx');
+    const wb = (XLSX as any).read(bytes, { type: 'array' });
+    expect(wb.SheetNames).toEqual(['Sheet1']);
+  });
+
+  it('works for ods format', () => {
+    const bytes = buildMultiSheetWorkbook(
+      [
+        { name: 'One', csv: 'a,b\n' },
+        { name: 'Two', csv: 'c,d\n' },
+      ],
+      'ods',
+    );
+    // ods is a ZIP.
+    expect(bytes[0]).toBe(0x50);
+    const wb = (XLSX as any).read(bytes, { type: 'array' });
+    expect(wb.SheetNames).toEqual(['One', 'Two']);
+  });
+
+  it('works for fods format (XML flat)', () => {
+    const bytes = buildMultiSheetWorkbook(
+      [
+        { name: 'One', csv: 'a,b\n' },
+        { name: 'Two', csv: 'c,d\n' },
+      ],
+      'fods',
+    );
+    // fods is XML — first byte is `<`.
+    expect(bytes[0]).toBe('<'.charCodeAt(0));
+    const wb = (XLSX as any).read(bytes, { type: 'array' });
+    expect(wb.SheetNames).toEqual(['One', 'Two']);
+  });
+});
+
+describe('parseMultiSheetWorkbook', () => {
+  it('round-trips through build+parse preserving sheet order and content', () => {
+    const input = [
+      { name: 'Alpha', csv: 'a,b\n1,2\n' },
+      { name: 'Beta', csv: 'c,d\n3,4\n' },
+    ];
+    const bytes = buildMultiSheetWorkbook(input, 'xlsx');
+    const out = parseMultiSheetWorkbook(bytes);
+    expect(out.map((s) => s.name)).toEqual(['Alpha', 'Beta']);
+    expect(out[0]?.csv).toMatch(/a,b/);
+    expect(out[0]?.csv).toMatch(/1,2/);
+    expect(out[1]?.csv).toMatch(/c,d/);
+    expect(out[1]?.csv).toMatch(/3,4/);
+  });
+
+  it('returns the blank Sheet1 from an empty-build workbook', () => {
+    const bytes = buildMultiSheetWorkbook([], 'xlsx');
+    const out = parseMultiSheetWorkbook(bytes);
+    expect(out.length).toBe(1);
+    expect(out[0]?.name).toBe('Sheet1');
+  });
+
+  it('skips sheets declared in SheetNames but missing from Sheets', () => {
+    const syntheticWb = {
+      SheetNames: ['Real', 'Phantom'],
+      Sheets: { Real: (XLSX as any).utils.aoa_to_sheet([['x']]) },
+    };
+    const mockRead = () => syntheticWb;
+    const out = parseMultiSheetWorkbook(new Uint8Array(), mockRead);
+    expect(out.map((s) => s.name)).toEqual(['Real']);
+  });
+
+  it('tolerates a workbook whose SheetNames is missing (defensive)', () => {
+    const mockRead = () => ({ Sheets: {} });
+    const out = parseMultiSheetWorkbook(new Uint8Array(), mockRead);
+    expect(out).toEqual([]);
   });
 });

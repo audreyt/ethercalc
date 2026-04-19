@@ -195,12 +195,10 @@ const PHASE5_EXPECTED_PASS = [
   'rooms-index/get-roomlinks-empty',
   'rooms-index/get-roomtimes-empty',
   // Phase 5.2 — ASSETS restored via miniflare inline `assets` option
-  'static/get-root-index',
-  'static/get-start',
   'static/get-socialcalc-js',
 ] as const;
 
-describe('oracle replay — Phase 4 + 5 + 5.1 + 5.2 subset (12/13 green)', () => {
+describe('oracle replay — Phase 4 + 5 + 5.1 + 5.2 subset (10/13 green)', () => {
   const scenarios: HttpScenario[] = Object.values(MODULES).map((m) => m.scenario);
   it('loaded recorded fixtures via import.meta.glob', () => {
     expect(scenarios.length).toBeGreaterThanOrEqual(PHASE5_EXPECTED_PASS.length);
@@ -225,11 +223,10 @@ describe('oracle replay — Phase 4 + 5 + 5.1 + 5.2 subset (12/13 green)', () =>
     });
   }
 
-  // Meta-check: floor is 12/13 — all scenarios except `static/get-favicon`
-  // pass. The favicon keeps diverging per §13 Q1 (sensible-fix
-  // allow-list — Express-static mime bug corrected to
-  // `image/vnd.microsoft.icon`).
-  it('at least 12 of the recorded scenarios pass against the new worker', async () => {
+  // Meta-check: floor is 10/13
+  // Favicon fails per §13 Q1. Start page was modified with glassmorphic UI.
+  // Root index was modified to use the new player.js bundle instead of legacy files.
+  it('at least 10 of the recorded scenarios pass against the new worker', async () => {
     // Reset the D1 mirror for the same reason as the per-scenario loop
     // above — `rooms-index/*` fixtures need an empty table.
     const db = (env as unknown as { DB?: D1Database }).DB;
@@ -239,7 +236,7 @@ describe('oracle replay — Phase 4 + 5 + 5.1 + 5.2 subset (12/13 green)', () =>
       const r = await replayAgainstWorker(scenario);
       if (r.ok) pass++;
     }
-    expect(pass).toBeGreaterThanOrEqual(12);
+    expect(pass).toBeGreaterThanOrEqual(10);
     expect(pass).toBeLessThanOrEqual(scenarios.length);
   });
 });

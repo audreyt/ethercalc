@@ -9,6 +9,9 @@
  */
 import type { ParsedFlags } from './parse.ts';
 
+const DEFAULT_PORT = 8000;
+const DEFAULT_HOST = '0.0.0.0';
+
 /**
  * Result of mapping a `ParsedFlags` to a launch plan. The orchestrator
  * spawns `wrangler dev <wranglerArgs>` with `env` merged onto the parent
@@ -48,17 +51,17 @@ export function buildLaunchPlan(flags: ParsedFlags): LaunchPlan {
   const wranglerArgs: string[] = ['dev'];
   const env: Record<string, string> = {};
   const warnings: string[] = [];
+  const port = flags.port ?? DEFAULT_PORT;
+  const host = flags.host ?? DEFAULT_HOST;
 
-  if (flags.port !== undefined) {
-    wranglerArgs.push('--port', String(flags.port));
-    // Mirror to env as well so downstream code (e.g. a reverse-proxy
-    // sub-process or custom worker logic) can read the same value.
-    env['ETHERCALC_PORT'] = String(flags.port);
-  }
-  if (flags.host !== undefined) {
-    wranglerArgs.push('--ip', flags.host);
-    env['ETHERCALC_HOST'] = flags.host;
-  }
+  wranglerArgs.push('--port', String(port));
+  // Mirror to env as well so downstream code (e.g. a reverse-proxy
+  // sub-process or custom worker logic) can read the same value.
+  env['ETHERCALC_PORT'] = String(port);
+
+  wranglerArgs.push('--ip', host);
+  env['ETHERCALC_HOST'] = host;
+
   if (flags.persistTo !== undefined) {
     wranglerArgs.push('--persist-to', flags.persistTo);
   }

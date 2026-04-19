@@ -44,6 +44,7 @@ import {
   pickDueTriggers,
   toEpochMinutes,
 } from './lib/cron.ts';
+import { withCronSchema } from './lib/d1-schema.ts';
 import type { Env } from './env.ts';
 
 /**
@@ -67,15 +68,18 @@ export async function runScheduled(params: {
   const { env, nowMinutes } = params;
   // Without a D1 binding there's nothing to scan. The scheduled()
   // handler still succeeds so Cloudflare doesn't retry.
-  if (!env.DB) return { due: [], keep: [], fired: [] };
+  const db = env.DB;
+  if (!db) return { due: [], keep: [], fired: [] };
 
   // Read every row. In production `cron_triggers` is bounded by the
   // number of users actively scheduling emails — a full-table scan is
   // cheaper than a WHERE clause for a typical EtherCalc deployment
   // (legacy `DB.hgetall "cron-list"` also returned the full hash).
-  const allRes = await env.DB.prepare(
-    'SELECT room, cell, fire_at FROM cron_triggers ORDER BY fire_at ASC',
-  ).all<CronTriggerRow>();
+  const allRes = await withCronSchema(db, async () =>
+    db.prepare(
+      'SELECT room, cell, fire_at FROM cron_triggers ORDER BY fire_at ASC',
+    ).all<CronTriggerRow>(),
+  );
   const rows = allRes.results ?? [];
   const { due, keep } = pickDueTriggers(nowMinutes, rows);
 
@@ -112,7 +116,7 @@ export async function runScheduled(params: {
     // from `rows` by filtering on identity — for each due trigger
     // re-match rows with fire_at <= nowMinutes.
     const dueRows = rows.filter((r) => r.fire_at <= nowMinutes);
-    const stmt = env.DB.prepare(
+    const stmt = db.prepare(
       'DELETE FROM cron_triggers WHERE room = ?1 AND cell = ?2 AND fire_at = ?3',
     );
     // Batch each fired row as one bound statement. We intentionally
@@ -122,7 +126,7 @@ export async function runScheduled(params: {
       stmt.bind(r.room, r.cell, r.fire_at),
     );
     if (batch.length > 0) {
-      await env.DB.batch(batch);
+      await db.batch(batch);
     }
   }
 

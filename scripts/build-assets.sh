@@ -69,6 +69,7 @@ die() { echo "[build-assets] FAIL: $*" >&2; exit 1; }
 echo "[build-assets] rebuilding $DEST"
 rm -rf "$DEST"
 mkdir -p "$DEST/l10n" "$DEST/static" "$DEST/multi"
+mkdir -p "$DEST/images"
 
 # HTML entry pages.
 cp "$ROOT/index.html"  "$DEST/index.html"
@@ -93,11 +94,17 @@ for f in en de es-ES fr ru-RU zh-CN zh-TW; do
   cp "$ROOT/l10n/$f.json" "$DEST/l10n/$f.json"
 done
 
+# Legacy toolbar / scrollbar artwork referenced by SocialCalc at /images/*.
+cp -R "$ROOT/images/." "$DEST/images/"
+
 # SocialCalc runtime — served at /static/socialcalc.js (§13 Q8).
 cp "$SOCIALCALC_JS" "$DEST/static/socialcalc.js"
 
 # Built single-sheet client — served at /static/player.js.
 cp "$PLAYER_JS" "$DEST/static/player.js"
+
+# Other static assets for the landing page and legacy UI (including css, img, etc)
+cp -r "$ROOT/static/"* "$DEST/static/"
 
 # Multi-sheet React app — whole dist tree mounted under /multi.
 cp -R "$MULTI_DIST/." "$DEST/multi/"

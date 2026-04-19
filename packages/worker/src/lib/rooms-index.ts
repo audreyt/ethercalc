@@ -1,3 +1,5 @@
+import { withRoomsSchema } from './d1-schema.ts';
+
 /**
  * D1-backed cross-room index helpers (Phase 5.1).
  *
@@ -45,13 +47,15 @@ export async function mirrorRoomToD1(
   room: string,
   updatedAt: number,
 ): Promise<void> {
-  await db
-    .prepare(
-      'INSERT INTO rooms (room, updated_at) VALUES (?1, ?2) ' +
-        'ON CONFLICT(room) DO UPDATE SET updated_at = excluded.updated_at',
-    )
-    .bind(room, updatedAt)
-    .run();
+  await withRoomsSchema(db, async () => {
+    await db
+      .prepare(
+        'INSERT INTO rooms (room, updated_at) VALUES (?1, ?2) ' +
+          'ON CONFLICT(room) DO UPDATE SET updated_at = excluded.updated_at',
+      )
+      .bind(room, updatedAt)
+      .run();
+  });
 }
 
 /** Delete a room row. Safe to call on a room that doesn't exist. */
@@ -59,7 +63,9 @@ export async function deleteRoomFromD1(
   db: D1Database,
   room: string,
 ): Promise<void> {
-  await db.prepare('DELETE FROM rooms WHERE room = ?1').bind(room).run();
+  await withRoomsSchema(db, async () => {
+    await db.prepare('DELETE FROM rooms WHERE room = ?1').bind(room).run();
+  });
 }
 
 /**
@@ -69,13 +75,15 @@ export async function deleteRoomFromD1(
  * ascending bytes. We do the same via `ORDER BY room ASC`.
  */
 export async function listRooms(db: D1Database): Promise<string[]> {
-  const res = await db
-    .prepare('SELECT room FROM rooms ORDER BY room ASC')
-    .all<{ room: string }>();
-  // D1's `.all()` guarantees `results: Array<T>` when the query is a
-  // SELECT that succeeded. In practice the binding also sets it to an
-  // empty array for zero-row responses, so we can read it directly.
-  return res.results.map((r) => r.room);
+  return withRoomsSchema(db, async () => {
+    const res = await db
+      .prepare('SELECT room FROM rooms ORDER BY room ASC')
+      .all<{ room: string }>();
+    // D1's `.all()` guarantees `results: Array<T>` when the query is a
+    // SELECT that succeeded. In practice the binding also sets it to an
+    // empty array for zero-row responses, so we can read it directly.
+    return res.results.map((r) => r.room);
+  });
 }
 
 /**
@@ -88,16 +96,18 @@ export async function listRooms(db: D1Database): Promise<string[]> {
 export async function listRoomTimes(
   db: D1Database,
 ): Promise<Record<string, number>> {
-  const res = await db
-    .prepare(
-      'SELECT room, updated_at FROM rooms ORDER BY updated_at DESC, room ASC',
-    )
-    .all<{ room: string; updated_at: number }>();
-  const out: Record<string, number> = {};
-  for (const row of res.results) {
-    out[row.room] = row.updated_at;
-  }
-  return out;
+  return withRoomsSchema(db, async () => {
+    const res = await db
+      .prepare(
+        'SELECT room, updated_at FROM rooms ORDER BY updated_at DESC, room ASC',
+      )
+      .all<{ room: string; updated_at: number }>();
+    const out: Record<string, number> = {};
+    for (const row of res.results) {
+      out[row.room] = row.updated_at;
+    }
+    return out;
+  });
 }
 
 /**

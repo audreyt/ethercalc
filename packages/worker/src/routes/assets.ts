@@ -114,6 +114,9 @@ export function registerAssets(app: Hono<{ Bindings: Env }>): void {
     return serveAsset(c.env, `/l10n/${lang}`);
   });
 
+  // Legacy SocialCalc chrome artwork.
+  app.get('/images/*', async (c) => serveAsset(c.env, c.req.path));
+
   // `/static/socialcalc.js` — vendored SocialCalc 2.3.0 UMD (§13 Q8).
   app.get('/static/socialcalc.js', async (c) => serveAsset(c.env, '/static/socialcalc.js'));
 
@@ -133,6 +136,9 @@ export function registerAssets(app: Hono<{ Bindings: Env }>): void {
     const target = buildFormPartPath(part);
     return serveAsset(c.env, target);
   });
+
+  // Catch-all for any other static files (like start.css, jszip.js, etc.)
+  app.get('/static/*', async (c) => serveAsset(c.env, c.req.path));
 
   // `/:template/appeditor` — Phase 4.1 panels.html route (§6.1). Ordering:
   // this has a literal `/appeditor` suffix so it can safely register
