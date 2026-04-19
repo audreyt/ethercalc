@@ -1,7 +1,42 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
+/**
+ * Legacy-compatible CLI shim (§13 Q6, CLAUDE.md §8 Phase 11).
+ *
+ * Accepts the old EtherCalc flag surface (--key, --cors, --port, --host,
+ * --expire, --basepath, --keyfile, --certfile) and translates them into
+ * wrangler dev invocation + Miniflare env vars. All translation logic
+ * lives in `packages/cli/` where it is 100% unit-tested; this shim is
+ * the thin IO wrapper that connects it to real stdio and `spawnSync`.
+ *
+ * Why bun shebang: the workspace is bun-first (commit 042b731). Bun also
+ * runs Node's CommonJS + ESM, so `bunx wrangler` works out of the box.
+ * Fallback for pure-Node environments: `node bin/ethercalc` also works
+ * because bun-specific syntax is avoided below.
+ */
+import { spawnSync } from 'node:child_process';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-var path = require("path");
-var fs = require("fs");
-var path = path.join(path.dirname(fs.realpathSync(__filename)), '..');
+import { main } from '../packages/cli/src/run.ts';
 
-require(path + '/app');
+const here = path.dirname(fileURLToPath(import.meta.url));
+const workerCwd = path.resolve(here, '..', 'packages', 'worker');
+
+const argv = process.argv.slice(2);
+const code = main(argv, {
+  stdout: (s) => process.stdout.write(s),
+  stderr: (s) => process.stderr.write(s),
+  exec: (cmd, args, extraEnv) => {
+    const result = spawnSync(cmd, args, {
+      cwd: workerCwd,
+      env: { ...process.env, ...extraEnv },
+      stdio: 'inherit',
+    });
+    if (result.error) {
+      process.stderr.write(`ethercalc: failed to launch ${cmd}: ${result.error.message}\n`);
+      return 127;
+    }
+    return result.status ?? 0;
+  },
+});
+process.exit(code);

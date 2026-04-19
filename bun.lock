@@ -5,6 +5,16 @@
     "": {
       "name": "ethercalc",
     },
+    "packages/cli": {
+      "name": "@ethercalc/cli",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@types/node": "^22.9.0",
+        "@vitest/coverage-istanbul": "^2.1.4",
+        "typescript": "^5.6.3",
+        "vitest": "^2.1.4",
+      },
+    },
     "packages/client": {
       "name": "@ethercalc/client",
       "version": "0.0.0",
@@ -226,6 +236,8 @@
     "@esbuild/win32-ia32": ["@esbuild/win32-ia32@0.21.5", "", { "os": "win32", "cpu": "ia32" }, "sha512-SWXFF1CL2RVNMaVs+BBClwtfZSvDgtL//G/smwAc5oVK/UPu2Gu9tIaRgFmYFFKrmg3SyAjSrElf0TiJ1v8fYA=="],
 
     "@esbuild/win32-x64": ["@esbuild/win32-x64@0.21.5", "", { "os": "win32", "cpu": "x64" }, "sha512-tQd/1efJuzPC6rCFwEvLtci/xNFcTZknmXs98FYDfGE4wP9ClFV98nyKrzJKVPMhdDnjzLhdUyMX4PsQAPjwIw=="],
+
+    "@ethercalc/cli": ["@ethercalc/cli@workspace:packages/cli"],
 
     "@ethercalc/client": ["@ethercalc/client@workspace:packages/client"],
 
