@@ -30,6 +30,7 @@ import type {
 } from '@ethercalc/shared/messages';
 
 import {
+  buildAskEcellBroadcast,
   buildChatBroadcast,
   buildEcellBroadcast,
   buildEcellsReply,
@@ -253,6 +254,20 @@ export async function handleEcell(
   await ctx.broadcast(buildEcellBroadcast(msg), false);
 }
 
+/**
+ * `ask.ecell` — cursor-position poll. The asker wants every peer to reply
+ * with their current `editor.ecell` (client-side handler does the reply —
+ * see the dispatcher in `packages/client/src/main.ts`). Server-side we
+ * just rebroadcast to peers; no storage, no auth. Matches the legacy
+ * catch-all `@on data` broadcast at `src/main.ls` end-of-switch.
+ */
+export async function handleAskEcell(
+  ctx: WsContext,
+  msg: Extract<ClientMessage, { type: 'ask.ecell' }>,
+): Promise<void> {
+  await ctx.broadcast(buildAskEcellBroadcast(msg), false);
+}
+
 // ─── Top-level dispatcher ───────────────────────────────────────────────────
 
 /**
@@ -288,6 +303,9 @@ export async function dispatchWsMessage(
       return;
     case 'ecell':
       await handleEcell(ctx, msg);
+      return;
+    case 'ask.ecell':
+      await handleAskEcell(ctx, msg);
       return;
     default: {
       // Exhaustiveness sentinel. If a new ClientMessage variant is added

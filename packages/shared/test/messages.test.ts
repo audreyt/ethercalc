@@ -12,6 +12,7 @@ describe('CLIENT_MESSAGE_TYPES / SERVER_MESSAGE_TYPES', () => {
   it('exhaustively lists every client discriminator', () => {
     expect([...CLIENT_MESSAGE_TYPES].sort()).toEqual(
       [
+        'ask.ecell',
         'ask.ecells',
         'ask.log',
         'ask.recalc',
@@ -27,6 +28,7 @@ describe('CLIENT_MESSAGE_TYPES / SERVER_MESSAGE_TYPES', () => {
   it('exhaustively lists every server discriminator', () => {
     expect([...SERVER_MESSAGE_TYPES].sort()).toEqual(
       [
+        'ask.ecell',
         'chat',
         'confirmemailsent',
         'ecell',
@@ -89,6 +91,7 @@ describe('parseServerMessage', () => {
       stopHuddle: { type: 'stopHuddle', room: 'r' },
       ecell: { type: 'ecell', room: 'r', user: 'u', ecell: 'A1' },
       'my.ecell': { type: 'my.ecell', room: 'r', user: 'u', ecell: 'A1' },
+      'ask.ecell': { type: 'ask.ecell', room: 'r', user: 'u' },
     } as const;
     for (const type of SERVER_MESSAGE_TYPES) {
       const fixture = fixtures[type];

@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildAskEcellBroadcast,
   buildChatBroadcast,
   buildEcellBroadcast,
   buildEcellsReply,
@@ -138,6 +139,7 @@ describe('broadcast shapers', () => {
     expect(out).toEqual({ type: 'ecell', room: 'r', user: 'u', ecell: 'A1' });
     expect('original' in out).toBe(false);
     expect('auth' in out).toBe(false);
+    expect('to' in out).toBe(false);
   });
 
   it('buildEcellBroadcast preserves original + auth when supplied', () => {
@@ -151,6 +153,23 @@ describe('broadcast shapers', () => {
     });
     expect(out.original).toBe('B2');
     expect(out.auth).toBe('h');
+  });
+
+  it('buildEcellBroadcast preserves `to` for ask.ecell private replies', () => {
+    const out = buildEcellBroadcast({
+      type: 'ecell',
+      room: 'r',
+      user: 'me',
+      ecell: 'C4',
+      to: 'asker',
+    });
+    expect(out.to).toBe('asker');
+  });
+
+  it('buildAskEcellBroadcast carries room + asker user for peers to target', () => {
+    expect(
+      buildAskEcellBroadcast({ type: 'ask.ecell', room: 'r', user: 'alice' }),
+    ).toEqual({ type: 'ask.ecell', room: 'r', user: 'alice' });
   });
 
   it('buildStopHuddleBroadcast preserves auth only when supplied', () => {

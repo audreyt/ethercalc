@@ -13,6 +13,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   dispatchWsMessage,
+  handleAskEcell,
   handleAskEcells,
   handleAskLog,
   handleAskRecalc,
@@ -535,6 +536,28 @@ describe('handleEcell', () => {
   });
 });
 
+describe('handleAskEcell', () => {
+  // Cursor-poll relay (new after the 2026-04-20 browser smoke found the
+  // legacy catch-all `@on data` rebroadcast was missing). No storage
+  // touch; no auth gate; pure peer-only broadcast.
+  it('rebroadcasts the ask.ecell frame to peers without auth', async () => {
+    const { ctx, calls, state } = makeCtx({ authOk: false });
+    await handleAskEcell(ctx, { type: 'ask.ecell', room: 'r', user: 'alice' });
+    expect(calls.broadcasts).toHaveLength(1);
+    expect(calls.broadcasts[0]!.msg).toEqual({
+      type: 'ask.ecell',
+      room: 'r',
+      user: 'alice',
+    });
+    expect(calls.broadcasts[0]!.includeSelf).toBe(false);
+    expect(state.ecell.size).toBe(0);
+    expect(state.log.size).toBe(0);
+    expect(state.chat.size).toBe(0);
+    expect(calls.replies).toHaveLength(0);
+    expect(calls.applied).toHaveLength(0);
+  });
+});
+
 // ─── dispatchWsMessage routing ─────────────────────────────────────────────
 
 describe('dispatchWsMessage', () => {
@@ -611,6 +634,24 @@ describe('dispatchWsMessage', () => {
     });
     expect(calls.broadcasts).toHaveLength(1);
     expect(calls.broadcasts[0]!.msg.type).toBe('ecell');
+  });
+
+  it('routes ask.ecell (cursor poll) and rebroadcasts to peers', async () => {
+    const { ctx, calls, state } = makeCtx();
+    await dispatchWsMessage(ctx, { type: 'ask.ecell', room: 'r', user: 'asker' });
+    expect(calls.broadcasts).toHaveLength(1);
+    expect(calls.broadcasts[0]!.msg).toEqual({
+      type: 'ask.ecell',
+      room: 'r',
+      user: 'asker',
+    });
+    // Not include_self (peers only).
+    expect(calls.broadcasts[0]!.includeSelf).toBe(false);
+    // No storage writes (pure relay).
+    expect(state.log.size).toBe(0);
+    expect(state.chat.size).toBe(0);
+    expect(state.ecell.size).toBe(0);
+    expect(calls.replies).toHaveLength(0);
   });
 
   it('never-case: dispatch with a fabricated unknown type is a no-op', async () => {
@@ -738,6 +779,7 @@ describe('WsContext wiring corners', () => {
     });
     await dispatchWsMessage(ctx, { type: 'ask.log', room: 'r', user: 'u' });
     await dispatchWsMessage(ctx, { type: 'ask.recalc', room: 'r' });
+    await dispatchWsMessage(ctx, { type: 'ask.ecell', room: 'r', user: 'u' });
     expect(authSpy).not.toHaveBeenCalled();
   });
 

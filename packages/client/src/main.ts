@@ -251,11 +251,32 @@ export function createDispatcher(host: MainHost): (msg: ServerMessage) => void {
       case 'stopHuddle':
         applyStopHuddle();
         return;
+      case 'ask.ecell':
+        applyAskEcell(SocialCalc, target, msg);
+        return;
       case 'my.ecell':
       case 'ignore':
         return;
     }
   };
+}
+
+/**
+ * Peer asked us to announce our cursor position. Reply with an `ecell`
+ * broadcast targeted at the asker (legacy `player.ls:128-132`). App mode
+ * opts out — the form/app UI has no editable cursor to report.
+ */
+function applyAskEcell(
+  SocialCalc: SocialCalcGlobal,
+  target: SpreadsheetLike,
+  msg: { user?: string },
+): void {
+  if (SocialCalc._app) return;
+  const ecell = target.editor.ecell.coord;
+  if (!ecell) return;
+  const payload: Record<string, unknown> = { ecell };
+  if (msg.user !== undefined) payload['to'] = msg.user;
+  SocialCalc.Callbacks.broadcast?.('ecell', payload);
 }
 
 function applyEcells(

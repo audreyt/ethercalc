@@ -14,6 +14,8 @@
  *   - CLAUDE.md sec 7 item 22 (submitform include_self=true invariant)
  */
 import type {
+  AskEcellClientMessage,
+  AskEcellServerMessage,
   AskLogMessage,
   ChatClientMessage,
   ChatServerMessage,
@@ -129,6 +131,18 @@ export function buildMyEcellBroadcast(msg: MyEcellMessage): MyEcellServerMessage
   return { type: 'my.ecell', room: msg.room, user: msg.user, ecell: msg.ecell };
 }
 
+/**
+ * Shape an ask.ecell rebroadcast. Forwards the asker's `user` to peers so
+ * they can target their `ecell` reply via `to: user`. The legacy catch-all
+ * did the same thing with `broadcast @data` — we carry the payload
+ * explicitly because our parser is closed-union.
+ */
+export function buildAskEcellBroadcast(
+  msg: AskEcellClientMessage,
+): AskEcellServerMessage {
+  return { type: 'ask.ecell', room: msg.room, user: msg.user };
+}
+
 /** Shape an ecell broadcast. */
 export function buildEcellBroadcast(msg: EcellClientMessage): EcellServerMessage {
   const out: EcellServerMessage = {
@@ -139,6 +153,9 @@ export function buildEcellBroadcast(msg: EcellClientMessage): EcellServerMessage
   };
   if (msg.original !== undefined) out.original = msg.original;
   if (msg.auth !== undefined) out.auth = msg.auth;
+  // `to` targets a single peer (ask.ecell reply path). Must survive the
+  // round-trip so the client-side `data.to !== _username` filter works.
+  if (msg.to !== undefined) out.to = msg.to;
   return out;
 }
 

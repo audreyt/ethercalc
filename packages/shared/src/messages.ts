@@ -62,6 +62,32 @@ export interface EcellClientMessage {
   ecell: string;
   original?: string;
   auth?: string;
+  /**
+   * Private-channel targeting. When set, the server rebroadcasts to all
+   * peers but only the peer whose username matches `to` acts on it —
+   * everyone else drops it in the client dispatcher. Used by the
+   * ask.ecell → ecell reply flow (legacy `player.ls:122`).
+   */
+  to?: string;
+}
+
+/**
+ * `ask.ecell` (singular) — "tell me where you are" cursor-poll broadcast.
+ *
+ * Legacy (`src/player-broadcast.ls:21`): every time the local client's
+ * `DoPositionCalculations` runs (scroll, resize, refocus), it sends
+ * `ask.ecell`. The legacy server's catch-all `@on data` broadcasts it to
+ * every peer in the room. Peers receive it and reply with their own
+ * `ecell` coordinate targeted at the asker via `to: <user>`.
+ *
+ * Our server had no catch-all and no explicit `ask.ecell` handler, so the
+ * frame was silently dropped and remote cursors went stale whenever a
+ * peer scrolled. Found during the 2026-04-20 browser smoke sweep.
+ */
+export interface AskEcellClientMessage {
+  type: 'ask.ecell';
+  room: string;
+  user: string;
 }
 
 export type ClientMessage =
@@ -72,7 +98,8 @@ export type ClientMessage =
   | AskLogMessage
   | AskRecalcMessage
   | StopHuddleMessage
-  | EcellClientMessage;
+  | EcellClientMessage
+  | AskEcellClientMessage;
 
 export const CLIENT_MESSAGE_TYPES = [
   'chat',
@@ -83,6 +110,7 @@ export const CLIENT_MESSAGE_TYPES = [
   'ask.recalc',
   'stopHuddle',
   'ecell',
+  'ask.ecell',
 ] as const satisfies readonly ClientMessage['type'][];
 
 // ─── Server → Client ───────────────────────────────────────────────────────
@@ -152,6 +180,8 @@ export interface EcellServerMessage {
   ecell: string;
   original?: string;
   auth?: string;
+  /** See `EcellClientMessage.to` — preserved end-to-end. */
+  to?: string;
 }
 
 export interface MyEcellServerMessage {
@@ -159,6 +189,17 @@ export interface MyEcellServerMessage {
   room: string;
   user: string;
   ecell: string;
+}
+
+/**
+ * `ask.ecell` (singular) rebroadcast to peers. Shape identical to the
+ * client-sent frame — same `user` field that peers use to target their
+ * reply via `ecell` with `to: user`. See `AskEcellClientMessage`.
+ */
+export interface AskEcellServerMessage {
+  type: 'ask.ecell';
+  room: string;
+  user: string;
 }
 
 export type ServerMessage =
@@ -172,7 +213,8 @@ export type ServerMessage =
   | IgnoreMessage
   | StopHuddleServerMessage
   | EcellServerMessage
-  | MyEcellServerMessage;
+  | MyEcellServerMessage
+  | AskEcellServerMessage;
 
 export const SERVER_MESSAGE_TYPES = [
   'log',
@@ -186,6 +228,7 @@ export const SERVER_MESSAGE_TYPES = [
   'stopHuddle',
   'ecell',
   'my.ecell',
+  'ask.ecell',
 ] as const satisfies readonly ServerMessage['type'][];
 
 // ─── Codec ────────────────────────────────────────────────────────────────

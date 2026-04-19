@@ -739,4 +739,59 @@ describe('createDispatcher', () => {
     expect(resetCount).toBe(0);
     void sc;
   });
+
+  /**
+   * `ask.ecell` — peer asks "where are you?". Legacy `player.ls:128-132`:
+   * reply with `ecell` broadcast targeted at the asker, carrying our
+   * current cursor. App mode opts out. Missing cursor → don't reply.
+   */
+  describe('ask.ecell reply', () => {
+    it('replies with ecell broadcast when cursor is set', () => {
+      const { dispatch, sc, ss } = setup();
+      ss.editor.ecell.coord = 'B3';
+      const broadcasts: Array<{ type: string; payload?: unknown }> = [];
+      sc.Callbacks.broadcast = (type, payload) => broadcasts.push({ type, ...(payload !== undefined ? { payload } : {}) });
+      dispatch({ type: 'ask.ecell', room: 'room1', user: 'peer' });
+      expect(broadcasts).toEqual([
+        {
+          type: 'ecell',
+          payload: { ecell: 'B3', to: 'peer' },
+        },
+      ]);
+    });
+
+    it('opts out when in app mode', () => {
+      const { dispatch, sc, ss } = setup();
+      sc._app = true;
+      ss.editor.ecell.coord = 'B3';
+      let called = 0;
+      sc.Callbacks.broadcast = () => {
+        called++;
+      };
+      dispatch({ type: 'ask.ecell', room: 'room1', user: 'peer' });
+      expect(called).toBe(0);
+    });
+
+    it('does not reply when cursor coord is empty', () => {
+      const { dispatch, sc, ss } = setup();
+      ss.editor.ecell.coord = '';
+      let called = 0;
+      sc.Callbacks.broadcast = () => {
+        called++;
+      };
+      dispatch({ type: 'ask.ecell', room: 'room1', user: 'peer' });
+      expect(called).toBe(0);
+    });
+
+    it('omits `to` when the asker user is undefined', () => {
+      const { dispatch, sc, ss } = setup();
+      ss.editor.ecell.coord = 'C4';
+      const broadcasts: Array<{ type: string; payload?: unknown }> = [];
+      sc.Callbacks.broadcast = (type, payload) => broadcasts.push({ type, ...(payload !== undefined ? { payload } : {}) });
+      // Legacy server's catch-all preserves `user` from the frame; still,
+      // defensively don't stamp `to: undefined`.
+      dispatch({ type: 'ask.ecell', room: 'room1' } as unknown as Parameters<typeof dispatch>[0]);
+      expect(broadcasts[0]!.payload).toEqual({ ecell: 'C4' });
+    });
+  });
 });
