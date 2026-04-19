@@ -16,3 +16,8 @@ node_modules/.playwright/
 # client-multi/dist/**) that goes stale. CI regenerates it before
 # `wrangler deploy --dry-run`. See CLAUDE.md §8 Phase 4.1/11.
 /assets/
+# Phase 12 mutation-testing outputs (nightly StrykerJS). Reports are
+# uploaded as CI artifacts, not committed. See docs/MUTATION_REPORT.md.
+reports/
+.stryker-tmp/
+stryker.log
