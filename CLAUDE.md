@@ -442,6 +442,7 @@ Discovered during audit; each needs handling in the phase plan.
 30. **Offline/sessionStorage client behavior** (src/player.ls, `SocialCalc.hadSnapshot` flag): client caches last sheet to sessionStorage and restores on reconnect. Port preserves or drops — decide in Phase 10.
 31. **Docker Desktop on macOS/ARM + workerd networking quirk** (found in Phase 11a): `docker compose up` with the Miniflare image binds 0.0.0.0:8000 inside the container, but Docker Desktop's virtio networking on Apple Silicon returns zero bytes to host curls. Linux CI runners don't reproduce it. Dev-affordance only — doesn't block CI. If a contributor reports "docker compose up works but curl hangs", the answer is "run `bun run --cwd packages/worker dev` directly, or use Linux/WSL".
 32. **CLI env vars need worker-side reading** (Phase 11a deferral): `ETHERCALC_EXPIRE`, `ETHERCALC_CORS`, `ETHERCALC_BASEPATH` are set by `bin/ethercalc` into the Miniflare env, but the worker doesn't read them yet — Phase 5+ work. `ETHERCALC_KEY` IS read (by Phase 4's auth layer). Wire the others as their governing routes get ported.
+33. **`?raw` Vite imports vs wrangler `[[rules]]` cross-toolchain trap** (P5 finding): wrangler needs `[[rules]] type="Text" globs=["**/SocialCalc.js"]` to bundle the 27k-line UMD for `wrangler deploy --dry-run`. But when vitest-pool-workers reads `wrangler.configPath`, that same rule is merged into Miniflare's `modulesRules`, which then mangles our Vite `?raw` imports by appending `?mf_vitest_force=Text` to the URL and breaking the import resolver. Workaround: in `packages/worker/vitest.config.ts`, drop `wrangler.configPath` and supply `main` + `miniflare.durableObjects` inline instead. Downside: `[assets]` binding from wrangler.toml also disappears, hence the Phase 5.2 follow-up.
 
 ---
 
@@ -497,16 +498,22 @@ Goal: prove Plan A works (SocialCalc loads and executes in workerd).
 - [x] Oracle replay 8/13 green (was 5/13). Three new scenarios pass: get-root-index, get-start, get-socialcalc-js.
 - [ ] `/:template/form` stubs 503 pending Phase 5 DO-to-DO clone (flip a `phase5Ready` flag once Phase 5 ships `/_do/clone`).
 
-### Phase 5 — Port room CRUD (no live collab yet)
-- [ ] `RoomDO` with `snapshot/log/audit/chat/ecell` storage.
-- [ ] POST `/_` (create; json/sc/csv/xlsx bodies).
-- [ ] PUT `/_/:room`.
-- [ ] DELETE `/_/:room`.
-- [ ] GET `/_/:room` (raw save).
-- [ ] GET `/_exists/:room`.
-- [ ] GET `/_rooms`, `/_roomlinks`, `/_roomtimes` (via D1 mirror).
-- [ ] GET `/_from/:template`.
-- [ ] Oracle replay green for all above.
+### Phase 5 — Port room CRUD — MOSTLY DONE
+- [x] `RoomDO` with `snapshot/log/audit/chat/ecell` storage via `state.storage` + `@ethercalc/shared/storage-keys`. Lazy HeadlessSpreadsheet hydration.
+- [x] DO internal API at `/_do/{ping,snapshot,log,commands,all,exists,cells,cells/:coord}`.
+- [x] POST `/_` (create; json/sc/csv bodies). xlsx/ods bodies 501 pending Phase 8.
+- [x] PUT `/_/:room` — replaces snapshot, clears log/chat/ecell/audit.
+- [x] DELETE `/_/:room` → 201.
+- [x] GET `/_/:room` (raw save) — 404 `text/plain` when missing.
+- [x] GET `/_exists/:room` — bare JSON boolean per P3 oracle F-05.
+- [x] GET `/_rooms`, `/_roomlinks`, `/_roomtimes` **scaffolded returning `[]`/`{}`** — D1 binding commented in wrangler.toml; populating the index is Phase 5.1.
+- [x] GET `/_from/:template` — 302 to new room via DO-to-DO fetch.
+- [x] `/_roomlinks` ships **sensible-fix** (§13 Q1): `text/html` CT + HTML `<a>` list body.
+- [x] Extended `@ethercalc/socialcalc-headless` with `exportCells()`, `exportCell(coord)`, `csvToSave(csv)`.
+- [x] 104 Node tests + 25 workers integration = 129 worker tests, 100% coverage on all gated files.
+- [x] Oracle replay: 9/13 scenarios (static/* regressed in vitest from ASSETS binding loss — tracked as Phase 5.2).
+- [ ] **Phase 5.1** — populate D1 so `_rooms`/`_roomlinks`/`_roomtimes` return real data. Requires `rooms(room, updated_at, cors_public)` table + DO → D1 mirror on snapshot writes.
+- [ ] **Phase 5.2** — restore ASSETS binding in vitest-pool-workers (inline miniflare `assets` option) so the 3 static/* oracle scenarios pass again.
 
 ### Phase 6 — Port command execution
 - [ ] POST `/_/:room` with command handling (JSON, text, xlsx→loadclipboard).
@@ -757,6 +764,7 @@ Append one entry per session you work on this. Keep it short. Use this for conte
 | 2026-04-19 | 10.2  | **Phase 10.2 DONE.** P10c agent second round covered `src/graph.ts` (615 lines) to 100% with 102 new tests via fake 2D canvas recorder + fake DOM. Client package now 190 tests at 100/100/100/100 across ws-adapter, socialcalc-callbacks, main, graph. Three narrow `/* istanbul ignore next */` on dead `??` fallbacks. **587 tests total across 7 packages.** | 78fd477, 9640ee9 |
 | 2026-04-19 | 11e2e/4.1 | **Third wave agents merged:** PE2E Playwright skeleton (`packages/e2e/`, 5 specs, 10/11 passing + 1 skip pending asset pipeline); PAssets curated `assets/` (27 files 1.9 MiB, `scripts/build-assets.sh`), live ASSETS binding, `/:room` entry route, colon-route `/static/form:part.js`, dynamic `manifest.appcache` DevMode stub, i18n 7 locales. Oracle replay 5/13 → 8/13. Two new sensible-fix allow-list entries: `/_roomlinks` CT, `/favicon.ico` CT (§6.1). §4.4 drop-headers list expanded (Accept-Ranges, Cache-Control, Content-Length). `/:template/form` stubs 503 pending Phase 5 DO-to-DO clone. | edcff17-5a419eb, 08195b5-8f06ad0 |
 | 2026-04-19 | 11b/11c | **P11b + P11c merged.** P11b: `packages/migrate/` hand-rolled RDB parser (6 encodings incl LZF, 500 LOC), MigrationTarget + InMemory/Wrangler targets, CLI with dry-run, 91 tests at 100% coverage; uses `do_storage_seed` D1 staging as Phase 5 stopgap. P11c: `packages/socketio-shim/` full wire-format adapter (framing + translate + handshake + sid + adapter + legacy-io client bundle), 168 tests at 100% coverage; 3-colon splitter for event-frame JSON with embedded colons; explicit single-digit guard blocks Engine.IO v1+ shape. **10 packages, 911+ tests passing.** | 7da1907-71123b1, 9aa5da1/157c7c3 |
+| 2026-04-19 | 5 | **Phase 5 merged.** P5 agent: RoomDO with full state.storage-backed snapshot/log/audit/chat/ecell; DO internal API `/_do/*`; POST/PUT/GET/DELETE room routes + `_exists`/`_rooms`/`_roomlinks`/`_roomtimes`/`_from/:template`. csv via SocialCalc; xlsx/ods 501 stubs. `/_roomlinks` ships sensible-fix (text/html + HTML body). Extended headless with exportCells/exportCell/csvToSave. Worker 70 node + 42 integration → 104 + 25 (129 total). Oracle replay 9/13. **§7 item 33 documents the `?raw` vs `[[rules]]` cross-toolchain trap** with the workaround (inline DO binding, drop wrangler.configPath); downside: ASSETS binding regresses in vitest, Phase 5.2 follow-up. **1011+ tests passing across 10 packages.** | 4af4ae3, cc2f31c, 2bfdcf2 |
 
 ---
 
