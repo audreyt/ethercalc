@@ -472,6 +472,8 @@ describe('handleStopHuddle', () => {
     expect(state.snapshot).toBeUndefined();
     expect(calls.broadcasts).toHaveLength(1);
     expect(calls.broadcasts[0]!.msg).toEqual({ type: 'stopHuddle', room: 'r' });
+    // Peers-only — sender already knows it stopped the huddle.
+    expect(calls.broadcasts[0]!.includeSelf).toBe(false);
   });
 
   it('preserves auth field on the broadcast payload when supplied', async () => {
@@ -515,6 +517,8 @@ describe('handleEcell', () => {
     });
     // `ecell` is a broadcast-only frame; it does NOT touch storage.
     expect(state.ecell.size).toBe(0);
+    // Peers only — sender already knows its own cursor.
+    expect(calls.broadcasts[0]!.includeSelf).toBe(false);
   });
 
   it('preserves original + auth optional fields in the broadcast', async () => {

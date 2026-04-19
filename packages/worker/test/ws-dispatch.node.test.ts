@@ -173,10 +173,12 @@ describe('broadcast shapers', () => {
   });
 
   it('buildStopHuddleBroadcast preserves auth only when supplied', () => {
-    expect(buildStopHuddleBroadcast({ type: 'stopHuddle', room: 'r' })).toEqual({
-      type: 'stopHuddle',
-      room: 'r',
-    });
+    const without = buildStopHuddleBroadcast({ type: 'stopHuddle', room: 'r' });
+    expect(without).toEqual({ type: 'stopHuddle', room: 'r' });
+    // `toEqual` treats {x: undefined} and {} the same. To kill the
+    // "always assign auth" mutant at buildStopHuddleBroadcast line 167,
+    // we must assert the absence of the key explicitly.
+    expect('auth' in without).toBe(false);
     expect(
       buildStopHuddleBroadcast({ type: 'stopHuddle', room: 'r', auth: 'h' }),
     ).toEqual({ type: 'stopHuddle', room: 'r', auth: 'h' });
