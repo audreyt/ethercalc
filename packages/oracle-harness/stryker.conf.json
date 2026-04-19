@@ -1,6 +1,7 @@
 {
   "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "_comment": "Phase 12 mutation testing — see CLAUDE.md §5.3 + docs/MUTATION_REPORT.md. bin.ts, cli.ts and record/replay are thin glue with integration coverage, not unit tests, so they're excluded.",
+  "_ratchet_comment": "Break threshold is the current measured mutation score (floored). Any PR that lowers it fails. To RAISE the baseline, close surviving mutants (see docs/MUTATION_REPORT.md top-gaps list), re-run `bun run mutation`, and update `break` here in the same PR. `low` is a +3 ratchet target (warns, does not fail). `high` is a +8 stretch goal.",
   "packageManager": "npm",
   "testRunner": "vitest",
   "plugins": ["@stryker-mutator/vitest-runner"],
@@ -22,9 +23,9 @@
   ],
   "coverageAnalysis": "perTest",
   "thresholds": {
-    "high": 80,
-    "low": 60,
-    "break": 70
+    "high": 92,
+    "low": 87,
+    "break": 84
   },
   "timeoutMS": 120000,
   "concurrency": 4,
