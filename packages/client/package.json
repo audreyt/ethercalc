@@ -1,0 +1,27 @@
+{
+  "name": "@ethercalc/client",
+  "version": "0.0.0",
+  "private": true,
+  "description": "EtherCalc single-sheet browser client (Vite + TypeScript)",
+  "license": "CC0-1.0",
+  "type": "module",
+  "main": "./src/main.ts",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ethercalc/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@vitest/coverage-istanbul": "^2.1.4",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10",
+    "vitest": "^2.1.4"
+  }
+}
