@@ -14,10 +14,13 @@ import { registerExports } from './routes/exports.ts';
 import { registerLegacySocketIo } from './routes/legacy-socketio.ts';
 import { registerRoomRoutes } from './routes/rooms.ts';
 import { registerStateless } from './routes/stateless.ts';
+import { registerTimetrigger } from './routes/timetrigger.ts';
 import { registerWs } from './routes/ws.ts';
+import { scheduled } from './scheduled.ts';
 import type { Env } from './env.ts';
 
 export { RoomDO } from './room.ts';
+export { scheduled } from './scheduled.ts';
 
 /**
  * Build the root Hono app. Exported for tests so they can construct it
@@ -42,6 +45,11 @@ export function buildApp(): Hono<{ Bindings: Env }> {
   // the native transport; `/socket.io/*` covers the old embeds.
   registerWs(app);
   registerLegacySocketIo(app);
+  // Phase 9 — backwards-compat `/_timetrigger` endpoint. Registered before
+  // the room routes so the `_timetrigger` literal wins against any
+  // `/_exists/:room` pattern (same leading underscore). Reads the D1
+  // `cron_triggers` table and fires due rows just like `scheduled()`.
+  registerTimetrigger(app);
   // Room index + CRUD — register BEFORE stateless so `/_rooms`, `/_exists/:room`,
   // `/_from/:template` etc take precedence over any `/:room`-style catch-all.
   registerRoomRoutes(app);
@@ -56,4 +64,11 @@ export function buildApp(): Hono<{ Bindings: Env }> {
   return app;
 }
 
-export default buildApp();
+// Module-worker default export: Cloudflare calls `fetch` for HTTP + WS
+// upgrades and `scheduled` for cron triggers (Phase 9). Using the Hono
+// app's `.fetch` directly keeps the existing HTTP routing intact.
+const _app = buildApp();
+export default {
+  fetch: _app.fetch.bind(_app),
+  scheduled,
+};

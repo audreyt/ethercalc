@@ -21,8 +21,10 @@
 /* istanbul ignore file */
 import type { Hono } from 'hono';
 
+import { upsertCronTriggers } from '../handlers/cron.ts';
 import { classifyCommandBody, joinCommands } from '../handlers/post-command.ts';
 import { classifyRequestBody } from '../handlers/rooms.ts';
+import { parseSettimetrigger } from '../lib/cron.ts';
 import { doFetch } from '../lib/do-dispatch.ts';
 import {
   enrichLoadClipboard,
@@ -318,6 +320,25 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
     // single newline-separated batch (matches legacy
     // `cmdstr = command * '\n'`).
     const cmdstr = joinCommands(commandOut);
+
+    // Phase 9 — settimetrigger side-effect. The legacy flow posted the
+    // command to a worker-thread which then emitted a `setcrontrigger`
+    // message (src/sc.ls:220); we short-circuit by detecting the verb
+    // here and writing to D1 before the DO runs the command. The DO
+    // still executes the command (which records a log entry), but the
+    // actual scheduling lives in `cron_triggers`.
+    //
+    // Multi-line dispatches (array command or newline-joined text
+    // block) can carry several settimetrigger lines; we parse each.
+    if (c.env.DB) {
+      for (const line of cmdstr.split('\n')) {
+        const parsed = parseSettimetrigger(line);
+        if (parsed) {
+          await upsertCronTriggers(c.env.DB, room, parsed.cell, parsed.times);
+        }
+      }
+    }
+
     await doFetch(c.env, room, '/_do/commands', {
       method: 'POST',
       body: cmdstr,
