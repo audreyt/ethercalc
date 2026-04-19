@@ -238,13 +238,24 @@ export class RoomDO implements DurableObject {
   async #postCommands(request: Request, roomName: string | null): Promise<Response> {
     const body = await request.text();
     if (!body) return plainResponse('', 202);
+    await this.#applyCommandAndMirror(roomName, body);
+    return plainResponse('', 202);
+  }
+
+  /**
+   * Apply a command batch + mirror to D1. Shared between the HTTP path
+   * (`POST /_do/commands`) and the WS path (`execute` frame). Centralizing
+   * this ensures both paths update the `rooms` index; without mirroring on
+   * the WS path, `/_rooms` and `/_roomtimes` go stale whenever a browser
+   * client edits a fresh room (found during 2026-04-20 browser smoke).
+   */
+  async #applyCommandAndMirror(roomName: string | null, cmdstr: string): Promise<void> {
     let updatedAt = 0;
     await this.#state.blockConcurrencyWhile(async () => {
-      await this.#appendCommand(body);
+      await this.#appendCommand(cmdstr);
       updatedAt = Date.now();
     });
     await this.#mirrorIndex(roomName, updatedAt);
-    return plainResponse('', 202);
   }
 
   async #deleteAll(roomName: string | null): Promise<Response> {
@@ -543,9 +554,12 @@ export class RoomDO implements DurableObject {
       auth: messageAuth,
       storage,
       applyCommand: async (cmdstr: string) => {
-        await this.#state.blockConcurrencyWhile(async () => {
-          await this.#appendCommand(cmdstr);
-        });
+        // Mirror the DO's own room (from the WS handshake attachment),
+        // not the per-frame `room` field, because the append lands in
+        // *this* DO's storage regardless of what room the frame names.
+        // For normal (non-multiplexed) clients the two are equal.
+        const nameToMirror = attachment.room || messageRoom;
+        await this.#applyCommandAndMirror(nameToMirror, cmdstr);
       },
       broadcast: async (msg, includeSelf) => {
         if (includeSelf) this.#broadcastAll(msg);

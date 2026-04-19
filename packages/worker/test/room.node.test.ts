@@ -651,6 +651,93 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
     expect(res.status).toBe(201);
     expect(d1Calls).toHaveLength(0);
   });
+
+  /**
+   * WS-path parity. The browser client never issues `POST /_do/commands`;
+   * it sends an `execute` frame over the WS, which lands in
+   * `#applyCommandAndMirror` through `#buildWsContext`. Without this mirror
+   * wire-up, `/_rooms` stayed empty even after active editing — the bug
+   * that surfaced during the 2026-04-20 browser smoke test.
+   */
+  it('WS execute frame mirrors the room into D1', async () => {
+    const record2: FakeStorageRecord = { map: new Map() };
+    const d1Calls2: D1Call[] = [];
+    const env = makeEnvWithDb(d1Calls2);
+    const { state } = makeWsAwareState('x', record2, []);
+    const wsRoom = new RoomDO(state, env);
+    const log: FakeWsLog = { sent: [] };
+    const ws = makeFakeWs(log, { user: 'alice', room: 'gamma', auth: 'h' });
+    await wsRoom.webSocketMessage(
+      ws,
+      JSON.stringify({
+        type: 'execute',
+        room: 'gamma',
+        user: 'alice',
+        auth: 'gamma',
+        cmdstr: 'set A1 value n 1',
+      }),
+    );
+    expect(d1Calls2).toHaveLength(1);
+    expect(d1Calls2[0]!.sql).toContain('INSERT INTO rooms');
+    expect(d1Calls2[0]!.params[0]).toBe('gamma');
+    expect(typeof d1Calls2[0]!.params[1]).toBe('number');
+  });
+
+  /**
+   * Attachment fallback: the DO was opened with a handshake attachment of
+   * `{room: 'alpha', …}`, but the client frame declares `room: 'beta'`.
+   * Since the append lands in the DO's own storage (the one opened for
+   * `alpha`), the mirror must follow the handshake room — not the frame.
+   */
+  it('WS execute mirrors the handshake-attachment room, not the frame room', async () => {
+    const record3: FakeStorageRecord = { map: new Map() };
+    const d1Calls3: D1Call[] = [];
+    const env = makeEnvWithDb(d1Calls3);
+    const { state } = makeWsAwareState('x', record3, []);
+    const wsRoom = new RoomDO(state, env);
+    const log: FakeWsLog = { sent: [] };
+    const ws = makeFakeWs(log, { user: 'u', room: 'alpha', auth: 'h' });
+    await wsRoom.webSocketMessage(
+      ws,
+      JSON.stringify({
+        type: 'execute',
+        room: 'beta',
+        user: 'u',
+        auth: 'beta',
+        cmdstr: 'set A1 value n 1',
+      }),
+    );
+    expect(d1Calls3).toHaveLength(1);
+    expect(d1Calls3[0]!.params[0]).toBe('alpha');
+  });
+
+  /**
+   * When the handshake attachment is missing (legacy handshake or default
+   * fallback), the mirror room falls back to the frame's `room` field so
+   * we still register the edit somewhere sensible.
+   */
+  it('WS execute with empty attachment room falls back to frame room', async () => {
+    const record4: FakeStorageRecord = { map: new Map() };
+    const d1Calls4: D1Call[] = [];
+    const env = makeEnvWithDb(d1Calls4);
+    const { state } = makeWsAwareState('x', record4, []);
+    const wsRoom = new RoomDO(state, env);
+    const log: FakeWsLog = { sent: [] };
+    // makeFakeWs defaults attachment to { user: '', room: '', auth: '' }.
+    const ws = makeFakeWs(log);
+    await wsRoom.webSocketMessage(
+      ws,
+      JSON.stringify({
+        type: 'execute',
+        room: 'fallback',
+        user: '',
+        auth: 'fallback',
+        cmdstr: 'set A1 value n 1',
+      }),
+    );
+    expect(d1Calls4).toHaveLength(1);
+    expect(d1Calls4[0]!.params[0]).toBe('fallback');
+  });
 });
 
 /**
