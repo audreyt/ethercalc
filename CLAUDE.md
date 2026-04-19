@@ -565,9 +565,10 @@ Goal: prove Plan A works (SocialCalc loads and executes in workerd).
 - [x] `scripts/smoke-selfhost.sh` — builds image, composes up, curls `/_health`, composes down.
 - [x] CI `build-selfhost` job wires the smoke script.
 - [x] README.mkdn — self-host section with env var table.
-- [ ] `/socket.io/socket.io.js` legacy adapter serving — depends on Phase 7 WS layer.
-- [ ] Migration script: import existing Redis dump → D1 + KV.
-- [ ] Playwright e2e against `wrangler dev` covering both single-sheet and `multi/` flows.
+- [x] **`packages/socketio-shim/`** — socket.io v0.9 wire-format adapter (framing/translate/handshake/sid/adapter/legacy-io). 168 tests, 100% coverage. All 8 reconnect events translated. `LEGACY_IO_JS` bundle ready. Wiring into the worker awaits Phase 7 WS layer.
+- [x] **Migration script** — `packages/migrate/` hand-rolled RDB parser (6 encodings incl LZF), pluggable MigrationTarget + InMemoryTarget + WranglerTarget, CLI with `--dry-run`. 91 tests, 100% coverage. Uses `do_storage_seed` D1 staging table as stopgap until Phase 5 ships `PUT /_do/snapshot`.
+- [x] **Playwright e2e** — `packages/e2e/` with wrangler dev + vite dev per-worker fixtures, 5 specs (10 passing + 1 skipped pending full asset pipeline). CI job with Chromium install + trace artifacts.
+- [ ] Wire socketio-shim into the worker at `/socket.io/*` — depends on Phase 7.
 
 ### Phase 12 — CI hardening
 - [ ] Nightly Stryker mutation job.
@@ -755,6 +756,7 @@ Append one entry per session you work on this. Keep it short. Use this for conte
 | 2026-04-19 | 8a    | **Phase 8a DONE.** P8a agent merged the xlsx + ods matchers on top of the earlier html merge. fflate + canonicalize-each-XML pipeline. 158 oracle-harness tests, 100% coverage. Volatile element drop lists surfaced and documented in §4.4 (docProps/core.xml + app.xml for xlsx, meta.xml for ods, id referrers + comments + whitespace-only text for html). Unblocks Phase 8 export wiring. | db2d0a8, 413307a |
 | 2026-04-19 | 10.2  | **Phase 10.2 DONE.** P10c agent second round covered `src/graph.ts` (615 lines) to 100% with 102 new tests via fake 2D canvas recorder + fake DOM. Client package now 190 tests at 100/100/100/100 across ws-adapter, socialcalc-callbacks, main, graph. Three narrow `/* istanbul ignore next */` on dead `??` fallbacks. **587 tests total across 7 packages.** | 78fd477, 9640ee9 |
 | 2026-04-19 | 11e2e/4.1 | **Third wave agents merged:** PE2E Playwright skeleton (`packages/e2e/`, 5 specs, 10/11 passing + 1 skip pending asset pipeline); PAssets curated `assets/` (27 files 1.9 MiB, `scripts/build-assets.sh`), live ASSETS binding, `/:room` entry route, colon-route `/static/form:part.js`, dynamic `manifest.appcache` DevMode stub, i18n 7 locales. Oracle replay 5/13 → 8/13. Two new sensible-fix allow-list entries: `/_roomlinks` CT, `/favicon.ico` CT (§6.1). §4.4 drop-headers list expanded (Accept-Ranges, Cache-Control, Content-Length). `/:template/form` stubs 503 pending Phase 5 DO-to-DO clone. | edcff17-5a419eb, 08195b5-8f06ad0 |
+| 2026-04-19 | 11b/11c | **P11b + P11c merged.** P11b: `packages/migrate/` hand-rolled RDB parser (6 encodings incl LZF, 500 LOC), MigrationTarget + InMemory/Wrangler targets, CLI with dry-run, 91 tests at 100% coverage; uses `do_storage_seed` D1 staging as Phase 5 stopgap. P11c: `packages/socketio-shim/` full wire-format adapter (framing + translate + handshake + sid + adapter + legacy-io client bundle), 168 tests at 100% coverage; 3-colon splitter for event-frame JSON with embedded colons; explicit single-digit guard blocks Engine.IO v1+ shape. **10 packages, 911+ tests passing.** | 7da1907-71123b1, 9aa5da1/157c7c3 |
 
 ---
 
