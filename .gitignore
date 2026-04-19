@@ -1,3 +1,8 @@
-/node_modules/
+node_modules/
 /dump/
 *.swp
+dist/
+coverage/
+.wrangler/
+.vitest-cache/
+*.log

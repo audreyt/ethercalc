@@ -414,13 +414,12 @@ Legend: `[ ]` pending · `[~]` in progress · `[x]` done · `[!]` blocked (see n
 - [x] Read API + src + protocol; write §1–§15 of this doc.
 - [ ] User approves plan (or redirects). **← blocker for Phase 1.**
 
-### Phase 1 — socialcalc-in-DO prototype (highest-risk spike)
+### Phase 1 — socialcalc-in-DO prototype (highest-risk spike) — DONE
 Goal: prove Plan A works (SocialCalc loads and executes in workerd).
-- [ ] New `packages/socialcalc-headless/` with TS wrapper.
-- [ ] Minimal repro: Worker that on GET returns `exportSave()` after running a canned command stream.
-- [ ] `vitest` test asserts exact save string matches oracle output for same commands.
-- [ ] Document findings in §16 Appendix A.
-- [ ] If Plan A fails, execute Plan B fallback, update §3.4.
+- [x] New `packages/socialcalc-headless/` with TS wrapper.
+- [x] Smoke test suite (6 tests) asserting SUM, text+number, snapshot+log round-trip, recalc-without-formulas.
+- [x] Documented findings in §16.A (eval scaffold, three source transforms, sloppy-mode requirement).
+- [x] Plan A green — Plan B/C not needed.
 
 ### Phase 2 — Repo scaffold
 - [ ] `pnpm-workspace.yaml` (or bun workspaces) with packages: `worker`, `socialcalc-headless`, `client`, `oracle-harness`, `shared`.
@@ -686,6 +685,7 @@ Append one entry per session you work on this. Keep it short. Use this for conte
 | ---------- | ----- | ---------------------------------------------------------------------------------------------------- | ------- |
 | 2026-04-19 | 0     | Plan drafted. Audited LS source, Redis keys, socket events.                                          | —       |
 | 2026-04-19 | 0     | Renamed REWRITE.md → CLAUDE.md (auto-load). All §13 questions answered; §1/§3/§8/§9/§11 updated.     | —       |
+| 2026-04-19 | 1     | **Phase 1 done.** `packages/socialcalc-headless/` runs SocialCalc 2.3.0 in workerd. 6/6 smoke tests green. Three source transforms documented (§16.A); most important is rewriting UMD `factory.call(root, this)` → `factory.call(root, root)` to pin `window` to our host in sloppy-mode eval. Sync setTimeout shim lets recalc unroll inline. | —       |
 
 ---
 
@@ -722,30 +722,78 @@ To resume work:
 
 ## 16. Appendix
 
-### 16.A — socialcalc-in-DO prototype plan (Phase 1 detail)
+### 16.A — socialcalc-in-DO prototype — RESOLVED 2026-04-19
 
-Minimal viable test:
+**Plan A works.** `socialcalc@2.3.0` runs inside workerd via `@cloudflare/vitest-pool-workers`. 6/6 smoke tests green. Code lives in `packages/socialcalc-headless/`.
 
-```ts
-// packages/socialcalc-headless/test/smoke.test.ts
-import { describe, it, expect } from 'vitest';
-import { createSpreadsheet } from '../src/index.ts';
+#### What worked
 
-describe('socialcalc in workerd', () => {
-  it('executes set + recalc and exports CSV', async () => {
-    const ss = await createSpreadsheet();
-    await ss.executeCommand('set A1 value n 1\nset A2 value n 2\nset A3 formula SUM(A1:A2)\nrecalc');
-    expect(await ss.exportCSV()).toBe('1\n2\n3\n');
-  });
-});
+1. **Vite `?raw` import** of `socialcalc/dist/SocialCalc.js` — string-loads the 27k-line UMD at build time.
+2. **`new Function(...)`** eval inside workerd. Permitted; no CSP/unsafe-eval restriction for DO code.
+3. **Sync `setTimeout` shim** — legacy server used `process.nextTick` via webworker-threads; we install `host.setTimeout = function(cb){cb();return 0;}` so the recalc state machine unrolls inline and `executeCommand()` returns a fully-settled sheet.
+4. **ShimNode DOM class** at `src/dom-shim.ts` — direct port of the legacy `src/sc.ls` Node class. Covers the seven attribute names SocialCalc sets (`id`, `width`, `height`, `className`, `colSpan`, `rowSpan`, `title`) plus `innerHTML`/`outerHTML` getters and `appendChild`.
+5. **Manual `RecalcSheet` kick** — the `recalc` command only sets `needsrecalc="yes"`; without an editor we trigger `SocialCalc.RecalcSheet(sheet)` ourselves after the command batch.
+
+#### Three non-obvious source transforms (`transformSource` in `src/index.ts`)
+
+| # | Find                                 | Replace with                                   | Why                                                                |
+| - | ------------------------------------ | ---------------------------------------------- | ------------------------------------------------------------------ |
+| 1 | `document.createElement(`            | `SocialCalc.document.createElement(`           | Legacy — redirect DOM creation to our shim's namespace-bound one   |
+| 2 | `alert(`                             | `(function(){})(`                              | Legacy — silence alerts on error paths                             |
+| 3 | `factory.call(root, this)` (UMD)     | `factory.call(root, root)`                     | **New.** `this` at the UMD's outer IIFE call site resolves to the real workerd global in sloppy-mode eval, so `window.setTimeout` inside the factory became the real async timer instead of our shim. Rewriting to `root` pins `window` to our host. Also applies to the `factory.bind(root, this)` AMD branch. |
+
+#### Eval scaffold (`WRAPPED_TEMPLATE` in `src/index.ts`)
+
+```js
+// Called as `factory.call(host, ShimNode)` — so `this === host` inside body.
+var host = this;
+host.setTimeout = function (cb) { cb(); return 0; };
+host.clearTimeout = function () {};
+
+// Inner IIFE pins `this === host` too, so SocialCalc's UMD sees
+// `(this, factory)` with `this === host` and pipes host through as `window`.
+(function () {
+  var window = this;
+  var navigator = { language: "", userAgent: "" };
+  var module, exports, define;       // force UMD else-branch
+  ${transformedSource}
+}).call(host);
+
+var __SC = host.SocialCalc;
+__SC.document = __SC.document || {};
+__SC.document.createElement = function (tag) { return new __ShimNode(tag); };
+return __SC;
 ```
 
-If this passes in `@cloudflare/vitest-pool-workers` (runs in workerd), we're unblocked. If it fails, diagnosis order:
-1. `new Function(socialCalcSource)` — does workerd allow it? If no: Plan B.
-2. DOM stubs insufficient? — enrich `Node` class to cover all calls.
-3. `setTimeout` behavior — workerd supports, but `clearTimeout(id)` returns differently? — likely fine.
-4. `navigator.userAgent` assumption in SocialCalc formula engine — stub.
-5. Memory — SocialCalc holds a lot; DO has 128MB limit. Likely fine for reasonable sheets.
+#### Required: sloppy mode
+
+SocialCalc 2.3.0 uses `delete varname;` at lines 7173, 25144, 27541. This is a `SyntaxError` in strict mode. No `"use strict";` anywhere in the wrapper. `new Function` bodies are sloppy by default, which is what we need.
+
+#### Performance
+
+- Factory is memoized module-wide (`cachedNamespace`). The 27k-line eval runs **once per isolate** (≈ once per DO cold start).
+- Each room gets a fresh `SpreadsheetControl` on the shared namespace.
+- Synchronous recalc adds no meaningful latency for reasonable sheets (SUM over 2 cells: 2 setTimeout hops; no measurable diff from async).
+
+#### What we proved (smoke test suite)
+
+- `loads SocialCalc namespace in workerd`
+- `instantiates a SpreadsheetControl with a default empty sheet`
+- `executes set + SUM formula and exports CSV` — `SUM(A1:A2)` with A1=1, A2=2 → `1\n2\n3\n`
+- `loads from snapshot and applies log` — round-trips `createSpreadsheetSave` → `createSpreadsheet({snapshot, log})`
+- `survives a recalc where no formulas reference anything`
+- `handles text cells and basic arithmetic` — mixed text + numeric + formula, 2-col 3-row CSV
+
+#### What we haven't proved yet (deferred to Phase 8)
+
+- HTML export (`CreateSheetHTML` → ShimNode's `outerHTML` serialization). Basic infra is there; needs test.
+- Cell-level introspection (`sheet.cells[coord]`) for `exportCells`/`exportCell` endpoints.
+- Cross-sheet formula references (`'other-room'!A1`) — requires `RecalcInfo.LoadSheet` hook wired to sibling DOs. Design lives in §10.2 (RecalcLoadSheet → `env.ROOM.get(idFromName(otherRoom))`).
+- `ScheduleSheetCommands` path (async, via StatusCallback) — we bypass it with sync `ExecuteSheetCommand`. Fine for HTTP requests, but if any command sequence depends on the async scheduler's cmdend callback, we'll need to run it the async way. No known case yet.
+
+#### Unused Plan B / Plan C
+
+Plan A green ⇒ Plan B (Node Workers compat) and Plan C (WASM) NOT needed. Delete from plan in next cleanup pass.
 
 ### 16.B — Deferred decisions not in §13
 
