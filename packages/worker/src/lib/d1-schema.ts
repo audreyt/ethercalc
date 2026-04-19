@@ -57,6 +57,3 @@ export async function withCronSchema<T>(
     op,
   );
 }
-
-// Syntax error here
-const foo: number = "string";

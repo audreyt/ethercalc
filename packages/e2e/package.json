@@ -11,7 +11,7 @@
     "test:headed": "playwright test --headed",
     "test:ui": "playwright test --ui",
     "install:browsers": "playwright install --with-deps chromium",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsgo --noEmit",
     "report": "playwright show-report"
   },
   "devDependencies": {

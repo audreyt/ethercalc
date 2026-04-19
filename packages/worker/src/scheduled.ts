@@ -115,14 +115,14 @@ export async function runScheduled(params: {
     // (PK). `due` lost them to the `DueTrigger` shape. Re-derive
     // from `rows` by filtering on identity — for each due trigger
     // re-match rows with fire_at <= nowMinutes.
-    const dueRows = rows.filter((r) => r.fire_at <= nowMinutes);
+    const dueRows = rows.filter((r: CronTriggerRow) => r.fire_at <= nowMinutes);
     const stmt = db.prepare(
       'DELETE FROM cron_triggers WHERE room = ?1 AND cell = ?2 AND fire_at = ?3',
     );
     // Batch each fired row as one bound statement. We intentionally
     // don't wrap in a transaction; each delete is idempotent on PK
     // collision anyway.
-    const batch = dueRows.map((r) =>
+    const batch = dueRows.map((r: CronTriggerRow) =>
       stmt.bind(r.room, r.cell, r.fire_at),
     );
     if (batch.length > 0) {
