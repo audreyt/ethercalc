@@ -1,0 +1,19 @@
+{
+  "scenario": {
+    "name": "misc/get-exists-unknown-room",
+    "kind": "http",
+    "request": {
+      "method": "GET",
+      "path": "/_exists/oracle-probe-never-created-room-xyzzy"
+    },
+    "expect": {
+      "status": 200,
+      "headers": {
+        "content-length": "5",
+        "content-type": "application/json; charset=utf-8"
+      },
+      "bodyBase64": "ZmFsc2U=",
+      "bodyMatcher": "json"
+    }
+  }
+}

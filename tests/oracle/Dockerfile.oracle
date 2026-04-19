@@ -1,0 +1,45 @@
+# Oracle image: current-main EtherCalc (pre-rewrite, LiveScript/zappajs) boot via bun.
+#
+# This is the ground truth that Phase 3+ scenarios record against. It
+# reads from the Redis sidecar service on host `redis:6379`.
+#
+# The pinned SHA is passed in at build time via --build-arg so the
+# docker-compose file can keep it in one place. Default matches the
+# last legacy commit on origin/main at the time of Phase 3 kickoff:
+#   042b731d9e98f1d30537e6cb656f65792afdecdf — "Switch from node/npm to bun"
+#
+# We use Node 20 on Debian + layer Bun on top: the zappajs 0.5.x stack
+# only ships Node-compatible dependencies, and `bun install` handles
+# all of them via its npm compat shim. `bun app.js` runs the server
+# (app.js is compiled LiveScript output checked into the repo).
+
+FROM node:20-bookworm-slim
+
+ARG ORACLE_SHA=042b731d9e98f1d30537e6cb656f65792afdecdf
+ENV ORACLE_SHA=${ORACLE_SHA}
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git ca-certificates curl unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install bun (the legacy app's runtime since the 042b731 commit).
+RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=/opt/bun bash \
+    && ln -s /opt/bun/bin/bun /usr/local/bin/bun
+
+WORKDIR /srv/ethercalc
+
+# Clone the pinned SHA. Using a shallow clone keeps the image small;
+# passing --depth=1 with a specific SHA requires a two-step fetch.
+RUN git init . \
+    && git remote add origin https://github.com/audreyt/ethercalc.git \
+    && git fetch --depth 1 origin ${ORACLE_SHA} \
+    && git checkout FETCH_HEAD
+
+RUN bun install
+
+EXPOSE 8000
+
+# CORS disabled on the oracle: lets us record `/_rooms`, `/_roomlinks`,
+# `/_roomtimes` (which are 403-gated with CORS on). Workers can opt-in
+# CORS via the recorder scenario headers when we get there.
+CMD ["bun", "app.js", "--port", "8000", "--host", "0.0.0.0"]

@@ -1,0 +1,19 @@
+{
+  "scenario": {
+    "name": "rooms-index/get-rooms-empty",
+    "kind": "http",
+    "request": {
+      "method": "GET",
+      "path": "/_rooms"
+    },
+    "expect": {
+      "status": 200,
+      "headers": {
+        "content-length": "2",
+        "content-type": "application/json; charset=utf-8"
+      },
+      "bodyBase64": "W10=",
+      "bodyMatcher": "json"
+    }
+  }
+}

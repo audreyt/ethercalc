@@ -1,0 +1,19 @@
+{
+  "scenario": {
+    "name": "misc/get-etc-foo-404",
+    "kind": "http",
+    "request": {
+      "method": "GET",
+      "path": "/etc/foo"
+    },
+    "expect": {
+      "status": 404,
+      "headers": {
+        "content-length": "0",
+        "content-type": "text/html; charset=utf-8"
+      },
+      "bodyBase64": "",
+      "bodyMatcher": "exact"
+    }
+  }
+}
