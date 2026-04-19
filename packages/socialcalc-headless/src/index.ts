@@ -1,5 +1,5 @@
-import { ShimNode } from './dom-shim.js';
-import { createSocialCalcFactory } from './socialcalc.bundled.js';
+import { ShimNode } from './dom-shim';
+import { createSocialCalcFactory } from './socialcalc.bundled';
 
 type SocialCalcNamespace = Record<string, unknown> & {
   SpreadsheetControl: new (idPrefix?: string) => SpreadsheetControl;
@@ -48,9 +48,7 @@ export function loadSocialCalc(): SocialCalcNamespace {
 }
 
 export interface HeadlessSpreadsheetOptions {
-  /** Initial snapshot in SocialCalc save format. */
   snapshot?: string;
-  /** Initial command log to replay (applied after snapshot, before recalc). */
   log?: readonly string[];
 }
 
@@ -69,39 +67,25 @@ export class HeadlessSpreadsheet {
     const sheet = this.#ss.context.sheetobj;
     const parse = new this.#SC.Parse(trimmed);
     while (!parse.EOF()) {
-      this.#SC.ExecuteSheetCommand(sheet, parse, saveundo);
+      try {
+        this.#SC.ExecuteSheetCommand(sheet, parse, saveundo);
+      } catch (e) { console.error("Error in ExecuteSheetCommand:", e); }
       parse.NextLine();
     }
     if (sheet.attribs.needsrecalc === 'yes' || sheet.recalconce === true) {
-      this.#SC.RecalcSheet(sheet);
+      try {
+        this.#SC.RecalcSheet(sheet);
+      } catch (e) { console.error("Error in RecalcSheet:", e); }
       sheet.attribs.needsrecalc = 'no';
     }
   }
 
-  createSheetSave(): string {
-    return this.#ss.CreateSheetSave();
-  }
-
-  createSpreadsheetSave(): string {
-    return this.#ss.CreateSpreadsheetSave();
-  }
-
-  createSheetHTML(): string {
-    return this.#ss.CreateSheetHTML();
-  }
-
-  exportCSV(): string {
-    return this.#SC.ConvertSaveToOtherFormat(this.#ss.CreateSheetSave(), 'csv');
-  }
-
-  exportCells(): Record<string, unknown> {
-    return this.#ss.sheet.cells;
-  }
-
-  exportCell(coord: string): unknown {
-    const cell = this.#ss.sheet.cells[coord];
-    return cell === undefined ? null : cell;
-  }
+  createSheetSave(): string { return this.#ss.CreateSheetSave(); }
+  createSpreadsheetSave(): string { return this.#ss.CreateSpreadsheetSave(); }
+  createSheetHTML(): string { return this.#ss.CreateSheetHTML(); }
+  exportCSV(): string { return this.#SC.ConvertSaveToOtherFormat(this.#ss.CreateSheetSave(), 'csv'); }
+  exportCells(): Record<string, unknown> { return this.#ss.sheet.cells; }
+  exportCell(coord: string): unknown { const cell = this.#ss.sheet.cells[coord]; return cell === undefined ? null : cell; }
 }
 
 export function csvToSave(csv: string): string {
@@ -113,11 +97,13 @@ export function createSpreadsheet(opts: HeadlessSpreadsheetOptions = {}): Headle
   const SC = loadSocialCalc();
   const ss = new SC.SpreadsheetControl();
   if (opts.snapshot) {
-    const parts = ss.DecodeSpreadsheetSave(opts.snapshot);
-    if (parts?.sheet) {
-      ss.sheet.ResetSheet();
-      ss.ParseSheetSave(opts.snapshot.substring(parts.sheet.start, parts.sheet.end));
-    }
+    try {
+      const parts = ss.DecodeSpreadsheetSave(opts.snapshot);
+      if (parts?.sheet) {
+        ss.sheet.ResetSheet();
+        ss.ParseSheetSave(opts.snapshot.substring(parts.sheet.start, parts.sheet.end));
+      }
+    } catch (e) { console.error("Error in DecodeSpreadsheetSave:", e); }
   }
   const wrapped = new HeadlessSpreadsheet(SC, ss);
   if (opts.log) {
