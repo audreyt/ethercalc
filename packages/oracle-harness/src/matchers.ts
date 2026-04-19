@@ -1,6 +1,11 @@
 import type { BodyMatcher } from '@ethercalc/shared/oracle-scenarios';
 
 import { canonicalizeHtml } from './html-canonical.ts';
+import {
+  compareZipArchives,
+  VOLATILE_ODS_META,
+  VOLATILE_XLSX_DOCPROPS,
+} from './zip-canonical.ts';
 
 /**
  * Body matchers used by `replay.ts`. Each matcher takes the expected
@@ -8,10 +13,9 @@ import { canonicalizeHtml } from './html-canonical.ts';
  * returns `null` on success or a short explanation on failure.
  *
  * Phase 3 implements `exact`, `json`, `ignore`, and `scsave`. Phase 8a
- * adds `html` via linkedom; `xlsx` and `ods` follow in Phase 8b using
- * the same linkedom XML path plus fflate unzip. See §4.4 of CLAUDE.md
- * and the drop lists documented in `html-canonical.ts` (and, once it
- * lands, `zip-canonical.ts`).
+ * adds `html` via linkedom plus `xlsx`/`ods` via fflate unzip + the
+ * same linkedom XML canonicalizer. See §4.4 of CLAUDE.md and the drop
+ * lists documented in `html-canonical.ts` and `zip-canonical.ts`.
  */
 export type MatcherResult = string | null;
 
@@ -133,14 +137,41 @@ export function matchHtml(ctx: MatcherContext): MatcherResult {
   return `html mismatch:\n--- expected\n${expected}\n--- actual\n${actual}`;
 }
 
-/** Structural XLSX matcher. Deferred to Phase 8b (after html lands). */
-export function matchXlsx(_ctx: MatcherContext): MatcherResult {
-  throw new Error('not implemented — Phase 8');
+/**
+ * Structural XLSX matcher. Unzips both archives, sorts entries,
+ * canonicalizes each XML entry (via the same DOM walker used by the
+ * HTML matcher), drops volatile elements in `docProps/core.xml` and
+ * `docProps/app.xml`, and byte-compares the stable representation.
+ * Binary entries (images) are hex-compared.
+ *
+ * See `zip-canonical.ts` for the complete drop list.
+ */
+export function matchXlsx(ctx: MatcherContext): MatcherResult {
+  return compareZipBodies(ctx, 'xlsx', VOLATILE_XLSX_DOCPROPS);
 }
 
-/** Structural ODS matcher. Deferred to Phase 8b (after html lands). */
-export function matchOds(_ctx: MatcherContext): MatcherResult {
-  throw new Error('not implemented — Phase 8');
+/**
+ * Structural ODS matcher. Same pipeline as xlsx but with a different
+ * volatile-element map — ODS metadata lives in `meta.xml`.
+ *
+ * See `zip-canonical.ts` for the complete drop list.
+ */
+export function matchOds(ctx: MatcherContext): MatcherResult {
+  return compareZipBodies(ctx, 'ods', VOLATILE_ODS_META);
+}
+
+function compareZipBodies(
+  ctx: MatcherContext,
+  label: 'xlsx' | 'ods',
+  volatile: Readonly<Record<string, readonly string[]>>,
+): MatcherResult {
+  if (ctx.expectedBase64 === null) return `expected body is null but matcher is "${label}"`;
+  const expected = decodeBase64(ctx.expectedBase64);
+  const result = compareZipArchives(expected, ctx.actualBytes, volatile);
+  if (result.equal) return null;
+  // `compareZipArchives` always populates `diff` when `equal: false`,
+  // but TS can't prove it without a union type — hence the cast.
+  return `${label} mismatch: ${result.diff!}`;
 }
 
 /** Table of matcher functions keyed by `BodyMatcher` name. */
