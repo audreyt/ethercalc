@@ -21,7 +21,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ethercalc/shared": "workspace:*"
+    "@ethercalc/shared": "workspace:*",
+    "fflate": "^0.8.2",
+    "linkedom": "^0.18.12"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
