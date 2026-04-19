@@ -1,0 +1,34 @@
+{
+  "name": "@ethercalc/migrate",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Phase 11b — Legacy Redis RDB dump → Cloudflare (DO storage + D1 + KV) migrator (§12)",
+  "license": "CC0-1.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./parse-rdb": "./src/parse-rdb.ts",
+    "./extract-rooms": "./src/extract-rooms.ts",
+    "./apply": "./src/apply.ts",
+    "./targets/in-memory": "./src/targets/in-memory.ts",
+    "./targets/wrangler": "./src/targets/wrangler.ts",
+    "./cli": "./src/cli.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "migrate": "bun run src/cli.ts"
+  },
+  "dependencies": {
+    "@ethercalc/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@vitest/coverage-istanbul": "^2.1.4",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  }
+}
