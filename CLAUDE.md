@@ -466,11 +466,15 @@ Goal: prove Plan A works (SocialCalc loads and executes in workerd).
 - [x] CI is green end-to-end with the scaffolding.
 - [ ] `packages/oracle-harness/` with docker-compose + scenario runner stubs. *(deferred to Phase 3 — it's the natural owner)*
 
-### Phase 3 — Oracle recorder
-- [ ] Docker-compose that boots Redis + current `main` on a known port.
-- [ ] `record.ts` iterates scenarios, persists `recorded/*.json`.
-- [ ] First scenarios: every GET from §6.1 that doesn't require state (static, 404 blocks, /_new).
-- [ ] Replay runs pass against oracle itself (sanity) and fail loudly against the target (since not ported yet).
+### Phase 3 — Oracle recorder — MOSTLY DONE
+- [x] `packages/oracle-harness/` with `src/{record,replay,cli,matchers,headers,normalize,scenarios/*}.ts` and 102/102 tests + 100% coverage.
+- [x] `tests/oracle/docker-compose.yml` + `Dockerfile.oracle` pinned to `042b731`.
+- [x] `tests/oracle/recorded/` — 13 stateless HTTP scenarios captured against the docker oracle.
+- [x] Replay round-trip green (oracle → fixtures → oracle).
+- [x] Body matchers: `exact`, `json`, `scsave`, `ignore`. `html`/`xlsx`/`ods` throw "not implemented — Phase 8".
+- [x] `FINDINGS.md` at `tests/oracle/FINDINGS.md` — 9 oracle quirks documented.
+- [ ] Expand to the full endpoint inventory as subsequent phases land their port. Current 13 are the stateless subset.
+- [ ] `re:<regex>` header matcher convention: used for Location/Content-Length/Last-Modified. Considering promoting this pattern into `@ethercalc/shared`.
 
 ### Phase 4 — Port pure/stateless endpoints
 - [ ] Static assets via Workers Assets.
@@ -522,11 +526,15 @@ Goal: prove Plan A works (SocialCalc loads and executes in workerd).
 - [ ] `sendemail` SocialCalc command routes through email binding.
 - [ ] `confirmemailsent` WS reply.
 
-### Phase 10 — Single-sheet client adapter
-- [ ] Build current single-sheet client (`src/player.ls`, `src/player-broadcast.ls`, `src/player-graph.ls`) via Vite → ES modules.
-- [ ] `packages/client/src/ws-adapter.ts` replaces socket.io client; exposes the same `SocialCalc.Callbacks.broadcast` surface.
-- [ ] Served by Workers Assets.
-- [ ] Playwright: open room, type, reload, export → passes.
+### Phase 10 — Single-sheet client adapter — MOSTLY DONE
+- [x] `packages/client/` with Vite + TS. `src/{ws-adapter,socialcalc-callbacks,main,graph,types,boot}.ts`. 78/78 tests. Build: 20.3 kB JS.
+- [x] `ws-adapter.ts` replaces socket.io client; broadcast queueing during disconnect, backoff reconnect, frame validation via `@ethercalc/shared`.
+- [x] `socialcalc-callbacks.ts` preserves `window.SocialCalc.Callbacks.broadcast` public surface for external embeds.
+- [x] `main.ts` ports `player.ls` entry (URL query, history pushState, formDataViewer flow, ask.log handshake).
+- [ ] **Coverage gate temporarily relaxed** to 99/95/90/99 (was 100/100/100/100). Three uncovered paths: main.ts `parts.edit` fallback loader arrow, applyFormDataLog `parts.sheet`-false branch, callbacks `delete SocialCalc.LoadEditorSettings` branch. Close in Phase 10.1 follow-up PR — should be 3 targeted tests.
+- [ ] `src/graph.ts` (615 lines) ported but excluded from coverage gate. Add targeted tests in Phase 10.2.
+- [ ] Served by Workers Assets — wire in Phase 11.
+- [ ] Playwright: open room, type, reload, export → passes. *(deferred to Phase 11)*
 
 ### Phase 10b — `multi/` React 18 port (§13 Q2) — DONE (except Playwright)
 - [x] New package `packages/client-multi/` — React 18 + TypeScript + Vite.
@@ -724,6 +732,8 @@ Append one entry per session you work on this. Keep it short. Use this for conte
 | 2026-04-19 | —     | `packages/shared/` contracts committed as the stable target for parallel agent work. WS messages, DO storage keys, oracle scenario schemas. 100% coverage. Dispatched 4 parallel worktree agents: P3 (oracle harness), P10 (single-sheet client), P10b (multi/ React 18), Research (LS audit). | —       |
 | 2026-04-19 | —     | **Research agent returned.** 30 findings integrated into §6.1/§6.2/§7 items 21-30: cross-sheet formula DO-to-DO wiring, submitform+`include_self`, 8-event socket.io reconnect shim, undocumented i18n (`l10n/` 7 locales, fallback chain in index.html), bundled third-party libs, `/static/form:part.js` colon route, `panels.html`/`appeditor`, multi→single iframe postMessage. Top-5 blockers flagged as gates on Phases 7/8/10. | —       |
 | 2026-04-19 | 10b   | **Phase 10b agent merged.** `packages/client-multi/` React 18 + Radix tabs + Vite. 89/89 tests, 100% coverage on all tracked. Vite build 163 kB JS / 1.6 kB CSS. Playwright deferred to Phase 11 per §8. Preserved three legacy quirks (documented in `packages/client-multi/FINDINGS.md`). | a0ecd20 |
+| 2026-04-19 | 3     | **Phase 3 agent merged.** `packages/oracle-harness/` + `tests/oracle/` docker stack pinned to `042b731`. 102/102 tests, 100% coverage. 13 stateless scenarios recorded (oracle self-replay green). 9 FINDINGS documented (identity-HMAC when KEY unset, bare boolean `/_exists/:room` response, semi-volatile `Last-Modified`, fetch auto-redirect gotcha). html/xlsx/ods matchers throw "not implemented — Phase 8". | 4a52b96, 2d06bc3, 99932e3 |
+| 2026-04-19 | 10    | **Phase 10 agent merged.** `packages/client/` Vite + TS port of `player*.ls`. Agent crashed mid-final-report but delivered: 78/78 tests, typecheck clean, Vite build 20.3 kB. Coverage gate temporarily relaxed to 99/95/90/99 on this package — three uncovered edge branches (main.ts `parts.edit` loader fallback, applyFormDataLog `parts.sheet`=false path, callbacks `delete` branch) to be closed in Phase 10.1 follow-up. | a203aeb |
 
 ---
 

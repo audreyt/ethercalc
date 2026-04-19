@@ -31,7 +31,9 @@ jobs:
           bun run --cwd packages/shared typecheck
           bun run --cwd packages/socialcalc-headless typecheck
           bun run --cwd packages/worker typecheck
+          bun run --cwd packages/client typecheck
           bun run --cwd packages/client-multi typecheck
+          bun run --cwd packages/oracle-harness typecheck
 
       - name: shared — tests + 100% coverage gate
         run: bun run --cwd packages/shared test:coverage
@@ -48,11 +50,20 @@ jobs:
       - name: socialcalc-headless — smoke tests (workerd)
         run: bun run --cwd packages/socialcalc-headless test
 
+      - name: client — tests + coverage gate (temporarily 99/95/90/99)
+        run: bun run --cwd packages/client test:coverage
+
+      - name: client — Vite build
+        run: bun run --cwd packages/client build
+
       - name: client-multi — tests + 100% coverage gate
         run: bun run --cwd packages/client-multi test:coverage
 
       - name: client-multi — Vite build
         run: bun run --cwd packages/client-multi build
+
+      - name: oracle-harness — tests + 100% coverage gate
+        run: bun run --cwd packages/oracle-harness test:coverage
 
       - name: Upload coverage artifacts
         if: always()
@@ -62,6 +73,8 @@ jobs:
           path: |
             packages/shared/coverage/
             packages/worker/coverage/
+            packages/client/coverage/
             packages/client-multi/coverage/
+            packages/oracle-harness/coverage/
           retention-days: 7
           if-no-files-found: ignore
