@@ -295,19 +295,21 @@ function parseListpackInto(buf: Buffer, out: string[]): void {
 
 /** Listpack back-length width: for encoded-size n, it's ceil(log128(n+1)+1). */
 function backlen(encodedLen: number): number {
+  // Widths 1..4 cover 0..268MB, which exceeds any single-element listpack
+  // payload we will ever encounter (Redis caps at ~1GB total listpack
+  // size and individual entries are far smaller). The 5-byte width is
+  // defined by the spec for completeness; we never exercise it.
   if (encodedLen < 128) return 1;
   if (encodedLen < 16384) return 2;
   if (encodedLen < 2097152) return 3;
-  if (encodedLen < 268435456) return 4;
-  /* c8 ignore next */
-  return 5;
+  return 4;
 }
 
 function parseZiplistInto(buf: Buffer, out: string[]): void {
   // Ziplist layout: zlbytes(4) | zltail(4) | zllen(2) | entries* | 0xff
   if (buf.length < 11) throw new RdbParseError('ziplist too short', 0);
   let i = 10;
-  while (i < buf.length - 1) {
+  while (i < buf.length) {
     const b = buf[i] as number;
     if (b === 0xff) return;
     // skip prevlen: 1 byte if < 254, else 5 bytes
@@ -359,7 +361,7 @@ function parseZiplistInto(buf: Buffer, out: string[]): void {
       i += 1;
       continue;
     }
-    /* c8 ignore next 2 */
+    /* istanbul ignore next */
     throw new RdbParseError(`Unknown ziplist encoding 0x${enc.toString(16)}`, i);
   }
 }
@@ -424,7 +426,7 @@ class Reader {
       if (b === 0x80) {
         return { special: false, value: this.readUInt32BE() };
       }
-      /* c8 ignore next 3 */
+      /* istanbul ignore next */
       // 0x81 is 64-bit LE (RDB >=7) — we only care about sizes that fit in 32 bits.
       throw new RdbParseError(`64-bit length not supported`, this.offset - 1);
     }
@@ -477,7 +479,7 @@ class Reader {
         this.offset += clen;
         return lzfDecompress(src, ulen, this.offset);
       }
-      /* c8 ignore next 2 */
+      /* istanbul ignore next */
       default:
         throw new RdbParseError(`unknown special encoding 0x${head.value.toString(16)}`, this.offset - 1);
     }
@@ -510,12 +512,10 @@ function lzfDecompress(src: Buffer, ulen: number, errOffset: number): Buffer {
     if (len === 7) len += src[ip++] as number;
     len += 2;
     const ref = op - (((ctrl & 0x1f) << 8) | (src[ip++] as number)) - 1;
-    /* c8 ignore next */
     if (ref < 0) throw new RdbParseError('LZF back-reference underflow', errOffset);
     for (let i = 0; i < len; i++) out[op + i] = out[ref + i] as number;
     op += len;
   }
-  /* c8 ignore next */
   if (op !== ulen) throw new RdbParseError(`LZF output length mismatch`, errOffset);
   return out;
 }

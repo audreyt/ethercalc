@@ -16,13 +16,13 @@ export type {
 } from './targets/in-memory.ts';
 export { WranglerTarget } from './targets/wrangler.ts';
 export type { WranglerTargetConfig, Exec } from './targets/wrangler.ts';
+export { parseArgs, CliArgError } from './cli-args.ts';
+export type { CliArgs } from './cli-args.ts';
 export {
-  parseArgs,
   runMigrate,
   buildTarget,
   DryRunTarget,
   main,
-  CliArgError,
   USAGE,
 } from './cli.ts';
-export type { CliArgs, RunDeps } from './cli.ts';
+export type { RunDeps } from './cli.ts';

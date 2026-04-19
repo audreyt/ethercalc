@@ -6,30 +6,25 @@
  * dry-run sink that prints every intended write without calling out.
  *
  * Logic is split for testability:
- *   - `parseArgs`  — pure argv → config transform.
+ *   - `parseArgs`  — pure argv → config transform (lives in cli-args.ts).
  *   - `runMigrate` — pure (modulo injected deps).
  *   - `main`       — thin real-process wrapper at the bottom.
+ *
+ * `parseArgs` is imported via the module namespace (not a named import)
+ * so tests can `vi.spyOn` it to cover the non-CliArgError branch in
+ * {@link main}. Direct-named imports are baked in at bundle time and
+ * wouldn't be rebindable.
  */
 import type { Exec } from './targets/wrangler.ts';
 import { parseRdb } from './parse-rdb.ts';
 import { extractRooms } from './extract-rooms.ts';
 import { applyRooms, type MigrationTarget, type ApplyStats } from './apply.ts';
 import { WranglerTarget } from './targets/wrangler.ts';
+import * as args from './cli-args.ts';
 
-export interface CliArgs {
-  input: string;
-  d1Name: string;
-  kvName: string;
-  dryRun: boolean;
-  help: boolean;
-}
-
-export class CliArgError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'CliArgError';
-  }
-}
+export { CliArgError, parseArgs } from './cli-args.ts';
+export type { CliArgs } from './cli-args.ts';
+import { CliArgError, type CliArgs } from './cli-args.ts';
 
 export const USAGE: string = [
   'ethercalc-migrate — import a legacy Redis dump into Cloudflare',
@@ -44,49 +39,6 @@ export const USAGE: string = [
   '  --dry-run         Print what would be written without calling wrangler.',
   '  -h, --help        Show this help and exit.',
 ].join('\n');
-
-/** Pure argv parser. */
-export function parseArgs(argv: readonly string[]): CliArgs {
-  const out: CliArgs = {
-    input: '',
-    d1Name: '',
-    kvName: '',
-    dryRun: false,
-    help: false,
-  };
-  let i = 0;
-  while (i < argv.length) {
-    const a = argv[i] as string;
-    if (a === '--help' || a === '-h') {
-      out.help = true;
-      i += 1;
-      continue;
-    }
-    if (a === '--dry-run') {
-      out.dryRun = true;
-      i += 1;
-      continue;
-    }
-    if (a === '--input' || a === '--d1-name' || a === '--kv-name') {
-      const v = argv[i + 1];
-      if (v === undefined) {
-        throw new CliArgError(`${a} requires a value`);
-      }
-      if (a === '--input') out.input = v;
-      else if (a === '--d1-name') out.d1Name = v;
-      else out.kvName = v;
-      i += 2;
-      continue;
-    }
-    throw new CliArgError(`Unknown flag: ${a}`);
-  }
-  if (!out.help) {
-    if (out.input === '') throw new CliArgError('--input is required');
-    if (out.d1Name === '') throw new CliArgError('--d1-name is required');
-    if (out.kvName === '') throw new CliArgError('--kv-name is required');
-  }
-  return out;
-}
 
 /**
  * DryRun target prints each intended write and counts them. Matches the
@@ -186,21 +138,21 @@ export async function main(
   argv: readonly string[],
   deps: RunDeps,
 ): Promise<number> {
-  let args;
+  let parsed: CliArgs;
   try {
-    args = parseArgs(argv);
+    parsed = args.parseArgs(argv);
   } catch (err) {
     if (!(err instanceof CliArgError)) throw err;
     deps.stderr(`${err.message}\n`);
     deps.stderr('Run with --help for usage.\n');
     return 2;
   }
-  if (args.help) {
+  if (parsed.help) {
     deps.stdout(`${USAGE}\n`);
     return 0;
   }
   try {
-    await runMigrate(args, deps);
+    await runMigrate(parsed, deps);
     return 0;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
