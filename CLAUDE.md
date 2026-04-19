@@ -258,6 +258,8 @@ All `src/**/*.ts` code is partitioned:
 
 Workaround (current): the two-config split above — pure logic is covered via Node env; Workers-only glue gets integration-tested without coverage enforcement. This has the nice side-effect of keeping handlers pure (dependency-injected clocks, no direct env access) which aids testability.
 
+**Mutation-coverage ratchet (2026-04-19):** line coverage at 100% is necessary but insufficient — a test can hit lines without asserting anything. Each package's `stryker.conf.json` now carries a `break` threshold set to the measured mutation score floor. PRs that drop any score below `break` fail via a fast `mutation-gate` CI job that runs Stryker only on packages whose `src/` changed. To **raise** a floor, close surviving mutants (see `docs/MUTATION_REPORT.md` top-gaps), re-run `bun run mutation`, and bump `break` in the same PR. Nightly runs the full matrix; the PR gate is for regression, not comprehensive coverage.
+
 ### 5.3 Oracle replay & e2e
 
 - **Oracle replay**: dedicated Vitest project (`vitest.oracle.config.ts`) that spins up both the oracle (via `testcontainers` + docker) and the target (via `unstable_dev` from Wrangler), runs every scenario, asserts bytes.
@@ -270,9 +272,9 @@ Workaround (current): the two-config split above — pure logic is covered via N
 
 `package.json`'s `test` script runs both in sequence.
 
-### 5.3 Mutation testing (stretch goal)
+### 5.5 Mutation testing — REQUIRED
 
-Add **StrykerJS** in a nightly job (not blocking) to catch coverage-without-assertion. Only after Phase 7 is green.
+StrykerJS is wired: per-package nightly runs (full matrix) + fast PR-gate on changed packages only. Thresholds pinned to measured floors in `packages/*/stryker.conf.json`; `docs/MUTATION_REPORT.md` tracks the baseline and the "top surviving mutants" that are the next targets to close.
 
 ---
 
@@ -706,6 +708,7 @@ ethercalc/                           # existing root, not torn down
 8. **test:e2e**: Playwright against `wrangler dev` — covers both single-sheet and `multi/` flows.
 9. **build:cf**: `wrangler deploy --dry-run`.
 10. **build:selfhost**: `docker build` the Miniflare image, `docker compose up -d`, run smoke scenarios against it (§13 Q5).
+11. **mutation-gate**: Stryker on packages whose `src/` changed vs merge-base with `origin/main`. Skips docs-only PRs; branch protection should treat this as "required if run" rather than unconditionally required.
 
 ### 11.2 `nightly.yml`
 
@@ -715,7 +718,8 @@ ethercalc/                           # existing root, not torn down
 
 ### 11.3 Branch protection
 
-- All 10 PR-gate jobs required before merge to `main`.
+- All 10 core PR-gate jobs required before merge to `main`.
+- `mutation-gate` is **conditionally required** — runs only when `packages/*/src/` changes. Docs/test-only/config PRs skip it; branch protection should allow that skip.
 - No admin bypass on coverage job.
 
 ---
@@ -769,6 +773,7 @@ Append one entry per session you work on this. Keep it short. Use this for conte
 | 2026-04-19 | 11b/11c | **P11b + P11c merged.** P11b: `packages/migrate/` hand-rolled RDB parser (6 encodings incl LZF, 500 LOC), MigrationTarget + InMemory/Wrangler targets, CLI with dry-run, 91 tests at 100% coverage; uses `do_storage_seed` D1 staging as Phase 5 stopgap. P11c: `packages/socketio-shim/` full wire-format adapter (framing + translate + handshake + sid + adapter + legacy-io client bundle), 168 tests at 100% coverage; 3-colon splitter for event-frame JSON with embedded colons; explicit single-digit guard blocks Engine.IO v1+ shape. **10 packages, 911+ tests passing.** | 7da1907-71123b1, 9aa5da1/157c7c3 |
 | 2026-04-19 | 5 | **Phase 5 merged.** P5 agent: RoomDO with full state.storage-backed snapshot/log/audit/chat/ecell; DO internal API `/_do/*`; POST/PUT/GET/DELETE room routes + `_exists`/`_rooms`/`_roomlinks`/`_roomtimes`/`_from/:template`. csv via SocialCalc; xlsx/ods 501 stubs. `/_roomlinks` ships sensible-fix (text/html + HTML body). Extended headless with exportCells/exportCell/csvToSave. Worker 70 node + 42 integration → 104 + 25 (129 total). Oracle replay 9/13. **§7 item 33 documents the `?raw` vs `[[rules]]` cross-toolchain trap** with the workaround (inline DO binding, drop wrangler.configPath); downside: ASSETS binding regresses in vitest, Phase 5.2 follow-up. **1011+ tests passing across 10 packages.** | 4af4ae3, cc2f31c, 2bfdcf2 |
 | 2026-04-19 | 5.1/5.2/6/7/8/12 | **Fifth wave merged (5 parallel agents + polish).** P5.1 D1 rooms index (live mirror); P5.2 ASSETS in vitest; P6 command execution (loadclipboard + multi-cascade via `/_do/rename` + `/_do/install` cross-DO transfer); P7 native WS at `/_ws/:room` with DO hibernation + `/socket.io/*` via socketio-shim + 22 WS unit + 11 integration tests; P8-wire exports (csv/html/xlsx/ods/fods/md via SheetJS + pure GFM); P12 StrykerJS baseline (83% weighted, nightly CI + MUTATION_REPORT.md). Topology got tangled — several resets + a reverted cherry-pick; ultimately unified by resetting main to bac7e85 and re-cherry-picking P5.1/P5.2 on top. `src/room.ts` Node coverage relaxed (Phase 7.1 will extract WS handlers). **1070 tests passing across 9 packages.** | many |
+| 2026-04-19 | ratchet | **Mutation ratchet merged.** Per-package `stryker.conf.json` floors pinned to measured scores (worker 92, migrate 90, shared 89, oracle-harness 84, socketio-shim 81, client 73). Fast `mutation-gate` CI job runs Stryker only on packages whose `src/` changed vs merge-base. `docs/MUTATION_REPORT.md` grows ratchet workflow + worked walkthrough raising `client` from 73.81→74.12%. `scripts/ratchet-verify.sh` local-dev audit. §5.5 documents the required-mutation policy. | 94b6850, d1c5920, 08234e5, 738859a |
 
 ---
 
