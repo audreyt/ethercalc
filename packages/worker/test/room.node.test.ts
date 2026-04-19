@@ -738,6 +738,76 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
     expect(d1Calls4).toHaveLength(1);
     expect(d1Calls4[0]!.params[0]).toBe('fallback');
   });
+
+  /**
+   * WS `stopHuddle` must also drop the D1 row. Without this, `/_rooms`
+   * continued listing rooms that had been huddle-wiped — surfaced during
+   * the 2026-04-20 browser smoke test.
+   */
+  it('WS stopHuddle drops the room row from D1 (handshake-room path)', async () => {
+    const record5: FakeStorageRecord = { map: new Map() };
+    const d1Calls5: D1Call[] = [];
+    const env = makeEnvWithDb(d1Calls5);
+    const { state } = makeWsAwareState('x', record5, []);
+    const wsRoom = new RoomDO(state, env);
+    const log: FakeWsLog = { sent: [] };
+    const ws = makeFakeWs(log, { user: 'u', room: 'delta', auth: 'h' });
+    await wsRoom.webSocketMessage(
+      ws,
+      JSON.stringify({
+        type: 'stopHuddle',
+        room: 'delta',
+        auth: 'delta',
+      }),
+    );
+    expect(d1Calls5).toHaveLength(1);
+    expect(d1Calls5[0]!.sql).toContain('DELETE FROM rooms');
+    expect(d1Calls5[0]!.params).toEqual(['delta']);
+  });
+
+  it('WS stopHuddle with empty attachment falls back to the frame room for unindex', async () => {
+    const record6: FakeStorageRecord = { map: new Map() };
+    const d1Calls6: D1Call[] = [];
+    const env = makeEnvWithDb(d1Calls6);
+    const { state } = makeWsAwareState('x', record6, []);
+    const wsRoom = new RoomDO(state, env);
+    const log: FakeWsLog = { sent: [] };
+    // Default attachment: { user: '', room: '', auth: '' }.
+    const ws = makeFakeWs(log);
+    await wsRoom.webSocketMessage(
+      ws,
+      JSON.stringify({
+        type: 'stopHuddle',
+        room: 'fallback-delete',
+        auth: 'fallback-delete',
+      }),
+    );
+    expect(d1Calls6).toHaveLength(1);
+    expect(d1Calls6[0]!.sql).toContain('DELETE FROM rooms');
+    expect(d1Calls6[0]!.params).toEqual(['fallback-delete']);
+  });
+
+  it('WS stopHuddle with failed auth does NOT touch D1', async () => {
+    const record7: FakeStorageRecord = { map: new Map() };
+    const d1Calls7: D1Call[] = [];
+    const env: Env = {
+      ...makeEnvWithDb(d1Calls7),
+      ETHERCALC_KEY: 'secret', // KEY set → auth must match hmac(room)
+    };
+    const { state } = makeWsAwareState('x', record7, []);
+    const wsRoom = new RoomDO(state, env);
+    const log: FakeWsLog = { sent: [] };
+    const ws = makeFakeWs(log, { user: 'u', room: 'r', auth: 'h' });
+    await wsRoom.webSocketMessage(
+      ws,
+      JSON.stringify({
+        type: 'stopHuddle',
+        room: 'r',
+        auth: 'not-the-hmac',
+      }),
+    );
+    expect(d1Calls7).toHaveLength(0);
+  });
 });
 
 /**

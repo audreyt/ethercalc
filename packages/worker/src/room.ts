@@ -259,6 +259,18 @@ export class RoomDO implements DurableObject {
   }
 
   async #deleteAll(roomName: string | null): Promise<Response> {
+    await this.#deleteAllAndUnindex(roomName);
+    return plainResponse('OK', 201);
+  }
+
+  /**
+   * Wipe the entire room + delete its D1 index row. Shared between the
+   * HTTP path (`DELETE /_do/all`) and the WS path (`stopHuddle` frame).
+   * Centralizing this ensures both paths drop the D1 row; without it,
+   * `/_rooms` kept listing rooms that had been stopHuddle'd through the
+   * WS (discovered during 2026-04-20 browser smoke).
+   */
+  async #deleteAllAndUnindex(roomName: string | null): Promise<void> {
     await this.#state.blockConcurrencyWhile(async () => {
       await this.#state.storage.deleteAll();
       this.#ss = null;
@@ -267,7 +279,6 @@ export class RoomDO implements DurableObject {
       this.#nextChatSeq = 0;
     });
     await this.#deleteIndex(roomName);
-    return plainResponse('OK', 201);
   }
 
   async #getExists(): Promise<Response> {
@@ -538,13 +549,15 @@ export class RoomDO implements DurableObject {
       getSnapshot: async () =>
         await this.#state.storage.get<string>(STORAGE_KEYS.snapshot),
       deleteAll: async () => {
-        await this.#state.blockConcurrencyWhile(async () => {
-          await this.#state.storage.deleteAll();
-          this.#ss = null;
-          this.#nextLogSeq = 0;
-          this.#nextAuditSeq = 0;
-          this.#nextChatSeq = 0;
-        });
+        // WS `stopHuddle` is the hot path. Mirror the HTTP DELETE flow:
+        // wipe storage AND drop the D1 index row so `/_rooms`,
+        // `/_roomlinks`, and `/_roomtimes` stop listing the dead room.
+        // Uses the handshake attachment room (falls back to the frame's
+        // `room` when the attachment is empty — see #applyCommandAndMirror
+        // for the rationale). The handler enforces auth before calling
+        // this, so we don't need to re-verify here.
+        const nameToUnindex = attachment.room || messageRoom;
+        await this.#deleteAllAndUnindex(nameToUnindex);
       },
     };
     const env = this.#env;
