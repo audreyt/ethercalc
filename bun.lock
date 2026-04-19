@@ -52,6 +52,19 @@
         "vitest": "^2.1.4",
       },
     },
+    "packages/migrate": {
+      "name": "@ethercalc/migrate",
+      "version": "0.0.0",
+      "dependencies": {
+        "@ethercalc/shared": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/node": "^22.9.0",
+        "@vitest/coverage-istanbul": "^2.1.4",
+        "typescript": "^5.6.3",
+        "vitest": "^2.1.4",
+      },
+    },
     "packages/oracle-harness": {
       "name": "@ethercalc/oracle-harness",
       "version": "0.0.0",
@@ -246,6 +259,8 @@
     "@ethercalc/client": ["@ethercalc/client@workspace:packages/client"],
 
     "@ethercalc/client-multi": ["@ethercalc/client-multi@workspace:packages/client-multi"],
+
+    "@ethercalc/migrate": ["@ethercalc/migrate@workspace:packages/migrate"],
 
     "@ethercalc/oracle-harness": ["@ethercalc/oracle-harness@workspace:packages/oracle-harness"],
 
