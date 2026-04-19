@@ -107,9 +107,13 @@ export function decodeFrame(raw: string): Packet | null {
   }
   if (start <= raw.length) parts.push(raw.slice(start));
 
-  const typeStr = parts[0];
-  if (typeof typeStr !== 'string' || typeStr.length === 0) return null;
-  // Reject multi-digit or non-digit types (e.g. "42" — Engine.IO's later format).
+  // `parts[0]` is always a string — the splitter always pushes at least
+  // one slice (possibly `''`). Cast away the `| undefined` that
+  // noUncheckedIndexedAccess adds; removing the cast would require a
+  // defensive `??` whose fallback branch is structurally unreachable.
+  const typeStr = parts[0] as string;
+  // Empty string (input starts with a colon) or a multi-digit / non-digit
+  // type are all rejected. Engine.IO's later "42…" format falls here too.
   if (typeStr.length !== 1 || typeStr < '0' || typeStr > '9') return null;
 
   const typeNum = Number(typeStr);

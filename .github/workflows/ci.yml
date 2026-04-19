@@ -35,6 +35,7 @@ jobs:
           bun run --cwd packages/client-multi typecheck
           bun run --cwd packages/oracle-harness typecheck
           bun run --cwd packages/cli typecheck
+          bun run --cwd packages/socketio-shim typecheck
           bun run --cwd packages/e2e typecheck
 
       - name: shared — tests + 100% coverage gate
@@ -78,6 +79,9 @@ jobs:
       - name: cli — tests + 100% coverage gate
         run: bun run --cwd packages/cli test:coverage
 
+      - name: socketio-shim — tests + 100% coverage gate
+        run: bun run --cwd packages/socketio-shim test:coverage
+
       - name: Upload coverage artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -90,6 +94,7 @@ jobs:
             packages/client-multi/coverage/
             packages/oracle-harness/coverage/
             packages/cli/coverage/
+            packages/socketio-shim/coverage/
           retention-days: 7
           if-no-files-found: ignore
 

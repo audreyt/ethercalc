@@ -108,6 +108,10 @@ describe('decodeFrame', () => {
     expect(decodeFrame('x::')).toBeNull();
   });
 
+  it('rejects input that starts with a colon (empty type segment)', () => {
+    expect(decodeFrame(':abc')).toBeNull();
+  });
+
   it('rejects type code 9 (out of range)', () => {
     expect(decodeFrame('9::')).toBeNull();
   });

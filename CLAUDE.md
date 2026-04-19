@@ -213,7 +213,7 @@ export interface WsScenario {
 
 ### 4.4 Normalization rules
 
-- Drop headers: `Date`, `Server`, `ETag`, `X-Powered-By`, `Connection`. `Last-Modified` is semi-volatile (tied to docker image build mtime) — relax via `re:<regex>` matcher when it shows up in a recording.
+- Drop headers: `Date`, `Server`, `ETag`, `X-Powered-By`, `Connection`, `Accept-Ranges`, `Cache-Control`, `Content-Length`. `Last-Modified` is semi-volatile (tied to docker image build mtime) — relax via `re:<regex>` matcher when it shows up in a recording. (Implementation-detail headers that diverge between Express-static and Workers Assets; not semantic.)
 - **HTML** (`packages/oracle-harness/src/html-canonical.ts`): parse via linkedom, then drop:
   - HTML comments
   - whitespace-only text nodes
@@ -323,8 +323,9 @@ Add **StrykerJS** in a nightly job (not blocking) to catch coverage-without-asse
 | DELETE | `/_/:room`                        | → 201 `OK`                                               | Deletes all room keys, terminates worker                                                                                      |
 | —      | CORS preflight                    | 204 for OPTIONS when CORS enabled                        |                                                                                                                               |
 
-**Behaviors requiring bug-for-bug preservation:**
-- `GET /_roomlinks` responds with `Content-Type: text/html` but serializes via `res.json()` — returns JSON array in an HTML content-type response. Preserve (flagged for fix per §13 Q1 — see §6.1 below).
+**Behaviors requiring bug-for-bug preservation** (except §13 Q1 sensible-fix allow-list):
+- `GET /_roomlinks` responds with `Content-Type: text/html` but serializes via `res.json()` — returns JSON array in an HTML content-type response. **Sensible-fix allow-list** per §13 Q1: new impl emits HTML body with HTML content-type.
+- `GET /favicon.ico` legacy Content-Type is `text/html; charset=utf-8` (Express-static bug). **Sensible-fix allow-list**: new impl returns `image/vnd.microsoft.icon`.
 - `GET /l10n/:lang.json` — not in API.md but client depends on it. Serve from Workers Assets.
 - `GET /static/form:part.js` — literal colon in path; Hono must route `:part` as a param.
 - `GET /:template/appeditor` → `panels.html` — form/app builder UI.
@@ -485,15 +486,16 @@ Goal: prove Plan A works (SocialCalc loads and executes in workerd).
 - [ ] Expand to the full endpoint inventory as subsequent phases land their port. Current 13 are the stateless subset.
 - [ ] `re:<regex>` header matcher convention: used for Location/Content-Length/Last-Modified. Considering promoting this pattern into `@ethercalc/shared`.
 
-### Phase 4 — Port pure/stateless endpoints — MOSTLY DONE
+### Phase 4 — Port pure/stateless endpoints — DONE
 - [x] `src/lib/auth.ts` (Web Crypto HMAC-SHA256, identity fallback) + `src/lib/room-name.ts` (12-char id via randomUUID) — 100% covered.
 - [x] `src/handlers/new-room.ts`, `src/handlers/room-redirects.ts`, `src/handlers/blocked-paths.ts` — 100% covered.
 - [x] `src/routes/stateless.ts` registers `/_new`, `/=_new`, `/:room/{edit,view,app}`, `/etc/*`, `/var/*`.
-- [x] `src/routes/assets.ts` scaffold (ASSETS binding, 404 fallback when unbound).
-- [x] `test/oracle-replay.test.ts` — replays recorded fixtures against `worker.fetch()`; 5 of 13 scenarios green (all Phase 4 scope).
-- [x] wrangler.toml scaffolds `ETHERCALC_KEY`, `BASEPATH`; `[assets]` commented (legacy repo root trips per-asset size limit — curated assets/ dir lands in Phase 11).
-- [ ] **`GET /:room` entry-page route deferred to Phase 4.1** — requires curated ASSETS dir AND careful ordering (will shadow `/_rooms`, `/_from/:template` etc without explicit priority).
-- [ ] Static asset content (icons, manifest.appcache dynamic stub) lands when Phase 11 finalizes the assets pipeline.
+- [x] `src/routes/assets.ts` live — ASSETS binding wired to curated `assets/` dir.
+- [x] **Phase 4.1 DONE via PAssets agent** — `GET /:room` entry route registered LAST (after `/_rooms`, `/_new`, etc.), serves `assets/index.html`. `/:template/appeditor` → panels.html. `/static/form:part.js` colon-route via `/static/:file{form.+\.js}` constrained segment + prefix/suffix peel. `manifest.appcache` dynamic DevMode stub via `DEVMODE=1` env var.
+- [x] All 10 icons + `index.html` + `start.html` + `manifest.json` + 7 `l10n/*.json` locales served from curated `assets/` dir.
+- [x] `scripts/build-assets.sh` rebuilds `assets/` deterministically from sources; CI runs it before wrangler dry-run.
+- [x] Oracle replay 8/13 green (was 5/13). Three new scenarios pass: get-root-index, get-start, get-socialcalc-js.
+- [ ] `/:template/form` stubs 503 pending Phase 5 DO-to-DO clone (flip a `phase5Ready` flag once Phase 5 ships `/_do/clone`).
 
 ### Phase 5 — Port room CRUD (no live collab yet)
 - [ ] `RoomDO` with `snapshot/log/audit/chat/ecell` storage.
@@ -752,6 +754,7 @@ Append one entry per session you work on this. Keep it short. Use this for conte
 | 2026-04-19 | 4/8a/10.1/11a | **Second parallel wave merged.** Four agents ran in parallel worktrees: P4 stateless HTTP (Hono wiring + auth + redirects + 5/13 oracle scenarios, 45 Node tests at 100% coverage); P8a-partial html matcher via linkedom (127 tests total, 100%); P10c coverage closeout (client back to 100/100/100/100 on gated files); P11a Miniflare docker + `bin/ethercalc` CLI + `packages/cli` (55 tests, 100%) + CI build-selfhost job + README self-host section. 395+ tests green across 7 packages. §6.4 clarified: `verifyAuth('0')` must reject unconditionally because identity-HMAC makes `computeAuth(undefined,'0') === '0'`. §6.1 clarified: `/etc/*` 404 CT is `text/html` not `text/plain`. | many |
 | 2026-04-19 | 8a    | **Phase 8a DONE.** P8a agent merged the xlsx + ods matchers on top of the earlier html merge. fflate + canonicalize-each-XML pipeline. 158 oracle-harness tests, 100% coverage. Volatile element drop lists surfaced and documented in §4.4 (docProps/core.xml + app.xml for xlsx, meta.xml for ods, id referrers + comments + whitespace-only text for html). Unblocks Phase 8 export wiring. | db2d0a8, 413307a |
 | 2026-04-19 | 10.2  | **Phase 10.2 DONE.** P10c agent second round covered `src/graph.ts` (615 lines) to 100% with 102 new tests via fake 2D canvas recorder + fake DOM. Client package now 190 tests at 100/100/100/100 across ws-adapter, socialcalc-callbacks, main, graph. Three narrow `/* istanbul ignore next */` on dead `??` fallbacks. **587 tests total across 7 packages.** | 78fd477, 9640ee9 |
+| 2026-04-19 | 11e2e/4.1 | **Third wave agents merged:** PE2E Playwright skeleton (`packages/e2e/`, 5 specs, 10/11 passing + 1 skip pending asset pipeline); PAssets curated `assets/` (27 files 1.9 MiB, `scripts/build-assets.sh`), live ASSETS binding, `/:room` entry route, colon-route `/static/form:part.js`, dynamic `manifest.appcache` DevMode stub, i18n 7 locales. Oracle replay 5/13 → 8/13. Two new sensible-fix allow-list entries: `/_roomlinks` CT, `/favicon.ico` CT (§6.1). §4.4 drop-headers list expanded (Accept-Ranges, Cache-Control, Content-Length). `/:template/form` stubs 503 pending Phase 5 DO-to-DO clone. | edcff17-5a419eb, 08195b5-8f06ad0 |
 
 ---
 
