@@ -90,6 +90,19 @@
         "wrangler": "^3.86.0",
       },
     },
+    "packages/socketio-shim": {
+      "name": "@ethercalc/socketio-shim",
+      "version": "0.0.0",
+      "dependencies": {
+        "@ethercalc/shared": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/node": "^22.9.0",
+        "@vitest/coverage-istanbul": "^2.1.4",
+        "typescript": "^5.6.3",
+        "vitest": "^2.1.4",
+      },
+    },
     "packages/worker": {
       "name": "@ethercalc/worker",
       "version": "0.0.0",
@@ -252,6 +265,8 @@
     "@ethercalc/shared": ["@ethercalc/shared@workspace:packages/shared"],
 
     "@ethercalc/socialcalc-headless": ["@ethercalc/socialcalc-headless@workspace:packages/socialcalc-headless"],
+
+    "@ethercalc/socketio-shim": ["@ethercalc/socketio-shim@workspace:packages/socketio-shim"],
 
     "@ethercalc/worker": ["@ethercalc/worker@workspace:packages/worker"],
 
