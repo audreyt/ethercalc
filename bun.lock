@@ -88,6 +88,8 @@
       "devDependencies": {
         "@cloudflare/vitest-pool-workers": "^0.6.0",
         "@cloudflare/workers-types": "^4.20241112.0",
+        "@ethercalc/oracle-harness": "workspace:*",
+        "@ethercalc/shared": "workspace:*",
         "@vitest/coverage-istanbul": "^2.1.4",
         "@vitest/coverage-v8": "^2.1.4",
         "typescript": "^5.6.3",

@@ -5,7 +5,8 @@
  *
  * Excluded from the coverage gate per CLAUDE.md §5.2: workerd's bundler
  * doesn't trace Hono-invoked paths through istanbul. Every branch here
- * is exercised via integration tests in `test/stateless.test.ts`.
+ * is exercised via integration tests in `test/stateless.test.ts` + the
+ * oracle replay.
  */
 /* istanbul ignore file */
 import type { Context, Hono } from 'hono';
@@ -16,6 +17,29 @@ import { buildRoomRedirect, type RoomMode } from '../handlers/room-redirects.ts'
 import type { Env } from '../env.ts';
 
 type AppContext = Context<{ Bindings: Env }>;
+
+/**
+ * Express's `res.redirect()` emits a plaintext body of the form
+ * `Found. Redirecting to <url>` plus `Content-Type: text/plain; charset=UTF-8`
+ * (uppercase UTF-8 is Express convention). Hono's `c.redirect` omits
+ * both the body and the content-type. To stay oracle-byte-compatible
+ * we reproduce Express's shape here; the body is informational (user
+ * agents follow the Location header regardless), but having it match
+ * lets `bodyMatcher: "ignore"` scenarios keep their pass-through and
+ * any future `bodyMatcher: "exact"` scenarios still line up.
+ */
+function expressRedirect(location: string): Response {
+  const body = `Found. Redirecting to ${location}`;
+  return new Response(body, {
+    status: 302,
+    headers: {
+      Location: location,
+      'Content-Type': 'text/plain; charset=UTF-8',
+      'Content-Length': String(body.length),
+      Vary: 'Accept',
+    },
+  });
+}
 
 /**
  * Register every stateless route (non-room-backed, non-WS). Ordering
@@ -35,7 +59,7 @@ export function registerStateless(app: Hono<{ Bindings: Env }>): void {
       hasKey: Boolean(c.env.ETHERCALC_KEY),
       multi: false,
     });
-    return c.redirect(info.headers.Location, info.status);
+    return expressRedirect(info.headers.Location);
   });
   app.get('/=_new', (c) => {
     const info = buildNewRoomRedirect({
@@ -43,7 +67,7 @@ export function registerStateless(app: Hono<{ Bindings: Env }>): void {
       hasKey: Boolean(c.env.ETHERCALC_KEY),
       multi: true,
     });
-    return c.redirect(info.headers.Location, info.status);
+    return expressRedirect(info.headers.Location);
   });
 
   // Room redirects — /:room/edit|view|app. The `:room` path param is
@@ -59,9 +83,7 @@ export function registerStateless(app: Hono<{ Bindings: Env }>): void {
         : { basepath: c.env.BASEPATH ?? '', room, mode, key },
     );
     // `edit`/`view`/`app` always produce a redirect (never null).
-    // The non-null assertion is safe because buildRoomRedirect only
-    // returns null for mode === 'entry'.
-    return c.redirect(redirect!.headers.Location, redirect!.status);
+    return expressRedirect(redirect!.headers.Location);
   };
   app.get('/:room/edit', handleRoomRedirect('edit'));
   app.get('/:room/view', handleRoomRedirect('view'));
@@ -70,5 +92,10 @@ export function registerStateless(app: Hono<{ Bindings: Env }>): void {
 
 function sendBlocked(_c: AppContext): Response {
   const r = buildBlockedPathResponse();
-  return new Response(r.body, { status: r.status, headers: r.headers });
+  // Content-Length: 0 — matches oracle recording. Hono's Response
+  // constructor doesn't auto-set this for an empty body, so we set it.
+  return new Response(r.body, {
+    status: r.status,
+    headers: { ...r.headers, 'Content-Length': '0' },
+  });
 }
