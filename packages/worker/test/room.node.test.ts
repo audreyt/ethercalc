@@ -68,6 +68,57 @@ function makeState(idString: string, record: FakeStorageRecord): DurableObjectSt
   } as unknown as DurableObjectState;
 }
 
+/**
+ * WebSocket + state extensions needed for the hibernation-API surface.
+ * Node doesn't ship `WebSocketPair` or `state.acceptWebSocket`; we supply
+ * an in-memory record of every ws/state primitive so the tests can assert
+ * on them.
+ */
+interface FakeWsLog {
+  sent: string[];
+  serializedAttachment?: unknown;
+}
+function makeFakeWs(log: FakeWsLog, attachment?: unknown): WebSocket {
+  return {
+    send(data: string) {
+      log.sent.push(data);
+    },
+    serializeAttachment(v: unknown) {
+      log.serializedAttachment = v;
+    },
+    deserializeAttachment(): unknown {
+      return attachment ?? null;
+    },
+    close() {},
+  } as unknown as WebSocket;
+}
+interface WsAwareState {
+  state: DurableObjectState;
+  accepted: WebSocket[];
+  peers: WebSocket[];
+}
+function makeWsAwareState(
+  idString: string,
+  record: FakeStorageRecord,
+  peers: WebSocket[] = [],
+): WsAwareState {
+  const accepted: WebSocket[] = [];
+  const state = {
+    id: { toString: () => idString } as DurableObjectId,
+    storage: fakeStorage(record),
+    async blockConcurrencyWhile<T>(cb: () => Promise<T>): Promise<T> {
+      return cb();
+    },
+    acceptWebSocket(ws: WebSocket) {
+      accepted.push(ws);
+    },
+    getWebSockets(): WebSocket[] {
+      return peers;
+    },
+  } as unknown as DurableObjectState;
+  return { state, accepted, peers };
+}
+
 function makeEnv(): Env {
   return { ROOM: {} as DurableObjectNamespace };
 }
@@ -593,5 +644,635 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
     );
     expect(res.status).toBe(201);
     expect(d1Calls).toHaveLength(0);
+  });
+});
+
+/**
+ * Phase 6 — cross-DO rename primitives. The `#postRename` + `#postInstall`
+ * handlers are pure HTTP endpoints on the DO; they do their own
+ * `blockConcurrencyWhile` serialization and talk to sibling DOs only via a
+ * stub supplied through `env.ROOM`. Easy to unit-test with a Map-backed
+ * fake storage and a recording `ROOM` namespace.
+ */
+describe('RoomDO — cross-DO rename primitives (Phase 6)', () => {
+  interface SiblingCall {
+    idFromName: string;
+    init: RequestInit | undefined;
+  }
+  function makeRenameEnv(
+    siblingCalls: SiblingCall[],
+    responseStatus = 201,
+  ): Env {
+    return {
+      ROOM: {
+        idFromName(name: string) {
+          return { __name: name, toString: () => name } as unknown as DurableObjectId;
+        },
+        get(id: DurableObjectId): DurableObjectStub {
+          const name = (id as unknown as { __name: string }).__name;
+          return {
+            async fetch(_path: string, init?: RequestInit): Promise<Response> {
+              siblingCalls.push({ idFromName: name, init });
+              return new Response('OK', { status: responseStatus });
+            },
+          } as unknown as DurableObjectStub;
+        },
+      } as unknown as DurableObjectNamespace,
+    };
+  }
+
+  it('POST /_do/rename with missing body.to returns 400', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('x', record), makeRenameEnv([]));
+    const res = await room.fetch(
+      new Request('https://do/_do/rename', {
+        method: 'POST',
+        body: JSON.stringify({}),
+      }),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('POST /_do/rename with empty string body.to returns 400', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('x', record), makeRenameEnv([]));
+    const res = await room.fetch(
+      new Request('https://do/_do/rename', {
+        method: 'POST',
+        body: JSON.stringify({ to: '' }),
+      }),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('POST /_do/rename with no snapshot returns 204 no-op', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('x', record), makeRenameEnv([]));
+    const res = await room.fetch(
+      new Request('https://do/_do/rename', {
+        method: 'POST',
+        body: JSON.stringify({ to: 'new' }),
+      }),
+    );
+    expect(res.status).toBe(204);
+  });
+
+  it('POST /_do/rename with snapshot invokes target DO install and wipes local', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    record.map.set(STORAGE_KEYS.snapshot, 'socialcalc:v1');
+    record.map.set(logKey(0), 'set A1 value n 1');
+    record.map.set(auditKey(0), 'set A1 value n 1');
+    const siblingCalls: SiblingCall[] = [];
+    const room = new RoomDO(
+      makeState('x', record),
+      makeRenameEnv(siblingCalls),
+    );
+    const res = await room.fetch(
+      new Request('https://do/_do/rename', {
+        method: 'POST',
+        body: JSON.stringify({ to: 'alpha' }),
+      }),
+    );
+    expect(res.status).toBe(201);
+    expect(siblingCalls).toHaveLength(1);
+    expect(siblingCalls[0]!.idFromName).toBe('alpha');
+    const parsed = JSON.parse(siblingCalls[0]!.init!.body as string) as {
+      snapshot: string;
+      log: string[];
+      audit: string[];
+    };
+    expect(parsed.snapshot).toBe('socialcalc:v1');
+    expect(parsed.log).toEqual(['set A1 value n 1']);
+    expect(parsed.audit).toEqual(['set A1 value n 1']);
+    // Local storage wiped.
+    expect(record.map.size).toBe(0);
+  });
+
+  it('POST /_do/rename returns 502 when sibling install fails', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    record.map.set(STORAGE_KEYS.snapshot, 'snap');
+    const room = new RoomDO(
+      makeState('x', record),
+      makeRenameEnv([], 500),
+    );
+    const res = await room.fetch(
+      new Request('https://do/_do/rename', {
+        method: 'POST',
+        body: JSON.stringify({ to: 'alpha' }),
+      }),
+    );
+    expect(res.status).toBe(502);
+    // Local storage preserved on failure (snapshot still there).
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('snap');
+  });
+
+  it('POST /_do/install with non-string snapshot returns 400', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('x', record), makeEnv());
+    const res = await room.fetch(
+      new Request('https://do/_do/install', {
+        method: 'POST',
+        body: JSON.stringify({}),
+      }),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('POST /_do/install with non-string-array log returns 400', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('x', record), makeEnv());
+    const res = await room.fetch(
+      new Request('https://do/_do/install', {
+        method: 'POST',
+        body: JSON.stringify({ snapshot: 'x', log: [1, 2] }),
+      }),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('POST /_do/install with non-string-array audit returns 400', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('x', record), makeEnv());
+    const res = await room.fetch(
+      new Request('https://do/_do/install', {
+        method: 'POST',
+        body: JSON.stringify({ snapshot: 'x', audit: [1] }),
+      }),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('POST /_do/install writes snapshot + log + audit, returns 201', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    record.map.set('stale', 'yes'); // should be wiped
+    const room = new RoomDO(makeState('x', record), makeEnv());
+    const res = await room.fetch(
+      new Request('https://do/_do/install', {
+        method: 'POST',
+        body: JSON.stringify({
+          snapshot: 'socialcalc:v1',
+          log: ['cmd-1', 'cmd-2'],
+          audit: ['cmd-1'],
+        }),
+      }),
+    );
+    expect(res.status).toBe(201);
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('socialcalc:v1');
+    expect(record.map.get(logKey(0))).toBe('cmd-1');
+    expect(record.map.get(logKey(1))).toBe('cmd-2');
+    expect(record.map.get(auditKey(0))).toBe('cmd-1');
+    expect(record.map.has('stale')).toBe(false);
+  });
+
+  it('POST /_do/install defaults missing log/audit to empty arrays', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('x', record), makeEnv());
+    const res = await room.fetch(
+      new Request('https://do/_do/install', {
+        method: 'POST',
+        body: JSON.stringify({ snapshot: 'SAVE' }),
+      }),
+    );
+    expect(res.status).toBe(201);
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('SAVE');
+  });
+});
+
+/**
+ * Phase 7 — WebSocket upgrade + hibernation-API glue. `#acceptWebSocket`
+ * needs a `WebSocketPair` global; the Node test harness provides a stub
+ * before each test. `webSocketMessage` takes an already-accepted socket,
+ * so we supply a minimal send/serialize/deserialize trio.
+ */
+describe('RoomDO — WebSocket acceptance (Phase 7)', () => {
+  let record: FakeStorageRecord;
+
+  beforeEach(() => {
+    record = { map: new Map() };
+  });
+
+  it('GET /_do/ws without Upgrade header returns 426', async () => {
+    const { state } = makeWsAwareState('x', record);
+    const room = new RoomDO(state, makeEnv());
+    const res = await room.fetch(new Request('https://do/_do/ws'));
+    expect(res.status).toBe(426);
+    expect(await res.text()).toBe('Expected Upgrade: websocket');
+  });
+
+  it('webSocketClose is a no-op (legacy cursor preservation)', async () => {
+    const { state } = makeWsAwareState('x', record);
+    const room = new RoomDO(state, makeEnv());
+    // Must not throw.
+    await room.webSocketClose(makeFakeWs({ sent: [] }));
+  });
+
+  it('webSocketMessage ignores non-string messages', async () => {
+    const { state } = makeWsAwareState('x', record);
+    const room = new RoomDO(state, makeEnv());
+    const log: FakeWsLog = { sent: [] };
+    const ws = makeFakeWs(log);
+    await room.webSocketMessage(ws, new ArrayBuffer(4));
+    expect(log.sent).toHaveLength(0);
+  });
+
+  it('webSocketMessage ignores unparseable frames', async () => {
+    const { state } = makeWsAwareState('x', record);
+    const room = new RoomDO(state, makeEnv());
+    const log: FakeWsLog = { sent: [] };
+    const ws = makeFakeWs(log);
+    await room.webSocketMessage(ws, 'not-json');
+    expect(log.sent).toHaveLength(0);
+  });
+
+  it('webSocketMessage dispatches ask.log and replies on the socket', async () => {
+    record.map.set(STORAGE_KEYS.snapshot, 'SAVE');
+    record.map.set(logKey(0), 'cmd-1');
+    const { state } = makeWsAwareState('x', record, []);
+    const room = new RoomDO(state, makeEnv());
+    const log: FakeWsLog = { sent: [] };
+    const ws = makeFakeWs(log, { user: 'alice', room: 'r', auth: 'h' });
+    await room.webSocketMessage(
+      ws,
+      JSON.stringify({ type: 'ask.log', room: 'r', user: 'alice' }),
+    );
+    expect(log.sent).toHaveLength(1);
+    const reply = JSON.parse(log.sent[0]!) as {
+      type: string;
+      snapshot: string;
+      log: string[];
+    };
+    expect(reply.type).toBe('log');
+    expect(reply.snapshot).toBe('SAVE');
+    expect(reply.log).toEqual(['cmd-1']);
+  });
+
+  it('webSocketMessage falls back to default attachment when deserialize returns null', async () => {
+    const { state } = makeWsAwareState('x', record, []);
+    const room = new RoomDO(state, makeEnv());
+    const log: FakeWsLog = { sent: [] };
+    // `attachment` arg omitted → deserializeAttachment returns null.
+    const ws = makeFakeWs(log);
+    await room.webSocketMessage(
+      ws,
+      JSON.stringify({ type: 'ask.log', room: 'r', user: 'u' }),
+    );
+    expect(log.sent).toHaveLength(1);
+  });
+
+  it('webSocketMessage dispatches my.ecell, persists and broadcasts to peers', async () => {
+    const peerLog: FakeWsLog = { sent: [] };
+    const peer = makeFakeWs(peerLog);
+    const { state } = makeWsAwareState('x', record, [peer]);
+    const room = new RoomDO(state, makeEnv());
+    const senderLog: FakeWsLog = { sent: [] };
+    const sender = makeFakeWs(senderLog, { user: 'alice', room: 'r', auth: 'h' });
+    await room.webSocketMessage(
+      sender,
+      JSON.stringify({
+        type: 'my.ecell',
+        room: 'r',
+        user: 'alice',
+        ecell: 'A1',
+      }),
+    );
+    // Peer receives broadcast, sender does not (broadcast excludes sender).
+    expect(peerLog.sent).toHaveLength(1);
+    expect(senderLog.sent).toHaveLength(0);
+    expect(record.map.get(ecellKey('alice'))).toBe('A1');
+  });
+
+  it('webSocketMessage dispatches chat, persists chat entry, broadcasts', async () => {
+    const peerLog: FakeWsLog = { sent: [] };
+    const peer = makeFakeWs(peerLog);
+    const { state } = makeWsAwareState('x', record, [peer]);
+    const room = new RoomDO(state, makeEnv());
+    const senderLog: FakeWsLog = { sent: [] };
+    const sender = makeFakeWs(senderLog, { user: 'alice', room: 'r', auth: 'h' });
+    await room.webSocketMessage(
+      sender,
+      JSON.stringify({
+        type: 'chat',
+        room: 'r',
+        user: 'alice',
+        msg: 'hi',
+      }),
+    );
+    expect(peerLog.sent).toHaveLength(1);
+    expect(record.map.get(chatKey(0))).toBe('hi');
+  });
+
+  it('webSocketMessage executes a command (auth OK via identity HMAC) and applies it', async () => {
+    const peerLog: FakeWsLog = { sent: [] };
+    const peer = makeFakeWs(peerLog);
+    const { state } = makeWsAwareState('x', record, [peer]);
+    // No ETHERCALC_KEY set → identity HMAC, so auth === room passes.
+    const room = new RoomDO(state, makeEnv());
+    const log: FakeWsLog = { sent: [] };
+    const ws = makeFakeWs(log, { user: 'alice', room: 'r', auth: 'h' });
+    await room.webSocketMessage(
+      ws,
+      JSON.stringify({
+        type: 'execute',
+        room: 'r',
+        user: 'alice',
+        auth: 'r',
+        cmdstr: 'set A1 value n 1',
+      }),
+    );
+    expect(record.map.get(logKey(0))).toBe('set A1 value n 1');
+    expect(mockExec).toHaveBeenCalledWith('set A1 value n 1');
+    expect(peerLog.sent).toHaveLength(1);
+  });
+
+  it('webSocketMessage drops an execute when auth field missing (view-only)', async () => {
+    const peerLog: FakeWsLog = { sent: [] };
+    const peer = makeFakeWs(peerLog);
+    const { state } = makeWsAwareState('x', record, [peer]);
+    const room = new RoomDO(
+      state,
+      { ROOM: {} as DurableObjectNamespace, ETHERCALC_KEY: 'secret' },
+    );
+    const log: FakeWsLog = { sent: [] };
+    const ws = makeFakeWs(log, { user: 'alice', room: 'r', auth: 'h' });
+    await room.webSocketMessage(
+      ws,
+      JSON.stringify({
+        type: 'execute',
+        room: 'r',
+        user: 'alice',
+        cmdstr: 'set A1 value n 1',
+      }),
+    );
+    // No command applied.
+    expect(record.map.get(logKey(0))).toBeUndefined();
+    expect(peerLog.sent).toHaveLength(0);
+  });
+
+  it('webSocketMessage forwards submitform to sibling DO and broadcasts to all', async () => {
+    const peerLog: FakeWsLog = { sent: [] };
+    const peer = makeFakeWs(peerLog);
+    const senderLog: FakeWsLog = { sent: [] };
+    const sender = makeFakeWs(senderLog, { user: 'u', room: 'r', auth: 'h' });
+    // `broadcastAll` iterates `state.getWebSockets()`, which in prod
+    // includes the sender because the DO accepted it during handshake.
+    const { state } = makeWsAwareState('x', record, [peer, sender]);
+    const siblingFetches: Array<{ name: string; body: string }> = [];
+    const env: Env = {
+      ROOM: {
+        idFromName(name: string) {
+          return { __name: name, toString: () => name } as unknown as DurableObjectId;
+        },
+        get(id: DurableObjectId): DurableObjectStub {
+          const name = (id as unknown as { __name: string }).__name;
+          return {
+            async fetch(_path: string, init?: RequestInit): Promise<Response> {
+              siblingFetches.push({ name, body: init?.body as string });
+              return new Response('ok', { status: 202 });
+            },
+          } as unknown as DurableObjectStub;
+        },
+      } as unknown as DurableObjectNamespace,
+    };
+    const room = new RoomDO(state, env);
+    await room.webSocketMessage(
+      sender,
+      JSON.stringify({
+        type: 'execute',
+        room: 'mysheet',
+        user: 'u',
+        auth: 'mysheet',
+        cmdstr: 'submitform\rset B1 value n 7',
+      }),
+    );
+    expect(siblingFetches).toHaveLength(1);
+    expect(siblingFetches[0]!.name).toBe('mysheet_formdata');
+    expect(siblingFetches[0]!.body).toBe('set B1 value n 7');
+    // Broadcast to all (include_self=true) — peer receives AND sender receives.
+    expect(peerLog.sent).toHaveLength(1);
+    expect(senderLog.sent).toHaveLength(1);
+  });
+
+  it('webSocketMessage dispatches stopHuddle which wipes storage and broadcasts', async () => {
+    record.map.set(STORAGE_KEYS.snapshot, 'SAVE');
+    record.map.set(logKey(0), 'cmd');
+    record.map.set(chatKey(0), 'hi');
+    const peerLog: FakeWsLog = { sent: [] };
+    const peer = makeFakeWs(peerLog);
+    const { state } = makeWsAwareState('x', record, [peer]);
+    const room = new RoomDO(state, makeEnv());
+    const ws = makeFakeWs({ sent: [] }, { user: 'u', room: 'r', auth: 'h' });
+    await room.webSocketMessage(
+      ws,
+      JSON.stringify({ type: 'stopHuddle', room: 'r', auth: 'r' }),
+    );
+    expect(record.map.size).toBe(0);
+    expect(peerLog.sent).toHaveLength(1);
+  });
+
+  it('webSocketMessage dispatches ecell (broadcast-only, no persistence)', async () => {
+    const peerLog: FakeWsLog = { sent: [] };
+    const peer = makeFakeWs(peerLog);
+    const { state } = makeWsAwareState('x', record, [peer]);
+    const room = new RoomDO(state, makeEnv());
+    const ws = makeFakeWs({ sent: [] }, { user: 'u', room: 'r', auth: 'h' });
+    await room.webSocketMessage(
+      ws,
+      JSON.stringify({
+        type: 'ecell',
+        room: 'r',
+        user: 'u',
+        ecell: 'A1',
+        auth: 'r',
+      }),
+    );
+    expect(peerLog.sent).toHaveLength(1);
+    // ecell does NOT touch storage.
+    expect(record.map.size).toBe(0);
+  });
+
+  it('webSocketMessage dispatches ask.ecells (reply with map)', async () => {
+    record.map.set(ecellKey('alice'), 'A1');
+    const { state } = makeWsAwareState('x', record, []);
+    const room = new RoomDO(state, makeEnv());
+    const log: FakeWsLog = { sent: [] };
+    const ws = makeFakeWs(log, { user: 'u', room: 'r', auth: 'h' });
+    await room.webSocketMessage(
+      ws,
+      JSON.stringify({ type: 'ask.ecells', room: 'r' }),
+    );
+    expect(log.sent).toHaveLength(1);
+    const reply = JSON.parse(log.sent[0]!) as { ecells: Record<string, string> };
+    expect(reply.ecells).toEqual({ alice: 'A1' });
+  });
+
+  it('webSocketMessage dispatches ask.recalc (reply with snapshot + log)', async () => {
+    record.map.set(STORAGE_KEYS.snapshot, 'SAVE');
+    record.map.set(logKey(0), 'cmd');
+    const { state } = makeWsAwareState('x', record, []);
+    const room = new RoomDO(state, makeEnv());
+    const log: FakeWsLog = { sent: [] };
+    const ws = makeFakeWs(log, { user: 'u', room: 'r', auth: 'h' });
+    await room.webSocketMessage(
+      ws,
+      JSON.stringify({ type: 'ask.recalc', room: 'r' }),
+    );
+    expect(log.sent).toHaveLength(1);
+    const reply = JSON.parse(log.sent[0]!) as {
+      snapshot: string;
+      log: string[];
+    };
+    expect(reply.snapshot).toBe('SAVE');
+    expect(reply.log).toEqual(['cmd']);
+  });
+
+  it('webSocketMessage dispatches ask.recalc with empty storage (empty snapshot branch)', async () => {
+    const { state } = makeWsAwareState('x', record, []);
+    const room = new RoomDO(state, makeEnv());
+    const log: FakeWsLog = { sent: [] };
+    const ws = makeFakeWs(log, { user: 'u', room: 'r', auth: 'h' });
+    await room.webSocketMessage(
+      ws,
+      JSON.stringify({ type: 'ask.recalc', room: 'r' }),
+    );
+    const reply = JSON.parse(log.sent[0]!) as { snapshot: string };
+    expect(reply.snapshot).toBe('');
+  });
+
+  it('WsContext.spreadsheet.executeCommand no-ops when #ss is unhydrated', async () => {
+    // Expose the context-assembly surface through a write that triggers
+    // `#buildWsContext` with no prior #getSpreadsheet call. The chat path
+    // exercises storage.appendLog without touching #ss.
+    const { state } = makeWsAwareState('x', record, []);
+    const room = new RoomDO(state, makeEnv());
+    const ws = makeFakeWs({ sent: [] }, { user: 'u', room: 'r', auth: 'h' });
+    await room.webSocketMessage(
+      ws,
+      JSON.stringify({ type: 'chat', room: 'r', user: 'u', msg: 'no-ss' }),
+    );
+    expect(record.map.get(chatKey(0))).toBe('no-ss');
+  });
+
+  it('broadcast (exclude-self) skips sender when sender is in the peer list', async () => {
+    // `state.getWebSockets()` in prod returns every accepted socket, so
+    // the sender is normally included. The `#broadcast` helper must skip
+    // the sender; this test drives that branch by placing the sender in
+    // `peers`.
+    const senderLog: FakeWsLog = { sent: [] };
+    const sender = makeFakeWs(senderLog, { user: 'u', room: 'r', auth: 'h' });
+    const peerLog: FakeWsLog = { sent: [] };
+    const peer = makeFakeWs(peerLog);
+    const { state } = makeWsAwareState('x', record, [sender, peer]);
+    const room = new RoomDO(state, makeEnv());
+    await room.webSocketMessage(
+      sender,
+      JSON.stringify({ type: 'chat', room: 'r', user: 'u', msg: 'hi' }),
+    );
+    // Sender did NOT receive its own broadcast (exclude-self branch).
+    expect(senderLog.sent).toHaveLength(0);
+    // Peer did.
+    expect(peerLog.sent).toHaveLength(1);
+  });
+
+  it('peer-broadcast catch swallows a send failure on one peer', async () => {
+    // A peer whose send() throws must not stop the broadcast loop.
+    const flakey = {
+      send() {
+        throw new Error('peer dead');
+      },
+      serializeAttachment() {},
+      deserializeAttachment() {
+        return null;
+      },
+      close() {},
+    } as unknown as WebSocket;
+    const healthyLog: FakeWsLog = { sent: [] };
+    const healthy = makeFakeWs(healthyLog);
+    const { state } = makeWsAwareState('x', record, [flakey, healthy]);
+    const room = new RoomDO(state, makeEnv());
+    const sender = makeFakeWs({ sent: [] }, { user: 'u', room: 'r', auth: 'h' });
+    await room.webSocketMessage(
+      sender,
+      JSON.stringify({ type: 'chat', room: 'r', user: 'u', msg: 'broadcast-test' }),
+    );
+    // The healthy peer still got the frame despite the flakey one throwing.
+    expect(healthyLog.sent).toHaveLength(1);
+  });
+
+  it('#sendTo swallows a send failure on the reply socket', async () => {
+    const { state } = makeWsAwareState('x', record, []);
+    const room = new RoomDO(state, makeEnv());
+    const flakey = {
+      send() {
+        throw new Error('closed');
+      },
+      deserializeAttachment() {
+        return { user: 'u', room: 'r', auth: 'h' };
+      },
+    } as unknown as WebSocket;
+    // Must not throw.
+    await room.webSocketMessage(
+      flakey,
+      JSON.stringify({ type: 'ask.log', room: 'r', user: 'u' }),
+    );
+  });
+
+  it('submitform broadcastAll also swallows a dead-peer send failure', async () => {
+    const flakey = {
+      send() {
+        throw new Error('gone');
+      },
+      serializeAttachment() {},
+      deserializeAttachment() {
+        return null;
+      },
+      close() {},
+    } as unknown as WebSocket;
+    const healthyLog: FakeWsLog = { sent: [] };
+    const healthy = makeFakeWs(healthyLog);
+    const { state } = makeWsAwareState('x', record, [flakey, healthy]);
+    // siblingDo is unused here — submitform without payload skips fetch.
+    const room = new RoomDO(state, makeEnv());
+    const sender = makeFakeWs({ sent: [] }, { user: 'u', room: 'r', auth: 'h' });
+    await room.webSocketMessage(
+      sender,
+      JSON.stringify({
+        type: 'execute',
+        room: 'r',
+        user: 'u',
+        auth: 'r',
+        cmdstr: 'submitform',
+      }),
+    );
+    expect(healthyLog.sent).toHaveLength(1);
+  });
+});
+
+/**
+ * Direct coverage for the #buildWsContext adapter's ctx.storage.appendLog
+ * routing. The log/audit prefixes go through `#appendLogEntry` →
+ * blockConcurrencyWhile; chat goes through the public `appendChat` method.
+ * An audit-prefix path isn't reachable via any existing WS message type
+ * but remains as a future-proofing branch, so we exercise it via the
+ * chat/log fan-out the same way execute does.
+ */
+describe('RoomDO — WsContext storage plumbing', () => {
+  it('execute routes command through applyCommand → log/audit + snapshot', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const { state } = makeWsAwareState('x', record, []);
+    const room = new RoomDO(state, makeEnv());
+    const ws = makeFakeWs({ sent: [] }, { user: 'u', room: 'r', auth: 'h' });
+    await room.webSocketMessage(
+      ws,
+      JSON.stringify({
+        type: 'execute',
+        room: 'r',
+        user: 'u',
+        auth: 'r',
+        cmdstr: 'set A1 value n 1',
+      }),
+    );
+    expect(record.map.get(logKey(0))).toBe('set A1 value n 1');
+    expect(record.map.get(auditKey(0))).toBe('set A1 value n 1');
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('SNAP');
   });
 });

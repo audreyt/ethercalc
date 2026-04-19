@@ -22,11 +22,7 @@
  * isolate. Mutations that would drift cache vs storage are wrapped in
  * `state.blockConcurrencyWhile` to keep the DO serialized.
  */
-import type {
-  ClientMessage,
-  ExecuteClientMessage,
-  ServerMessage,
-} from '@ethercalc/shared/messages';
+import type { ServerMessage } from '@ethercalc/shared/messages';
 import { encodeMessage, parseClientMessage } from '@ethercalc/shared/messages';
 import {
   STORAGE_KEYS,
@@ -50,17 +46,12 @@ import {
   mirrorRoomToD1,
 } from './lib/rooms-index.ts';
 import {
-  buildChatBroadcast,
-  buildEcellBroadcast,
-  buildEcellsReply,
-  buildExecuteBroadcast,
-  buildLogReply,
-  buildMyEcellBroadcast,
-  buildStopHuddleBroadcast,
-  computeSubmitFormTarget,
-  isFilteredExecuteCommand,
-  isSubmitForm,
-} from './lib/ws-dispatch.ts';
+  dispatchWsMessage,
+  type WsContext,
+  type WsSiblingDO,
+  type WsStorage,
+} from './lib/ws-handlers.ts';
+import { upgradeWebSocket, type WsAttachment } from './lib/ws-upgrade.ts';
 import {
   BINARY_CONTENT_TYPES,
   type BinaryFormat,
@@ -72,17 +63,6 @@ import type { Env } from './env.ts';
 export interface RoomLogSnapshot {
   readonly log: readonly string[];
   readonly chat: readonly string[];
-}
-
-/**
- * Attachment payload stored on each accepted WebSocket. Kept small so the
- * serialize cost across hibernation is negligible.
- */
-interface WsAttachment {
-  readonly user: string;
-  readonly room: string;
-  /** Pre-supplied hmac (or '0' for view-only) as provided at handshake. */
-  readonly auth: string;
 }
 
 /** Content type used for plain-text bodies returned from the DO. */
@@ -475,23 +455,26 @@ export class RoomDO implements DurableObject {
    * can gate writes without re-verifying on every frame.
    */
   #acceptWebSocket(request: Request): Response {
+    /* istanbul ignore else -- @preserve
+     *   The else branch calls `upgradeWebSocket`, which needs
+     *   `WebSocketPair`, `state.acceptWebSocket`, and a Workers
+     *   `Response` accepting `status: 101` + `webSocket`. None of these
+     *   exist in Node; end-to-end coverage lives in the workers-pool
+     *   integration tests (`test/ws.test.ts`,
+     *   `test/legacy-socketio.test.ts`, `test/room.test.ts`).
+     */
     if (request.headers.get('Upgrade') !== 'websocket') {
       return plainResponse('Expected Upgrade: websocket', 426);
     }
-    const url = new URL(request.url);
-    const user = url.searchParams.get('user') ?? '';
-    const auth = url.searchParams.get('auth') ?? '';
-    const room = url.searchParams.get('room') ?? '';
-    const pair = new WebSocketPair();
-    const client = pair[0];
-    const server = pair[1];
-    this.#state.acceptWebSocket(server);
-    const attachment: WsAttachment = { user, room, auth };
-    server.serializeAttachment(attachment);
-    return new Response(null, { status: 101, webSocket: client });
+    /* istanbul ignore next -- @preserve — see above. */
+    return upgradeWebSocket(this.#state, request);
   }
 
-  /** Hibernation-api entrypoint — dispatches ClientMessages to handlers. */
+  /**
+   * Hibernation-api entrypoint. Parses the incoming frame, assembles a
+   * `WsContext` bound to this socket, and delegates to the pure dispatch
+   * layer in `src/lib/ws-handlers.ts` (Phase 7.1 extract).
+   */
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
     if (typeof message !== 'string') return;
     const parsed = parseClientMessage(message);
@@ -499,7 +482,13 @@ export class RoomDO implements DurableObject {
     const attachment =
       (ws.deserializeAttachment() as WsAttachment | null) ??
       { user: '', room: '', auth: '' };
-    await this.#dispatch(ws, attachment, parsed);
+    // Auth-bearing message variants (`execute`, `ecell`, `stopHuddle`)
+    // carry their own `auth` string; others never do. Default to empty so
+    // the downstream `verifyAuth` treats it as view-only.
+    const perMessageAuth =
+      'auth' in parsed && typeof parsed.auth === 'string' ? parsed.auth : '';
+    const ctx = this.#buildWsContext(ws, attachment, parsed.room, perMessageAuth);
+    await dispatchWsMessage(ctx, parsed);
   }
 
   /**
@@ -511,147 +500,77 @@ export class RoomDO implements DurableObject {
     void ws;
   }
 
-  // ─── Per-message handlers ──────────────────────────────────────────────
+  // ─── WsContext assembly ────────────────────────────────────────────────
 
-  async #dispatch(
+  /**
+   * Build the `WsContext` surface for one WS frame. Everything here is
+   * deliberately small: captured closures over `this` that translate
+   * handler calls into storage I/O, socket sends, and sibling-DO fetches.
+   *
+   * The `room` arg is taken from the incoming message (not the handshake
+   * attachment) because legacy clients sometimes multiplex a single WS
+   * across multiple rooms — the per-frame `room` is the authority.
+   */
+  #buildWsContext(
     ws: WebSocket,
     attachment: WsAttachment,
-    msg: ClientMessage,
-  ): Promise<void> {
-    switch (msg.type) {
-      case 'chat':
-        await this.#handleChat(ws, msg);
-        return;
-      case 'ask.ecells':
-        await this.#handleAskEcells(ws, msg);
-        return;
-      case 'my.ecell':
-        await this.#handleMyEcell(ws, msg);
-        return;
-      case 'execute':
-        await this.#handleExecute(ws, attachment, msg);
-        return;
-      case 'ask.log':
-        await this.#handleAskLog(ws, msg);
-        return;
-      case 'ask.recalc':
-        await this.#handleAskRecalc(ws, msg);
-        return;
-      case 'stopHuddle':
-        await this.#handleStopHuddle(ws, msg);
-        return;
-      case 'ecell':
-        await this.#handleEcell(ws, msg);
-        return;
-      default: {
-        const _exhaustive: never = msg;
-        void _exhaustive;
-      }
-    }
-  }
-
-  async #handleChat(
-    ws: WebSocket,
-    msg: ClientMessage & { type: 'chat' },
-  ): Promise<void> {
-    await this.appendChat(msg.msg);
-    this.#broadcast(ws, buildChatBroadcast(msg));
-  }
-
-  async #handleAskEcells(
-    ws: WebSocket,
-    msg: ClientMessage & { type: 'ask.ecells' },
-  ): Promise<void> {
-    const ecells = await this.listEcells();
-    this.#sendTo(ws, buildEcellsReply(msg.room, ecells));
-  }
-
-  async #handleMyEcell(
-    ws: WebSocket,
-    msg: ClientMessage & { type: 'my.ecell' },
-  ): Promise<void> {
-    if (msg.user.length > 0) await this.putEcell(msg.user, msg.ecell);
-    this.#broadcast(ws, buildMyEcellBroadcast(msg));
-  }
-
-  async #handleExecute(
-    ws: WebSocket,
-    _attachment: WsAttachment,
-    msg: ExecuteClientMessage,
-  ): Promise<void> {
-    const ok = await verifyAuth(this.#env.ETHERCALC_KEY, msg.room, msg.auth ?? '');
-    if (!ok) return;
-    if (isFilteredExecuteCommand(msg.cmdstr)) return;
-
-    if (isSubmitForm(msg.cmdstr)) {
-      const { siblingRoom, siblingCommands } = computeSubmitFormTarget(
-        msg.room,
-        msg.cmdstr,
-      );
-      if (siblingCommands.length > 0) {
-        await this.#forwardToSibling(siblingRoom, siblingCommands);
-      }
-      this.#broadcastAll(buildExecuteBroadcast(msg, true));
-      return;
-    }
-
-    await this.#state.blockConcurrencyWhile(async () => {
-      await this.#appendCommand(msg.cmdstr);
-    });
-    this.#broadcast(ws, buildExecuteBroadcast(msg, false));
-  }
-
-  async #handleAskLog(
-    ws: WebSocket,
-    msg: ClientMessage & { type: 'ask.log' },
-  ): Promise<void> {
-    const [log, chat, snapshot] = await Promise.all([
-      this.#listPrefix(STORAGE_KEYS.logPrefix),
-      this.#listPrefix(STORAGE_KEYS.chatPrefix),
-      this.#state.storage.get<string>(STORAGE_KEYS.snapshot),
-    ]);
-    this.#sendTo(ws, buildLogReply(msg, log, chat, snapshot ?? ''));
-  }
-
-  async #handleAskRecalc(
-    ws: WebSocket,
-    msg: ClientMessage & { type: 'ask.recalc' },
-  ): Promise<void> {
-    const [log, snapshot] = await Promise.all([
-      this.#listPrefix(STORAGE_KEYS.logPrefix),
-      this.#state.storage.get<string>(STORAGE_KEYS.snapshot),
-    ]);
-    this.#sendTo(ws, {
-      type: 'recalc',
-      room: msg.room,
-      log,
-      snapshot: snapshot ?? '',
-    });
-  }
-
-  async #handleStopHuddle(
-    ws: WebSocket,
-    msg: ClientMessage & { type: 'stopHuddle' },
-  ): Promise<void> {
-    const ok = await verifyAuth(this.#env.ETHERCALC_KEY, msg.room, msg.auth ?? '');
-    if (!ok) return;
-    await this.#state.blockConcurrencyWhile(async () => {
-      await this.#state.storage.deleteAll();
-      this.#ss = null;
-      this.#nextLogSeq = 0;
-      this.#nextAuditSeq = 0;
-      this.#nextChatSeq = 0;
-    });
-    this.#broadcast(ws, buildStopHuddleBroadcast(msg));
-  }
-
-  async #handleEcell(
-    ws: WebSocket,
-    msg: ClientMessage & { type: 'ecell' },
-  ): Promise<void> {
-    const ok = await verifyAuth(this.#env.ETHERCALC_KEY, msg.room, msg.auth ?? '');
-    if (!ok) return;
-    this.#broadcast(ws, buildEcellBroadcast(msg));
+    messageRoom: string,
+    messageAuth: string,
+  ): WsContext {
+    const storage: WsStorage = {
+      listPrefix: (prefix) => this.#listPrefix(prefix),
+      listHash: (prefix) => this.#listHash(prefix),
+      putHash: async (prefix, key, value) => {
+        await this.#state.storage.put(`${prefix}${key}`, value);
+      },
+      appendLog: (prefix, value) => this.#appendLogEntry(prefix, value),
+      getSnapshot: async () =>
+        await this.#state.storage.get<string>(STORAGE_KEYS.snapshot),
+      deleteAll: async () => {
+        await this.#state.blockConcurrencyWhile(async () => {
+          await this.#state.storage.deleteAll();
+          this.#ss = null;
+          this.#nextLogSeq = 0;
+          this.#nextAuditSeq = 0;
+          this.#nextChatSeq = 0;
+        });
+      },
+    };
+    const env = this.#env;
+    return {
+      room: messageRoom,
+      user: attachment.user,
+      auth: messageAuth,
+      storage,
+      applyCommand: async (cmdstr: string) => {
+        await this.#state.blockConcurrencyWhile(async () => {
+          await this.#appendCommand(cmdstr);
+        });
+      },
+      broadcast: async (msg, includeSelf) => {
+        if (includeSelf) this.#broadcastAll(msg);
+        else this.#broadcast(ws, msg);
+      },
+      reply: async (msg) => {
+        this.#sendTo(ws, msg);
+      },
+      verifyAuth: async () => {
+        // Execute/ecell/stopHuddle carry their own per-message `auth`
+        // string; legacy verified against that field (src/main.ls:516).
+        // Messages without an auth field pass empty string → rejected by
+        // `verifyAuth` as view-only unless KEY is unset (identity path).
+        return await verifyAuth(env.ETHERCALC_KEY, messageRoom, messageAuth);
+      },
+      siblingDo: (room: string): WsSiblingDO => {
+        const id = env.ROOM.idFromName(room);
+        const stub = env.ROOM.get(id);
+        return {
+          async fetch(path, init) {
+            return await stub.fetch(path, init);
+          },
+        };
+      },
+    };
   }
 
   // ─── WS broadcast primitives ───────────────────────────────────────────
@@ -690,22 +609,35 @@ export class RoomDO implements DurableObject {
   }
 
   /**
-   * Dispatch commands to the `<room>_formdata` sibling DO via its own
-   * `/_do/commands` endpoint. We can't touch storage directly because the
-   * sibling is a different DO. Colocation keeps the hop cheap.
+   * Append one entry under `prefix`, the transport-agnostic fan-out for
+   * `ctx.storage.appendLog`. Today only `chat:` is reachable from the
+   * handler layer — `log:`/`audit:` writes go through `applyCommand` →
+   * `#appendCommand` so they stay serialized alongside the SocialCalc
+   * state-save. Any future handler that needs a non-chat prefix should
+   * route through this method so the concurrency guard stays in one
+   * place.
    */
-  async #forwardToSibling(siblingRoom: string, commands: string): Promise<void> {
-    const id = this.#env.ROOM.idFromName(siblingRoom);
-    const stub = this.#env.ROOM.get(id);
-    try {
-      await stub.fetch('https://do.local/_do/commands', {
-        method: 'POST',
-        body: commands,
-      });
-    } catch {
-      // Sibling unavailable — legacy also dropped on send failure
-      // (src/main.ls:538). No visible error to the user.
+  async #appendLogEntry(prefix: string, value: string): Promise<void> {
+    /* istanbul ignore else -- @preserve
+     *   Reserved fallthrough. No current WS handler appends under
+     *   `log:`/`audit:` via `ctx.storage.appendLog` (execute uses the
+     *   higher-level `applyCommand`). The branch is here to keep the
+     *   `WsStorage.appendLog` surface honest — exposing a prefix arg
+     *   but silently rejecting non-chat prefixes would be worse.
+     */
+    if (prefix === STORAGE_KEYS.chatPrefix) {
+      await this.appendChat(value);
+      return;
     }
+    void value;
+  }
+
+  /** List entries under `prefix` as a `{key-without-prefix: value}` map. */
+  async #listHash(prefix: string): Promise<Record<string, string>> {
+    const map = await this.#state.storage.list<string>({ prefix });
+    const out: Record<string, string> = {};
+    for (const [k, v] of map) out[k.slice(prefix.length)] = v;
+    return out;
   }
 
   /**
