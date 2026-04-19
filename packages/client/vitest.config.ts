@@ -17,6 +17,7 @@ export default defineConfig({
         'src/ws-adapter.ts',
         'src/socialcalc-callbacks.ts',
         'src/main.ts',
+        'src/graph.ts',
       ],
       reporter: ['text', 'json-summary', 'lcov'],
       thresholds: {
