@@ -7,3 +7,7 @@ coverage/
 .vitest-cache/
 *.log
 .claude/
+# Playwright e2e outputs
+playwright-report/
+test-results/
+node_modules/.playwright/
