@@ -2,7 +2,7 @@
  * Smoke test for the multi-sheet SPA (`packages/client-multi/`).
  *
  * We boot the Vite dev server (via the `clientBase` fixture) and point
- * the browser at `/=test-room`. The app's boot path reads the URL, calls
+ * the browser at `/multi/=test-room`. The app's boot path reads the URL, calls
  * `fetch('<basePath>/_/test-room/csv.json')`, and — because the fetch
  * fails (no backend wired for the SPA's API calls at this phase) — the
  * Foldr falls through to its "empty room" branch, seeds a default row,
@@ -21,7 +21,7 @@
 import { test, expect } from '../src/fixtures-client.ts';
 
 test.describe('client-multi smoke', () => {
-  test('SPA mounts at /=test-room with Radix tab UI', async ({
+  test('SPA mounts at /multi/=test-room with Radix tab UI', async ({
     clientBase,
     page,
   }) => {
@@ -34,7 +34,7 @@ test.describe('client-multi smoke', () => {
       if (msg.type() === 'error') consoleErrors.push(msg.text());
     });
 
-    await page.goto(`${clientBase}/=test-room`);
+    await page.goto(`${clientBase}/multi/=test-room`);
     // Boot is async — Foldr.fetch awaits a network round-trip and the
     // empty-state seeding adds another POST. React renders after both.
     const tablist = page.getByRole('tablist');
@@ -45,6 +45,14 @@ test.describe('client-multi smoke', () => {
     // future changes to the empty-state seed.
     const tabCount = await page.getByRole('tab').count();
     expect(tabCount).toBeGreaterThanOrEqual(1);
+
+    // The active sheet frame should occupy most of the viewport. This catches
+    // layout regressions where the tab strip becomes the containing block and
+    // the iframe collapses to 0px height.
+    const iframe = page.locator('iframe').first();
+    await expect(iframe).toBeVisible();
+    const box = await iframe.boundingBox();
+    expect(box?.height ?? 0).toBeGreaterThan(400);
 
     // No uncaught exceptions in the page context.
     expect(errors, `uncaught page errors: ${errors.join(' | ')}`).toHaveLength(

@@ -75,7 +75,9 @@ export const App: FC<AppProps> = ({
   };
 
   const canDelete = foldr.size() > 1;
-  const navClass = `${styles['nav']}${isReadOnly ? ' ' + styles['readonly'] : ''}`;
+  const navClass = [styles['nav'], isReadOnly ? styles['readonly'] : '']
+    .filter(Boolean)
+    .join(' ');
 
   return (
     <div className={navClass} data-rev={state.rev}>

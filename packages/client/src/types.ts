@@ -145,6 +145,7 @@ export interface SocialCalcGlobal {
     LoadSheetCache?: Record<string, string>;
   };
   Formula?: { SheetCache?: { sheets?: Record<string, unknown> } };
+  Keyboard?: { passThru?: boolean };
   CurrentSpreadsheetControlObject?: SpreadsheetLike;
 
   // Ctors referenced by main.ts.

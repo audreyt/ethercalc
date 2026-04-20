@@ -5,11 +5,16 @@
  */
 
 /* Global page layout — same as legacy `body {margin:0;padding:0;overflow:hidden}` */
+:global(html),
+:global(body),
+:global(#root) {
+  height: 100%;
+}
+
 :global(body) {
   margin: 0;
   padding: 0;
   overflow: hidden;
-  height: 100%;
 }
 
 :global(iframe) {
@@ -20,26 +25,32 @@
 
 /* === Nav strip + buttons ============================================= */
 
-.nav,
-.buttons {
+.nav {
+  /* Marker class only — legacy layout attached the absolute strip rules to the
+   * inner <nav> element, not the outer wrapper div.
+   */
+}
+
+.buttons,
+.tabList {
   background: #eee;
   font-family: Helvetica, sans-serif;
   border-top: 1px solid black;
   position: absolute !important;
   font-size: 16px;
-  height: 22px;
   bottom: 5px;
+  height: 43px;
 }
 
-.nav {
+.tabList {
   right: 200px;
   left: 0;
   padding-left: 8px;
   white-space: nowrap;
-  /* overflow-x: auto; (kept commented to mirror legacy) */
+  overflow-x: auto;
 }
 
-.readonly .nav {
+.readonly .tabList {
   right: 0;
 }
 
@@ -123,15 +134,6 @@
  * Radix's tablist role lives one level deep under our .nav container, so we
  * target it directly.
  */
-.nav .buttons,
-.nav .tabList {
-  height: 43px;
-}
-
-.nav .tabList {
-  overflow-x: auto;
-}
-
 /* Radix's TabsList is a flex row of triggers; make sure it renders on the
  * baseline of the .nav strip.
  */
