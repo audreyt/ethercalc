@@ -99,6 +99,11 @@ cp -R "$ROOT/images/." "$DEST/images/"
 
 # SocialCalc runtime — served at /static/socialcalc.js (§13 Q8).
 cp "$SOCIALCALC_JS" "$DEST/static/socialcalc.js"
+# The audreyt/socialcalc UMD adds top-level `"use strict"` directives,
+# but the browser renderer still relies on sloppy-mode loop vars such as
+# `colpane` inside `FitToEditTable`. Strip those directives on the asset
+# copy so the served runtime matches legacy EtherCalc behavior.
+perl -0pi -e 's/\(function \(root, factory\) {\n    "use strict";/\(function \(root, factory\) {/; s/function \(window\) {\n"use strict";/function \(window\) {/' "$DEST/static/socialcalc.js"
 
 # Built single-sheet client — served at /static/player.js.
 cp "$PLAYER_JS" "$DEST/static/player.js"
