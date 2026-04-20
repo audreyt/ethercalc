@@ -20,7 +20,7 @@
     "@ethercalc/socialcalc-headless": "workspace:*",
     "@ethercalc/socketio-shim": "workspace:*",
     "hono": "^4.6.10",
-    "xlsx": "^0.18.5"
+    "@e965/xlsx": "^0.20.3"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.6.0",

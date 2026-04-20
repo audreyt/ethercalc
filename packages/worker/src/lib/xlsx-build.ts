@@ -32,7 +32,7 @@
 // the individual typed symbols because the public ESM surface we use
 // (aoa_to_sheet + book_new + book_append_sheet + write) is typed more
 // liberally in the library than what we actually hit.
-import * as XLSX from 'xlsx';
+import * as XLSX from '@e965/xlsx';
 
 import { parseCSV } from './csv-parse.ts';
 
