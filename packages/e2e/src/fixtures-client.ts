@@ -71,6 +71,10 @@ async function startVite(args: {
     '--host',
     '127.0.0.1',
     '--strictPort',
+    // Override the production `base: '/multi/'` so the dev server serves
+    // assets at root — the e2e test navigates to `/=room`, not `/multi/=room`.
+    '--base',
+    '/',
   ];
   const opts: SpawnOptions = {
     cwd: CLIENT_MULTI_PKG,
