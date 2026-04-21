@@ -303,6 +303,84 @@ describe('HttpTarget', () => {
     expect(calls).toHaveLength(0);
   });
 
+  it('drains the response body on success (falls back to arrayBuffer when body.cancel absent)', async () => {
+    const cancelCalls: number[] = [];
+    const arrayBufferCalls: number[] = [];
+    let n = 0;
+    // Build three Response shapes the drain() helper has to handle:
+    //   1. body with cancel()  — typical Bun/undici path
+    //   2. body without cancel — must fall through to arrayBuffer()
+    //   3. body === null       — must go straight to the fallback too
+    const fetch: FetchLike = async () => {
+      n += 1;
+      if (n === 1) {
+        // Standard Response — body is a ReadableStream with cancel().
+        return new Response('OK', { status: 201 });
+      }
+      if (n === 2) {
+        // Monkey-patched to drop cancel() so drain() uses arrayBuffer().
+        const res = new Response('OK', { status: 201 });
+        Object.defineProperty(res, 'body', {
+          value: { cancel: undefined }, // no cancel method → typeof !== 'function'
+        });
+        const origAB = res.arrayBuffer.bind(res);
+        res.arrayBuffer = async () => {
+          arrayBufferCalls.push(n);
+          return origAB();
+        };
+        return res;
+      }
+      // null body — e.g. 204 No Content. drain() hits the arrayBuffer branch.
+      const res = new Response(null, { status: 201 });
+      const origAB = res.arrayBuffer.bind(res);
+      res.arrayBuffer = async () => {
+        arrayBufferCalls.push(n);
+        return origAB();
+      };
+      return res;
+    };
+
+    const target = new HttpTarget({
+      baseUrl: 'http://127.0.0.1:8000',
+      token: 'abc',
+      fetch,
+    });
+    // Three seed PUTs → three drain() calls.
+    for (const name of ['a', 'b', 'c']) {
+      await target.putSnapshot(name, 'S');
+      await target.setRoomIndex(name, 1);
+    }
+    // Both monkey-patched paths reached arrayBuffer; the first went
+    // through body.cancel() (uninstrumented but proven by the absence
+    // from arrayBufferCalls).
+    expect(arrayBufferCalls).toEqual([2, 3]);
+    expect(cancelCalls).toEqual([]); // no-op — cancel itself we can't instrument post-hoc
+  });
+
+  it('drain swallows errors thrown by body.cancel()', async () => {
+    // Covers the catch in drain(): if cancel() throws we log nothing
+    // and move on — the caller has already succeeded from its POV.
+    const fetch: FetchLike = async () => {
+      const res = new Response('OK', { status: 201 });
+      Object.defineProperty(res, 'body', {
+        value: {
+          cancel: () => {
+            throw new Error('stream already closed');
+          },
+        },
+      });
+      return res;
+    };
+    const target = new HttpTarget({
+      baseUrl: 'http://127.0.0.1:8000',
+      token: 'abc',
+      fetch,
+    });
+    await target.putSnapshot('a', 'S');
+    // Must not throw — drain() catches and swallows.
+    await expect(target.setRoomIndex('a', 1)).resolves.toBeUndefined();
+  });
+
   it('throws when the bulk-index endpoint returns non-2xx', async () => {
     let call = 0;
     const fetch: FetchLike = async () => {

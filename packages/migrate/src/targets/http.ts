@@ -198,6 +198,12 @@ export class HttpTarget implements MigrationTarget {
         `seed ${room} failed: ${res.status} ${res.statusText} — ${text}`,
       );
     }
+    // Critical: drain the response body even on the 201 path. Bun's
+    // (and undici's) fetch holds the buffered Request + Response pair
+    // alive until the body stream is consumed or cancelled. At 676k
+    // PUTs × ~85 KB per round-trip pair, the retention balloons to
+    // 58 GB RSS and segfaults — empirically proven on 2026-04-21.
+    await drain(res);
   }
 
   async #flushBulkIndex(): Promise<void> {
@@ -219,6 +225,7 @@ export class HttpTarget implements MigrationTarget {
         `bulk-index ${chunk.length} rows failed: ${res.status} ${res.statusText} — ${text}`,
       );
     }
+    await drain(res);
   }
 }
 
@@ -227,6 +234,35 @@ async function safeText(res: Response): Promise<string> {
     return await res.text();
   } catch {
     return '<unreadable body>';
+  }
+}
+
+/**
+ * Release a Response without inspecting its bytes. `safeText`/`.text()`
+ * already drain the body; this is for success paths where we don't
+ * need the payload but still must consume it or cancel the stream.
+ *
+ * Both Bun and undici/Node hold the buffered Request + Response bytes
+ * alive until the body is fully read or explicitly cancelled. On a
+ * long-running migration (hundreds of thousands of calls) this adds
+ * up to tens of GB of retained memory and eventually crashes the
+ * process — see CLAUDE.md §14 2026-04-21 entry.
+ *
+ * Try `body.cancel()` first (cheapest — tells the runtime to stop
+ * buffering); fall back to `.arrayBuffer()` on engines where cancel
+ * is missing or where the body has no underlying stream. Any error
+ * here is non-fatal: we've already succeeded from the caller's POV.
+ */
+async function drain(res: Response): Promise<void> {
+  try {
+    if (res.body !== null && typeof res.body.cancel === 'function') {
+      await res.body.cancel();
+      return;
+    }
+    await res.arrayBuffer();
+  } catch {
+    // best-effort — the underlying bytes will be reclaimed when the
+    // Response goes out of scope regardless, this just accelerates it.
   }
 }
 
@@ -254,6 +290,9 @@ export async function waitForHealth(
   while (true) {
     try {
       const res = await deps.fetch(url);
+      // Drain whether ok or not — see `drain()` doc for why skipping
+      // this leaks up to a few hundred KB per health poll.
+      await drain(res);
       if (res.ok) return true;
     } catch {
       // Retry — the socket may still be warming up.
