@@ -13,8 +13,19 @@
  */
 
 export const STORAGE_KEYS = {
-  /** String — SocialCalc save format. */
+  /**
+   * String — SocialCalc save format, for rooms whose snapshot fits
+   * under the DO-storage 128 KiB per-value ceiling. Large snapshots
+   * use the chunked layout below instead.
+   */
   snapshot: 'snapshot',
+  /**
+   * Object `{ chunks: number }` — present iff the snapshot is split
+   * across `snapshot:chunk:<i>` keys. Absent for small snapshots.
+   */
+  snapshotMeta: 'snapshot:meta',
+  /** Prefix for chunked snapshot parts: `snapshot:chunk:<padSeq(i)>`. */
+  snapshotChunkPrefix: 'snapshot:chunk:',
   /** Number — ms since epoch. Updated on every snapshot write. */
   metaUpdatedAt: 'meta:updated_at',
   /** Prefix for command log entries (folded into snapshot periodically). */
@@ -52,4 +63,13 @@ export function chatKey(n: number): string {
 export function ecellKey(user: string): string {
   if (!user) throw new RangeError('ecellKey requires a non-empty user');
   return STORAGE_KEYS.ecellPrefix + user;
+}
+
+/**
+ * Chunked-snapshot chunk key: `snapshot:chunk:<padSeq(i)>`. Zero-padded
+ * so `storage.list({prefix: STORAGE_KEYS.snapshotChunkPrefix})` returns
+ * chunks in order without a sort step.
+ */
+export function snapshotChunkKey(i: number): string {
+  return STORAGE_KEYS.snapshotChunkPrefix + padSeq(i);
 }

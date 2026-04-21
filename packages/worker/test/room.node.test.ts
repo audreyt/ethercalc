@@ -34,8 +34,16 @@ function fakeStorage(record: FakeStorageRecord): DurableObjectStorage {
   const m = record.map;
   return {
     async get(key: unknown): Promise<unknown> {
-      if (typeof key !== 'string') throw new Error('multi-key get not used');
-      return m.get(key);
+      // Support the single-key `get(key)` and the batched
+      // `get(keys[])` forms — the chunked-snapshot reader uses the
+      // batched form so it can fetch N chunk keys in one hop.
+      if (typeof key === 'string') return m.get(key);
+      if (Array.isArray(key)) {
+        const out = new Map<string, unknown>();
+        for (const k of key) if (m.has(k as string)) out.set(k as string, m.get(k as string));
+        return out;
+      }
+      throw new Error('unexpected get argument shape');
     },
     async put(key: unknown, value: unknown): Promise<void> {
       // Support both the single-key `put(key, value)` and the batched
@@ -51,9 +59,16 @@ function fakeStorage(record: FakeStorageRecord): DurableObjectStorage {
       }
       throw new Error('unexpected put argument shape');
     },
-    async delete(key: unknown): Promise<boolean> {
-      if (typeof key !== 'string') throw new Error('multi-key delete not used');
-      return m.delete(key);
+    async delete(key: unknown): Promise<boolean | number> {
+      // Single-key returns boolean; array form returns number deleted
+      // (matching DurableObjectStorage.delete's overload shape).
+      if (typeof key === 'string') return m.delete(key);
+      if (Array.isArray(key)) {
+        let n = 0;
+        for (const k of key) if (m.delete(k as string)) n += 1;
+        return n;
+      }
+      throw new Error('unexpected delete argument shape');
     },
     async deleteAll(): Promise<void> {
       m.clear();
@@ -365,6 +380,71 @@ describe('RoomDO (unit, direct construction)', () => {
     expect(record.map.get(logKey(0))).toBe('set A1 value n 1');
     expect(record.map.get(auditKey(0))).toBe('set A1 value n 1');
     expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('NEWSNAP');
+  });
+
+  it('POST /_do/commands stores a large snapshot as chunks', async () => {
+    // Force the mock save to exceed the 100 KiB SNAPSHOT_CHUNK_BYTES
+    // ceiling so `#appendCommand` routes through snapshotEntries'
+    // chunked path: meta row + snapshot:chunk:<i> keys, no single
+    // `snapshot` key.
+    const big = 'B'.repeat(210 * 1024); // ~2.1× chunk size → 3 chunks
+    mockSave.mockReturnValueOnce(big);
+    const res = await room.fetch(
+      new Request('https://do/_do/commands', {
+        method: 'POST',
+        body: 'cmd',
+      }),
+    );
+    expect(res.status).toBe(202);
+    expect(record.map.has(STORAGE_KEYS.snapshot)).toBe(false);
+    expect(record.map.get(STORAGE_KEYS.snapshotMeta)).toEqual({ chunks: 3 });
+    expect(record.map.has(`snapshot:chunk:${String(0).padStart(16, '0')}`)).toBe(true);
+    expect(record.map.has(`snapshot:chunk:${String(2).padStart(16, '0')}`)).toBe(true);
+  });
+
+  it('POST /_do/commands skips delete when prior-chunked state is re-chunked to same count', async () => {
+    // Cover the `stale.length > 0` false branch: prior state was
+    // chunked (2 chunks), new save is also chunked at 2 chunks. No
+    // stale keys to clean up.
+    const twoChunks = 'B'.repeat(110 * 1024); // 110 KiB → 2 chunks
+    record.map.set(STORAGE_KEYS.snapshotMeta, { chunks: 2 });
+    record.map.set(`snapshot:chunk:${String(0).padStart(16, '0')}`, 'old0');
+    record.map.set(`snapshot:chunk:${String(1).padStart(16, '0')}`, 'old1');
+    mockSave.mockReturnValueOnce(twoChunks);
+    const res = await room.fetch(
+      new Request('https://do/_do/commands', {
+        method: 'POST',
+        body: 'same-size',
+      }),
+    );
+    expect(res.status).toBe(202);
+    expect(record.map.get(STORAGE_KEYS.snapshotMeta)).toEqual({ chunks: 2 });
+    // Overwritten, not stale-deleted.
+    expect(record.map.get(`snapshot:chunk:${String(0).padStart(16, '0')}`)).not.toBe('old0');
+  });
+
+  it('POST /_do/commands cleans up stale chunks when shrinking back to single-key', async () => {
+    // Seed the DO with prior chunked state (5 chunks), then run a
+    // command whose new save fits in a single key. The stale chunks
+    // 0..4 and the meta key must be deleted; the new `snapshot` key
+    // holds the small value.
+    record.map.set(STORAGE_KEYS.snapshotMeta, { chunks: 5 });
+    for (let i = 0; i < 5; i++) {
+      record.map.set(`snapshot:chunk:${String(i).padStart(16, '0')}`, 'stale');
+    }
+    mockSave.mockReturnValueOnce('tiny');
+    const res = await room.fetch(
+      new Request('https://do/_do/commands', {
+        method: 'POST',
+        body: 'shrink',
+      }),
+    );
+    expect(res.status).toBe(202);
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('tiny');
+    expect(record.map.has(STORAGE_KEYS.snapshotMeta)).toBe(false);
+    for (let i = 0; i < 5; i++) {
+      expect(record.map.has(`snapshot:chunk:${String(i).padStart(16, '0')}`)).toBe(false);
+    }
   });
 
   it('POST /_do/commands twice increments sequence', async () => {

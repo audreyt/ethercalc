@@ -192,12 +192,6 @@ export async function runMigrate(
               `${(bytes / 1024).toFixed(1)} KiB (> 120 KiB DO limit)\n`,
           );
         },
-        onSkippedRoom: ({ room, bytes }) => {
-          deps.stderr(
-            `  SKIP ROOM: ${room} snapshot = ` +
-              `${(bytes / 1024).toFixed(1)} KiB (> 120 KiB DO limit)\n`,
-          );
-        },
       }),
       target,
       {

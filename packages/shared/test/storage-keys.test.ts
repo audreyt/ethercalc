@@ -8,18 +8,28 @@ import {
   auditKey,
   chatKey,
   ecellKey,
+  snapshotChunkKey,
 } from '../src/storage-keys.ts';
 
 describe('STORAGE_KEYS', () => {
   it('exposes every key pattern from CLAUDE.md §3.3', () => {
     expect(STORAGE_KEYS).toEqual({
       snapshot: 'snapshot',
+      snapshotMeta: 'snapshot:meta',
+      snapshotChunkPrefix: 'snapshot:chunk:',
       metaUpdatedAt: 'meta:updated_at',
       logPrefix: 'log:',
       auditPrefix: 'audit:',
       chatPrefix: 'chat:',
       ecellPrefix: 'ecell:',
     });
+  });
+});
+
+describe('snapshotChunkKey', () => {
+  it('zero-pads the index so listPrefix returns chunks in order', () => {
+    expect(snapshotChunkKey(0)).toBe('snapshot:chunk:0000000000000000');
+    expect(snapshotChunkKey(42)).toBe('snapshot:chunk:0000000000000042');
   });
 });
 

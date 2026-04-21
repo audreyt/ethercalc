@@ -65,15 +65,18 @@ export interface RoomsFromRedisOptions {
     readonly bytes: number;
   }) => void;
   /**
-   * Whole-room skip threshold. Same 128 KiB DO ceiling, but snapshots
-   * are authoritative (unlike audit rows) so we can't silently drop
-   * them — the room stops being a room without one. Rooms whose
-   * snapshot exceeds this are skipped outright and surfaced via
-   * `onSkippedRoom` for the operator to inspect manually. Default
-   * matches `maxEntryBytes`.
+   * Legacy knob — previously skipped rooms whose snapshot exceeded
+   * the 128 KiB DO-per-value ceiling. The worker now chunks snapshots
+   * transparently (see `src/lib/snapshot-storage.ts`), so the default
+   * is effectively `Infinity` (no skipping). Kept for callers that
+   * still want to bound individual PUT body size at a lower cap.
    */
   maxSnapshotBytes?: number;
-  /** Called when a whole room is skipped for an oversized snapshot. */
+  /**
+   * Called when a whole room is skipped for an oversized snapshot.
+   * With the post-2026-04-22 chunked-snapshot worker this only fires
+   * when the caller sets an explicit {@link maxSnapshotBytes}.
+   */
   onSkippedRoom?: (info: {
     readonly room: string;
     readonly bytes: number;
@@ -105,7 +108,10 @@ export async function* roomsFromRedis(
   }
   const sorted = Array.from(names).sort();
   const maxEntryBytes = options.maxEntryBytes ?? 120 * 1024;
-  const maxSnapshotBytes = options.maxSnapshotBytes ?? maxEntryBytes;
+  // Worker now chunks snapshots internally — default is unbounded.
+  // Callers can still opt in to a ceiling via explicit
+  // `maxSnapshotBytes` (tests do this to exercise the skip path).
+  const maxSnapshotBytes = options.maxSnapshotBytes ?? Infinity;
   const onOversizedEntry = options.onOversizedEntry;
   const onSkippedRoom = options.onSkippedRoom;
 

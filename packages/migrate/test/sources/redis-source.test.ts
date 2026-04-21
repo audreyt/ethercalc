@@ -272,10 +272,11 @@ describe('roomsFromRedis — timestamps + progress', () => {
     ]);
   });
 
-  it('skips whole room when snapshot exceeds maxSnapshotBytes', async () => {
-    // Covers the oversized-snapshot path — dropping just the snapshot
-    // leaves a half-room, so the adapter omits the whole room and
-    // fires onSkippedRoom for the operator.
+  it('default: keeps rooms regardless of snapshot size (worker chunks)', async () => {
+    // Post-2026-04-22 the worker chunks snapshots > 128 KiB across
+    // `snapshot:chunk:<i>` keys, so the migrator no longer needs to
+    // drop huge-snapshot rooms. Default `maxSnapshotBytes` is
+    // Infinity — both rooms pass through.
     const bigSnap = 'a'.repeat(200_000);
     const client = scriptedClient({
       'HGETALL timestamps': [],
@@ -294,6 +295,35 @@ describe('roomsFromRedis — timestamps + progress', () => {
     const skipped: Array<{ room: string; bytes: number }> = [];
     const rooms = await collect(
       roomsFromRedis(client, {
+        onSkippedRoom: ({ room, bytes }) => skipped.push({ room, bytes }),
+      }),
+    );
+    expect(rooms.map((r) => r.name)).toEqual(['huge', 'ok']);
+    expect(skipped).toEqual([]);
+  });
+
+  it('opt-in: respects explicit maxSnapshotBytes when caller sets it', async () => {
+    // Callers that want the old skip behavior (e.g. to bound per-PUT
+    // body size independently of the worker's ceiling) still can.
+    const bigSnap = 'a'.repeat(200_000);
+    const client = scriptedClient({
+      'HGETALL timestamps': [],
+      ...oneShotScan(['snapshot-huge', 'snapshot-ok']),
+      'GET snapshot-huge': bigSnap,
+      'LRANGE log-huge 0 -1': [],
+      'LRANGE audit-huge 0 -1': [],
+      'LRANGE chat-huge 0 -1': [],
+      'HGETALL ecell-huge': [],
+      'GET snapshot-ok': 'small',
+      'LRANGE log-ok 0 -1': [],
+      'LRANGE audit-ok 0 -1': [],
+      'LRANGE chat-ok 0 -1': [],
+      'HGETALL ecell-ok': [],
+    });
+    const skipped: Array<{ room: string; bytes: number }> = [];
+    const rooms = await collect(
+      roomsFromRedis(client, {
+        maxSnapshotBytes: 120 * 1024,
         onSkippedRoom: ({ room, bytes }) => skipped.push({ room, bytes }),
       }),
     );

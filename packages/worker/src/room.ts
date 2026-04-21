@@ -30,6 +30,7 @@ import {
   chatKey,
   ecellKey,
   logKey,
+  snapshotChunkKey,
 } from '@ethercalc/shared/storage-keys';
 import {
   HeadlessSpreadsheet,
@@ -46,6 +47,12 @@ import {
   deleteRoomFromD1,
   mirrorRoomToD1,
 } from './lib/rooms-index.ts';
+import {
+  hasSnapshot,
+  readSnapshot,
+  readSnapshotMeta,
+  snapshotEntries,
+} from './lib/snapshot-storage.ts';
 import {
   dispatchWsMessage,
   type WsContext,
@@ -216,8 +223,8 @@ export class RoomDO implements DurableObject {
   // ─── Handlers ──────────────────────────────────────────────────────────
 
   async #getSnapshot(): Promise<Response> {
-    const snapshot = await this.#state.storage.get<string>(STORAGE_KEYS.snapshot);
-    if (snapshot === undefined || snapshot === null) return notFound();
+    const snapshot = await readSnapshot(this.#state.storage);
+    if (snapshot === null) return notFound();
     return plainResponse(snapshot);
   }
 
@@ -226,9 +233,12 @@ export class RoomDO implements DurableObject {
     let updatedAt = 0;
     await this.#state.blockConcurrencyWhile(async () => {
       await this.#state.storage.deleteAll();
-      await this.#state.storage.put(STORAGE_KEYS.snapshot, body);
       updatedAt = Date.now();
-      await this.#state.storage.put(STORAGE_KEYS.metaUpdatedAt, updatedAt);
+      // One batched put — chunked or single, always lands atomically.
+      await this.#state.storage.put({
+        ...snapshotEntries(body),
+        [STORAGE_KEYS.metaUpdatedAt]: updatedAt,
+      });
       this.#ss = null;
       this.#nextLogSeq = 0;
       this.#nextAuditSeq = 0;
@@ -293,8 +303,9 @@ export class RoomDO implements DurableObject {
   }
 
   async #getExists(): Promise<Response> {
-    const snapshot = await this.#state.storage.get<string>(STORAGE_KEYS.snapshot);
-    return jsonResponse({ exists: snapshot ? 1 : 0 });
+    return jsonResponse({
+      exists: (await hasSnapshot(this.#state.storage)) ? 1 : 0,
+    });
   }
 
   async #getCells(): Promise<Response> {
@@ -368,11 +379,11 @@ export class RoomDO implements DurableObject {
       return new Response('rename body must be {to: string}', { status: 400 });
     }
     const [snapshot, log, audit] = await Promise.all([
-      this.#state.storage.get<string>(STORAGE_KEYS.snapshot),
+      readSnapshot(this.#state.storage),
       this.#listPrefix(STORAGE_KEYS.logPrefix),
       this.#listPrefix(STORAGE_KEYS.auditPrefix),
     ]);
-    if (snapshot === undefined || snapshot === null) {
+    if (snapshot === null) {
       // No-op: legacy `if snapshot` guard at main.ls:427 -- nothing to rename.
       return new Response(null, { status: 204 });
     }
@@ -436,8 +447,13 @@ export class RoomDO implements DurableObject {
       const entries: Record<string, unknown> = {
         [STORAGE_KEYS.metaUpdatedAt]: payload.updatedAt,
       };
+      // Chunk the snapshot when it exceeds the DO-storage 128 KiB
+      // per-value ceiling. `snapshotEntries` returns either `{snapshot:
+      // …}` (fast path) or `{snapshot:meta:{chunks}, snapshot:chunk:<i>:
+      // …}` (>100 KiB, split). Skipped entirely for empty snapshots so
+      // log-only rooms keep the "no snapshot" shape.
       if (payload.snapshot.length > 0) {
-        entries[STORAGE_KEYS.snapshot] = payload.snapshot;
+        Object.assign(entries, snapshotEntries(payload.snapshot));
       }
       for (let i = 0; i < payload.log.length; i++) {
         entries[logKey(i)] = payload.log[i] as string;
@@ -492,14 +508,17 @@ export class RoomDO implements DurableObject {
     }
     await this.#state.blockConcurrencyWhile(async () => {
       await this.#state.storage.deleteAll();
-      await this.#state.storage.put(STORAGE_KEYS.snapshot, parsed.snapshot as string);
-      await this.#state.storage.put(STORAGE_KEYS.metaUpdatedAt, Date.now());
+      const entries: Record<string, unknown> = {
+        ...snapshotEntries(parsed.snapshot as string),
+        [STORAGE_KEYS.metaUpdatedAt]: Date.now(),
+      };
       for (let i = 0; i < log.length; i++) {
-        await this.#state.storage.put(logKey(i), log[i] as string);
+        entries[logKey(i)] = log[i] as string;
       }
       for (let i = 0; i < audit.length; i++) {
-        await this.#state.storage.put(auditKey(i), audit[i] as string);
+        entries[auditKey(i)] = audit[i] as string;
       }
+      await this.#state.storage.put(entries);
       this.#ss = null;
       this.#nextLogSeq = log.length;
       this.#nextAuditSeq = audit.length;
@@ -638,8 +657,7 @@ export class RoomDO implements DurableObject {
         await this.#state.storage.put(`${prefix}${key}`, value);
       },
       appendLog: (prefix, value) => this.#appendLogEntry(prefix, value),
-      getSnapshot: async () =>
-        await this.#state.storage.get<string>(STORAGE_KEYS.snapshot),
+      getSnapshot: async () => (await readSnapshot(this.#state.storage)) ?? undefined,
       deleteAll: async () => {
         // WS `stopHuddle` is the hot path. Mirror the HTTP DELETE flow:
         // wipe storage AND drop the D1 index row so `/_rooms`,
@@ -766,14 +784,45 @@ export class RoomDO implements DurableObject {
     await this.#ensureSeqs();
     const logSeq = this.#nextLogSeq!;
     const auditSeq = this.#nextAuditSeq!;
-    await this.#state.storage.put(logKey(logSeq), body);
-    await this.#state.storage.put(auditKey(auditSeq), body);
-    this.#nextLogSeq = logSeq + 1;
-    this.#nextAuditSeq = auditSeq + 1;
     ss.executeCommand(body);
     const newSnapshot = ss.createSpreadsheetSave();
-    await this.#state.storage.put(STORAGE_KEYS.snapshot, newSnapshot);
-    await this.#state.storage.put(STORAGE_KEYS.metaUpdatedAt, Date.now());
+
+    // Figure out the PRIOR snapshot layout so we can clean up stale
+    // chunk keys when the new save either (a) fits in the single-key
+    // fast path while the old one was chunked, or (b) uses fewer
+    // chunks than before. Without this cleanup, orphan chunks would
+    // silently extend the save on next read.
+    const priorMeta = await readSnapshotMeta(this.#state.storage);
+    const newEntries = snapshotEntries(newSnapshot);
+    const newMeta = newEntries[STORAGE_KEYS.snapshotMeta] as
+      | { chunks: number }
+      | undefined;
+    const newChunkCount = newMeta?.chunks ?? 0;
+
+    await this.#state.storage.put({
+      ...newEntries,
+      [STORAGE_KEYS.metaUpdatedAt]: Date.now(),
+      [logKey(logSeq)]: body,
+      [auditKey(auditSeq)]: body,
+    });
+
+    // Stale-chunk cleanup only runs when the prior layout had chunks
+    // we didn't overwrite: shrinking chunk count, or switching back to
+    // single-key. When prior was also single-key (no meta) the new
+    // single-key write already overwrote it and there's nothing to do.
+    if (priorMeta !== null) {
+      const stale: string[] = [];
+      if (!(STORAGE_KEYS.snapshotMeta in newEntries)) {
+        stale.push(STORAGE_KEYS.snapshotMeta);
+      }
+      for (let i = newChunkCount; i < priorMeta.chunks; i++) {
+        stale.push(snapshotChunkKey(i));
+      }
+      if (stale.length > 0) await this.#state.storage.delete(stale);
+    }
+
+    this.#nextLogSeq = logSeq + 1;
+    this.#nextAuditSeq = auditSeq + 1;
   }
 
   // ─── Internals ─────────────────────────────────────────────────────────
@@ -785,7 +834,7 @@ export class RoomDO implements DurableObject {
    */
   async #getSpreadsheet(): Promise<HeadlessSpreadsheet> {
     if (this.#ss) return this.#ss;
-    const snapshot = await this.#state.storage.get<string>(STORAGE_KEYS.snapshot);
+    const snapshot = await readSnapshot(this.#state.storage);
     const log = await this.#listPrefix(STORAGE_KEYS.logPrefix);
     this.#ss = createSpreadsheet(snapshot ? { snapshot, log } : { log });
     return this.#ss;
