@@ -183,29 +183,12 @@ export class HttpTarget implements MigrationTarget {
     if (buffer.snapshot !== undefined && buffer.snapshot.length > 0) {
       body['snapshot'] = buffer.snapshot;
     }
-    const res = await this.#fetch(
+    const json = JSON.stringify(body);
+    await this.#fetchWithRetry(
+      `seed ${room}`,
       `${this.#baseUrl}/_migrate/seed/${encodeURIComponent(room)}`,
-      {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.#token}`,
-        },
-        body: JSON.stringify(body),
-      },
+      json,
     );
-    if (!res.ok) {
-      const text = await safeText(res);
-      throw new Error(
-        `seed ${room} failed: ${res.status} ${res.statusText} — ${text}`,
-      );
-    }
-    // Critical: drain the response body even on the 201 path. Bun's
-    // (and undici's) fetch holds the buffered Request + Response pair
-    // alive until the body stream is consumed or cancelled. At 676k
-    // PUTs × ~85 KB per round-trip pair, the retention balloons to
-    // 58 GB RSS and segfaults — empirically proven on 2026-04-21.
-    await drain(res);
   }
 
   async #flushBulkIndex(): Promise<void> {
@@ -213,21 +196,64 @@ export class HttpTarget implements MigrationTarget {
     // larger-than-batch flush (e.g. if concurrency outpaced the
     // threshold check) still drains in bounded chunks.
     const chunk = this.#pendingIndex.splice(0, this.#bulkIndexBatchSize);
-    const res = await this.#fetch(`${this.#baseUrl}/_migrate/bulk-index`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.#token}`,
-      },
-      body: JSON.stringify({ rooms: chunk }),
-    });
-    if (!res.ok) {
-      const text = await safeText(res);
-      throw new Error(
-        `bulk-index ${chunk.length} rows failed: ${res.status} ${res.statusText} — ${text}`,
-      );
+    const json = JSON.stringify({ rooms: chunk });
+    await this.#fetchWithRetry(
+      `bulk-index ${chunk.length} rows`,
+      `${this.#baseUrl}/_migrate/bulk-index`,
+      json,
+    );
+  }
+
+  /**
+   * PUT a JSON body with retry-on-5xx. CF Workers (and the load path
+   * through a DO) do occasionally 500 under load — a single retry with
+   * ~1s backoff clears almost every transient. Gives up after 3 tries
+   * and surfaces the final error; 4xx is never retried because those
+   * are deterministic (bad token, bad payload) and will fail the same
+   * way every time.
+   *
+   * Response body drained on every path — Bun/undici hold the buffered
+   * Request+Response pair alive until the body stream is consumed or
+   * cancelled. At hundreds of thousands of PUTs × ~85 KB per pair, not
+   * draining balloons RSS to 58 GB and segfaults (2026-04-21 repro).
+   */
+  async #fetchWithRetry(
+    label: string,
+    url: string,
+    jsonBody: string,
+  ): Promise<void> {
+    const maxAttempts = 3;
+    let lastErrorText = '';
+    let lastStatus = 0;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const res = await this.#fetch(url, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.#token}`,
+        },
+        body: jsonBody,
+      });
+      if (res.ok) {
+        await drain(res);
+        return;
+      }
+      // Read the body once — drain happens automatically via `.text()`.
+      lastErrorText = await safeText(res);
+      lastStatus = res.status;
+      if (res.status < 500 || attempt === maxAttempts) {
+        throw new Error(
+          `${label} failed: ${res.status} ${res.statusText} — ${lastErrorText}`,
+        );
+      }
+      // 5xx and we have attempts left: sleep with jitter, then retry.
+      const backoffMs = 200 * attempt + Math.floor(Math.random() * 100);
+      await new Promise((r) => setTimeout(r, backoffMs));
     }
-    await drain(res);
+    // Unreachable — the loop always either returns or throws on the
+    // final attempt. Included for the compiler's narrowing.
+    /* istanbul ignore next */
+    throw new Error(`${label} failed: ${lastStatus} — ${lastErrorText}`);
   }
 }
 

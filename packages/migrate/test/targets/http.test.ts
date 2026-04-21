@@ -146,6 +146,45 @@ describe('HttpTarget', () => {
     expect(calls[0]!.url).toBe('http://127.0.0.1:8000/_migrate/seed/a%20b%2Fc');
   });
 
+  it('retries on 5xx and succeeds on a subsequent attempt', async () => {
+    // CF workers occasionally 500 under load; a single retry with
+    // short backoff clears almost every transient. This asserts we
+    // actually drive the retry loop — the seed PUT 500s twice, then
+    // succeeds on the third attempt.
+    let attempts = 0;
+    const fetch: FetchLike = async () => {
+      attempts += 1;
+      if (attempts < 3) return new Response('transient', { status: 500 });
+      return new Response('OK', { status: 201 });
+    };
+    const target = new HttpTarget({
+      baseUrl: 'http://127.0.0.1:8000',
+      token: 'abc',
+      fetch,
+    });
+    await target.putSnapshot('room-retry', 'S');
+    await expect(target.setRoomIndex('room-retry', 1)).resolves.toBeUndefined();
+    expect(attempts).toBe(3);
+  });
+
+  it('does NOT retry on 4xx — fails fast', async () => {
+    // Bad token or malformed payload is deterministic; retrying wastes
+    // time. Covers the `if (res.status < 500 ...) throw` branch.
+    let attempts = 0;
+    const fetch: FetchLike = async () => {
+      attempts += 1;
+      return new Response('bad token', { status: 401 });
+    };
+    const target = new HttpTarget({
+      baseUrl: 'http://127.0.0.1:8000',
+      token: 'abc',
+      fetch,
+    });
+    await target.putSnapshot('room-401', 'S');
+    await expect(target.setRoomIndex('room-401', 1)).rejects.toThrow(/401/);
+    expect(attempts).toBe(1);
+  });
+
   it('throws when the seed endpoint returns non-2xx', async () => {
     const fetch: FetchLike = async () =>
       new Response('log must be a string[]', { status: 400 });
