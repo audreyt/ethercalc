@@ -489,6 +489,35 @@ describe('runMigrate — end to end with in-memory deps', () => {
     expect(client.closeSpy).toHaveBeenCalledTimes(1);
   });
 
+  it('logs SKIP ROOM warnings when snapshot exceeds the limit', async () => {
+    const bigSnap = 'a'.repeat(200_000);
+    const client = fakeClient(['huge'], {
+      'GET snapshot-huge': bigSnap,
+    });
+    const { deps, stderr } = makeDeps({
+      connectRedis: async () => client,
+      fetch: async () => new Response('OK', { status: 201 }),
+      now: () => 0,
+      sleep: async () => undefined,
+    });
+    const stats = await runMigrate(
+      {
+        source: 'redis://127.0.0.1:6379',
+        target: 'http://127.0.0.1:8000',
+        token: 'abc',
+        dryRun: false,
+        help: false,
+        skipBulkIndex: false,
+      },
+      deps,
+    );
+    // Oversized room is skipped — nothing seeded.
+    expect(stats.rooms).toBe(0);
+    expect(stderr.join('')).toMatch(
+      /SKIP ROOM: huge snapshot = .* KiB \(> 120 KiB DO limit\)/,
+    );
+  });
+
   it('logs oversized-entry warnings to stderr', async () => {
     // Overrides one room's audit with a 200 KB entry (> 120 KB cap).
     // The redis-source filter drops it and fires onOversizedEntry,

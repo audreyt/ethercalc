@@ -272,6 +272,35 @@ describe('roomsFromRedis — timestamps + progress', () => {
     ]);
   });
 
+  it('skips whole room when snapshot exceeds maxSnapshotBytes', async () => {
+    // Covers the oversized-snapshot path — dropping just the snapshot
+    // leaves a half-room, so the adapter omits the whole room and
+    // fires onSkippedRoom for the operator.
+    const bigSnap = 'a'.repeat(200_000);
+    const client = scriptedClient({
+      'HGETALL timestamps': [],
+      ...oneShotScan(['snapshot-huge', 'snapshot-ok']),
+      'GET snapshot-huge': bigSnap,
+      'LRANGE log-huge 0 -1': [],
+      'LRANGE audit-huge 0 -1': [],
+      'LRANGE chat-huge 0 -1': [],
+      'HGETALL ecell-huge': [],
+      'GET snapshot-ok': 'small',
+      'LRANGE log-ok 0 -1': [],
+      'LRANGE audit-ok 0 -1': [],
+      'LRANGE chat-ok 0 -1': [],
+      'HGETALL ecell-ok': [],
+    });
+    const skipped: Array<{ room: string; bytes: number }> = [];
+    const rooms = await collect(
+      roomsFromRedis(client, {
+        onSkippedRoom: ({ room, bytes }) => skipped.push({ room, bytes }),
+      }),
+    );
+    expect(rooms.map((r) => r.name)).toEqual(['ok']);
+    expect(skipped).toEqual([{ room: 'huge', bytes: 200_000 }]);
+  });
+
   it('honors custom maxEntryBytes threshold', async () => {
     const medium = 'y'.repeat(50_000); // 50 KB
     const client = scriptedClient({

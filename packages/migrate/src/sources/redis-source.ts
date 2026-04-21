@@ -64,6 +64,20 @@ export interface RoomsFromRedisOptions {
     readonly index: number;
     readonly bytes: number;
   }) => void;
+  /**
+   * Whole-room skip threshold. Same 128 KiB DO ceiling, but snapshots
+   * are authoritative (unlike audit rows) so we can't silently drop
+   * them — the room stops being a room without one. Rooms whose
+   * snapshot exceeds this are skipped outright and surfaced via
+   * `onSkippedRoom` for the operator to inspect manually. Default
+   * matches `maxEntryBytes`.
+   */
+  maxSnapshotBytes?: number;
+  /** Called when a whole room is skipped for an oversized snapshot. */
+  onSkippedRoom?: (info: {
+    readonly room: string;
+    readonly bytes: number;
+  }) => void;
 }
 
 /**
@@ -91,11 +105,26 @@ export async function* roomsFromRedis(
   }
   const sorted = Array.from(names).sort();
   const maxEntryBytes = options.maxEntryBytes ?? 120 * 1024;
+  const maxSnapshotBytes = options.maxSnapshotBytes ?? maxEntryBytes;
   const onOversizedEntry = options.onOversizedEntry;
+  const onSkippedRoom = options.onSkippedRoom;
 
   let done = 0;
   for (const name of sorted) {
     const [snapshot, log, audit, chat, ecellArr] = await fetchRoom(client, name);
+
+    // Snapshots are authoritative — dropping just the snapshot leaves
+    // the room in a weird half-state (DO exists, has logs, but no
+    // save). Skip the whole room instead and let the operator decide
+    // (e.g. split the sheet, rehydrate from audit, or accept loss).
+    const snapshotStr = snapshot ?? '';
+    const snapshotBytes = Buffer.byteLength(snapshotStr, 'utf8');
+    if (snapshotBytes > maxSnapshotBytes) {
+      onSkippedRoom?.({ room: name, bytes: snapshotBytes });
+      done += 1;
+      options.onProgress?.({ done, total: sorted.length });
+      continue;
+    }
 
     const ecell: Record<string, string> = {};
     for (let i = 0; i + 1 < ecellArr.length; i += 2) {
@@ -108,7 +137,7 @@ export async function* roomsFromRedis(
 
     const room: Room = {
       name,
-      snapshot: snapshot ?? '',
+      snapshot: snapshotStr,
       log: filterOversized(log, 'log', name, maxEntryBytes, onOversizedEntry),
       audit: filterOversized(audit, 'audit', name, maxEntryBytes, onOversizedEntry),
       chat: filterOversized(chat, 'chat', name, maxEntryBytes, onOversizedEntry),
