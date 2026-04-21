@@ -6,6 +6,7 @@
   "license": "CC0-1.0",
   "type": "module",
   "scripts": {
+    "pretest": "playwright install chromium",
     "test": "playwright test",
     "test:single": "playwright test --project=chromium",
     "test:headed": "playwright test --headed",

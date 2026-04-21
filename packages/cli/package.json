@@ -2,7 +2,7 @@
   "name": "@ethercalc/cli",
   "version": "0.0.0",
   "private": true,
-  "description": "Legacy-compatible CLI wrapper (§13 Q6) — maps --key/--cors/--port/etc to wrangler dev + Miniflare env vars",
+  "description": "Legacy-compatible CLI wrapper (\u00a713 Q6) \u2014 maps --key/--cors/--port/etc to wrangler dev + Miniflare env vars",
   "license": "CC0-1.0",
   "type": "module",
   "main": "./src/index.ts",
@@ -21,8 +21,8 @@
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
-    "@vitest/coverage-istanbul": "^2.1.4",
+    "@vitest/coverage-istanbul": "^4.1.4",
     "typescript": "^5.6.3",
-    "vitest": "^2.1.4"
+    "vitest": "^4.1.4"
   }
 }

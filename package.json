@@ -13,7 +13,10 @@
     "packages/*"
   ],
   "scripts": {
+    "pretest": "bun run build:assets",
     "test": "npm run --workspaces --if-present test",
+    "build:clients": "bun run --cwd packages/client build && bun run --cwd packages/client-multi build",
+    "build:assets": "bun run build:clients && bash scripts/build-assets.sh",
     "typecheck": "bun run --filter '*' typecheck",
     "lint": "bun run --filter '*' lint",
     "mutation": "bun run --filter '*' mutation"
@@ -24,9 +27,9 @@
   "devDependencies": {
     "@stryker-mutator/core": "^9.6.1",
     "@stryker-mutator/vitest-runner": "^9.6.1",
-    "@typescript/native-preview": "^7.0.0-dev.20260419.1"
+    "@typescript/native-preview": "^7.0.0-dev.20260420.1"
   },
   "dependencies": {
-    "wrangler": "4"
+    "wrangler": "^4.84.0"
   }
 }
