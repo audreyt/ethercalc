@@ -23,6 +23,15 @@
  *   last), and drop the entry so re-emit is free. The payload shape
  *   matches the server's `parseSeedPayload` (see `@ethercalc/worker`).
  *
+ * D1 index batching:
+ *   The seed PUT carries `skipIndex: true`, so the DO's `#postSeed`
+ *   writes storage + meta but does NOT touch the D1 `rooms` row.
+ *   Instead we queue `(room, updatedAt)` pairs locally and flush them
+ *   through `PUT /_migrate/bulk-index` in chunks. One SQL `INSERT …
+ *   VALUES (…),(…),…` per chunk collapses the per-room D1 round-trip
+ *   into ~N/chunk round-trips — the difference between a 5-hour D1-
+ *   bound migration and a 30-minute upload-bound one.
+ *
  * Failure semantics: a non-2xx response aborts the run by throwing. The
  * caller (`runMigrate` in `cli.ts`) doesn't re-try — the dump is
  * deterministic, so if one room failed the fix is to change the code
@@ -53,6 +62,15 @@ export interface HttpTargetConfig {
   token: string;
   /** Override for tests. Defaults to the global `fetch`. */
   fetch?: FetchLike;
+  /**
+   * Max number of `(room, updatedAt)` pairs per `/_migrate/bulk-index`
+   * round-trip. Default 200 — SQLite's default parameter cap is 999,
+   * and we bind two per entry, so the real ceiling is 499; 200 leaves
+   * headroom for future schema growth without changing behavior.
+   * Callers can lower this to test flush-on-threshold behavior in
+   * deterministic unit tests.
+   */
+  bulkIndexBatchSize?: number;
 }
 
 export class HttpTarget implements MigrationTarget {
@@ -60,12 +78,15 @@ export class HttpTarget implements MigrationTarget {
   readonly #token: string;
   readonly #fetch: FetchLike;
   readonly #buffers: Map<string, RoomBuffer> = new Map();
+  readonly #pendingIndex: Array<{ room: string; updatedAt: number }> = [];
+  readonly #bulkIndexBatchSize: number;
 
   constructor(config: HttpTargetConfig) {
     // Strip a trailing slash so `${baseUrl}/_migrate/...` is always well-formed.
     this.#baseUrl = config.baseUrl.replace(/\/+$/, '');
     this.#token = config.token;
     this.#fetch = config.fetch ?? ((input, init) => fetch(input, init));
+    this.#bulkIndexBatchSize = Math.max(1, config.bulkIndexBatchSize ?? 200);
   }
 
   putSnapshot(room: string, snapshot: string): Promise<void> {
@@ -95,8 +116,23 @@ export class HttpTarget implements MigrationTarget {
 
   async setRoomIndex(room: string, updatedAt: number): Promise<void> {
     const buffer = this.#bucket(room);
-    await this.#flush(room, buffer, updatedAt);
+    // Seed the DO with `skipIndex: true` — it writes storage + meta
+    // but leaves the D1 `rooms` row to the batched flush below.
+    await this.#flushSeed(room, buffer, updatedAt);
     this.#buffers.delete(room);
+    this.#pendingIndex.push({ room, updatedAt });
+    if (this.#pendingIndex.length >= this.#bulkIndexBatchSize) {
+      await this.#flushBulkIndex();
+    }
+  }
+
+  /**
+   * Drain any remaining `(room, updatedAt)` pairs that haven't reached
+   * the batch threshold. Safe to call multiple times — it's a no-op when
+   * the queue is empty. Invoked by `applyRoomStream` at end-of-run.
+   */
+  async flush(): Promise<void> {
+    if (this.#pendingIndex.length > 0) await this.#flushBulkIndex();
   }
 
   #bucket(room: string): RoomBuffer {
@@ -108,7 +144,7 @@ export class HttpTarget implements MigrationTarget {
     return b;
   }
 
-  async #flush(
+  async #flushSeed(
     room: string,
     buffer: RoomBuffer,
     updatedAt: number,
@@ -119,6 +155,7 @@ export class HttpTarget implements MigrationTarget {
       chat: buffer.chat,
       ecell: buffer.ecell,
       updatedAt,
+      skipIndex: true,
     };
     // Match `applyRoomStream`: only send `snapshot` when the source
     // yielded one. A log-only room (dump entry with no `snapshot-*`
@@ -142,6 +179,27 @@ export class HttpTarget implements MigrationTarget {
       const text = await safeText(res);
       throw new Error(
         `seed ${room} failed: ${res.status} ${res.statusText} — ${text}`,
+      );
+    }
+  }
+
+  async #flushBulkIndex(): Promise<void> {
+    // Splice out up to one batch's worth; leave the tail in place so a
+    // larger-than-batch flush (e.g. if concurrency outpaced the
+    // threshold check) still drains in bounded chunks.
+    const chunk = this.#pendingIndex.splice(0, this.#bulkIndexBatchSize);
+    const res = await this.#fetch(`${this.#baseUrl}/_migrate/bulk-index`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.#token}`,
+      },
+      body: JSON.stringify({ rooms: chunk }),
+    });
+    if (!res.ok) {
+      const text = await safeText(res);
+      throw new Error(
+        `bulk-index ${chunk.length} rows failed: ${res.status} ${res.statusText} — ${text}`,
       );
     }
   }

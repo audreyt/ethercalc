@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 
 import {
+  bulkMirrorRoomsToD1,
   deleteRoomFromD1,
   listRooms,
   listRoomTimes,
@@ -68,6 +69,35 @@ describe('mirrorRoomToD1', () => {
     const t = Date.now();
     await mirrorRoomToD1(db, 'r', t);
     expect(calls[0]!.params[1]).toBe(t);
+  });
+});
+
+describe('bulkMirrorRoomsToD1', () => {
+  it('no-ops on an empty array (would otherwise hit an empty VALUES clause)', async () => {
+    const { db, calls } = makeFakeDb();
+    await bulkMirrorRoomsToD1(db, []);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('emits one INSERT with N placeholder pairs + flat params', async () => {
+    const { db, calls } = makeFakeDb();
+    await bulkMirrorRoomsToD1(db, [
+      { room: 'a', updatedAt: 1 },
+      { room: 'b', updatedAt: 2 },
+      { room: 'c', updatedAt: 3 },
+    ]);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.op).toBe('run');
+    expect(calls[0]!.sql).toContain('INSERT INTO rooms (room, updated_at) VALUES (?, ?), (?, ?), (?, ?)');
+    expect(calls[0]!.sql).toContain('ON CONFLICT(room) DO UPDATE');
+    expect(calls[0]!.params).toEqual(['a', 1, 'b', 2, 'c', 3]);
+  });
+
+  it('accepts a single-row batch (boundary)', async () => {
+    const { db, calls } = makeFakeDb();
+    await bulkMirrorRoomsToD1(db, [{ room: 'solo', updatedAt: 99 }]);
+    expect(calls[0]!.sql).toContain('VALUES (?, ?)');
+    expect(calls[0]!.params).toEqual(['solo', 99]);
   });
 });
 

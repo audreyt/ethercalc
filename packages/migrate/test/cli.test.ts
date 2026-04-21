@@ -351,9 +351,13 @@ describe('runMigrate — end to end with in-memory deps', () => {
     );
     expect(stats.rooms).toBe(1);
     expect(stdout.join('')).toContain('migrated 1 rooms');
+    // Expected call order: health poll, seed with skipIndex:true, then
+    // the end-of-run bulk-index flush for the single (foo, updatedAt)
+    // pair.
     expect(fetched).toEqual([
       'GET http://127.0.0.1:8000/_health',
       'PUT http://127.0.0.1:8000/_migrate/seed/foo',
+      'PUT http://127.0.0.1:8000/_migrate/bulk-index',
     ]);
     expect(client.closeSpy).toHaveBeenCalledTimes(1);
   });

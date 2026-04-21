@@ -58,7 +58,21 @@ function fakeStorage(record: FakeStorageRecord): DurableObjectStorage {
   } as unknown as DurableObjectStorage;
 }
 
-function makeState(idString: string, record: FakeStorageRecord): DurableObjectState {
+/**
+ * Side-channel augmentation on the fake state — we expose the queue of
+ * promises passed to `waitUntil` so tests that want to assert the effect
+ * of a `waitUntil`-ed write (e.g. Phase 11b's fire-and-forget D1 mirror
+ * in `#postSeed`) can drain it explicitly via {@link drainWaitUntil}.
+ */
+interface WaitUntilTrack {
+  readonly __waitUntilPromises: Promise<unknown>[];
+}
+
+function makeState(
+  idString: string,
+  record: FakeStorageRecord,
+): DurableObjectState & WaitUntilTrack {
+  const waitUntilPromises: Promise<unknown>[] = [];
   return {
     id: { toString: () => idString } as DurableObjectId,
     storage: fakeStorage(record),
@@ -71,7 +85,18 @@ function makeState(idString: string, record: FakeStorageRecord): DurableObjectSt
     getWebSockets(): WebSocket[] {
       return [];
     },
-  } as unknown as DurableObjectState;
+    waitUntil(p: Promise<unknown>): void {
+      waitUntilPromises.push(p);
+    },
+    __waitUntilPromises: waitUntilPromises,
+  } as unknown as DurableObjectState & WaitUntilTrack;
+}
+
+/** Await every promise passed to `state.waitUntil`. */
+async function drainWaitUntil(
+  state: DurableObjectState & WaitUntilTrack,
+): Promise<void> {
+  await Promise.all(state.__waitUntilPromises);
 }
 
 /**
@@ -1011,12 +1036,13 @@ describe('RoomDO — cross-DO rename primitives (Phase 6)', () => {
  * any storage write happens.
  */
 describe('RoomDO — POST /_do/seed (Phase 11b migration)', () => {
-  it('installs the full payload and mirrors D1 when ?name is set', async () => {
+  it('installs the full payload and mirrors D1 (via waitUntil) when ?name is set', async () => {
     const record: FakeStorageRecord = { map: new Map() };
     record.map.set('stale', 'yes'); // must be wiped before install
     const calls: D1Call[] = [];
     const env = makeEnvWithDb(calls);
-    const room = new RoomDO(makeState('x', record), env);
+    const state = makeState('x', record);
+    const room = new RoomDO(state, env);
     const res = await room.fetch(
       new Request('https://do/_do/seed?name=gamma', {
         method: 'POST',
@@ -1043,15 +1069,48 @@ describe('RoomDO — POST /_do/seed (Phase 11b migration)', () => {
     expect(record.map.get(chatKey(1))).toBe('world');
     expect(record.map.get(ecellKey('alice'))).toBe('A1');
     expect(record.map.get(ecellKey('bob'))).toBe('B2');
-    // D1 row mirrored with the caller-provided updatedAt.
+    // D1 mirror was scheduled via `state.waitUntil` — the behavior we
+    // care about is "201 doesn't block on D1 commit". In production
+    // the mirror drains on the DO's background execution context; the
+    // fake D1 here resolves synchronously so the INSERT lands before
+    // drainWaitUntil(), but we still assert that `waitUntil` was
+    // actually called (and that draining is idempotent).
+    expect(state.__waitUntilPromises).toHaveLength(1);
+    await drainWaitUntil(state);
     const insert = calls.find((c) => c.sql.startsWith('INSERT INTO rooms'));
     expect(insert).toBeDefined();
     expect(insert?.params).toEqual(['gamma', 1700]);
   });
 
+  it('skipIndex:true suppresses the D1 mirror entirely', async () => {
+    // The migrator sends skipIndex:true so it can batch index writes
+    // via /_migrate/bulk-index. The DO must NOT schedule the mirror at
+    // all — not even as a waitUntil task — or we'd double-write.
+    const record: FakeStorageRecord = { map: new Map() };
+    const calls: D1Call[] = [];
+    const env = makeEnvWithDb(calls);
+    const state = makeState('x', record);
+    const room = new RoomDO(state, env);
+    const res = await room.fetch(
+      new Request('https://do/_do/seed?name=gamma', {
+        method: 'POST',
+        body: JSON.stringify({
+          snapshot: 'S',
+          updatedAt: 42,
+          skipIndex: true,
+        }),
+      }),
+    );
+    expect(res.status).toBe(201);
+    // Draining confirms there were no pending writes either.
+    await drainWaitUntil(state);
+    expect(calls.find((c) => c.sql.startsWith('INSERT INTO rooms'))).toBeUndefined();
+  });
+
   it('log-only rooms (empty snapshot) skip the snapshot storage key', async () => {
     const record: FakeStorageRecord = { map: new Map() };
-    const room = new RoomDO(makeState('x', record), makeEnv());
+    const state = makeState('x', record);
+    const room = new RoomDO(state, makeEnv());
     const res = await room.fetch(
       new Request('https://do/_do/seed', {
         method: 'POST',
@@ -1065,6 +1124,7 @@ describe('RoomDO — POST /_do/seed (Phase 11b migration)', () => {
     expect(record.map.has(STORAGE_KEYS.snapshot)).toBe(false);
     expect(record.map.get(STORAGE_KEYS.metaUpdatedAt)).toBe(500);
     expect(record.map.get(logKey(0))).toBe('cmd');
+    await drainWaitUntil(state);
   });
 
   it('returns 400 with the handler error message on a bad payload', async () => {
@@ -1098,7 +1158,8 @@ describe('RoomDO — POST /_do/seed (Phase 11b migration)', () => {
     const record: FakeStorageRecord = { map: new Map() };
     const calls: D1Call[] = [];
     const env = makeEnvWithDb(calls);
-    const room = new RoomDO(makeState('x', record), env);
+    const state = makeState('x', record);
+    const room = new RoomDO(state, env);
     const res = await room.fetch(
       new Request('https://do/_do/seed', {
         method: 'POST',
@@ -1106,6 +1167,7 @@ describe('RoomDO — POST /_do/seed (Phase 11b migration)', () => {
       }),
     );
     expect(res.status).toBe(201);
+    await drainWaitUntil(state);
     expect(calls.length).toBe(0);
   });
 
@@ -1113,7 +1175,8 @@ describe('RoomDO — POST /_do/seed (Phase 11b migration)', () => {
     // Covers the inline `() => Date.now()` injected into parseSeedPayload;
     // every other test supplies an explicit updatedAt.
     const record: FakeStorageRecord = { map: new Map() };
-    const room = new RoomDO(makeState('x', record), makeEnv());
+    const state = makeState('x', record);
+    const room = new RoomDO(state, makeEnv());
     const before = Date.now();
     const res = await room.fetch(
       new Request('https://do/_do/seed', {
@@ -1126,6 +1189,7 @@ describe('RoomDO — POST /_do/seed (Phase 11b migration)', () => {
     const stored = record.map.get(STORAGE_KEYS.metaUpdatedAt) as number;
     expect(stored).toBeGreaterThanOrEqual(before);
     expect(stored).toBeLessThanOrEqual(after);
+    await drainWaitUntil(state);
   });
 });
 

@@ -31,6 +31,13 @@ export interface Room {
  *   putChat       → DO storage `chat:<padSeq(seq)>`
  *   putEcell      → DO storage `ecell:<user>`
  *   setRoomIndex  → D1 `rooms(room, updated_at)` + KV `rooms:exists:<room>`
+ *
+ * Optional `flush` drains any batched state the target has accumulated
+ * but not yet sent. Implementations that write inline (dry-run,
+ * in-memory) leave it unset; the HTTP target uses it to push remaining
+ * `(room, updatedAt)` pairs into `PUT /_migrate/bulk-index` at
+ * end-of-run, so the batch-size quantization doesn't leave the tail
+ * untrimmed.
  */
 export interface MigrationTarget {
   putSnapshot(room: string, snapshot: string): Promise<void>;
@@ -39,6 +46,7 @@ export interface MigrationTarget {
   putChat(room: string, seq: number, msg: string): Promise<void>;
   putEcell(room: string, user: string, cell: string): Promise<void>;
   setRoomIndex(room: string, updatedAt: number): Promise<void>;
+  flush?(): Promise<void>;
 }
 
 /** Summary returned from {@link applyRoomStream}. */
@@ -114,6 +122,10 @@ export async function applyRoomStream(
   }
   await Promise.all(inFlight);
   if (firstError !== null) throw firstError;
+  // Give targets a chance to drain batched state (HTTP target flushes
+  // its pending bulk-index queue here). Inline targets leave `flush`
+  // unset; the optional call keeps the interface ergonomic.
+  if (target.flush !== undefined) await target.flush();
   return stats;
 }
 

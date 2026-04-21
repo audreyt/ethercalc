@@ -31,6 +31,15 @@ export interface SeedPayload {
   readonly ecell: Readonly<Record<string, string>>;
   /** Epoch ms to record as `meta:updated_at` and the D1 `rooms.updated_at`. */
   readonly updatedAt: number;
+  /**
+   * When `true`, the DO persists the room but does NOT write the D1
+   * `rooms` index row. The migrator sets this during bulk imports so
+   * it can batch index writes via `PUT /_migrate/bulk-index` — one
+   * SQL statement for N rows instead of one round-trip per room.
+   * Defaults to `false` (DO mirrors D1 inline, matching the
+   * pre-2026-04-21 shape).
+   */
+  readonly skipIndex: boolean;
 }
 
 export type SeedParseResult =
@@ -73,6 +82,16 @@ export function parseSeedPayload(raw: unknown, now: () => number): SeedParseResu
     return { ok: false, error: 'updatedAt must be a finite number' };
   }
 
+  const rawSkip = rec['skipIndex'];
+  let skipIndex: boolean;
+  if (rawSkip === undefined) {
+    skipIndex = false;
+  } else if (typeof rawSkip === 'boolean') {
+    skipIndex = rawSkip;
+  } else {
+    return { ok: false, error: 'skipIndex must be a boolean' };
+  }
+
   return {
     ok: true,
     value: {
@@ -82,8 +101,53 @@ export function parseSeedPayload(raw: unknown, now: () => number): SeedParseResu
       chat: chat.value,
       ecell: ecell.value,
       updatedAt,
+      skipIndex,
     },
   };
+}
+
+/** One entry of a `PUT /_migrate/bulk-index` payload. */
+export interface BulkIndexEntry {
+  readonly room: string;
+  readonly updatedAt: number;
+}
+
+export type BulkIndexParseResult =
+  | { readonly ok: true; readonly value: readonly BulkIndexEntry[] }
+  | { readonly ok: false; readonly error: string };
+
+/**
+ * Parse the batched index payload: `{ rooms: [{room, updatedAt}, …] }`.
+ * Rejects anything else so corrupt dumps fail loudly rather than
+ * silently skipping timestamp writes (which would break `/_roomtimes`
+ * ordering without any error surface).
+ */
+export function parseBulkIndexPayload(raw: unknown): BulkIndexParseResult {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { ok: false, error: 'body must be a JSON object' };
+  }
+  const rec = raw as Record<string, unknown>;
+  const rooms = rec['rooms'];
+  if (!Array.isArray(rooms)) {
+    return { ok: false, error: 'rooms must be an array' };
+  }
+  const out: BulkIndexEntry[] = [];
+  for (const entry of rooms) {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+      return { ok: false, error: 'rooms entries must be objects' };
+    }
+    const e = entry as Record<string, unknown>;
+    const room = e['room'];
+    if (typeof room !== 'string' || room.length === 0) {
+      return { ok: false, error: 'rooms[].room must be a non-empty string' };
+    }
+    const updatedAt = e['updatedAt'];
+    if (typeof updatedAt !== 'number' || !Number.isFinite(updatedAt)) {
+      return { ok: false, error: 'rooms[].updatedAt must be a finite number' };
+    }
+    out.push({ room, updatedAt });
+  }
+  return { ok: true, value: out };
 }
 
 type ArrayResult =

@@ -21,7 +21,9 @@
 import type { Hono } from 'hono';
 
 import { doFetch } from '../lib/do-dispatch.ts';
+import { parseBulkIndexPayload } from '../handlers/migrate.ts';
 import { verifyMigrateToken } from '../lib/migrate-auth.ts';
+import { bulkMirrorRoomsToD1 } from '../lib/rooms-index.ts';
 import type { Env } from '../env.ts';
 
 const TEXT_CT = 'text/plain; charset=utf-8';
@@ -52,5 +54,44 @@ export function registerMigrate(app: Hono<{ Bindings: Env }>): void {
     });
     const text = await res.text();
     return c.text(text, res.status as 201 | 400, { 'Content-Type': TEXT_CT });
+  });
+
+  // Batched sibling of the seed endpoint. Callers (the migrator, today)
+  // send `PUT /_migrate/bulk-index` with `{rooms: [{room, updatedAt}, …]}`
+  // after the seed pass; we fold all rows into ONE D1 INSERT to dodge
+  // D1's per-statement primary-region latency. See CLAUDE.md §14
+  // 2026-04-21 for the why. Same auth gate as /_migrate/seed.
+  app.put('/_migrate/bulk-index', async (c) => {
+    const verdict = verifyMigrateToken(
+      c.env.ETHERCALC_MIGRATE_TOKEN,
+      c.req.header('Authorization') ?? null,
+    );
+    if (verdict.kind === 'disabled') {
+      return c.text('Not Found', 404, { 'Content-Type': TEXT_CT });
+    }
+    if (verdict.kind === 'missing' || verdict.kind === 'bad') {
+      return c.text('Unauthorized', 401, { 'Content-Type': TEXT_CT });
+    }
+
+    let raw: unknown;
+    try {
+      raw = await c.req.json();
+    } catch {
+      return c.text('bulk-index body must be valid JSON', 400, {
+        'Content-Type': TEXT_CT,
+      });
+    }
+    const parsed = parseBulkIndexPayload(raw);
+    if (!parsed.ok) {
+      return c.text(parsed.error, 400, { 'Content-Type': TEXT_CT });
+    }
+    if (c.env.DB === undefined) {
+      // No D1 bound — silently succeed so Node-only tests (and
+      // hypothetical self-host configs that skip the cross-room
+      // index) don't 500.
+      return c.text('OK', 201, { 'Content-Type': TEXT_CT });
+    }
+    await bulkMirrorRoomsToD1(c.env.DB, parsed.value);
+    return c.text('OK', 201, { 'Content-Type': TEXT_CT });
   });
 }

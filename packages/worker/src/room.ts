@@ -445,7 +445,19 @@ export class RoomDO implements DurableObject {
       this.#nextAuditSeq = payload.audit.length;
       this.#nextChatSeq = payload.chat.length;
     });
-    await this.#mirrorIndex(roomName, payload.updatedAt);
+    // The D1 mirror is a cross-DO write that happens on every seed. Two
+    // opt-outs, from the caller's perspective:
+    //   - `payload.skipIndex=true` — the caller plans to batch index
+    //     writes via `PUT /_migrate/bulk-index`. Don't touch D1 at all.
+    //   - default (skipIndex=false) — fire-and-forget via `waitUntil`
+    //     so this 201 returns as soon as DO storage is durable; the D1
+    //     write drains on the DO's background execution context.
+    // At 1.8M rooms the second option alone cuts ~50 ms off the critical
+    // path of each PUT, and the batched path cuts the D1 chokepoint by
+    // 100× (see CLAUDE.md §14 2026-04-21).
+    if (!payload.skipIndex) {
+      this.#state.waitUntil(this.#mirrorIndex(roomName, payload.updatedAt));
+    }
     return plainResponse('OK', 201);
   }
 

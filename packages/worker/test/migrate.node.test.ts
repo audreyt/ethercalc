@@ -10,7 +10,7 @@
  */
 import { describe, it, expect } from 'vitest';
 
-import { parseSeedPayload } from '../src/handlers/migrate.ts';
+import { parseBulkIndexPayload, parseSeedPayload } from '../src/handlers/migrate.ts';
 import { verifyMigrateToken } from '../src/lib/migrate-auth.ts';
 
 describe('parseSeedPayload', () => {
@@ -27,6 +27,7 @@ describe('parseSeedPayload', () => {
       chat: [],
       ecell: {},
       updatedAt: NOW,
+      skipIndex: false,
     });
   });
 
@@ -158,6 +159,116 @@ describe('parseSeedPayload', () => {
     const r = parseSeedPayload({ snapshot: '' }, now);
     if (!r.ok) throw new Error(r.error);
     expect(r.value.snapshot).toBe('');
+  });
+
+  it('accepts skipIndex: true (migrator bulk-index path)', () => {
+    const r = parseSeedPayload({ skipIndex: true }, now);
+    if (!r.ok) throw new Error(r.error);
+    expect(r.value.skipIndex).toBe(true);
+  });
+
+  it('rejects non-boolean skipIndex', () => {
+    const r = parseSeedPayload({ skipIndex: 'yes' }, now);
+    expect(r).toEqual({ ok: false, error: 'skipIndex must be a boolean' });
+  });
+});
+
+describe('parseBulkIndexPayload', () => {
+  it('accepts a well-formed rooms array', () => {
+    const r = parseBulkIndexPayload({
+      rooms: [
+        { room: 'a', updatedAt: 1 },
+        { room: 'b', updatedAt: 2 },
+      ],
+    });
+    if (!r.ok) throw new Error(r.error);
+    expect(r.value).toEqual([
+      { room: 'a', updatedAt: 1 },
+      { room: 'b', updatedAt: 2 },
+    ]);
+  });
+
+  it('accepts an empty rooms array (no-op flush)', () => {
+    const r = parseBulkIndexPayload({ rooms: [] });
+    if (!r.ok) throw new Error(r.error);
+    expect(r.value).toEqual([]);
+  });
+
+  it('rejects null body', () => {
+    const r = parseBulkIndexPayload(null);
+    expect(r).toEqual({ ok: false, error: 'body must be a JSON object' });
+  });
+
+  it('rejects array body', () => {
+    const r = parseBulkIndexPayload([]);
+    expect(r).toEqual({ ok: false, error: 'body must be a JSON object' });
+  });
+
+  it('rejects primitive body', () => {
+    const r = parseBulkIndexPayload(42);
+    expect(r).toEqual({ ok: false, error: 'body must be a JSON object' });
+  });
+
+  it('rejects non-array rooms field', () => {
+    const r = parseBulkIndexPayload({ rooms: 'oops' });
+    expect(r).toEqual({ ok: false, error: 'rooms must be an array' });
+  });
+
+  it('rejects non-object entries', () => {
+    const r = parseBulkIndexPayload({ rooms: ['not-an-object'] });
+    expect(r).toEqual({ ok: false, error: 'rooms entries must be objects' });
+  });
+
+  it('rejects null entries', () => {
+    const r = parseBulkIndexPayload({ rooms: [null] });
+    expect(r).toEqual({ ok: false, error: 'rooms entries must be objects' });
+  });
+
+  it('rejects nested array entries', () => {
+    const r = parseBulkIndexPayload({ rooms: [[]] });
+    expect(r).toEqual({ ok: false, error: 'rooms entries must be objects' });
+  });
+
+  it('rejects missing room field', () => {
+    const r = parseBulkIndexPayload({ rooms: [{ updatedAt: 1 }] });
+    expect(r).toEqual({
+      ok: false,
+      error: 'rooms[].room must be a non-empty string',
+    });
+  });
+
+  it('rejects empty-string room', () => {
+    const r = parseBulkIndexPayload({ rooms: [{ room: '', updatedAt: 1 }] });
+    expect(r).toEqual({
+      ok: false,
+      error: 'rooms[].room must be a non-empty string',
+    });
+  });
+
+  it('rejects non-string room', () => {
+    const r = parseBulkIndexPayload({ rooms: [{ room: 42, updatedAt: 1 }] });
+    expect(r).toEqual({
+      ok: false,
+      error: 'rooms[].room must be a non-empty string',
+    });
+  });
+
+  it('rejects missing updatedAt', () => {
+    const r = parseBulkIndexPayload({ rooms: [{ room: 'a' }] });
+    expect(r).toEqual({
+      ok: false,
+      error: 'rooms[].updatedAt must be a finite number',
+    });
+  });
+
+  it('rejects non-finite updatedAt', () => {
+    const r = parseBulkIndexPayload({
+      rooms: [{ room: 'a', updatedAt: Number.POSITIVE_INFINITY }],
+    });
+    expect(r).toEqual({
+      ok: false,
+      error: 'rooms[].updatedAt must be a finite number',
+    });
   });
 });
 

@@ -143,6 +143,143 @@ describe('PUT /_migrate/seed/:room', () => {
     expect(times['mig-e']).toBe(1_700_000_000_000);
   });
 
+  it('skipIndex:true does NOT mirror D1 (migrator bulk-index path)', async () => {
+    const res = await request(
+      'PUT',
+      '/_migrate/seed/mig-skip',
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${TOKEN}`,
+        },
+        body: JSON.stringify({
+          snapshot: 'S',
+          updatedAt: 1_700_000_000_999,
+          skipIndex: true,
+        }),
+      },
+      { ETHERCALC_MIGRATE_TOKEN: TOKEN },
+    );
+    expect(res.status).toBe(201);
+    // DO storage writes happened (snapshot readable), but the D1 row
+    // was NOT mirrored — `mig-skip` should be absent from /_rooms.
+    const snap = await request('GET', '/_/mig-skip');
+    expect(snap.status).toBe(200);
+    expect(await snap.text()).toBe('S');
+    const rooms = (await (await request('GET', '/_rooms')).json()) as string[];
+    expect(rooms).not.toContain('mig-skip');
+  });
+});
+
+describe('PUT /_migrate/bulk-index', () => {
+  it('returns 404 when token is unset', async () => {
+    const res = await request('PUT', '/_migrate/bulk-index', {
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rooms: [] }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 401 when Authorization is wrong', async () => {
+    const res = await request(
+      'PUT',
+      '/_migrate/bulk-index',
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer wrong',
+        },
+        body: JSON.stringify({ rooms: [] }),
+      },
+      { ETHERCALC_MIGRATE_TOKEN: TOKEN },
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 400 on malformed JSON', async () => {
+    const res = await request(
+      'PUT',
+      '/_migrate/bulk-index',
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${TOKEN}`,
+        },
+        body: '{not json',
+      },
+      { ETHERCALC_MIGRATE_TOKEN: TOKEN },
+    );
+    expect(res.status).toBe(400);
+    expect(await res.text()).toBe('bulk-index body must be valid JSON');
+  });
+
+  it('returns 400 with the specific error on malformed payload', async () => {
+    const res = await request(
+      'PUT',
+      '/_migrate/bulk-index',
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${TOKEN}`,
+        },
+        body: JSON.stringify({ rooms: [{ room: '', updatedAt: 1 }] }),
+      },
+      { ETHERCALC_MIGRATE_TOKEN: TOKEN },
+    );
+    expect(res.status).toBe(400);
+    expect(await res.text()).toBe('rooms[].room must be a non-empty string');
+  });
+
+  it('upserts N rooms in one SQL statement and they show up in /_rooms + /_roomtimes', async () => {
+    const res = await request(
+      'PUT',
+      '/_migrate/bulk-index',
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${TOKEN}`,
+        },
+        body: JSON.stringify({
+          rooms: [
+            { room: 'bulk-x', updatedAt: 1_700_000_000_101 },
+            { room: 'bulk-y', updatedAt: 1_700_000_000_202 },
+            { room: 'bulk-z', updatedAt: 1_700_000_000_303 },
+          ],
+        }),
+      },
+      { ETHERCALC_MIGRATE_TOKEN: TOKEN },
+    );
+    expect(res.status).toBe(201);
+    expect(await res.text()).toBe('OK');
+    const rooms = (await (await request('GET', '/_rooms')).json()) as string[];
+    expect(rooms).toEqual(expect.arrayContaining(['bulk-x', 'bulk-y', 'bulk-z']));
+    const times = (await (await request('GET', '/_roomtimes')).json()) as Record<
+      string,
+      number
+    >;
+    expect(times['bulk-x']).toBe(1_700_000_000_101);
+    expect(times['bulk-y']).toBe(1_700_000_000_202);
+    expect(times['bulk-z']).toBe(1_700_000_000_303);
+  });
+
+  it('accepts an empty rooms array as a no-op 201', async () => {
+    const res = await request(
+      'PUT',
+      '/_migrate/bulk-index',
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${TOKEN}`,
+        },
+        body: JSON.stringify({ rooms: [] }),
+      },
+      { ETHERCALC_MIGRATE_TOKEN: TOKEN },
+    );
+    expect(res.status).toBe(201);
+  });
+});
+
+describe('PUT /_migrate/seed/:room — idempotent', () => {
   it('is idempotent — re-seeding replaces prior state', async () => {
     const common = {
       headers: {

@@ -61,7 +61,7 @@ function captureFetch(): { fetch: FetchLike; calls: CapturedCall[] } {
 }
 
 describe('HttpTarget', () => {
-  it('flushes one PUT per room on setRoomIndex, with full payload', async () => {
+  it('flushes one seed PUT on setRoomIndex with skipIndex:true, queues index', async () => {
     const { fetch, calls } = captureFetch();
     const target = new HttpTarget({
       baseUrl: 'http://127.0.0.1:8000',
@@ -78,6 +78,8 @@ describe('HttpTarget', () => {
     expect(calls).toHaveLength(0); // buffered — nothing sent yet
     await target.setRoomIndex('room-a', 1700);
 
+    // Only the seed PUT — the index write is queued until flush() /
+    // batch threshold.
     expect(calls).toHaveLength(1);
     const c = calls[0]!;
     expect(c.url).toBe('http://127.0.0.1:8000/_migrate/seed/room-a');
@@ -91,7 +93,17 @@ describe('HttpTarget', () => {
       chat: ['hello'],
       ecell: { alice: 'A1', bob: 'B2' },
       updatedAt: 1700,
+      skipIndex: true,
     });
+
+    // Flushing drains the one queued (room, updatedAt) pair through
+    // /_migrate/bulk-index.
+    await target.flush();
+    expect(calls).toHaveLength(2);
+    const b = calls[1]!;
+    expect(b.url).toBe('http://127.0.0.1:8000/_migrate/bulk-index');
+    expect(b.method).toBe('PUT');
+    expect(b.body).toEqual({ rooms: [{ room: 'room-a', updatedAt: 1700 }] });
   });
 
   it('omits snapshot field when the room has no recorded snapshot', async () => {
@@ -172,7 +184,7 @@ describe('HttpTarget', () => {
     );
   });
 
-  it('composes with applyRoomStream — one PUT per room in order', async () => {
+  it('composes with applyRoomStream — seed PUTs + batched bulk-index tail', async () => {
     const { fetch, calls } = captureFetch();
     const target = new HttpTarget({
       baseUrl: 'http://127.0.0.1:8000',
@@ -203,9 +215,82 @@ describe('HttpTarget', () => {
       target,
     );
     expect(stats.rooms).toBe(2);
-    expect(calls).toHaveLength(2);
+    // Two seed PUTs + one bulk-index PUT at end-of-run.
+    expect(calls).toHaveLength(3);
     expect(calls[0]!.url).toBe('http://127.0.0.1:8000/_migrate/seed/alpha');
     expect(calls[1]!.url).toBe('http://127.0.0.1:8000/_migrate/seed/beta');
+    expect(calls[2]!.url).toBe('http://127.0.0.1:8000/_migrate/bulk-index');
+    expect(calls[2]!.body).toEqual({
+      rooms: [
+        { room: 'alpha', updatedAt: 1 },
+        { room: 'beta', updatedAt: 2 },
+      ],
+    });
+  });
+
+  it('flushes bulk-index on batch-size threshold without waiting for flush()', async () => {
+    const { fetch, calls } = captureFetch();
+    const target = new HttpTarget({
+      baseUrl: 'http://127.0.0.1:8000',
+      token: 'abc',
+      fetch,
+      bulkIndexBatchSize: 2,
+    });
+    // 3 rooms + batch size 2 → bulk-index fires on room 2, leaves 1 in
+    // the queue for flush().
+    for (const n of ['r1', 'r2', 'r3']) {
+      await target.putSnapshot(n, 'S');
+      await target.setRoomIndex(n, Number(n.slice(1)));
+    }
+    // 3 seeds + 1 mid-stream bulk-index.
+    expect(calls.map((c) => c.url)).toEqual([
+      'http://127.0.0.1:8000/_migrate/seed/r1',
+      'http://127.0.0.1:8000/_migrate/seed/r2',
+      'http://127.0.0.1:8000/_migrate/bulk-index',
+      'http://127.0.0.1:8000/_migrate/seed/r3',
+    ]);
+    expect(calls[2]!.body).toEqual({
+      rooms: [
+        { room: 'r1', updatedAt: 1 },
+        { room: 'r2', updatedAt: 2 },
+      ],
+    });
+    await target.flush();
+    expect(calls).toHaveLength(5);
+    expect(calls[4]!.url).toBe('http://127.0.0.1:8000/_migrate/bulk-index');
+    expect(calls[4]!.body).toEqual({
+      rooms: [{ room: 'r3', updatedAt: 3 }],
+    });
+  });
+
+  it('flush() is a no-op when the queue is empty', async () => {
+    const { fetch, calls } = captureFetch();
+    const target = new HttpTarget({
+      baseUrl: 'http://127.0.0.1:8000',
+      token: 'abc',
+      fetch,
+    });
+    await target.flush();
+    expect(calls).toHaveLength(0);
+  });
+
+  it('throws when the bulk-index endpoint returns non-2xx', async () => {
+    let call = 0;
+    const fetch: FetchLike = async () => {
+      call += 1;
+      if (call === 1) return new Response('OK', { status: 201 });
+      return new Response('rooms[].updatedAt must be a finite number', {
+        status: 400,
+      });
+    };
+    const target = new HttpTarget({
+      baseUrl: 'http://127.0.0.1:8000',
+      token: 'abc',
+      fetch,
+    });
+    await target.putSnapshot('room-z', 'S');
+    await target.setRoomIndex('room-z', 1);
+    await expect(target.flush()).rejects.toThrow(/bulk-index 1 rows failed: 400/);
   });
 
   it('default config routes through globalThis.fetch', async () => {

@@ -58,6 +58,45 @@ export async function mirrorRoomToD1(
   });
 }
 
+/**
+ * Upsert many rooms in a single SQL statement — the batched sibling of
+ * {@link mirrorRoomToD1}. Migration seeds 1.8M rooms through
+ * `PUT /_migrate/seed/:room` + `skipIndex: true`, then the migrator
+ * flushes `(room, updatedAt)` pairs in chunks of ~200 through the
+ * `PUT /_migrate/bulk-index` route (which calls this helper).
+ *
+ * One `INSERT … VALUES (?,?),(?,?),…` is ~100× cheaper than N single-
+ * row inserts against D1's sqlite primary: each call is one network
+ * round-trip, one transaction commit, one WAL fsync. Without this,
+ * the full-migration wall-clock ends up D1-bound (~5 h at 100 rps).
+ *
+ * No-ops cleanly when `entries` is empty — D1 would reject the empty
+ * `VALUES ()` clause otherwise. Prepared-statement parameter cap:
+ * SQLite allows up to 999 by default; at two params per entry the
+ * safe max is 499 entries per call. Callers (migrator) already batch
+ * at 200 to leave headroom for future schema growth.
+ */
+export async function bulkMirrorRoomsToD1(
+  db: D1Database,
+  entries: readonly { readonly room: string; readonly updatedAt: number }[],
+): Promise<void> {
+  if (entries.length === 0) return;
+  await withRoomsSchema(db, async () => {
+    const placeholders = entries.map(() => '(?, ?)').join(', ');
+    const params: (string | number)[] = [];
+    for (const e of entries) {
+      params.push(e.room, e.updatedAt);
+    }
+    await db
+      .prepare(
+        `INSERT INTO rooms (room, updated_at) VALUES ${placeholders} ` +
+          'ON CONFLICT(room) DO UPDATE SET updated_at = excluded.updated_at',
+      )
+      .bind(...params)
+      .run();
+  });
+}
+
 /** Delete a room row. Safe to call on a room that doesn't exist. */
 export async function deleteRoomFromD1(
   db: D1Database,
