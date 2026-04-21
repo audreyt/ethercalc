@@ -144,9 +144,12 @@ function filterOversized(
   const out: string[] = [];
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i] as string;
-    const bytes = entry.length * 3; // upper bound for UTF-8 encoding
-    if (bytes > max || Buffer.byteLength(entry, 'utf8') > max) {
-      cb?.({ room, kind, index: i, bytes: Buffer.byteLength(entry, 'utf8') });
+    // Always compute real UTF-8 byte length — an earlier "length * 3"
+    // fast-path false-positived on mostly-ASCII strings (e.g. 60k ASCII
+    // chars report `length * 3 = 180k` but actual is 60k).
+    const bytes = Buffer.byteLength(entry, 'utf8');
+    if (bytes > max) {
+      cb?.({ room, kind, index: i, bytes });
       continue;
     }
     out.push(entry);
