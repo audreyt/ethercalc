@@ -52,6 +52,7 @@ import {
   readSnapshot,
   readSnapshotMeta,
   snapshotEntries,
+  type SnapshotMeta,
 } from './lib/snapshot-storage.ts';
 import {
   dispatchWsMessage,
@@ -201,6 +202,18 @@ export class RoomDO implements DurableObject {
     // namespace (tests, future tooling) can bypass that.
     if (path === '/_do/seed' && request.method === 'POST') {
       return this.#postSeed(request, roomName);
+    }
+    // ─── Phase 11b: client-side chunked snapshot upload ──────────────
+    // Companion to `/_do/seed` for rooms whose raw SocialCalc save
+    // exceeds CF's ~25 MB per-request body limit. The migrator first
+    // POSTs `/_do/seed` with an empty `snapshot` (which deleteAll's
+    // the DO and installs log/audit/chat/ecell), then streams N chunk
+    // bodies here with `seq=<i>&chunks=<N>`. The final chunk flips
+    // `snapshot:meta` over to the new layout; readers see either the
+    // pre-migration state or the freshly-assembled save, never a
+    // mix. See the `#postSnapshotChunk` doc for the full contract.
+    if (path === '/_do/snapshot-chunk' && request.method === 'POST') {
+      return this.#postSnapshotChunk(request, roomName, url.searchParams);
     }
     // ─── Phase 7: native WebSocket upgrade ───────────────────────────
     if (path === '/_do/ws' && request.method === 'GET') {
@@ -485,6 +498,91 @@ export class RoomDO implements DurableObject {
     // 100× (see CLAUDE.md §14 2026-04-21).
     if (!payload.skipIndex) {
       this.#state.waitUntil(this.#mirrorIndex(roomName, payload.updatedAt));
+    }
+    return plainResponse('OK', 201);
+  }
+
+  /**
+   * Phase 11b — client-side chunked snapshot upload.
+   *
+   * Contract (enforced by `routes/migrate.ts` before we ever see the
+   * request, re-checked here for defense-in-depth and because unit
+   * tests construct the DO directly):
+   *   - `seq` and `chunks` are integers, `0 ≤ seq < chunks`, `chunks ≥ 1`.
+   *   - Body is the verbatim chunk payload (plain UTF-8 text).
+   *
+   * Flow when called N times in order:
+   *   1. seq=0..N-2 → land `snapshot:chunk:<padSeq(seq)>`. Meta is NOT
+   *      written yet; readers still see whatever snapshot (if any) was
+   *      there before the upload started.
+   *   2. seq=N-1 → batched put of the final chunk + `snapshot:meta =
+   *      {chunks: N}` + `meta:updated_at`. Atomically flips the DO's
+   *      "current snapshot" over to the new chunked layout. Then
+   *      cleans up any legacy single-key `snapshot` from a prior seed
+   *      and any higher-seq chunks from a prior larger chunked save.
+   *      Finally mirrors the D1 `rooms` row so cross-room indexes pick
+   *      up the new `updated_at`.
+   *
+   * Re-migrating the same room: safe. The stale-cleanup step drops
+   * both layouts of any leftover snapshot state. We don't reset
+   * `#nextLogSeq` / `#nextAuditSeq` / `#nextChatSeq` — those counters
+   * track DO-local append sequence and are unrelated to the snapshot
+   * body itself.
+   */
+  async #postSnapshotChunk(
+    request: Request,
+    roomName: string | null,
+    searchParams: URLSearchParams,
+  ): Promise<Response> {
+    const seqRaw = searchParams.get('seq');
+    const chunksRaw = searchParams.get('chunks');
+    // `URLSearchParams.get` returns `null` for missing params;
+    // `Number(null) === 0` would otherwise slip through the range check.
+    const seq = seqRaw === null ? NaN : Number(seqRaw);
+    const chunks = chunksRaw === null ? NaN : Number(chunksRaw);
+    if (
+      !Number.isInteger(seq) ||
+      seq < 0 ||
+      !Number.isInteger(chunks) ||
+      chunks < 1 ||
+      seq >= chunks
+    ) {
+      return new Response('seq/chunks must be integers with 0 ≤ seq < chunks', {
+        status: 400,
+      });
+    }
+    const body = await request.text();
+    const isFinal = seq === chunks - 1;
+    let updatedAt = 0;
+    await this.#state.blockConcurrencyWhile(async () => {
+      if (!isFinal) {
+        await this.#state.storage.put(snapshotChunkKey(seq), body);
+        return;
+      }
+      // Read the prior meta BEFORE we overwrite it, so we know which
+      // higher-seq chunks (if any) are stale from a larger previous
+      // chunked save. A prior single-key `snapshot` is always cleaned
+      // up regardless — either it's leftover from a pre-chunked seed
+      // or it's absent, both fine.
+      const priorMeta = await readSnapshotMeta(this.#state.storage);
+      updatedAt = Date.now();
+      await this.#state.storage.put({
+        [snapshotChunkKey(seq)]: body,
+        [STORAGE_KEYS.snapshotMeta]: { chunks } satisfies SnapshotMeta,
+        [STORAGE_KEYS.metaUpdatedAt]: updatedAt,
+      });
+      const stale: string[] = [STORAGE_KEYS.snapshot];
+      if (priorMeta !== null) {
+        for (let i = chunks; i < priorMeta.chunks; i++) {
+          stale.push(snapshotChunkKey(i));
+        }
+      }
+      await this.#state.storage.delete(stale);
+      // Next `#getSpreadsheet` will rehydrate from the reassembled save.
+      this.#ss = null;
+    });
+    if (isFinal) {
+      await this.#mirrorIndex(roomName, updatedAt);
     }
     return plainResponse('OK', 201);
   }

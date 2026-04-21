@@ -6,6 +6,7 @@ import {
   chatKey,
   ecellKey,
   logKey,
+  snapshotChunkKey,
 } from '@ethercalc/shared/storage-keys';
 
 import { RoomDO } from '../src/room.ts';
@@ -1280,6 +1281,187 @@ describe('RoomDO — POST /_do/seed (Phase 11b migration)', () => {
     expect(stored).toBeGreaterThanOrEqual(before);
     expect(stored).toBeLessThanOrEqual(after);
     await drainWaitUntil(state);
+  });
+});
+
+describe('RoomDO — POST /_do/snapshot-chunk (Phase 11b chunked upload)', () => {
+  it('non-final chunk stores the chunk and does not touch meta or D1', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const calls: D1Call[] = [];
+    const env = makeEnvWithDb(calls);
+    const room = new RoomDO(makeState('x', record), env);
+    const res = await room.fetch(
+      new Request('https://do/_do/snapshot-chunk?seq=0&chunks=3&name=gamma', {
+        method: 'POST',
+        body: 'aaaa',
+      }),
+    );
+    expect(res.status).toBe(201);
+    expect(record.map.get(snapshotChunkKey(0))).toBe('aaaa');
+    // Intermediate chunk must not flip meta or the updated_at timestamp —
+    // readers should still see whatever snapshot was there before the
+    // upload started (or no snapshot).
+    expect(record.map.has(STORAGE_KEYS.snapshotMeta)).toBe(false);
+    expect(record.map.has(STORAGE_KEYS.metaUpdatedAt)).toBe(false);
+    expect(calls.length).toBe(0);
+  });
+
+  it('final chunk writes meta + updated_at and mirrors D1', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const calls: D1Call[] = [];
+    const env = makeEnvWithDb(calls);
+    const room = new RoomDO(makeState('x', record), env);
+
+    for (const [i, body] of [
+      [0, 'aaaa'],
+      [1, 'bbbb'],
+    ] as const) {
+      const res = await room.fetch(
+        new Request(`https://do/_do/snapshot-chunk?seq=${i}&chunks=3&name=gamma`, {
+          method: 'POST',
+          body,
+        }),
+      );
+      expect(res.status).toBe(201);
+    }
+    const before = Date.now();
+    const res = await room.fetch(
+      new Request('https://do/_do/snapshot-chunk?seq=2&chunks=3&name=gamma', {
+        method: 'POST',
+        body: 'cccc',
+      }),
+    );
+    const after = Date.now();
+    expect(res.status).toBe(201);
+    expect(await res.text()).toBe('OK');
+    expect(record.map.get(snapshotChunkKey(0))).toBe('aaaa');
+    expect(record.map.get(snapshotChunkKey(1))).toBe('bbbb');
+    expect(record.map.get(snapshotChunkKey(2))).toBe('cccc');
+    expect(record.map.get(STORAGE_KEYS.snapshotMeta)).toEqual({ chunks: 3 });
+    const stored = record.map.get(STORAGE_KEYS.metaUpdatedAt) as number;
+    expect(stored).toBeGreaterThanOrEqual(before);
+    expect(stored).toBeLessThanOrEqual(after);
+    // D1 mirror runs synchronously in the final-chunk path (not via
+    // waitUntil like /_do/seed) because snapshot-chunk is inherently
+    // the tail of a multi-request upload — the migrator's next step
+    // depends on knowing the mirror landed.
+    const insert = calls.find((c) => c.sql.startsWith('INSERT INTO rooms'));
+    expect(insert).toBeDefined();
+    expect(insert?.params).toEqual(['gamma', stored]);
+  });
+
+  it('final chunk deletes any legacy single-key snapshot from a prior seed', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    // Simulate a prior seed that left a small single-key snapshot.
+    record.map.set(STORAGE_KEYS.snapshot, 'OLD-SMALL-SAVE');
+    const room = new RoomDO(makeState('x', record), makeEnv());
+    const res = await room.fetch(
+      new Request('https://do/_do/snapshot-chunk?seq=0&chunks=1', {
+        method: 'POST',
+        body: 'NEW-CHUNKED',
+      }),
+    );
+    expect(res.status).toBe(201);
+    // The legacy single-key must be gone — otherwise readSnapshot's
+    // fast path would return the stale OLD-SMALL-SAVE.
+    expect(record.map.has(STORAGE_KEYS.snapshot)).toBe(false);
+    expect(record.map.get(snapshotChunkKey(0))).toBe('NEW-CHUNKED');
+    expect(record.map.get(STORAGE_KEYS.snapshotMeta)).toEqual({ chunks: 1 });
+  });
+
+  it('final chunk deletes stale higher-seq chunks from a prior larger chunked save', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    // Simulate a prior 5-chunk save that we're about to overwrite
+    // with a new 3-chunk save.
+    record.map.set(STORAGE_KEYS.snapshotMeta, { chunks: 5 });
+    for (let i = 0; i < 5; i++) record.map.set(snapshotChunkKey(i), `old-${i}`);
+    const room = new RoomDO(makeState('x', record), makeEnv());
+    // Write new chunks 0..2.
+    for (const [i, body] of [
+      [0, 'new-0'],
+      [1, 'new-1'],
+      [2, 'new-2'],
+    ] as const) {
+      const res = await room.fetch(
+        new Request(`https://do/_do/snapshot-chunk?seq=${i}&chunks=3`, {
+          method: 'POST',
+          body,
+        }),
+      );
+      expect(res.status).toBe(201);
+    }
+    // Chunks 3 and 4 from the prior save must be cleaned up so a
+    // reader following the new meta doesn't stop at 3 while the
+    // orphans silently waste storage.
+    expect(record.map.has(snapshotChunkKey(3))).toBe(false);
+    expect(record.map.has(snapshotChunkKey(4))).toBe(false);
+    expect(record.map.get(STORAGE_KEYS.snapshotMeta)).toEqual({ chunks: 3 });
+  });
+
+  it('re-chunking at the same chunk count leaves nothing stale to clean', async () => {
+    // Covers the `priorMeta !== null` branch where the new chunk count
+    // matches the prior chunk count exactly — the stale loop has no
+    // iterations but the legacy single-key cleanup still fires.
+    const record: FakeStorageRecord = { map: new Map() };
+    record.map.set(STORAGE_KEYS.snapshotMeta, { chunks: 2 });
+    record.map.set(snapshotChunkKey(0), 'old-0');
+    record.map.set(snapshotChunkKey(1), 'old-1');
+    const room = new RoomDO(makeState('x', record), makeEnv());
+    for (const [i, body] of [
+      [0, 'new-0'],
+      [1, 'new-1'],
+    ] as const) {
+      const res = await room.fetch(
+        new Request(`https://do/_do/snapshot-chunk?seq=${i}&chunks=2`, {
+          method: 'POST',
+          body,
+        }),
+      );
+      expect(res.status).toBe(201);
+    }
+    expect(record.map.get(snapshotChunkKey(0))).toBe('new-0');
+    expect(record.map.get(snapshotChunkKey(1))).toBe('new-1');
+    expect(record.map.get(STORAGE_KEYS.snapshotMeta)).toEqual({ chunks: 2 });
+  });
+
+  it('final chunk without ?name skips the D1 mirror', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const calls: D1Call[] = [];
+    const env = makeEnvWithDb(calls);
+    const room = new RoomDO(makeState('x', record), env);
+    const res = await room.fetch(
+      new Request('https://do/_do/snapshot-chunk?seq=0&chunks=1', {
+        method: 'POST',
+        body: 'only-chunk',
+      }),
+    );
+    expect(res.status).toBe(201);
+    expect(calls.length).toBe(0);
+    expect(record.map.get(STORAGE_KEYS.snapshotMeta)).toEqual({ chunks: 1 });
+  });
+
+  it.each([
+    ['missing seq', 'chunks=2'],
+    ['missing chunks', 'seq=0'],
+    ['non-integer seq', 'seq=1.5&chunks=2'],
+    ['negative seq', 'seq=-1&chunks=2'],
+    ['chunks=0', 'seq=0&chunks=0'],
+    ['seq >= chunks', 'seq=2&chunks=2'],
+  ])('%s → 400', async (_label, qs) => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('x', record), makeEnv());
+    const res = await room.fetch(
+      new Request(`https://do/_do/snapshot-chunk?${qs}`, {
+        method: 'POST',
+        body: 'x',
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(await res.text()).toBe(
+      'seq/chunks must be integers with 0 ≤ seq < chunks',
+    );
+    // Nothing written on the bad-params path.
+    expect(record.map.size).toBe(0);
   });
 });
 

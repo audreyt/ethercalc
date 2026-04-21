@@ -94,4 +94,49 @@ export function registerMigrate(app: Hono<{ Bindings: Env }>): void {
     await bulkMirrorRoomsToD1(c.env.DB, parsed.value);
     return c.text('OK', 201, { 'Content-Type': TEXT_CT });
   });
+
+  // Client-side chunked snapshot upload. Used for rooms whose
+  // snapshot exceeds CF's ~25 MB request-body limit (the regular
+  // /_migrate/seed path can't fit the whole body in one PUT). Flow:
+  //   1. Migrator PUTs /_migrate/seed/:room with snapshot = "" and
+  //      all other fields as usual. DO lands the room with no
+  //      snapshot keys.
+  //   2. Migrator PUTs N × /_migrate/snapshot-chunk/:room with query
+  //      params `seq=<i>` and `chunks=<N>`. Body is one chunk
+  //      (≤100 KiB). DO stores `snapshot:chunk:<padSeq(seq)>` and,
+  //      on the final call (seq === chunks-1), writes `snapshot:meta`.
+  // Query-param based so individual chunks don't carry JSON framing
+  // overhead.
+  app.put('/_migrate/snapshot-chunk/:room', async (c) => {
+    const verdict = verifyMigrateToken(
+      c.env.ETHERCALC_MIGRATE_TOKEN,
+      c.req.header('Authorization') ?? null,
+    );
+    if (verdict.kind === 'disabled') {
+      return c.text('Not Found', 404, { 'Content-Type': TEXT_CT });
+    }
+    if (verdict.kind === 'missing' || verdict.kind === 'bad') {
+      return c.text('Unauthorized', 401, { 'Content-Type': TEXT_CT });
+    }
+    const room = c.req.param('room') ?? '';
+    if (room.length === 0) {
+      return c.text('room segment required', 400, { 'Content-Type': TEXT_CT });
+    }
+    const seq = Number(c.req.query('seq'));
+    const chunks = Number(c.req.query('chunks'));
+    if (!Number.isInteger(seq) || seq < 0 || !Number.isInteger(chunks) || chunks < 1 || seq >= chunks) {
+      return c.text('seq/chunks must be integers with 0 ≤ seq < chunks', 400, {
+        'Content-Type': TEXT_CT,
+      });
+    }
+    const body = await c.req.raw.arrayBuffer();
+    const res = await doFetch(
+      c.env,
+      room,
+      `/_do/snapshot-chunk?seq=${seq}&chunks=${chunks}`,
+      { method: 'POST', body },
+    );
+    const text = await res.text();
+    return c.text(text, res.status as 201 | 400, { 'Content-Type': TEXT_CT });
+  });
 }

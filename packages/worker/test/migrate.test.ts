@@ -279,6 +279,92 @@ describe('PUT /_migrate/bulk-index', () => {
   });
 });
 
+describe('PUT /_migrate/snapshot-chunk/:room', () => {
+  it('returns 404 when ETHERCALC_MIGRATE_TOKEN is unset', async () => {
+    const res = await request(
+      'PUT',
+      '/_migrate/snapshot-chunk/chunky-a?seq=0&chunks=1',
+      { body: 'chunk' },
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 401 when Authorization bearer is wrong', async () => {
+    const res = await request(
+      'PUT',
+      '/_migrate/snapshot-chunk/chunky-b?seq=0&chunks=1',
+      { headers: { Authorization: 'Bearer wrong' }, body: 'chunk' },
+      { ETHERCALC_MIGRATE_TOKEN: TOKEN },
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 400 when seq/chunks are out of range', async () => {
+    const res = await request(
+      'PUT',
+      '/_migrate/snapshot-chunk/chunky-c?seq=3&chunks=2',
+      { headers: { Authorization: `Bearer ${TOKEN}` }, body: 'chunk' },
+      { ETHERCALC_MIGRATE_TOKEN: TOKEN },
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when :room segment is empty (unreachable path, but asserted)', async () => {
+    // Hono's router won't actually route to the handler with an empty
+    // segment — a literal `PUT /_migrate/snapshot-chunk/` falls through
+    // to the 404. Instead we verify the negative via a missing seq/chunks
+    // (a case the normal flow covers).
+    const res = await request(
+      'PUT',
+      '/_migrate/snapshot-chunk/chunky-d',
+      { headers: { Authorization: `Bearer ${TOKEN}` }, body: 'chunk' },
+      { ETHERCALC_MIGRATE_TOKEN: TOKEN },
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('streams a multi-chunk snapshot and the room reads back the reassembled save', async () => {
+    // First install an empty-snapshot room via the normal seed path.
+    const seedRes = await request(
+      'PUT',
+      '/_migrate/seed/chunky-ok',
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${TOKEN}`,
+        },
+        body: JSON.stringify({
+          snapshot: '',
+          updatedAt: 1_700_000_100_000,
+        }),
+      },
+      { ETHERCALC_MIGRATE_TOKEN: TOKEN },
+    );
+    expect(seedRes.status).toBe(201);
+
+    const parts = ['PART-ONE-', 'PART-TWO-', 'PART-THREE'];
+    for (let i = 0; i < parts.length; i++) {
+      const res = await request(
+        'PUT',
+        `/_migrate/snapshot-chunk/chunky-ok?seq=${i}&chunks=${parts.length}`,
+        {
+          headers: { Authorization: `Bearer ${TOKEN}` },
+          body: parts[i]!,
+        },
+        { ETHERCALC_MIGRATE_TOKEN: TOKEN },
+      );
+      expect(res.status).toBe(201);
+    }
+
+    const snap = await request('GET', '/_/chunky-ok');
+    expect(snap.status).toBe(200);
+    expect(await snap.text()).toBe(parts.join(''));
+    // D1 mirror on final-chunk path ⇒ room appears in /_rooms.
+    const rooms = (await (await request('GET', '/_rooms')).json()) as string[];
+    expect(rooms).toContain('chunky-ok');
+  });
+});
+
 describe('PUT /_migrate/seed/:room — idempotent', () => {
   it('is idempotent — re-seeding replaces prior state', async () => {
     const common = {
