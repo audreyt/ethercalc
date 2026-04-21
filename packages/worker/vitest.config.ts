@@ -20,13 +20,11 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   plugins: [
     cloudflareTest({
-      singleWorker: true,
-      // Disable per-test isolated storage — we hit a Miniflare SQLite
-      // shm file tracking bug (AssertionError: Expected .sqlite, got
-      // …sqlite-shm) whenever a route test goes worker.fetch → DO →
-      // storage. Tests below use unique room names + deleteAll guards
-      // where shared state would cause false positives.
-      isolatedStorage: false,
+      // Pool-workers 0.14.x dropped `singleWorker` / `isolatedStorage`.
+      // Miniflare SQLite shm bug that motivated `isolatedStorage: false`
+      // is moot — the worker rewrite no longer does worker.fetch → DO
+      // → storage from a test context in the shape that tripped it.
+      //
       // Don't point at wrangler.toml — its `[[rules]]` for `SocialCalc.js`
       // (needed by `wrangler deploy --dry-run`) ends up merged into
       // miniflare's modulesRules, which then mangles `?raw` imports via

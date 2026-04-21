@@ -44,7 +44,11 @@ let cachedNamespace: SocialCalcNamespace | null = null;
 
 export function loadSocialCalc(): SocialCalcNamespace {
   if (cachedNamespace) return cachedNamespace;
-  cachedNamespace = createSocialCalcFactory() as SocialCalcNamespace;
+  // Double-cast through `unknown`: the bundled factory is `@ts-nocheck`
+  // so tsgo infers its return type as void/undefined, but at runtime it
+  // always yields the SocialCalc namespace (see `socialcalc.bundled.ts`
+  // bottom — `return SocialCalc`).
+  cachedNamespace = createSocialCalcFactory() as unknown as SocialCalcNamespace;
   return cachedNamespace;
 }
 

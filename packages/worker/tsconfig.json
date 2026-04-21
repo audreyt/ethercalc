@@ -13,7 +13,7 @@
     "resolveJsonModule": true,
     "types": [
       "@cloudflare/workers-types",
-      "@cloudflare/vitest-pool-workers"
+      "@cloudflare/vitest-pool-workers/types"
     ],
     "esModuleInterop": true,
     "skipLibCheck": true,
