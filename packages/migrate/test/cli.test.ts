@@ -489,6 +489,37 @@ describe('runMigrate — end to end with in-memory deps', () => {
     expect(client.closeSpy).toHaveBeenCalledTimes(1);
   });
 
+  it('logs oversized-entry warnings to stderr', async () => {
+    // Overrides one room's audit with a 200 KB entry (> 120 KB cap).
+    // The redis-source filter drops it and fires onOversizedEntry,
+    // which the CLI hook forwards to stderr.
+    const big = 'z'.repeat(200_000);
+    const client = fakeClient(['big'], {
+      'LRANGE audit-big 0 -1': [big, 'ok'],
+    });
+    const { deps, stderr } = makeDeps({
+      connectRedis: async () => client,
+      fetch: async () => new Response('OK', { status: 201 }),
+      now: () => 0,
+      sleep: async () => undefined,
+    });
+    const stats = await runMigrate(
+      {
+        source: 'redis://127.0.0.1:6379',
+        target: 'http://127.0.0.1:8000',
+        token: 'abc',
+        dryRun: false,
+        help: false,
+        skipBulkIndex: false,
+      },
+      deps,
+    );
+    expect(stats.rooms).toBe(1);
+    expect(stderr.join('')).toMatch(
+      /skip oversized: big audit\[0\] = .* KiB \(> 120 KiB DO limit\)/,
+    );
+  });
+
   it('--skip-bulk-index fires seed PUTs only, no /_migrate/bulk-index', async () => {
     const fetched: string[] = [];
     const client = fakeClient(['foo', 'bar']);

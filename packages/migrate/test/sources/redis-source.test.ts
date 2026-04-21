@@ -239,6 +239,56 @@ describe('roomsFromRedis — timestamps + progress', () => {
     expect(rooms[0]?.updatedAt).toBeUndefined();
   });
 
+  it('drops oversized log/audit/chat entries and fires onOversizedEntry', async () => {
+    // The real 2026-04-21 prod dump had 1 MB+ `loadclipboard` audit
+    // entries that 500'd DO seed (values > 128 KiB are rejected by
+    // DO storage). Filter side on the migrator so the run can
+    // complete — the dropped audits are legacy clipboard pastes,
+    // not load-bearing.
+    const big = 'x'.repeat(200_000); // 200 KB > 120 KB default cap
+    const small = 'ok';
+    const client = scriptedClient({
+      'HGETALL timestamps': [],
+      ...oneShotScan(['snapshot-fat']),
+      'GET snapshot-fat': 'S',
+      'LRANGE log-fat 0 -1': [small, big, small],
+      'LRANGE audit-fat 0 -1': [big, small],
+      'LRANGE chat-fat 0 -1': [],
+      'HGETALL ecell-fat': [],
+    });
+    const dropped: Array<{ kind: string; index: number; bytes: number }> = [];
+    const rooms = await collect(
+      roomsFromRedis(client, {
+        onOversizedEntry: ({ kind, index, bytes }) => {
+          dropped.push({ kind, index, bytes });
+        },
+      }),
+    );
+    expect(rooms[0]?.log).toEqual([small, small]);
+    expect(rooms[0]?.audit).toEqual([small]);
+    expect(dropped).toEqual([
+      { kind: 'log', index: 1, bytes: 200_000 },
+      { kind: 'audit', index: 0, bytes: 200_000 },
+    ]);
+  });
+
+  it('honors custom maxEntryBytes threshold', async () => {
+    const medium = 'y'.repeat(50_000); // 50 KB
+    const client = scriptedClient({
+      'HGETALL timestamps': [],
+      ...oneShotScan(['snapshot-m']),
+      'GET snapshot-m': 'S',
+      'LRANGE log-m 0 -1': [medium],
+      'LRANGE audit-m 0 -1': [],
+      'LRANGE chat-m 0 -1': [],
+      'HGETALL ecell-m': [],
+    });
+    const rooms = await collect(
+      roomsFromRedis(client, { maxEntryBytes: 40_000 }),
+    );
+    expect(rooms[0]?.log).toEqual([]); // 50 KB > 40 KB, dropped
+  });
+
   it('calls onProgress after each room', async () => {
     const client = scriptedClient({
       'HGETALL timestamps': [],

@@ -185,6 +185,12 @@ export async function runMigrate(
             );
           }
         },
+        onOversizedEntry: ({ room, kind, index, bytes }) => {
+          deps.stderr(
+            `  skip oversized: ${room} ${kind}[${index}] = ` +
+              `${(bytes / 1024).toFixed(1)} KiB (> 120 KiB DO limit)\n`,
+          );
+        },
       }),
       target,
       {

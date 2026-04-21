@@ -47,6 +47,23 @@ export interface RoomsFromRedisOptions {
    * batch. Defaults to 10 000, tuned for large dumps on localhost.
    */
   scanCount?: number;
+  /**
+   * Max bytes per individual `log`/`audit`/`chat` entry — anything
+   * longer gets dropped (with optional callback notice) rather than
+   * shipped. Cloudflare Durable Object storage rejects values over
+   * 128 KiB per key; a handful of legacy `loadclipboard` audit
+   * entries in the real dump are 1–5 MB and would 500 the DO seed
+   * without this filter. Default 120 KiB (leaving ~8 KiB headroom
+   * under the 128 KiB ceiling for the JSON envelope).
+   */
+  maxEntryBytes?: number;
+  /** Called when an entry is dropped for exceeding `maxEntryBytes`. */
+  onOversizedEntry?: (info: {
+    readonly room: string;
+    readonly kind: 'log' | 'audit' | 'chat';
+    readonly index: number;
+    readonly bytes: number;
+  }) => void;
 }
 
 /**
@@ -73,6 +90,8 @@ export async function* roomsFromRedis(
     names.add(k.slice('log-'.length));
   }
   const sorted = Array.from(names).sort();
+  const maxEntryBytes = options.maxEntryBytes ?? 120 * 1024;
+  const onOversizedEntry = options.onOversizedEntry;
 
   let done = 0;
   for (const name of sorted) {
@@ -90,9 +109,9 @@ export async function* roomsFromRedis(
     const room: Room = {
       name,
       snapshot: snapshot ?? '',
-      log,
-      audit,
-      chat,
+      log: filterOversized(log, 'log', name, maxEntryBytes, onOversizedEntry),
+      audit: filterOversized(audit, 'audit', name, maxEntryBytes, onOversizedEntry),
+      chat: filterOversized(chat, 'chat', name, maxEntryBytes, onOversizedEntry),
       ecell,
       ...(updatedAt !== undefined ? { updatedAt } : {}),
     };
@@ -100,6 +119,39 @@ export async function* roomsFromRedis(
     done += 1;
     options.onProgress?.({ done, total: sorted.length });
   }
+}
+
+/**
+ * Drop entries that exceed the per-value byte ceiling and invoke the
+ * `onOversizedEntry` callback for each drop. Preserves array order for
+ * the survivors; sequence indices on the DO side go by `i` in the
+ * filtered array, so the dropped audits silently disappear from the
+ * post-migration history (fine — they're historical audit noise, not
+ * load-bearing state).
+ */
+function filterOversized(
+  entries: readonly string[],
+  kind: 'log' | 'audit' | 'chat',
+  room: string,
+  max: number,
+  cb?: (info: {
+    readonly room: string;
+    readonly kind: 'log' | 'audit' | 'chat';
+    readonly index: number;
+    readonly bytes: number;
+  }) => void,
+): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i] as string;
+    const bytes = entry.length * 3; // upper bound for UTF-8 encoding
+    if (bytes > max || Buffer.byteLength(entry, 'utf8') > max) {
+      cb?.({ room, kind, index: i, bytes: Buffer.byteLength(entry, 'utf8') });
+      continue;
+    }
+    out.push(entry);
+  }
+  return out;
 }
 
 /**
