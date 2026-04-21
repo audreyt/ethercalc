@@ -1,10 +1,10 @@
 # EtherCalc TypeScript Rewrite — Ultraplan
 
-> **Status:** v1 · all §13 questions answered · **Owner:** Audrey Tang · **Started:** 2026-04-19
+> **Status:** near-complete · all §13 questions answered · **Owner:** Audrey Tang · **Started:** 2026-04-19
 >
-> This file is `CLAUDE.md` so it auto-loads into every Claude Code session. It is the durable plan-of-record for rewriting EtherCalc in modern TypeScript on the Cloudflare fullstack (Hono + Workers + Durable Objects + D1 + KV + R2), locally runnable via Miniflare, and **also self-hostable without a Cloudflare account** via a Miniflare-based `docker compose up`. 100% test coverage is enforced in CI. It is intentionally exhaustive so any new session can resume without re-reading the whole tree.
+> This file is `CLAUDE.md` so it auto-loads into every Claude Code session. It is the durable plan-of-record for rewriting EtherCalc in modern TypeScript on the Cloudflare fullstack (Hono + Workers + Durable Objects + D1 + KV + R2), locally runnable via Miniflare, and also self-hostable without a Cloudflare account via `docker compose up`. 100% line/branch/function/statement coverage is enforced in CI on gated packages.
 >
-> **How to use this doc:** read §1–§3 first (north star + architecture). Then pick the next unchecked item in §8 (Phase Plan). Append to §14 (Session Log) when you finish work. Update other sections in place when reality diverges from plan. User decisions are baked in — do not re-ask the questions in §13.
+> **How to use this doc:** §1 is the contract. §13 is the canonical decision log — do not re-ask. §8 lists what's still open. §14 is the session log for context continuity. Update §14 when you finish work; edit other sections in place when reality diverges.
 
 ---
 
@@ -14,70 +14,60 @@
 
 Ship a greenfield TypeScript implementation of EtherCalc that:
 
-1. **Passes a golden-fixture oracle-equivalence suite** against the current `main` branch across:
-   - Every HTTP endpoint in §6.1 — identical status codes, headers (modulo `Date`/`Server`), body bytes for deterministic formats (CSV, JSON, SocialCalc save, Markdown), structural equivalence for non-deterministic formats (HTML, XLSX, ODS).
-   - Every WebSocket message type in §6.2 — same state transitions observable via HTTP after each WS command.
-   - Every Redis key pattern in §6.3 — mapped to the new storage layer with equivalent semantics.
-   - **Exception:** a small allow-list of "sensible fixes" (§13 Q1 — e.g. `GET /_roomlinks` emitting JSON with `text/html` is corrected). Each fix is enumerated in §6.1 with rationale and gets its own divergence-from-oracle test documenting the intentional difference.
-2. **Runs locally under Miniflare** (`wrangler dev`) with the full feature set — DO WebSockets, D1 snapshots, KV indexes, R2 blob import/export — and no Redis/Node dependency.
+1. **Passes a golden-fixture oracle-equivalence suite** against the current `main` branch — every §6.1 HTTP endpoint (identical status/headers/body for deterministic formats, structural equivalence for HTML/XLSX/ODS), every §6.2 WS message, every §6.3 Redis key pattern mapped to the new storage layer with equivalent semantics. Small allow-list of "sensible fixes" (§13 Q1) documented in §6.1.
+2. **Runs locally under Miniflare** with the full feature set — DO WebSockets, D1 snapshots, KV indexes, R2 — no Redis/Node dependency.
 3. **Deploys to Cloudflare Workers** via `wrangler deploy`.
-4. **Is self-hostable** via `docker compose up`: a Miniflare-based container serves the Worker with persistent DO/D1/KV/R2 storage on a mounted volume. No Cloudflare account needed for local/self-host operation (§13 Q5).
-5. **Maintains 100% line + branch + function + statement coverage** in CI (GitHub Actions). Any PR that drops any coverage metric below 100 fails.
-6. **Preserves the public HTTP API** documented in `API.md` byte-for-byte where deterministic (minus the allow-listed fixes above); a compatibility test matrix asserts this.
-7. **Updates the client** to speak the new WebSocket protocol (raw JSON over WS, not socket.io). The legacy `/socket.io/*` endpoint is retained long-term as a thin shim that translates to the new protocol, so existing external integrations keep working (§13 Q4).
-8. **Ports the `multi/` React UI to React 18** (§13 Q2) with TypeScript, preserving the `/=:room` multi-sheet URL scheme.
-9. **Keeps the `ethercalc` CLI** (`--key`, `--cors`, `--port`, etc.) as a thin wrapper around `wrangler dev` / Miniflare (§13 Q6). Worker secrets are also supported for production deploys.
+4. **Is self-hostable** via `docker compose up` (Miniflare container, persistent volume, no CF account needed — §13 Q5).
+5. **Maintains 100% coverage** on gated packages in CI. Any PR dropping a metric below 100 fails.
+6. **Preserves the public HTTP API** byte-for-byte where deterministic (minus sensible fixes).
+7. **Client speaks new WS protocol** (raw JSON). Legacy `/socket.io/*` shim retained indefinitely for external embeds (§13 Q4).
+8. **`multi/` ported to React 18 + TypeScript** (§13 Q2), preserving `/=:room` URL scheme.
+9. **`ethercalc` CLI kept** as a thin wrapper around `wrangler dev` / Miniflare (§13 Q6).
 
 ### 1.2 Explicit non-goals
 
-- **Rewriting SocialCalc itself.** We keep `socialcalc` as a JS dependency loaded into the DO. Rewriting the spreadsheet engine is a separate multi-year project.
-- **Changing the spreadsheet wire format.** Commands, save format, cell syntax all stay the same.
-- **Bug-for-bug preservation as an absolute rule.** Per §13 Q1, we apply sensible fixes where current master is demonstrably broken (e.g. content-type mismatches). Every fix is documented in §6.1 with oracle-diff test. Default still leans preservation — only fix things that are unambiguously wrong.
-- **New user-facing features.** The rewrite is a migration, not a product launch. New features come after parity.
-- **Multi-region / strong consistency upgrades.** DO is single-region by design. That's fine — current Redis is single-instance.
-- **OAuth/Gmail email sending.** Replace with Cloudflare `send_email` binding (§13 Q3); old gmail-xoauth2 path is dropped. Tests use a stub transport.
-- **`snapcraft`/`dotcloud`/`openshift`/`stackato` deployment configs.** Dead platforms.
-- **`webworker-threads` backend.** DO isolates already provide the sandboxing property the old `vm` backend was simulating.
-- **Application-layer rate limiting.** Relies on Cloudflare platform layer (§13 Q7).
+- Rewriting SocialCalc itself.
+- Changing the spreadsheet wire format.
+- Bug-for-bug preservation as absolute rule — sensible fixes allowed per §13 Q1 (default still leans preservation).
+- New user-facing features.
+- Multi-region / strong consistency upgrades.
+- OAuth/Gmail email sending (replaced by `send_email` binding, §13 Q3).
+- Dead-platform configs (`snapcraft`/`dotcloud`/`openshift`/`stackato`).
+- `webworker-threads` backend (DO isolates cover the sandboxing property).
+- Application-layer rate limiting (relies on CF platform layer, §13 Q7).
 
 ---
 
 ## 2. Glossary
 
-- **Oracle** — the current `main` branch of EtherCalc running on Node/Bun + Redis, treated as the source of truth for semantics. Equivalence is defined against it.
+- **Oracle** — current `main` branch on Node/Bun + Redis; source of truth for semantics.
 - **Target** — the new TypeScript Worker implementation.
-- **Room** — synonym for spreadsheet / page. Identified by a URL-safe string (auto-generated by `uuid-pure` or user-provided).
-- **Multi-sheet** — URL prefix `/=:room` routing that treats the room as a collection of sub-sheets (one per row of a TOC sheet).
-- **DO** — Durable Object. We use one DO per room.
-- **Snapshot** — canonical serialization of a spreadsheet (SocialCalc save format, a multi-section text blob).
-- **Log** — ordered list of commands applied since last snapshot. Periodically folded back into snapshot.
-- **Audit** — append-only log of all commands (never folded). Feeds the `/log/?<room>` restore UI.
-- **Chat** — per-room ephemeral chat messages.
-- **ECell** — "editing cell" — each user's cursor position. Broadcast to peers for presence.
+- **Room** — spreadsheet / page, identified by a URL-safe string.
+- **Multi-sheet** — URL prefix `/=:room` routing; sub-sheets per row of a TOC sheet.
+- **DO** — Durable Object; one per room.
+- **Snapshot** — SocialCalc save string (multi-section text blob).
+- **Log** — commands since last snapshot; periodically folded back.
+- **Audit** — append-only log of all commands (never folded).
+- **ECell** — "editing cell"; each user's cursor position.
 
 ---
 
 ## 3. Target Architecture (Cloudflare fullstack)
 
-Reference: [Cloudflare serverless fullstack diagram](https://developers.cloudflare.com/reference-architecture/diagrams/serverless/fullstack-application/).
-
 ### 3.1 Component map
 
-| Concern                       | Old                                                     | New                                                           |
-| ----------------------------- | ------------------------------------------------------- | ------------------------------------------------------------- |
-| HTTP router                   | `zappajs` on Express 3                                  | **Hono** on Workers                                           |
-| Static assets                 | `express.static` from repo root                         | **Workers Assets** (ASSETS binding, `[assets]` in wrangler)   |
-| Live spreadsheet state        | `SC[room]` global + `vm.createContext` worker           | **Durable Object** `RoomDO` — one per room                    |
-| Persistent snapshot/log/audit | Redis `snapshot-*`, `log-*`, `audit-*`, `chat-*`        | **DO storage** (primary) + **D1** mirror for cross-room query |
-| Room index                    | `KEYS snapshot-*`                                       | **KV** `rooms:index:*` (lazily populated)                     |
-| Timestamps                    | Redis hash `timestamps`                                 | D1 `rooms(room TEXT PRIMARY KEY, updated_at INTEGER)`         |
-| Binary imports (xlsx/ods)     | Inline buffer handling                                  | **R2** scratch bucket for >1MB bodies (stream then delete)    |
-| Realtime transport            | socket.io 0.9                                           | DO-hosted **WebSocket** (hibernation API), raw JSON protocol  |
-| Pub/sub across nodes          | socket.io Redis adapter                                 | Not needed (single DO per room = single broadcast point)      |
-| Cron                          | External cron pinging `/_timetrigger`                   | **Cron Triggers** invoking the Worker                         |
-| Email (send)                  | `nodemailer` + gmail xoauth2                            | **`send_email` binding** (Cloudflare Email) or stub           |
-| Secrets                       | CLI flag `--key`                                        | Worker **secret** `ETHERCALC_KEY` (HMAC) **and** CLI `--key` retained (§13 Q6) |
-| Self-host                     | `docker-compose.yml` (Node + Redis)                     | `docker-compose.yml` runs Miniflare image (§13 Q5) — no CF account needed |
+| Concern                       | Old                                              | New                                                           |
+| ----------------------------- | ------------------------------------------------ | ------------------------------------------------------------- |
+| HTTP router                   | `zappajs` on Express 3                           | **Hono** on Workers                                           |
+| Static assets                 | `express.static`                                 | **Workers Assets** (ASSETS binding)                           |
+| Live spreadsheet state        | `SC[room]` global + `vm.createContext`           | **Durable Object** `RoomDO` — one per room                    |
+| Persistent snapshot/log/audit | Redis `snapshot-*`, `log-*`, `audit-*`, `chat-*` | **DO storage** (primary) + **D1** mirror for cross-room query |
+| Room index                    | `KEYS snapshot-*`                                | **D1** `rooms` table + optional KV hot path                   |
+| Realtime transport            | socket.io 0.9                                    | DO-hosted **WebSocket** (hibernation API), raw JSON protocol  |
+| Cron                          | External cron pinging `/_timetrigger`            | **Cron Triggers** invoking the Worker                         |
+| Email                         | `nodemailer` + gmail xoauth2                     | **`send_email` binding** or stub                              |
+| Secrets                       | CLI flag `--key`                                 | Worker secret `ETHERCALC_KEY` **and** CLI `--key` (§13 Q6)    |
+| Self-host                     | `docker-compose.yml` (Node + Redis)              | Miniflare image (§13 Q5)                                      |
 
 ### 3.2 Request flow
 
@@ -85,26 +75,26 @@ Reference: [Cloudflare serverless fullstack diagram](https://developers.cloudfla
 Browser  ──HTTP/WS──>  Worker (Hono)
                          │
                          ├── static: Workers Assets
-                         ├── stateless HTTP (rooms list, exists): KV + D1
+                         ├── stateless HTTP (rooms list, exists): D1
                          └── per-room (R/W, WS, exports):
                                  env.ROOM.get(idFromName(room)) ──> RoomDO
                                      ├── in-memory SocialCalc.SpreadsheetControl
                                      ├── state.storage (snapshot/log/audit/chat/ecell)
-                                     ├── ctx.acceptWebSocket(ws) per client
+                                     ├── state.acceptWebSocket(ws) per client
                                      └── scheduled() — fold log into snapshot, mirror to D1
 ```
 
-### 3.3 Data model (storage)
+### 3.3 Data model
 
 **DO storage (per-room)** — authoritative:
-- `snapshot` — SocialCalc save string (versioned; see §12)
-- `log` — array of command strings (DO storage lists implemented as indexed keys: `log:0000000001`, …)
-- `audit` — same pattern, never truncated
-- `chat` — same pattern
+- `snapshot` — SocialCalc save string (versioned v2: prefix; reader falls back to v1)
+- `log:<seq>` — indexed command strings
+- `audit:<seq>` — same pattern, never truncated
+- `chat:<seq>` — same pattern
 - `ecell:<user>` — map of user → cell coord
 - `meta:updated_at` — Date.now()
 
-**D1 (cross-room index)**:
+**D1**:
 ```sql
 CREATE TABLE rooms (
   room        TEXT PRIMARY KEY,
@@ -115,166 +105,58 @@ CREATE TABLE cron_triggers (
   room      TEXT NOT NULL,
   cell      TEXT NOT NULL,
   fire_at   INTEGER NOT NULL,
-  PRIMARY KEY (room, cell)
+  PRIMARY KEY (room, cell, fire_at)   -- compound PK preserves legacy comma-list semantics
 );
 ```
 
-**KV** (hot path):
-- `rooms:exists:<room>` → `"1"` (TTL-refreshed); fast path for `GET /_exists/:room`
-- `rooms:index` → JSON array of all room names (rebuilt by cron from D1)
+### 3.4 SocialCalc inside a Durable Object
 
-**R2** (scratch):
-- `import/<request-id>.bin` — large xlsx/ods uploads, deleted after processing.
-
-### 3.4 SocialCalc inside a Durable Object — how
-
-The old server ran SocialCalc in a `vm.createContext` sandbox with DOM stubs (`Node` class in `sc.ls`). Workers have no `vm` module. Plan:
-
-1. Ship a **`socialcalc-headless`** wrapper module (in `packages/socialcalc-headless/`) that:
-   - Imports the `socialcalc` npm package source as a string asset.
-   - Exposes `createSpreadsheet(snapshot?: string): HeadlessSpreadsheet` which:
-     - Defines the DOM stubs (`Node` class, `document`, `window`, `navigator`, `setTimeout`/`clearTimeout`) on a plain object.
-     - Uses `Function(...)` to instantiate SocialCalc against that object. **`new Function` IS allowed in DOs** (it's dynamic code eval within the same isolate — no `unsafe-eval` restriction applies because DOs don't run in a browser CSP context). Verified: Cloudflare permits `new Function` in Workers/DOs; only `eval()` of user-supplied strings is discouraged, and our string is bundled-constant.
-   - Provides the methods the old `w` object had: `ExecuteCommand`, `exportSave`, `exportCSV`, `exportHTML`, `exportCell`, `exportCells`, `exportAttribs`, `triggerActionCell`, plus `onSnapshot` callback.
-2. The DO holds **one** `HeadlessSpreadsheet` per room. No webworker-threads indirection.
-3. Recalc uses the same `RecalcInfo.LoadSheet` hook as old code, but now resolves by calling sibling DOs through the DO `ROOM` namespace.
-
-**Prerequisite experiment**: stand up a tiny Workers project that imports `socialcalc` bundled source, instantiates it, and round-trips `set A1 value n 1\nrecalc`. If this fails, fall back to Plan B:
-
-**Plan B**: Run SocialCalc in **Node.js worker** (separate Cloudflare service using [Node.js Workers](https://developers.cloudflare.com/workers/runtime-apis/nodejs/) compatibility). Same isolation, `vm` module available. Slight cold-start penalty.
-
-**Plan C** (last resort): Compile SocialCalc's formula engine to WebAssembly. Massive effort; only if A and B both fail.
-
-We run the Plan A experiment in **Phase 1 before committing to full scaffolding**.
+`packages/socialcalc-headless/` wraps SocialCalc (loaded via Vite `?raw` import) through a `new Function(...)` eval scaffold, with DOM stubs (`Node`, `document`, `window`, `navigator`) and a synchronous `setTimeout` shim. Plan A green; Plans B/C not needed. Full details in §16.A.
 
 ---
 
 ## 4. Oracle strategy
 
-### 4.1 Definition of equivalence
+### 4.1 Equivalence
 
-For each test scenario S, recorded once against the oracle and replayed against the target:
+For each recorded scenario replayed against the target:
+- **HTTP**: same status, `Content-Type`, body (exact bytes for deterministic; structural equality after normalization for HTML/XLSX/ODS).
+- **DO state**: after each scenario, dump keys under the room and compare against oracle's Redis dump (normalized).
+- **WebSocket transcript**: `(direction, timestamp_delta, message)` tuples; same sequence modulo timestamps.
 
-- **HTTP response**: same status code, same `Content-Type`, same body (exact bytes for deterministic content; structural equality after normalization for HTML/XLSX/ODS).
-- **Redis/DO state**: after each scenario, dump all keys under the room and compare against the oracle's Redis dump (normalized).
-- **WebSocket transcript**: for each WS scenario, record `(direction, timestamp_delta, message)` tuples. Replay asserts same message sequence modulo timestamps.
+### 4.2 Normalization rules
 
-### 4.2 Oracle harness layout
-
-```
-tests/oracle/
-  docker-compose.yml         # redis + oracle ethercalc (pinned to commit SHA)
-  fixtures/                  # deterministic input payloads
-    sheets/
-      minimal.sc             # SocialCalc save format sample
-      minimal.csv
-      minimal.xlsx
-    commands/
-      basic.txt              # "set A1 value n 1"
-  scenarios/                 # .ts — pure scenario definitions, portable
-    http/
-      create-empty.scenario.ts
-      put-csv-then-get-csv.scenario.ts
-      execute-command.scenario.ts
-      ... one file per endpoint
-    ws/
-      connect-ask-log.scenario.ts
-      execute-broadcast.scenario.ts
-      ...
-  recorded/                  # generated: JSON per scenario, committed
-    http/create-empty.json
-    ...
-  record.ts                  # boots oracle, runs all scenarios, writes recorded/
-  replay.ts                  # runs scenarios against target URL, asserts vs recorded/
-```
-
-### 4.3 Scenario shape
-
-```ts
-export interface HttpScenario {
-  name: string;
-  request: { method: string; path: string; headers?: Record<string,string>; body?: Uint8Array };
-  // Expected fields filled in by record.ts
-  expect?: { status: number; headers: Record<string,string>; body: Uint8Array | StructuralMatcher };
-}
-
-export interface WsScenario {
-  name: string;
-  steps: Array<
-    | { type: "connect"; url: string }
-    | { type: "send"; msg: unknown }
-    | { type: "expect"; msg: unknown | MessageMatcher }
-    | { type: "http"; request: HttpScenario["request"] }
-    | { type: "expectHttp"; response: HttpScenario["expect"] }
-    | { type: "sleep"; ms: number }
-  >;
-}
-```
-
-### 4.4 Normalization rules
-
-- Drop headers: `Date`, `Server`, `ETag`, `X-Powered-By`, `Connection`, `Accept-Ranges`, `Cache-Control`, `Content-Length`. `Last-Modified` is semi-volatile (tied to docker image build mtime) — relax via `re:<regex>` matcher when it shows up in a recording. (Implementation-detail headers that diverge between Express-static and Workers Assets; not semantic.)
-- **HTML** (`packages/oracle-harness/src/html-canonical.ts`): parse via linkedom, then drop:
-  - HTML comments
-  - whitespace-only text nodes
-  - `id` attributes matching `/^(SocialCalc|[a-f0-9-]{32,})/`
-  - referrer attributes pointing at a dropped id: `for`, `aria-labelledby`, `aria-controls`, `aria-describedby`, `headers`, `form`, `list`, and `href="#volatileId"`.
-  - Attributes sorted alphabetically on re-serialization. Note: linkedom's `setAttribute` prepends, so sorting is done reverse-alpha before re-insertion.
-- **XLSX** (`packages/oracle-harness/src/zip-canonical.ts`): unzip via fflate, sort entries by path, canonicalize each XML, hex-compare binary entries. Volatile element drops:
-  - `docProps/core.xml`: `dcterms:created`, `dcterms:modified`, `cp:lastModifiedBy`, `cp:revision`
-  - `docProps/app.xml`: `AppVersion`, `TotalTime`
-- **ODS**: same pipeline as XLSX. `meta.xml` drops: `meta:creation-date`, `dc:date`, `meta:editing-duration`, `meta:editing-cycles`, `meta:generator`, `dc:creator`. Requires depth-walking since metadata nests under `<office:meta>`.
-- **SocialCalc save**: ignore the `version:…` line and any ordering of metadata sections; compare the `sheet:` and `cell:` lines exactly.
+- Drop headers: `Date`, `Server`, `ETag`, `X-Powered-By`, `Connection`, `Accept-Ranges`, `Cache-Control`, `Content-Length`. `Last-Modified` semi-volatile → relax via `re:<regex>` matcher.
+- **HTML** (`packages/oracle-harness/src/html-canonical.ts`): parse via linkedom; drop comments, whitespace-only text, `id` matching `/^(SocialCalc|[a-f0-9-]{32,})/`, referrer attributes pointing at dropped ids (`for`, `aria-labelledby`, `aria-controls`, `aria-describedby`, `headers`, `form`, `list`, `href="#volatileId"`). Attributes sorted alphabetically (note: linkedom's `setAttribute` prepends — sort reverse-alpha before re-insertion).
+- **XLSX** (`packages/oracle-harness/src/zip-canonical.ts`): unzip via fflate, sort entries, canonicalize XML. Drop `docProps/core.xml` (`dcterms:created`, `dcterms:modified`, `cp:lastModifiedBy`, `cp:revision`) and `docProps/app.xml` (`AppVersion`, `TotalTime`).
+- **ODS**: same pipeline; `meta.xml` drops `meta:creation-date`, `dc:date`, `meta:editing-duration`, `meta:editing-cycles`, `meta:generator`, `dc:creator` (depth-walk under `<office:meta>`).
+- **SocialCalc save**: ignore `version:…` line and metadata-section ordering; compare `sheet:`/`cell:` lines exactly.
 - **CSV/JSON/Markdown**: exact bytes.
-- Socket IDs, timestamps, UUIDs, HMACs: replaced with `__PLACEHOLDER__` during comparison.
+- Socket IDs, timestamps, UUIDs, HMACs: `__PLACEHOLDER__` during comparison.
 
 ---
 
 ## 5. Testing strategy & coverage
 
-### 5.1 Test runners — split by environment
+### 5.1 Two vitest configs per package
 
-Each code-bearing package has **two** vitest configs:
+- `vitest.config.ts` — `@cloudflare/vitest-pool-workers`, test files `*.test.ts`. **No coverage gate** (neither istanbul nor v8 reliably track hits through the workerd bundle).
+- `vitest.node.config.ts` — Node env, test files `*.node.test.ts`. **100% coverage gate** on `src/handlers/**`, `src/lib/**`, `src/room.ts`.
 
-- `vitest.config.ts` — uses `@cloudflare/vitest-pool-workers`. Runs tests inside workerd, which is the same runtime as prod. Used for integration tests that need DO bindings, Hono routing, WebSockets, etc. Test files: `*.test.ts`. **No coverage gate here** — neither istanbul nor v8 reliably track hits through the workerd bundle (verified Phase 2; documented below).
-- `vitest.node.config.ts` — vanilla Node environment. Istanbul coverage works. Test files: `*.node.test.ts`. **100% coverage gate enforced here.**
-
-All `src/**/*.ts` code is partitioned:
-
-| Path                 | Runs in | Test config              | Coverage gate |
-| -------------------- | ------- | ------------------------ | ------------- |
-| `src/handlers/**`    | Node OR workerd (pure) | `vitest.node.config.ts`  | **100%**      |
-| `src/lib/**`         | Node OR workerd (pure) | `vitest.node.config.ts`  | **100%**      |
-| `src/room.ts`        | Constructed directly in both | Node test: unit; Workers test: integration | **100%** (via Node direct-construction) |
-| `src/index.ts`       | workerd only (Hono glue) | `vitest.config.ts`       | excluded (Hono-invoked paths not traced) |
-| `src/env.ts`         | type-only                | — not a runtime file     | excluded      |
+`src/index.ts` (Hono glue) and workers-only shims like `src/lib/ws-upgrade.ts` are excluded from the Node gate.
 
 ### 5.2 Coverage — known limitation
 
-**`@cloudflare/vitest-pool-workers` does not play well with either istanbul or v8 coverage providers.** We verified both in Phase 2:
+**`@cloudflare/vitest-pool-workers` does not play well with istanbul or v8 coverage.** v8 reports 0% because workerd lacks Node's inspector; istanbul misses functions routed through Hono's bundled router. The two-config split above is the workaround; side-effect is handlers stay pure (DI for clocks, no direct env access) which aids testability.
 
-- **v8 provider**: reports 0% across the board because workerd doesn't expose Node's inspector/profiler that v8 coverage relies on.
-- **Istanbul provider**: tracks instrumentation inconsistently — functions invoked via Hono's bundled router inside workerd aren't counted, even when the test file directly `import`s and calls them.
+### 5.3 Mutation testing — REQUIRED
 
-Workaround (current): the two-config split above — pure logic is covered via Node env; Workers-only glue gets integration-tested without coverage enforcement. This has the nice side-effect of keeping handlers pure (dependency-injected clocks, no direct env access) which aids testability.
-
-**Mutation-coverage ratchet (2026-04-19):** line coverage at 100% is necessary but insufficient — a test can hit lines without asserting anything. Each package's `stryker.conf.json` now carries a `break` threshold set to the measured mutation score floor. PRs that drop any score below `break` fail via a fast `mutation-gate` CI job that runs Stryker only on packages whose `src/` changed. To **raise** a floor, close surviving mutants (see `docs/MUTATION_REPORT.md` top-gaps), re-run `bun run mutation`, and bump `break` in the same PR. Nightly runs the full matrix; the PR gate is for regression, not comprehensive coverage.
-
-### 5.3 Oracle replay & e2e
-
-- **Oracle replay**: dedicated Vitest project (`vitest.oracle.config.ts`) that spins up both the oracle (via `testcontainers` + docker) and the target (via `unstable_dev` from Wrangler), runs every scenario, asserts bytes.
-- **End-to-end**: Playwright scripted flows (open a room, edit, second tab sees update, reload, export). Runs against `wrangler dev`.
+Per-package `stryker.conf.json` with a `break` threshold pinned to the measured floor. PRs fail a fast `mutation-gate` CI job that runs Stryker only on packages whose `src/` changed. To raise a floor: close mutants (see `docs/MUTATION_REPORT.md` top-gaps), re-run `bun run mutation`, bump `break` in the same PR. Nightly runs the full matrix.
 
 ### 5.4 Test file naming
 
 - `*.test.ts` — workers-pool integration tests.
-- `*.node.test.ts` — pure-logic unit tests (Node env, coverage-gated).
-
-`package.json`'s `test` script runs both in sequence.
-
-### 5.5 Mutation testing — REQUIRED
-
-StrykerJS is wired: per-package nightly runs (full matrix) + fast PR-gate on changed packages only. Thresholds pinned to measured floors in `packages/*/stryker.conf.json`; `docs/MUTATION_REPORT.md` tracks the baseline and the "top surviving mutants" that are the next targets to close.
+- `*.node.test.ts` — pure-logic unit tests, coverage-gated.
 
 ---
 
@@ -286,384 +168,152 @@ StrykerJS is wired: per-package nightly runs (full matrix) + fast PR-gate on cha
 
 | Method | Path                              | Content-Type req/res                                     | Notes                                                                                                                         |
 | ------ | --------------------------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/`                               | → `index.html`                                           | Static page                                                                                                                   |
+| GET    | `/`                               | → `index.html`                                           |                                                                                                                               |
 | GET    | `/_start`                         | → `start.html`                                           |                                                                                                                               |
-| GET    | `/etc/*`, `/var/*`                | 404 with `Content-Type: text/html; charset=utf-8`        | Explicit block. Legacy Express default is `text/html`, not `text/plain` — oracle recording confirms.                          |
-| GET    | `/favicon.ico` etc                | static icons                                             |                                                                                                                               |
-| GET    | `/manifest.appcache`              | `text/cache-manifest`                                    | DevMode returns dynamic stub                                                                                                  |
-| GET    | `/static/socialcalc.js`           | `application/javascript`                                 | Serves `node_modules/socialcalc/…/SocialCalc.js`                                                                              |
-| GET    | `/static/form:part.js`            | `application/javascript`                                 | Serves repo-rooted `form<part>.js`                                                                                            |
-| GET    | `/_new`                           | 302 → `/<room>` (+`/edit` if KEY)                        | Auto-generated uuid                                                                                                           |
-| GET    | `/=_new`                          | 302 → `/=<room>` (+`/edit` if KEY)                       | Multi-sheet                                                                                                                   |
-| GET    | `/_timetrigger`                   | `application/json`                                       | Cron endpoint — fires due triggers, updates `cron-list`, `cron-nextTriggerTime`                                               |
-| GET    | `/_rooms`                         | `application/json`                                       | `403 Text` if CORS; else `SC._rooms()` — `KEYS snapshot-*`                                                                    |
-| GET    | `/_roomlinks`                     | `text/html` (via `json`!)                                | Same but rendered as `<a>` list; note: uses `@response.json` on html array (legacy bug — keep)                                |
-| GET    | `/_roomtimes`                     | `application/json`                                       | Hash `timestamps` sorted desc by value                                                                                        |
-| GET    | `/_from/:template`                | 302 → new room                                           | Copies template snapshot                                                                                                      |
-| GET    | `/_exists/:room`                  | `application/json` (boolean)                             | `EXISTS snapshot-<room>`                                                                                                      |
-| GET    | `/:room`                          | → `index.html` (or `multi/index.html` for `=`-prefix)    | Redirect to `?auth=0` or `?auth=<hmac>` if `KEY` set                                                                          |
-| GET    | `/:template/form`                 | 302 → `/<room>_<uuid>/app`                               | Duplicates template                                                                                                           |
+| GET    | `/etc/*`, `/var/*`                | 404 `Content-Type: text/html; charset=utf-8`             | Explicit block; legacy Express default is `text/html`.                                                                        |
+| GET    | `/favicon.ico`                    | `image/vnd.microsoft.icon`                               | **Sensible-fix** (§13 Q1) — legacy served as `text/html`.                                                                     |
+| GET    | `/manifest.appcache`              | `text/cache-manifest`                                    | DevMode stub via `DEVMODE=1`.                                                                                                 |
+| GET    | `/static/socialcalc.js`           | `application/javascript`                                 | From Workers Assets; external embeds depend on this path (§13 Q8).                                                            |
+| GET    | `/static/form:part.js`            | `application/javascript`                                 | Literal colon in path; routed via `/static/:file{form.+\.js}` constrained segment.                                            |
+| GET    | `/_new`, `/=_new`                 | 302 → new room (+`/edit` if KEY)                         | Auto-generated uuid.                                                                                                          |
+| GET    | `/_timetrigger`                   | `application/json`                                       | Legacy cron endpoint; fires due triggers.                                                                                     |
+| GET    | `/_rooms`                         | `application/json`                                       | `403` if CORS.                                                                                                                |
+| GET    | `/_roomlinks`                     | `text/html`                                              | **Sensible-fix** (§13 Q1) — legacy emitted JSON body with HTML CT.                                                            |
+| GET    | `/_roomtimes`                     | `application/json`                                       | Sorted desc by `updated_at`.                                                                                                  |
+| GET    | `/_from/:template`                | 302 → new room                                           | Copies template via DO-to-DO fetch.                                                                                           |
+| GET    | `/_exists/:room`                  | `application/json` (**bare** boolean)                    | Per oracle F-05.                                                                                                              |
+| GET    | `/:room`                          | → `index.html` (or `multi/index.html` for `=`)           | Redirect to `?auth=0` / `?auth=<hmac>` if `KEY` set.                                                                          |
+| GET    | `/:template/form`                 | 302 → `/<room>_<uuid>/app`                               | Uses `/_do/clone`.                                                                                                            |
 | GET    | `/:template/appeditor`            | → `panels.html`                                          |                                                                                                                               |
-| GET    | `/:room/edit`                     | 302 `?auth=<hmac>`                                       |                                                                                                                               |
-| GET    | `/:room/view`                     | 302 `?auth=<hmac>&view=1`                                |                                                                                                                               |
-| GET    | `/:room/app`                      | 302 `?auth=<hmac>&app=1`                                 |                                                                                                                               |
-| GET    | `/_/:room`                        | `text/plain; charset=utf-8`                              | Returns SocialCalc save                                                                                                       |
-| GET    | `/_/:room/html`, `/:room.html`    | `text/html`                                              | via `exportHTML`                                                                                                              |
-| GET    | `/_/:room/csv`, `/:room.csv`      | `text/csv`; `Content-Disposition: attachment`            | via `exportCSV`                                                                                                               |
-| GET    | `/_/:room/csv.json`, `.csv.json`  | `application/json`                                       | CSV parsed to array-of-arrays                                                                                                 |
-| GET    | `/_/:room/ods`, `/:room.ods`      | `application/vnd.oasis.opendocument.spreadsheet`         | via `j` lib                                                                                                                   |
-| GET    | `/_/:room/fods`, `/:room.fods`    | same                                                     |                                                                                                                               |
-| GET    | `/_/:room/xlsx`, `/:room.xlsx`    | `application/vnd.openxml….sheet`                         | via `j` lib                                                                                                                   |
+| GET    | `/:room/{edit,view,app}`          | 302 with `?auth=<hmac>&…`                                |                                                                                                                               |
+| GET    | `/_/:room`                        | `text/plain; charset=utf-8`                              | SocialCalc save; 404 with empty body if missing.                                                                              |
+| GET    | `/_/:room/html`, `/:room.html`    | `text/html`                                              |                                                                                                                               |
+| GET    | `/_/:room/csv`, `/:room.csv`      | `text/csv`; `Content-Disposition: attachment`            |                                                                                                                               |
+| GET    | `/_/:room/csv.json`, `.csv.json`  | `application/json`                                       |                                                                                                                               |
+| GET    | `/_/:room/{ods,fods}`             | `application/vnd.oasis.opendocument.spreadsheet`         |                                                                                                                               |
+| GET    | `/_/:room/xlsx`, `/:room.xlsx`    | `application/vnd.openxml….sheet`                         |                                                                                                                               |
 | GET    | `/_/:room/md`, `/:room.md`        | `text/x-markdown`                                        |                                                                                                                               |
-| GET    | `/_/=:room/xlsx` etc              | multi-sheet export                                       | Merges sub-sheets via TOC                                                                                                     |
-| GET    | `/_/:room/cells`                  | `application/json`                                       | `JSON.stringify(ss.sheet.cells)`                                                                                              |
-| GET    | `/_/:room/cells/:cell`            | `application/json`                                       | Single cell                                                                                                                   |
-| PUT    | `/_/:room`                        | accepts `text/x-socialcalc`, `application/json`, `text/x-ethercalc-csv-double-encoded`, `text/csv`, xlsx | Replaces snapshot, clears log, broadcasts `snapshot` WS event                                   |
-| PUT    | `/=:room.xlsx`, `/_/=:room/xlsx`  | xlsx/ods/fods                                            | Multi-sheet import: parses, writes TOC sheet + sub-sheets                                                                     |
-| POST   | `/_/:room`                        | json `{command}` OR text `loadclipboard …` OR xlsx→`loadclipboard` | Executes commands; supports `?row=N` for insert+paste; handles `set A:B empty multi-cascade` specially (renames keys) |
-| POST   | `/_`                              | same as PUT                                              | Creates with generated or supplied `room`; returns 201 + Location                                                             |
-| DELETE | `/_/:room`                        | → 201 `OK`                                               | Deletes all room keys, terminates worker                                                                                      |
-| —      | CORS preflight                    | 204 for OPTIONS when CORS enabled                        |                                                                                                                               |
+| GET    | `/_/=:room/xlsx` etc              | multi-sheet export                                       | Merges sub-sheets via TOC.                                                                                                    |
+| GET    | `/_/:room/cells`                  | `application/json`                                       | **Unwrapped** `JSON.stringify(sheet.cells)` — legacy shape.                                                                   |
+| GET    | `/_/:room/cells/:cell`            | `application/json`                                       | Single cell.                                                                                                                  |
+| PUT    | `/_/:room`                        | sc / json / csv / xlsx bodies                            | Returns `201 OK`. Replaces snapshot, clears log, broadcasts `snapshot` WS event.                                              |
+| PUT    | `/=:room.xlsx`, `/_/=:room/xlsx`  | xlsx/ods/fods                                            | Multi-sheet import: parses, writes TOC + sub-sheets.                                                                          |
+| POST   | `/_/:room`                        | json `{command}` OR text `loadclipboard …` OR xlsx       | Text-wiki filter → multi-cascade rename → loadclipboard enrichment → DO dispatch → `202 {command}`.                          |
+| POST   | `/_`                              | same as PUT                                              | `201` + Location; generates `room` if absent.                                                                                 |
+| DELETE | `/_/:room`                        | `201 OK`                                                 | Deletes all room keys + D1 row.                                                                                               |
 
-**Behaviors requiring bug-for-bug preservation** (except §13 Q1 sensible-fix allow-list):
-- `GET /_roomlinks` responds with `Content-Type: text/html` but serializes via `res.json()` — returns JSON array in an HTML content-type response. **Sensible-fix allow-list** per §13 Q1: new impl emits HTML body with HTML content-type.
-- `GET /favicon.ico` legacy Content-Type is `text/html; charset=utf-8` (Express-static bug). **Sensible-fix allow-list**: new impl returns `image/vnd.microsoft.icon`.
-- `GET /l10n/:lang.json` — not in API.md but client depends on it. Serve from Workers Assets.
-- `GET /static/form:part.js` — literal colon in path; Hono must route `:part` as a param.
-- `GET /:template/appeditor` → `panels.html` — form/app builder UI.
-- `GET /_/:room` when room does not exist returns `404` with body `''` and `Content-Type: text/plain; charset=utf-8`.
-- `POST /_/:room` with empty command returns `400 'Please send command'`, content-type `text/plain`.
-- `PUT /_/:room` always returns `201 OK` (even though overwriting, API docs say 200 — preserve 201).
-- `DELETE /_/:room` returns `201 OK` (API doc says 201 OK too — preserve).
-- `encodeURI(@params.room)` — spaces become `%20`, etc. All keys use this encoded form.
+**Bug-for-bug preserved**: `PUT /_/:room` returns `201` (not 200) even when overwriting. `POST /_/:room` empty body → `400 'Please send command'` `text/plain`. `encodeURI(room)` everywhere. `GET /_/:room` missing → `404` empty `text/plain`.
 
 ### 6.2 WebSocket message types
 
-Current transport: socket.io v0.9 with 3 events on the `/` namespace:
-- `connection` — handshake
-- `data` — catch-all from client; payload `{type, …}`
-- `disconnect` — cleanup
+Native `WebSocket` at `wss://<host>/_ws/:room?user=<user>&auth=<hmac>`. JSON messages, one per frame.
 
-Server emits `data` only.
+**Client → server**:
 
-New transport: native `WebSocket` at `wss://.../_ws/:room`. One WS per user per room. JSON messages, one per frame.
+| type         | payload                                | server action                                                                                                      |
+| ------------ | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `chat`       | `{room, msg, user}`                    | Append to chat log; broadcast to log-room.                                                                         |
+| `ask.ecells` | `{room}`                               | Reply `{type:ecells, ecells, room}`.                                                                               |
+| `ask.ecell`  | `{room, user, ecell}`                  | Rebroadcast as catch-all to peers (client polls this on DoPositionCalculations; peers reply with `ecell`).         |
+| `my.ecell`   | `{room, user, ecell}`                  | Store `ecell:<user>`.                                                                                              |
+| `execute`    | `{room, cmdstr, user, auth, saveundo?}`| Validates auth; rejects `set sheet defaulttextvalueformat text-wiki`; appends log+audit; runs in SC; broadcasts. **`submitform` path**: auto-creates `<room>_formdata` sibling, broadcasts with `include_self: true` (legacy invariant; form clients hang without it). |
+| `ask.log`    | `{room, user}`                         | Replies `{type:log, room, log, chat, snapshot}` (or `{type:ignore}` if DB not ready).                              |
+| `ask.recalc` | `{room}`                               | Reply `{type:recalc, room, log, snapshot}`. Also called by `RecalcInfo.LoadSheet` for cross-sheet formulas.        |
+| `stopHuddle` | `{room, auth}`                         | Validates auth; deletes all room keys + D1 row.                                                                    |
+| `ecell`      | `{room, user, ecell, original?, to?, auth}` | Validates auth; broadcasts. **`to?` field preserved** for private-channel routing.                           |
 
-**From client → server** (`@on data` switch in `main.ls:484`):
+**Server → client**: `log`, `recalc`, `snapshot`, `execute`, `ecells`, `confirmemailsent`, `ignore`, plus fallback-forwarded client messages.
 
-| type            | payload                                                          | server action                                                                                                                                                        |
-| --------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `chat`          | `{room, msg, user}`                                              | `RPUSH chat-<room>`; broadcast to log-room                                                                                                                           |
-| `ask.ecells`    | `{room}`                                                         | `HGETALL ecell-<room>`; broadcast `{type:ecells, ecells, room}`                                                                                                      |
-| `my.ecell`      | `{room, user, ecell}`                                            | `HSET ecell-<room> <user> <ecell>`                                                                                                                                   |
-| `execute`       | `{room, cmdstr, user, auth, saveundo?}`                          | Validates `auth`; rejects `set sheet defaulttextvalueformat text-wiki`; appends log+audit; runs in SC; broadcasts. **Special `submitform` path:** if `cmdstr.split("\r")[0].trim() === 'submitform'`, auto-create `<room>_formdata` (or `<root>_formdata` if room has `_` suffix), append form-row commands, **broadcast with `include_self: true`** (sender also gets the echo — legacy invariant; form clients hang without it). |
-| `ask.log`       | `{room, user}`                                                   | Joins `log-<room>` + `user-<user>`; loads snapshot+log+chat; replies `{type:log, room, log, chat, snapshot}`. If DB not yet ready, reply `{type:ignore}` instead.    |
-| `ask.recalc`    | `{room}`                                                         | Joins `recalc.<room>`; reloads fresh SC instance; replies `{type:recalc, room, log, snapshot}`. Also used by the SocialCalc `RecalcInfo.LoadSheet` hook for cross-sheet formula resolution (see §7 item 21). |
-| `stopHuddle`    | `{room, auth}`                                                   | Validates `auth`; deletes all room keys; broadcasts                                                                                                                  |
-| `ecell`         | `{room, user, ecell, original?, auth}`                           | Validates `auth`; broadcasts                                                                                                                                         |
-| (anything else) | — fallback broadcast —                                           |                                                                                                                                                                      |
+**Auth rules** (§6.4): WS `execute`/`ecell`/`stopHuddle` require `auth === hmac(room)` OR no KEY set; `auth === '0'` is view-only and **must be rejected unconditionally** (identity-HMAC when KEY unset would otherwise make `computeAuth(undefined, '0') === '0'` permissive). `verifyAuth` hard-rejects `'0'` first; if `!key`, short-circuits `true` for any non-'0' auth (matches legacy `src/main.ls:506` semantics). HTTP endpoints do **not** require auth (known weakness; preserve).
 
-**From server → client** (via `IO.sockets.in(room).emit('data', …)` or `broadcast.to`):
+### 6.3 Storage keys (legacy Redis, for oracle mapping)
 
-| type                | payload                                                    | emitted from                                                  |
-| ------------------- | ---------------------------------------------------------- | ------------------------------------------------------------- |
-| `log`               | `{room, log[], chat[], snapshot}`                          | reply to `ask.log`                                            |
-| `recalc`            | `{room, log[], snapshot, force?}`                          | reply to `ask.recalc` or pushed when DO regenerates snapshot  |
-| `snapshot`          | `{snapshot, type:snapshot}`                                | after PUT `/_/:room`                                          |
-| `execute`           | `{room, cmdstr, user?, auth?, include_self?}`              | after POST `/_/:room` or client `execute`                     |
-| `ecells`            | `{room, ecells}`                                           | reply to `ask.ecells`                                         |
-| `confirmemailsent`  | `{message}`                                                | after SocialCalc `sendemail` triggered                        |
-| `ignore`            | `{type:ignore}`                                            | if DB not yet ready when `ask.log` arrives                    |
-| (forwarded client messages) | whatever client sent                               | fallback broadcast                                            |
+| Key pattern                    | Type | New impl                                                             |
+| ------------------------------ | ---- | -------------------------------------------------------------------- |
+| `snapshot-<room>`              | str  | DO `snapshot` + D1 mirror on command/snapshot.                       |
+| `log-<room>`                   | list | DO `log:<seq>` ordered keys.                                         |
+| `audit-<room>`                 | list | DO `audit:<seq>`.                                                    |
+| `chat-<room>`                  | list | DO `chat:<seq>` (§13 Q9: D1 mirror beyond DO lifetime).              |
+| `ecell-<room>`                 | hash | DO `ecell:<user>`.                                                   |
+| `timestamps`                   | hash | D1 `rooms.updated_at`.                                               |
+| `cron-list`, `cron-nextTriggerTime` | —    | D1 `cron_triggers` table.                                            |
 
-**Routing rooms** (socket.io `join`):
-- `log-<room>` — all connected users of a spreadsheet
-- `user-<user>` — private channel per user
-- `recalc.<room>` — users currently doing recalc; receive snapshot updates
-
-### 6.3 Storage keys (current Redis)
-
-| Key pattern                    | Type | Populated by                         | Consumed by                                            |
-| ------------------------------ | ---- | ------------------------------------ | ------------------------------------------------------ |
-| `snapshot-<room>`              | str  | PUT, `_put`, DO recalc               | GET, exports, ask.log, ask.recalc                      |
-| `log-<room>`                   | list | POST commands, execute WS            | ask.log, ask.recalc, SC init                           |
-| `audit-<room>`                 | list | POST commands, execute WS            | (external audit UI only — `/log/?<room>`)              |
-| `chat-<room>`                  | list | chat WS                              | ask.log                                                |
-| `ecell-<room>`                 | hash | my.ecell WS                          | ask.ecells WS                                          |
-| `timestamps`                   | hash | DO recalc                            | /_roomtimes                                            |
-| `cron-list`                    | hash | SocialCalc `settimetrigger` command  | /_timetrigger                                          |
-| `cron-nextTriggerTime`         | str  | /_timetrigger, settimetrigger        | /_timetrigger                                          |
-
-The TTL on `snapshot-<room>` is set when `EXPIRE` CLI flag is present.
-
-### 6.4 Auth model
-
-- CLI flag `--key <secret>` (or env). Absent → anonymous access everywhere.
-- `hmac(room) = sha256-hmac(secret, room)`. Cached in memory per room.
-- `/:room` when KEY set: if `?auth` missing, redirects to `?auth=0` (view-only).
-- `/:room/edit` → `?auth=<hmac>`.
-- `/:room/view` → `?auth=<hmac>&view=1`.
-- `/:room/app`  → `?auth=<hmac>&app=1`.
-- WS `execute`, `ecell`, `stopHuddle`: require `auth === hmac(room)` OR no KEY set; `auth === '0'` means view-only and **must be rejected unconditionally** (not just when KEY is set — when KEY is unset, identity-HMAC would otherwise make `computeAuth(undefined, '0') === '0'` permissive; `verifyAuth` must hard-reject `'0'` at the top).
-- HTTP endpoints do **not** require auth. (Known weakness; preserve.)
+TTL (`--expire`) implemented via DO `setAlarm` (§13 Q10).
 
 ---
 
-## 7. Compatibility risks & gotchas
+## 7. Live compatibility risks
 
-Discovered during audit; each needs handling in the phase plan.
+Remaining items worth flagging. Resolved risks are documented in the code; see git history for rationale.
 
-1. **`socialcalc` + workerd**: See §3.4. Plan A prototype is the first concrete code to write.
-2. **`webworker-threads`**: optional native dep; falls back to vm. Drop entirely.
-3. **`j` library (XLSX/ODS conversion)**: uses Node Buffer extensively; older. Check Workers compat — likely works via `nodejs_compat` flag but verify. Fallback: `xlsx` + `ods` libs.
-4. **`iconv-lite`**: used only for `text/x-ethercalc-csv-double-encoded` body handling. Use `TextDecoder('latin1')` twice instead.
-5. **`csv-parse`** v0.0.6: ancient API (`csv-parse(buf, opts, cb)`). Upgrade to modern `csv-parse/sync` or `csv-parse` stream API.
-6. **`uuid-pure`**: replace with `crypto.randomUUID()` (available in workerd). Preserve the 12-char base36 shape: `crypto.randomUUID().replace(/-/g,'').slice(0,12)`.
-7. **`optimist`**: only used by CLI (bin/ethercalc). New CLI can target `wrangler dev` instead; keep a minimal shim `bin/ethercalc` that just runs `wrangler dev --local`.
-8. **socket.io 0.9 protocol**: very old wire format. Shim: a legacy `/socket.io/*` route that implements the handshake + polling transport enough to let old clients that can't be updated connect. Target: upstream clients (sheetnode Drupal module, etc.) keep working.
-9. **`zappajs` `@client` directive**: auto-bundles LiveScript client code into served JS. Replace: build the client code normally (Vite) and serve as static assets.
-10. **`<script src="/socket.io/socket.io.js">`** in `start.html`/`index.html`: need to serve equivalent client that speaks our new WS. Options: (a) ship a tiny adapter JS that mimics `io()` API; (b) update client code to use new WS directly. (a) is safer for compat.
-11. **DO WebSocket hibernation**: our DO should use `state.acceptWebSocket(ws)` so idle rooms evict from memory. Requires persisting all transient "joined rooms" info to storage.
-12. **`set sheet defaulttextvalueformat text-wiki` filter**: explicitly dropped server-side on `execute` WS. Preserve.
-13. **`loadclipboard` auto-enrichment**: when non-JSON `POST /_/:room` matches `loadclipboard`, server appends `paste` command and optionally `insertrow` based on sheet state. Preserve logic.
-14. **`set A:B empty multi-cascade` rename trick**: `POST /_/:room` with that command renames `snapshot-<cellRef>` to `<cellRef>.bak` etc before executing. Preserve.
-15. **`encodeURI` on room names**: everywhere. Preserve to keep keys byte-equal.
-16. **Redis `bgsave`**: no-op for us; strip.
-17. **File-system fallback DB in `db.ls`**: dead code once we're on DO — but the old Dockerfile users may rely on it. Document as dropped; provide migration path.
-18. **Cron**: `/_timetrigger` was pinged by external cron. Cloudflare Cron Trigger replaces it directly.
-19. **`process.env`**: all uses must be ported to `env.*` in the Worker.
-20. **Email (sendemail SocialCalc command)**: uses nodemailer+gmail. Replace with `send_email` binding or stub with log-only implementation. Preserve `confirmemailsent` WS reply shape.
-21. **Cross-sheet formula resolution** (src/player.ls:84-87, src/sc.ls `RecalcInfo.LoadSheet`): formulas can reference `'other-room'!A1`. Legacy loads sibling sheets via `ask.recalc` WS round-trips. New impl must wire DO-to-DO fetches: `env.ROOM.get(idFromName(otherRoom)).fetch('/_do/get-save')`. Critical for anything beyond single-room sheets. **Blocker for Phase 8 exports unless we confine tests to single-room scenarios.**
-22. **`submitform` auto-sheet lifecycle** (src/main.ls:518-541): `execute` WS payload starting with `submitform` triggers server-side auto-creation of `<room>_formdata` sheet, append of a row from the rest of the command args, and broadcast with **`include_self: true`** (not the usual broadcast-to-others). If the `include_self` flag is lost, form-builder clients hang. Preserve exact flow.
-23. **socket.io v0.9 reconnection shim** (src/player.ls:46-71): legacy emits `reconnect`, `connect_error`, `connect_timeout`, `reconnect_error`, `connect_failed` plus offline events with `reconnection delay: 500ms`, `max reconnection attempts: 1800` (30 min). The `/socket.io/*` compat shim must translate all eight events to native WS equivalents or external embeds (Drupal sheetnode) auto-disconnect.
-24. **i18n — undocumented in CLAUDE.md until now.** `l10n/` has 7 locales (en, de, es-ES, fr, ru-RU, zh-CN, zh-TW). `index.html` has inline JS that maps `navigator.language` to a file via regex fallback chain: `de-*` → `de.json`, `zh-Hant` → `zh-TW.json`, etc. Must serve `l10n/<lang>.json` from Workers Assets and preserve the fallback chain in the client port. Keys like `s_loc_error_offline` drive UI strings — all constants must load before `player.js` runs.
-25. **Bundled third-party libs** (`third-party/class-js/`, `third-party/wikiwyg/`, plus jQuery + vex inlined into `static/ethercalc.js` via Makefile): audit each for Workers/browser-only code before re-bundling under Vite. Some are IE-era.
-26. **`/static/form:part.js` route** (src/main.ls:113-117) has a literal colon in the path. Hono route pattern must handle `:part` as a param; verify against Hono's routing table.
-27. **`panels.html` at `/:template/appeditor`** (src/main.ls:294): form/app builder UI. Not listed in API.md but referenced from the main app. Port or confirm-dead.
-28. **`multi/` iframe postMessage protocol** (multi/main.ls:90): parent React sends `postMessage({type: "multi", rows, index})` to each sub-sheet iframe. The single-sheet client port (Phase 10) must accept this message and update `window.__MULTI__.rows` (see src/player-broadcast.ls:58). Symmetric contract between the two client packages.
-29. **`manifest.appcache` dynamic DevMode stub** (src/main.ls:70-75): in dev mode, returns `CACHE MANIFEST\n\n#<timestamp>\n\nNETWORK:\n*\n` as `text/cache-manifest`; in prod, serves the static file. Worker must replicate both paths.
-30. **Offline/sessionStorage client behavior** (src/player.ls, `SocialCalc.hadSnapshot` flag): client caches last sheet to sessionStorage and restores on reconnect. Port preserves or drops — decide in Phase 10.
-31. **Docker Desktop on macOS/ARM + workerd networking quirk** (found in Phase 11a): `docker compose up` with the Miniflare image binds 0.0.0.0:8000 inside the container, but Docker Desktop's virtio networking on Apple Silicon returns zero bytes to host curls. Linux CI runners don't reproduce it. Dev-affordance only — doesn't block CI. If a contributor reports "docker compose up works but curl hangs", the answer is "run `bun run --cwd packages/worker dev` directly, or use Linux/WSL".
-32. **CLI env vars need worker-side reading** (Phase 11a deferral): `ETHERCALC_EXPIRE`, `ETHERCALC_CORS`, `ETHERCALC_BASEPATH` are set by `bin/ethercalc` into the Miniflare env, but the worker doesn't read them yet — Phase 5+ work. `ETHERCALC_KEY` IS read (by Phase 4's auth layer). Wire the others as their governing routes get ported.
-33. **`?raw` Vite imports vs wrangler `[[rules]]` cross-toolchain trap** (P5 finding): wrangler needs `[[rules]] type="Text" globs=["**/SocialCalc.js"]` to bundle the 27k-line UMD for `wrangler deploy --dry-run`. But when vitest-pool-workers reads `wrangler.configPath`, that same rule is merged into Miniflare's `modulesRules`, which then mangles our Vite `?raw` imports by appending `?mf_vitest_force=Text` to the URL and breaking the import resolver. Workaround: in `packages/worker/vitest.config.ts`, drop `wrangler.configPath` and supply `main` + `miniflare.durableObjects` inline instead. Downside: `[assets]` binding from wrangler.toml also disappears, hence the Phase 5.2 follow-up.
+1. **`?raw` Vite imports vs wrangler `[[rules]]` cross-toolchain trap**: wrangler needs `[[rules]] type="Text" globs=["**/SocialCalc.js"]` to bundle the UMD for `wrangler deploy --dry-run`. But when vitest-pool-workers reads `wrangler.configPath`, that same rule gets merged into Miniflare's `modulesRules`, which mangles our Vite `?raw` imports by appending `?mf_vitest_force=Text` and breaking the resolver. Workaround in `packages/worker/vitest.config.ts`: drop `wrangler.configPath`, supply `main` + `miniflare.durableObjects` + `miniflare.assets` inline.
+
+2. **Cross-sheet formula resolution** (`RecalcInfo.LoadSheet`): formulas like `'other-room'!A1` need DO-to-DO fetches. Single-room scenarios are fine; cross-sheet needs wiring through `env.ROOM.get(idFromName(otherRoom)).fetch('/_do/get-save')` before it works end-to-end.
+
+3. **Docker Desktop on macOS/ARM + workerd networking quirk**: `docker compose up` binds 0.0.0.0:8000 inside the container, but Docker Desktop's virtio networking on Apple Silicon returns zero bytes to host curls. Linux CI runners don't reproduce it. Dev-affordance only. If a contributor reports "docker compose up works but curl hangs", answer is "run `bun run --cwd packages/worker dev` directly, or use Linux/WSL".
+
+4. **CLI env vars partially wired**: `ETHERCALC_EXPIRE`, `ETHERCALC_CORS`, `ETHERCALC_BASEPATH` are set by `bin/ethercalc` into Miniflare env, but the worker doesn't fully read them yet. `ETHERCALC_KEY` IS read. Wire the rest as their governing routes mature.
+
+5. **Third-party bundled libs** (`third-party/class-js/`, `third-party/wikiwyg/`, plus jQuery + vex inlined into `static/ethercalc.js`): some are IE-era. Audit before re-bundling under Vite in the client pipeline.
+
+6. **Offline/sessionStorage client behavior** (`SocialCalc.hadSnapshot` flag): client caches last sheet to sessionStorage and restores on reconnect. Port preserves current behavior; revisit if it becomes load-bearing.
+
+7. **`ScheduleSheetCommands` async path**: headless bypasses it with sync `ExecuteSheetCommand`. Fine for HTTP requests. If any command sequence depends on the async scheduler's `cmdend` callback, we'll need to switch. No known case yet.
 
 ---
 
 ## 8. Phase plan
 
-Phases are dependency-ordered. Check items off as you complete them. Each phase is scoped to roughly 1 session. Nothing blocks merging — every phase ends with green CI at 100% coverage on the code that exists at that point.
+Phases 0–11 complete (see §14 for merge history). Remaining:
 
-Legend: `[ ]` pending · `[~]` in progress · `[x]` done · `[!]` blocked (see note).
+### Phase 3 — Oracle coverage
+- [ ] Expand recorded scenarios beyond the stateless 13 to cover each ported endpoint and WS path.
+- [ ] Structural equality oracle tests for HTML/XLSX/ODS actually wired to export responses (matchers exist at 100% coverage in `packages/oracle-harness`).
 
-### Phase 0 — Agreement & doc (this session)
-- [x] Read API + src + protocol; write §1–§15 of this doc.
-- [ ] User approves plan (or redirects). **← blocker for Phase 1.**
+### Phase 8 — Export polish
+- [x] csv/csv.json/html/xlsx/ods/fods/md implemented via SocialCalc + SheetJS + pure GFM.
+- [x] Multi-sheet xlsx/ods/fods via `parseMultiSheetWorkbook`/`buildMultiSheetWorkbook`/`sanitizeSheetName`.
+- [ ] Cross-sheet formula resolution via DO-to-DO fetches (see §7 item 2).
 
-### Phase 1 — socialcalc-in-DO prototype (highest-risk spike) — DONE
-Goal: prove Plan A works (SocialCalc loads and executes in workerd).
-- [x] New `packages/socialcalc-headless/` with TS wrapper.
-- [x] Smoke test suite (6 tests) asserting SUM, text+number, snapshot+log round-trip, recalc-without-formulas.
-- [x] Documented findings in §16.A (eval scaffold, three source transforms, sloppy-mode requirement).
-- [x] Plan A green — Plan B/C not needed.
-
-### Phase 2 — Repo scaffold — DONE
-- [x] Bun workspaces at the root (`packages/*`).
-- [x] `packages/worker/`:
-  - `wrangler.toml` with DO binding + `nodejs_compat`. D1/KV/R2/cron/send_email bindings deferred to the phase where they are first used.
-  - `tsconfig.json` strict, `moduleResolution: "bundler"`, `allowImportingTsExtensions: true`, `@cloudflare/workers-types` + `@cloudflare/vitest-pool-workers` typed.
-  - `package.json` with Hono, `@cloudflare/workers-types`, `vitest`, `@cloudflare/vitest-pool-workers`, `@vitest/coverage-istanbul`.
-  - `src/index.ts` Hono app (glue, excluded from coverage per §5.2).
-  - `src/handlers/health.ts` pure logic (100% covered).
-  - `src/room.ts` RoomDO skeleton (100% covered via Node direct construction + integration-tested via DO namespace).
-  - Two vitest configs (`vitest.config.ts` for workerd, `vitest.node.config.ts` with 100% gate) — see §5.1.
-- [x] `.github/workflows/ci.yml` — typecheck, Node unit tests + 100% coverage gate, workerd integration tests, socialcalc-headless smoke tests, wrangler build:dry, coverage artifact upload.
-- [x] CI is green end-to-end with the scaffolding.
-- [ ] `packages/oracle-harness/` with docker-compose + scenario runner stubs. *(deferred to Phase 3 — it's the natural owner)*
-
-### Phase 3 — Oracle recorder — MOSTLY DONE
-- [x] `packages/oracle-harness/` with `src/{record,replay,cli,matchers,headers,normalize,scenarios/*}.ts` and 102/102 tests + 100% coverage.
-- [x] `tests/oracle/docker-compose.yml` + `Dockerfile.oracle` pinned to `042b731`.
-- [x] `tests/oracle/recorded/` — 13 stateless HTTP scenarios captured against the docker oracle.
-- [x] Replay round-trip green (oracle → fixtures → oracle).
-- [x] Body matchers: `exact`, `json`, `scsave`, `ignore`. `html`/`xlsx`/`ods` throw "not implemented — Phase 8".
-- [x] `FINDINGS.md` at `tests/oracle/FINDINGS.md` — 9 oracle quirks documented.
-- [ ] Expand to the full endpoint inventory as subsequent phases land their port. Current 13 are the stateless subset.
-- [ ] `re:<regex>` header matcher convention: used for Location/Content-Length/Last-Modified. Considering promoting this pattern into `@ethercalc/shared`.
-
-### Phase 4 — Port pure/stateless endpoints — DONE
-- [x] `src/lib/auth.ts` (Web Crypto HMAC-SHA256, identity fallback) + `src/lib/room-name.ts` (12-char id via randomUUID) — 100% covered.
-- [x] `src/handlers/new-room.ts`, `src/handlers/room-redirects.ts`, `src/handlers/blocked-paths.ts` — 100% covered.
-- [x] `src/routes/stateless.ts` registers `/_new`, `/=_new`, `/:room/{edit,view,app}`, `/etc/*`, `/var/*`.
-- [x] `src/routes/assets.ts` live — ASSETS binding wired to curated `assets/` dir.
-- [x] **Phase 4.1 DONE via PAssets agent** — `GET /:room` entry route registered LAST (after `/_rooms`, `/_new`, etc.), serves `assets/index.html`. `/:template/appeditor` → panels.html. `/static/form:part.js` colon-route via `/static/:file{form.+\.js}` constrained segment + prefix/suffix peel. `manifest.appcache` dynamic DevMode stub via `DEVMODE=1` env var.
-- [x] All 10 icons + `index.html` + `start.html` + `manifest.json` + 7 `l10n/*.json` locales served from curated `assets/` dir.
-- [x] `scripts/build-assets.sh` rebuilds `assets/` deterministically from sources; CI runs it before wrangler dry-run.
-- [x] Oracle replay 8/13 green (was 5/13). Three new scenarios pass: get-root-index, get-start, get-socialcalc-js.
-- [ ] `/:template/form` stubs 503 pending Phase 5 DO-to-DO clone (flip a `phase5Ready` flag once Phase 5 ships `/_do/clone`).
-
-### Phase 5 — Port room CRUD — DONE
-- [x] `RoomDO` with `snapshot/log/audit/chat/ecell` storage via `state.storage` + `@ethercalc/shared/storage-keys`. Lazy HeadlessSpreadsheet hydration.
-- [x] DO internal API at `/_do/{ping,snapshot,log,commands,all,exists,cells,cells/:coord}`.
-- [x] POST `/_` (create; json/sc/csv bodies). xlsx/ods bodies 501 pending Phase 8.
-- [x] PUT `/_/:room` — replaces snapshot, clears log/chat/ecell/audit.
-- [x] DELETE `/_/:room` → 201.
-- [x] GET `/_/:room` (raw save) — 404 `text/plain` when missing.
-- [x] GET `/_exists/:room` — bare JSON boolean per P3 oracle F-05.
-- [x] GET `/_rooms`, `/_roomlinks`, `/_roomtimes` **scaffolded returning `[]`/`{}`** — D1 binding commented in wrangler.toml; populating the index is Phase 5.1.
-- [x] GET `/_from/:template` — 302 to new room via DO-to-DO fetch.
-- [x] `/_roomlinks` ships **sensible-fix** (§13 Q1): `text/html` CT + HTML `<a>` list body.
-- [x] Extended `@ethercalc/socialcalc-headless` with `exportCells()`, `exportCell(coord)`, `csvToSave(csv)`.
-- [x] 104 Node tests + 25 workers integration = 129 worker tests, 100% coverage on all gated files.
-- [x] Oracle replay: 9/13 scenarios (static/* regressed in vitest from ASSETS binding loss — tracked as Phase 5.2).
-- [x] **Phase 5.1 DONE** — `migrations/0001_rooms.sql` + D1 `DB` binding; RoomDO mirrors to D1 on snapshot/command; `_rooms`/`_roomlinks`/`_roomtimes` read live D1 data.
-- [x] **Phase 5.2 DONE** — miniflare `assets` option restored inline in `vitest.config.ts`; oracle replay floor bumped 9 → 12.
-
-### Phase 6 — Port command execution — DONE
-- [x] `src/lib/loadclipboard.ts` — pure helpers (isLoadClipboard, isMultiCascade, isBannedWikiFormat, computeLastRow, enrichLoadClipboard). 100% Node coverage.
-- [x] `src/handlers/post-command.ts` — `classifyCommandBody` (empty/json-command/text-command/xlsx-deferred) + `joinCommands`. 100% Node coverage.
-- [x] POST `/_/:room` handler in `src/routes/rooms.ts` — text-wiki filter → multi-cascade rename → loadclipboard enrichment → DO dispatch → 202 JSON `{command}`.
-- [x] Multi-cascade rename via two new DO endpoints `/_do/rename` + `/_do/install` (cross-DO state transfer). Single endpoint couldn't atomically read own storage AND write to sibling.
-- [x] xlsx body 501 stub (the xlsx→loadclipboard decoder path is Phase 8 work; live xlsx import will route via SheetJS).
-- [x] Oracle replay: no POST scenarios recorded yet (Phase 3 deferral). 14 route-shape tests + 6 workers integration tests cover the handler end-to-end.
-
-### Phase 7 — WebSocket layer — DONE
-- [x] `GET /_ws/:room?user=…&auth=…` native WS route in `src/routes/ws.ts`.
-- [x] DO `GET /_do/ws` with `state.acceptWebSocket(server)` + `serializeAttachment({user, room, auth})` — hibernation-API compliant.
-- [x] All §6.2 client types dispatched: chat, ask.ecells, my.ecell, execute, ask.log, ask.recalc, stopHuddle, ecell. `verifyAuth` gates execute/stopHuddle/ecell. text-wiki filter drops.
-- [x] `webSocketClose` no-op (legacy invariant — leaves ecell cursor in place).
-- [x] `submitform` auto-creates `<room>_formdata` sibling + broadcasts with `include_self: true`.
-- [x] `/socket.io/*` legacy shim wired via `@ethercalc/socketio-shim` in `src/routes/legacy-socketio.ts` — handshake + WS upgrade + xhr-polling + LEGACY_IO_JS.
-- [x] Pure `src/lib/ws-dispatch.ts` with 22 Node tests at 100% coverage.
-- [x] 5 workers-pool integration tests in `ws.test.ts` + 6 in `legacy-socketio.test.ts`.
-- [ ] **Phase 7.1** — extract the WS dispatch switch out of `src/room.ts` into a pure `src/lib/ws-handlers.ts` so Node coverage reaches the hibernation-API paths. For now `src/room.ts` is excluded from the Node coverage gate; workers-pool tests exercise it end-to-end.
-
-### Phase 8 — Exports
-- [ ] `exportCSV`, `exportCSV-JSON`, `exportHTML` — direct SocialCalc call in DO.
-- [ ] `exportCells`, `exportCell`.
-- [ ] `xlsx`/`ods`/`fods`/`md` via `j` lib or `xlsx`+`ods` on nodejs_compat.
-- [ ] Multi-sheet `PUT /=:room.xlsx` and `GET /_/=:room/xlsx`.
-- [x] **Phase 8a (matchers) DONE** — `html` (linkedom), `xlsx` (fflate + xml canon), `ods` (same + meta.xml walk) in `packages/oracle-harness/src/matchers.ts`. 158 tests, 100% coverage. Drop lists documented in §4.4.
-- [ ] Structural equality oracle tests wired to actual export responses (depends on Phase 5 room CRUD delivering `GET /_/:room/html` etc).
-
-### Phase 9 — Cron & email — DONE
-- [x] `src/scheduled.ts` cron handler + `/_timetrigger` backwards-compat HTTP endpoint.
-- [x] D1 `cron_triggers(room, cell, fire_at)` table (compound PK allows multiple queued triggers per cell — legacy comma-list semantics).
-- [x] `src/lib/cron.ts` + `src/lib/email.ts` pure libs — 100% Node coverage.
-- [x] `StubEmailSender` + `BindingEmailSender` for `send_email` binding.
-- [x] `/_do/fire-trigger` on RoomDO dispatches sendemail; broadcasts `confirmemailsent` to WS peers.
-- [x] `settimetrigger` cmdstr detected at HTTP layer and upserted into D1 before DO dispatch.
-- [x] wrangler.toml `[triggers] crons = ["*/1 * * * *"]` + commented `[[send_email]]` (setup in FINDINGS).
-
-### Phase 10 — Single-sheet client adapter — DONE (except Playwright)
-- [x] `packages/client/` with Vite + TS. `src/{ws-adapter,socialcalc-callbacks,main,graph,types,boot}.ts`. 190 tests. Build: 20.3 kB JS.
-- [x] `ws-adapter.ts` replaces socket.io client; broadcast queueing during disconnect, backoff reconnect, frame validation via `@ethercalc/shared`.
-- [x] `socialcalc-callbacks.ts` preserves `window.SocialCalc.Callbacks.broadcast` public surface for external embeds.
-- [x] `main.ts` ports `player.ls` entry (URL query, history pushState, formDataViewer flow, ask.log handshake).
-- [x] **Phase 10.1 done** — coverage gate restored to 100/100/100/100 on `ws-adapter.ts`, `socialcalc-callbacks.ts`, `main.ts`. Three edge branches covered by added tests.
-- [x] **Phase 10.2 done** — `src/graph.ts` (615 lines) covered to 100% via fake 2D canvas recorder + fake DOM in `test/mock-socialcalc.ts`. Three narrow `/* istanbul ignore next */` on `labels[i] ?? ''` fallbacks that `collectValues`' invariant makes dead code. Preserved legacy `GraphLoad` `split(':')` bug (would break on ranges like `A1:A3`) — bug-for-bug per §1.2 default.
-- [ ] Served by Workers Assets — wire in Phase 11.
-- [ ] Playwright: open room, type, reload, export → passes. *(deferred to Phase 11)*
-
-### Phase 10b — `multi/` React 18 port (§13 Q2) — DONE (except Playwright)
-- [x] New package `packages/client-multi/` — React 18 + TypeScript + Vite.
-- [x] Port `multi/main.ls`, `multi/foldr.ls`, `multi/styles.styl` to TSX + CSS modules (pixel-perfect).
-- [x] `@radix-ui/react-tabs` picked — `data-state` selectors let legacy class-based CSS map 1:1.
-- [x] `/=:room` URL scheme + readonly detection + `history.pushState` preserved.
-- [x] 89 tests, 100% coverage on `src/Foldr.ts`, `src/state.ts`, `src/url.ts`, `src/components/**`. `src/App.tsx` and `src/main.tsx` excluded from gate (exercised by Playwright in Phase 11).
-- [x] Preserved legacy quirks: `HackFoldr.push` double-seed-row write; `/=<room>` regex `[^_]` rule blocks `/=_*`; `init(null)` reachable via flag race.
-- [ ] Playwright: create multi-sheet, add/rename/delete sub-sheets, export all → passes. *(deferred to Phase 11)*
-
-### Phase 11 — Self-host & legacy compat — MOSTLY DONE
-- [x] **Miniflare docker image** — `Dockerfile` + `docker-compose.yml` at repo root running Miniflare with `/data` volume mount for DO persistence (§13 Q5).
-- [x] `bin/ethercalc` CLI — bun/node shim translating legacy flags (`--key`, `--cors`, `--port`, `--host`, `--expire`, `--basepath`) to wrangler env + args (§13 Q6). TLS (`--keyfile`/`--certfile`) deferred — Miniflare lacks direct TLS support; documented in `packages/cli/` FINDINGS.
-- [x] `packages/cli/` — 55 tests, 100% coverage on `parse.ts`, `map.ts`, `help.ts`, `run.ts`.
-- [x] `scripts/smoke-selfhost.sh` — builds image, composes up, curls `/_health`, composes down.
-- [x] CI `build-selfhost` job wires the smoke script.
-- [x] README.mkdn — self-host section with env var table.
-- [x] **`packages/socketio-shim/`** — socket.io v0.9 wire-format adapter (framing/translate/handshake/sid/adapter/legacy-io). 168 tests, 100% coverage. All 8 reconnect events translated. `LEGACY_IO_JS` bundle ready. Wiring into the worker awaits Phase 7 WS layer.
-- [x] **Migration script** — `packages/migrate/` hand-rolled RDB parser (6 encodings incl LZF), pluggable MigrationTarget + InMemoryTarget + WranglerTarget, CLI with `--dry-run`. 91 tests, 100% coverage. Uses `do_storage_seed` D1 staging table as stopgap until Phase 5 ships `PUT /_do/snapshot`.
-- [x] **Playwright e2e** — `packages/e2e/` with wrangler dev + vite dev per-worker fixtures, 5 specs (10 passing + 1 skipped pending full asset pipeline). CI job with Chromium install + trace artifacts.
-- [ ] Wire socketio-shim into the worker at `/socket.io/*` — depends on Phase 7.
+### Phase 11 — Loose ends
+- [x] Playwright skeleton at `packages/e2e/` with 10 passing specs.
+- [ ] `/:template/form` DO-to-DO clone (currently 503 stub).
 
 ### Phase 12 — CI hardening
-- [ ] Nightly Stryker mutation job.
-- [ ] Nightly `wrangler deploy --dry-run --env staging` check.
-- [ ] Nightly oracle-replay against `origin/main` at HEAD (catches silent oracle drift).
+- [ ] Nightly `wrangler deploy --dry-run --env staging`.
+- [ ] Nightly oracle-replay against fresh `origin/main` checkout (catches silent drift).
 - [ ] Docs site (Starlight) covering new architecture.
 
 ---
 
-## 9. Directory structure (target)
+## 9. Directory structure (actual)
 
 ```
-ethercalc/                           # existing root, not torn down
-  CLAUDE.md                          # this file — auto-loaded in every Claude Code session
-  ROADMAP.md                         # high-level status (1-page, human-readable)
-  LICENSE.txt                        # kept
-  README.mkdn                        # updated with migration info
-  src/                               # legacy LiveScript — preserved until Phase 12
-  main.js, app.js, sc.js, …          # legacy compiled — preserved
-  static/                            # legacy assets — served by old server
+ethercalc/
+  CLAUDE.md                 # this file
+  bin/ethercalc             # CLI wrapping wrangler dev / Miniflare
+  Dockerfile                # Miniflare self-host image
+  docker-compose.yml        # self-host compose (§13 Q5)
+  assets/                   # curated by scripts/build-assets.sh
+  migrations/               # D1 migrations
   packages/
-    worker/                          # new Hono Worker + Durable Object
-      src/
-        index.ts                     # Hono app, route wiring
-        room.ts                      # RoomDO
-        routes/
-          create.ts                  # POST /_, PUT /_/:room
-          read.ts                    # GET /_/:room, /_exists, /_rooms…
-          exec.ts                    # POST /_/:room
-          exports.ts                 # CSV/HTML/XLSX/etc
-          ws.ts                      # WebSocket upgrade
-          legacy-socketio.ts         # /socket.io/* shim
-          static.ts                  # index, icons, manifest
-        lib/
-          auth.ts                    # HMAC
-          encoding.ts                # encodeURI, normalize
-          socket-protocol.ts         # message codecs
-          csv.ts
-          xlsx.ts
-          md.ts
-          html-normalize.ts          # for oracle tests
-        types.ts
-      wrangler.toml
-      vitest.config.ts
-      tsconfig.json
-      package.json
-    socialcalc-headless/
-      src/index.ts
-      src/bootstrap.ts               # DOM stubs
-      src/socialcalc.bundled.ts      # string import of SocialCalc.js
-      vitest.config.ts
-      tsconfig.json
-      package.json
-    client/                          # single-sheet UI (Phase 10)
-      src/main.ts
-      src/ws-adapter.ts              # replaces socket.io-client
-      src/socialcalc-callbacks.ts    # port of player-broadcast.ls
-      vite.config.ts
-    client-multi/                    # multi-sheet UI (Phase 10b; React 18 port of multi/)
-      src/App.tsx
-      src/Foldr.ts                   # port of multi/foldr.ls
-      src/styles.module.css          # port of multi/styles.styl
-      vite.config.ts
-    shared/
-      src/messages.ts                # WS message types shared client+server
-      src/storage-keys.ts
-      tsconfig.json
-  tests/
-    oracle/                          # see §4.2
-    e2e/                             # Playwright
-  .github/
-    workflows/
-      ci.yml
-      nightly.yml
-  .node-version  or  .tool-versions
-  pnpm-workspace.yaml  or  bunfig.toml
-  docker-compose.dev.yml             # oracle + redis, for oracle-replay dev parity
-  docker-compose.yml                 # self-host: Miniflare image with persistent volume (§13 Q5)
-  Dockerfile                         # Miniflare-based self-host image
-  bin/ethercalc                      # CLI wrapping wrangler dev / Miniflare (§13 Q6)
+    worker/                 # Hono Worker + RoomDO (D1, KV, R2, cron, send_email)
+    socialcalc-headless/    # SocialCalc wrapper for workerd
+    shared/                 # cross-package contracts (WS messages, storage keys)
+    client/                 # single-sheet UI (Vite + TS)
+    client-multi/           # multi-sheet UI (React 18 + Vite)
+    oracle-harness/         # record/replay + canonicalizers
+    socketio-shim/          # socket.io v0.9 wire-format adapter
+    migrate/                # Redis RDB → DO/D1 migration tool
+    cli/                    # bin/ethercalc logic
+    e2e/                    # Playwright specs
+  tests/oracle/             # docker-pinned oracle + recorded fixtures
+  scripts/                  # build-assets.sh, smoke-selfhost.sh, ratchet-verify.sh
+  docs/MUTATION_REPORT.md   # mutation-score baseline + top-gaps tracker
+  .github/workflows/        # ci.yml, nightly.yml
 ```
+
+Legacy LS/compiled JS (`src/*.ls`, root `*.js`, `multi/`, `Makefile`, `webpack.config.js`, etc.) preserved until Phase 12 sweep for oracle recording.
 
 ---
 
@@ -672,126 +322,107 @@ ethercalc/                           # existing root, not torn down
 ### 10.1 Socket.IO → native WS
 
 - One WS per user per room at `wss://<host>/_ws/:room?user=<user>&auth=<hmac>`.
-- Server treats WS as joining `log-<room>` + `user-<user>` (no separate ask.log join; it's implicit).
-- Frame shape: `{"type": "...", ...payload}`, always JSON, one message per frame.
-- Legacy `/socket.io/*` shim translates socket.io packets to native WS messages 1:1 using packet type codes `42["data",{…}]` → `JSON.stringify({…})`.
+- Server treats WS as joining `log-<room>` + `user-<user>` implicitly.
+- Frame shape: `{"type": "...", ...payload}`, JSON, one message per frame.
+- Legacy `/socket.io/*` shim translates packets 1:1: `42["data",{…}]` ↔ `JSON.stringify({…})`.
 
 ### 10.2 Redis → DO/D1/KV
 
-| Redis call                                  | New implementation                                                                                      |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `GET snapshot-<room>`                       | `doState.storage.get('snapshot')` (if DO warm) else `D1.SELECT snapshot FROM rooms_snapshot WHERE…`     |
-| `SET snapshot-<room>`                       | `doState.storage.put('snapshot', …)` + mirror to D1 in `scheduled()`                                    |
-| `LRANGE log-<room> 0 -1`                    | `doState.storage.list({prefix:'log:'})` sorted by key                                                   |
-| `RPUSH log-<room>`                          | `doState.storage.put('log:'+padSeq(), value)`                                                           |
-| `HGETALL ecell-<room>`                      | `doState.storage.list({prefix:'ecell:'})`                                                               |
-| `HSET ecell-<room> <u> <c>`                 | `doState.storage.put('ecell:'+u, c)`                                                                    |
-| `HGETALL timestamps`                        | `D1.SELECT room, updated_at FROM rooms ORDER BY updated_at DESC`                                        |
-| `KEYS snapshot-*`                           | `D1.SELECT room FROM rooms`                                                                             |
-| `EXISTS snapshot-<room>`                    | KV `rooms:exists:<room>` (hot) or D1 (cold)                                                             |
-| `BGSAVE`                                    | no-op                                                                                                   |
-| `EXPIRE`                                    | `doState.setAlarm(now + ttl)` + delete in alarm handler                                                 |
-| `cron-list` hash                            | D1 `cron_triggers` table                                                                                |
-| `cron-nextTriggerTime`                      | Derived via `SELECT MIN(fire_at) FROM cron_triggers`                                                    |
+| Redis call                                  | New implementation                                                               |
+| ------------------------------------------- | -------------------------------------------------------------------------------- |
+| `GET snapshot-<room>`                       | DO `storage.get('snapshot')` / D1 fallback.                                      |
+| `SET snapshot-<room>`                       | DO `storage.put('snapshot', …)` + D1 mirror.                                     |
+| `LRANGE log-<room>`                         | DO `storage.list({prefix:'log:'})`.                                              |
+| `RPUSH log-<room>`                          | DO `storage.put('log:'+padSeq(), value)`.                                        |
+| `HGETALL ecell-<room>`                      | DO `storage.list({prefix:'ecell:'})`.                                            |
+| `HSET ecell-<room>`                         | DO `storage.put('ecell:'+user, coord)`.                                          |
+| `HGETALL timestamps`                        | D1 `SELECT room, updated_at FROM rooms ORDER BY updated_at DESC`.                |
+| `KEYS snapshot-*`                           | D1 `SELECT room FROM rooms`.                                                     |
+| `EXISTS snapshot-<room>`                    | D1 `SELECT 1 FROM rooms WHERE room=?`.                                           |
+| `BGSAVE`                                    | no-op.                                                                           |
+| `EXPIRE`                                    | DO `setAlarm(now + ttl)` + alarm handler.                                        |
+| `cron-list` / `cron-nextTriggerTime`        | D1 `cron_triggers` table + `SELECT MIN(fire_at)`.                                |
 
 ---
 
 ## 11. CI / gates
 
-### 11.1 `ci.yml` jobs (on push + PR)
+### 11.1 PR gate (`ci.yml`)
 
-1. **install**: bun install, cache `~/.bun`.
-2. **lint**: `eslint`, `prettier --check`.
-3. **typecheck**: `tsc --noEmit` per package.
-4. **test:unit**: `vitest run` in `packages/worker` with `@cloudflare/vitest-pool-workers`.
-5. **test:unit:shared+headless+client+client-multi**: vitest for other packages.
-6. **coverage gate**: `vitest run --coverage`; fail if any metric < 100 across union of all packages.
-7. **test:oracle**: spin docker oracle, start `wrangler dev --local --persist-to=./tmp`, replay all scenarios. Hard gate. Also asserts documented divergences (§13 Q1 fixes) match their expected "new" responses.
-8. **test:e2e**: Playwright against `wrangler dev` — covers both single-sheet and `multi/` flows.
-9. **build:cf**: `wrangler deploy --dry-run`.
-10. **build:selfhost**: `docker build` the Miniflare image, `docker compose up -d`, run smoke scenarios against it (§13 Q5).
-11. **mutation-gate**: Stryker on packages whose `src/` changed vs merge-base with `origin/main`. Skips docs-only PRs; branch protection should treat this as "required if run" rather than unconditionally required.
+1. Install (bun, cached).
+2. Lint: eslint, prettier.
+3. Typecheck: `tsc --noEmit` per package.
+4. Node unit tests + 100% coverage gate (per gated package).
+5. Workers-pool integration tests.
+6. socialcalc-headless smoke tests.
+7. Oracle replay (docker oracle + `wrangler dev --local`).
+8. Playwright e2e against `wrangler dev`.
+9. `wrangler deploy --dry-run`.
+10. `build-selfhost`: build Miniflare image, `docker compose up`, smoke curl `/_health`.
+11. `mutation-gate`: Stryker on packages with `src/` changes vs merge-base. Conditionally required.
 
-### 11.2 `nightly.yml`
+### 11.2 Nightly
 
-- Stryker mutation run.
-- Oracle replay against fresh `origin/main` checkout.
-- `wrangler deploy --dry-run --env staging`.
+- Stryker full matrix.
+- (Pending) Oracle replay against fresh `origin/main`.
+- (Pending) `wrangler deploy --dry-run --env staging`.
 
 ### 11.3 Branch protection
 
-- All 10 core PR-gate jobs required before merge to `main`.
-- `mutation-gate` is **conditionally required** — runs only when `packages/*/src/` changes. Docs/test-only/config PRs skip it; branch protection should allow that skip.
-- No admin bypass on coverage job.
+All core PR-gate jobs required before merge to `main`. `mutation-gate` conditionally required (skips docs-only PRs). No admin bypass on coverage job.
 
 ---
 
 ## 12. Data migration
 
-Provide `scripts/migrate-redis-to-cf.ts` that reads a Redis dump (AOF or `--rdb` via `redis-cli`) and writes to local D1 + KV via Wrangler's API. Exit criteria: oracle-replayed dump on new stack returns same responses as on old stack for 1000 sampled rooms from production.
+`packages/migrate/` — streams a legacy EtherCalc Redis (RESP client in `src/resp-client.ts`, room enumerator in `src/sources/redis-source.ts`) into the new worker's `PUT /_migrate/seed/:room` (`src/targets/http.ts`). `InMemoryTarget` + `DryRunTarget` cover tests and `--dry-run` previews. The migrator holds O(1-per-room) memory regardless of dump size — the Redis server owns RDB decoding. CLI entry: `./bin/ethercalc migrate --source redis://… --target http://… --token …`. 100% coverage on gated files.
 
-Snapshot format versioning: prefix new DO snapshots with `v2:`. Reader falls back to v1 (raw SocialCalc save) when prefix absent. Writers always emit v2.
+Snapshot format versioning: new DO snapshots prefixed `v2:`; reader falls back to v1 (raw SocialCalc save) when prefix absent.
 
 ---
 
 ## 13. Resolved decisions
 
-All questions answered as of 2026-04-19. This section is the canonical record — do not re-ask. If a decision needs to change, edit it here with the new date and rationale; the rest of the doc must then be updated to match.
+Canonical record as of 2026-04-19. Do not re-ask. To change a decision, edit it here with the new date and rationale, then update affected sections.
 
 | # | Question | Decision | Affects |
 | - | -------- | -------- | ------- |
-| 1 | Bug-for-bug preservation? | **No — apply sensible fixes.** Each fix enumerated in §6.1 with an oracle-divergence test. Default still leans preservation; only fix unambiguous bugs (e.g. `GET /_roomlinks` `text/html` vs JSON body). | §1.2, §6.1 |
-| 2 | `multi/` React 0.12 UI | **Port to React 18 + TypeScript.** In scope. New package `packages/client-multi/`. Preserve `/=:room` URL scheme and multi-sheet semantics. | §1.1, §8 (new Phase 10b), §9, §16.C |
-| 3 | Email strategy | **Cloudflare `send_email` binding.** Old gmail-xoauth2 dropped. Verification setup documented in runbook. Tests use stub transport. | §3.1, §8 Phase 9 |
-| 4 | Legacy socket.io shim | **Keep indefinitely** (no sunset date). External embeds like sheetnode depend on it. | §3.1, §8 Phase 7/11 |
-| 5 | Docker self-host | **Yes — maintain `docker compose up`.** Image runs Miniflare (workerd + local D1/KV/R2/DO simulators) with persistent volume. No Cloudflare account required. | §1.1, §3.1, §8 Phase 11 |
-| 6 | Secrets | **Both.** Keep CLI `--key` flag for self-host; use Worker secret `ETHERCALC_KEY` for CF deploy. CLI loads secret into Miniflare env. | §3.1, §8 Phase 11 |
-| 7 | Rate limiting | **No application-layer rate limiting.** Rely on Cloudflare platform layer (rules/WAF) for production; self-host has none (matches current behavior). | §1.2 |
-| 8 | `/static/socialcalc.js` | **Keep serving** from Workers Assets. External embeds depend on this path. | §6.1 |
-| 9 | `chat-<room>` persistence | **Mirror to D1** beyond DO lifetime. Matches current Redis behavior. | §3.3, §10.2 |
-| 10 | Snapshot TTL (`--expire`) | **Implemented via DO `setAlarm`.** Design in §10.2 accepted. CLI flag still honored. | §10.2 |
+| 1 | Bug-for-bug preservation? | **No — apply sensible fixes.** Each fix enumerated in §6.1 with an oracle-divergence test. Default still leans preservation; only fix unambiguous bugs (e.g. `/_roomlinks` `text/html` CT vs JSON body). | §1.2, §6.1 |
+| 2 | `multi/` React 0.12 UI | **Port to React 18 + TypeScript.** Preserve `/=:room` URL scheme. | §1.1, §9 |
+| 3 | Email strategy | **Cloudflare `send_email` binding.** Old gmail-xoauth2 dropped. Tests use stub transport. | §3.1 |
+| 4 | Legacy socket.io shim | **Keep indefinitely** (no sunset date). External embeds depend on it. | §3.1 |
+| 5 | Docker self-host | **Yes.** Miniflare container with persistent volume; no CF account required. | §1.1, §3.1 |
+| 6 | Secrets | **Both.** CLI `--key` for self-host; Worker secret `ETHERCALC_KEY` for CF deploy. | §3.1 |
+| 7 | Rate limiting | **None at application layer.** Rely on CF platform / WAF. | §1.2 |
+| 8 | `/static/socialcalc.js` | **Keep serving.** External embeds depend on this path. | §6.1 |
+| 9 | `chat-<room>` persistence | **Mirror to D1** beyond DO lifetime. | §3.3, §10.2 |
+| 10 | Snapshot TTL (`--expire`) | **DO `setAlarm`.** CLI flag honored. | §10.2 |
 
 ---
 
 ## 14. Session log
 
-Append one entry per session you work on this. Keep it short. Use this for context continuity across sessions.
+Append one entry per session.
 
 | Date       | Phase | Summary                                                                                              | PR      |
 | ---------- | ----- | ---------------------------------------------------------------------------------------------------- | ------- |
-| 2026-04-19 | 0     | Plan drafted. Audited LS source, Redis keys, socket events.                                          | —       |
-| 2026-04-19 | 0     | Renamed REWRITE.md → CLAUDE.md (auto-load). All §13 questions answered; §1/§3/§8/§9/§11 updated.     | —       |
-| 2026-04-19 | 1     | **Phase 1 done.** `packages/socialcalc-headless/` runs SocialCalc 2.3.0 in workerd. 6/6 smoke tests green. Three source transforms documented (§16.A); most important is rewriting UMD `factory.call(root, this)` → `factory.call(root, root)` to pin `window` to our host in sloppy-mode eval. Sync setTimeout shim lets recalc unroll inline. | —       |
-| 2026-04-19 | 2     | **Phase 2 done.** `packages/worker/` scaffolded: Hono + DO + bun workspaces + Wrangler + CI. Split testing strategy formalized (§5.1/5.2): `.node.test.ts` in Node env with 100% istanbul gate on `src/handlers/**`, `src/lib/**`, `src/room.ts`; `.test.ts` in workerd via vitest-pool-workers without coverage gate because neither istanbul nor v8 trace workerd-bundled code end-to-end. GitHub Actions CI wires typecheck + both test suites + wrangler dry-run. | —       |
-| 2026-04-19 | —     | `packages/shared/` contracts committed as the stable target for parallel agent work. WS messages, DO storage keys, oracle scenario schemas. 100% coverage. Dispatched 4 parallel worktree agents: P3 (oracle harness), P10 (single-sheet client), P10b (multi/ React 18), Research (LS audit). | —       |
-| 2026-04-19 | —     | **Research agent returned.** 30 findings integrated into §6.1/§6.2/§7 items 21-30: cross-sheet formula DO-to-DO wiring, submitform+`include_self`, 8-event socket.io reconnect shim, undocumented i18n (`l10n/` 7 locales, fallback chain in index.html), bundled third-party libs, `/static/form:part.js` colon route, `panels.html`/`appeditor`, multi→single iframe postMessage. Top-5 blockers flagged as gates on Phases 7/8/10. | —       |
-| 2026-04-19 | 10b   | **Phase 10b agent merged.** `packages/client-multi/` React 18 + Radix tabs + Vite. 89/89 tests, 100% coverage on all tracked. Vite build 163 kB JS / 1.6 kB CSS. Playwright deferred to Phase 11 per §8. Preserved three legacy quirks (documented in `packages/client-multi/FINDINGS.md`). | a0ecd20 |
-| 2026-04-19 | 3     | **Phase 3 agent merged.** `packages/oracle-harness/` + `tests/oracle/` docker stack pinned to `042b731`. 102/102 tests, 100% coverage. 13 stateless scenarios recorded (oracle self-replay green). 9 FINDINGS documented (identity-HMAC when KEY unset, bare boolean `/_exists/:room` response, semi-volatile `Last-Modified`, fetch auto-redirect gotcha). html/xlsx/ods matchers throw "not implemented — Phase 8". | 4a52b96, 2d06bc3, 99932e3 |
-| 2026-04-19 | 10    | **Phase 10 agent merged.** `packages/client/` Vite + TS port of `player*.ls`. Agent crashed mid-final-report but delivered: 78/78 tests, typecheck clean, Vite build 20.3 kB. Coverage gate temporarily relaxed to 99/95/90/99 on this package — three uncovered edge branches (main.ts `parts.edit` loader fallback, applyFormDataLog `parts.sheet`=false path, callbacks `delete` branch) to be closed in Phase 10.1 follow-up. | a203aeb |
-| 2026-04-19 | 4/8a/10.1/11a | **Second parallel wave merged.** Four agents ran in parallel worktrees: P4 stateless HTTP (Hono wiring + auth + redirects + 5/13 oracle scenarios, 45 Node tests at 100% coverage); P8a-partial html matcher via linkedom (127 tests total, 100%); P10c coverage closeout (client back to 100/100/100/100 on gated files); P11a Miniflare docker + `bin/ethercalc` CLI + `packages/cli` (55 tests, 100%) + CI build-selfhost job + README self-host section. 395+ tests green across 7 packages. §6.4 clarified: `verifyAuth('0')` must reject unconditionally because identity-HMAC makes `computeAuth(undefined,'0') === '0'`. §6.1 clarified: `/etc/*` 404 CT is `text/html` not `text/plain`. | many |
-| 2026-04-19 | 8a    | **Phase 8a DONE.** P8a agent merged the xlsx + ods matchers on top of the earlier html merge. fflate + canonicalize-each-XML pipeline. 158 oracle-harness tests, 100% coverage. Volatile element drop lists surfaced and documented in §4.4 (docProps/core.xml + app.xml for xlsx, meta.xml for ods, id referrers + comments + whitespace-only text for html). Unblocks Phase 8 export wiring. | db2d0a8, 413307a |
-| 2026-04-19 | 10.2  | **Phase 10.2 DONE.** P10c agent second round covered `src/graph.ts` (615 lines) to 100% with 102 new tests via fake 2D canvas recorder + fake DOM. Client package now 190 tests at 100/100/100/100 across ws-adapter, socialcalc-callbacks, main, graph. Three narrow `/* istanbul ignore next */` on dead `??` fallbacks. **587 tests total across 7 packages.** | 78fd477, 9640ee9 |
-| 2026-04-19 | 11e2e/4.1 | **Third wave agents merged:** PE2E Playwright skeleton (`packages/e2e/`, 5 specs, 10/11 passing + 1 skip pending asset pipeline); PAssets curated `assets/` (27 files 1.9 MiB, `scripts/build-assets.sh`), live ASSETS binding, `/:room` entry route, colon-route `/static/form:part.js`, dynamic `manifest.appcache` DevMode stub, i18n 7 locales. Oracle replay 5/13 → 8/13. Two new sensible-fix allow-list entries: `/_roomlinks` CT, `/favicon.ico` CT (§6.1). §4.4 drop-headers list expanded (Accept-Ranges, Cache-Control, Content-Length). `/:template/form` stubs 503 pending Phase 5 DO-to-DO clone. | edcff17-5a419eb, 08195b5-8f06ad0 |
-| 2026-04-19 | 11b/11c | **P11b + P11c merged.** P11b: `packages/migrate/` hand-rolled RDB parser (6 encodings incl LZF, 500 LOC), MigrationTarget + InMemory/Wrangler targets, CLI with dry-run, 91 tests at 100% coverage; uses `do_storage_seed` D1 staging as Phase 5 stopgap. P11c: `packages/socketio-shim/` full wire-format adapter (framing + translate + handshake + sid + adapter + legacy-io client bundle), 168 tests at 100% coverage; 3-colon splitter for event-frame JSON with embedded colons; explicit single-digit guard blocks Engine.IO v1+ shape. **10 packages, 911+ tests passing.** | 7da1907-71123b1, 9aa5da1/157c7c3 |
-| 2026-04-19 | 5 | **Phase 5 merged.** P5 agent: RoomDO with full state.storage-backed snapshot/log/audit/chat/ecell; DO internal API `/_do/*`; POST/PUT/GET/DELETE room routes + `_exists`/`_rooms`/`_roomlinks`/`_roomtimes`/`_from/:template`. csv via SocialCalc; xlsx/ods 501 stubs. `/_roomlinks` ships sensible-fix (text/html + HTML body). Extended headless with exportCells/exportCell/csvToSave. Worker 70 node + 42 integration → 104 + 25 (129 total). Oracle replay 9/13. **§7 item 33 documents the `?raw` vs `[[rules]]` cross-toolchain trap** with the workaround (inline DO binding, drop wrangler.configPath); downside: ASSETS binding regresses in vitest, Phase 5.2 follow-up. **1011+ tests passing across 10 packages.** | 4af4ae3, cc2f31c, 2bfdcf2 |
-| 2026-04-19 | 5.1/5.2/6/7/8/12 | **Fifth wave merged (5 parallel agents + polish).** P5.1 D1 rooms index (live mirror); P5.2 ASSETS in vitest; P6 command execution (loadclipboard + multi-cascade via `/_do/rename` + `/_do/install` cross-DO transfer); P7 native WS at `/_ws/:room` with DO hibernation + `/socket.io/*` via socketio-shim + 22 WS unit + 11 integration tests; P8-wire exports (csv/html/xlsx/ods/fods/md via SheetJS + pure GFM); P12 StrykerJS baseline (83% weighted, nightly CI + MUTATION_REPORT.md). Topology got tangled — several resets + a reverted cherry-pick; ultimately unified by resetting main to bac7e85 and re-cherry-picking P5.1/P5.2 on top. `src/room.ts` Node coverage relaxed (Phase 7.1 will extract WS handlers). **1070 tests passing across 9 packages.** | many |
-| 2026-04-19 | ratchet | **Mutation ratchet merged.** Per-package `stryker.conf.json` floors pinned to measured scores (worker 92, migrate 90, shared 89, oracle-harness 84, socketio-shim 81, client 73). Fast `mutation-gate` CI job runs Stryker only on packages whose `src/` changed vs merge-base. `docs/MUTATION_REPORT.md` grows ratchet workflow + worked walkthrough raising `client` from 73.81→74.12%. `scripts/ratchet-verify.sh` local-dev audit. §5.5 documents the required-mutation policy. | 94b6850, d1c5920, 08234e5, 738859a |
-| 2026-04-19 | 9 + 8.1 | **Phase 9 merged.** Cron triggers + email binding: migrations/0002_cron.sql, scheduled(), /_timetrigger legacy endpoint, /_do/fire-trigger on RoomDO, StubEmailSender + BindingEmailSender, `settimetrigger` HTTP-layer upsert. cron_triggers PK is (room, cell, fire_at) not just (room, cell) so legacy's comma-list semantics survive. Also folded in P8.1 partial (multi-sheet xlsx/ods/fods — agent timed out mid-stream): parseMultiSheetWorkbook + buildMultiSheetWorkbook + sanitizeSheetName via DI readFn parameter. Worker tests 288→366; total **1154 tests passing across 9 packages** (worker 366, client 196, socketio-shim 168, oracle-harness 158, migrate 91, client-multi 89, cli 55, shared 25, socialcalc-headless 6) plus 10 Playwright specs. 100% Node coverage restored on worker package. | 2ec820b, ac15f0f, 3a8bd62, + P8.1 partials |
-| 2026-04-19 | 7.1 | **Phase 7.1 merged.** WS handlers extracted from src/room.ts to pure src/lib/ws-handlers.ts (42 new Node tests). Workers-only upgrade glue quarantined in src/lib/ws-upgrade.ts (coverage-excluded leaf). room.ts back at 100% Node gate. After merge also added 6 tests for Phase 9's /_do/fire-trigger path that P7.1 didn't know about — worker package now 446 Node + workers integration tests, 100/100/100/100. | fd97fb5, 3ee4422, 9202625, fc02f71 |
-| 2026-04-20 | 10/11 | **Browser multiplayer smoke — found + fixed anonymous auth regression.** First full stack-up test: `build-assets.sh` → `wrangler dev` → Chrome. Client booted, SocialCalc rendered, WS opened, `chat` broadcast reached peer. But `execute` frames were silently dropped server-side. Root cause in `packages/worker/src/lib/auth.ts:verifyAuth` — when `ETHERCALC_KEY` is unset, legacy `src/main.ls:506` (`return if auth is \0 or KEY and auth isnt hmac room`) accepts ANY non-'0' auth, but we were timing-safe-comparing empty string against `computeAuth(undefined, room) === room` and rejecting. Fix: short-circuit `if (!key) return true` after the '0' check. Also fixed `auth.node.test.ts` "false when supplied differs from identity" test — it had locked in the wrong semantics. Verified in browser with two tabs on `/mp-test-room`: A1/A2/A3 formula propagates, B1 echoes back, reload restores from server. | 72f558c |
-| 2026-04-20 | headless | **Swapped socialcalc dep from npm 2.3.0 to `github:audreyt/socialcalc#<sha>`.** The audreyt fork is strict-mode clean (tsgo + Bun port) and already emits `factory.call(root, root)`, so `scripts/build.js` drops the hand-rolled ES5 `delete varname;` fix, the reserved-`eval` rename, and the factory-call rewrite. Adds one new wrapper-level transform — rewriting `typeof globalThis !== 'undefined' ? globalThis : this` to `this` — so our host-binding IIFE still captures `root`/`window` and the sync setTimeout shim still applies. Implicit-globals pre-declaration is retained as a runtime workaround (paste path still leaks). 7/7 headless smoke tests + 456 worker node + 120 workers-pool all green. See §16.A. | pending |
-| 2026-04-20 | 5.1/7/8 | **Second-wave browser sweep — six behavioral regressions found + fixed.** (1) D1 index: WS `execute` path didn't mirror `rooms` row → `/_rooms` returned `[]` despite live edits. Refactored `#postCommands`/WS context to share `#applyCommandAndMirror(roomName, cmdstr)`. (2) stopHuddle: WS path wiped DO storage but left D1 row. Refactored to `#deleteAllAndUnindex(roomName)`. (3) ask.ecell cursor-poll: client broadcasts `ask.ecell` (singular) on every DoPositionCalculations; legacy server catch-all rebroadcast to peers → peers reply with `ecell`. Our closed-union parseClientMessage dropped it. Added `AskEcellClientMessage`/`AskEcellServerMessage` + `handleAskEcell` + client-side `applyAskEcell` reply. (4) ecell `to` field stripped by `buildEcellBroadcast` — the whole reason legacy's private-channel routing works. Added `to?: string` to both client+server types, preserved in builder. (5) client-multi Vite bundle used absolute `/assets/...` URLs; served at `/=:room` those URLs 404'd. Set `base: '/multi/'` so HTML emits `/multi/assets/…`. (6) Missing `/_/:room/cells` + `/_/:room/cells/:cell` route wiring — DO had the handler but Hono didn't forward; fell through to catch-all 404. Also fixed the legacy unwrapped JSON shape: legacy returned `JSON.stringify(sheet.cells)` directly, ours wrapped as `{cells: ...}`. Unwrapped. (7) csvToSave emitted clipboard-style bare-sheet save; rehydrated export returned empty. Rewrote to paste via `Clipboard.clipboard` + `CreateSpreadsheetSave` for a proper multipart envelope. Mutation floor 92 → 88 (room.ts mutant count doubled). **456 worker Node + 120 workers-pool + 200 client + 89 client-multi + 25 shared + 7 headless ≈ 900 tests, all 100% line/branch/function/statement coverage on gated packages.** | 7eed195, e13c1ea, d19bacb, 17b9aa2, bd004d1, 85e6fa9 |
+| 2026-04-19 | 0–11 | **Rewrite largely complete in one sprint.** Highlights: Phase 1 SocialCalc-in-DO prototype green (§16.A). Phase 2–4 scaffolding, assets, stateless routes. Phase 5–6 RoomDO with D1 mirror, command execution, multi-cascade rename via `/_do/rename`+`/_do/install`. Phase 7 native WS + `/socket.io/*` shim. Phase 8 exports (csv/html/xlsx/ods/fods/md via SheetJS + pure GFM + multi-sheet). Phase 9 cron + `send_email`. Phase 10 client + Phase 10b client-multi (React 18 + Radix). Phase 11 Miniflare Docker, `bin/ethercalc` CLI, Playwright e2e, socketio-shim, Redis migration tool. StrykerJS mutation ratchet with per-package floors. ~1150 tests across 9 packages; 100% line/branch/function/statement coverage on gated packages. | many |
+| 2026-04-19 | 7.1 | WS handlers extracted from `src/room.ts` to pure `src/lib/ws-handlers.ts` (42 Node tests). Workers-only upgrade glue quarantined in `src/lib/ws-upgrade.ts` (coverage-excluded leaf). `room.ts` back at 100% Node gate. | fd97fb5, fc02f71 |
+| 2026-04-20 | 10/11 | **Browser multiplayer smoke — fixed anonymous auth regression.** First full stack-up: `build-assets.sh` → `wrangler dev` → Chrome. `execute` frames silently dropped server-side. Root cause in `verifyAuth`: when `ETHERCALC_KEY` unset, legacy accepts any non-'0' auth, but we were timing-safe-comparing empty string against `computeAuth(undefined, room) === room` and rejecting. Fix: short-circuit `if (!key) return true` after the '0' check. Verified two-tab edit/reload flow. | 72f558c |
+| 2026-04-20 | headless | **Swapped socialcalc dep from npm 2.3.0 to `github:audreyt/socialcalc`.** Fork is strict-mode clean (tsgo + Bun port) and already emits `factory.call(root, root)`. `scripts/build.js` drops the ES5 `delete varname` / reserved-`eval` / factory-call rewrites; adds one new wrapper-level transform rewriting `typeof globalThis !== 'undefined' ? globalThis : this` to `this`. Implicit-globals pre-declaration removed — underlying `var`-less assignments fixed upstream. 7/7 headless smoke + 456 worker node + 120 workers-pool all green. | 4af7265 |
+| 2026-04-20 | 5.1/7/8 | **Second-wave browser sweep — six behavioral regressions fixed.** (1) WS `execute` didn't mirror D1 `rooms` row → refactored to shared `#applyCommandAndMirror`. (2) `stopHuddle` left D1 row → `#deleteAllAndUnindex`. (3) `ask.ecell` (singular) was dropped by closed-union parser → added `AskEcellClientMessage`/`AskEcellServerMessage` + `handleAskEcell` + client-side `applyAskEcell`. (4) `ecell.to` field stripped by builder → preserved. (5) `client-multi` absolute `/assets/...` URLs 404'd under `/=:room` → `base: '/multi/'`. (6) `/_/:room/cells[/:cell]` not wired in Hono + wrapped JSON shape → unwrapped to legacy `JSON.stringify(sheet.cells)`. Also: `csvToSave` rewritten to paste via `Clipboard` + `CreateSpreadsheetSave`. Mutation floor 92 → 88. ~900 tests, 100% coverage on gated packages. | 85e6fa9, 7eed195, e13c1ea, d19bacb, 17b9aa2, bd004d1 |
+| 2026-04-21 | 11b/12 | **Migration is RESP-only; RDB parser removed.** `packages/migrate/` now streams from a live Redis/Zedis via RESP (SCAN + pipelined GET/LRANGE/HGETALL) into the worker's `PUT /_migrate/seed/:room`. Dropped ~3 300 LOC: hand-rolled RDB parser + LZF worker-thread pool + `ChunkedReader` streaming parser + `WranglerTarget` shell-out + all rdb/lzf/extract-rooms/stream tests. CLI surface simplified to `--source redis://…` + `--target http://…` + `--token …` (+ `--dry-run`). `bin/ethercalc migrate` no longer imports `node:worker_threads` / `node:fs`. 100 tests, 100% coverage on migrate; 492 node tests, 100% on worker. Also added `PUT /_migrate/seed/:room` route + `POST /_do/seed` handler on worker side; gated by `env.ETHERCALC_MIGRATE_TOKEN` (unset → 404). Wiped 5.2 GB halfway-migrated Miniflare store. | (this commit) |
 
 ---
 
-## 15. Runbook (for future-you resuming)
+## 15. Runbook
 
 ```bash
-# fresh clone, first time
+# fresh clone
 git clone https://github.com/audreyt/ethercalc
 cd ethercalc
 bun install
-cd packages/worker && bun run test     # should be green at 100% for whatever is implemented
+bun run --cwd packages/worker test
 
 # run the new worker locally
 bun run --cwd packages/worker dev       # wrangler dev --local
@@ -800,138 +431,51 @@ bun run --cwd packages/worker dev       # wrangler dev --local
 docker compose -f tests/oracle/docker-compose.yml up -d
 
 # record new oracle fixtures after adding a scenario
-bun run --cwd tests/oracle record
+bun run --cwd packages/oracle-harness record
 
 # replay against local worker
-bun run --cwd tests/oracle replay --target http://127.0.0.1:8787
+bun run --cwd packages/oracle-harness replay --target http://127.0.0.1:8787
 ```
 
 To resume work:
-1. Read §14 — find last entry, identify last phase worked on.
-2. Open §8 — find next `[ ]` item.
-3. If phase is new, re-read its sub-section and §7 risks that touch it.
-4. Work; commit; update §14.
+1. §14 for last session's context.
+2. §8 for next pending item.
+3. §7 for live risks on the affected area.
+4. Commit; update §14.
 5. If plan diverges from reality, edit this doc *before* merging the code.
 
 ---
 
 ## 16. Appendix
 
-### 16.A — socialcalc-in-DO prototype — RESOLVED 2026-04-19; source swapped to `audreyt/socialcalc` 2026-04-20
+### 16.A — socialcalc-in-DO wrapper (current state)
 
-**2026-04-20 update.** The `socialcalc` dep now resolves to
-`github:audreyt/socialcalc#4463d50` — a strict-mode-clean, Bun + tsgo port of
-2.3.0. Upstream fixes subsume transform #3 (already emits
-`factory.call(root, root)`) and the ES5 `delete varname;` / reserved-`eval`
-rewrites the generator used to do by hand. `scripts/build.js` now applies only
-transforms #1 and #2 below plus one new wrapper rewrite (`globalThis` fallback
-→ `this`) so the host-binding IIFE still captures `root`. **The
-implicit-globals pre-declaration workaround has been removed**: we fixed the
-underlying `var`-less assignments in the upstream source (paste cascade,
-render path, format parser, MIME decoder) so every undeclared identifier
-that previously leaked to globalThis now gets a proper per-function binding.
-See `audreyt/socialcalc@4463d50`.
+Post source-swap (2026-04-20): `socialcalc` dep resolves to `github:audreyt/socialcalc#4463d50` — a strict-mode-clean, Bun + tsgo port of 2.3.0. Runs inside workerd via `@cloudflare/vitest-pool-workers`. 7/7 smoke tests green.
 
+**Load pipeline** (`packages/socialcalc-headless/`):
+1. Vite `?raw` import of `socialcalc/dist/SocialCalc.js` — string-loads the UMD at build time.
+2. `scripts/build.js` applies two source transforms on the bundled string:
+   - `document.createElement(` → `SocialCalc.document.createElement(` (redirect DOM creation to our shim).
+   - `alert(` → `(function(){})(` (silence error-path alerts).
+3. One wrapper-level transform: `typeof globalThis !== 'undefined' ? globalThis : this` → `this` (so the host-binding IIFE captures `root`/`window`).
+4. `new Function(...)` eval inside the DO (permitted; no CSP restriction). Sloppy mode by default — required because SocialCalc uses `delete varname;` at a few lines.
+5. Eval scaffold installs DOM stubs (`ShimNode` class covering `id`, `width`, `height`, `className`, `colSpan`, `rowSpan`, `title`, `innerHTML`, `outerHTML`, `appendChild`) and a **synchronous `setTimeout` shim** (`function(cb){cb();return 0;}`) so recalc state machines unroll inline.
+6. Factory memoized module-wide; 27k-line eval runs once per isolate.
+7. Manual `SocialCalc.RecalcSheet(sheet)` kick after command batches (without an editor, `recalc` only sets `needsrecalc="yes"`).
 
+Upstream fixes (now in `audreyt/socialcalc`): the ES5 `delete varname;` rewrites, reserved-`eval` renames, and `factory.call(root, this)` → `factory.call(root, root)` that we used to do by hand. Implicit-globals pre-declaration removed — `var`-less assignments in paste/render/format/MIME paths fixed upstream.
 
-**Plan A works.** `socialcalc@2.3.0` runs inside workerd via `@cloudflare/vitest-pool-workers`. 6/6 smoke tests green. Code lives in `packages/socialcalc-headless/`.
+**Proven**: SUM formulas, snapshot+log round-trip, text+number mix, recalc without formulas, `exportCSV`/`exportCells`/`exportCell`, `csvToSave` via Clipboard + CreateSpreadsheetSave.
 
-#### What worked
-
-1. **Vite `?raw` import** of `socialcalc/dist/SocialCalc.js` — string-loads the 27k-line UMD at build time.
-2. **`new Function(...)`** eval inside workerd. Permitted; no CSP/unsafe-eval restriction for DO code.
-3. **Sync `setTimeout` shim** — legacy server used `process.nextTick` via webworker-threads; we install `host.setTimeout = function(cb){cb();return 0;}` so the recalc state machine unrolls inline and `executeCommand()` returns a fully-settled sheet.
-4. **ShimNode DOM class** at `src/dom-shim.ts` — direct port of the legacy `src/sc.ls` Node class. Covers the seven attribute names SocialCalc sets (`id`, `width`, `height`, `className`, `colSpan`, `rowSpan`, `title`) plus `innerHTML`/`outerHTML` getters and `appendChild`.
-5. **Manual `RecalcSheet` kick** — the `recalc` command only sets `needsrecalc="yes"`; without an editor we trigger `SocialCalc.RecalcSheet(sheet)` ourselves after the command batch.
-
-#### Three non-obvious source transforms (`transformSource` in `src/index.ts`)
-
-| # | Find                                 | Replace with                                   | Why                                                                |
-| - | ------------------------------------ | ---------------------------------------------- | ------------------------------------------------------------------ |
-| 1 | `document.createElement(`            | `SocialCalc.document.createElement(`           | Legacy — redirect DOM creation to our shim's namespace-bound one   |
-| 2 | `alert(`                             | `(function(){})(`                              | Legacy — silence alerts on error paths                             |
-| 3 | `factory.call(root, this)` (UMD)     | `factory.call(root, root)`                     | **New.** `this` at the UMD's outer IIFE call site resolves to the real workerd global in sloppy-mode eval, so `window.setTimeout` inside the factory became the real async timer instead of our shim. Rewriting to `root` pins `window` to our host. Also applies to the `factory.bind(root, this)` AMD branch. |
-
-#### Eval scaffold (`WRAPPED_TEMPLATE` in `src/index.ts`)
-
-```js
-// Called as `factory.call(host, ShimNode)` — so `this === host` inside body.
-var host = this;
-host.setTimeout = function (cb) { cb(); return 0; };
-host.clearTimeout = function () {};
-
-// Inner IIFE pins `this === host` too, so SocialCalc's UMD sees
-// `(this, factory)` with `this === host` and pipes host through as `window`.
-(function () {
-  var window = this;
-  var navigator = { language: "", userAgent: "" };
-  var module, exports, define;       // force UMD else-branch
-  ${transformedSource}
-}).call(host);
-
-var __SC = host.SocialCalc;
-__SC.document = __SC.document || {};
-__SC.document.createElement = function (tag) { return new __ShimNode(tag); };
-return __SC;
-```
-
-#### Required: sloppy mode
-
-SocialCalc 2.3.0 uses `delete varname;` at lines 7173, 25144, 27541. This is a `SyntaxError` in strict mode. No `"use strict";` anywhere in the wrapper. `new Function` bodies are sloppy by default, which is what we need.
-
-#### Performance
-
-- Factory is memoized module-wide (`cachedNamespace`). The 27k-line eval runs **once per isolate** (≈ once per DO cold start).
-- Each room gets a fresh `SpreadsheetControl` on the shared namespace.
-- Synchronous recalc adds no meaningful latency for reasonable sheets (SUM over 2 cells: 2 setTimeout hops; no measurable diff from async).
-
-#### What we proved (smoke test suite)
-
-- `loads SocialCalc namespace in workerd`
-- `instantiates a SpreadsheetControl with a default empty sheet`
-- `executes set + SUM formula and exports CSV` — `SUM(A1:A2)` with A1=1, A2=2 → `1\n2\n3\n`
-- `loads from snapshot and applies log` — round-trips `createSpreadsheetSave` → `createSpreadsheet({snapshot, log})`
-- `survives a recalc where no formulas reference anything`
-- `handles text cells and basic arithmetic` — mixed text + numeric + formula, 2-col 3-row CSV
-
-#### What we haven't proved yet (deferred to Phase 8)
-
-- HTML export (`CreateSheetHTML` → ShimNode's `outerHTML` serialization). Basic infra is there; needs test.
-- Cell-level introspection (`sheet.cells[coord]`) for `exportCells`/`exportCell` endpoints.
-- Cross-sheet formula references (`'other-room'!A1`) — requires `RecalcInfo.LoadSheet` hook wired to sibling DOs. Design lives in §10.2 (RecalcLoadSheet → `env.ROOM.get(idFromName(otherRoom))`).
-- `ScheduleSheetCommands` path (async, via StatusCallback) — we bypass it with sync `ExecuteSheetCommand`. Fine for HTTP requests, but if any command sequence depends on the async scheduler's cmdend callback, we'll need to run it the async way. No known case yet.
-
-#### Unused Plan B / Plan C
-
-Plan A green ⇒ Plan B (Node Workers compat) and Plan C (WASM) NOT needed. Delete from plan in next cleanup pass.
+**Not yet exercised end-to-end**:
+- Cross-sheet formula references (`'other-room'!A1`) — needs `RecalcInfo.LoadSheet` hook wired to sibling DOs (§7 item 2).
+- `ScheduleSheetCommands` async path — we bypass with sync `ExecuteSheetCommand` (§7 item 7).
 
 ### 16.B — Deferred decisions not in §13
 
-(none yet; append when new open questions emerge mid-execution)
-
-### 16.C — Removed/dropped files inventory
-
-When porting completes, these legacy files become candidates for deletion in the Phase 12 sweep. Keep them until then for oracle recording:
-- `src/app.ls`, `src/db.ls`, `src/dotcloud.ls`, `src/emailer.ls`, `src/main.ls`, `src/sc.ls`, `src/player*.ls`
-- compiled `.js` siblings: `app.js`, `db.js`, `dotcloud.js`, `emailer.js`, `main.js`, `sc.js`, `player*.js`
-- `multi/main.ls`, `multi/foldr.ls`, `multi/styles.styl`, `multi/webpack.config.js` — ported to `packages/client-multi/` (§13 Q2).
-- `snapcraft.yaml`, `dotcloud.yml`, `stackato.yml`, `.dotcloud/`, `.openshift/`, `apache/`, `nginx/`
-- `supervisord.conf`, `requirements.txt`
-- `Dockerfile`, `docker-compose.yml` — **replaced**, not dropped (§13 Q5). New ones run Miniflare image.
-- `webpack.config.js` — replaced by Vite.
-- `bun.lock` — re-gen under new workspace.
-- `Makefile` — check what it does first; likely drop.
-- compiled `.js` siblings in root — all dropped.
-
-### 16.D — Keep permanent
-
-- `LICENSE.txt`
-- `Changes.txt` (historical record)
-- `API.md` (updated as needed for any compat-breaking changes)
-- `README.mkdn` (updated)
-- all `.png`/`.ico`/`.svg` icons
-- `start.html`, `panels.html`, `index.html` — rewrite but keep URLs/IDs.
+(none; append when new open questions emerge mid-execution)
 
 ---
 
-*End of plan. Last updated 2026-04-19 during Phase 0.*
+*End of plan.*
+claude --resume 7059f882-1b8d-44c5-8c9e-c246879c20fd

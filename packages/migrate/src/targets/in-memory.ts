@@ -32,7 +32,7 @@ export interface InMemoryTargetOptions {
 /**
  * Implementation of {@link MigrationTarget} that stashes everything in
  * regular JS maps. All methods return resolved Promises so they compose
- * with the async applyRooms() pipeline.
+ * with the async applyRoomStream() pipeline.
  */
 export class InMemoryTarget implements MigrationTarget {
   /** `doStorage.get(room)` → (storageKey → value). */

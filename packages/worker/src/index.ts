@@ -12,6 +12,7 @@ import { buildHealthBody } from './handlers/health.ts';
 import { registerAssets, registerRoomCatchAll } from './routes/assets.ts';
 import { registerExports } from './routes/exports.ts';
 import { registerLegacySocketIo } from './routes/legacy-socketio.ts';
+import { registerMigrate } from './routes/migrate.ts';
 import { registerRoomRoutes } from './routes/rooms.ts';
 import { registerStateless } from './routes/stateless.ts';
 import { registerTimetrigger } from './routes/timetrigger.ts';
@@ -50,6 +51,11 @@ export function buildApp(): Hono<{ Bindings: Env }> {
   // `/_exists/:room` pattern (same leading underscore). Reads the D1
   // `cron_triggers` table and fires due rows just like `scheduled()`.
   registerTimetrigger(app);
+  // Phase 11b — migration seed endpoint (`PUT /_migrate/seed/:room`).
+  // Registered before the room routes so the `_migrate` literal prefix
+  // wins against `/_/:room` patterns. Gated by `ETHERCALC_MIGRATE_TOKEN`
+  // inside the handler; no risk of exposing it accidentally.
+  registerMigrate(app);
   // Room index + CRUD — register BEFORE stateless so `/_rooms`, `/_exists/:room`,
   // `/_from/:template` etc take precedence over any `/:room`-style catch-all.
   registerRoomRoutes(app);

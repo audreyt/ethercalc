@@ -1,5 +1,6 @@
 node_modules/
 /dump/
+dump.rdb
 *.swp
 dist/
 coverage/
@@ -7,6 +8,8 @@ coverage/
 .vitest-cache/
 *.log
 .claude/
+# Local-only secrets for `wrangler dev` / Miniflare. See CLAUDE.md §3.1.
+.dev.vars
 # Playwright e2e outputs
 playwright-report/
 test-results/

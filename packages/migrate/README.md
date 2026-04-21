@@ -1,56 +1,60 @@
 # @ethercalc/migrate
 
-Phase 11b migrator — reads a legacy EtherCalc Redis dump and replays
-every room into Cloudflare (DO storage + D1 + KV) via wrangler. See
-`CLAUDE.md` §12 for the full design.
+Phase 11b migrator — streams a legacy EtherCalc Redis out of a live
+RESP server and seeds each room into the new Cloudflare stack via the
+worker's `PUT /_migrate/seed/:room` endpoint. See `CLAUDE.md` §12 for
+the full design.
 
-## Exporting a Redis dump
+## Exporting the legacy data
 
-On the host that runs the legacy server:
+Load the legacy `dump.rdb` into a RESP-speaking server on the migration
+host. Any of these works — the migrator only talks RESP:
 
 ```bash
-redis-cli --rdb /tmp/ethercalc.rdb
+# Option A — real redis-server
+redis-server --dir /path/to/dump/ --dbfilename dump.rdb --port 6379
+
+# Option B — Zedis or any other RESP-compatible RDB loader.
 ```
 
-This writes a point-in-time snapshot of every key (`snapshot-*`,
-`log-*`, `audit-*`, `chat-*`, `ecell-*`, plus the global `timestamps`
-hash). No online Redis is required once the `.rdb` is in hand — this
-tool parses it offline.
+The server owns the RDB decode; the migrator owns shape-shifting into
+Worker PUTs. Total memory in the migrator stays O(1-per-room)
+regardless of dump size — rooms are streamed via `SCAN` and pipelined
+`GET`/`LRANGE`/`HGETALL`.
 
 ## Running the migration
 
+Start the new worker in one terminal (Miniflare or `wrangler dev`):
+
 ```bash
-bun run --cwd packages/migrate migrate \
-  --input /tmp/ethercalc.rdb \
-  --d1-name ethercalc-rooms \
-  --kv-name ROOMS_INDEX
+echo 'ETHERCALC_MIGRATE_TOKEN="local-only"' > packages/worker/.dev.vars
+./bin/ethercalc
 ```
 
-The migrator will:
+Then run the migrator in another:
 
-1. Parse the RDB file (pure, offline — see `src/parse-rdb.ts`).
-2. Partition it into per-room records (`src/extract-rooms.ts`).
-3. Shell out to `wrangler d1 execute` / `wrangler kv key put` for each
-   write (`src/targets/wrangler.ts`).
+```bash
+./bin/ethercalc migrate \
+  --source redis://127.0.0.1:6379 \
+  --target http://127.0.0.1:8000 \
+  --token local-only
+```
 
-Per-room DO storage is seeded via a staging table `do_storage_seed`
-in D1 (the Worker hydrates it on first room access). Once Phase 5's
-`PUT /_do/snapshot` DO endpoint lands, this target will switch to
-direct DO API calls without changing its public surface.
+`--token` must match `env.ETHERCALC_MIGRATE_TOKEN` on the worker. In
+production, set it with `wrangler secret put ETHERCALC_MIGRATE_TOKEN`
+before running with `--target https://ethercalc.workers.dev`.
 
 ## Dry-run preview
 
 ```bash
-bun run --cwd packages/migrate migrate \
-  --input /tmp/ethercalc.rdb \
-  --d1-name ethercalc-rooms \
-  --kv-name ROOMS_INDEX \
+./bin/ethercalc migrate \
+  --source redis://127.0.0.1:6379 \
   --dry-run
 ```
 
-Prints every intended write to stdout without invoking wrangler.
-Useful for diffing against a previous dump and for sanity-checking
-`--d1-name`/`--kv-name`.
+Enumerates every room via RESP and prints the intended writes to
+stdout without contacting any worker. Useful for sanity-checking the
+dump before a real seed.
 
 ## What goes where
 
@@ -70,7 +74,7 @@ encoding applied by the legacy `encodeURI` call).
 ## Testing
 
 ```bash
-bun run --cwd packages/migrate test            # 91 tests
+bun run --cwd packages/migrate test
 bun run --cwd packages/migrate test:coverage   # 100% gate
 ```
 

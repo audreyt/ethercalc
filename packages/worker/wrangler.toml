@@ -88,7 +88,7 @@ crons = ["*/1 * * * *"]
 [[d1_databases]]
 binding = "DB"
 database_name = "ethercalc_rooms"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "bd9247bd-5b50-4c47-8ce6-de3196511684"
 migrations_dir = "./migrations"
 
 # Load SocialCalc.js as a Text module so `new Function(rawSource)` inside
@@ -107,7 +107,12 @@ type = "Text"
 globs = ["**/SocialCalc.js?raw", "**/SocialCalc.js"]
 fallthrough = true
 
-# Enable new Function eval
-[[unsafe.bindings]]
-name = "UNSAFE_EVAL"
-type = "unsafe_eval"
+# `unsafe_eval` binding is no longer needed: `socialcalc.bundled.ts` is
+# transpiled at build time into the worker bundle (see
+# `packages/socialcalc-headless/scripts/build.js`). No runtime `eval` /
+# `new Function` calls remain, so CF validation no longer needs the
+# capability object. If we ever revert to `?raw`-import + eval, re-add:
+#
+#   [[unsafe.bindings]]
+#   name = "UNSAFE_EVAL"
+#   type = "unsafe_eval"

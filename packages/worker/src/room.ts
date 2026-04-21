@@ -37,6 +37,7 @@ import {
 } from '@ethercalc/socialcalc-headless';
 
 import { buildEmailSender } from './handlers/cron.ts';
+import { parseSeedPayload } from './handlers/migrate.ts';
 import { verifyAuth } from './lib/auth.ts';
 import { parseCSV } from './lib/csv-parse.ts';
 import { parseSendemail } from './lib/email.ts';
@@ -183,6 +184,16 @@ export class RoomDO implements DurableObject {
     }
     if (path === '/_do/install' && request.method === 'POST') {
       return this.#postInstall(request);
+    }
+    // ─── Phase 11b: full-fidelity migration seed ─────────────────────
+    // `POST /_do/seed` is the migration entry point — it replaces the
+    // entire room (snapshot + log + audit + chat + ecell + meta
+    // timestamp) in one shot, then mirrors the D1 `rooms` row. The
+    // worker-level `PUT /_migrate/seed/:room` route authenticates the
+    // caller before dispatching here; direct DO access from inside the
+    // namespace (tests, future tooling) can bypass that.
+    if (path === '/_do/seed' && request.method === 'POST') {
+      return this.#postSeed(request, roomName);
     }
     // ─── Phase 7: native WebSocket upgrade ───────────────────────────
     if (path === '/_do/ws' && request.method === 'GET') {
@@ -381,6 +392,60 @@ export class RoomDO implements DurableObject {
       this.#nextAuditSeq = 0;
       this.#nextChatSeq = 0;
     });
+    return plainResponse('OK', 201);
+  }
+
+  /**
+   * Phase 11b — full-fidelity room seed. Accepts the complete payload
+   * derived from a legacy Redis dump (see `@ethercalc/migrate`) and
+   * installs it verbatim, replacing any existing state in this DO.
+   *
+   * Differences from `#postInstall` (rename path):
+   *   - carries chat + ecell + explicit updatedAt
+   *   - mirrors the D1 `rooms` row via `?name=<room>`
+   *   - snapshot field is optional; a log-only room (legacy rooms with
+   *     commands recorded but no snapshot yet folded) seeds with an
+   *     empty snapshot and no `snapshot` storage key.
+   *
+   * Idempotent — re-running against the same room overwrites. The
+   * migrator calls this exactly once per room per run.
+   */
+  async #postSeed(request: Request, roomName: string | null): Promise<Response> {
+    let raw: unknown;
+    try {
+      raw = await request.json();
+    } catch {
+      return new Response('seed body must be valid JSON', { status: 400 });
+    }
+    const parsed = parseSeedPayload(raw, () => Date.now());
+    if (!parsed.ok) {
+      return new Response(parsed.error, { status: 400 });
+    }
+    const payload = parsed.value;
+    await this.#state.blockConcurrencyWhile(async () => {
+      await this.#state.storage.deleteAll();
+      if (payload.snapshot.length > 0) {
+        await this.#state.storage.put(STORAGE_KEYS.snapshot, payload.snapshot);
+      }
+      await this.#state.storage.put(STORAGE_KEYS.metaUpdatedAt, payload.updatedAt);
+      for (let i = 0; i < payload.log.length; i++) {
+        await this.#state.storage.put(logKey(i), payload.log[i] as string);
+      }
+      for (let i = 0; i < payload.audit.length; i++) {
+        await this.#state.storage.put(auditKey(i), payload.audit[i] as string);
+      }
+      for (let i = 0; i < payload.chat.length; i++) {
+        await this.#state.storage.put(chatKey(i), payload.chat[i] as string);
+      }
+      for (const [user, cell] of Object.entries(payload.ecell)) {
+        await this.#state.storage.put(ecellKey(user), cell);
+      }
+      this.#ss = null;
+      this.#nextLogSeq = payload.log.length;
+      this.#nextAuditSeq = payload.audit.length;
+      this.#nextChatSeq = payload.chat.length;
+    });
+    await this.#mirrorIndex(roomName, payload.updatedAt);
     return plainResponse('OK', 201);
   }
 

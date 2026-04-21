@@ -278,33 +278,19 @@ Largest surface (5 files, 370 mutants). Biggest contributors are `framing.ts` (2
 
 ## Package: `migrate`
 
-**Score: 90.16% (605 killed+timeout / 671 mutants, 66 survived)**
+**Baseline needs a rerun after the 2026-04-21 RESP-only rewrite.** The
+hand-rolled RDB parser + LZF worker pool + `WranglerTarget` were
+removed — migration now always streams RESP from a live Redis into the
+worker's `PUT /_migrate/seed/:room`. The entries below are stale; the
+next nightly Stryker run will repopulate this section. Retained here as
+historical context in case we ever re-add an RDB-parsing path.
 
-The RDB parser is the largest file (573 LOC). Most survivors are arithmetic offsets in binary-parsing inner loops where the code is over-specified — `i + 1 < arr.length` vs `i + 1 <= arr.length` is invisible because we never feed it an odd-length pair array.
+<details>
+<summary>Stale baseline (pre-2026-04-21)</summary>
 
-### Top 5 surviving mutants
+Score before rewrite: 90.16% (605 killed+timeout / 671 mutants, 66 survived). The top surviving clusters were in `parse-rdb.ts` arithmetic offsets, `extract-rooms.ts` default-branch coverage, and `targets/wrangler.ts` SQL-string substitutions — none of which exist in the current `src/` tree.
 
-1. **`src/parse-rdb.ts:174,195` — EqualityOperator** on `for (let i = 0; i + 1 < arr.length; i += 2)`
-   `<` → `<=`
-   **Why uncaught:** RDB hash/zset payloads always come in pairs. No fixture feeds an odd-length array, so `<=` and `<` agree on all realistic inputs. Defensive code; the `<=` variant would over-read the last index but tests never hit it.
-
-2. **`src/parse-rdb.ts:571:31` — StringLiteral** on `Buffer.from(s, 'utf8')` → `Buffer.from(s, "")`
-   **Why uncaught:** Node's `Buffer.from` with an unknown encoding falls back to UTF-8 by default. Real equivalence — no test can distinguish.
-
-3. **`src/cli-args.ts:58:9` — ConditionalExpression** on `if (out.input === '')` → `if (false)`
-   **Why uncaught:** Default for `out.input` is `''`, but tests always pass `--input=<something>`. The `--input=''` explicit empty-string case isn't tested.
-
-4. **`src/extract-rooms.ts:81:7` — ConditionalExpression** on `if (raw === undefined) return {};`
-   **Why uncaught:** Tests always provide the key. The "snapshot missing" path through `extractRooms` isn't exercised in unit tests (only in the `fixtures-roundtrip` integration).
-
-5. **`src/targets/wrangler.ts` cluster (7 survived)** — a mix of `StringLiteral` replacements on SQL strings (`'INSERT INTO …'` → `''`) and method-call arg mutations. `wrangler.ts` is tested via a mock that records the call shape but doesn't assert on the SQL string bytes.
-
-### Recommended test additions
-
-- [ ] `extractRooms` — feed a missing snapshot key, assert empty result (not just "no crash").
-- [ ] `CliArgs` — test `--input=` (empty-value) separately from "argument omitted".
-- [ ] `targets/wrangler.ts` — assert on SQL string contents, not just "query was called".
-- [ ] `parse-rdb` — add a fixture with an odd-length hash payload (malformed); assert it errors cleanly.
+</details>
 
 ---
 
@@ -443,24 +429,8 @@ The full nightly matrix runs six packages in parallel jobs. Indicative per-packa
 | socketio-shim  | 1–2 min         | 370           | Well-bounded; no action.                                       |
 | oracle-harness | 2–3 min         | 545           | Matchers + canonicalizers are heavy; no action.                |
 | client         | 2–3 min         | 653           | `graph.ts` excluded; 3 files dominate. No action.              |
-| migrate        | **3–6 min**     | 671           | `parse-rdb.ts` is the critical-path file; see below.           |
+| migrate        | under 2 min     | rerun pending | RDB parser removed 2026-04-21; runtime will drop dramatically. |
 
-**Only `migrate` plausibly approaches the 5-minute ceiling** (CLAUDE.md §5.3 implies "minutes per package" as the expected worst case — not a hard limit, but the trigger for deeper slicing). Its 573-LOC `parse-rdb.ts` (a hand-rolled RDB binary parser) generates the largest per-file mutant count and dominates the wall-clock. Two non-implementation options if timings drift further:
-
-1. **Split the `mutate` glob.** Current config is `src/**/*.ts`. Splitting `parse-rdb.ts` into its own nightly matrix cell (and the rest of `migrate` into a second cell) halves the critical-path time at the cost of one extra job slot. Config sketch:
-
-   ```jsonc
-   // packages/migrate/stryker.conf.json — split-mode variant
-   "mutate": ["src/parse-rdb.ts"]
-   // and a sibling config: "mutate": ["src/**/*.ts", "!src/parse-rdb.ts", ...]
-   ```
-
-2. **Bump `concurrency` on `migrate` only.** Other packages are I/O-bounded (vitest startup per re-run); `parse-rdb.ts` mutants are CPU-bounded (buffer parsing, no async). Raising concurrency from 4 to 8 on this package cuts wall-clock by ~30% on the 4-core ubuntu-latest runner at the cost of longer individual test re-runs. Lower-risk than option 1.
-
-   ```jsonc
-   "concurrency": 8   // was 4
-   ```
-
-Neither is blocking today. Apply if `parse-rdb.ts` grows (e.g. adding encoding support), if `migrate`'s score tightens and the additional test-runner cost pushes it past ~5 min, or if the next nightly's timing sheet confirms a concrete regression.
+After the 2026-04-21 RESP-only rewrite `migrate` is the smallest mutation surface in the repo (parser/LZF/stream modules gone). A fresh nightly will settle the runtime and mutant count; no sharding or concurrency knobs look necessary.
 
 The PR-gate `mutation-gate` job (ci.yml) is already scoped to changed packages, so a single-package edit stays under ~2 minutes regardless of migrate's full-matrix cost.

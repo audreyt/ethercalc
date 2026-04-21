@@ -10,13 +10,13 @@ import * as migrate from '../src/index.ts';
 describe('@ethercalc/migrate barrel', () => {
   it('re-exports every public runtime symbol', () => {
     const names = [
-      'parseRdb',
-      'encodeRdb',
-      'RdbParseError',
-      'extractRooms',
-      'applyRooms',
+      'applyRoomStream',
       'InMemoryTarget',
-      'WranglerTarget',
+      'HttpTarget',
+      'waitForHealth',
+      'RespClient',
+      'RespError',
+      'roomsFromRedis',
       'parseArgs',
       'runMigrate',
       'buildTarget',

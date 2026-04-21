@@ -1,28 +1,36 @@
 /**
  * Replay extracted rooms into a pluggable {@link MigrationTarget}.
  *
- * The real production target writes to Cloudflare (D1 + KV + DO storage
- * via the DO's internal HTTP API or direct wrangler shell-outs); unit
- * tests use the in-memory target. The interface is deliberately narrow
- * — only the operations a migration needs, each mapped 1:1 to a legacy
- * Redis key pattern.
+ * The real production target writes through the live worker's
+ * `PUT /_migrate/seed/:room` (see `./targets/http.ts`); unit tests use
+ * the in-memory target. The interface is deliberately narrow — only the
+ * operations a migration needs, each mapped 1:1 to a legacy Redis key
+ * pattern.
  */
 
-import type { Room } from './extract-rooms.ts';
+/** One legacy EtherCalc room, assembled from RESP replies. */
+export interface Room {
+  readonly name: string;
+  /** SocialCalc save string. `''` means no snapshot recorded. */
+  readonly snapshot: string;
+  readonly log: readonly string[];
+  readonly audit: readonly string[];
+  readonly chat: readonly string[];
+  readonly ecell: Readonly<Record<string, string>>;
+  /** Epoch ms from the shared `timestamps` hash. Optional. */
+  readonly updatedAt?: number;
+}
 
 /**
  * Sink for migrated room data.
  *
  * Mapping (per CLAUDE.md §10.2):
- *   putSnapshot   → DO storage `snapshot` (via PUT /_do/snapshot or direct)
+ *   putSnapshot   → DO storage `snapshot`
  *   putLog        → DO storage `log:<padSeq(seq)>`
  *   putAudit      → DO storage `audit:<padSeq(seq)>`
  *   putChat       → DO storage `chat:<padSeq(seq)>`
  *   putEcell      → DO storage `ecell:<user>`
  *   setRoomIndex  → D1 `rooms(room, updated_at)` + KV `rooms:exists:<room>`
- *
- * All methods return a Promise so real implementations can batch/network.
- * Synchronous in-memory tests can still return a resolved Promise.
  */
 export interface MigrationTarget {
   putSnapshot(room: string, snapshot: string): Promise<void>;
@@ -33,10 +41,7 @@ export interface MigrationTarget {
   setRoomIndex(room: string, updatedAt: number): Promise<void>;
 }
 
-/**
- * Summary returned from {@link applyRooms}. Callers log it or check
- * counts in tests.
- */
+/** Summary returned from {@link applyRoomStream}. */
 export interface ApplyStats {
   rooms: number;
   snapshots: number;
@@ -47,15 +52,36 @@ export interface ApplyStats {
   indexed: number;
 }
 
+/** Hook called as rooms finish seeding — useful for CLI progress output. */
+export type SendProgressHook = (info: {
+  readonly seeded: number;
+  readonly inFlight: number;
+}) => void;
+
+export interface ApplyRoomStreamOptions {
+  /**
+   * Max concurrent per-room seed operations. A value of 1 preserves
+   * sequential semantics; higher values overlap sends with the RESP
+   * source and fan out across the host's cores via libuv. Defaults to
+   * 1 — callers whose target is safe to parallelize (like `HttpTarget`,
+   * whose buffers are per-room and mutually independent) should pass
+   * 8-16.
+   */
+  readonly concurrency?: number;
+  readonly onProgress?: SendProgressHook;
+}
+
 /**
- * Write every room into the target. Iteration order is stable (rooms as
- * given; per-room writes go snapshot → log → audit → chat → ecell →
- * index). Errors propagate — the caller decides whether to roll back.
+ * Consume an async iterable of rooms and feed them into the target,
+ * one at a time (or up to `concurrency` at a time). Returns stats once
+ * the source is exhausted and every in-flight write has resolved.
  */
-export async function applyRooms(
-  rooms: readonly Room[],
+export async function applyRoomStream(
+  rooms: AsyncIterable<Room>,
   target: MigrationTarget,
+  options: ApplyRoomStreamOptions = {},
 ): Promise<ApplyStats> {
+  const concurrency = Math.max(1, Math.floor(options.concurrency ?? 1));
   const stats: ApplyStats = {
     rooms: 0,
     snapshots: 0,
@@ -65,33 +91,58 @@ export async function applyRooms(
     ecellEntries: 0,
     indexed: 0,
   };
-  for (const room of rooms) {
-    stats.rooms += 1;
-    if (room.snapshot !== '') {
-      await target.putSnapshot(room.name, room.snapshot);
-      stats.snapshots += 1;
+  const inFlight = new Set<Promise<void>>();
+  let firstError: unknown = null;
+  const onProgress = options.onProgress;
+  for await (const room of rooms) {
+    const work = seedOneRoom(target, room, stats)
+      .catch((err) => {
+        if (firstError === null) firstError = err;
+      })
+      .then(() => {
+        if (onProgress !== undefined) {
+          onProgress({ seeded: stats.rooms, inFlight: inFlight.size });
+        }
+      });
+    inFlight.add(work);
+    void work.finally(() => {
+      inFlight.delete(work);
+    });
+    if (inFlight.size >= concurrency) {
+      await Promise.race(inFlight);
     }
-    for (let i = 0; i < room.log.length; i++) {
-      await target.putLog(room.name, i + 1, room.log[i] as string);
-      stats.logEntries += 1;
-    }
-    for (let i = 0; i < room.audit.length; i++) {
-      await target.putAudit(room.name, i + 1, room.audit[i] as string);
-      stats.auditEntries += 1;
-    }
-    for (let i = 0; i < room.chat.length; i++) {
-      await target.putChat(room.name, i + 1, room.chat[i] as string);
-      stats.chatEntries += 1;
-    }
-    for (const [user, cell] of Object.entries(room.ecell)) {
-      await target.putEcell(room.name, user, cell);
-      stats.ecellEntries += 1;
-    }
-    // Index every room, even ones without snapshots — the new stack
-    // treats "room known to KV/D1" as a distinct signal from "has data".
-    const ts = room.updatedAt ?? 0;
-    await target.setRoomIndex(room.name, ts);
-    stats.indexed += 1;
   }
+  await Promise.all(inFlight);
+  if (firstError !== null) throw firstError;
   return stats;
+}
+
+async function seedOneRoom(
+  target: MigrationTarget,
+  room: Room,
+  stats: ApplyStats,
+): Promise<void> {
+  if (room.snapshot !== '') {
+    await target.putSnapshot(room.name, room.snapshot);
+    stats.snapshots += 1;
+  }
+  for (let i = 0; i < room.log.length; i++) {
+    await target.putLog(room.name, i + 1, room.log[i] as string);
+    stats.logEntries += 1;
+  }
+  for (let i = 0; i < room.audit.length; i++) {
+    await target.putAudit(room.name, i + 1, room.audit[i] as string);
+    stats.auditEntries += 1;
+  }
+  for (let i = 0; i < room.chat.length; i++) {
+    await target.putChat(room.name, i + 1, room.chat[i] as string);
+    stats.chatEntries += 1;
+  }
+  for (const [user, cell] of Object.entries(room.ecell)) {
+    await target.putEcell(room.name, user, cell);
+    stats.ecellEntries += 1;
+  }
+  await target.setRoomIndex(room.name, room.updatedAt ?? 0);
+  stats.rooms += 1;
+  stats.indexed += 1;
 }

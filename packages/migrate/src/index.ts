@@ -3,19 +3,29 @@
  * sibling modules; this file is pure re-export surface and exercised by
  * test/index.test.ts.
  */
-export { parseRdb, encodeRdb, RdbParseError } from './parse-rdb.ts';
-export type { RedisDump } from './parse-rdb.ts';
-export { extractRooms } from './extract-rooms.ts';
-export type { Room } from './extract-rooms.ts';
-export { applyRooms } from './apply.ts';
-export type { MigrationTarget, ApplyStats } from './apply.ts';
+export { applyRoomStream } from './apply.ts';
+export type {
+  MigrationTarget,
+  ApplyStats,
+  ApplyRoomStreamOptions,
+  SendProgressHook,
+  Room,
+} from './apply.ts';
 export { InMemoryTarget } from './targets/in-memory.ts';
 export type {
   InMemoryRoomIndexRow,
   InMemoryTargetOptions,
 } from './targets/in-memory.ts';
-export { WranglerTarget } from './targets/wrangler.ts';
-export type { WranglerTargetConfig, Exec } from './targets/wrangler.ts';
+export { HttpTarget, waitForHealth } from './targets/http.ts';
+export type {
+  HttpTargetConfig,
+  FetchLike,
+  WaitForHealthDeps,
+} from './targets/http.ts';
+export { RespClient, RespError } from './resp-client.ts';
+export type { RespValue, RespSocket } from './resp-client.ts';
+export { roomsFromRedis } from './sources/redis-source.ts';
+export type { RespLike, RoomsFromRedisOptions } from './sources/redis-source.ts';
 export { parseArgs, CliArgError } from './cli-args.ts';
 export type { CliArgs } from './cli-args.ts';
 export {

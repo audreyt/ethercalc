@@ -82,4 +82,20 @@ export interface Env {
    * bound.
    */
   readonly EMAIL_FROM?: string;
+
+  /**
+   * Phase 11b — bearer token that unlocks `PUT /_migrate/seed/:room`,
+   * the write path used by `@ethercalc/migrate` to import legacy
+   * Redis dumps. When unset (the default on production deploys), the
+   * route returns `404` — migration is an operator-opt-in action,
+   * not a public surface. See `src/lib/migrate-auth.ts` for the
+   * verifier and `src/routes/migrate.ts` for the Hono glue.
+   *
+   * Typical local flow:
+   *   echo 'ETHERCALC_MIGRATE_TOKEN="local-only"' > packages/worker/.dev.vars
+   *   ./bin/ethercalc                                          # Miniflare
+   *   bun run migrate -- --input dump.rdb \
+   *     --target http://127.0.0.1:8000 --token local-only
+   */
+  readonly ETHERCALC_MIGRATE_TOKEN?: string;
 }

@@ -2,17 +2,17 @@
   "name": "@ethercalc/migrate",
   "version": "0.0.0",
   "private": true,
-  "description": "Phase 11b — Legacy Redis RDB dump → Cloudflare (DO storage + D1 + KV) migrator (§12)",
+  "description": "Phase 11b — Stream a legacy Redis (RESP) into the new Worker via PUT /_migrate/seed/:room (§12)",
   "license": "CC0-1.0",
   "type": "module",
   "main": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./parse-rdb": "./src/parse-rdb.ts",
-    "./extract-rooms": "./src/extract-rooms.ts",
     "./apply": "./src/apply.ts",
+    "./sources/redis": "./src/sources/redis-source.ts",
+    "./targets/http": "./src/targets/http.ts",
     "./targets/in-memory": "./src/targets/in-memory.ts",
-    "./targets/wrangler": "./src/targets/wrangler.ts",
+    "./resp-client": "./src/resp-client.ts",
     "./cli": "./src/cli.ts"
   },
   "scripts": {

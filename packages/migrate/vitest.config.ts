@@ -7,9 +7,6 @@ export default defineConfig({
     coverage: {
       provider: 'istanbul',
       include: ['src/**/*.ts'],
-      // index.ts and cli.ts are thin glue — index is a barrel re-export,
-      // cli is exercised via its dependency-injected parseArgs/main split.
-      // We still gate both via their unit tests below; no exclusions.
       reporter: ['text', 'json-summary', 'lcov'],
       thresholds: {
         lines: 100,

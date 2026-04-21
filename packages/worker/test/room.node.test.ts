@@ -1005,6 +1005,131 @@ describe('RoomDO — cross-DO rename primitives (Phase 6)', () => {
 });
 
 /**
+ * Phase 11b — migration seed endpoint. Verifies every storage write the
+ * migrator depends on, the D1 mirror, the "log-only room" shape (no
+ * snapshot), and the validation error path that short-circuits before
+ * any storage write happens.
+ */
+describe('RoomDO — POST /_do/seed (Phase 11b migration)', () => {
+  it('installs the full payload and mirrors D1 when ?name is set', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    record.map.set('stale', 'yes'); // must be wiped before install
+    const calls: D1Call[] = [];
+    const env = makeEnvWithDb(calls);
+    const room = new RoomDO(makeState('x', record), env);
+    const res = await room.fetch(
+      new Request('https://do/_do/seed?name=gamma', {
+        method: 'POST',
+        body: JSON.stringify({
+          snapshot: 'socialcalc:v1',
+          log: ['cmd-1', 'cmd-2'],
+          audit: ['cmd-1', 'cmd-2'],
+          chat: ['hello', 'world'],
+          ecell: { alice: 'A1', bob: 'B2' },
+          updatedAt: 1700,
+        }),
+      }),
+    );
+    expect(res.status).toBe(201);
+    expect(await res.text()).toBe('OK');
+    expect(record.map.has('stale')).toBe(false);
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('socialcalc:v1');
+    expect(record.map.get(STORAGE_KEYS.metaUpdatedAt)).toBe(1700);
+    expect(record.map.get(logKey(0))).toBe('cmd-1');
+    expect(record.map.get(logKey(1))).toBe('cmd-2');
+    expect(record.map.get(auditKey(0))).toBe('cmd-1');
+    expect(record.map.get(auditKey(1))).toBe('cmd-2');
+    expect(record.map.get(chatKey(0))).toBe('hello');
+    expect(record.map.get(chatKey(1))).toBe('world');
+    expect(record.map.get(ecellKey('alice'))).toBe('A1');
+    expect(record.map.get(ecellKey('bob'))).toBe('B2');
+    // D1 row mirrored with the caller-provided updatedAt.
+    const insert = calls.find((c) => c.sql.startsWith('INSERT INTO rooms'));
+    expect(insert).toBeDefined();
+    expect(insert?.params).toEqual(['gamma', 1700]);
+  });
+
+  it('log-only rooms (empty snapshot) skip the snapshot storage key', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('x', record), makeEnv());
+    const res = await room.fetch(
+      new Request('https://do/_do/seed', {
+        method: 'POST',
+        body: JSON.stringify({
+          log: ['cmd'],
+          updatedAt: 500,
+        }),
+      }),
+    );
+    expect(res.status).toBe(201);
+    expect(record.map.has(STORAGE_KEYS.snapshot)).toBe(false);
+    expect(record.map.get(STORAGE_KEYS.metaUpdatedAt)).toBe(500);
+    expect(record.map.get(logKey(0))).toBe('cmd');
+  });
+
+  it('returns 400 with the handler error message on a bad payload', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('x', record), makeEnv());
+    const res = await room.fetch(
+      new Request('https://do/_do/seed', {
+        method: 'POST',
+        body: JSON.stringify({ log: 'not-an-array' }),
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(await res.text()).toBe('log must be a string[]');
+    expect(record.map.size).toBe(0); // no partial writes
+  });
+
+  it('returns 400 when the body is not valid JSON', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('x', record), makeEnv());
+    const res = await room.fetch(
+      new Request('https://do/_do/seed', {
+        method: 'POST',
+        body: '{not json',
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(await res.text()).toBe('seed body must be valid JSON');
+  });
+
+  it('skips the D1 mirror when ?name is absent', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const calls: D1Call[] = [];
+    const env = makeEnvWithDb(calls);
+    const room = new RoomDO(makeState('x', record), env);
+    const res = await room.fetch(
+      new Request('https://do/_do/seed', {
+        method: 'POST',
+        body: JSON.stringify({ snapshot: 's', updatedAt: 1 }),
+      }),
+    );
+    expect(res.status).toBe(201);
+    expect(calls.length).toBe(0);
+  });
+
+  it('defaults updatedAt to Date.now() when omitted', async () => {
+    // Covers the inline `() => Date.now()` injected into parseSeedPayload;
+    // every other test supplies an explicit updatedAt.
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('x', record), makeEnv());
+    const before = Date.now();
+    const res = await room.fetch(
+      new Request('https://do/_do/seed', {
+        method: 'POST',
+        body: JSON.stringify({ snapshot: 's' }),
+      }),
+    );
+    const after = Date.now();
+    expect(res.status).toBe(201);
+    const stored = record.map.get(STORAGE_KEYS.metaUpdatedAt) as number;
+    expect(stored).toBeGreaterThanOrEqual(before);
+    expect(stored).toBeLessThanOrEqual(after);
+  });
+});
+
+/**
  * Phase 7 — WebSocket upgrade + hibernation-API glue. `#acceptWebSocket`
  * needs a `WebSocketPair` global; the Node test harness provides a stub
  * before each test. `webSocketMessage` takes an already-accepted socket,

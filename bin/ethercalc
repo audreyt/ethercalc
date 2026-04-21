@@ -18,11 +18,26 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { main } from '../packages/cli/src/run.ts';
+import { main as migrateMain } from '../packages/migrate/src/cli.ts';
+import { RespClient } from '../packages/migrate/src/resp-client.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const workerCwd = path.resolve(here, '..', 'packages', 'worker');
 
 const argv = process.argv.slice(2);
+
+// Subcommand dispatch. `ethercalc migrate <flags…>` forwards to the
+// RESP-source migrator in `packages/migrate`. All other argv forms fall
+// through to the wrangler-dev launcher (legacy flag surface).
+if (argv[0] === 'migrate') {
+  const code = await migrateMain(argv.slice(1), {
+    connectRedis: (url) => RespClient.connect(url),
+    stdout: (s) => process.stdout.write(s),
+    stderr: (s) => process.stderr.write(s),
+  });
+  process.exit(code);
+}
+
 const code = main(argv, {
   stdout: (s) => process.stdout.write(s),
   stderr: (s) => process.stderr.write(s),
