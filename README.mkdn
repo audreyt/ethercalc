@@ -3,30 +3,33 @@
 * Overview: https://ethercalc.net/
 * 中文版: http://tw.ethercalc.net/
 * 简体中文: http://cn.ethercalc.net/
-* REST API: http://docs.ethercalc.apiary.io/
+* REST API: [API.md](./API.md)
 
-* Language: [LiveScript](http://livescript.net/)
-* Runtime: [Node.js](http://nodejs.org/) (4.x preferred, should work with 0.8+)
-* Services: [Redis](http://redis.io) (2.4+; fall-back to on-disk JSON storage if not present)
-    * Multi-server is supported _only_ when running with Redis
-    * Note to Redis 2.2 users (e.g. on Ubuntu 12.04): Please disable the `timeout 300` setting in `/etc/redis.conf`, or upgrade to Redis 2.4+ if possible at all. For more details, see [#49](https://github.com/audreyt/ethercalc/issues/49#issuecomment-25331595).
-* Browsers tested: Safari, Chrome, Firefox, IE.
-* Integrated with content management systems:
-    * [Socialtext](http://www.socialtext.com/)
-    * [Drupal](https://drupal.org/project/sheetnode)
+EtherCalc is a web spreadsheet for real-time collaborative editing.
+This branch is the TypeScript rewrite on the Cloudflare fullstack
+(Hono + Workers + Durable Objects + D1 + KV + R2). It deploys to
+Cloudflare via `wrangler deploy`, and **self-hosts anywhere via
+`docker compose up`** with no Cloudflare account required. See
+[CLAUDE.md](./CLAUDE.md) for the plan-of-record, full architecture,
+and phase status.
 
-## Self-hosting without a Cloudflare account
+Integrated with content management systems:
 
-The TypeScript rewrite runs on the Cloudflare stack (Hono + Workers +
-Durable Objects + D1 + KV + R2) **but also self-hosts** via Miniflare in
-a single container. No Cloudflare account required.
+* [Socialtext](http://www.socialtext.com/)
+* [Drupal](https://drupal.org/project/sheetnode)
+
+Browsers tested: Safari, Chrome, Firefox.
+
+## Self-hosting
 
     git clone https://github.com/audreyt/ethercalc
     cd ethercalc
     docker compose up -d
 
-That boots the Miniflare-backed worker on `http://localhost:8000` and
-persists all spreadsheet state to `./ethercalc-data/` in the repo.
+This boots the Miniflare-backed Worker on `http://localhost:8000` and
+persists all spreadsheet state (Durable Objects, D1, KV, R2) to
+`./ethercalc-data/` in the repo. No Redis, no Node runtime, no
+Cloudflare account.
 
 ### Environment variables
 
@@ -41,126 +44,65 @@ Override defaults by exporting these before `docker compose up`:
 | `ETHERCALC_BASEPATH`  | *(unset)*   | URL prefix, e.g. `/ethercalc` behind a proxy.     |
 | `ETHERCALC_EXPIRE`    | *(unset)*   | Seconds of inactivity before a room is pruned.    |
 
-### CLI usage
+On Apple Silicon, Docker Desktop's virtio networking has an
+intermittent quirk that can make `curl localhost:8000` hang even
+against a healthy container. If you hit it, run the worker directly
+(`bun run --cwd packages/worker dev`) or use a Linux host.
+
+## CLI
 
 For non-Docker runs (local dev, systemd, etc.) use the `bin/ethercalc`
-wrapper. It accepts the legacy `--key`/`--cors`/`--port`/`--host`/
-`--expire`/`--basepath` flags and forwards them to `wrangler dev` + the
-Miniflare env. Run `bin/ethercalc --help` for the full flag table.
+wrapper. It accepts the legacy flag surface and forwards to
+`wrangler dev` + Miniflare env vars:
 
-TLS flags `--keyfile`/`--certfile` print a warning — `wrangler dev` does
-not currently expose them. Terminate TLS at a reverse proxy in front of
-the container (nginx/caddy/traefik).
+    bin/ethercalc [--key SECRET] [--cors] [--port N] [--host ADDR] \
+                  [--expire SEC] [--basepath PREFIX] \
+                  [--persist-to DIR]
 
-## Installation (legacy — Redis-backed, pre-rewrite)
+Run `bin/ethercalc --help` for the full flag table. `--keyfile` /
+`--certfile` are accepted for backward compatibility but currently
+print a warning — `wrangler dev` does not expose TLS. Terminate TLS at
+a reverse proxy (nginx/caddy/traefik).
 
-For global installation (may need root)
+## Deploy to Cloudflare
 
-    npm i -g ethercalc
-    ethercalc
+    cd packages/worker
+    npx wrangler deploy
 
-For local non-root installation
+Store the HMAC secret as a Worker secret:
 
-    git clone git@github.com:audreyt/ethercalc.git
-    cd ethercalc
-    npm i
-    make
+    npx wrangler secret put ETHERCALC_KEY
 
-Nodejs older than 6.0
+## Migration from a legacy (Redis-backed) EtherCalc
 
-    downgrade Nodemailer to v2.7.2
+`bin/ethercalc migrate` streams an existing Redis or Zedis instance
+into the new Worker via `PUT /_migrate/seed/:room`:
 
-Or install with our [Docker](http://www.docker.io/) image, which comes with
-support for webworker-threads:
+    bin/ethercalc migrate \
+      --source redis://localhost:6379 \
+      --target http://new-worker.example/ \
+      --token $ETHERCALC_MIGRATE_TOKEN
 
-    # Install docker and docker-compose
-    sudo ./misc/linux-install-docker-and-compose.sh
+The migrator holds O(1-per-room) memory regardless of dump size — the
+Redis server owns RDB decoding. The target endpoint is gated by
+`env.ETHERCALC_MIGRATE_TOKEN` (when unset, the route returns 404).
+Pass `--dry-run` to preview without writing.
 
-    # Run ethercalc on port 80 ( http://localhost/ )
-    docker-compose up -d
+## Development
 
-Config database
+    bun install
+    bun run --cwd packages/worker dev          # wrangler dev --local
+    bun run --cwd packages/worker test         # workers-pool + node tests
 
-    set env vars:
-      REDIS_PORT REDIS_HOST REDIS_SOCKPATH REDIS_PASS REDIS_DB OPENSHIFT_DATA_DIR
-
-    Defaults:
-      REDIS_HOST = localhost   
-      REDIS_PORT = 6379   
-      OPENSHIFT_DATA_DIR= process.cwd!
-
-    OPENSHIFT_DATA_DIR is used if redis is not Running.
-
-    Code is here:
-    https://github.com/audreyt/ethercalc/blob/df758d4c2f5cbcb00b50e9289a8ba237d4f8fa86/src/db.ls#L5
-
-
-Send email
-
-    Optional - Send email formulas requires OAuth2 & cron  e.g. =email(to, subject, body), =emailAt(time, to, subject, body)
-
-    OAuth2 - Set environment vars
-    1) Tutorial: follow the tutorial to get the 4 environment vars http://masashi-k.blogspot.com.au/2013/06/sending-mail-with-gmail-using-xoauth2.html
-    2) Set 4 environment vars - see [src/emailer.ls] vars: user, clientId, clientSecret, refreshToken
-    Tested using gmail, have not tested with other providors
-
-    Cron - Required for emailAt formulas.
-    See *curl* in [.openshift/cron/minutely/timetrigger] for openshift version (openshift](openshift.redhat.com)
-    The curl checks the database for unsent emails and updates the database after sending.
+See [CLAUDE.md](./CLAUDE.md) for the directory map, testing strategy
+(100% line/branch/function/statement coverage plus Stryker mutation
+gates on gated packages), and the remaining phase plan.
 
 ## REST API
 
-Please see [API.md](https://github.com/audreyt/ethercalc/blob/master/API.md)
-for the API Blueprint, or [the online version at Apiary](http://docs.ethercalc.apiary.io/).
-
-## Runtime Flags
-
-### Listening Interface: `--host` / `--port`
-
-Specify a specific host and/or a different port for the service.
-
-By default EtherCalc listens at `0.0.0.0:8000` (all IPv4 interfaces).
-
-### Using SSL: `--keyfile` / `--certfile`
-
-    openssl genrsa -out ethercalc-key.pem 1024
-    openssl req -new -key ethercalc-key.pem -out certrequest.csr
-    openssl x509 -req -in certrequest.csr -signkey ethercalc-key.pem -out ethercalc-cert.pem
-    ethercalc --keyfile ethercalc-key.pem --certfile ethercalc-cert.pem
-
-### Prefers polling over Websocket: `--polling`
-
-Useful when running behind a proxy without WebSocket support.
-
-### Enable Cross-Origin Resource Sharing: `--cors`
-
-Useful when setting up EtherCalc as a public REST API server.
-
-### URL Prefix: `--basepath /path/prefix`
-
-Useful when running under an URL rewriter. If running with a nginx reverse
-proxy, please add this section:
-
-```
-    location /zappa/socket/__local/ {
-        rewrite (.*) /path/prefix$1;
-    }
-```
-
-
-### Access Control: `--key secret`
-
-Offers read-write vs. read-only modes. See issues [#1](https://github.com/audreyt/ethercalc/issues/1) and [#4](https://github.com/audreyt/ethercalc/issues/4) for details on setting this up.
-
-### Disable server-side WebWorkers: `--vm`
-
-Runs a single-thread background loop with `vm.createContext` instead of `webworker-threads`.
-
-Useful for running custom functions in server side that requires full VM access.
-
-### Expires inactive spreadsheets: `--expire 86400`
-
-Deletes a spreadsheet's content after N seconds of inactivity. Activities include accessing with REST API as well as Web UI, including moving the active cell cursor on an opened page.
+See [API.md](./API.md). The public HTTP surface is preserved
+byte-for-byte where deterministic, minus a small allow-list of
+sensible fixes documented in CLAUDE.md §6.1.
 
 # Licensing
 
@@ -198,15 +140,15 @@ Deletes a spreadsheet's content after N seconds of inactivity. Activities includ
 ### Apache License 2.0 (SheetJS)
 
 * static/shim.js
-* static/xlsx.js
+* static/xlsx.core.min.js
 * static/xlsxworker.js
-* start.html (xlsx2socialcalc.js)
+* assets/start.html (xlsx2socialcalc.js)
 
-### CC0 Public Domain (唐鳳)
+### CC0 Public Domain (唐鳳 / Audrey Tang)
 
-* src/*.ls
+* src/*.ls (legacy LiveScript sources, preserved until Phase 12 sweep)
+* packages/**/*.ts (TypeScript rewrite)
 
 ### Mozilla Public License Version 2.0 (LibreOffice contributors)
 
 * images/sc_*.png
-
