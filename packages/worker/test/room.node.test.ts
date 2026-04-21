@@ -335,6 +335,32 @@ describe('RoomDO (unit, direct construction)', () => {
     expect(await res.text()).toBe('save-text');
   });
 
+  it('GET /_do/snapshot streams chunked snapshots via ReadableStream', async () => {
+    // Simulate a prior chunked write: meta + three chunk keys. The
+    // handler must walk them in-order and stitch the bytes back so a
+    // reader sees the concatenated save.
+    record.map.set(STORAGE_KEYS.snapshotMeta, { chunks: 3 });
+    record.map.set(snapshotChunkKey(0), 'alpha-');
+    record.map.set(snapshotChunkKey(1), 'beta-');
+    record.map.set(snapshotChunkKey(2), 'gamma');
+    const res = await room.fetch(new Request('https://do/_do/snapshot'));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toBe('text/plain; charset=utf-8');
+    expect(await res.text()).toBe('alpha-beta-gamma');
+  });
+
+  it('GET /_do/snapshot stream surfaces a missing-chunk error', async () => {
+    // Writer contract guarantees every chunk exists when meta is
+    // present. A gap implies corruption, so the stream must fail loud
+    // rather than silently truncate.
+    record.map.set(STORAGE_KEYS.snapshotMeta, { chunks: 2 });
+    record.map.set(snapshotChunkKey(0), 'alpha');
+    // chunk 1 absent on purpose
+    const res = await room.fetch(new Request('https://do/_do/snapshot'));
+    expect(res.status).toBe(200);
+    await expect(res.text()).rejects.toThrow(/snapshot chunk 1 missing/);
+  });
+
   it('PUT /_do/snapshot clears prior log/audit/chat/ecell', async () => {
     record.map.set(logKey(0), 'set A1 value n 1');
     record.map.set(auditKey(0), 'set A1 value n 1');

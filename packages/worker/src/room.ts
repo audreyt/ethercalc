@@ -236,9 +236,42 @@ export class RoomDO implements DurableObject {
   // ─── Handlers ──────────────────────────────────────────────────────────
 
   async #getSnapshot(): Promise<Response> {
-    const snapshot = await readSnapshot(this.#state.storage);
-    if (snapshot === null) return notFound();
-    return plainResponse(snapshot);
+    // Fast path: single-key. Small snapshots stay materialized (they
+    // fit under CF's 96 MB DO-response body ceiling with plenty of
+    // headroom).
+    const single = await this.#state.storage.get<string>(STORAGE_KEYS.snapshot);
+    if (typeof single === 'string') return plainResponse(single);
+    const meta = await this.#state.storage.get<SnapshotMeta>(
+      STORAGE_KEYS.snapshotMeta,
+    );
+    if (meta === undefined || meta === null) return notFound();
+    // Chunked path: stream the reassembled save. Materializing a 148 MB
+    // string into a Response body hits workerd's DO-response-size limit
+    // (empirically ~96 MB on the paid plan); a streamed body bypasses
+    // that because the response is transferred frame-by-frame.
+    const storage = this.#state.storage;
+    const encoder = new TextEncoder();
+    const total = meta.chunks;
+    let i = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        if (i >= total) {
+          controller.close();
+          return;
+        }
+        const part = await storage.get<string>(snapshotChunkKey(i));
+        if (typeof part !== 'string') {
+          controller.error(new Error(`snapshot chunk ${i} missing`));
+          return;
+        }
+        controller.enqueue(encoder.encode(part));
+        i += 1;
+      },
+    });
+    return new Response(stream, {
+      status: 200,
+      headers: { 'Content-Type': PLAIN_TEXT },
+    });
   }
 
   async #putSnapshot(request: Request, roomName: string | null): Promise<Response> {

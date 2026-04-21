@@ -209,8 +209,17 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
     if (res.status === 404) {
       return sizedResponse('', 404, TEXT_CT);
     }
-    const body = await res.text();
-    return sizedResponse(body, 200, TEXT_CT);
+    // Pass the body through as a stream. Materializing via `res.text()`
+    // would load the entire save into worker memory and re-set a
+    // Content-Length header — fine for the common small-snapshot case,
+    // but breaks for chunked snapshots over workerd's ~96 MB
+    // DO-response ceiling (the DO delivers those as a streamed body;
+    // collapsing back to text would defeat the point). Browsers and
+    // curl handle chunked transfer encoding fine.
+    return new Response(res.body, {
+      status: 200,
+      headers: { 'Content-Type': TEXT_CT },
+    });
   });
 
   // ─── GET /_/:room/cells (full cell map JSON) ───────────────────────
