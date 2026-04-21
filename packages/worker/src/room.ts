@@ -424,22 +424,34 @@ export class RoomDO implements DurableObject {
     const payload = parsed.value;
     await this.#state.blockConcurrencyWhile(async () => {
       await this.#state.storage.deleteAll();
+      // One batched `storage.put(entries)` call instead of N
+      // sequential awaits. Each individual `put` is a subrequest
+      // against the DO's SQLite, billed against the request's
+      // 10-ms-CPU budget on the Workers free tier (and a seed for a
+      // room with a 26 KB snapshot + a handful of log entries can hit
+      // that limit). A single entries-object put batches the whole
+      // seed into one transactional write, dropping CPU below the
+      // ceiling. DO storage supports up to 128 keys per call — well
+      // above what a real dump row ever carries.
+      const entries: Record<string, unknown> = {
+        [STORAGE_KEYS.metaUpdatedAt]: payload.updatedAt,
+      };
       if (payload.snapshot.length > 0) {
-        await this.#state.storage.put(STORAGE_KEYS.snapshot, payload.snapshot);
+        entries[STORAGE_KEYS.snapshot] = payload.snapshot;
       }
-      await this.#state.storage.put(STORAGE_KEYS.metaUpdatedAt, payload.updatedAt);
       for (let i = 0; i < payload.log.length; i++) {
-        await this.#state.storage.put(logKey(i), payload.log[i] as string);
+        entries[logKey(i)] = payload.log[i] as string;
       }
       for (let i = 0; i < payload.audit.length; i++) {
-        await this.#state.storage.put(auditKey(i), payload.audit[i] as string);
+        entries[auditKey(i)] = payload.audit[i] as string;
       }
       for (let i = 0; i < payload.chat.length; i++) {
-        await this.#state.storage.put(chatKey(i), payload.chat[i] as string);
+        entries[chatKey(i)] = payload.chat[i] as string;
       }
       for (const [user, cell] of Object.entries(payload.ecell)) {
-        await this.#state.storage.put(ecellKey(user), cell);
+        entries[ecellKey(user)] = cell;
       }
+      await this.#state.storage.put(entries);
       this.#ss = null;
       this.#nextLogSeq = payload.log.length;
       this.#nextAuditSeq = payload.audit.length;

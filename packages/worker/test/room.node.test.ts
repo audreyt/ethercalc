@@ -38,8 +38,18 @@ function fakeStorage(record: FakeStorageRecord): DurableObjectStorage {
       return m.get(key);
     },
     async put(key: unknown, value: unknown): Promise<void> {
-      if (typeof key !== 'string') throw new Error('multi-key put not used');
-      m.set(key, value);
+      // Support both the single-key `put(key, value)` and the batched
+      // `put(entries)` forms — Phase 11b's #postSeed uses the batched
+      // form to stay under the Workers-free-tier 10 ms CPU budget.
+      if (typeof key === 'string') {
+        m.set(key, value);
+        return;
+      }
+      if (key !== null && typeof key === 'object') {
+        for (const [k, v] of Object.entries(key)) m.set(k, v);
+        return;
+      }
+      throw new Error('unexpected put argument shape');
     },
     async delete(key: unknown): Promise<boolean> {
       if (typeof key !== 'string') throw new Error('multi-key delete not used');
