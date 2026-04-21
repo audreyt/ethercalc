@@ -380,6 +380,83 @@ describe('runMigrate — end to end with in-memory deps', () => {
     expect(client.closeSpy).toHaveBeenCalledTimes(1);
   });
 
+  it('calls Bun.gc(true) every 500 rooms when the runtime exposes it', async () => {
+    // Builds 1200 rooms so the hook fires at 500 and 1000 but not at
+    // 1200 (1200 % 500 !== 0). Stubs globalThis.Bun.gc to record calls
+    // without actually needing Bun's runtime; restores the original
+    // (possibly real Bun.gc when the test runs under Bun) afterward.
+    const names: string[] = [];
+    for (let i = 0; i < 1200; i++) {
+      names.push(`room-${i.toString().padStart(4, '0')}`);
+    }
+    const client = fakeClient(names);
+    const gcCalls: boolean[] = [];
+    const scope = globalThis as { Bun?: { gc?: (force: boolean) => void } };
+    const prior = scope.Bun;
+    scope.Bun = { gc: (force) => { gcCalls.push(force); } };
+    try {
+      const { deps } = makeDeps({
+        connectRedis: async () => client,
+        fetch: async () => new Response('OK', { status: 201 }),
+        now: () => 0,
+        sleep: async () => undefined,
+      });
+      await runMigrate(
+        {
+          source: 'redis://127.0.0.1:6379',
+          target: 'http://127.0.0.1:8000',
+          token: 'abc',
+          dryRun: false,
+          help: false,
+          skipBulkIndex: false,
+        },
+        deps,
+      );
+    } finally {
+      scope.Bun = prior;
+    }
+    // Hook fires twice: once at seeded=500, once at seeded=1000. Always
+    // forced (full GC, argument `true`).
+    expect(gcCalls).toEqual([true, true]);
+  });
+
+  it('skips Bun.gc when globalThis.Bun is absent (Node-compat path)', async () => {
+    // Ensures the `typeof Bun !== 'function'` guard doesn't throw when
+    // running under a runtime without `Bun`. We run 500+ rooms so the
+    // seeded-% 500 check passes — if the code tried to dereference a
+    // non-existent Bun.gc it would throw.
+    const names: string[] = [];
+    for (let i = 0; i < 600; i++) {
+      names.push(`room-${i.toString().padStart(3, '0')}`);
+    }
+    const client = fakeClient(names);
+    const scope = globalThis as { Bun?: unknown };
+    const prior = scope.Bun;
+    delete scope.Bun;
+    try {
+      const { deps } = makeDeps({
+        connectRedis: async () => client,
+        fetch: async () => new Response('OK', { status: 201 }),
+        now: () => 0,
+        sleep: async () => undefined,
+      });
+      const stats = await runMigrate(
+        {
+          source: 'redis://127.0.0.1:6379',
+          target: 'http://127.0.0.1:8000',
+          token: 'abc',
+          dryRun: false,
+          help: false,
+          skipBulkIndex: false,
+        },
+        deps,
+      );
+      expect(stats.rooms).toBe(600);
+    } finally {
+      scope.Bun = prior;
+    }
+  });
+
   it('reports progress on every 100th room and always closes the client', async () => {
     const names: string[] = [];
     for (let i = 0; i < 120; i++) {

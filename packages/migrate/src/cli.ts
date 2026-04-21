@@ -195,6 +195,21 @@ export async function runMigrate(
               `  seed: ${seeded.toLocaleString()} rooms sent (${inFlight} in flight)\n`,
             );
           }
+          // Bun's JSC heap doesn't feel enough pressure during a long
+          // steady-state HTTP fan-out: RSS climbs ~50 KB/room and hits
+          // OOM at scale (empirically proven on the 2026-04-21 1.8M-
+          // room run — segfaulted at 62 GB). A full GC every 500 rooms
+          // holds RSS flat (~2 GB steady state) at <1% throughput cost.
+          // Opportunistic: only fires under Bun; Node-compat callers
+          // (none today) skip the hint cleanly.
+          if (
+            seeded > 0 &&
+            seeded % 500 === 0 &&
+            typeof (globalThis as { Bun?: { gc?: (force: boolean) => void } }).Bun
+              ?.gc === 'function'
+          ) {
+            (globalThis as { Bun: { gc: (force: boolean) => void } }).Bun.gc(true);
+          }
         },
       },
     );
