@@ -49,6 +49,9 @@ export const USAGE: string = [
   '  --token <bearer>           Matches env.ETHERCALC_MIGRATE_TOKEN on the worker.',
   '  --health-timeout-ms <n>    Max wait for /_health before seeding (default 30000).',
   '  --concurrency <n>          Parallel in-flight seed PUTs (default 8).',
+  '  --skip-bulk-index          Skip PUT /_migrate/bulk-index; only write DO',
+  '                             storage. Use when D1 was populated out-of-band',
+  '                             via `wrangler d1 execute --remote --file=…`.',
   '  --dry-run                  Print intended writes instead of executing.',
   '  -h, --help                 Show this help and exit.',
 ].join('\n');
@@ -145,6 +148,7 @@ export function buildTarget(args: CliArgs, deps: RunDeps): MigrationTarget {
   return new HttpTarget({
     baseUrl: args.target,
     token: args.token,
+    skipBulkIndex: args.skipBulkIndex,
     ...(deps.fetch !== undefined ? { fetch: deps.fetch } : {}),
   });
 }

@@ -92,7 +92,21 @@ describe('parseArgs', () => {
       token: 'secret',
       dryRun: false,
       help: false,
+      skipBulkIndex: false,
     });
+  });
+
+  it('accepts --skip-bulk-index (DO-only pass)', () => {
+    const a = parseArgs([
+      '--source',
+      'redis://127.0.0.1:6379',
+      '--target',
+      'http://127.0.0.1:8000',
+      '--token',
+      'secret',
+      '--skip-bulk-index',
+    ]);
+    expect(a.skipBulkIndex).toBe(true);
   });
 
   it('accepts --dry-run without a target', () => {
@@ -291,6 +305,7 @@ describe('buildTarget', () => {
       token: '',
       dryRun: true,
       help: false,
+      skipBulkIndex: false,
     };
     expect(buildTarget(args, deps)).toBeInstanceOf(DryRunTarget);
   });
@@ -303,6 +318,7 @@ describe('buildTarget', () => {
       token: 'abc',
       dryRun: false,
       help: false,
+      skipBulkIndex: false,
     };
     const t = buildTarget(args, deps);
     expect(t.constructor.name).toBe('HttpTarget');
@@ -317,6 +333,7 @@ describe('buildTarget', () => {
       token: 'abc',
       dryRun: false,
       help: false,
+      skipBulkIndex: false,
     };
     const t = buildTarget(args, deps);
     expect(t.constructor.name).toBe('HttpTarget');
@@ -346,6 +363,7 @@ describe('runMigrate — end to end with in-memory deps', () => {
         token: 'abc',
         dryRun: false,
         help: false,
+        skipBulkIndex: false,
       },
       deps,
     );
@@ -381,6 +399,7 @@ describe('runMigrate — end to end with in-memory deps', () => {
         token: 'abc',
         dryRun: false,
         help: false,
+        skipBulkIndex: false,
       },
       deps,
     );
@@ -391,6 +410,39 @@ describe('runMigrate — end to end with in-memory deps', () => {
     expect(stderrJoined).toMatch(/source: room 100\/120/);
     expect(stderrJoined).toMatch(/seed: 100/);
     expect(client.closeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('--skip-bulk-index fires seed PUTs only, no /_migrate/bulk-index', async () => {
+    const fetched: string[] = [];
+    const client = fakeClient(['foo', 'bar']);
+    const { deps, stdout } = makeDeps({
+      connectRedis: async () => client,
+      fetch: async (url, init) => {
+        fetched.push(`${init?.method ?? 'GET'} ${String(url)}`);
+        return new Response('OK', { status: 201 });
+      },
+      now: () => 0,
+      sleep: async () => undefined,
+    });
+    const stats = await runMigrate(
+      {
+        source: 'redis://127.0.0.1:6379',
+        target: 'http://127.0.0.1:8000',
+        token: 'abc',
+        dryRun: false,
+        help: false,
+        skipBulkIndex: true,
+      },
+      deps,
+    );
+    expect(stats.rooms).toBe(2);
+    expect(stdout.join('')).toContain('migrated 2 rooms');
+    // Health probe + two seed PUTs, but ZERO bulk-index calls.
+    expect(fetched).toEqual([
+      'GET http://127.0.0.1:8000/_health',
+      'PUT http://127.0.0.1:8000/_migrate/seed/bar',
+      'PUT http://127.0.0.1:8000/_migrate/seed/foo',
+    ]);
   });
 
   it('dry-run drives the RESP source without hitting /_health', async () => {
@@ -410,6 +462,7 @@ describe('runMigrate — end to end with in-memory deps', () => {
         token: '',
         dryRun: true,
         help: false,
+        skipBulkIndex: false,
       },
       deps,
     );
@@ -439,6 +492,7 @@ describe('runMigrate — end to end with in-memory deps', () => {
           token: 'abc',
           dryRun: false,
           help: false,
+          skipBulkIndex: false,
           healthTimeoutMs: 50,
         },
         deps,

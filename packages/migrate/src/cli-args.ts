@@ -28,6 +28,14 @@ export interface CliArgs {
    * CF) handles rooms in parallel across DOs.
    */
   concurrency?: number;
+  /**
+   * Skip every `PUT /_migrate/bulk-index` call — seed PUTs still fire
+   * with `skipIndex: true` so the DO owns its storage but the D1
+   * `rooms` table is left untouched. Use when you populated D1 out of
+   * band (e.g. `wrangler d1 execute --remote --file=rooms.sql`) and
+   * just want to run the DO pass.
+   */
+  skipBulkIndex: boolean;
 }
 
 export class CliArgError extends Error {
@@ -45,6 +53,7 @@ export function parseArgs(argv: readonly string[]): CliArgs {
     token: '',
     dryRun: false,
     help: false,
+    skipBulkIndex: false,
   };
   let i = 0;
   while (i < argv.length) {
@@ -56,6 +65,11 @@ export function parseArgs(argv: readonly string[]): CliArgs {
     }
     if (a === '--dry-run') {
       out.dryRun = true;
+      i += 1;
+      continue;
+    }
+    if (a === '--skip-bulk-index') {
+      out.skipBulkIndex = true;
       i += 1;
       continue;
     }

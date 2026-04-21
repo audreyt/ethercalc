@@ -263,6 +263,35 @@ describe('HttpTarget', () => {
     });
   });
 
+  it('skipBulkIndex suppresses both the queued flushes and the final flush()', async () => {
+    const { fetch, calls } = captureFetch();
+    const target = new HttpTarget({
+      baseUrl: 'http://127.0.0.1:8000',
+      token: 'abc',
+      fetch,
+      skipBulkIndex: true,
+      bulkIndexBatchSize: 1, // would normally flush after every room
+    });
+    for (const n of ['a', 'b', 'c']) {
+      await target.putSnapshot(n, 'S');
+      await target.setRoomIndex(n, 1);
+    }
+    await target.flush();
+    // Three seed PUTs + ZERO bulk-index calls even with batch size 1
+    // and an explicit final flush.
+    expect(calls.map((c) => c.url)).toEqual([
+      'http://127.0.0.1:8000/_migrate/seed/a',
+      'http://127.0.0.1:8000/_migrate/seed/b',
+      'http://127.0.0.1:8000/_migrate/seed/c',
+    ]);
+    // Seed body still carries skipIndex: true — the DO side must also
+    // avoid mirroring when our side is about to skip the bulk-index.
+    for (const c of calls) {
+      const body = c.body as Record<string, unknown>;
+      expect(body.skipIndex).toBe(true);
+    }
+  });
+
   it('flush() is a no-op when the queue is empty', async () => {
     const { fetch, calls } = captureFetch();
     const target = new HttpTarget({

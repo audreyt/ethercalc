@@ -71,6 +71,18 @@ export interface HttpTargetConfig {
    * deterministic unit tests.
    */
   bulkIndexBatchSize?: number;
+  /**
+   * Disable the bulk-index side of the pipeline entirely. When `true`,
+   * the target fires seed PUTs (still with `skipIndex: true` on the
+   * body) but never enqueues or flushes `(room, updatedAt)` pairs —
+   * i.e. it writes DO storage and leaves the D1 `rooms` table alone.
+   *
+   * Use this when D1 is being populated out-of-band, e.g. via a
+   * `wrangler d1 execute --remote --file=rooms.sql` dump import that
+   * runs minutes before this pass. See CLAUDE.md §14 2026-04-21 for
+   * the production recipe.
+   */
+  skipBulkIndex?: boolean;
 }
 
 export class HttpTarget implements MigrationTarget {
@@ -80,6 +92,7 @@ export class HttpTarget implements MigrationTarget {
   readonly #buffers: Map<string, RoomBuffer> = new Map();
   readonly #pendingIndex: Array<{ room: string; updatedAt: number }> = [];
   readonly #bulkIndexBatchSize: number;
+  readonly #skipBulkIndex: boolean;
 
   constructor(config: HttpTargetConfig) {
     // Strip a trailing slash so `${baseUrl}/_migrate/...` is always well-formed.
@@ -87,6 +100,7 @@ export class HttpTarget implements MigrationTarget {
     this.#token = config.token;
     this.#fetch = config.fetch ?? ((input, init) => fetch(input, init));
     this.#bulkIndexBatchSize = Math.max(1, config.bulkIndexBatchSize ?? 200);
+    this.#skipBulkIndex = config.skipBulkIndex ?? false;
   }
 
   putSnapshot(room: string, snapshot: string): Promise<void> {
@@ -117,9 +131,11 @@ export class HttpTarget implements MigrationTarget {
   async setRoomIndex(room: string, updatedAt: number): Promise<void> {
     const buffer = this.#bucket(room);
     // Seed the DO with `skipIndex: true` — it writes storage + meta
-    // but leaves the D1 `rooms` row to the batched flush below.
+    // but leaves the D1 `rooms` row to the batched flush below (or
+    // skips it altogether when `skipBulkIndex` is on).
     await this.#flushSeed(room, buffer, updatedAt);
     this.#buffers.delete(room);
+    if (this.#skipBulkIndex) return;
     this.#pendingIndex.push({ room, updatedAt });
     if (this.#pendingIndex.length >= this.#bulkIndexBatchSize) {
       await this.#flushBulkIndex();
@@ -132,6 +148,7 @@ export class HttpTarget implements MigrationTarget {
    * the queue is empty. Invoked by `applyRoomStream` at end-of-run.
    */
   async flush(): Promise<void> {
+    if (this.#skipBulkIndex) return;
     if (this.#pendingIndex.length > 0) await this.#flushBulkIndex();
   }
 
