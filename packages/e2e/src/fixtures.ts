@@ -43,7 +43,13 @@ export const test = base.extend<NonNullable<unknown>, WorkerFixtures>({
         await killTree(proc);
       }
     },
-    { scope: 'worker' },
+    // Wrangler 4 + pool-workers 0.14.x can take ≥30s to finish its
+    // cold-start (compat-date resolution, asset manifest, miniflare
+    // workerd spawn). Playwright's default fixture timeout tracks
+    // `config.timeout` (30s) which was racing our internal 45s
+    // `waitPort`. Pin fixture timeout to 90s so the internal wait gets
+    // room; the long spin-up is paid once per worker.
+    { scope: 'worker', timeout: 90_000 },
   ],
 });
 
@@ -92,7 +98,13 @@ async function startWrangler(args: {
     }
   });
 
-  const timeoutSec = process.env['CI'] ? 45 : 30;
+  // Wrangler 4 cold-start on CI hosts (GitHub ubuntu-latest) routinely
+  // lands between 30-60 s due to remote-binding resolution + assets
+  // manifest build. The fixture-level timeout above caps the Playwright
+  // side at 90 s; this internal deadline stays slightly below that so
+  // we surface a readable error instead of Playwright's generic
+  // "fixture timeout".
+  const timeoutSec = process.env['CI'] ? 80 : 30;
   const opened = await waitPort({
     host: '127.0.0.1',
     port,

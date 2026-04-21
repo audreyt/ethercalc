@@ -43,7 +43,10 @@ const clientTest = base.extend<NonNullable<unknown>, ClientFixtures>({
         await killTree(proc);
       }
     },
-    { scope: 'worker' },
+    // Vite dev is much faster than wrangler (~2-5 s cold start), but
+    // the same Playwright-default-30 s-fixture-timeout trap applies —
+    // pin it at 60 s to match the wrangler sibling's safety margin.
+    { scope: 'worker', timeout: 60_000 },
   ],
 });
 
