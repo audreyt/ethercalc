@@ -2,7 +2,7 @@
   "name": "@ethercalc/migrate",
   "version": "0.0.0",
   "private": true,
-  "description": "Phase 11b — Legacy Redis RDB dump → Cloudflare (DO storage + D1 + KV) migrator (§12)",
+  "description": "Phase 11b \u2014 Legacy Redis RDB dump \u2192 Cloudflare (DO storage + D1 + KV) migrator (\u00a712)",
   "license": "CC0-1.0",
   "type": "module",
   "main": "./src/index.ts",
@@ -30,8 +30,8 @@
     "@stryker-mutator/core": "^9.6.1",
     "@stryker-mutator/vitest-runner": "^9.6.1",
     "@types/node": "^22.9.0",
-    "@vitest/coverage-istanbul": "^2.1.4",
+    "@vitest/coverage-istanbul": "^4.1.4",
     "typescript": "^5.6.3",
-    "vitest": "^2.1.4"
+    "vitest": "^4.1.4"
   }
 }

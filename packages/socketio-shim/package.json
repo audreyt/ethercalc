@@ -2,7 +2,7 @@
   "name": "@ethercalc/socketio-shim",
   "version": "0.0.0",
   "private": true,
-  "description": "Legacy socket.io v0.9 wire-format shim — translates old external embeds (Drupal sheetnode etc.) to the new native WS protocol (§7 items 8/23, §13 Q4)",
+  "description": "Legacy socket.io v0.9 wire-format shim \u2014 translates old external embeds (Drupal sheetnode etc.) to the new native WS protocol (\u00a77 items 8/23, \u00a713 Q4)",
   "license": "CC0-1.0",
   "type": "module",
   "main": "./src/index.ts",
@@ -29,8 +29,8 @@
     "@stryker-mutator/core": "^9.6.1",
     "@stryker-mutator/vitest-runner": "^9.6.1",
     "@types/node": "^22.9.0",
-    "@vitest/coverage-istanbul": "^2.1.4",
+    "@vitest/coverage-istanbul": "^4.1.4",
     "typescript": "^5.6.3",
-    "vitest": "^2.1.4"
+    "vitest": "^4.1.4"
   }
 }

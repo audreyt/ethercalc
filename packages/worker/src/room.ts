@@ -648,18 +648,14 @@ export class RoomDO implements DurableObject {
    * place.
    */
   async #appendLogEntry(prefix: string, value: string): Promise<void> {
-    /* istanbul ignore else -- @preserve
-     *   Reserved fallthrough. No current WS handler appends under
-     *   `log:`/`audit:` via `ctx.storage.appendLog` (execute uses the
-     *   higher-level `applyCommand`). The branch is here to keep the
-     *   `WsStorage.appendLog` surface honest — exposing a prefix arg
-     *   but silently rejecting non-chat prefixes would be worse.
-     */
+    // Today only `chat:` is reachable from the handler layer —
+    // `log:`/`audit:` writes go through `applyCommand` → `#appendCommand`.
+    // The non-chat fallthrough is a silent no-op rather than a throw to
+    // keep `WsStorage.appendLog` honest about its prefix arg.
+    /* istanbul ignore else -- @preserve */
     if (prefix === STORAGE_KEYS.chatPrefix) {
       await this.appendChat(value);
-      return;
     }
-    void value;
   }
 
   /** List entries under `prefix` as a `{key-without-prefix: value}` map. */

@@ -1,15 +1,14 @@
-import { defineWorkersConfig } from '@cloudflare/vitest-pool-workers/config';
+import { cloudflareTest } from '@cloudflare/vitest-pool-workers';
+import { defineConfig } from 'vitest/config';
 
-export default defineWorkersConfig({
-  test: {
-    poolOptions: {
-      workers: {
-        singleWorker: true,
-        miniflare: {
-          compatibilityDate: '2024-11-12',
-          compatibilityFlags: ['nodejs_compat'],
-        },
+export default defineConfig({
+  plugins: [
+    cloudflareTest({
+      singleWorker: true,
+      miniflare: {
+        compatibilityDate: '2024-11-12',
+        compatibilityFlags: ['nodejs_compat'],
       },
-    },
-  },
+    }),
+  ],
 });
