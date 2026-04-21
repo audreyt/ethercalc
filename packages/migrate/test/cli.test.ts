@@ -413,7 +413,7 @@ describe('runMigrate — end to end with in-memory deps', () => {
         deps,
       );
     } finally {
-      scope.Bun = prior;
+      scope.Bun = prior as { gc?: (force: boolean) => void };
     }
     // Hook fires twice: once at seeded=100, once at seeded=200. Always
     // forced (full GC, argument `true`).
@@ -453,7 +453,7 @@ describe('runMigrate — end to end with in-memory deps', () => {
       );
       expect(stats.rooms).toBe(150);
     } finally {
-      scope.Bun = prior;
+      scope.Bun = prior as { gc?: (force: boolean) => void };
     }
   });
 

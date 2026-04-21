@@ -324,19 +324,23 @@ describe('HttpTarget', () => {
           value: { cancel: undefined }, // no cancel method → typeof !== 'function'
         });
         const origAB = res.arrayBuffer.bind(res);
-        res.arrayBuffer = async () => {
-          arrayBufferCalls.push(n);
-          return origAB();
-        };
+        Object.defineProperty(res, 'arrayBuffer', {
+          value: async () => {
+            arrayBufferCalls.push(n);
+            return origAB();
+          },
+        });
         return res;
       }
       // null body — e.g. 204 No Content. drain() hits the arrayBuffer branch.
       const res = new Response(null, { status: 201 });
       const origAB = res.arrayBuffer.bind(res);
-      res.arrayBuffer = async () => {
-        arrayBufferCalls.push(n);
-        return origAB();
-      };
+      Object.defineProperty(res, 'arrayBuffer', {
+        value: async () => {
+          arrayBufferCalls.push(n);
+          return origAB();
+        },
+      });
       return res;
     };
 

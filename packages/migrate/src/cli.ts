@@ -209,7 +209,7 @@ export async function runMigrate(
             typeof (globalThis as { Bun?: { gc?: (force: boolean) => void } }).Bun
               ?.gc === 'function'
           ) {
-            (globalThis as { Bun: { gc: (force: boolean) => void } }).Bun.gc(true);
+            (globalThis as unknown as { Bun: { gc: (force: boolean) => void } }).Bun.gc(true);
           }
         },
       },
