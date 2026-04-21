@@ -154,6 +154,21 @@ jobs:
         run: bunx playwright install --with-deps chromium
         working-directory: packages/e2e
 
+      # Wrangler 4 reads `[assets] directory = "../../assets"` from
+      # wrangler.toml; if the dir is missing (or empty, which it is on
+      # this fresh runner) wrangler hangs on asset-manifest resolution
+      # — silently, with no stderr — and every fixture setup times out.
+      # The `test` job builds these before its own suite; `e2e` runs on
+      # a separate runner with a clean workspace, so rebuild here.
+      - name: client — Vite build (for assets/static/player.js)
+        run: bun run --cwd packages/client build
+
+      - name: client-multi — Vite build (for assets/multi/)
+        run: bun run --cwd packages/client-multi build
+
+      - name: Build curated assets/ dir
+        run: ./scripts/build-assets.sh
+
       - name: Run Playwright suite
         run: bun run --cwd packages/e2e test
         env:
