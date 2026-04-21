@@ -64,11 +64,13 @@ export interface HttpTargetConfig {
   fetch?: FetchLike;
   /**
    * Max number of `(room, updatedAt)` pairs per `/_migrate/bulk-index`
-   * round-trip. Default 200 — SQLite's default parameter cap is 999,
-   * and we bind two per entry, so the real ceiling is 499; 200 leaves
-   * headroom for future schema growth without changing behavior.
-   * Callers can lower this to test flush-on-threshold behavior in
-   * deterministic unit tests.
+   * round-trip. Default 50 — D1 enforces a hard 100-parameter cap per
+   * prepared statement, and we bind two per entry (room + updatedAt),
+   * so anything over 50 rows fails with a generic `500 Internal Server
+   * Error` (the limit is not surfaced via an error message we'd see).
+   * The earlier value of 200 silently broke every production run on
+   * 2026-04-21 — see CLAUDE.md §14. Tests can lower further to drive
+   * flush-on-threshold deterministically.
    */
   bulkIndexBatchSize?: number;
   /**
@@ -99,7 +101,7 @@ export class HttpTarget implements MigrationTarget {
     this.#baseUrl = config.baseUrl.replace(/\/+$/, '');
     this.#token = config.token;
     this.#fetch = config.fetch ?? ((input, init) => fetch(input, init));
-    this.#bulkIndexBatchSize = Math.max(1, config.bulkIndexBatchSize ?? 200);
+    this.#bulkIndexBatchSize = Math.max(1, config.bulkIndexBatchSize ?? 50);
     this.#skipBulkIndex = config.skipBulkIndex ?? false;
   }
 

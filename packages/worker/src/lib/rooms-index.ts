@@ -71,10 +71,12 @@ export async function mirrorRoomToD1(
  * the full-migration wall-clock ends up D1-bound (~5 h at 100 rps).
  *
  * No-ops cleanly when `entries` is empty — D1 would reject the empty
- * `VALUES ()` clause otherwise. Prepared-statement parameter cap:
- * SQLite allows up to 999 by default; at two params per entry the
- * safe max is 499 entries per call. Callers (migrator) already batch
- * at 200 to leave headroom for future schema growth.
+ * `VALUES ()` clause otherwise. Prepared-statement parameter cap on
+ * D1 is **100** (not SQLite's 999) — at two params per entry the safe
+ * max is ~49 entries per call. The migrator's `HttpTarget` batches at
+ * 50, so the ceiling comes from D1, not this helper. Over-batching
+ * lands a generic `500 Internal Server Error` with no actionable
+ * detail — see CLAUDE.md §14 2026-04-21 for the incident.
  */
 export async function bulkMirrorRoomsToD1(
   db: D1Database,

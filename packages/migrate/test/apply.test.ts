@@ -179,23 +179,56 @@ describe('applyRoomStream', () => {
     ).rejects.toThrow('boom');
   });
 
-  it('keeps the first error and ignores later ones', async () => {
-    // Covers the `if (firstError === null) firstError = err;` guard when
-    // two rooms fail — we want the first-seen error, not the second.
-    class DoubleFailTarget extends RecordingTarget {
-      override setRoomIndex(room: string): Promise<void> {
-        return Promise.reject(new Error(`fail-${room}`));
+  it('fast-fails subsequent rooms once a prior one errors', async () => {
+    // Covers the `if (firstError !== null) break;` guard. Sets up a
+    // target that rejects the very first room so firstError lands
+    // before the second room is pulled from the source; asserts only
+    // one room was seeded (no `break` → we'd see three).
+    class FirstFailTarget extends RecordingTarget {
+      override setRoomIndex(_room: string): Promise<void> {
+        return Promise.reject(new Error('first-fail'));
       }
     }
-    const t = new DoubleFailTarget();
+    const t = new FirstFailTarget();
+    const seen: string[] = [];
+    async function* withObserver(): AsyncIterable<Room> {
+      for (const name of ['a', 'b', 'c', 'd']) {
+        seen.push(name);
+        yield { name, snapshot: '', log: [], audit: [], chat: [], ecell: {} };
+      }
+    }
+    await expect(
+      applyRoomStream(withObserver(), t, { concurrency: 1 }),
+    ).rejects.toThrow('first-fail');
+    // Only 'a' and 'b' pulled — 'b' saw firstError and break'd before
+    // 'c'/'d' were produced.
+    expect(seen).toEqual(['a', 'b']);
+  });
+
+  it('keeps the first error and ignores later ones (concurrent failures)', async () => {
+    // Covers the `if (firstError === null) firstError = err;` guard
+    // when two rooms fail concurrently. All rejections are delayed
+    // (setTimeout) so both work_a and work_b are pushed to inFlight
+    // BEFORE either catch runs — then both catches fire, the second
+    // observes firstError !== null and takes the false branch.
+    class DelayedFailTarget extends RecordingTarget {
+      override setRoomIndex(room: string): Promise<void> {
+        const delay = room === 'a' ? 5 : 10;
+        return new Promise((_, rej) =>
+          setTimeout(() => rej(new Error(`fail-${room}`)), delay),
+        );
+      }
+    }
+    const t = new DelayedFailTarget();
     await expect(
       applyRoomStream(
         fromArray([
           { name: 'a', snapshot: '', log: [], audit: [], chat: [], ecell: {} },
           { name: 'b', snapshot: '', log: [], audit: [], chat: [], ecell: {} },
+          { name: 'c', snapshot: '', log: [], audit: [], chat: [], ecell: {} },
         ]),
         t,
-        { concurrency: 1 },
+        { concurrency: 3 },
       ),
     ).rejects.toThrow('fail-a');
   });

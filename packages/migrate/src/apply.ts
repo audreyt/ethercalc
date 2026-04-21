@@ -103,6 +103,12 @@ export async function applyRoomStream(
   let firstError: unknown = null;
   const onProgress = options.onProgress;
   for await (const room of rooms) {
+    // Fail fast — if any prior room has errored, stop consuming more
+    // from the source. Otherwise a broken target (e.g. D1 rejecting a
+    // batch with 500) would silently swallow every subsequent error
+    // and only surface at end-of-run, after hundreds of thousands of
+    // wasted seeds. Empirically hit on 2026-04-21 — see CLAUDE.md §14.
+    if (firstError !== null) break;
     const work = seedOneRoom(target, room, stats)
       .catch((err) => {
         if (firstError === null) firstError = err;
