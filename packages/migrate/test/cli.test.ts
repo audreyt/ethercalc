@@ -380,13 +380,13 @@ describe('runMigrate — end to end with in-memory deps', () => {
     expect(client.closeSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('calls Bun.gc(true) every 500 rooms when the runtime exposes it', async () => {
-    // Builds 1200 rooms so the hook fires at 500 and 1000 but not at
-    // 1200 (1200 % 500 !== 0). Stubs globalThis.Bun.gc to record calls
+  it('calls Bun.gc(true) every 100 rooms when the runtime exposes it', async () => {
+    // Builds 250 rooms so the hook fires at 100 and 200 but not at
+    // 250 (250 % 100 !== 0). Stubs globalThis.Bun.gc to record calls
     // without actually needing Bun's runtime; restores the original
     // (possibly real Bun.gc when the test runs under Bun) afterward.
     const names: string[] = [];
-    for (let i = 0; i < 1200; i++) {
+    for (let i = 0; i < 250; i++) {
       names.push(`room-${i.toString().padStart(4, '0')}`);
     }
     const client = fakeClient(names);
@@ -415,18 +415,18 @@ describe('runMigrate — end to end with in-memory deps', () => {
     } finally {
       scope.Bun = prior;
     }
-    // Hook fires twice: once at seeded=500, once at seeded=1000. Always
+    // Hook fires twice: once at seeded=100, once at seeded=200. Always
     // forced (full GC, argument `true`).
     expect(gcCalls).toEqual([true, true]);
   });
 
   it('skips Bun.gc when globalThis.Bun is absent (Node-compat path)', async () => {
-    // Ensures the `typeof Bun !== 'function'` guard doesn't throw when
-    // running under a runtime without `Bun`. We run 500+ rooms so the
-    // seeded-% 500 check passes — if the code tried to dereference a
+    // Ensures the optional-chain guard doesn't throw when running
+    // under a runtime without `Bun`. We run >100 rooms so the
+    // seeded-% 100 check passes — if the code tried to dereference a
     // non-existent Bun.gc it would throw.
     const names: string[] = [];
-    for (let i = 0; i < 600; i++) {
+    for (let i = 0; i < 150; i++) {
       names.push(`room-${i.toString().padStart(3, '0')}`);
     }
     const client = fakeClient(names);
@@ -451,7 +451,7 @@ describe('runMigrate — end to end with in-memory deps', () => {
         },
         deps,
       );
-      expect(stats.rooms).toBe(600);
+      expect(stats.rooms).toBe(150);
     } finally {
       scope.Bun = prior;
     }
