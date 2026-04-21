@@ -489,6 +489,43 @@ describe('runMigrate — end to end with in-memory deps', () => {
     expect(client.closeSpy).toHaveBeenCalledTimes(1);
   });
 
+  it('surfaces per-room errors via ROOM ERROR + end-of-run note', async () => {
+    // Failing target that 500s deterministically on one specific room.
+    // onRoomError wires the CLI's stderr hook; the migrator continues
+    // past the failure and reports a summary note at the end.
+    const client = fakeClient(['a', 'b', 'c']);
+    let seen = 0;
+    const { deps, stderr } = makeDeps({
+      connectRedis: async () => client,
+      fetch: async (url) => {
+        const u = String(url);
+        if (u.includes('_migrate/seed/b')) {
+          seen += 1;
+          return new Response('upstream unreachable', { status: 500 });
+        }
+        return new Response('OK', { status: 201 });
+      },
+      now: () => 0,
+      sleep: async () => undefined,
+    });
+    const stats = await runMigrate(
+      {
+        source: 'redis://127.0.0.1:6379',
+        target: 'http://127.0.0.1:8000',
+        token: 'abc',
+        dryRun: false,
+        help: false,
+        skipBulkIndex: false,
+      },
+      deps,
+    );
+    expect(stats.rooms).toBe(2); // a and c succeeded
+    expect(seen).toBeGreaterThanOrEqual(3); // all retries exhausted
+    const err = stderr.join('');
+    expect(err).toMatch(/ROOM ERROR: b — seed b failed: 500/);
+    expect(err).toMatch(/1 room\(s\) failed all retries and were skipped/);
+  });
+
   it('logs SKIP ROOM warnings when snapshot exceeds the limit', async () => {
     const bigSnap = 'a'.repeat(200_000);
     const client = fakeClient(['huge'], {

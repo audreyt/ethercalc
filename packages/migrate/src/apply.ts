@@ -77,6 +77,18 @@ export interface ApplyRoomStreamOptions {
    */
   readonly concurrency?: number;
   readonly onProgress?: SendProgressHook;
+  /**
+   * Called once per room that failed all retries. When set, per-room
+   * errors are reported here and the stream continues with the next
+   * room — a long-running production migration would otherwise abort
+   * on any transient 500 that outlasts the per-request retry budget.
+   * When unset, the first error still aborts (legacy behavior, useful
+   * for tests and deterministic reproduction).
+   */
+  readonly onRoomError?: (info: {
+    readonly room: string;
+    readonly error: unknown;
+  }) => void;
 }
 
 /**
@@ -102,16 +114,18 @@ export async function applyRoomStream(
   const inFlight = new Set<Promise<void>>();
   let firstError: unknown = null;
   const onProgress = options.onProgress;
+  const onRoomError = options.onRoomError;
   for await (const room of rooms) {
-    // Fail fast — if any prior room has errored, stop consuming more
-    // from the source. Otherwise a broken target (e.g. D1 rejecting a
-    // batch with 500) would silently swallow every subsequent error
-    // and only surface at end-of-run, after hundreds of thousands of
-    // wasted seeds. Empirically hit on 2026-04-21 — see CLAUDE.md §14.
-    if (firstError !== null) break;
+    // Fail-fast behaviour preserved when `onRoomError` is unset —
+    // tests rely on it and so does anyone debugging a real issue.
+    // Production callers that opt into `onRoomError` get
+    // continue-on-error: each failed room is reported to the callback,
+    // the stream keeps going, and no exception is thrown at end-of-run.
+    if (firstError !== null && onRoomError === undefined) break;
     const work = seedOneRoom(target, room, stats)
       .catch((err) => {
-        if (firstError === null) firstError = err;
+        if (onRoomError !== undefined) onRoomError({ room: room.name, error: err });
+        else if (firstError === null) firstError = err;
       })
       .then(() => {
         if (onProgress !== undefined) {
@@ -127,7 +141,7 @@ export async function applyRoomStream(
     }
   }
   await Promise.all(inFlight);
-  if (firstError !== null) throw firstError;
+  if (firstError !== null && onRoomError === undefined) throw firstError;
   // Give targets a chance to drain batched state (HTTP target flushes
   // its pending bulk-index queue here). Inline targets leave `flush`
   // unset; the optional call keeps the interface ergonomic.

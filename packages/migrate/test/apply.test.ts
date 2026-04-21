@@ -179,6 +179,37 @@ describe('applyRoomStream', () => {
     ).rejects.toThrow('boom');
   });
 
+  it('continues past per-room errors when onRoomError is set', async () => {
+    // Production CF migrations hit transient 500s that outlast the
+    // per-request retry budget. With onRoomError set, applyRoomStream
+    // reports each failure and keeps going rather than aborting.
+    class MiddleFailTarget extends RecordingTarget {
+      override setRoomIndex(room: string): Promise<void> {
+        if (room === 'b') return Promise.reject(new Error('transient 500'));
+        return super.setRoomIndex(room, 0);
+      }
+    }
+    const t = new MiddleFailTarget();
+    const errors: Array<{ room: string; msg: string }> = [];
+    const stats = await applyRoomStream(
+      fromArray([
+        { name: 'a', snapshot: '', log: [], audit: [], chat: [], ecell: {} },
+        { name: 'b', snapshot: '', log: [], audit: [], chat: [], ecell: {} },
+        { name: 'c', snapshot: '', log: [], audit: [], chat: [], ecell: {} },
+      ]),
+      t,
+      {
+        concurrency: 1,
+        onRoomError: ({ room, error }) => {
+          errors.push({ room, msg: (error as Error).message });
+        },
+      },
+    );
+    // Rooms a and c succeeded — stats.rooms counts only successes.
+    expect(stats.rooms).toBe(2);
+    expect(errors).toEqual([{ room: 'b', msg: 'transient 500' }]);
+  });
+
   it('fast-fails subsequent rooms once a prior one errors', async () => {
     // Covers the `if (firstError !== null) break;` guard. Sets up a
     // target that rejects the very first room so firstError lands

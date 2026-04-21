@@ -175,6 +175,7 @@ export async function runMigrate(
   const concurrency = args.concurrency ?? (args.dryRun ? 1 : 8);
   const client = await deps.connectRedis(args.source);
   let stats: ApplyStats;
+  let failedRoomCount = 0;
   try {
     stats = await applyRoomStream(
       roomsFromRedis(client, {
@@ -224,10 +225,26 @@ export async function runMigrate(
             (globalThis as unknown as { Bun: { gc: (force: boolean) => void } }).Bun.gc(true);
           }
         },
+        onRoomError: ({ room, error }) => {
+          failedRoomCount += 1;
+          // Non-Error rejection is defensive — HttpTarget always
+          // throws `new Error(...)` — but caller-injected fakes in
+          // downstream consumers could reject with a string; surface
+          // it as-is rather than printing `[object Object]`.
+          /* istanbul ignore next */
+          const msg = error instanceof Error ? error.message : String(error);
+          deps.stderr(`  ROOM ERROR: ${room} — ${msg}\n`);
+        },
       },
     );
   } finally {
     await client.close();
+  }
+  if (failedRoomCount > 0) {
+    deps.stderr(
+      `  NOTE: ${failedRoomCount.toLocaleString()} room(s) failed all retries ` +
+        `and were skipped; see the ROOM ERROR lines above.\n`,
+    );
   }
   deps.stdout(
     `migrated ${stats.rooms} rooms ` +
