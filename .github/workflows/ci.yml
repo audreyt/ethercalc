@@ -17,7 +17,7 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -100,7 +100,7 @@ jobs:
 
       - name: Upload coverage artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-lcov
           path: |
@@ -123,10 +123,10 @@ jobs:
     # Mirrors CLAUDE.md §11.1 item 10. Uses the Dockerfile + docker-compose
     # at the repo root and hits /_health via scripts/smoke-selfhost.sh.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Smoke — build image, compose up, curl /_health, compose down
         run: ./scripts/smoke-selfhost.sh
@@ -141,7 +141,7 @@ jobs:
     # the HTTP surface + SPA mount. Uploads the HTML report on failure so
     # traces/screenshots are recoverable.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -176,7 +176,7 @@ jobs:
 
       - name: Upload Playwright HTML report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: packages/e2e/playwright-report/
@@ -185,7 +185,7 @@ jobs:
 
       - name: Upload trace + screenshots on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-test-results
           path: packages/e2e/test-results/
@@ -203,7 +203,7 @@ jobs:
     # nightly.yml; see CLAUDE.md §5.3 + docs/MUTATION_REPORT.md for the
     # ratchet workflow.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -253,7 +253,7 @@ jobs:
 
       - name: Upload mutation reports on failure
         if: failure() && steps.changed.outputs.packages != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mutation-gate-reports
           path: packages/*/reports/mutation/
