@@ -18,7 +18,6 @@
   "devDependencies": {
     "@playwright/test": "^1.48.2",
     "@types/node": "^22.9.0",
-    "typescript": "^6.0.3",
     "wait-port": "^1.1.0"
   }
 }

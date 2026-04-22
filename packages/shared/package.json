@@ -23,7 +23,6 @@
     "@stryker-mutator/core": "^9.6.1",
     "@stryker-mutator/vitest-runner": "^9.6.1",
     "@vitest/coverage-istanbul": "^4.1.4",
-    "typescript": "^6.0.3",
     "vitest": "^4.1.4"
   }
 }
