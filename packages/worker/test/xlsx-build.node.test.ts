@@ -6,9 +6,15 @@ import * as XLSX from '@e965/xlsx';
 import {
   BINARY_CONTENT_TYPES,
   buildMultiSheetWorkbook,
+  buildMultiSheetWorkbookFromSheets,
   csvToBinaryWorkbook,
+  encodeColumn,
+  parseCoord,
   parseMultiSheetWorkbook,
   sanitizeSheetName,
+  sheetViewToBinaryWorkbook,
+  sheetViewToWorksheet,
+  translateCell,
 } from '../src/lib/xlsx-build.ts';
 
 /**
@@ -319,6 +325,442 @@ describe('buildMultiSheetWorkbook', () => {
     expect(bytes[0]).toBe('<'.charCodeAt(0));
     const wb = (XLSX as any).read(bytes, { type: 'array' });
     expect(wb.SheetNames).toEqual(['One', 'Two']);
+  });
+});
+
+describe('parseCoord / encodeColumn', () => {
+  it('parses A1 / Z99 / AA1 / AAA1', () => {
+    expect(parseCoord('A1')).toEqual({ r: 0, c: 0 });
+    expect(parseCoord('Z99')).toEqual({ r: 98, c: 25 });
+    expect(parseCoord('AA1')).toEqual({ r: 0, c: 26 });
+    expect(parseCoord('AAA1')).toEqual({ r: 0, c: 702 });
+  });
+
+  it('returns null for invalid coordinates', () => {
+    expect(parseCoord('')).toBeNull();
+    expect(parseCoord('1A')).toBeNull();
+    expect(parseCoord('A')).toBeNull();
+    expect(parseCoord('A0')).toBeNull();
+    expect(parseCoord('a1')).toBeNull(); // lowercase
+    expect(parseCoord('A1B')).toBeNull();
+  });
+
+  it('encodeColumn is inverse of parseCoord column', () => {
+    expect(encodeColumn(0)).toBe('A');
+    expect(encodeColumn(25)).toBe('Z');
+    expect(encodeColumn(26)).toBe('AA');
+    expect(encodeColumn(701)).toBe('ZZ');
+    expect(encodeColumn(702)).toBe('AAA');
+  });
+});
+
+describe('translateCell', () => {
+  it('numeric cell → {t:"n", v:<number>}', () => {
+    expect(translateCell({ valuetype: 'n', datatype: 'v', datavalue: 42 })).toEqual({
+      t: 'n',
+      v: 42,
+    });
+  });
+
+  it('numeric cell with string datavalue is parsed to a number', () => {
+    expect(
+      translateCell({ valuetype: 'n', datatype: 'v', datavalue: '3.14' }),
+    ).toMatchObject({ t: 'n', v: 3.14 });
+  });
+
+  it('NaN datavalue coerces to 0 (graceful degrade)', () => {
+    expect(
+      translateCell({ valuetype: 'n', datatype: 'v', datavalue: 'not a number' }),
+    ).toMatchObject({ t: 'n', v: 0 });
+  });
+
+  it('missing datavalue on numeric cell coerces to 0', () => {
+    // `datavalue: undefined` exercises the `raw ?? ''` fallback.
+    expect(translateCell({ valuetype: 'n', datatype: 'v' })).toMatchObject({
+      t: 'n',
+      v: 0,
+    });
+  });
+
+  it('text cell → {t:"s", v:<string>}', () => {
+    expect(
+      translateCell({ valuetype: 't', datatype: 't', datavalue: 'hello' }),
+    ).toEqual({ t: 's', v: 'hello' });
+  });
+
+  it('text with missing datavalue falls back to empty string', () => {
+    expect(translateCell({ valuetype: 't', datatype: 't' })).toMatchObject({
+      t: 's',
+      v: '',
+    });
+  });
+
+  it('formula cell includes `f` and cached value', () => {
+    const out = translateCell({
+      valuetype: 'n',
+      datatype: 'f',
+      datavalue: 10,
+      formula: 'SUM(A1:A3)',
+    });
+    expect(out).toEqual({ t: 'n', v: 10, f: 'SUM(A1:A3)' });
+  });
+
+  it('formula with no cached value emits a numeric 0', () => {
+    // valuetype=b but datatype=f → formula-without-recalc-yet case.
+    const out = translateCell({
+      valuetype: 'b',
+      datatype: 'f',
+      formula: 'NOW()',
+    });
+    expect(out).toMatchObject({ t: 'n', v: 0, f: 'NOW()' });
+  });
+
+  it('blank non-formula cells are omitted (null)', () => {
+    expect(translateCell({ valuetype: 'b' })).toBeNull();
+    expect(translateCell({})).toBeNull();
+  });
+
+  it('error cell → {t:"e", v:0x2a}', () => {
+    expect(
+      translateCell({ valuetype: 'e', datatype: 'v', datavalue: '#N/A' }),
+    ).toEqual({ t: 'e', v: 0x2a });
+  });
+
+  it('logical/boolean numeric (valuetype=nl) → {t:"b"}', () => {
+    expect(
+      translateCell({ valuetype: 'nl', datatype: 'v', datavalue: 1 }),
+    ).toEqual({ t: 'b', v: true });
+    expect(
+      translateCell({ valuetype: 'nl', datatype: 'v', datavalue: 0 }),
+    ).toEqual({ t: 'b', v: false });
+  });
+
+  it('logical with non-numeric garbage degrades to v:false', () => {
+    expect(
+      translateCell({ valuetype: 'nl', datatype: 'v', datavalue: 'nope' }),
+    ).toEqual({ t: 'b', v: false });
+  });
+
+  it('unknown valuetype main char degrades to string', () => {
+    expect(
+      translateCell({ valuetype: 'q', datatype: 'v', datavalue: 'weird' }),
+    ).toEqual({ t: 's', v: 'weird' });
+  });
+
+  it('unknown valuetype with undefined datavalue → empty string', () => {
+    expect(translateCell({ valuetype: 'q' })).toEqual({ t: 's', v: '' });
+  });
+
+  it('number format from valueformats is carried through as `z`', () => {
+    const fmts = ['', '0.00%'];
+    expect(
+      translateCell(
+        { valuetype: 'n', datatype: 'v', datavalue: 0.5, nontextvalueformat: 1 },
+        fmts,
+      ),
+    ).toEqual({ t: 'n', v: 0.5, z: '0.00%' });
+  });
+
+  it('"General" format is treated as no format', () => {
+    const fmts = ['', 'General'];
+    const out = translateCell(
+      { valuetype: 'n', datatype: 'v', datavalue: 1, nontextvalueformat: 1 },
+      fmts,
+    );
+    expect(out).not.toHaveProperty('z');
+  });
+
+  it('text-* formats are dropped (SocialCalc-specific, graceful degrade)', () => {
+    const fmts = ['', 'text-wiki'];
+    const out = translateCell(
+      { valuetype: 'n', datatype: 'v', datavalue: 1, nontextvalueformat: 1 },
+      fmts,
+    );
+    expect(out).not.toHaveProperty('z');
+  });
+
+  it('nontextvalueformat=0 or negative is ignored', () => {
+    const fmts = ['0.00', '0.00%'];
+    const out = translateCell(
+      { valuetype: 'n', datatype: 'v', datavalue: 1, nontextvalueformat: 0 },
+      fmts,
+    );
+    expect(out).not.toHaveProperty('z');
+  });
+
+  it('missing format index is tolerated', () => {
+    const out = translateCell(
+      { valuetype: 'n', datatype: 'v', datavalue: 1, nontextvalueformat: 99 },
+      [],
+    );
+    expect(out).not.toHaveProperty('z');
+  });
+
+  it('comment is attached as `c: [{t: ...}]`', () => {
+    const out = translateCell({
+      valuetype: 't',
+      datatype: 't',
+      datavalue: 'x',
+      comment: 'remember me',
+    });
+    expect(out).toEqual({
+      t: 's',
+      v: 'x',
+      c: [{ t: 'remember me' }],
+    });
+  });
+});
+
+describe('sheetViewToWorksheet', () => {
+  it('builds a worksheet with `!ref` spanning all non-blank cells', () => {
+    const ws = sheetViewToWorksheet({
+      cells: {
+        A1: { valuetype: 't', datatype: 't', datavalue: 'a' },
+        B2: { valuetype: 'n', datatype: 'v', datavalue: 2 },
+        C3: { valuetype: 'n', datatype: 'v', datavalue: 3 },
+      },
+    });
+    expect(ws['!ref']).toBe('A1:C3');
+    expect((ws as any)['A1']).toEqual({ t: 's', v: 'a' });
+    expect((ws as any)['B2']).toEqual({ t: 'n', v: 2 });
+    expect((ws as any)['C3']).toEqual({ t: 'n', v: 3 });
+  });
+
+  it('iteration encountering an already-dominated coord leaves maxR/maxC alone', () => {
+    // Iterating in insert order: A3 → A1 → B1 pulls `maxR` up to 2 then
+    // stays there for A1/B1 (`rc.r > maxR` false), and `maxC` up to 1 at
+    // B1 but stays put at A1 (`rc.c > maxC` false). Pins both branches.
+    const ws = sheetViewToWorksheet({
+      cells: {
+        A3: { valuetype: 'n', datatype: 'v', datavalue: 3 },
+        A1: { valuetype: 'n', datatype: 'v', datavalue: 1 },
+        B1: { valuetype: 'n', datatype: 'v', datavalue: 2 },
+      },
+    });
+    expect(ws['!ref']).toBe('A1:B3');
+  });
+
+  it('falls back to A1:A1 blank ref when no cells survive', () => {
+    const ws = sheetViewToWorksheet({
+      cells: {
+        A1: { valuetype: 'b' },
+        A2: {},
+      },
+    });
+    expect(ws['!ref']).toBe('A1');
+    expect((ws as any)['A1']).toEqual({ t: 's', v: '' });
+  });
+
+  it('skips invalid coords', () => {
+    const ws = sheetViewToWorksheet({
+      cells: {
+        invalid: { valuetype: 't', datatype: 't', datavalue: 'x' },
+        A1: { valuetype: 't', datatype: 't', datavalue: 'y' },
+      },
+    });
+    expect(ws['!ref']).toBe('A1:A1');
+    expect((ws as any)['A1']).toEqual({ t: 's', v: 'y' });
+    expect((ws as any)['invalid']).toBeUndefined();
+  });
+
+  it('emits !merges for colspan/rowspan cells', () => {
+    const ws = sheetViewToWorksheet({
+      cells: {
+        A1: {
+          valuetype: 't',
+          datatype: 't',
+          datavalue: 'span',
+          colspan: 3,
+          rowspan: 2,
+        },
+      },
+    });
+    expect(ws['!merges']).toEqual([
+      { s: { r: 0, c: 0 }, e: { r: 1, c: 2 } },
+    ]);
+  });
+
+  it('does not emit !merges when no cell spans', () => {
+    const ws = sheetViewToWorksheet({
+      cells: {
+        A1: { valuetype: 'n', datatype: 'v', datavalue: 1 },
+      },
+    });
+    expect(ws['!merges']).toBeUndefined();
+  });
+
+  it('merge with only colspan (rowspan=1 default)', () => {
+    const ws = sheetViewToWorksheet({
+      cells: {
+        A1: { valuetype: 't', datatype: 't', datavalue: 'x', colspan: 2 },
+      },
+    });
+    expect(ws['!merges']).toEqual([
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 1 } },
+    ]);
+  });
+});
+
+describe('sheetViewToBinaryWorkbook', () => {
+  it('roundtrips formulas through xlsx', () => {
+    const bytes = sheetViewToBinaryWorkbook(
+      {
+        cells: {
+          A1: { valuetype: 'n', datatype: 'v', datavalue: 1 },
+          A2: { valuetype: 'n', datatype: 'v', datavalue: 2 },
+          A3: {
+            valuetype: 'n',
+            datatype: 'f',
+            datavalue: 3,
+            formula: 'SUM(A1:A2)',
+          },
+        },
+      },
+      'xlsx',
+    );
+    const wb = (XLSX as any).read(bytes, { type: 'array' });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    expect(sheet.A1.v).toBe(1);
+    expect(sheet.A2.v).toBe(2);
+    expect(sheet.A3.v).toBe(3);
+    expect(sheet.A3.f).toBe('SUM(A1:A2)');
+  });
+
+  it('preserves number format strings', () => {
+    const bytes = sheetViewToBinaryWorkbook(
+      {
+        cells: {
+          A1: {
+            valuetype: 'n',
+            datatype: 'v',
+            datavalue: 0.25,
+            nontextvalueformat: 1,
+          },
+        },
+        valueformats: ['', '0.00%'],
+      },
+      'xlsx',
+    );
+    // SheetJS drops style metadata on `read` by default — pass
+    // `cellStyles: true` to retain the `z`/`w` format fields.
+    const wb = (XLSX as any).read(bytes, { type: 'array', cellStyles: true });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    expect(sheet.A1.v).toBe(0.25);
+    expect(sheet.A1.z).toBe('0.00%');
+    expect(sheet.A1.w).toBe('25.00%');
+  });
+
+  it('preserves merged ranges', () => {
+    const bytes = sheetViewToBinaryWorkbook(
+      {
+        cells: {
+          A1: {
+            valuetype: 't',
+            datatype: 't',
+            datavalue: 'header',
+            colspan: 2,
+          },
+        },
+      },
+      'xlsx',
+    );
+    const wb = (XLSX as any).read(bytes, { type: 'array' });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    expect(sheet['!merges']).toEqual([
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 1 } },
+    ]);
+  });
+
+  it('empty sheet still produces a valid file', () => {
+    const bytes = sheetViewToBinaryWorkbook({ cells: {} }, 'xlsx');
+    const wb = (XLSX as any).read(bytes, { type: 'array' });
+    expect(wb.SheetNames).toEqual(['Sheet1']);
+  });
+
+  it('honors custom sheet name', () => {
+    const bytes = sheetViewToBinaryWorkbook(
+      { cells: { A1: { valuetype: 't', datatype: 't', datavalue: 'x' } } },
+      'xlsx',
+      'Custom',
+    );
+    const wb = (XLSX as any).read(bytes, { type: 'array' });
+    expect(wb.SheetNames).toEqual(['Custom']);
+  });
+
+  it('ods format also roundtrips formulas', () => {
+    const bytes = sheetViewToBinaryWorkbook(
+      {
+        cells: {
+          A1: { valuetype: 'n', datatype: 'v', datavalue: 5 },
+          A2: {
+            valuetype: 'n',
+            datatype: 'f',
+            datavalue: 25,
+            formula: 'A1*A1',
+          },
+        },
+      },
+      'ods',
+    );
+    const wb = (XLSX as any).read(bytes, { type: 'array' });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    expect(sheet.A2.v).toBe(25);
+    // ODS formula prefix convention: SheetJS reads ODS formulas prefixed
+    // with 'of=' or similar — we only assert the formula roundtrip is
+    // non-empty, since the exact ODS syntax is format-specific.
+    expect(sheet.A2.f).toBeTruthy();
+  });
+});
+
+describe('buildMultiSheetWorkbookFromSheets', () => {
+  it('builds a workbook with one view per sheet', () => {
+    const bytes = buildMultiSheetWorkbookFromSheets(
+      [
+        {
+          name: 'Alpha',
+          view: {
+            cells: {
+              A1: { valuetype: 'n', datatype: 'v', datavalue: 1 },
+            },
+          },
+        },
+        {
+          name: 'Beta',
+          view: {
+            cells: {
+              A1: {
+                valuetype: 'n',
+                datatype: 'f',
+                datavalue: 10,
+                formula: 'Alpha!A1*10',
+              },
+            },
+          },
+        },
+      ],
+      'xlsx',
+    );
+    const wb = (XLSX as any).read(bytes, { type: 'array' });
+    expect(wb.SheetNames).toEqual(['Alpha', 'Beta']);
+    expect(wb.Sheets['Beta'].A1.f).toBe('Alpha!A1*10');
+  });
+
+  it('falls back to blank Sheet1 when given zero sheets', () => {
+    const bytes = buildMultiSheetWorkbookFromSheets([], 'xlsx');
+    const wb = (XLSX as any).read(bytes, { type: 'array' });
+    expect(wb.SheetNames).toEqual(['Sheet1']);
+  });
+
+  it('sanitizes and deduplicates sheet names', () => {
+    const bytes = buildMultiSheetWorkbookFromSheets(
+      [
+        { name: 'A/B', view: { cells: {} } },
+        { name: 'A_B', view: { cells: {} } }, // collision after sanitize
+      ],
+      'xlsx',
+    );
+    const wb = (XLSX as any).read(bytes, { type: 'array' });
+    expect(wb.SheetNames).toEqual(['A_B', 'A_B (2)']);
   });
 });
 

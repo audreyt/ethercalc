@@ -269,6 +269,12 @@ vi.mock('@ethercalc/socialcalc-headless', () => ({
     exportCells: () => mockExportCells(),
     exportCell: (coord: string) => mockExportCell(coord),
     exportCSV: () => mockExportCSV(),
+    exportSheetData: () => ({
+      cells: mockExportCells(),
+      valueformats: [],
+      cellformats: [],
+      attribs: {},
+    }),
     createSheetHTML: () => mockCreateSheetHTML(),
   }),
 }));

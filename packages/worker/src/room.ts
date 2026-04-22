@@ -64,7 +64,7 @@ import { upgradeWebSocket, type WsAttachment } from './lib/ws-upgrade.ts';
 import {
   BINARY_CONTENT_TYPES,
   type BinaryFormat,
-  csvToBinaryWorkbook,
+  sheetViewToBinaryWorkbook,
 } from './lib/xlsx-build.ts';
 import type { Env } from './env.ts';
 
@@ -395,7 +395,10 @@ export class RoomDO implements DurableObject {
 
   async #getBinary(format: BinaryFormat): Promise<Response> {
     const ss = await this.#getSpreadsheet();
-    const bytes = csvToBinaryWorkbook(ss.exportCSV(), format);
+    // Walk the raw SocialCalc sheet rather than going through CSV — that
+    // preserves formulas, number formats, merges, and comments. See
+    // `sheetViewToWorksheet` for the graceful-degrade-to-value rules.
+    const bytes = sheetViewToBinaryWorkbook(ss.exportSheetData(), format);
     return binaryResponse(bytes, BINARY_CONTENT_TYPES[format]);
   }
 

@@ -30,12 +30,26 @@ interface SpreadsheetControl {
 interface Sheet {
   cells: Record<string, unknown>;
   attribs: { needsrecalc?: string } & Record<string, unknown>;
+  valueformats?: readonly string[];
+  cellformats?: readonly string[];
   recalconce?: boolean;
   sci: { sheetobj: Sheet };
   statuscallback?: StatusCallback;
   statuscallbackparams?: unknown;
   ResetSheet(): void;
   ScheduleSheetCommands(cmdstr: string, saveundo: boolean, isRemote?: boolean): void;
+}
+
+/**
+ * Structural view of a SocialCalc sheet sufficient to build a high-fidelity
+ * xlsx/ods export (formulas, number formats, merges, comments). Keep this
+ * shape stable — `packages/worker/src/lib/xlsx-build.ts` depends on it.
+ */
+export interface SheetData {
+  cells: Record<string, unknown>;
+  valueformats: readonly string[];
+  cellformats: readonly string[];
+  attribs: Record<string, unknown>;
 }
 
 type StatusCallback = (data: unknown, status: string, arg: unknown, params: unknown) => void;
@@ -91,6 +105,20 @@ export class HeadlessSpreadsheet {
   exportCSV(): string { return this.#SC.ConvertSaveToOtherFormat(this.#ss.CreateSheetSave(), 'csv'); }
   exportCells(): Record<string, unknown> { return this.#ss.sheet.cells; }
   exportCell(coord: string): unknown { const cell = this.#ss.sheet.cells[coord]; return cell === undefined ? null : cell; }
+  /**
+   * Full structural sheet view for high-fidelity export (formulas + number
+   * formats + merges). Unlike `exportCSV()`, which flattens to string values,
+   * this exposes the raw cell attributes that an xlsx/ods writer can walk.
+   */
+  exportSheetData(): SheetData {
+    const sheet = this.#ss.sheet;
+    return {
+      cells: sheet.cells,
+      valueformats: sheet.valueformats ?? [],
+      cellformats: sheet.cellformats ?? [],
+      attribs: sheet.attribs,
+    };
+  }
 }
 
 /**

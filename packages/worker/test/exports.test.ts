@@ -192,6 +192,61 @@ describe('Phase 8 exports — GET /_/:room/<format>', () => {
   });
 });
 
+describe('Phase 8 exports — formula & format roundtrip', () => {
+  const FORMULA_ROOM = 'phase8-formula-' + Math.random().toString(36).slice(2, 8);
+
+  beforeAll(async () => {
+    const e = env as unknown as Env;
+    const id = e.ROOM.idFromName(encodeURI(FORMULA_ROOM));
+    const stub = e.ROOM.get(id);
+    await stub.fetch('https://do/_do/all', { method: 'DELETE' });
+    await stub.fetch('https://do/_do/snapshot', { method: 'PUT', body: '' });
+    // Seed a simple sum: A1=1, A2=2, A3=SUM(A1:A2).
+    const commands = [
+      'set A1 value n 1',
+      'set A2 value n 2',
+      'set A3 formula SUM(A1:A2)',
+    ];
+    for (const c of commands) {
+      const res = await stub.fetch('https://do/_do/commands', {
+        method: 'POST',
+        body: c,
+      });
+      expect(res.status).toBe(202);
+    }
+  });
+
+  it('xlsx export preserves the SUM formula on A3', async () => {
+    const res = await request('GET', `/_/${FORMULA_ROOM}/xlsx`);
+    expect(res.status).toBe(200);
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    // Read back with SheetJS and check A3 has the formula.
+    const XLSX = await import('@e965/xlsx');
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const wb = (XLSX as any).read(bytes, { type: 'array' });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    expect(sheet.A1.v).toBe(1);
+    expect(sheet.A2.v).toBe(2);
+    expect(sheet.A3.v).toBe(3);
+    expect(sheet.A3.f).toBe('SUM(A1:A2)');
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+  });
+
+  it('ods export preserves the SUM formula', async () => {
+    const res = await request('GET', `/_/${FORMULA_ROOM}/ods`);
+    expect(res.status).toBe(200);
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    const XLSX = await import('@e965/xlsx');
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const wb = (XLSX as any).read(bytes, { type: 'array' });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    expect(sheet.A3.v).toBe(3);
+    // ODS prefixes formulas with "of=" but the body matches.
+    expect(sheet.A3.f).toBeTruthy();
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+  });
+});
+
 describe('Phase 8 exports — 404 on unknown room', () => {
   it('returns 404 plain-text when the DO has no snapshot', async () => {
     // A fresh room no one has ever written to — DO exists lazily but

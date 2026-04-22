@@ -39,6 +39,254 @@ import { parseCSV } from './csv-parse.ts';
 /** Binary workbook formats we support (single-sheet for Phase 8). */
 export type BinaryFormat = 'xlsx' | 'ods' | 'fods';
 
+// ─── Cells-based high-fidelity exporter ───────────────────────────────────
+//
+// The CSV intermediate at `csvToBinaryWorkbook` flattens everything to
+// strings, so formulas, number formats, and merged ranges are lost. For
+// rooms where the user cares about roundtrip ("open in Excel, edit,
+// re-import") we walk `sheet.cells` directly and emit SheetJS
+// `{v, t, f, z, c}` cells. Graceful-degrade: unknown valuetype → string
+// with stringified datavalue; unrecognized format → omitted. Excel still
+// shows the cached computed value alongside a preserved formula, so even
+// if a SocialCalc-specific function doesn't exist in Excel's formula
+// dialect the user sees the right value on open.
+
+/** Single cell view from a SocialCalc sheet. */
+export interface SocialCalcCell {
+  readonly coord?: string;
+  readonly datavalue?: string | number;
+  readonly datatype?: 'v' | 't' | 'f' | 'c' | null;
+  readonly formula?: string;
+  readonly valuetype?: string;
+  readonly nontextvalueformat?: number;
+  readonly textvalueformat?: number;
+  readonly colspan?: number;
+  readonly rowspan?: number;
+  readonly comment?: string;
+}
+
+/**
+ * Structural sheet view — matches `@ethercalc/socialcalc-headless`'s
+ * `SheetData`. Redeclared here so this lib stays dependency-free of
+ * the headless package (pure Node unit-testable).
+ */
+export interface SocialCalcSheetView {
+  // Typed as `unknown` to accept the structurally-compatible `SheetData`
+  // from `@ethercalc/socialcalc-headless` without needing a shared type
+  // import. Each entry is cast to `SocialCalcCell` inside the walker.
+  readonly cells: Readonly<Record<string, unknown>>;
+  readonly valueformats?: readonly string[];
+  readonly cellformats?: readonly string[];
+  readonly attribs?: Readonly<Record<string, unknown>>;
+}
+
+/** Parse "A1" / "AA12" into zero-based `{r, c}`. Returns null on invalid input. */
+export function parseCoord(coord: string): { r: number; c: number } | null {
+  const m = /^([A-Z]+)(\d+)$/.exec(coord);
+  if (!m) return null;
+  const letters = m[1] as string;
+  const rowStr = m[2] as string;
+  let col = 0;
+  for (let i = 0; i < letters.length; i++) {
+    col = col * 26 + (letters.charCodeAt(i) - 64);
+  }
+  const row = parseInt(rowStr, 10) - 1;
+  if (row < 0) return null;
+  return { r: row, c: col - 1 };
+}
+
+/** Inverse of `parseCoord` for the column part. */
+export function encodeColumn(c: number): string {
+  let out = '';
+  let n = c;
+  while (n >= 0) {
+    out = String.fromCharCode(65 + (n % 26)) + out;
+    n = Math.floor(n / 26) - 1;
+  }
+  return out;
+}
+
+/**
+ * Translate one SocialCalc cell into a SheetJS cell object. Returns `null`
+ * when the cell should be omitted (truly blank — `valuetype` starts with
+ * 'b' AND no formula). Rules:
+ *
+ * - Numeric (`valuetype[0] === 'n'`):
+ *     - `nl` → `t: 'b'` (logical / boolean)
+ *     - anything else → `t: 'n'` with `cell.datavalue` as the value
+ *     - `nontextvalueformat` pointing at a non-'General' / non-`text-*`
+ *       entry → `z: <format string>` (SocialCalc's format dialect already
+ *       matches Excel's for the common subset: decimals, percents,
+ *       currency, dates)
+ * - Text (`valuetype[0] === 't'`): `t: 's'`, `v: datavalue`. Subtypes
+ *   (`th`/`tl`/`tw`) degrade to plain text — the raw markup survives.
+ * - Error (`valuetype[0] === 'e'`): `t: 'e'`, `v: 0x2A` (#N/A).
+ * - Formula (`datatype === 'f'`): adds `f: <formula>` alongside the cached
+ *   value. SocialCalc stores formulas without a leading `=`, matching
+ *   SheetJS's expected shape.
+ * - Merge (`colspan > 1 || rowspan > 1`): caller collects into `!merges`.
+ * - Comment: `c: [{t: <comment>}]`.
+ *
+ * Unknown valuetypes degrade to string via `String(datavalue)`.
+ */
+export function translateCell(
+  cell: SocialCalcCell,
+  valueformats: readonly string[] = [],
+): Record<string, unknown> | null {
+  const valuetype = String(cell.valuetype ?? '');
+  const main = valuetype[0] ?? '';
+  const isFormula = cell.datatype === 'f' && typeof cell.formula === 'string' && cell.formula.length > 0;
+
+  // Skip truly blank non-formula cells.
+  if ((main === 'b' || main === '') && !isFormula) return null;
+
+  const out: Record<string, unknown> = {};
+
+  if (main === 'n') {
+    const raw = cell.datavalue;
+    const n = typeof raw === 'number' ? raw : parseFloat(String(raw ?? ''));
+    if (valuetype === 'nl') {
+      // SocialCalc stores 1/0 as numeric for logical values.
+      out.v = Number.isFinite(n) ? n !== 0 : false;
+      out.t = 'b';
+    } else {
+      out.v = Number.isFinite(n) ? n : 0;
+      out.t = 'n';
+    }
+  } else if (main === 't') {
+    out.v = cell.datavalue ?? '';
+    out.t = 's';
+  } else if (main === 'e') {
+    out.v = 0x2a; // xlsx code for #N/A
+    out.t = 'e';
+  } else if (isFormula) {
+    // Formula with blank / unknown value — Excel will show #N/A-ish until
+    // it recalculates on open. Seed with 0 so the cell is numeric-typed.
+    out.v = 0;
+    out.t = 'n';
+  } else {
+    // Graceful degrade: stringify.
+    out.v = String(cell.datavalue ?? '');
+    out.t = 's';
+  }
+
+  if (isFormula) {
+    out.f = cell.formula;
+  }
+
+  // Number format pass-through.
+  const fmtIdx = cell.nontextvalueformat;
+  if (typeof fmtIdx === 'number' && fmtIdx > 0) {
+    const fmt = valueformats[fmtIdx];
+    if (fmt && fmt !== 'General' && !fmt.startsWith('text-')) {
+      out.z = fmt;
+    }
+  }
+
+  if (cell.comment) {
+    out.c = [{ t: String(cell.comment) }];
+  }
+
+  return out;
+}
+
+/**
+ * Build a SheetJS worksheet object from a SocialCalc sheet view. The
+ * returned object has `!ref`, `!merges` (when any), and one cell entry per
+ * non-blank coord. Suitable for `book_append_sheet`.
+ */
+export function sheetViewToWorksheet(view: SocialCalcSheetView): Record<string, unknown> {
+  const ws: Record<string, unknown> = {};
+  const merges: Array<{
+    s: { r: number; c: number };
+    e: { r: number; c: number };
+  }> = [];
+  let minR = Infinity;
+  let minC = Infinity;
+  let maxR = -Infinity;
+  let maxC = -Infinity;
+
+  for (const [coord, cell] of Object.entries(view.cells)) {
+    const rc = parseCoord(coord);
+    if (!rc) continue;
+    const scCell = cell as SocialCalcCell;
+    const xcell = translateCell(scCell, view.valueformats);
+    if (!xcell) continue;
+    ws[coord] = xcell;
+    if (rc.r < minR) minR = rc.r;
+    if (rc.c < minC) minC = rc.c;
+    if (rc.r > maxR) maxR = rc.r;
+    if (rc.c > maxC) maxC = rc.c;
+
+    const colspan = Number(scCell.colspan ?? 1);
+    const rowspan = Number(scCell.rowspan ?? 1);
+    if (colspan > 1 || rowspan > 1) {
+      merges.push({
+        s: { r: rc.r, c: rc.c },
+        e: { r: rc.r + rowspan - 1, c: rc.c + colspan - 1 },
+      });
+    }
+  }
+
+  if (maxR === -Infinity) {
+    // No cells — emit a minimal 1x1 blank so readers don't reject the file.
+    ws['!ref'] = 'A1';
+    ws['A1'] = { t: 's', v: '' };
+  } else {
+    // parseCoord guarantees r >= 0 and c >= 0 for every cell we kept,
+    // so minR/minC are always valid zero-based indices here.
+    ws['!ref'] = `${encodeColumn(minC)}${minR + 1}:${encodeColumn(maxC)}${maxR + 1}`;
+  }
+
+  if (merges.length > 0) {
+    ws['!merges'] = merges;
+  }
+
+  return ws;
+}
+
+/** Single-sheet high-fidelity exporter. Replaces the CSV-based pipeline. */
+export function sheetViewToBinaryWorkbook(
+  view: SocialCalcSheetView,
+  format: BinaryFormat,
+  sheetName: string = 'Sheet1',
+): Uint8Array {
+  const ws = sheetViewToWorksheet(view);
+  const book = (XLSX as any).utils.book_new();
+  (XLSX as any).utils.book_append_sheet(book, ws, sheetName);
+  const out = (XLSX as any).write(book, {
+    bookType: format,
+    type: 'array',
+    compression: true,
+  });
+  return new Uint8Array(out as ArrayBufferLike);
+}
+
+/** Multi-sheet high-fidelity exporter. Parallels `buildMultiSheetWorkbook`. */
+export function buildMultiSheetWorkbookFromSheets(
+  sheets: ReadonlyArray<{ readonly name: string; readonly view: SocialCalcSheetView }>,
+  format: BinaryFormat,
+): Uint8Array {
+  const book = (XLSX as any).utils.book_new();
+  const used: string[] = [];
+  if (sheets.length === 0) {
+    const blank = (XLSX as any).utils.aoa_to_sheet([['']]);
+    (XLSX as any).utils.book_append_sheet(book, blank, 'Sheet1');
+  }
+  for (const s of sheets) {
+    const ws = sheetViewToWorksheet(s.view);
+    const name = sanitizeSheetName(s.name, used);
+    used.push(name);
+    (XLSX as any).utils.book_append_sheet(book, ws, name);
+  }
+  const out = (XLSX as any).write(book, {
+    bookType: format,
+    type: 'array',
+    compression: true,
+  });
+  return new Uint8Array(out as ArrayBufferLike);
+}
+
 /**
  * Convert a CSV string (typically from `socialcalc.exportCSV()`) to a binary
  * workbook in the requested format. Returns a freshly-allocated Uint8Array.
