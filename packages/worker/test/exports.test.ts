@@ -232,6 +232,38 @@ describe('Phase 8 exports — formula & format roundtrip', () => {
     /* eslint-enable @typescript-eslint/no-explicit-any */
   });
 
+  it('cross-sheet formula resolves via sibling DO hydration', async () => {
+    const e = env as unknown as Env;
+    const sibling = 'phase82-sibling-' + Math.random().toString(36).slice(2, 8);
+    const main = 'phase82-main-' + Math.random().toString(36).slice(2, 8);
+
+    // Seed sibling with A1=100.
+    const sibId = e.ROOM.idFromName(encodeURI(sibling));
+    const sib = e.ROOM.get(sibId);
+    await sib.fetch('https://do/_do/all', { method: 'DELETE' });
+    await sib.fetch('https://do/_do/snapshot', { method: 'PUT', body: '' });
+    await sib.fetch('https://do/_do/commands', {
+      method: 'POST',
+      body: 'set A1 value n 100',
+    });
+
+    // Seed main with A1='sibling'!A1 — referencing across rooms.
+    const mainId = e.ROOM.idFromName(encodeURI(main));
+    const m = e.ROOM.get(mainId);
+    await m.fetch('https://do/_do/all', { method: 'DELETE' });
+    await m.fetch('https://do/_do/snapshot', { method: 'PUT', body: '' });
+    await m.fetch(`https://do/_do/commands?name=${encodeURIComponent(main)}`, {
+      method: 'POST',
+      body: `set A1 formula '${sibling}'!A1`,
+    });
+
+    // Next read should have hydrated the sibling and recalced.
+    const res = await request('GET', `/_/${main}/csv`);
+    expect(res.status).toBe(200);
+    const csv = await res.text();
+    expect(csv.trim()).toBe('100');
+  });
+
   it('ods export preserves the SUM formula', async () => {
     const res = await request('GET', `/_/${FORMULA_ROOM}/ods`);
     expect(res.status).toBe(200);
@@ -264,25 +296,69 @@ describe('Phase 8 exports — 404 on unknown room', () => {
   });
 });
 
-describe('Phase 8 exports — multi-sheet 501 stubs', () => {
-  it('GET /_/=:room/xlsx returns 501', async () => {
-    const res = await request('GET', '/_/=room/xlsx');
-    expect(res.status).toBe(501);
-    expect(await res.text()).toContain('Phase 8.1');
+describe('Phase 8.1 exports — multi-sheet', () => {
+  it('GET /_/=:room/xlsx returns 404 for an unknown TOC', async () => {
+    const res = await request('GET', `/_/=never-created-${Date.now()}/xlsx`);
+    expect(res.status).toBe(404);
   });
 
-  it('GET /_/=:room/ods returns 501', async () => {
-    const res = await request('GET', '/_/=room/ods');
-    expect(res.status).toBe(501);
+  it('GET /_/=:room/ods returns 404 for an unknown TOC', async () => {
+    const res = await request('GET', `/_/=never-created-${Date.now()}/ods`);
+    expect(res.status).toBe(404);
   });
 
-  it('GET /_/=:room/fods returns 501', async () => {
-    const res = await request('GET', '/_/=room/fods');
-    expect(res.status).toBe(501);
+  it('GET /_/=:room/fods returns 404 for an unknown TOC', async () => {
+    const res = await request('GET', `/_/=never-created-${Date.now()}/fods`);
+    expect(res.status).toBe(404);
   });
 
-  it('GET /=:room.xlsx returns 501', async () => {
-    const res = await request('GET', '/=room.xlsx');
-    expect(res.status).toBe(501);
+  it('GET /=:room.xlsx returns 404 for an unknown TOC', async () => {
+    const res = await request('GET', `/=never-created-${Date.now()}.xlsx`);
+    expect(res.status).toBe(404);
+  });
+
+  it('GET /_/=:room/xlsx builds a multi-sheet workbook from a seeded TOC', async () => {
+    const MULTI_ROOM = 'phase81-multi-' + Math.random().toString(36).slice(2, 8);
+    const e = env as unknown as Env;
+
+    // Seed sub-sheets.
+    for (let i = 1; i <= 2; i++) {
+      const subId = e.ROOM.idFromName(encodeURI(`${MULTI_ROOM}.${i}`));
+      const sub = e.ROOM.get(subId);
+      await sub.fetch('https://do/_do/all', { method: 'DELETE' });
+      await sub.fetch('https://do/_do/snapshot', { method: 'PUT', body: '' });
+      await sub.fetch('https://do/_do/commands', {
+        method: 'POST',
+        body: `set A1 value n ${i * 10}`,
+      });
+    }
+
+    // Seed TOC (= room named MULTI_ROOM without the `=`).
+    const tocId = e.ROOM.idFromName(encodeURI(MULTI_ROOM));
+    const toc = e.ROOM.get(tocId);
+    await toc.fetch('https://do/_do/all', { method: 'DELETE' });
+    await toc.fetch('https://do/_do/snapshot', { method: 'PUT', body: '' });
+    const tocCmds = [
+      'set A1 text t url',
+      'set B1 text t title',
+      `set A2 text t /${MULTI_ROOM}.1`,
+      'set B2 text t FirstTab',
+      `set A3 text t /${MULTI_ROOM}.2`,
+      'set B3 text t SecondTab',
+    ];
+    for (const c of tocCmds) {
+      await toc.fetch('https://do/_do/commands', { method: 'POST', body: c });
+    }
+
+    const res = await request('GET', `/_/=${MULTI_ROOM}/xlsx`);
+    expect(res.status).toBe(200);
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    const XLSX = await import('@e965/xlsx');
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const wb = (XLSX as any).read(bytes, { type: 'array' });
+    expect(wb.SheetNames).toEqual(['FirstTab', 'SecondTab']);
+    expect(wb.Sheets['FirstTab'].A1.v).toBe(10);
+    expect(wb.Sheets['SecondTab'].A1.v).toBe(20);
+    /* eslint-enable @typescript-eslint/no-explicit-any */
   });
 });

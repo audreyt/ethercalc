@@ -199,9 +199,13 @@ describe('route glue — env.ROOM dispatch shapes', () => {
     expect(calls[0]!.bodyText).toBe('x');
   });
 
-  it('POST /_ with XLSX returns 501 without touching DO', async () => {
-    const { env, calls } = makeFakeRoomNamespace(() => {
-      throw new Error('should not reach DO');
+  it('POST /_ with garbage XLSX body still creates a blank room (empty fallback)', async () => {
+    const { env, calls } = makeFakeRoomNamespace((call) => {
+      // Body-preserving PUT — accept and echo.
+      if (call.url.includes('/_do/snapshot')) {
+        return new Response('', { status: 201 });
+      }
+      return new Response('', { status: 200 });
     });
     const app = buildApp();
     const res = await app.fetch(
@@ -211,12 +215,14 @@ describe('route glue — env.ROOM dispatch shapes', () => {
           'content-type':
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         },
-        body: 'PKZIP',
+        body: 'PKZIP', // garbage — classifier catches parse error, treats as empty.
       }),
       env as never,
     );
-    expect(res.status).toBe(501);
-    expect(calls).toHaveLength(0);
+    // Garbage body → empty save → 201 at a new room.
+    expect(res.status).toBe(201);
+    // One DO write to snapshot.
+    expect(calls.some((c) => c.url.includes('/_do/snapshot'))).toBe(true);
   });
 
   it('GET /_from/:template copies template snapshot into a new room', async () => {

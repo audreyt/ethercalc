@@ -19,10 +19,13 @@
  *                                                   in Phase 8`)
  */
 import { csvToSocialCalc, decodeDoubleEncoded } from '../lib/csv.ts';
+import { xlsxToSave } from '../lib/xlsx-import.ts';
 
-/** The three types of payload this layer understands. */
+/** The two types of payload this layer understands. */
 export type DecodedBody =
   | { readonly kind: 'save'; readonly snapshot: string }
+  // Retained for POST `/_/:room` — bulk xlsx on POST is deferred; PUT
+  // handles it directly below via `xlsxToSave`.
   | { readonly kind: 'xlsx-deferred' }
   | { readonly kind: 'empty' };
 
@@ -43,7 +46,14 @@ export function classifyRequestBody(
   bytes: Uint8Array,
 ): DecodedBody {
   const ct = contentType.split(';')[0]!.trim().toLowerCase();
-  if (XLSX_MIMES.includes(ct)) return { kind: 'xlsx-deferred' };
+  if (XLSX_MIMES.includes(ct)) {
+    if (bytes.byteLength === 0) return { kind: 'empty' };
+    try {
+      return { kind: 'save', snapshot: xlsxToSave(bytes) };
+    } catch {
+      return { kind: 'empty' };
+    }
+  }
   if (ct === 'application/json') {
     try {
       const text = new TextDecoder('utf-8').decode(bytes);

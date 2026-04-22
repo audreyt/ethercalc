@@ -261,6 +261,10 @@ const mockCreateSheetHTML = vi.fn<() => string>(
   () => '<table><tr><td>1</td></tr></table>',
 );
 
+const mockFindRefs = vi.fn<() => string[]>(() => []);
+const mockAddSibling = vi.fn<(name: string, save: string) => void>();
+const mockRecalc = vi.fn<() => void>();
+
 vi.mock('@ethercalc/socialcalc-headless', () => ({
   HeadlessSpreadsheet: class MockSS {},
   createSpreadsheet: () => ({
@@ -275,6 +279,9 @@ vi.mock('@ethercalc/socialcalc-headless', () => ({
       cellformats: [],
       attribs: {},
     }),
+    findCrossSheetRefs: () => mockFindRefs(),
+    addSiblingSheet: (name: string, save: string) => mockAddSibling(name, save),
+    recalc: () => mockRecalc(),
     createSheetHTML: () => mockCreateSheetHTML(),
   }),
 }));
@@ -700,6 +707,106 @@ describe('RoomDO (unit, direct construction)', () => {
     expect(res.headers.get('Content-Type')).toContain('opendocument');
     const text = await res.text();
     expect(text.startsWith('<')).toBe(true);
+  });
+
+  it('GET /_do/sheet-data returns the structural SheetData as JSON', async () => {
+    const res = await room.fetch(new Request('https://do/_do/sheet-data'));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toContain('application/json');
+    const data = (await res.json()) as {
+      cells: Record<string, unknown>;
+      valueformats: string[];
+      cellformats: string[];
+      attribs: Record<string, unknown>;
+    };
+    expect(data).toHaveProperty('cells');
+    expect(data).toHaveProperty('valueformats');
+    expect(data).toHaveProperty('cellformats');
+    expect(data).toHaveProperty('attribs');
+  });
+
+  describe('#fetchSibling (cross-sheet hydration I/O)', () => {
+    it('fetches the sibling DO, adds to cache, and recalcs when refs are present', async () => {
+      // Make the mocked spreadsheet advertise a cross-sheet reference so
+      // #hydrateCrossSheetRefs triggers #fetchSibling.
+      mockFindRefs.mockReset();
+      mockFindRefs.mockImplementation(() => []);
+      mockFindRefs.mockReturnValueOnce(['neighbor']);
+      const siblingCalls: string[] = [];
+      const env: Env = {
+        ROOM: {
+          idFromName: (n: string) => ({ name: n } as unknown as DurableObjectId),
+          get: () => ({
+            fetch: (url: string) => {
+              siblingCalls.push(url);
+              return Promise.resolve(
+                new Response('version:1.5\ncell:A1:v:42\n', { status: 200 }),
+              );
+            },
+          } as unknown as DurableObjectStub),
+        } as unknown as DurableObjectNamespace,
+      } as Env;
+      const state = makeState('xyz-nb', { map: new Map() });
+      const freshRoom = new RoomDO(state, env);
+      const res = await freshRoom.fetch(new Request('https://do/_do/csv'));
+      expect(res.status).toBe(200);
+      // Sibling was fetched.
+      expect(siblingCalls.some((u) => u.includes('/_do/snapshot'))).toBe(true);
+      // addSiblingSheet + recalc were called.
+      expect(mockAddSibling).toHaveBeenCalledWith('neighbor', expect.any(String));
+      expect(mockRecalc).toHaveBeenCalled();
+    });
+
+    it('treats sibling 404 as no save — skips add/recalc', async () => {
+      // Make findCrossSheetRefs return ['missing'] only on this test's
+      // first call. A prior test may have consumed its own queue already
+      // so this mockReturnValueOnce is always the next outgoing value.
+      mockFindRefs.mockReset();
+      mockFindRefs.mockImplementation(() => []);
+      mockFindRefs.mockReturnValueOnce(['missing']);
+      let fetchCalls = 0;
+      const env: Env = {
+        ROOM: {
+          idFromName: () => ({} as unknown as DurableObjectId),
+          get: () => ({
+            fetch: () => {
+              fetchCalls++;
+              return Promise.resolve(new Response('', { status: 404 }));
+            },
+          } as unknown as DurableObjectStub),
+        } as unknown as DurableObjectNamespace,
+      } as Env;
+      const state = makeState('xyz-404', { map: new Map() });
+      const freshRoom = new RoomDO(state, env);
+      mockAddSibling.mockClear();
+      mockRecalc.mockClear();
+      const res = await freshRoom.fetch(new Request('https://do/_do/csv'));
+      expect(res.status).toBe(200);
+      expect(fetchCalls).toBe(1); // guard: sibling fetch actually ran
+      expect(mockAddSibling).not.toHaveBeenCalled();
+      expect(mockRecalc).not.toHaveBeenCalled();
+    });
+
+    it('treats empty sibling body as no save', async () => {
+      mockFindRefs.mockReset();
+      mockFindRefs.mockImplementation(() => []);
+      mockFindRefs.mockReturnValueOnce(['empty']);
+      const env: Env = {
+        ROOM: {
+          idFromName: () => ({} as unknown as DurableObjectId),
+          get: () => ({
+            fetch: () =>
+              Promise.resolve(new Response('', { status: 200 })),
+          } as unknown as DurableObjectStub),
+        } as unknown as DurableObjectNamespace,
+      } as Env;
+      const state = makeState('xyz-empty', { map: new Map() });
+      const freshRoom = new RoomDO(state, env);
+      mockAddSibling.mockClear();
+      const res = await freshRoom.fetch(new Request('https://do/_do/csv'));
+      expect(res.status).toBe(200);
+      expect(mockAddSibling).not.toHaveBeenCalled();
+    });
   });
 
   it.each([
