@@ -3,6 +3,24 @@ main = "src/index.ts"
 compatibility_date = "2024-11-12"
 compatibility_flags = ["nodejs_compat"]
 
+# Keep the `*.workers.dev` hostname alongside the custom domain — it's
+# handy for debugging and used by migration tooling in `/tmp/reseed-*.ts`.
+# Without this, adding any `routes` entry disables workers.dev by default.
+workers_dev = true
+
+# Custom domains. Requires the `ethercalc.net` zone to live under this
+# Cloudflare account (one-time nameserver swap at the registrar). On
+# deploy, wrangler auto-creates proxied DNS records and provisions TLS.
+# `override_existing_dns_record = true` replaces the legacy A/CNAME
+# records (2026-04-22 cutover from Zappa/Node to this worker).
+[[routes]]
+pattern = "ethercalc.net"
+zone_name = "ethercalc.net"
+custom_domain = true
+[[routes]]
+pattern = "www.ethercalc.net"
+zone_name = "ethercalc.net"
+custom_domain = true
 # Durable Object: one instance per spreadsheet room.
 # Holds live SocialCalc state, WebSocket clients, and the snapshot/log/audit
 # storage. See CLAUDE.md §3.2 and §3.3.
