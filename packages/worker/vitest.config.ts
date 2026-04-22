@@ -10,7 +10,7 @@ import { defineConfig } from 'vitest/config';
  * provider can instrument end-to-end. See CLAUDE.md §5.2 for the split
  * strategy: pure logic lives in `src/handlers/**` and `src/lib/**` and is
  * covered by `vitest.node.config.ts` (vanilla Node environment, full
- * instanbul coverage). The 100% CI gate applies to that config.
+ * istanbul coverage). The 100% CI gate applies to that config.
  *
  * Pool-workers 0.14.x replaced `defineWorkersConfig({ poolOptions.workers })`
  * with the `cloudflareTest()` plugin pattern. Same options moved up under
