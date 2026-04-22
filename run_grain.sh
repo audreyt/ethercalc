@@ -5,13 +5,17 @@
 # as the continueCommand in sandstorm-pkgdef.capnp.
 #
 # Responsibilities:
-#   1. Boot the Miniflare-backed Worker on port 33411, persisting DO/
-#      D1/KV/R2 state to /var/miniflare (the grain's writable volume).
+#   1. Boot workerd on port 33411, persisting Durable Object state to
+#      /var/do-storage (the grain's writable volume). We use workerd
+#      directly (rather than `wrangler dev` + Miniflare) because
+#      wrangler's startup fetches Cloudflare's metadata endpoint for
+#      `setupCf`, which fails in Sandstorm grains (no outbound network
+#      by default).
 #   2. On the first boot after an upgrade from the legacy LiveScript
 #      EtherCalc (appVersion ≤ 201910080), stream the previous dump
 #      through `ethercalc migrate` so users keep their spreadsheets.
 #   3. Run until Sandstorm signals exit, then shut the worker down
-#      cleanly so Miniflare gets a chance to flush state.
+#      cleanly so DO storage gets a chance to flush.
 #
 # Why a grain-local migrate token:
 #   The PUT /_migrate/seed endpoint on the worker is gated on
@@ -30,34 +34,49 @@ APP_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$APP_DIR"
 
 export ETHERCALC_MIGRATE_TOKEN="sandstorm-grain-local"
-export ETHERCALC_PERSIST_DIR="/var/miniflare"
-# Bun's runtime scaffolds a fake /usr/bin/node symlink under $TMPDIR for
-# scripts that import from `node:*`. In Sandstorm's grain sandbox the
-# default TMPDIR (/tmp) is a separate fs that Bun's symlink-create
-# pathway stumbles on — it panics with `createFakeTemporaryNodeExecutable:
-# error.FileNotFound`. Point TMPDIR at the grain's writable /var so Bun
-# uses that instead.
-export TMPDIR="/var/tmp"
-export BUN_INSTALL_CACHE_DIR="/var/bun-cache"
-# Wrangler / Miniflare call `os.homedir()` during bootstrap. The Sandstorm
-# grain sandbox doesn't set HOME; point it at a grain-local writable dir
-# so Wrangler's startup (`uv_os_homedir`) doesn't ENOENT.
+# Each Sandstorm grain IS a single spreadsheet — `/` should land in
+# the live sheet, not the ethercalc.net "create new" landing. The
+# legacy LiveScript EtherCalc initialized a `sheet1` room on grain
+# creation; we point `/` at the same name so existing grains upgrade
+# seamlessly (the migrated `/var/dump.json` content is under
+# `sheet1`).
+export ETHERCALC_DEFAULT_ROOM="sheet1"
+# Wrangler/Bun used to need HOME/TMPDIR set in the grain sandbox; now
+# that we run workerd directly neither is load-bearing, but keep them
+# exported — bunx is still invoked by the `ethercalc migrate` CLI for
+# post-boot seeding and wants HOME.
 export HOME="/var/home"
-mkdir -p "$ETHERCALC_PERSIST_DIR" "$TMPDIR" "$BUN_INSTALL_CACHE_DIR" "$HOME"
+export TMPDIR="/var/tmp"
+mkdir -p "$HOME" "$TMPDIR" /var/do-storage
 
-# Boot Miniflare in the background. We pass --port 33411 so it binds
-# the port sandstorm-http-bridge expects to proxy.
-bun "$APP_DIR"/bin/ethercalc \
-    --port 33411 --host 0.0.0.0 \
-    --persist-to "$ETHERCALC_PERSIST_DIR" &
+# Locate workerd. `spk dev` maps the host's filesystem into the grain,
+# so the path under node_modules is reachable. Packaged grains embed
+# workerd inside the .spk at the same path via sandstorm-files.list
+# tracing. On the host machine, bun install drops the platform-matched
+# binary package under .bun/@cloudflare+workerd-linux-64@…/.
+WORKERD_BIN="$(find "$APP_DIR/node_modules" -name workerd -type f -executable 2>/dev/null | head -n1)"
+if [ -z "$WORKERD_BIN" ]; then
+  echo "run_grain: ERROR — workerd binary not found under node_modules" >&2
+  echo "           run 'bun install' before packaging" >&2
+  exit 127
+fi
+
+# Boot workerd in the background, pointing the DO disk service at /var
+# and the assets service at the symlinked assets/ tree (the bundle
+# layout script-build-workerd-bundle.sh produces).
+"$WORKERD_BIN" serve \
+    "$APP_DIR/packages/worker/workerd/config.capnp" \
+    -ddo="/var/do-storage" \
+    -dassets="$APP_DIR/assets" \
+    &
 WORKER_PID=$!
 
-# Forward SIGTERM/SIGINT so Miniflare gets a chance to flush before
-# the grain is torn down.
+# Forward SIGTERM/SIGINT so DO storage flushes before the grain tears
+# down. workerd traps SIGTERM cleanly and writes pending .sqlite pages.
 trap 'kill -TERM "$WORKER_PID" 2>/dev/null; wait "$WORKER_PID" 2>/dev/null; exit 0' TERM INT
 
-# Wait for /_health before proceeding. Miniflare normally responds in
-# 1–2s; we give it up to 60s for a cold grain.
+# Wait for /_health before proceeding with migration. workerd normally
+# responds in <1s; we give it up to 60s for a cold grain.
 for _ in $(seq 1 60); do
   if curl -sf http://127.0.0.1:33411/_health > /dev/null 2>&1; then
     break
@@ -72,7 +91,7 @@ done
 #   /var/dump/*.txt  — per-key text files (snapshot-* raw, audit-*
 #                      with \n/\r/\\ escape encoding)
 # We feed whichever shape we find into `ethercalc migrate`, which
-# seeds the worker's DO/D1 layer with full fidelity (snapshot + audit
+# seeds the worker's DO storage with full fidelity (snapshot + audit
 # from dir mode; snapshot + log + audit + chat + ecell + timestamps
 # from JSON mode). A /var/.migrated sentinel prevents re-runs.
 if [ ! -f /var/.migrated ]; then

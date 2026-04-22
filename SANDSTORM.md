@@ -70,58 +70,75 @@ What does not carry over (either layout):
 If `run_grain.sh` reports a migration failure, it does NOT drop the
 sentinel, so the next grain boot retries. Check the grain log.
 
-## Known packaging gap: worker runtime in the grain sandbox
+## Worker runtime inside the grain: standalone workerd
 
-A live-server test (native Ubuntu 24.04 x86_64, `spk dev` over the
-installed legacy v2017.02.21.0) confirmed the migration-trigger path
-end-to-end:
+The grain runs `workerd` directly rather than `wrangler dev` +
+Miniflare. Wrangler and Miniflare both make an outbound HTTP call to
+`workers.cloudflare.com` during `setupCf` to fetch metadata; Sandstorm
+grains have **no outbound network by default**, so that fetch hangs
+and aborts with `Unexpected server response: 101` before the worker
+ever binds to :33411. `workerd serve` skips that dance entirely — it
+just loads the pre-bundled worker, the DO/asset configuration, and
+listens.
 
-  1. Legacy grain runs, writes `/var/dump.json` with user content.
-  2. After the `spk dev` swap the new `run_grain.sh` fires, finds
-     `/var/dump.json`, and invokes `ethercalc migrate --source
-     file:///var/dump.json --target http://127.0.0.1:33411 --token
-     sandstorm-grain-local` — all args correct, planted content
-     intact.
-  3. Migrate blocks on `/_health` waiting for the worker to come up.
+### The bundle
 
-What's *not* verified yet is the worker itself booting inside the
-grain sandbox. `wrangler dev` + Miniflare reach out to Cloudflare
-metadata at startup (the `setupCf` call), but Sandstorm grains have
-**no outbound network by default**. So `wrangler dev` panics with
-`Unexpected server response: 101` before binding 33411, which causes
-`ethercalc migrate`'s `waitForHealth` loop to time out.
+`scripts/build-workerd-bundle.sh` produces a self-contained tree at
+`packages/worker/workerd/`:
 
-The migration **logic** is fine (run_grain.sh invoked it with the
-right args); the gap is the worker runtime expecting dev-time CF
-network access that the grain doesn't grant.
+  - `config.capnp`  — Cap'n Proto config checked in; declares the
+                       worker, bindings, DO namespace, HTTP socket.
+  - `worker/index.js` — bundled worker (built by
+                       `wrangler deploy --dry-run --outdir=…`).
+  - `assets/`       — symlink to the repo-root `assets/` tree
+                       (re-pointed at runtime via `-dassets=`).
+  - `do-storage/`   — empty dir; workerd creates per-DO SQLite files
+                       (re-pointed at runtime via `-ddo=`).
 
-**Recommended fix** (separate packaging work): bundle `workerd`
-standalone via `wrangler deploy --dry-run --outdir=dist/` at
-`spk pack` time, then launch `workerd serve dist/config.capnp` in
-`run_grain.sh` instead of `bun bin/ethercalc`. `workerd` doesn't need
-CF metadata to start — it just needs the pre-bundled worker and the
-DO/KV/R2 configuration. Also shrinks the package significantly (no
-bun, no `node_modules`).
+`run_grain.sh` finds the `workerd` binary under `node_modules/` (the
+`@cloudflare/workerd-linux-64` package ships it), then runs:
 
-Interim workaround: add `ipNetwork` to the pkgdef's `bridgeConfig` so
-the user can grant outbound HTTP on first grain start. Less ergonomic
-(extra permission prompt) but unblocks `wrangler dev` without
-repacking.
+```
+workerd serve packages/worker/workerd/config.capnp \
+    -ddo=/var/do-storage \
+    -dassets=./assets
+```
+
+### Live-verified on a real Sandstorm grain (2026-04-22)
+
+End-to-end upgrade test against `apps.sandstorm.io` legacy
+v2017.02.21.0 on Ubuntu 24.04 x86_64:
+
+  1. Legacy grain boots, writes `/var/dump.json` with cells
+     `A1=HELLO-FROM-LEGACY-2017`, `B1=42`, `C1=preserve-me`, 3 log
+     entries, 3 audit entries, 1 chat, 1 ecell, timestamps.
+  2. `spk dev` swaps in the new app. Legacy grain is torn down;
+     Sandstorm starts a fresh supervisor against the new pkgdef.
+  3. New `run_grain.sh` boots workerd on :33411, hits `/_health` in
+     <1s, detects `/var/dump.json`, invokes `ethercalc migrate`.
+  4. Migrator seeds the worker's Durable Object storage:
+     `migrated 1 rooms (1 snapshots, 3 log, 3 audit, 1 chat, 1 ecell)`.
+  5. `/var/.migrated` sentinel dropped.
+  6. Verified via `curl /_/sheet1` inside the grain's network
+     namespace: all three cells preserved in the returned SocialCalc
+     save. DO storage at `/var/do-storage/<uniqueKey>/<objId>.sqlite`
+     contains `audit:`, `chat:`, `ecell:`, `log:`, `snapshot`, and
+     `meta:updated_at` entries.
 
 ### Grain sandbox env vars (applied in run_grain.sh)
 
-Three env-var workarounds are needed for Bun/Wrangler to get past the
-sandbox's defaults; they're set automatically by `run_grain.sh`:
+  - `HOME=/var/home` — the `bun bin/ethercalc migrate` step still
+                        uses `bunx wrangler` under the hood for the
+                        CF-less `--dry-run` bundle build path, which
+                        calls `os.homedir()`. Set early so nothing
+                        ENOENTs.
+  - `TMPDIR=/var/tmp` — grain-writable temp, used by bun when running
+                        the migrate CLI.
 
-  - `HOME=/var/home`       — Wrangler's `os.homedir()` ENOENTs without this
-  - `TMPDIR=/var/tmp`      — Bun's `createFakeTemporaryNodeExecutable` wants
-                              a writable temp dir; the grain's /tmp fights it
-  - `BUN_INSTALL_CACHE_DIR=/var/bun-cache` — keep bun's cache grain-local
-
-In addition, the pkgdef must run with `spk dev --proc` so `/proc` is
-mounted inside the sandbox — Bun's runtime relies on `/proc/self/exe`
-to bootstrap. Packaged grains get this via Sandstorm's standard proc
-mount; only dev mode needs the explicit flag.
+The pkgdef still needs `spk dev --proc` in dev mode so `/proc` is
+mounted inside the sandbox (bun's runtime reads `/proc/self/exe`).
+Packaged grains built with `spk pack` get `/proc` automatically via
+Sandstorm's standard proc mount.
 
 ## Grain-local migrate token
 
