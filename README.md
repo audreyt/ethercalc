@@ -20,6 +20,24 @@ Integrated with content management systems:
 
 Browsers tested: Safari, Chrome, Firefox.
 
+## Install
+
+Via npm (requires [Bun](https://bun.sh/) ≥ 1.1 on PATH — the CLI
+spawns `bunx wrangler`):
+
+    npm install -g ethercalc
+    ethercalc              # starts on http://localhost:8000
+
+Via Docker (no Bun needed on the host — the image carries it):
+
+    git clone https://github.com/audreyt/ethercalc
+    cd ethercalc
+    docker compose up -d
+
+Both paths boot the same Miniflare-backed Worker, persist state
+under `./ethercalc-data/` (or `/data` in the container), and need no
+Cloudflare account.
+
 ## Self-hosting
 
     git clone https://github.com/audreyt/ethercalc

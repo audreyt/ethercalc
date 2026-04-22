@@ -3,7 +3,7 @@
  *
  * Kept separate from `parse.ts` so a test can snapshot it without importing
  * argv-parsing side effects. Format mirrors the legacy README "Runtime
- * Flags" section (see README.mkdn) so long-time users recognize the layout.
+ * Flags" section (see README.md) so long-time users recognize the layout.
  */
 export const HELP_TEXT: string = [
   'ethercalc — multi-user spreadsheet server',
