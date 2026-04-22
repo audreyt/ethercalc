@@ -87,7 +87,7 @@ jobs:
 
       - name: Open issue on break-threshold regression
         if: steps.stryker.outcome == 'failure'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           PACKAGE: ${{ matrix.package }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
