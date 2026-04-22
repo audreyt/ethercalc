@@ -15,7 +15,6 @@ and phase status.
 
 Integrated with content management systems:
 
-* [Socialtext](http://www.socialtext.com/)
 * [Drupal](https://drupal.org/project/sheetnode)
 
 Browsers tested: Safari, Chrome, Firefox.
