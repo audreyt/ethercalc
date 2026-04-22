@@ -1,0 +1,46 @@
+EtherCalc {{ .Chart.AppVersion }} is installing.
+
+1. Wait for the pod to become ready:
+     kubectl -n {{ .Release.Namespace }} rollout status deploy/{{ include "ethercalc.fullname" . }}
+
+2. Access EtherCalc:
+{{- if .Values.ingress.enabled }}
+     Configured via Ingress:
+   {{- range .Values.ingress.hosts }}
+     http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}{{ (index .paths 0).path }}
+   {{- end }}
+{{- else if contains "LoadBalancer" .Values.service.type }}
+     A LoadBalancer service was provisioned. Check its external IP:
+     kubectl -n {{ .Release.Namespace }} get svc {{ include "ethercalc.fullname" . }} -w
+{{- else if contains "NodePort" .Values.service.type }}
+     export NODE_PORT=$(kubectl -n {{ .Release.Namespace }} get svc {{ include "ethercalc.fullname" . }} -o jsonpath="{.spec.ports[0].nodePort}")
+     export NODE_IP=$(kubectl get nodes -o jsonpath="{.items[0].status.addresses[0].address}")
+     echo "http://$NODE_IP:$NODE_PORT"
+{{- else }}
+     Forward the service to your machine:
+     kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "ethercalc.fullname" . }} 8000:{{ .Values.service.port }}
+     open http://localhost:8000
+{{- end }}
+
+3. Persistence:
+{{- if .Values.persistence.enabled }}
+     Durable Object state persists to a {{ .Values.persistence.size }} PVC.
+     The PVC is annotated `helm.sh/resource-policy: keep` so it survives
+     `helm uninstall`. To delete data explicitly:
+     kubectl -n {{ .Release.Namespace }} delete pvc {{ include "ethercalc.pvcName" . }}
+{{- else }}
+     ⚠️  Persistence is DISABLED. All rooms will be lost on pod restart.
+     Re-install with --set persistence.enabled=true for production.
+{{- end }}
+
+4. To set / rotate the HMAC key and migrate token:
+     kubectl -n {{ .Release.Namespace }} create secret generic {{ include "ethercalc.secretName" . }} \
+       --from-literal=ETHERCALC_KEY="$(openssl rand -hex 32)" \
+       --from-literal=ETHERCALC_MIGRATE_TOKEN="$(openssl rand -hex 32)" \
+       --dry-run=client -o yaml | kubectl apply -f -
+     kubectl -n {{ .Release.Namespace }} rollout restart deploy/{{ include "ethercalc.fullname" . }}
+
+⚠️  IMPORTANT: replicas is hard-locked at 1. The worker is a single-
+    process Miniflare runtime — two pods sharing the PVC will corrupt
+    rooms. Scaling out requires Cloudflare Workers + Durable Objects
+    deployment (see packages/worker/README.md).

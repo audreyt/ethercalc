@@ -131,6 +131,38 @@ jobs:
       - name: Smoke — build image, compose up, curl /_health, compose down
         run: ./scripts/smoke-selfhost.sh
 
+  helm-lint:
+    name: helm — lint + template
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Catches chart syntax drift and template bugs on every PR.
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: helm lint
+        run: helm lint ./helm
+
+      - name: helm template — default values
+        run: helm template ci ./helm > /dev/null
+
+      - name: helm template — ingress enabled
+        run: |
+          helm template ci ./helm \
+            --set ingress.enabled=true \
+            --set ingress.hosts[0].host=ci.example.com \
+            --set ingress.hosts[0].paths[0].path=/ \
+            --set ingress.hosts[0].paths[0].pathType=Prefix \
+            > /dev/null
+
+      - name: helm template — existingSecret path
+        run: helm template ci ./helm --set secrets.existingSecret=external > /dev/null
+
+      - name: helm template — persistence disabled
+        run: helm template ci ./helm --set persistence.enabled=false > /dev/null
+
   e2e:
     name: e2e — Playwright against wrangler dev
     runs-on: ubuntu-latest

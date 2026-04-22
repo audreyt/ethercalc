@@ -1,0 +1,118 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ethercalc.fullname" . }}
+  labels:
+    {{- include "ethercalc.labels" . | nindent 4 }}
+spec:
+  # HARD INVARIANT: replicas MUST stay 1 and strategy MUST be Recreate.
+  # The worker is a single-process Miniflare runtime — two pods sharing
+  # the PVC would corrupt Durable Object state silently, with no
+  # consensus layer to reconcile them. See chart values.yaml preamble.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "ethercalc.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "ethercalc.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "ethercalc.serviceAccountName" . }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: {{ include "ethercalc.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          env:
+            - name: ETHERCALC_HOST
+              value: "0.0.0.0"
+            - name: ETHERCALC_PORT
+              value: "8000"
+            {{- if .Values.config.basepath }}
+            - name: ETHERCALC_BASEPATH
+              value: {{ .Values.config.basepath | quote }}
+            {{- end }}
+            {{- if .Values.config.defaultRoom }}
+            - name: ETHERCALC_DEFAULT_ROOM
+              value: {{ .Values.config.defaultRoom | quote }}
+            {{- end }}
+            {{- if .Values.config.cors }}
+            - name: ETHERCALC_CORS
+              value: "1"
+            {{- end }}
+            {{- if .Values.config.expire }}
+            - name: ETHERCALC_EXPIRE
+              value: {{ .Values.config.expire | quote }}
+            {{- end }}
+            - name: ETHERCALC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ethercalc.secretName" . }}
+                  key: ETHERCALC_KEY
+                  optional: true
+            - name: ETHERCALC_MIGRATE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ethercalc.secretName" . }}
+                  key: ETHERCALC_MIGRATE_TOKEN
+                  optional: true
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "ethercalc.pvcName" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

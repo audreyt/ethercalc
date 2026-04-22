@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "ethercalc.fullname" . }}-test-connection"
+  labels:
+    {{- include "ethercalc.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+spec:
+  restartPolicy: Never
+  containers:
+    - name: curl
+      image: curlimages/curl:8.11.0
+      command: ['sh', '-c']
+      args:
+        - |
+          set -eu
+          # Hit /_health — the chart's liveness/readiness gate — to confirm
+          # the pod is up and the worker answers HTTP.
+          curl --fail --max-time 10 \
+            "http://{{ include "ethercalc.fullname" . }}:{{ .Values.service.port }}/_health"

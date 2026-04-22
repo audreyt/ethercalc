@@ -1,0 +1,117 @@
+# Default values for EtherCalc.
+#
+# IMPORTANT: EtherCalc's self-host image runs a single `workerd serve`
+# process that owns all Durable Object state locally (under /data). Two
+# replicas sharing the PVC will silently corrupt rooms — there's no
+# consensus layer to keep them in sync. The chart enforces replicas: 1
+# and strategy: Recreate. Do NOT override these.
+
+image:
+  repository: audreyt/ethercalc
+  # Overrides Chart.yaml's appVersion if set. Leave empty to pin to the
+  # chart-compatible image version.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext: {}
+securityContext: {}
+
+service:
+  type: ClusterIP
+  port: 8000
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: ethercalc.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: ethercalc-tls
+  #    hosts:
+  #      - ethercalc.local
+
+resources:
+  # Reasonable defaults for a small spreadsheet deployment. Raise `memory`
+  # if rooms grow large — each live room holds its sheet in RAM.
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 100m
+    memory: 256Mi
+
+persistence:
+  # Durable Object state, D1 sqlite, KV, R2 all live on disk under /data.
+  # Disable only for ephemeral dev setups; production MUST have this on.
+  enabled: true
+  # Leave empty to use the cluster default storage class.
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  size: 10Gi
+  # Retain the PVC when the chart is uninstalled so data survives a
+  # `helm uninstall` + `helm install` cycle.
+  existingClaim: ""
+
+# Runtime configuration. These map 1:1 to the env vars documented in the
+# README's "Environment variables" table.
+config:
+  # Base URL prefix when EtherCalc sits behind a reverse proxy at a sub-path.
+  basepath: ""
+  # When set, EtherCalc redirects `/` to this room name.
+  defaultRoom: ""
+  # `1` enables permissive CORS headers.
+  cors: false
+  # Seconds of inactivity before a room is pruned. Leave empty to disable.
+  expire: ""
+
+# Secrets held in a Kubernetes Secret, never in values.yaml plaintext in
+# production. Set `existingSecret: <name>` to reference an external Secret
+# you created out-of-band; otherwise the chart will create one from these
+# fields at install time.
+secrets:
+  existingSecret: ""
+  # HMAC key for read-only vs. edit auth. Generate with e.g. `openssl rand -hex 32`.
+  key: ""
+  # Bearer token gating `PUT /_migrate/seed/:room`. Required for
+  # `ethercalc migrate --token ...`.
+  migrateToken: ""
+
+livenessProbe:
+  httpGet:
+    path: /_health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /_health
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

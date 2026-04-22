@@ -1,0 +1,22 @@
+apiVersion: v2
+name: ethercalc
+description: EtherCalc — multi-user spreadsheet server (TypeScript rewrite, self-hosted via Miniflare)
+type: application
+# Chart version bumps on chart changes; appVersion follows the image tag
+# produced by `.github/workflows/publish-image.yml`.
+version: 0.1.0
+appVersion: "0.20260423.0"
+home: https://ethercalc.net/
+sources:
+  - https://github.com/audreyt/ethercalc
+maintainers:
+  - name: Audrey Tang
+    email: audreyt@audreyt.org
+    url: https://audreyt.org/
+keywords:
+  - ethercalc
+  - spreadsheet
+  - collaboration
+  - realtime
+  - socialcalc
+icon: https://ethercalc.net/favicon.ico

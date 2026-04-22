@@ -1,0 +1,14 @@
+# Patterns to ignore when packaging the chart with `helm package`.
+.DS_Store
+.git/
+.gitignore
+.bzr/
+.hg/
+.hgignore
+.svn/
+*.orig
+*.tmp
+*.swp
+*.bak
+*.tgz
+OWNERS

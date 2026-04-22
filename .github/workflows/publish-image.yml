@@ -1,0 +1,74 @@
+name: Publish Docker image
+
+# On each version tag (`0.YYYYMMDD.N`), build the self-host image multi-arch
+# (amd64 + arm64) and push to Docker Hub as `audreyt/ethercalc:<tag>` and
+# `audreyt/ethercalc:latest`. Also wires a manual `workflow_dispatch` so a
+# run can be triggered against any ref for testing.
+#
+# Requires the following repo secrets:
+#   - DOCKERHUB_USERNAME
+#   - DOCKERHUB_TOKEN   (a Docker Hub access token with Read, Write, Delete)
+
+on:
+  push:
+    tags:
+      - '0.2*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Image tag to publish (defaults to "dev")'
+        required: false
+        default: 'dev'
+
+concurrency:
+  group: publish-image-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Derive image tags
+        id: tags
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            version="${GITHUB_REF_NAME}"
+            echo "tags=audreyt/ethercalc:${version},audreyt/ethercalc:latest" >> "$GITHUB_OUTPUT"
+            echo "version=${version}" >> "$GITHUB_OUTPUT"
+          else
+            version="${{ github.event.inputs.tag || 'dev' }}"
+            echo "tags=audreyt/ethercalc:${version}" >> "$GITHUB_OUTPUT"
+            echo "version=${version}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up QEMU (for arm64 on an amd64 runner)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.tags.outputs.version }}
