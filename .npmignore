@@ -1,0 +1,31 @@
+# npm publish excludes — the `files` allowlist in package.json already
+# narrows what ships; these patterns remove test / bench / internal-
+# tooling junk from the surviving tree so the tarball stays lean.
+
+# Test suites and fixtures (every package keeps sources under src/ and
+# tests under test/ — we only want src/ in the npm tarball).
+packages/*/test/
+packages/*/tests/
+packages/*/coverage/
+packages/*/.vitest-cache/
+packages/*/stryker.conf.json
+packages/*/vitest.config.ts
+packages/*/vitest.node.config.ts
+packages/*/playwright.config.ts
+
+# Oracle harness + e2e are dev-only — they exist purely to validate the
+# published worker behavior against the legacy oracle. End users never
+# run them; shipping them just bloats the tarball.
+packages/oracle-harness/
+packages/e2e/
+
+# Build intermediates. `packages/client/dist` and `client-multi/dist`
+# are the exception — explicit allowlist entries above keep them.
+packages/*/node_modules/
+packages/*/.wrangler/
+packages/*/dist/cache/
+
+# Mutation-testing artifacts (see docs/MUTATION_REPORT.md).
+reports/
+.stryker-tmp/
+stryker.log
