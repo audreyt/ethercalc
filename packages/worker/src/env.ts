@@ -60,6 +60,16 @@ export interface Env {
   readonly DEVMODE?: string;
 
   /**
+   * Single-grain default room. When set, `GET /` 302-redirects into
+   * `/<ETHERCALC_DEFAULT_ROOM>` instead of serving the "create new
+   * sheet" landing page. Used by Sandstorm grains — where each grain
+   * IS a single sheet — to take the user straight to the spreadsheet
+   * on `/`. Unset on ethercalc.net (shared pool of rooms, where `/`
+   * legitimately is a landing page).
+   */
+  readonly ETHERCALC_DEFAULT_ROOM?: string;
+
+  /**
    * Cloudflare `send_email` binding (Phase 9, §13 Q3). When present,
    * the cron/email layer wraps it via `BindingEmailSender`. When
    * unbound (Node unit tests, or deployments that omit the

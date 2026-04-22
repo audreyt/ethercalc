@@ -25,7 +25,7 @@ function makeHost(overrides: Partial<BootHost> = {}): BootHost {
   if (overrides.EtherCalc) host.EtherCalc = overrides.EtherCalc;
   if (overrides.Drupal) host.Drupal = overrides.Drupal;
   if (overrides.document) host.document = overrides.document;
-  if (overrides.open) host.open = overrides.open;
+  if (overrides.open) host.__exportOpen = overrides.open;
   if (overrides.parent) host.parent = overrides.parent;
   if (overrides.vex) host.vex = overrides.vex;
   return host;

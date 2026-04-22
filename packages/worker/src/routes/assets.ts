@@ -48,9 +48,50 @@ import {
 import type { Env } from '../env.ts';
 
 /**
+ * Extension → MIME map used when the upstream Fetcher doesn't set a
+ * useful `Content-Type`. Cloudflare's Workers Assets binding always
+ * sets the right type, but the standalone-workerd DiskDirectory we
+ * ship to Sandstorm returns `application/octet-stream` for every file
+ * (browsers treat that as a download). Patch it on the way through.
+ */
+const MIME_BY_EXT: Readonly<Record<string, string>> = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.mjs': 'application/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.map': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.ico': 'image/vnd.microsoft.icon',
+  '.webmanifest': 'application/manifest+json',
+  '.appcache': 'text/cache-manifest',
+  '.xml': 'application/xml; charset=utf-8',
+  '.txt': 'text/plain; charset=utf-8',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+};
+
+function mimeForPath(pathname: string): string | undefined {
+  const dot = pathname.lastIndexOf('.');
+  if (dot < 0) return undefined;
+  const ext = pathname.slice(dot).toLowerCase();
+  return MIME_BY_EXT[ext];
+}
+
+/**
  * Proxy a request into the `ASSETS` binding. When the binding is absent
  * (unit tests importing the router without Miniflare), returns a 404 so
  * callers fail soft.
+ *
+ * We copy the upstream response body into a new Response so we can set
+ * a sensible `Content-Type` when the binding doesn't already provide
+ * one. Cloudflare's production Assets binding sets types correctly;
+ * only the standalone workerd `DiskDirectory` path (used by Sandstorm
+ * self-host) needs this fix-up.
  */
 export async function serveAsset(env: Env, pathname: string): Promise<Response> {
   if (!env.ASSETS) {
@@ -60,7 +101,21 @@ export async function serveAsset(env: Env, pathname: string): Promise<Response> 
     });
   }
   const req = new Request(`https://assets.local${pathname}`, { method: 'GET' });
-  return env.ASSETS.fetch(req);
+  const upstream = await env.ASSETS.fetch(req);
+  const ct = upstream.headers.get('Content-Type');
+  // Only rewrite when the upstream is the default opaque binary type or
+  // missing — leave legit responses (text/html from CF Assets, errors
+  // with text/plain, etc.) untouched.
+  if (ct && !/^application\/octet-stream/i.test(ct)) return upstream;
+  const sniffed = mimeForPath(pathname);
+  if (sniffed === undefined) return upstream;
+  const headers = new Headers(upstream.headers);
+  headers.set('Content-Type', sniffed);
+  return new Response(upstream.body, {
+    status: upstream.status,
+    statusText: upstream.statusText,
+    headers,
+  });
 }
 
 /**
@@ -69,7 +124,23 @@ export async function serveAsset(env: Env, pathname: string): Promise<Response> 
 export function registerAssets(app: Hono<{ Bindings: Env }>): void {
   // Root entry page. Legacy served `index.html` at `/`. We forward to
   // ASSETS which picks it up from the curated dir.
-  app.get('/', async (c) => serveAsset(c.env, '/index.html'));
+  //
+  // Single-grain deployments (notably Sandstorm, where a grain IS a
+  // single spreadsheet) set `ETHERCALC_DEFAULT_ROOM=sheet1` so `/`
+  // 302-redirects into the live room instead of the "create new sheet"
+  // landing page. Without the env var, the legacy behavior (landing
+  // page) is preserved — this is what ethercalc.net serves.
+  app.get('/', async (c) => {
+    const defaultRoom = c.env.ETHERCALC_DEFAULT_ROOM;
+    if (defaultRoom !== undefined && defaultRoom !== '') {
+      const basepath = c.env.BASEPATH ?? '';
+      return new Response('', {
+        status: 302,
+        headers: { Location: `${basepath}/${defaultRoom}` },
+      });
+    }
+    return serveAsset(c.env, '/index.html');
+  });
 
   // Secondary landing page used by the home-screen link.
   app.get('/_start', async (c) => serveAsset(c.env, '/start.html'));

@@ -19,6 +19,16 @@ export interface BootHost extends MainHost {
       listener: (event: { target?: EventTarget | null }) => void,
     ) => void;
   };
+  /**
+   * Test-only override for the URL-opener. In production `host` IS
+   * `window`, and `host.open === window.open` (the browser builtin),
+   * so the default production path — a synthetic `<a>` click —
+   * must NOT delegate to `host.open` (doing so triggers the popup
+   * blocker). Instead we expose a dedicated override field that tests
+   * set explicitly; production code ignores it.
+   */
+  __exportOpen?: (url: string) => unknown;
+  /** @deprecated legacy alias — keep `window.open` addressable for type. */
   open?: (url: string) => unknown;
   parent?: {
     location: {
@@ -94,10 +104,21 @@ export function openLegacyExportDialog(host: BootHost): void {
     );
   if (!vex?.dialog?.open) return;
 
+  // `window.parent.location` throws a SecurityError in cross-origin
+  // iframe embeds (Sandstorm, notion integrations, etc.). Fall back to
+  // the current document's location when that happens — the export-URL
+  // builder handles both shapes.
+  const readParentLocation = (): { href?: string; pathname: string } | undefined => {
+    if (host.parent?.location) return host.parent.location;
+    if (typeof window === 'undefined') return undefined;
+    try {
+      return window.parent.location;
+    } catch {
+      return undefined;
+    }
+  };
   const parentLocation =
-    host.parent?.location ??
-    (typeof window !== 'undefined' ? window.parent.location : undefined) ??
-    { pathname: host.location.pathname };
+    readParentLocation() ?? { pathname: host.location.pathname };
   const isMultiple =
     Boolean(
       (host as BootHost & { __MULTI__?: { rows?: unknown[] } }).__MULTI__?.rows ??
@@ -108,10 +129,57 @@ export function openLegacyExportDialog(host: BootHost): void {
         ),
     ) ||
     /\.[1-9]\d*$/.test(room);
+  // Production path: synthetic `<a>` click. `window.open()` is
+  // popup-blocked in Chrome when called from inside the vex-dialog
+  // button handler (it's one async tick removed from the direct user
+  // click, so Chrome's user-activation window has lapsed). Anchor
+  // clicks don't hit the popup blocker, and they also honor the
+  // server's `Content-Disposition` header: CSV/XLSX/ODS download
+  // (server sets attachment), HTML opens inline (server doesn't).
+  //
+  // Tests override via `host.__exportOpen`; we deliberately do NOT
+  // fall back to `host.open` because in production `host === window`
+  // and `window.open` is the popup-blocked path we're avoiding.
+  // Production download path.
+  //
+  // Why `fetch → blob → object URL → anchor click` instead of a plain
+  // anchor pointing at the server URL: Chrome's "automatic downloads"
+  // security policy blocks same-origin navigation/download anchors
+  // that fire after any async hop (our vex dialog button -> callback
+  // -> openFormat is two ticks past the direct user click, so the
+  // user-activation gate has already closed). Pulling the bytes via
+  // fetch and then clicking an anchor that points at a blob: URL
+  // bypasses that gate — the click is treated as a direct save of
+  // local data, not a new navigation. This works uniformly for all
+  // four formats (xlsx/ods are binary, csv/html are text) and
+  // honors the server's Content-Disposition filename.
+  const deriveFilename = (url: string, cd: string | null): string => {
+    const match = cd && /filename\*?="?([^";]+)"?/i.exec(cd);
+    if (match?.[1]) return match[1];
+    const tail = url.split('?')[0]?.split('/').pop() ?? 'export';
+    return tail;
+  };
   const open =
-    host.open ??
-    (typeof window !== 'undefined'
-      ? (url: string) => window.open(url)
+    host.__exportOpen ??
+    (typeof document !== 'undefined' && typeof fetch !== 'undefined'
+      ? (url: string) => {
+          void (async () => {
+            const res = await fetch(url);
+            const blob = await res.blob();
+            const objectUrl = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = objectUrl;
+            a.download = deriveFilename(url, res.headers.get('Content-Disposition'));
+            a.rel = 'noopener';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            // Revoke on next tick so the click's navigation has
+            // already kicked off. Immediate revoke would race.
+            setTimeout(() => URL.revokeObjectURL(objectUrl), 1_000);
+          })();
+          return undefined;
+        }
       : undefined);
   if (!open) return;
 
