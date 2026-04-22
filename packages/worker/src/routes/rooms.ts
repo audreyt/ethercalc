@@ -100,11 +100,17 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
   // opts out of the index) we short-circuit to the empty-state body
   // shapes the oracle recorded.
   app.get('/_rooms', async (c) => {
+    if (c.env.ETHERCALC_CORS) {
+      return sizedResponse('_rooms not available with CORS', 403, TEXT_CT);
+    }
     if (!c.env.DB) return sizedResponse('[]', 200, JSON_CT);
     const rooms = await listRooms(c.env.DB);
     return sizedResponse(JSON.stringify(rooms), 200, JSON_CT);
   });
   app.get('/_roomlinks', async (c) => {
+    if (c.env.ETHERCALC_CORS) {
+      return sizedResponse('_roomlinks not available with CORS', 403, TEXT_CT);
+    }
     // Sensible-fix (§13 Q1): oracle emitted JSON in a text/html
     // response — we render an actual <a> list. Empty-state body is
     // still `[]` to keep the oracle's byte recording passing.
@@ -114,6 +120,9 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
     return sizedResponse(body, 200, HTML_CT);
   });
   app.get('/_roomtimes', async (c) => {
+    if (c.env.ETHERCALC_CORS) {
+      return sizedResponse('_roomtimes not available with CORS', 403, TEXT_CT);
+    }
     if (!c.env.DB) return sizedResponse('{}', 200, JSON_CT);
     const times = await listRoomTimes(c.env.DB);
     return sizedResponse(JSON.stringify(times), 200, JSON_CT);

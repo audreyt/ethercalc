@@ -98,4 +98,12 @@ export interface Env {
    *     --target http://127.0.0.1:8000 --token local-only
    */
   readonly ETHERCALC_MIGRATE_TOKEN?: string;
+
+  /**
+   * When truthy (`'1'`), disables room-enumeration endpoints (`/_rooms`,
+   * `/_roomlinks`, `/_roomtimes`) with a 403 — same as the legacy
+   * `--cors` flag. Set via `--cors` in the CLI or as a Worker variable
+   * in `wrangler.toml` for production Cloudflare deploys.
+   */
+  readonly ETHERCALC_CORS?: string;
 }

@@ -7,6 +7,7 @@
  */
 /* istanbul ignore file */
 import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 
 import { buildHealthBody } from './handlers/health.ts';
 import { registerAssets, registerRoomCatchAll } from './routes/assets.ts';
@@ -40,6 +41,9 @@ export { scheduled } from './scheduled.ts';
  */
 export function buildApp(): Hono<{ Bindings: Env }> {
   const app = new Hono<{ Bindings: Env }>();
+  // All API endpoints are CORS-friendly — external embeds (hackfoldr,
+  // third-party dashboards) fetch /_/:room/csv etc cross-origin.
+  app.use('*', cors());
   app.get('/_health', (c) => c.json(buildHealthBody()));
   // Phase 7: native WS + legacy socket.io shim. Register early so their
   // literal prefixes win against the `/:room` catch-all. `/_ws/:room` is

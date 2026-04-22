@@ -42,6 +42,7 @@ new_sqlite_classes = ["RoomDO"]
 # ETHERCALC_KEY in the Miniflare env for self-host parity.
 [vars]
 BASEPATH = ""
+ETHERCALC_CORS = "1"
 
 # Workers Assets binding (Phase 4.1/11). `directory` is resolved relative
 # to this wrangler.toml, so it points up two levels to the repo-root
