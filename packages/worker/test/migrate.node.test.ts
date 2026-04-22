@@ -315,6 +315,24 @@ describe('verifyMigrateToken', () => {
     });
   });
 
+  it('bad when same-length tokens differ only in one byte', () => {
+    // Exercises the body of the constant-time XOR loop. Kills the
+    // EqualityOperator mutants on `i < a.length` (→ `i >= a.length`,
+    // which would skip the loop entirely and leave `diff = 0`,
+    // incorrectly returning `ok`).
+    expect(verifyMigrateToken('secret', 'Bearer secreT')).toEqual({
+      kind: 'bad',
+    });
+  });
+
+  it('bad when same-length tokens differ only in the first byte', () => {
+    // Different position of the differing byte — defends against a
+    // mutation that might mis-iterate and happen to miss the mismatch.
+    expect(verifyMigrateToken('secret', 'Bearer Secret')).toEqual({
+      kind: 'bad',
+    });
+  });
+
   it('ok when token matches exactly', () => {
     expect(verifyMigrateToken('secret', 'Bearer secret')).toEqual({
       kind: 'ok',

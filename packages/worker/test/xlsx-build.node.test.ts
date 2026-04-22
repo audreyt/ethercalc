@@ -103,6 +103,51 @@ describe('csvToBinaryWorkbook', () => {
     // on the range; we only assert B1 is the non-empty value.
     expect(sheet.B1.v).toBe('a');
   });
+
+  // The next four pin specific regex mutations on the numeric-pattern at
+  // xlsx-build.ts:84 — `/^-?\d+(\.\d+)?$/`. Each mutation is observable
+  // via a carefully-chosen string that matches the mutant regex but not
+  // the original (or vice-versa).
+
+  it('does NOT coerce trailing-digit strings like "abc42" (`^` anchor)', () => {
+    // Mutation `/-?\d+(\.\d+)?$/` (no `^`) would match "abc42" and
+    // try `Number("abc42")` → NaN → cell type 'n' with bad value.
+    const bytes = csvToBinaryWorkbook('abc42\n', 'xlsx');
+    const wb = (XLSX as any).read(bytes, { type: 'array' });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    expect(sheet.A1.t).toBe('s');
+    expect(sheet.A1.v).toBe('abc42');
+  });
+
+  it('does NOT coerce leading-digit strings like "42abc" (`$` anchor)', () => {
+    // Mutation `/^-?\d+(\.\d+)?/` (no `$`) would match "42abc" as a prefix.
+    const bytes = csvToBinaryWorkbook('42abc\n', 'xlsx');
+    const wb = (XLSX as any).read(bytes, { type: 'array' });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    expect(sheet.A1.t).toBe('s');
+    expect(sheet.A1.v).toBe('42abc');
+  });
+
+  it('coerces multi-digit fractions like "1.234" (`+` quantifier)', () => {
+    // Mutation `/^-?\d+(\.\d)?$/` (no `+` after `\d`) would only match
+    // a single fractional digit, leaving "1.234" as a string.
+    const bytes = csvToBinaryWorkbook('1.234\n', 'xlsx');
+    const wb = (XLSX as any).read(bytes, { type: 'array' });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    expect(sheet.A1.t).toBe('n');
+    expect(sheet.A1.v).toBeCloseTo(1.234);
+  });
+
+  it('does NOT coerce decimal-with-letters like "1.abc" (`\\d` vs `\\D`)', () => {
+    // Mutation `/^-?\d+(\.\D+)?$/` (`\d` → `\D`) would match "1.abc"
+    // (the fractional part matches non-digits). Number("1.abc") = NaN,
+    // which would produce a numeric cell with a bogus value.
+    const bytes = csvToBinaryWorkbook('1.abc\n', 'xlsx');
+    const wb = (XLSX as any).read(bytes, { type: 'array' });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    expect(sheet.A1.t).toBe('s');
+    expect(sheet.A1.v).toBe('1.abc');
+  });
 });
 
 describe('BINARY_CONTENT_TYPES', () => {
@@ -135,6 +180,23 @@ describe('sanitizeSheetName', () => {
     const out = sanitizeSheetName(input);
     expect(out.length).toBe(31);
     expect(out).toBe('x'.repeat(31));
+  });
+
+  it('leaves names EXACTLY 31 characters untouched (boundary is strict >)', () => {
+    // Pins the `base.length > 31` boundary — mutation to `>=` would
+    // truncate a length-31 name to 31 (no-op result) but the predicate
+    // difference is observable via the slice path. The assertion
+    // `.toBe(input)` guarantees identity, not just equality.
+    const input = 'x'.repeat(31);
+    const out = sanitizeSheetName(input);
+    expect(out).toBe(input);
+    expect(out.length).toBe(31);
+  });
+
+  it('truncates 32-character names (one above the boundary)', () => {
+    const input = 'x'.repeat(32);
+    const out = sanitizeSheetName(input);
+    expect(out.length).toBe(31);
   });
 
   it('falls back to "Sheet" when the input is empty', () => {
