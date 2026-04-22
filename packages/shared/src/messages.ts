@@ -238,26 +238,62 @@ export function encodeMessage(msg: ClientMessage | ServerMessage): string {
 }
 
 export function parseClientMessage(raw: string): ClientMessage | null {
-  const parsed = safeJsonParse(raw);
-  if (!parsed || typeof parsed !== 'object') return null;
-  const type = (parsed as { type?: unknown }).type;
-  if (typeof type !== 'string') return null;
-  if (!(CLIENT_MESSAGE_TYPES as readonly string[]).includes(type)) return null;
-  return parsed as ClientMessage;
+  return parseTypedMessage<ClientMessage>(raw, CLIENT_MESSAGE_TYPES);
 }
 
 export function parseServerMessage(raw: string): ServerMessage | null {
-  const parsed = safeJsonParse(raw);
-  if (!parsed || typeof parsed !== 'object') return null;
-  const type = (parsed as { type?: unknown }).type;
-  if (typeof type !== 'string') return null;
-  if (!(SERVER_MESSAGE_TYPES as readonly string[]).includes(type)) return null;
-  return parsed as ServerMessage;
+  return parseTypedMessage<ServerMessage>(raw, SERVER_MESSAGE_TYPES);
 }
 
+/**
+ * Shared parser for discriminated-union JSON messages. The two exported
+ * wrappers above just pin the generic + the set of valid type literals.
+ *
+ * The null/typeof guards intentionally over-check: `safeJsonParse` can
+ * return any JSON-representable value (string/number/boolean/null/array/
+ * object), and accessing `.type` on a primitive `null` throws. The
+ * `typeof parsed !== 'object'` fork ALSO catches arrays (typeof [] ===
+ * 'object', but `(Array as { type?: unknown }).type` is undefined — fine
+ * for parsing, but a well-formed array input would spuriously reach the
+ * `includes` check otherwise). We keep both guards to make the
+ * property-access on line `parsed.type` provably safe.
+ */
+function parseTypedMessage<T extends { readonly type: string }>(
+  raw: string,
+  allowedTypes: readonly string[],
+): T | null {
+  const parsed = safeJsonParse(raw);
+  // Stryker disable next-line ConditionalExpression: `typeof parsed !== 'object'`
+  // is a type-safety guard — primitives (number/string/boolean) don't have a
+  // `.type` property, so `includes(undefined)` returns false anyway, producing
+  // a null return either way. The guard exists so the subsequent property
+  // access is provably safe (and the TS narrowing survives a rename).
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return null;
+  }
+  const type = (parsed as { type?: unknown }).type;
+  // `includes` handles the non-string case by returning false (SameValueZero
+  // comparison), so an explicit `typeof type !== 'string'` guard would be
+  // semantically redundant — omitted to shrink the mutation surface.
+  if (!allowedTypes.includes(type as string)) return null;
+  return parsed as T;
+}
+
+/**
+ * JSON.parse wrapped so malformed input folds into `null` rather than
+ * throwing. The return shape is deliberately `null` (not `undefined`)
+ * so callers can pattern-match against the discriminated union of
+ * parsed JSON values without ever seeing `undefined`.
+ */
 function safeJsonParse(raw: string): unknown {
   try {
     return JSON.parse(raw);
+    // Returning `null` vs `undefined` in the catch block is observationally
+    // equivalent — every call site is `parseTypedMessage`, which guards
+    // both values with `=== null` and `typeof !== 'object'` so both fold
+    // to the same `null` result. The surviving Stryker mutant (catch →
+    // empty block) is a genuine equivalent mutant, not a test gap.
+    // Stryker disable next-line BlockStatement
   } catch {
     return null;
   }

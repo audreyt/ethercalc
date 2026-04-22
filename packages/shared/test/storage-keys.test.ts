@@ -48,11 +48,18 @@ describe('padSeq', () => {
 
   it('rejects negative integers', () => {
     expect(() => padSeq(-1)).toThrow(RangeError);
+    // Pin the literal error message so a mutation that replaces the
+    // template with `\`\`` doesn't survive (the debugging value of the
+    // message is the whole point of using a RangeError over a plain
+    // Error). Regex matches either the integer or the NaN rejection.
+    expect(() => padSeq(-1)).toThrow(/padSeq requires a non-negative integer, got -1/);
   });
 
   it('rejects non-integers', () => {
     expect(() => padSeq(1.5)).toThrow(RangeError);
+    expect(() => padSeq(1.5)).toThrow(/padSeq requires a non-negative integer, got 1\.5/);
     expect(() => padSeq(Number.NaN)).toThrow(RangeError);
+    expect(() => padSeq(Number.NaN)).toThrow(/padSeq requires a non-negative integer, got NaN/);
   });
 });
 
@@ -71,5 +78,8 @@ describe('ecellKey', () => {
 
   it('rejects empty user', () => {
     expect(() => ecellKey('')).toThrow(RangeError);
+    // Pin the literal so a mutation replacing the message with `""`
+    // doesn't survive.
+    expect(() => ecellKey('')).toThrow(/ecellKey requires a non-empty user/);
   });
 });

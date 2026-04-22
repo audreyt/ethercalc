@@ -16,9 +16,9 @@
   "mutate": ["src/**/*.ts", "!src/index.ts"],
   "coverageAnalysis": "perTest",
   "thresholds": {
-    "high": 97,
-    "low": 92,
-    "break": 89
+    "high": 100,
+    "low": 97,
+    "break": 97
   },
   "timeoutMS": 60000,
   "concurrency": 4,

@@ -549,6 +549,37 @@ describe('roomsFromFilesystem — size limits + callbacks', () => {
     expect(skipped).toEqual([{ room: 'big', bytes: 10 }]);
   });
 
+  it('keeps snapshots exactly at maxSnapshotBytes (boundary is strict >)', async () => {
+    // A 5-byte snapshot at maxSnapshotBytes=5 MUST pass through.
+    // Catches the `snapshotBytes > maxSnapshotBytes` → `>=` boundary
+    // mutant in both dump.json and dump/ code paths.
+    const fsJson = fakeFs({
+      'dump.json': JSON.stringify({ 'snapshot-exact': 'exact' /* 5 bytes */ }),
+    });
+    const skipJson: Array<{ room: string; bytes: number }> = [];
+    const [roomJson] = await collect(
+      roomsFromFilesystem(fsJson, '/dump.json', {
+        maxSnapshotBytes: 5,
+        onSkippedRoom: (info) => skipJson.push({ ...info }),
+      }),
+    );
+    expect(roomJson?.name).toBe('exact');
+    expect(skipJson).toEqual([]);
+
+    const fsDir = fakeFs({
+      dump: { 'snapshot-exact.txt': 'exact' },
+    });
+    const skipDir: Array<{ room: string; bytes: number }> = [];
+    const [roomDir] = await collect(
+      roomsFromFilesystem(fsDir, '/dump', {
+        maxSnapshotBytes: 5,
+        onSkippedRoom: (info) => skipDir.push({ ...info }),
+      }),
+    );
+    expect(roomDir?.name).toBe('exact');
+    expect(skipDir).toEqual([]);
+  });
+
   it('drops oversized log/audit/chat entries and fires onOversizedEntry', async () => {
     const tooBig = 'x'.repeat(10);
     const fs = fakeFs({
