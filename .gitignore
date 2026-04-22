@@ -24,3 +24,13 @@ node_modules/.playwright/
 reports/
 .stryker-tmp/
 stryker.log
+
+# Workerd bundle output (scripts/build-workerd-bundle.sh regenerates)
+packages/worker/workerd/worker/
+packages/worker/workerd/assets
+packages/worker/workerd/do-storage/
+packages/worker/workerd/config.runtime.capnp
+packages/worker/workerd/override.capnp
+
+# Docker-compose bind-mount volume
+ethercalc-data/
