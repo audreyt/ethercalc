@@ -244,7 +244,9 @@ describe('installSocialCalcLogoLink', () => {
     listeners.click?.[0]?.({ target });
 
     expect(logoOpen).toHaveBeenCalledTimes(1);
-    expect(logoOpen).toHaveBeenCalledWith('https://github.com/audreyt/socialcalc');
+    expect(logoOpen).toHaveBeenCalledWith(
+      'https://github.com/audreyt/socialcalc/blob/main/LEGAL.txt',
+    );
   });
 
   it('ignores clicks that do not hit the logo cell', () => {

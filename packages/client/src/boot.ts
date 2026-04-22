@@ -61,7 +61,14 @@ export interface BootHost extends MainHost {
 
 const EXPORT_SELECTOR = '.te_download tr:nth-child(2) td:first-child';
 const LOGO_SELECTOR = 'td[id$="_logo"]';
-const SOCIALCALC_REPO_URL = 'https://github.com/audreyt/socialcalc';
+// CPAL Exhibit B requires the logo to link to the Attribution URL. The
+// license hard-codes http://www.socialcalc.org, but that domain has
+// lapsed into scam territory. LEGAL.txt in the actively maintained fork
+// carries the verbatim Attribution Copyright Notice + Attribution
+// Phrase, so pointing there presents the mandated notice to the user in
+// a comparable manner.
+const SOCIALCALC_ATTRIBUTION_URL =
+  'https://github.com/audreyt/socialcalc/blob/main/LEGAL.txt';
 
 type ExportFormat = 'xlsx' | 'csv' | 'html' | 'ods';
 
@@ -255,7 +262,7 @@ export function installSocialCalcLogoLink(host: BootHost): void {
             return undefined;
           }
         : undefined);
-    open?.(SOCIALCALC_REPO_URL);
+    open?.(SOCIALCALC_ATTRIBUTION_URL);
   });
 }
 
