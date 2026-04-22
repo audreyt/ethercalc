@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { runMain, deriveBaseUrl, createDispatcher, type MainHost } from '../src/main.ts';
+import { runMain, deriveBaseUrl, createDispatcher, stripRoom, type MainHost } from '../src/main.ts';
 import { makeSocialCalc, makeSpreadsheet } from './mock-socialcalc.ts';
 import { createMockFactory, createFakeTimers } from './mock-ws.ts';
 import type { SocialCalcGlobal, SpreadsheetLike } from '../src/types.ts';
@@ -30,6 +30,45 @@ describe('deriveBaseUrl', () => {
     expect(deriveBaseUrl('/room1/app', 'room1')).toBe('/');
     expect(deriveBaseUrl('/prefix/room1', 'room1')).toBe('/prefix');
     expect(deriveBaseUrl('/other', 'room1')).toBe('/other');
+  });
+});
+
+describe('stripRoom', () => {
+  it('drops exactly one leading underscore', () => {
+    // Pins the `+` quantifier — mutation to `/^_/` (single underscore)
+    // would leave the trailing one behind.
+    expect(stripRoom('__room')).toBe('room');
+    expect(stripRoom('___room')).toBe('room');
+  });
+
+  it('only strips underscores at the start', () => {
+    // Pins the `^` anchor — mutation to `/_+/` (unanchored) would
+    // munch the underscore between words.
+    expect(stripRoom('a_b')).toBe('a_b');
+    expect(stripRoom('room_name')).toBe('room_name');
+    expect(stripRoom('_room_name')).toBe('room_name');
+  });
+
+  it('drops everything from the first `?` onward', () => {
+    // Pins the `.*` greedy match — mutation to `/\?./` (single char)
+    // would leave the tail after that one char in place.
+    expect(stripRoom('room?key=val&x=1')).toBe('room');
+    expect(stripRoom('room?')).toBe('room');
+  });
+
+  it('only strips from `?` — not `#` or other punctuation', () => {
+    expect(stripRoom('room#anchor')).toBe('room#anchor');
+    expect(stripRoom('room&q=1')).toBe('room&q=1');
+  });
+
+  it('composes: leading underscores + query string', () => {
+    expect(stripRoom('__room?x=1')).toBe('room');
+    expect(stripRoom('_room?')).toBe('room');
+  });
+
+  it('returns the input unchanged when no marker is present', () => {
+    expect(stripRoom('room')).toBe('room');
+    expect(stripRoom('')).toBe('');
   });
 });
 

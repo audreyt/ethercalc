@@ -264,6 +264,77 @@ describe('installCallbacks', () => {
     expect(sc.MoveECell!(editor, 'B2')).toBe('B2');
     expect(editor.context.highlights['A1']).toBeUndefined();
   });
+
+  // The 5-way conjunction at socialcalc-callbacks.ts:180 decides whether
+  // the old ecell should get the 'range2' highlight on move. Mutation
+  // targets include each `&&` → `||` swap (7 distinct) plus the whole
+  // expression → true. Kill them by exercising each corner + just-outside
+  // case so the boundary AND conjunction shape is pinned behaviorally.
+  describe('MoveECell range2 boundary', () => {
+    const setup = (
+      row: number,
+      col: number,
+      range2: { hasrange: boolean; top: number; bottom: number; left: number; right: number },
+    ): { sc: ReturnType<typeof makeSocialCalc>; editor: ReturnType<typeof makeEditor> } => {
+      const sc = makeSocialCalc();
+      installBroadcast(sc, () => {});
+      installCallbacks(sc, { broadcast: () => {} });
+      const editor = makeEditor();
+      editor.ecell = { coord: 'A1', row, col };
+      editor.range2 = range2;
+      return { sc, editor };
+    };
+
+    it('sets range2 highlight when ecell is at the top-left corner', () => {
+      const { sc, editor } = setup(5, 3, { hasrange: true, top: 5, bottom: 10, left: 3, right: 7 });
+      sc.MoveECell!(editor, 'B2');
+      expect(editor.context.highlights['A1']).toBe('range2');
+    });
+
+    it('sets range2 highlight when ecell is at the bottom-right corner', () => {
+      const { sc, editor } = setup(10, 7, { hasrange: true, top: 5, bottom: 10, left: 3, right: 7 });
+      sc.MoveECell!(editor, 'B2');
+      expect(editor.context.highlights['A1']).toBe('range2');
+    });
+
+    it('sets range2 highlight when ecell is strictly inside', () => {
+      const { sc, editor } = setup(7, 5, { hasrange: true, top: 5, bottom: 10, left: 3, right: 7 });
+      sc.MoveECell!(editor, 'B2');
+      expect(editor.context.highlights['A1']).toBe('range2');
+    });
+
+    it('does NOT set range2 highlight when ecell row is just above top', () => {
+      const { sc, editor } = setup(4, 5, { hasrange: true, top: 5, bottom: 10, left: 3, right: 7 });
+      sc.MoveECell!(editor, 'B2');
+      expect(editor.context.highlights['A1']).toBeUndefined();
+    });
+
+    it('does NOT set range2 highlight when ecell row is just below bottom', () => {
+      const { sc, editor } = setup(11, 5, { hasrange: true, top: 5, bottom: 10, left: 3, right: 7 });
+      sc.MoveECell!(editor, 'B2');
+      expect(editor.context.highlights['A1']).toBeUndefined();
+    });
+
+    it('does NOT set range2 highlight when ecell col is just left of left', () => {
+      const { sc, editor } = setup(7, 2, { hasrange: true, top: 5, bottom: 10, left: 3, right: 7 });
+      sc.MoveECell!(editor, 'B2');
+      expect(editor.context.highlights['A1']).toBeUndefined();
+    });
+
+    it('does NOT set range2 highlight when ecell col is just right of right', () => {
+      const { sc, editor } = setup(7, 8, { hasrange: true, top: 5, bottom: 10, left: 3, right: 7 });
+      sc.MoveECell!(editor, 'B2');
+      expect(editor.context.highlights['A1']).toBeUndefined();
+    });
+
+    it('does NOT set range2 highlight when hasrange is false even with inside coords', () => {
+      // Pins the `hasrange` conjunct — mutation to `||` would make the
+      // rest of the condition matter on its own.
+      const { sc, editor } = setup(7, 5, { hasrange: false, top: 5, bottom: 10, left: 3, right: 7 });
+      sc.MoveECell!(editor, 'B2');
+      expect(editor.context.highlights['A1']).toBeUndefined();
+    });
+  });
 });
 
 describe('installRecalcLoader', () => {

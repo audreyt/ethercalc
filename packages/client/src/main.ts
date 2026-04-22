@@ -67,7 +67,14 @@ function defaultRandomUsername(): string {
   return Math.random().toString();
 }
 
-function stripRoom(raw: string): string {
+/**
+ * Normalizes a raw room identifier read from hash/query/path by dropping
+ * the leading-underscore marker (legacy hash format was `#_<room>`) and
+ * any trailing query string. Exported for direct unit testing — the
+ * double-replace is a surprising enough surface that the individual
+ * mutations on each regex need explicit coverage.
+ */
+export function stripRoom(raw: string): string {
   return raw.replace(/^_+/, '').replace(/\?.*/, '');
 }
 

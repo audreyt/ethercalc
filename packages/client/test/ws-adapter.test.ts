@@ -23,6 +23,13 @@ describe('ws-adapter URL helpers', () => {
     const url = buildWsEndpoint({ url: 'http://h/', room: 'r', user: 'u' });
     expect(url).toBe('ws://h/_ws/r?user=u');
   });
+
+  it('strips MULTIPLE trailing slashes (the `+` quantifier is load-bearing)', () => {
+    // Mutation `/\/+$/` → `/\/$/` would only strip one slash. Pin the
+    // 3-trailing-slash case so the quantifier is observable.
+    const url = buildWsEndpoint({ url: 'http://h///', room: 'r', user: 'u' });
+    expect(url).toBe('ws://h/_ws/r?user=u');
+  });
 });
 
 describe('createWsAdapter', () => {
@@ -105,6 +112,44 @@ describe('createWsAdapter', () => {
     expect(seen).toHaveLength(1);
     adapter.close();
   });
+
+  it('emits the precise onStatus type string at each lifecycle transition', () => {
+    // Pin the four status-type literals — `'open'`, `'close'`,
+    // `'reconnecting'`, `'error'` — so StringLiteral mutations flipping
+    // any of them to `""` are caught. The "reconnect_failed" case is
+    // pinned in the maxAttempts test below.
+    const { factory, sockets } = createMockFactory();
+    const timers = createFakeTimers();
+    const statuses: Array<{ type: string }> = [];
+    const adapter = createWsAdapter({
+      room: 'r',
+      user: 'u',
+      url: 'ws://h',
+      wsFactory: factory,
+      setTimeoutFn: timers.setTimeoutFn,
+      clearTimeoutFn: timers.clearTimeoutFn,
+      reconnectDelayMs: 5,
+      maxReconnectAttempts: 10,
+      onStatus: (s) => statuses.push(s),
+    });
+    sockets[0]!.acceptOpen();
+    expect(statuses.at(-1)).toEqual({ type: 'open' });
+    sockets[0]!.acceptError();
+    expect(statuses.at(-1)).toEqual({ type: 'error' });
+    sockets[0]!.acceptClose(1006, 'gone');
+    // After close we expect `close` then `reconnecting` (scheduled).
+    const lastTwo = statuses.slice(-2).map((s) => s.type);
+    expect(lastTwo).toEqual(['close', 'reconnecting']);
+    // Close frame carries through the code + reason literals.
+    const closeStatus = statuses.find((s) => s.type === 'close') as {
+      code?: number;
+      reason?: string;
+    };
+    expect(closeStatus.code).toBe(1006);
+    expect(closeStatus.reason).toBe('gone');
+    adapter.close();
+  });
+
 
   it('reconnects with backoff up to maxAttempts and then stops', () => {
     const { factory, sockets } = createMockFactory();

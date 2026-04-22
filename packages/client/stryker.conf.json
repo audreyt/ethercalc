@@ -20,9 +20,9 @@
   ],
   "coverageAnalysis": "perTest",
   "thresholds": {
-    "high": 81,
-    "low": 76,
-    "break": 73
+    "high": 85,
+    "low": 80,
+    "break": 77
   },
   "timeoutMS": 60000,
   "concurrency": 4,
