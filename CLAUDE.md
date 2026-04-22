@@ -248,17 +248,15 @@ Remaining items worth flagging. Resolved risks are documented in the code; see g
 
 1. **`?raw` Vite imports vs wrangler `[[rules]]` cross-toolchain trap**: wrangler needs `[[rules]] type="Text" globs=["**/SocialCalc.js"]` to bundle the UMD for `wrangler deploy --dry-run`. But when vitest-pool-workers reads `wrangler.configPath`, that same rule gets merged into Miniflare's `modulesRules`, which mangles our Vite `?raw` imports by appending `?mf_vitest_force=Text` and breaking the resolver. Workaround in `packages/worker/vitest.config.ts`: drop `wrangler.configPath`, supply `main` + `miniflare.durableObjects` + `miniflare.assets` inline.
 
-2. **Cross-sheet formula resolution** (`RecalcInfo.LoadSheet`): formulas like `'other-room'!A1` need DO-to-DO fetches. Single-room scenarios are fine; cross-sheet needs wiring through `env.ROOM.get(idFromName(otherRoom)).fetch('/_do/get-save')` before it works end-to-end.
+2. **Docker Desktop on macOS/ARM + workerd networking quirk**: `docker compose up` binds 0.0.0.0:8000 inside the container, but Docker Desktop's virtio networking on Apple Silicon returns zero bytes to host curls. Linux CI runners don't reproduce it. Dev-affordance only. If a contributor reports "docker compose up works but curl hangs", answer is "run `bun run --cwd packages/worker dev` directly, or use Linux/WSL".
 
-3. **Docker Desktop on macOS/ARM + workerd networking quirk**: `docker compose up` binds 0.0.0.0:8000 inside the container, but Docker Desktop's virtio networking on Apple Silicon returns zero bytes to host curls. Linux CI runners don't reproduce it. Dev-affordance only. If a contributor reports "docker compose up works but curl hangs", answer is "run `bun run --cwd packages/worker dev` directly, or use Linux/WSL".
+3. **CLI env vars partially wired**: `ETHERCALC_EXPIRE`, `ETHERCALC_CORS`, `ETHERCALC_BASEPATH` are set by `bin/ethercalc` into Miniflare env, but the worker doesn't fully read them yet. `ETHERCALC_KEY` IS read. Wire the rest as their governing routes mature.
 
-4. **CLI env vars partially wired**: `ETHERCALC_EXPIRE`, `ETHERCALC_CORS`, `ETHERCALC_BASEPATH` are set by `bin/ethercalc` into Miniflare env, but the worker doesn't fully read them yet. `ETHERCALC_KEY` IS read. Wire the rest as their governing routes mature.
+4. **Third-party bundled libs** (`third-party/class-js/`, `third-party/wikiwyg/`, plus jQuery + vex inlined into `static/ethercalc.js`): some are IE-era. Audit before re-bundling under Vite in the client pipeline.
 
-5. **Third-party bundled libs** (`third-party/class-js/`, `third-party/wikiwyg/`, plus jQuery + vex inlined into `static/ethercalc.js`): some are IE-era. Audit before re-bundling under Vite in the client pipeline.
+5. **Offline/sessionStorage client behavior** (`SocialCalc.hadSnapshot` flag): client caches last sheet to sessionStorage and restores on reconnect. Port preserves current behavior; revisit if it becomes load-bearing.
 
-6. **Offline/sessionStorage client behavior** (`SocialCalc.hadSnapshot` flag): client caches last sheet to sessionStorage and restores on reconnect. Port preserves current behavior; revisit if it becomes load-bearing.
-
-7. **`ScheduleSheetCommands` async path**: headless bypasses it with sync `ExecuteSheetCommand`. Fine for HTTP requests. If any command sequence depends on the async scheduler's `cmdend` callback, we'll need to switch. No known case yet.
+6. **`ScheduleSheetCommands` async path**: headless bypasses it with sync `ExecuteSheetCommand`. Fine for HTTP requests. If any command sequence depends on the async scheduler's `cmdend` callback, we'll need to switch. No known case yet.
 
 ---
 
@@ -272,8 +270,9 @@ Phases 0–11 complete (see §14 for merge history). Remaining:
 
 ### Phase 8 — Export polish
 - [x] csv/csv.json/html/xlsx/ods/fods/md implemented via SocialCalc + SheetJS + pure GFM.
-- [x] Multi-sheet xlsx/ods/fods via `parseMultiSheetWorkbook`/`buildMultiSheetWorkbook`/`sanitizeSheetName`.
-- [ ] Cross-sheet formula resolution via DO-to-DO fetches (see §7 item 2).
+- [x] xlsx/ods/fods exports walk `sheet.cells` — formulas, number formats, merges, comments preserved (`54c191e`).
+- [x] Multi-sheet xlsx/ods/fods export + xlsx/ods import with formula fidelity (`ecb18d3`).
+- [x] Cross-sheet formulas (`'other'!A1`) via `findCrossSheetRefs` + `/_do/snapshot` DO-to-DO fetch (`ecb18d3`).
 
 ### Phase 11 — Loose ends
 - [x] Playwright skeleton at `packages/e2e/` with 10 passing specs.
@@ -419,6 +418,7 @@ Append one entry per session.
 | 2026-04-20 | headless | **Swapped socialcalc dep from npm 2.3.0 to `github:audreyt/socialcalc`.** Fork is strict-mode clean (tsgo + Bun port) and already emits `factory.call(root, root)`. `scripts/build.js` drops the ES5 `delete varname` / reserved-`eval` / factory-call rewrites; adds one new wrapper-level transform rewriting `typeof globalThis !== 'undefined' ? globalThis : this` to `this`. Implicit-globals pre-declaration removed — underlying `var`-less assignments fixed upstream. 7/7 headless smoke + 456 worker node + 120 workers-pool all green. | 4af7265 |
 | 2026-04-20 | 5.1/7/8 | **Second-wave browser sweep — six behavioral regressions fixed.** (1) WS `execute` didn't mirror D1 `rooms` row → refactored to shared `#applyCommandAndMirror`. (2) `stopHuddle` left D1 row → `#deleteAllAndUnindex`. (3) `ask.ecell` (singular) was dropped by closed-union parser → added `AskEcellClientMessage`/`AskEcellServerMessage` + `handleAskEcell` + client-side `applyAskEcell`. (4) `ecell.to` field stripped by builder → preserved. (5) `client-multi` absolute `/assets/...` URLs 404'd under `/=:room` → `base: '/multi/'`. (6) `/_/:room/cells[/:cell]` not wired in Hono + wrapped JSON shape → unwrapped to legacy `JSON.stringify(sheet.cells)`. Also: `csvToSave` rewritten to paste via `Clipboard` + `CreateSpreadsheetSave`. Mutation floor 92 → 88. ~900 tests, 100% coverage on gated packages. | 85e6fa9, 7eed195, e13c1ea, d19bacb, 17b9aa2, bd004d1 |
 | 2026-04-21 | 11b/12 | **Migration is RESP-only; RDB parser removed.** `packages/migrate/` now streams from a live Redis/Zedis via RESP (SCAN + pipelined GET/LRANGE/HGETALL) into the worker's `PUT /_migrate/seed/:room`. Dropped ~3 300 LOC: hand-rolled RDB parser + LZF worker-thread pool + `ChunkedReader` streaming parser + `WranglerTarget` shell-out + all rdb/lzf/extract-rooms/stream tests. CLI surface simplified to `--source redis://…` + `--target http://…` + `--token …` (+ `--dry-run`). `bin/ethercalc migrate` no longer imports `node:worker_threads` / `node:fs`. 100 tests, 100% coverage on migrate; 492 node tests, 100% on worker. Also added `PUT /_migrate/seed/:room` route + `POST /_do/seed` handler on worker side; gated by `env.ETHERCALC_MIGRATE_TOKEN` (unset → 404). Wiped 5.2 GB halfway-migrated Miniflare store. | (this commit) |
+| 2026-04-23 | 7/8/16A | **Formula-preserving exports + cross-sheet formulas landed.** `54c191e` rewrote xlsx/ods/fods export to walk `sheet.cells` directly into SheetJS `{v, t, f, z, c}` cells — preserves formulas, number formats, merged ranges, cell comments. `ecb18d3` added the multi-sheet export routes that were 501 stubs (walks TOC + `/_do/sheet-data`), xlsx/ods import with formula fidelity (SheetJS → SocialCalc `set A1 formula SUM(A1:A2)` commands), and cross-sheet formula resolution via `findCrossSheetRefs` + `/_do/snapshot` DO-to-DO fetch + `addSiblingSheet`. §7 item 2 removed (renumbered 3→2, 4→3, 5→4, 6→5, 7→6); §8 Phase 8 last checkbox ticked; §16.A "Not yet exercised" cross-sheet bullet dropped. Closes #55, #234, #289, #305, #573, #717, #762, #783, #795 on the issue tracker. Merged to `sandstorm` as `b896a36`. | 54c191e, ecb18d3 |
 | 2026-04-22 | 12 | **Filesystem source for first-load Sandstorm migration.** Added `packages/migrate/src/sources/filesystem-source.ts` to enumerate rooms out of a legacy `src/db.ls`-written on-disk dump (what EtherCalc falls back to when no Redis is reachable — notably the Sandstorm grain, app id `a0n6hwm32zjsrzes8gnjg734dh6jwt7x83xdgytspe761pe2asw0`, which sets `OPENSHIFT_DATA_DIR=/var`). Auto-detects `dump.json` (flat map of legacy Redis keys) vs `dump/` directory (per-key `snapshot-*.txt` raw + `audit-*.txt` with legacy `\\n/\\r/\\\\` escape encoding). Log/chat/ecell absent in dir mode — matches legacy in-memory-only behavior so migrated rooms look the same as what the user last saw. CLI accepts `--source file:///path` or bare `/abs/path`; scheme validated at parse time via new `parseSource` helper in `cli-args.ts`. `RunDeps.connectRedis` and new `RunDeps.fs` are both optional; `bin/ethercalc` wires `node:fs/promises` into `fs`. 166 migrate tests, 100% coverage retained. Usage from a Sandstorm `run_grain.sh`: boot worker, block on `/_health`, run `./bin/ethercalc migrate --source file:///var --target http://127.0.0.1:$PORT --token $TOKEN`, drop a `.migrated` sentinel, proceed. Also extracted the oversized-entry filter to shared `filter-oversized.ts` (redis-source.ts now imports from there). | (this commit) |
 
 ---
@@ -473,11 +473,10 @@ Post source-swap (2026-04-20): `socialcalc` dep resolves to `github:audreyt/soci
 
 Upstream fixes (now in `audreyt/socialcalc`): the ES5 `delete varname;` rewrites, reserved-`eval` renames, and `factory.call(root, this)` → `factory.call(root, root)` that we used to do by hand. Implicit-globals pre-declaration removed — `var`-less assignments in paste/render/format/MIME paths fixed upstream.
 
-**Proven**: SUM formulas, snapshot+log round-trip, text+number mix, recalc without formulas, `exportCSV`/`exportCells`/`exportCell`, `csvToSave` via Clipboard + CreateSpreadsheetSave.
+**Proven**: SUM formulas, snapshot+log round-trip, text+number mix, recalc without formulas, `exportCSV`/`exportCells`/`exportCell`, `csvToSave` via Clipboard + CreateSpreadsheetSave, cross-sheet formula references (`'other-room'!A1`) via `addSiblingSheet` + sibling-snapshot fetch.
 
 **Not yet exercised end-to-end**:
-- Cross-sheet formula references (`'other-room'!A1`) — needs `RecalcInfo.LoadSheet` hook wired to sibling DOs (§7 item 2).
-- `ScheduleSheetCommands` async path — we bypass with sync `ExecuteSheetCommand` (§7 item 7).
+- `ScheduleSheetCommands` async path — we bypass with sync `ExecuteSheetCommand` (§7 item 6).
 
 ### 16.B — Deferred decisions not in §13
 
