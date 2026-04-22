@@ -1,0 +1,14 @@
+# *** WARNING: GENERATED FILE ***
+# This file is automatically updated and rewritten in sorted order every time
+# the app runs in dev mode. You may manually add or remove files, but don't
+# expect comments or ordering to be retained.
+#
+# Repopulated by `spk dev` on first run against the TypeScript rewrite.
+# The legacy list (Makefile / *.ls / node_modules for the old
+# LiveScript EtherCalc) is obsolete — the new runtime is bun +
+# packages/worker + bundled Miniflare via wrangler.
+#
+# To regenerate:
+#   vagrant-spk (or spk dev) with a Sandstorm devShell pointing at this
+#   checkout. The FUSE filesystem traces every read, and spk writes the
+#   full list here.
