@@ -4,6 +4,7 @@ import {
   buildLegacyExportUrl,
   initializeSpreadsheet,
   installLegacyExportBindings,
+  installSocialCalcLogoLink,
   type BootHost,
 } from '../src/boot.ts';
 import { makeSocialCalc, makeSpreadsheet } from './mock-socialcalc.ts';
@@ -215,5 +216,72 @@ describe('legacy export bindings', () => {
 
     opts.callback?.();
     expect(host.SocialCalc.Keyboard?.passThru).toBe(false);
+  });
+});
+
+describe('installSocialCalcLogoLink', () => {
+  it('opens the socialcalc repo when a td[id$="_logo"] cell is clicked', () => {
+    const listeners: Record<string, Array<(event: { target?: EventTarget | null }) => void>> = {};
+    const logoCell = { id: 'te_logo' };
+    const target = {
+      closest: vi.fn((selector: string) =>
+        selector === 'td[id$="_logo"]' ? logoCell : null,
+      ),
+    } as unknown as EventTarget;
+    const logoOpen = vi.fn();
+    const host = makeHost({
+      document: {
+        addEventListener: (type, listener) => {
+          (listeners[type] ??= []).push(listener);
+        },
+      },
+    });
+    host.__logoOpen = logoOpen;
+
+    installSocialCalcLogoLink(host);
+    installSocialCalcLogoLink(host); // idempotent
+
+    listeners.click?.[0]?.({ target });
+
+    expect(logoOpen).toHaveBeenCalledTimes(1);
+    expect(logoOpen).toHaveBeenCalledWith('https://github.com/audreyt/socialcalc');
+  });
+
+  it('ignores clicks that do not hit the logo cell', () => {
+    const listeners: Record<string, Array<(event: { target?: EventTarget | null }) => void>> = {};
+    const logoOpen = vi.fn();
+    const host = makeHost({
+      document: {
+        addEventListener: (type, listener) => {
+          (listeners[type] ??= []).push(listener);
+        },
+      },
+    });
+    host.__logoOpen = logoOpen;
+
+    installSocialCalcLogoLink(host);
+
+    // null target
+    listeners.click?.[0]?.({ target: null });
+    // non-object target
+    listeners.click?.[0]?.({ target: 'string' as unknown as EventTarget });
+    // object without closest()
+    listeners.click?.[0]?.({ target: {} as EventTarget });
+    // closest() returns null (no logo ancestor)
+    listeners.click?.[0]?.({
+      target: {
+        closest: () => null,
+      } as unknown as EventTarget,
+    });
+
+    expect(logoOpen).not.toHaveBeenCalled();
+  });
+
+  it('is a no-op when neither host.document nor a global document exists', () => {
+    const host = makeHost();
+    // Node test env has no `document` global, and we don't pass one here —
+    // so the handler never attaches and the flag stays false.
+    installSocialCalcLogoLink(host);
+    expect(host.__ETHERCALC_LOGO_BOUND__).toBeUndefined();
   });
 });

@@ -51,9 +51,17 @@ export interface BootHost extends MainHost {
     };
   };
   __ETHERCALC_EXPORT_BOUND__?: boolean;
+  /**
+   * Test-only override for the logo-click opener. Production uses a
+   * plain anchor click (see `installSocialCalcLogoLink`).
+   */
+  __logoOpen?: (url: string) => unknown;
+  __ETHERCALC_LOGO_BOUND__?: boolean;
 }
 
 const EXPORT_SELECTOR = '.te_download tr:nth-child(2) td:first-child';
+const LOGO_SELECTOR = 'td[id$="_logo"]';
+const SOCIALCALC_REPO_URL = 'https://github.com/audreyt/socialcalc';
 
 type ExportFormat = 'xlsx' | 'csv' | 'html' | 'ods';
 
@@ -217,6 +225,40 @@ export function openLegacyExportDialog(host: BootHost): void {
   });
 }
 
+function findLogoCell(target: EventTarget | null | undefined): unknown {
+  if (!target || typeof target !== 'object') return null;
+  const element = target as { closest?: (selector: string) => unknown };
+  if (typeof element.closest !== 'function') return null;
+  return element.closest(LOGO_SELECTOR);
+}
+
+export function installSocialCalcLogoLink(host: BootHost): void {
+  if (host.__ETHERCALC_LOGO_BOUND__) return;
+  const doc = host.document ?? (typeof document !== 'undefined' ? document : undefined);
+  if (!doc) return;
+
+  host.__ETHERCALC_LOGO_BOUND__ = true;
+
+  doc.addEventListener('click', (event) => {
+    if (!findLogoCell(event.target)) return;
+    const open =
+      host.__logoOpen ??
+      (typeof document !== 'undefined'
+        ? (url: string) => {
+            const a = document.createElement('a');
+            a.href = url;
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            return undefined;
+          }
+        : undefined);
+    open?.(SOCIALCALC_REPO_URL);
+  });
+}
+
 export function installLegacyExportBindings(host: BootHost): void {
   if (host.__ETHERCALC_EXPORT_BOUND__) return;
   const doc = host.document ?? (typeof document !== 'undefined' ? document : undefined);
@@ -280,6 +322,7 @@ export function initializeSpreadsheet(host: BootHost): void {
   ss.ExecuteCommand?.('redisplay', '');
   ss.ExecuteCommand?.('set sheet defaulttextvalueformat text-wiki');
   installLegacyExportBindings(host);
+  installSocialCalcLogoLink(host);
 }
 
 async function autoBoot(): Promise<void> {
