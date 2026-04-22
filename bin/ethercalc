@@ -43,11 +43,32 @@ if (argv[0] === 'migrate') {
   process.exit(code);
 }
 
+// Forward selected ETHERCALC_* env vars from the parent shell into
+// wrangler as `--var KEY:VALUE` flags. Wrangler only exposes env vars
+// to the worker as bindings when they come via `[vars]`, `.dev.vars`,
+// `wrangler secret put`, or `--var`. Sandstorm grains (and anyone
+// self-hosting in a read-only-/opt-style container) can't write
+// `.dev.vars` into the packaged worker dir, so this CLI flag path is
+// the Unix-y escape hatch. Only the narrow set that the Worker reads
+// gets whitelisted — we don't launder arbitrary env vars into Worker
+// bindings (CF would reject unknown ones anyway, but being explicit
+// is cheap).
+const WRANGLER_VAR_PASSTHROUGH: readonly string[] = [
+  'ETHERCALC_MIGRATE_TOKEN',
+];
+
 const code = main(argv, {
   stdout: (s) => process.stdout.write(s),
   stderr: (s) => process.stderr.write(s),
   exec: (cmd, args, extraEnv) => {
-    const result = spawnSync(cmd, args, {
+    const extraArgs: string[] = [];
+    for (const key of WRANGLER_VAR_PASSTHROUGH) {
+      const value = process.env[key];
+      if (value !== undefined && value !== '') {
+        extraArgs.push('--var', `${key}:${value}`);
+      }
+    }
+    const result = spawnSync(cmd, [...args, ...extraArgs], {
       cwd: workerCwd,
       env: { ...process.env, ...extraEnv },
       stdio: 'inherit',
