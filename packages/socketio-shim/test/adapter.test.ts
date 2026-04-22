@@ -172,7 +172,7 @@ describe('handleWebSocketUpgrade', () => {
     // timeout fires (see adapter.ts line ~164).
     type TimerEntry = { ms: number };
     for (const hbTimeoutSec of [10, 30, 60]) {
-      const harness: { setTimer: SocketIoShimOptions['setTimer']; entries: TimerEntry[] } = {
+      const harness: { setTimer: NonNullable<SocketIoShimOptions['setTimer']>; entries: TimerEntry[] } = {
         entries: [],
         setTimer(cb, ms) {
           const entry = { ms };
