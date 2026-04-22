@@ -396,7 +396,7 @@
   "s_calcerrerrorvalueinformula": "Error value in formula",
   "s_parseerrerrorinformulabadval": "Error in formula resulting in bad value",
   "s_formularangeresult": "Formula results in range value:",
-  "s_calcerrnumericnan": "Formula results in an bad numeric value",
+  "s_calcerrnumericnan": "Formula results in a bad numeric value",
   "s_calcerrnumericoverflow": "Numeric overflow",
   "s_sheetunavailable": "Sheet unavailable:",
   "s_calcerrcellrefmissing": "Cell reference missing when expected.",

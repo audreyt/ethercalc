@@ -34,10 +34,75 @@
 import type { Hono } from 'hono';
 
 import { doFetch } from '../lib/do-dispatch.ts';
-import { BINARY_CONTENT_TYPES } from '../lib/xlsx-build.ts';
+import {
+  BINARY_CONTENT_TYPES,
+  type BinaryFormat,
+  buildMultiSheetWorkbookFromSheets,
+} from '../lib/xlsx-build.ts';
 import type { Env } from '../env.ts';
 
 const TEXT_CT = 'text/plain; charset=utf-8';
+
+/**
+ * Fetch the TOC sheet (at `:room`, sans `=` prefix) and its sub-rooms, then
+ * build a single workbook with one worksheet per TOC row. TOC shape matches
+ * `packages/client-multi/src/Foldr.ts`: first row is headers; subsequent
+ * rows are `[link, title]` where link is `/<subroom>` and title is the
+ * user-chosen sheet tab name.
+ *
+ * Returns `null` when the TOC is missing or empty — caller emits 404.
+ */
+async function fetchMultiSheetBundle(
+  env: Env,
+  room: string,
+): Promise<Array<{ name: string; view: unknown }> | null> {
+  const tocRes = await doFetch(env, room, '/_do/csv.json');
+  if (tocRes.status !== 200) return null;
+  const rows = (await tocRes.json()) as unknown;
+  if (!Array.isArray(rows) || rows.length < 2) return null;
+
+  // Skip header row. Each remaining row is `[link, title]`.
+  const tocRows = rows.slice(1) as unknown[];
+  const bundle: Array<{ name: string; view: unknown }> = [];
+  for (const raw of tocRows) {
+    if (!Array.isArray(raw)) continue;
+    const link = typeof raw[0] === 'string' ? raw[0] : '';
+    const title = typeof raw[1] === 'string' && raw[1] ? raw[1] : `Sheet${bundle.length + 1}`;
+    // Links start with `/` — strip to get the sub-room name.
+    if (!link || link.startsWith('#')) continue;
+    const subroom = link.replace(/^\//, '');
+    if (!subroom) continue;
+    const sheetRes = await doFetch(env, subroom, '/_do/sheet-data');
+    if (sheetRes.status !== 200) continue;
+    const view = (await sheetRes.json()) as unknown;
+    bundle.push({ name: title, view });
+  }
+  return bundle.length > 0 ? bundle : null;
+}
+
+async function dispatchMultiSheetExport(
+  env: Env,
+  room: string,
+  format: BinaryFormat,
+): Promise<Response> {
+  const bundle = await fetchMultiSheetBundle(env, room);
+  if (!bundle) {
+    return new Response('', { status: 404, headers: { 'Content-Type': TEXT_CT } });
+  }
+  // `buildMultiSheetWorkbookFromSheets` expects `SocialCalcSheetView` —
+  // the JSON we got from the DO is structurally identical.
+  const bytes = buildMultiSheetWorkbookFromSheets(
+    bundle as ReadonlyArray<{ name: string; view: Parameters<typeof buildMultiSheetWorkbookFromSheets>[0][number]['view'] }>,
+    format,
+  );
+  return new Response(bytes, {
+    status: 200,
+    headers: {
+      'Content-Type': BINARY_CONTENT_TYPES[format],
+      'Content-Disposition': attachmentHeader(room, format),
+    },
+  });
+}
 
 /** Format registry for dispatcher. Keyed by URL suffix / slot. */
 interface ExportFormat {
@@ -128,22 +193,19 @@ async function dispatchExport(
  * still wins over `/_/:room` despite being registered after it.
  */
 export function registerExports(app: Hono<{ Bindings: Env }>): void {
-  // Multi-sheet export stubs — CLAUDE.md §6.1. These MUST come before the
+  // Multi-sheet export routes — CLAUDE.md §6.1. These MUST come before the
   // single-sheet routes so Hono's literal prefix matcher routes `/=:room`
-  // before `/:room`.
+  // before `/:room`. Each walks the TOC via DO-to-DO fetches and assembles
+  // one workbook with formula-fidelity per sub-sheet.
   for (const fmt of ['xlsx', 'ods', 'fods'] as const) {
-    app.get(`/_/=:room/${fmt}`, () =>
-      new Response(`multi-sheet ${fmt} export: Phase 8.1 follow-up`, {
-        status: 501,
-        headers: { 'Content-Type': TEXT_CT },
-      }),
+    app.get(`/_/=:room/${fmt}`, async (c) =>
+      dispatchMultiSheetExport(c.env, c.req.param('room') ?? '', fmt),
     );
-    app.get(`/=:room.${fmt}`, () =>
-      new Response(`multi-sheet ${fmt} export: Phase 8.1 follow-up`, {
-        status: 501,
-        headers: { 'Content-Type': TEXT_CT },
-      }),
-    );
+    app.get(`/=:room.${fmt}`, async (c) => {
+      const raw = c.req.param('room') ?? '';
+      const room = raw.slice(0, raw.length - fmt.length - 1);
+      return dispatchMultiSheetExport(c.env, room, fmt);
+    });
   }
 
   // Single-sheet routes. Registered under both `/_/:room/<fmt>` and
@@ -159,8 +221,12 @@ export function registerExports(app: Hono<{ Bindings: Env }>): void {
     app.get(`/_/:room/${key}`, async (c) => {
       const room = c.req.param('room') ?? '';
       if (room.startsWith('=')) {
+        // Multi-sheet only supports binary formats.
+        if (format.binary && format.attachmentExt) {
+          return dispatchMultiSheetExport(c.env, room.slice(1), format.attachmentExt as BinaryFormat);
+        }
         return new Response(
-          `multi-sheet ${key} export: Phase 8.1 follow-up`,
+          `multi-sheet ${key} export: only xlsx/ods/fods supported`,
           { status: 501, headers: { 'Content-Type': TEXT_CT } },
         );
       }
@@ -177,8 +243,11 @@ export function registerExports(app: Hono<{ Bindings: Env }>): void {
       const raw = c.req.param('room') ?? '';
       const room = raw.slice(0, raw.length - key.length - 1);
       if (room.startsWith('=')) {
+        if (format.binary && format.attachmentExt) {
+          return dispatchMultiSheetExport(c.env, room.slice(1), format.attachmentExt as BinaryFormat);
+        }
         return new Response(
-          `multi-sheet ${key} export: Phase 8.1 follow-up`,
+          `multi-sheet ${key} export: only xlsx/ods/fods supported`,
           { status: 501, headers: { 'Content-Type': TEXT_CT } },
         );
       }

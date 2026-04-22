@@ -80,16 +80,20 @@ describe('classifyRequestBody', () => {
     expect(out).toEqual({ kind: 'save', snapshot: 'SC:a,b\n1,2' });
   });
 
-  it('flags XLSX content types as xlsx-deferred', () => {
-    const out1 = classifyRequestBody(
+  it('empty XLSX body is flagged as empty, not parsed', () => {
+    const out = classifyRequestBody(
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      enc('PK\x03\x04…'),
+      new Uint8Array(),
     );
-    const out2 = classifyRequestBody(
-      'application/vnd.oasis.opendocument.spreadsheet',
-      enc('PK\x03\x04…'),
+    expect(out).toEqual({ kind: 'empty' });
+  });
+
+  it('garbage XLSX body falls back to empty on parse failure', () => {
+    // Random bytes — SheetJS throws; classifier catches and returns empty.
+    const out = classifyRequestBody(
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      enc('not a real xlsx'),
     );
-    expect(out1).toEqual({ kind: 'xlsx-deferred' });
-    expect(out2).toEqual({ kind: 'xlsx-deferred' });
+    expect(out).toEqual({ kind: 'empty' });
   });
 });

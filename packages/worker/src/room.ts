@@ -43,6 +43,8 @@ import { verifyAuth } from './lib/auth.ts';
 import { parseCSV } from './lib/csv-parse.ts';
 import { parseSendemail } from './lib/email.ts';
 import { csvToMarkdown } from './lib/md.ts';
+import { encodeRoom } from './lib/room-name.ts';
+import { hydrateCrossSheetRefs } from './lib/cross-sheet.ts';
 import {
   deleteRoomFromD1,
   mirrorRoomToD1,
@@ -64,7 +66,7 @@ import { upgradeWebSocket, type WsAttachment } from './lib/ws-upgrade.ts';
 import {
   BINARY_CONTENT_TYPES,
   type BinaryFormat,
-  csvToBinaryWorkbook,
+  sheetViewToBinaryWorkbook,
 } from './lib/xlsx-build.ts';
 import type { Env } from './env.ts';
 
@@ -117,6 +119,13 @@ export class RoomDO implements DurableObject {
   #nextLogSeq: number | null = null;
   #nextAuditSeq: number | null = null;
   #nextChatSeq: number | null = null;
+  /**
+   * Cached room name — set from `?name=…` on each request and retained
+   * for cross-sheet formula resolution (so sibling DO lookups can skip
+   * self-references without forcing every caller to thread the name
+   * through `#getSpreadsheet`).
+   */
+  #ownName: string | undefined;
 
   constructor(state: DurableObjectState, env: Env) {
     this.#state = state;
@@ -130,6 +139,7 @@ export class RoomDO implements DurableObject {
     // `?name=…` so the DO can mirror to D1 without re-deriving it from
     // its opaque id. `/_do/ping` already used the same param.
     const roomName = url.searchParams.get('name');
+    if (roomName) this.#ownName = roomName;
 
     if (path === '/_do/ping') {
       return jsonResponse({
@@ -181,6 +191,13 @@ export class RoomDO implements DurableObject {
     }
     if (path === '/_do/fods' && request.method === 'GET') {
       return this.#getBinary('fods');
+    }
+    // ─── Phase 8.1: sheet-data for multi-sheet export ────────────────
+    // Returns the structural SheetData (cells + valueformats + cellformats
+    // + attribs) as JSON, for the top-level `/_/=:room/*` route to walk
+    // cross-DO and build a multi-sheet workbook with formula fidelity.
+    if (path === '/_do/sheet-data' && request.method === 'GET') {
+      return this.#getSheetData();
     }
     // ─── Phase 6: cross-DO rename primitives ─────────────────────────
     // `set A\d+:B\d+ empty multi-cascade` in the HTTP command layer
@@ -395,8 +412,16 @@ export class RoomDO implements DurableObject {
 
   async #getBinary(format: BinaryFormat): Promise<Response> {
     const ss = await this.#getSpreadsheet();
-    const bytes = csvToBinaryWorkbook(ss.exportCSV(), format);
+    // Walk the raw SocialCalc sheet rather than going through CSV — that
+    // preserves formulas, number formats, merges, and comments. See
+    // `sheetViewToWorksheet` for the graceful-degrade-to-value rules.
+    const bytes = sheetViewToBinaryWorkbook(ss.exportSheetData(), format);
     return binaryResponse(bytes, BINARY_CONTENT_TYPES[format]);
+  }
+
+  async #getSheetData(): Promise<Response> {
+    const ss = await this.#getSpreadsheet();
+    return jsonResponse(ss.exportSheetData());
   }
 
   // ─── Rename primitives (Phase 6) ─────────────────────────────────────
@@ -916,6 +941,11 @@ export class RoomDO implements DurableObject {
     const logSeq = this.#nextLogSeq!;
     const auditSeq = this.#nextAuditSeq!;
     ss.executeCommand(body);
+    // Cross-sheet formulas added in this command may have resolved to
+    // `#NAME?` because the referenced siblings weren't in the formula
+    // cache during the initial recalc. Fetch them now and recalc so the
+    // stored snapshot carries the live value.
+    await this.#hydrateCrossSheetRefs(ss, this.#ownName);
     const newSnapshot = ss.createSpreadsheetSave();
 
     // Figure out the PRIOR snapshot layout so we can clean up stale
@@ -962,13 +992,52 @@ export class RoomDO implements DurableObject {
    * Return the cached HeadlessSpreadsheet, hydrating from the stored
    * snapshot if necessary. Idempotent + safe under concurrent calls because
    * the DO only services one request at a time.
+   *
+   * Phase 8.2 — hydrates sibling sheets referenced by any cross-sheet
+   * formula (`'other'!A1`) into SocialCalc's formula-evaluator cache
+   * BEFORE the final recalc, so cross-sheet refs compute to real values
+   * instead of `#NAME?`. Fetches each sibling's save via the standard
+   * `/_do/snapshot` DO-to-DO route; unresolved siblings just stay absent
+   * and the formulas return `#NAME?` as graceful degrade.
    */
   async #getSpreadsheet(): Promise<HeadlessSpreadsheet> {
     if (this.#ss) return this.#ss;
     const snapshot = await readSnapshot(this.#state.storage);
     const log = await this.#listPrefix(STORAGE_KEYS.logPrefix);
-    this.#ss = createSpreadsheet(snapshot ? { snapshot, log } : { log });
+    const ss = createSpreadsheet(snapshot ? { snapshot, log } : { log });
+    // #ownName is set by the fetch handler on every request; when it's
+    // unset (e.g. direct construction in unit tests) we skip cross-sheet
+    // resolution so tests don't require a full env.ROOM stub.
+    await this.#hydrateCrossSheetRefs(ss, this.#ownName);
+    this.#ss = ss;
     return this.#ss;
+  }
+
+  /**
+   * Enumerate cross-sheet refs and pre-populate SocialCalc's sheet cache
+   * with the referenced siblings, then re-run recalc. No-op when there
+   * are no cross-sheet references.
+   */
+  /**
+   * Fetch a sibling room's snapshot via the standard DO-to-DO path.
+   * Returns `null` when the sibling has no snapshot (404) or the fetch
+   * throws (e.g. workers recursion limit).
+   */
+  async #fetchSibling(name: string): Promise<string | null> {
+    const stub = this.#env.ROOM.get(this.#env.ROOM.idFromName(encodeRoom(name)));
+    const res = await stub.fetch('https://do.local/_do/snapshot', {
+      method: 'GET',
+    });
+    if (res.status !== 200) return null;
+    const text = await res.text();
+    return text || null;
+  }
+
+  async #hydrateCrossSheetRefs(
+    ss: HeadlessSpreadsheet,
+    ownName?: string,
+  ): Promise<void> {
+    await hydrateCrossSheetRefs(ss, (name) => this.#fetchSibling(name), ownName);
   }
 
   /** Ordered list of values stored under `prefix`, sorted by key. */

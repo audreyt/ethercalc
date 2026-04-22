@@ -13,6 +13,9 @@ type SocialCalcNamespace = Record<string, unknown> & {
   ScheduleSheetCommands: (sheet: unknown, cmdstr: string, saveundo: boolean) => void;
   RecalcSheet: (sheet: unknown) => void;
   Clipboard: { clipboard: string };
+  Formula?: {
+    AddSheetToCache: (name: string, str: string, live?: boolean) => unknown;
+  };
   document: { createElement: (tag: string) => ShimNode };
 };
 
@@ -30,12 +33,26 @@ interface SpreadsheetControl {
 interface Sheet {
   cells: Record<string, unknown>;
   attribs: { needsrecalc?: string } & Record<string, unknown>;
+  valueformats?: readonly string[];
+  cellformats?: readonly string[];
   recalconce?: boolean;
   sci: { sheetobj: Sheet };
   statuscallback?: StatusCallback;
   statuscallbackparams?: unknown;
   ResetSheet(): void;
   ScheduleSheetCommands(cmdstr: string, saveundo: boolean, isRemote?: boolean): void;
+}
+
+/**
+ * Structural view of a SocialCalc sheet sufficient to build a high-fidelity
+ * xlsx/ods export (formulas, number formats, merges, comments). Keep this
+ * shape stable — `packages/worker/src/lib/xlsx-build.ts` depends on it.
+ */
+export interface SheetData {
+  cells: Record<string, unknown>;
+  valueformats: readonly string[];
+  cellformats: readonly string[];
+  attribs: Record<string, unknown>;
 }
 
 type StatusCallback = (data: unknown, status: string, arg: unknown, params: unknown) => void;
@@ -91,6 +108,74 @@ export class HeadlessSpreadsheet {
   exportCSV(): string { return this.#SC.ConvertSaveToOtherFormat(this.#ss.CreateSheetSave(), 'csv'); }
   exportCells(): Record<string, unknown> { return this.#ss.sheet.cells; }
   exportCell(coord: string): unknown { const cell = this.#ss.sheet.cells[coord]; return cell === undefined ? null : cell; }
+  /**
+   * Full structural sheet view for high-fidelity export (formulas + number
+   * formats + merges). Unlike `exportCSV()`, which flattens to string values,
+   * this exposes the raw cell attributes that an xlsx/ods writer can walk.
+   */
+  exportSheetData(): SheetData {
+    const sheet = this.#ss.sheet;
+    return {
+      cells: sheet.cells,
+      valueformats: sheet.valueformats ?? [],
+      cellformats: sheet.cellformats ?? [],
+      attribs: sheet.attribs,
+    };
+  }
+
+  /**
+   * Enumerate unique sheet names referenced by any formula in this
+   * spreadsheet — e.g. `'other'!A1` or `other!A1`. Used by the DO to
+   * pre-fetch sibling sheets into SocialCalc's cache before recalc, so
+   * cross-sheet formulas resolve to real values instead of `#NAME?`.
+   */
+  findCrossSheetRefs(): string[] {
+    const seen = new Set<string>();
+    const cells = this.#ss.sheet.cells as Record<string, { formula?: string }>;
+    for (const cell of Object.values(cells)) {
+      const formula = cell?.formula;
+      if (typeof formula !== 'string' || formula.length === 0) continue;
+      // Match both quoted 'name'! and bare name! references. The
+      // capture groups are mutually exclusive; take whichever matched.
+      const re = /(?:'([^']+)'|([A-Za-z_][A-Za-z0-9_.-]*))!/g;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(formula)) !== null) {
+        const name = m[1] ?? m[2];
+        if (name) seen.add(name);
+      }
+    }
+    return [...seen];
+  }
+
+  /**
+   * Inject a sibling sheet's SocialCalc save into the formula-evaluator
+   * cache. Must be called *before* `recalc()` for cross-sheet refs to
+   * resolve. Idempotent — SocialCalc replaces any existing cache entry
+   * under the same (normalized) name.
+   */
+  addSiblingSheet(name: string, save: string): void {
+    const Formula = this.#SC.Formula as unknown as {
+      AddSheetToCache: (name: string, str: string, live?: boolean) => unknown;
+    };
+    if (!Formula?.AddSheetToCache) return;
+    Formula.AddSheetToCache(name, save, false);
+  }
+
+  /**
+   * Re-run recalc. Useful after `addSiblingSheet(...)` populates the
+   * formula-evaluator cache so cross-sheet refs that previously returned
+   * `#NAME?` compute to real values.
+   */
+  recalc(): void {
+    const sheet = this.#ss.context.sheetobj;
+    sheet.attribs.needsrecalc = 'yes';
+    try {
+      this.#SC.RecalcSheet(sheet);
+    } catch (e) {
+      console.error('Error in RecalcSheet:', e);
+    }
+    sheet.attribs.needsrecalc = 'no';
+  }
 }
 
 /**

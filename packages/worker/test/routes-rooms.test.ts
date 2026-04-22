@@ -196,16 +196,59 @@ describe('Phase 5 routes — full round-trip', () => {
     expect(res.headers.get('location')).toMatch(/^\/[a-z0-9]{12}$/);
   });
 
-  it('xlsx content-type on PUT returns 501 deferred', async () => {
+  it('PUT with xlsx content-type converts and stores (formula-preserving)', async () => {
+    // Build a tiny xlsx with A1=1, A2=2, A3=SUM(A1:A2) so we can assert
+    // the formula roundtripped into SocialCalc on import.
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const XLSX = await import('@e965/xlsx');
+    const ws = {
+      '!ref': 'A1:A3',
+      A1: { t: 'n', v: 1 },
+      A2: { t: 'n', v: 2 },
+      A3: { t: 'n', v: 3, f: 'SUM(A1:A2)' },
+    };
+    const book = (XLSX as any).utils.book_new();
+    (XLSX as any).utils.book_append_sheet(book, ws, 'Sheet1');
+    const bytes = new Uint8Array(
+      (XLSX as any).write(book, { bookType: 'xlsx', type: 'array' }) as ArrayBufferLike,
+    );
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+
     const res = await request('PUT', '/_/xlsx-room', {
       headers: {
         'content-type':
           'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       },
-      body: 'PK\x03\x04',
+      body: bytes,
     });
-    expect(res.status).toBe(501);
-    expect(await res.text()).toContain('Phase 8');
+    expect(res.status).toBe(201);
+
+    // Read back as a SocialCalc save — it should contain the formula.
+    // SocialCalc escapes `:` as `\c` in the save format, so the saved
+    // form is `SUM(A1\cA2)`.
+    const get = await request('GET', '/_/xlsx-room');
+    expect(get.status).toBe(200);
+    const saved = await get.text();
+    expect(saved).toContain('cell:A3:vtf:n:3:SUM(A1\\cA2)');
+
+    // And the csv.json export should compute the right value (recalc ran
+    // on import so A3 = 3).
+    const cells = await request('GET', '/_/xlsx-room/csv.json');
+    expect(cells.status).toBe(200);
+    const grid = (await cells.json()) as string[][];
+    expect(grid).toEqual([['1'], ['2'], ['3']]);
+  });
+
+  it('empty xlsx body on PUT is handled as empty (no crash)', async () => {
+    const res = await request('PUT', '/_/xlsx-empty-room', {
+      headers: {
+        'content-type':
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      },
+      body: new Uint8Array(),
+    });
+    // Empty body → DecodedBody `empty` → route emits 201 with no change.
+    expect([200, 201]).toContain(res.status);
   });
 
   it('PUT with text/csv converts and stores', async () => {
