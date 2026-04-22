@@ -100,7 +100,7 @@ jobs:
 
       - name: Upload coverage artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-lcov
           path: |
@@ -176,7 +176,7 @@ jobs:
 
       - name: Upload Playwright HTML report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: packages/e2e/playwright-report/
@@ -185,7 +185,7 @@ jobs:
 
       - name: Upload trace + screenshots on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-test-results
           path: packages/e2e/test-results/
@@ -253,7 +253,7 @@ jobs:
 
       - name: Upload mutation reports on failure
         if: failure() && steps.changed.outputs.packages != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mutation-gate-reports
           path: packages/*/reports/mutation/
