@@ -70,6 +70,59 @@ What does not carry over (either layout):
 If `run_grain.sh` reports a migration failure, it does NOT drop the
 sentinel, so the next grain boot retries. Check the grain log.
 
+## Known packaging gap: worker runtime in the grain sandbox
+
+A live-server test (native Ubuntu 24.04 x86_64, `spk dev` over the
+installed legacy v2017.02.21.0) confirmed the migration-trigger path
+end-to-end:
+
+  1. Legacy grain runs, writes `/var/dump.json` with user content.
+  2. After the `spk dev` swap the new `run_grain.sh` fires, finds
+     `/var/dump.json`, and invokes `ethercalc migrate --source
+     file:///var/dump.json --target http://127.0.0.1:33411 --token
+     sandstorm-grain-local` — all args correct, planted content
+     intact.
+  3. Migrate blocks on `/_health` waiting for the worker to come up.
+
+What's *not* verified yet is the worker itself booting inside the
+grain sandbox. `wrangler dev` + Miniflare reach out to Cloudflare
+metadata at startup (the `setupCf` call), but Sandstorm grains have
+**no outbound network by default**. So `wrangler dev` panics with
+`Unexpected server response: 101` before binding 33411, which causes
+`ethercalc migrate`'s `waitForHealth` loop to time out.
+
+The migration **logic** is fine (run_grain.sh invoked it with the
+right args); the gap is the worker runtime expecting dev-time CF
+network access that the grain doesn't grant.
+
+**Recommended fix** (separate packaging work): bundle `workerd`
+standalone via `wrangler deploy --dry-run --outdir=dist/` at
+`spk pack` time, then launch `workerd serve dist/config.capnp` in
+`run_grain.sh` instead of `bun bin/ethercalc`. `workerd` doesn't need
+CF metadata to start — it just needs the pre-bundled worker and the
+DO/KV/R2 configuration. Also shrinks the package significantly (no
+bun, no `node_modules`).
+
+Interim workaround: add `ipNetwork` to the pkgdef's `bridgeConfig` so
+the user can grant outbound HTTP on first grain start. Less ergonomic
+(extra permission prompt) but unblocks `wrangler dev` without
+repacking.
+
+### Grain sandbox env vars (applied in run_grain.sh)
+
+Three env-var workarounds are needed for Bun/Wrangler to get past the
+sandbox's defaults; they're set automatically by `run_grain.sh`:
+
+  - `HOME=/var/home`       — Wrangler's `os.homedir()` ENOENTs without this
+  - `TMPDIR=/var/tmp`      — Bun's `createFakeTemporaryNodeExecutable` wants
+                              a writable temp dir; the grain's /tmp fights it
+  - `BUN_INSTALL_CACHE_DIR=/var/bun-cache` — keep bun's cache grain-local
+
+In addition, the pkgdef must run with `spk dev --proc` so `/proc` is
+mounted inside the sandbox — Bun's runtime relies on `/proc/self/exe`
+to bootstrap. Packaged grains get this via Sandstorm's standard proc
+mount; only dev mode needs the explicit flag.
+
 ## Grain-local migrate token
 
 `run_grain.sh` hard-codes `ETHERCALC_MIGRATE_TOKEN=sandstorm-grain-local`.

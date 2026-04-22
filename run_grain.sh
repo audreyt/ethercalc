@@ -22,15 +22,32 @@
 #   to the user.
 set -euo pipefail
 
-cd /opt/app
+# Resolve the app directory from the script's own path. Under
+# `spk dev` this is the source tree on the dev machine; under a
+# packaged grain (after `spk pack` + `spk install`) this resolves
+# to /opt/app, Sandstorm's standard mount point.
+APP_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$APP_DIR"
 
 export ETHERCALC_MIGRATE_TOKEN="sandstorm-grain-local"
 export ETHERCALC_PERSIST_DIR="/var/miniflare"
-mkdir -p "$ETHERCALC_PERSIST_DIR"
+# Bun's runtime scaffolds a fake /usr/bin/node symlink under $TMPDIR for
+# scripts that import from `node:*`. In Sandstorm's grain sandbox the
+# default TMPDIR (/tmp) is a separate fs that Bun's symlink-create
+# pathway stumbles on — it panics with `createFakeTemporaryNodeExecutable:
+# error.FileNotFound`. Point TMPDIR at the grain's writable /var so Bun
+# uses that instead.
+export TMPDIR="/var/tmp"
+export BUN_INSTALL_CACHE_DIR="/var/bun-cache"
+# Wrangler / Miniflare call `os.homedir()` during bootstrap. The Sandstorm
+# grain sandbox doesn't set HOME; point it at a grain-local writable dir
+# so Wrangler's startup (`uv_os_homedir`) doesn't ENOENT.
+export HOME="/var/home"
+mkdir -p "$ETHERCALC_PERSIST_DIR" "$TMPDIR" "$BUN_INSTALL_CACHE_DIR" "$HOME"
 
 # Boot Miniflare in the background. We pass --port 33411 so it binds
 # the port sandstorm-http-bridge expects to proxy.
-bun /opt/app/bin/ethercalc \
+bun "$APP_DIR"/bin/ethercalc \
     --port 33411 --host 0.0.0.0 \
     --persist-to "$ETHERCALC_PERSIST_DIR" &
 WORKER_PID=$!
@@ -68,7 +85,7 @@ if [ ! -f /var/.migrated ]; then
 
   if [ -n "$LEGACY_SOURCE" ]; then
     echo "run_grain: migrating legacy EtherCalc dump at $LEGACY_SOURCE" >&2
-    if bun /opt/app/bin/ethercalc migrate \
+    if bun "$APP_DIR"/bin/ethercalc migrate \
         --source "$LEGACY_SOURCE" \
         --target http://127.0.0.1:33411 \
         --token "$ETHERCALC_MIGRATE_TOKEN"; then
