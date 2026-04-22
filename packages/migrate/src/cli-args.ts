@@ -3,15 +3,27 @@
  * `cli.ts` so tests can stub it via `vi.spyOn` on the module namespace
  * to exercise the non-CliArgError branch in {@link main}.
  *
- * The migrator now talks to a live Redis (real `redis-server` or Zedis)
- * over RESP via `--source` and writes through the live worker's
- * `PUT /_migrate/seed/:room` via `--target` + `--token`. No RDB file
- * parsing — the server that owns `dump.rdb` owns the decoding, and the
- * migrator stays memory-flat regardless of dump size.
+ * Two source shapes are supported:
+ *
+ *   - `redis://host:port` — a live Redis (real `redis-server` or Zedis)
+ *     that has already loaded `dump.rdb`. The server owns RDB decoding
+ *     and the migrator stays memory-flat regardless of dump size.
+ *
+ *   - `file:///path` or `/absolute/path` — a legacy on-disk dump, either
+ *     a `dump/` directory of per-key files or a `dump.json` blob, as
+ *     written by the LiveScript EtherCalc's filesystem fallback when no
+ *     Redis server was reachable. This is the path Sandstorm grains use.
  */
 
+export type ParsedSource =
+  | { readonly kind: 'redis'; readonly url: string }
+  | { readonly kind: 'file'; readonly path: string };
+
 export interface CliArgs {
-  /** `redis://host:port` URL of a RESP-speaking server that has loaded the dump. */
+  /**
+   * `redis://host:port` URL of a RESP-speaking server, `file:///path` of
+   * a legacy on-disk dump, or a bare absolute path (treated as filesystem).
+   */
   source: string;
   /** Base URL of the worker; when unset, only `--dry-run` is valid. */
   target: string;
@@ -107,10 +119,38 @@ export function parseArgs(argv: readonly string[]): CliArgs {
   }
   if (!out.help) {
     if (out.source === '') throw new CliArgError('--source is required');
+    // Validate scheme up-front so typos (`redis:/host`, `fil://path`)
+    // fail at parse time with a clear pointer instead of later with
+    // a confusing connect error.
+    parseSource(out.source);
     if (!out.dryRun) {
       if (out.target === '') throw new CliArgError('--target is required');
       if (out.token === '') throw new CliArgError('--token is required');
     }
   }
   return out;
+}
+
+/**
+ * Classify a `--source` string as redis-RESP or on-disk filesystem.
+ * Raises {@link CliArgError} on anything else.
+ *
+ *   - `redis://…`         → `{ kind: 'redis', url }`
+ *   - `file:///abs/path`  → `{ kind: 'file', path: '/abs/path' }`
+ *   - `/abs/path`         → `{ kind: 'file', path: '/abs/path' }` (friendly shorthand)
+ *   - anything else       → error
+ */
+export function parseSource(source: string): ParsedSource {
+  if (source.startsWith('redis://')) return { kind: 'redis', url: source };
+  if (source.startsWith('file://')) {
+    // `new URL('file:///var').pathname` is '/var' — standard WHATWG
+    // file-URL parsing. Decoding %xx escapes too is cheap and matches
+    // what users expect from file:// URLs.
+    const u = new URL(source);
+    return { kind: 'file', path: decodeURIComponent(u.pathname) };
+  }
+  if (source.startsWith('/')) return { kind: 'file', path: source };
+  throw new CliArgError(
+    `--source must be redis://…, file://…, or an absolute /path (got ${source})`,
+  );
 }

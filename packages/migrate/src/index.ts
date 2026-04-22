@@ -26,6 +26,12 @@ export { RespClient, RespError } from './resp-client.ts';
 export type { RespValue, RespSocket } from './resp-client.ts';
 export { roomsFromRedis } from './sources/redis-source.ts';
 export type { RespLike, RoomsFromRedisOptions } from './sources/redis-source.ts';
+export { roomsFromFilesystem } from './sources/filesystem-source.ts';
+export type {
+  FsLike,
+  FsStatLike,
+  RoomsFromFilesystemOptions,
+} from './sources/filesystem-source.ts';
 export { parseArgs, CliArgError } from './cli-args.ts';
 export type { CliArgs } from './cli-args.ts';
 export {

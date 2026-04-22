@@ -24,6 +24,10 @@
  *     loopback.
  */
 import type { Room } from '../apply.ts';
+import {
+  filterOversized,
+  type OversizedCallback,
+} from './filter-oversized.ts';
 
 /** Narrow shape of {@link import('../resp-client.ts').RespClient} used here. */
 export interface RespLike {
@@ -58,12 +62,7 @@ export interface RoomsFromRedisOptions {
    */
   maxEntryBytes?: number;
   /** Called when an entry is dropped for exceeding `maxEntryBytes`. */
-  onOversizedEntry?: (info: {
-    readonly room: string;
-    readonly kind: 'log' | 'audit' | 'chat';
-    readonly index: number;
-    readonly bytes: number;
-  }) => void;
+  onOversizedEntry?: OversizedCallback;
   /**
    * Legacy knob — previously skipped rooms whose snapshot exceeded
    * the 128 KiB DO-per-value ceiling. The worker now chunks snapshots
@@ -154,42 +153,6 @@ export async function* roomsFromRedis(
     done += 1;
     options.onProgress?.({ done, total: sorted.length });
   }
-}
-
-/**
- * Drop entries that exceed the per-value byte ceiling and invoke the
- * `onOversizedEntry` callback for each drop. Preserves array order for
- * the survivors; sequence indices on the DO side go by `i` in the
- * filtered array, so the dropped audits silently disappear from the
- * post-migration history (fine — they're historical audit noise, not
- * load-bearing state).
- */
-function filterOversized(
-  entries: readonly string[],
-  kind: 'log' | 'audit' | 'chat',
-  room: string,
-  max: number,
-  cb?: (info: {
-    readonly room: string;
-    readonly kind: 'log' | 'audit' | 'chat';
-    readonly index: number;
-    readonly bytes: number;
-  }) => void,
-): string[] {
-  const out: string[] = [];
-  for (let i = 0; i < entries.length; i++) {
-    const entry = entries[i] as string;
-    // Always compute real UTF-8 byte length — an earlier "length * 3"
-    // fast-path false-positived on mostly-ASCII strings (e.g. 60k ASCII
-    // chars report `length * 3 = 180k` but actual is 60k).
-    const bytes = Buffer.byteLength(entry, 'utf8');
-    if (bytes > max) {
-      cb?.({ room, kind, index: i, bytes });
-      continue;
-    }
-    out.push(entry);
-  }
-  return out;
 }
 
 /**
