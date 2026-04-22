@@ -53,5 +53,11 @@ export function main(argv: readonly string[], deps: MainDeps): number {
   for (const w of plan.warnings) {
     deps.stderr(`${w}\n`);
   }
-  return deps.exec('npx', ['wrangler', ...plan.wranglerArgs], plan.env);
+  // `bunx wrangler` (not `npx wrangler`) — bin/ethercalc already has a
+  // `#!/usr/bin/env bun` shebang, so bun is a hard prerequisite. Using
+  // bunx avoids needing nodejs+npm on top of bun, which matters for
+  // self-hosting in a minimal container (e.g. Sandstorm grains bundle
+  // only what the app touches at runtime; extra Node toolchain doubles
+  // the package size).
+  return deps.exec('bunx', ['wrangler', ...plan.wranglerArgs], plan.env);
 }

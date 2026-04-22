@@ -12,10 +12,18 @@ import {
   USAGE,
   type RunDeps,
 } from '../src/cli.ts';
-import { parseArgs, CliArgError, type CliArgs } from '../src/cli-args.ts';
+import {
+  parseArgs,
+  parseSource,
+  CliArgError,
+  type CliArgs,
+} from '../src/cli-args.ts';
 import * as argsMod from '../src/cli-args.ts';
+import type { FsLike, FsStatLike } from '../src/sources/filesystem-source.ts';
 
-type FakeClient = RunDeps['connectRedis'] extends (url: string) => Promise<infer T>
+type FakeClient = NonNullable<RunDeps['connectRedis']> extends (
+  url: string,
+) => Promise<infer T>
   ? T
   : never;
 
@@ -706,5 +714,240 @@ describe('main — argv orchestrator', () => {
     const { deps } = makeDeps();
     await expect(main(['--anything'], deps)).rejects.toThrow('boom');
     spy.mockRestore();
+  });
+});
+
+/**
+ * In-memory FsLike — mirrors the helper in filesystem-source.test.ts
+ * but duplicated here so cli.test.ts doesn't reach into a sibling test
+ * file. Only the shapes actually exercised by the CLI tests are built.
+ */
+function buildFs(tree: Record<string, unknown>): FsLike {
+  type Entry =
+    | { kind: 'file'; contents: string }
+    | { kind: 'dir'; entries: Map<string, Entry> };
+  const root = new Map<string, Entry>();
+  const ingest = (into: Map<string, Entry>, obj: Record<string, unknown>): void => {
+    for (const [k, v] of Object.entries(obj)) {
+      if (typeof v === 'string') {
+        into.set(k, { kind: 'file', contents: v });
+      } else if (v && typeof v === 'object') {
+        const sub = new Map<string, Entry>();
+        into.set(k, { kind: 'dir', entries: sub });
+        ingest(sub, v as Record<string, unknown>);
+      }
+    }
+  };
+  ingest(root, tree);
+  const resolve = (p: string): Entry | null => {
+    const parts = p.split('/').filter((s) => s.length > 0);
+    let cur: Entry = { kind: 'dir', entries: root };
+    for (const part of parts) {
+      if (cur.kind !== 'dir') return null;
+      const next = cur.entries.get(part);
+      if (next === undefined) return null;
+      cur = next;
+    }
+    return cur;
+  };
+  return {
+    readdir: async (p) => {
+      const e = resolve(p);
+      if (e === null || e.kind !== 'dir') throw new Error(`ENOTDIR: ${p}`);
+      return Array.from(e.entries.keys());
+    },
+    readFile: async (p) => {
+      const e = resolve(p);
+      if (e === null || e.kind !== 'file') throw new Error(`ENOENT: ${p}`);
+      return e.contents;
+    },
+    stat: async (p): Promise<FsStatLike> => {
+      const e = resolve(p);
+      if (e === null) throw new Error(`ENOENT: ${p}`);
+      return {
+        isDirectory: () => e.kind === 'dir',
+        isFile: () => e.kind === 'file',
+      };
+    },
+  };
+}
+
+describe('parseSource', () => {
+  it('classifies redis:// URLs', () => {
+    expect(parseSource('redis://localhost:6379')).toEqual({
+      kind: 'redis',
+      url: 'redis://localhost:6379',
+    });
+  });
+
+  it('classifies file:// URLs and pulls out the pathname', () => {
+    expect(parseSource('file:///var/dump')).toEqual({
+      kind: 'file',
+      path: '/var/dump',
+    });
+  });
+
+  it('decodes %xx escapes in file:// URL pathnames', () => {
+    // A grain path with a space-like escape. WHATWG URL encodes spaces
+    // as %20; we want callers to get the real on-disk path back.
+    expect(parseSource('file:///var/my%20dumps')).toEqual({
+      kind: 'file',
+      path: '/var/my dumps',
+    });
+  });
+
+  it('treats a bare absolute path as a filesystem source', () => {
+    expect(parseSource('/var/dump')).toEqual({
+      kind: 'file',
+      path: '/var/dump',
+    });
+  });
+
+  it('rejects relative paths and unknown schemes', () => {
+    expect(() => parseSource('./dump')).toThrow(CliArgError);
+    expect(() => parseSource('redis:/missing-slash')).toThrow(CliArgError);
+    expect(() => parseSource('')).toThrow(CliArgError);
+  });
+});
+
+describe('parseArgs — source validation', () => {
+  it('rejects a malformed source scheme at parse time (not at connect time)', () => {
+    expect(() =>
+      parseArgs(['--source', 'redis:/typo', '--dry-run']),
+    ).toThrow(CliArgError);
+  });
+
+  it('accepts a file:// source', () => {
+    const a = parseArgs(['--source', 'file:///var/dump', '--dry-run']);
+    expect(a.source).toBe('file:///var/dump');
+  });
+
+  it('accepts a bare-absolute-path source', () => {
+    const a = parseArgs(['--source', '/var/dump', '--dry-run']);
+    expect(a.source).toBe('/var/dump');
+  });
+});
+
+describe('runMigrate — filesystem source', () => {
+  it('dispatches to roomsFromFilesystem with a dump.json blob', async () => {
+    const fs = buildFs({
+      var: {
+        'dump.json': JSON.stringify({
+          'snapshot-alpha': 'SAVE-A',
+          'log-alpha': ['cmd-a1'],
+          timestamps: { 'timestamp-alpha': 42 },
+        }),
+      },
+    });
+    const { deps, stdout } = makeDeps();
+    deps.fs = fs;
+    const stats = await runMigrate(
+      {
+        source: 'file:///var',
+        target: '',
+        token: '',
+        dryRun: true,
+        help: false,
+        skipBulkIndex: false,
+      },
+      deps,
+    );
+    expect(stats.rooms).toBe(1);
+    expect(stats.snapshots).toBe(1);
+    expect(stats.logEntries).toBe(1);
+    expect(stdout.join('')).toContain('DO[alpha] put snapshot');
+    expect(stdout.join('')).toContain('D1 rooms INSERT alpha updated_at=42');
+  });
+
+  it('dispatches to roomsFromFilesystem with a dump/ directory', async () => {
+    const fs = buildFs({
+      var: {
+        dump: {
+          'snapshot-room1.txt': 'SAVE-1',
+          'audit-room1.txt': 'cmd1\ncmd2\n',
+        },
+      },
+    });
+    const { deps, stdout } = makeDeps();
+    deps.fs = fs;
+    const stats = await runMigrate(
+      {
+        source: 'file:///var',
+        target: '',
+        token: '',
+        dryRun: true,
+        help: false,
+        skipBulkIndex: false,
+      },
+      deps,
+    );
+    expect(stats.rooms).toBe(1);
+    expect(stats.auditEntries).toBe(2);
+    expect(stdout.join('')).toContain('DO[room1] put audit#1');
+    expect(stdout.join('')).toContain('DO[room1] put audit#2');
+  });
+
+  it('accepts a bare-absolute path source (no file:// scheme)', async () => {
+    const fs = buildFs({
+      dump: { 'snapshot-room1.txt': 'SAVE-1' },
+    });
+    const { deps } = makeDeps();
+    deps.fs = fs;
+    const stats = await runMigrate(
+      {
+        source: '/dump',
+        target: '',
+        token: '',
+        dryRun: true,
+        help: false,
+        skipBulkIndex: false,
+      },
+      deps,
+    );
+    expect(stats.rooms).toBe(1);
+  });
+
+  it('throws when --source file:// is used but deps.fs is unset', async () => {
+    const { deps } = makeDeps();
+    // deps.fs intentionally left unset
+    await expect(
+      runMigrate(
+        {
+          source: 'file:///var',
+          target: '',
+          token: '',
+          dryRun: true,
+          help: false,
+          skipBulkIndex: false,
+        },
+        deps,
+      ),
+    ).rejects.toThrow(/RunDeps\.fs to be wired/);
+  });
+});
+
+describe('runMigrate — redis source missing connectRedis', () => {
+  it('throws with a clear message when deps.connectRedis is unset', async () => {
+    // Bypass makeDeps's default (which stubs connectRedis). Build a
+    // bare RunDeps with no redis connector at all.
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const deps: RunDeps = {
+      stdout: (s) => { stdout.push(s); },
+      stderr: (s) => { stderr.push(s); },
+    };
+    await expect(
+      runMigrate(
+        {
+          source: 'redis://127.0.0.1:6379',
+          target: '',
+          token: '',
+          dryRun: true,
+          help: false,
+          skipBulkIndex: false,
+        },
+        deps,
+      ),
+    ).rejects.toThrow(/RunDeps\.connectRedis to be wired/);
   });
 });

@@ -1,14 +1,52 @@
 {
   "name": "ethercalc",
-  "private": true,
-  "version": "0.20201228.1",
+  "version": "0.20260422.0",
   "description": "Multi-User Spreadsheet Server — TypeScript rewrite (Cloudflare fullstack)",
   "homepage": "http://ethercalc.net/",
+  "author": "Audrey Tang <audreyt@audreyt.org>",
   "repository": {
     "type": "git",
     "url": "https://github.com/audreyt/ethercalc"
   },
   "license": "CC0-1.0",
+  "keywords": [
+    "ethercalc",
+    "spreadsheet",
+    "collaboration",
+    "realtime",
+    "cloudflare",
+    "workers",
+    "hono",
+    "durable-objects",
+    "socialcalc"
+  ],
+  "bin": {
+    "ethercalc": "./bin/ethercalc"
+  },
+  "files": [
+    "bin/",
+    "packages/",
+    "scripts/",
+    "static/",
+    "images/",
+    "l10n/",
+    "third-party/",
+    "app-graphics/",
+    "migrations/",
+    "Dockerfile",
+    "docker-compose.yml",
+    "*.html",
+    "*.ico",
+    "*.png",
+    "*.svg",
+    "*.xml",
+    "manifest.json",
+    "manifest.appcache",
+    "README.mkdn",
+    "CLAUDE.md",
+    "API.md",
+    "Changes.txt"
+  ],
   "workspaces": [
     "packages/*"
   ],
