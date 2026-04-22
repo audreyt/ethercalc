@@ -386,11 +386,14 @@ describe('RoomDO (unit, direct construction)', () => {
     expect(body.chat).toEqual(['hello']);
   });
 
-  it('POST /_do/commands with empty body is a no-op 202', async () => {
+  it('POST /_do/commands with empty body is a no-op 202 with an empty body', async () => {
     const res = await room.fetch(
       new Request('https://do/_do/commands', { method: 'POST', body: '' }),
     );
     expect(res.status).toBe(202);
+    // Pin the empty response body — StringLiteral → "Stryker was here!"
+    // on room.ts:307 would otherwise leak a garbage body to the client.
+    expect(await res.text()).toBe('');
     expect(mockExec).not.toHaveBeenCalled();
   });
 
@@ -403,6 +406,10 @@ describe('RoomDO (unit, direct construction)', () => {
       }),
     );
     expect(res.status).toBe(202);
+    // Pin the empty body on the success branch (room.ts:309) — pairs
+    // with the empty-body case above to catch every StringLiteral
+    // mutation on the #postCommands response.
+    expect(await res.text()).toBe('');
     expect(mockExec).toHaveBeenCalledWith('set A1 value n 1');
     expect(record.map.get(logKey(0))).toBe('set A1 value n 1');
     expect(record.map.get(auditKey(0))).toBe('set A1 value n 1');
@@ -701,6 +708,24 @@ describe('RoomDO (unit, direct construction)', () => {
     const res = await room.fetch(new Request(`https://do${path}`, { method }));
     expect(res.status).toBe(501);
   });
+
+  // Method-gate mutation kills: `request.method === 'GET'` on lines
+  // 144 (/_do/log), 156 (/_do/cells), and `=== 'DELETE'` on line 150
+  // (/_do/all) all survived mutation to `true`, because no existing
+  // test exercised the "right path, wrong method" combo for these
+  // three endpoints. Each 501 assertion below pins one method gate.
+  it.each([
+    ['/_do/log', 'POST'],
+    ['/_do/log', 'DELETE'],
+    ['/_do/cells', 'POST'],
+    ['/_do/cells', 'DELETE'],
+    ['/_do/cells/A1', 'POST'],
+    ['/_do/all', 'GET'],
+    ['/_do/all', 'POST'],
+  ])('method gate: %s + %s → 501', async (path, method) => {
+    const res = await room.fetch(new Request(`https://do${path}`, { method }));
+    expect(res.status).toBe(501);
+  });
 });
 
 /**
@@ -989,7 +1014,7 @@ describe('RoomDO — cross-DO rename primitives (Phase 6)', () => {
     };
   }
 
-  it('POST /_do/rename with missing body.to returns 400', async () => {
+  it('POST /_do/rename with missing body.to returns 400 with a descriptive body', async () => {
     const record: FakeStorageRecord = { map: new Map() };
     const room = new RoomDO(makeState('x', record), makeRenameEnv([]));
     const res = await room.fetch(
@@ -999,6 +1024,10 @@ describe('RoomDO — cross-DO rename primitives (Phase 6)', () => {
       }),
     );
     expect(res.status).toBe(400);
+    // Pin the error body literal — a StringLiteral → "" mutation on
+    // room.ts:425 would silently strip the message, leaving operators
+    // to diagnose a bare 400 with no hint.
+    expect(await res.text()).toMatch(/rename body must be \{to: string\}/);
   });
 
   it('POST /_do/rename with empty string body.to returns 400', async () => {
@@ -1011,6 +1040,7 @@ describe('RoomDO — cross-DO rename primitives (Phase 6)', () => {
       }),
     );
     expect(res.status).toBe(400);
+    expect(await res.text()).toMatch(/rename body must be \{to: string\}/);
   });
 
   it('POST /_do/rename with no snapshot returns 204 no-op', async () => {
@@ -1070,11 +1100,14 @@ describe('RoomDO — cross-DO rename primitives (Phase 6)', () => {
       }),
     );
     expect(res.status).toBe(502);
+    // Pin the "install failed: <status>" body so StringLiteral mutations
+    // on room.ts:443 — where the template literal lives — don't survive.
+    expect(await res.text()).toMatch(/^install failed: \d+/);
     // Local storage preserved on failure (snapshot still there).
     expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('snap');
   });
 
-  it('POST /_do/install with non-string snapshot returns 400', async () => {
+  it('POST /_do/install with non-string snapshot returns 400 with a descriptive body', async () => {
     const record: FakeStorageRecord = { map: new Map() };
     const room = new RoomDO(makeState('x', record), makeEnv());
     const res = await room.fetch(
@@ -1084,6 +1117,9 @@ describe('RoomDO — cross-DO rename primitives (Phase 6)', () => {
       }),
     );
     expect(res.status).toBe(400);
+    // Pin the error body literal so StringLiteral → "" mutations on
+    // room.ts:630 (snapshot), :635 (log), :638 (audit) don't survive.
+    expect(await res.text()).toMatch(/install body\.snapshot must be string/);
   });
 
   it('POST /_do/install with non-string-array log returns 400', async () => {
@@ -1096,6 +1132,7 @@ describe('RoomDO — cross-DO rename primitives (Phase 6)', () => {
       }),
     );
     expect(res.status).toBe(400);
+    expect(await res.text()).toMatch(/install body\.log must be string\[\]/);
   });
 
   it('POST /_do/install with non-string-array audit returns 400', async () => {
@@ -1108,6 +1145,7 @@ describe('RoomDO — cross-DO rename primitives (Phase 6)', () => {
       }),
     );
     expect(res.status).toBe(400);
+    expect(await res.text()).toMatch(/install body\.audit must be string\[\]/);
   });
 
   it('POST /_do/install writes snapshot + log + audit, returns 201', async () => {
@@ -1637,6 +1675,40 @@ describe('RoomDO — WebSocket acceptance (Phase 7)', () => {
     expect(peerLog.sent).toHaveLength(1);
   });
 
+  it('webSocketMessage execute under keyed mode uses the message auth, not a constant', async () => {
+    // Pins the perMessageAuth selector at room.ts:753
+    //   ('auth' in parsed && typeof parsed.auth === 'string') ? parsed.auth : ''
+    //
+    // With ETHERCALC_KEY set, verifyAuth requires the supplied auth to
+    // match `computeAuth(key, room)` exactly. Any mutation that turns
+    // the selector into a constant (`''`, `"Stryker was here!"`, swaps
+    // `&&` ↔ `||`, flips the typeof check, etc.) produces a perMessageAuth
+    // that doesn't match — verifyAuth rejects → command dropped →
+    // test fails.
+    const { state } = makeWsAwareState('k', record, []);
+    const env: Env = {
+      ROOM: {} as DurableObjectNamespace,
+      ETHERCALC_KEY: 'shared-secret',
+    };
+    const room = new RoomDO(state, env);
+    // Compute the real HMAC the message must carry.
+    const { computeAuth } = await import('../src/lib/auth.ts');
+    const hmac = await computeAuth('shared-secret', 'r');
+    const ws = makeFakeWs({ sent: [] }, { user: 'alice', room: 'r', auth: hmac });
+    await room.webSocketMessage(
+      ws,
+      JSON.stringify({
+        type: 'execute',
+        room: 'r',
+        user: 'alice',
+        auth: hmac,
+        cmdstr: 'set A1 value n 1',
+      }),
+    );
+    expect(record.map.get(logKey(0))).toBe('set A1 value n 1');
+    expect(mockExec).toHaveBeenCalledWith('set A1 value n 1');
+  });
+
   it('webSocketMessage drops an execute when auth field missing (view-only)', async () => {
     const peerLog: FakeWsLog = { sent: [] };
     const peer = makeFakeWs(peerLog);
@@ -1945,6 +2017,11 @@ describe('RoomDO — /_do/fire-trigger (Phase 9)', () => {
       new Request('https://do/_do/fire-trigger', { method: 'POST' }),
     );
     expect(res.status).toBe(200);
+    // Pin the empty response body — every fire-trigger exit path
+    // returns `plainResponse('', 200)` (room.ts:690/695/707/711),
+    // and StringLiteral → "Stryker was here!" mutations on the
+    // empty-string body would leak garbage to the cron runner.
+    expect(await res.text()).toBe('');
     expect(mockExportCell).not.toHaveBeenCalled();
   });
 
@@ -1954,6 +2031,7 @@ describe('RoomDO — /_do/fire-trigger (Phase 9)', () => {
       new Request('https://do/_do/fire-trigger?cell=Z9', { method: 'POST' }),
     );
     expect(res.status).toBe(200);
+    expect(await res.text()).toBe('');
     expect(mockExportCell).toHaveBeenCalledWith('Z9');
   });
 
@@ -1963,6 +2041,7 @@ describe('RoomDO — /_do/fire-trigger (Phase 9)', () => {
       new Request('https://do/_do/fire-trigger?cell=A1', { method: 'POST' }),
     );
     expect(res.status).toBe(200);
+    expect(await res.text()).toBe('');
   });
 
   it('dispatches sendemail via stub and returns 200 (formula path)', async () => {
@@ -1974,6 +2053,7 @@ describe('RoomDO — /_do/fire-trigger (Phase 9)', () => {
       new Request('https://do/_do/fire-trigger?cell=A1', { method: 'POST' }),
     );
     expect(res.status).toBe(200);
+    expect(await res.text()).toBe('');
   });
 
   it('dispatches sendemail via stub and returns 200 (datavalue fallback)', async () => {
@@ -1996,5 +2076,90 @@ describe('RoomDO — /_do/fire-trigger (Phase 9)', () => {
       new Request('https://do/_do/fire-trigger?cell=C3', { method: 'POST' }),
     );
     expect(res.status).toBe(200);
+  });
+
+  // The tests above assert status 200 but don't pin WHICH field
+  // (formula vs datavalue) was used to build the sendemail payload.
+  // The next block observes the `confirmemailsent` broadcast + its
+  // message content so the boundary/equality/logic mutants on lines
+  // 702-705 of room.ts (the `formula.length > 0 ? formula : ''` /
+  // `|| datavalue` selector) are no longer semantically equivalent
+  // to the originals.
+
+  describe('fire-trigger: selector between formula and datavalue', () => {
+    async function callWithPeer(
+      cellRecord: { formula?: unknown; datavalue?: unknown },
+    ): Promise<string[]> {
+      const peerLog: FakeWsLog = { sent: [] };
+      const peerWs = makeFakeWs(peerLog);
+      // A state whose getWebSockets returns a live peer so we can
+      // observe #broadcastAll's output.
+      const stateWithPeer = {
+        ...makeState('fire-peer', { map: new Map() }),
+        getWebSockets(): WebSocket[] {
+          return [peerWs];
+        },
+      } as unknown as DurableObjectState;
+      const r = new RoomDO(stateWithPeer, makeEnv());
+      mockExportCell.mockReturnValueOnce(cellRecord);
+      await r.fetch(
+        new Request('https://do/_do/fire-trigger?cell=A1', { method: 'POST' }),
+      );
+      return peerLog.sent;
+    }
+
+    it('uses formula when it is a non-empty string (both fields set)', async () => {
+      const sent = await callWithPeer({
+        formula: 'sendemail to@example.test form-subject form-body',
+        datavalue: 'sendemail wrong@example.test other other',
+      });
+      // A confirmemailsent frame must fire; the STUB returns
+      // " [E-mail Sent]" as the message. Parse+verify the payload.
+      expect(sent).toHaveLength(1);
+      const msg = JSON.parse(sent[0]!) as { type: string; message?: string };
+      expect(msg.type).toBe('confirmemailsent');
+    });
+
+    it('falls back to datavalue when formula is the empty string', async () => {
+      const sent = await callWithPeer({
+        formula: '',
+        datavalue: 'sendemail dv@example.test dv-subj dv-body',
+      });
+      expect(sent).toHaveLength(1);
+      const msg = JSON.parse(sent[0]!) as { type: string };
+      expect(msg.type).toBe('confirmemailsent');
+    });
+
+    it('falls back to datavalue when formula is non-string', async () => {
+      // A number formula triggers the `typeof === 'string'` guard on
+      // line 702 — the original drops into `''` and then the `||`
+      // selects datavalue. A mutation replacing the typeof check with
+      // `true` would take the formula branch and feed `Number` through
+      // parseSendemail, which returns null → no broadcast.
+      const sent = await callWithPeer({
+        formula: 42 as unknown as string,
+        datavalue: 'sendemail dv2@example.test s2 b2',
+      });
+      expect(sent).toHaveLength(1);
+    });
+
+    it('no broadcast when neither field carries a valid sendemail', async () => {
+      // Formula is present but not a sendemail; datavalue is present
+      // but also not a sendemail. parseSendemail returns null → no
+      // broadcast. Pins the `parseSendemail` return-check on line 707.
+      const sent = await callWithPeer({
+        formula: 'not a sendemail',
+        datavalue: 'also not a sendemail',
+      });
+      expect(sent).toEqual([]);
+    });
+
+    it('no broadcast when only a non-string formula AND non-string datavalue', async () => {
+      const sent = await callWithPeer({
+        formula: 1 as unknown as string,
+        datavalue: 2 as unknown as string,
+      });
+      expect(sent).toEqual([]);
+    });
   });
 });
