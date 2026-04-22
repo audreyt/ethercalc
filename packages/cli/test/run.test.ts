@@ -31,7 +31,7 @@ describe('main — happy paths', () => {
     const code = main([], deps);
     expect(code).toBe(0);
     expect(execCalls).toHaveLength(1);
-    expect(execCalls[0]?.cmd).toBe('npx');
+    expect(execCalls[0]?.cmd).toBe('bunx');
     expect(execCalls[0]?.args).toEqual([
       'wrangler', 'dev', '--port', '8000', '--ip', '0.0.0.0',
     ]);

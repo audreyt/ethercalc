@@ -9,7 +9,11 @@
 # hood; bun provides a Node-compatible runtime for wrangler itself.
 FROM oven/bun:1.3
 
-RUN apt-get update && apt-get install -y nodejs npm && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+# curl is kept only because run_grain.sh probes /_health with it; bun
+# comes with the oven/bun:1.3 base. Previously we also installed
+# nodejs + npm to give the CLI `npx wrangler` — the CLI now spawns
+# `bunx wrangler` instead, which is already provided by bun.
 
 WORKDIR /app
 
