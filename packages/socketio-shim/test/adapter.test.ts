@@ -165,6 +165,34 @@ describe('handleWebSocketUpgrade', () => {
     expect(timers.count()).toBe(1);
   });
 
+  it('heartbeat interval is exactly (hbTimeoutSec * 1000) / 2 ms', () => {
+    // Pin the formula so mutations flipping the ` / 2` to ` * 2` or
+    // dropping the `* 1000` don't survive. Legacy socket.io 0.9 sends
+    // heartbeats at hb/2 so the client sees one well before its own
+    // timeout fires (see adapter.ts line ~164).
+    type TimerEntry = { ms: number };
+    for (const hbTimeoutSec of [10, 30, 60]) {
+      const harness: { setTimer: SocketIoShimOptions['setTimer']; entries: TimerEntry[] } = {
+        entries: [],
+        setTimer(cb, ms) {
+          const entry = { ms };
+          harness.entries.push(entry);
+          return entry;
+        },
+      };
+      const shim = createSocketIoShim({
+        onClientMessage: () => undefined,
+        getNativeWebSocket: () => null,
+        setTimer: harness.setTimer,
+        clearTimer: () => undefined,
+        hbTimeoutSec,
+      });
+      shim.handleWebSocketUpgrade(new Request('https://x/'), VALID_SID)!.accept(new FakeWebSocket());
+      expect(harness.entries).toHaveLength(1);
+      expect(harness.entries[0]?.ms).toBe((hbTimeoutSec * 1000) / 2);
+    }
+  });
+
   it('sends a heartbeat when the timer fires', () => {
     const { shim, timers } = makeShim();
     const ws = new FakeWebSocket();
