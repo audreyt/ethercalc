@@ -151,6 +151,43 @@ describe('xlsxToSave — roundtrip', () => {
     expect(save).toMatch(/:colspan:2/);
   });
 
+  it('preserves vertical merge range (rowspan encoding)', () => {
+    // Pins the end-row offset `m.e.r + 1` at xlsx-import.ts:139 — a
+    // mutation to `-1` produces a bottom coord above the top, which
+    // SocialCalc rejects, dropping the merge entirely.
+    const ws = {
+      '!ref': 'A1:A3',
+      '!merges': [{ s: { r: 0, c: 0 }, e: { r: 2, c: 0 } }],
+      A1: { t: 's', v: 'tall' },
+    };
+    const book = (XLSX as any).utils.book_new();
+    (XLSX as any).utils.book_append_sheet(book, ws, 'Sheet1');
+    const bytes = new Uint8Array(
+      (XLSX as any).write(book, { bookType: 'xlsx', type: 'array' }) as ArrayBufferLike,
+    );
+    const save = xlsxToSave(bytes);
+    expect(save).toMatch(/:rowspan:3/);
+  });
+
+  it('preserves merges whose end column requires multi-letter encoding', () => {
+    // Pins colLetters's `n % 26` at xlsx-import.ts:165. A mutation to
+    // `n * 26` would turn column 26 ("AA") into a garbage character
+    // outside A–Z, producing an unparseable `merge A1:<garbage>1`
+    // command that SocialCalc's catch-block silently drops.
+    const ws = {
+      '!ref': 'A1:AA1',
+      '!merges': [{ s: { r: 0, c: 0 }, e: { r: 0, c: 26 } }],
+      A1: { t: 's', v: 'wide' },
+    };
+    const book = (XLSX as any).utils.book_new();
+    (XLSX as any).utils.book_append_sheet(book, ws, 'Sheet1');
+    const bytes = new Uint8Array(
+      (XLSX as any).write(book, { bookType: 'xlsx', type: 'array' }) as ArrayBufferLike,
+    );
+    const save = xlsxToSave(bytes);
+    expect(save).toMatch(/:colspan:27/);
+  });
+
   it('zero-byte input yields a save with no cells', () => {
     // SheetJS tolerates an empty byte array by producing an empty book;
     // xlsxToSave returns an empty SocialCalc save in that case.

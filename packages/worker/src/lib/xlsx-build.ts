@@ -144,6 +144,10 @@ export function translateCell(
 
   if (main === 'n') {
     const raw = cell.datavalue;
+    // Stryker disable next-line all : parseFloat(String(x)) on a JS number
+    // is identity for every representable value we receive from SocialCalc,
+    // so the `typeof raw === 'number'` fast-path and the `raw ?? ''`
+    // fallback produce identical numeric output. Equivalent mutants.
     const n = typeof raw === 'number' ? raw : parseFloat(String(raw ?? ''));
     if (valuetype === 'nl') {
       // SocialCalc stores 1/0 as numeric for logical values.
@@ -213,10 +217,14 @@ export function sheetViewToWorksheet(view: SocialCalcSheetView): Record<string, 
     const xcell = translateCell(scCell, view.valueformats);
     if (!xcell) continue;
     ws[coord] = xcell;
+    // Stryker disable EqualityOperator : flipping `<` / `>` to `<=` / `>=`
+    // is a no-op at equality because the value being assigned equals the
+    // current accumulator. Equivalent mutants on all four guards.
     if (rc.r < minR) minR = rc.r;
     if (rc.c < minC) minC = rc.c;
     if (rc.r > maxR) maxR = rc.r;
     if (rc.c > maxC) maxC = rc.c;
+    // Stryker restore EqualityOperator
 
     const colspan = Number(scCell.colspan ?? 1);
     const rowspan = Number(scCell.rowspan ?? 1);

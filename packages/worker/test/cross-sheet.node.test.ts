@@ -43,6 +43,46 @@ describe('extractSheetSave', () => {
     const garbage = 'not a SocialCalc save at all';
     expect(extractSheetSave(garbage)).toBe(garbage);
   });
+
+  // These three pin the line-anchoring details of the match regex at
+  // cross-sheet.ts:23. Each input is crafted so that the ORIGINAL
+  // regex doesn't match (→ returns input unchanged), but a specific
+  // mutation would match and return a substring.
+
+  it('requires `version:1.5` to start a line (`^` anchor)', () => {
+    // Mutant without leading `^`: matches `version:1.5` embedded in
+    // `xversion:1.5`. Original returns input; mutant returns a slice.
+    const embedded =
+      'xversion:1.5\n' +
+      'cell:A1:v:1\n' +
+      '--SocialCalcSpreadsheetControlSave\n';
+    expect(extractSheetSave(embedded)).toBe(embedded);
+  });
+
+  it('requires `version:1.5` to end a line (`$` anchor)', () => {
+    // Mutant without trailing `$`: matches `version:1.5extra`.
+    const trailing =
+      'version:1.5extra\n' +
+      'cell:A1:v:1\n' +
+      '--SocialCalcSpreadsheetControlSave\n';
+    expect(extractSheetSave(trailing)).toBe(trailing);
+  });
+
+  it('requires boundary lookahead to start a line (inner `^`)', () => {
+    // Mutant without `^` in the lookahead: matches an inline boundary
+    // substring inside a cell value, truncating the sheet body early.
+    // The original refuses because the boundary is mid-line, so the
+    // regex falls through to EOF and captures the full tail.
+    const inlineBoundary =
+      'version:1.5\n' +
+      'cell:A1:t:has--SocialCalcSpreadsheetControlSave-inside\n' +
+      'sheet:c:1:r:1:needsrecalc:no\n';
+    const out = extractSheetSave(inlineBoundary);
+    // Original regex (with `^` anchor in the lookahead) walks to EOF,
+    // since no real boundary line exists. The mutant truncates at the
+    // mid-line `--SocialCalc…` substring, dropping the `sheet:` line.
+    expect(out).toContain('sheet:c:1:r:1:needsrecalc:no');
+  });
 });
 
 describe('hydrateCrossSheetRefs', () => {

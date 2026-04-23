@@ -69,6 +69,11 @@ describe('csvToBinaryWorkbook', () => {
     // cell yields []; we only need to assert the file itself is readable.
     const wb = (XLSX as any).read(bytes, { type: 'array' });
     expect(wb.SheetNames).toEqual(['Sheet1']);
+    // A1 must be present and empty — pins the `[['']]` literal against
+    // mutations to `[]`, `[[]]`, `[["Stryker was here!"]]`.
+    const sheet = wb.Sheets['Sheet1'];
+    expect(sheet['!ref']).toBe('A1');
+    expect(sheet.A1?.v ?? '').toBe('');
   });
 
   it('coerces integer-looking strings into numbers', () => {
@@ -108,6 +113,12 @@ describe('csvToBinaryWorkbook', () => {
     // A1 is empty — SheetJS may or may not include it in the output depending
     // on the range; we only assert B1 is the non-empty value.
     expect(sheet.B1.v).toBe('a');
+    // When A1 IS emitted it must be the empty string, not a placeholder.
+    // Pins the `cells.push('')` branch at line 331 against a mutation
+    // that would substitute the Stryker test sentinel.
+    if (sheet.A1) {
+      expect(sheet.A1.v ?? '').toBe('');
+    }
   });
 
   // The next four pin specific regex mutations on the numeric-pattern at
@@ -227,6 +238,13 @@ describe('sanitizeSheetName', () => {
   it('returns the original when it does not collide', () => {
     expect(sanitizeSheetName('Alpha', ['Beta', 'Gamma'])).toBe('Alpha');
   });
+
+  it('default `existing` parameter is truly empty (no phantom collisions)', () => {
+    // Pins the `existing: readonly string[] = []` default. A mutation
+    // seeding it with a placeholder would cause an otherwise-unique
+    // name to dedupe when the caller omits the argument.
+    expect(sanitizeSheetName('Stryker was here')).toBe('Stryker was here');
+  });
 });
 
 describe('buildMultiSheetWorkbook', () => {
@@ -297,6 +315,23 @@ describe('buildMultiSheetWorkbook', () => {
     const bytes = buildMultiSheetWorkbook([], 'xlsx');
     const wb = (XLSX as any).read(bytes, { type: 'array' });
     expect(wb.SheetNames).toEqual(['Sheet1']);
+    // A1 exists as an empty cell — kills mutations on the blank-row
+    // literal `[['']]` (→ `[]`, `[[]]`, `[["Stryker was here!"]]`).
+    const sheet = wb.Sheets['Sheet1'];
+    expect(sheet['!ref']).toBe('A1');
+    expect(sheet.A1?.v ?? '').toBe('');
+  });
+
+  it('preserves a first-sheet name matching the mutator placeholder', () => {
+    // Pins `used: string[] = []` initializer — a mutation seeding it
+    // with `['Stryker was here']` would dedupe this exact name to
+    // `'Stryker was here (2)'` even though the workbook has one sheet.
+    const bytes = buildMultiSheetWorkbook(
+      [{ name: 'Stryker was here', csv: 'x\n' }],
+      'xlsx',
+    );
+    const wb = (XLSX as any).read(bytes, { type: 'array' });
+    expect(wb.SheetNames).toEqual(['Stryker was here']);
   });
 
   it('works for ods format', () => {
@@ -343,6 +378,13 @@ describe('parseCoord / encodeColumn', () => {
     expect(parseCoord('A0')).toBeNull();
     expect(parseCoord('a1')).toBeNull(); // lowercase
     expect(parseCoord('A1B')).toBeNull();
+  });
+
+  it('rejects coords whose letters are not at the start (`^` anchor)', () => {
+    // Mutation drops the leading `^` in `/^([A-Z]+)(\d+)$/`. Without it,
+    // `9A1` would match the `A1` suffix and wrongly parse as column A row 1.
+    expect(parseCoord('9A1')).toBeNull();
+    expect(parseCoord('1B2')).toBeNull();
   });
 
   it('encodeColumn is inverse of parseCoord column', () => {
@@ -413,6 +455,65 @@ describe('translateCell', () => {
       formula: 'NOW()',
     });
     expect(out).toMatchObject({ t: 'n', v: 0, f: 'NOW()' });
+  });
+
+  // The next four pin each clause of the three-way AND at xlsx-build.ts:138
+  // `isFormula = datatype==='f' && typeof formula==='string' && formula.length>0`
+  // by arranging for exactly one clause to fail. Each assertion uses
+  // `Object.hasOwn` to distinguish "no `f` key" from "`f: undefined`" —
+  // vitest's `toEqual` treats those as equal but `hasOwn` does not.
+
+  it('non-"f" datatype with a formula string is NOT a formula', () => {
+    // Mutation `datatype==='f' || …` or `true && …` would mark this as
+    // a formula; original leaves `f` unset.
+    const out = translateCell({
+      valuetype: 'n',
+      datatype: 'v',
+      datavalue: 10,
+      formula: 'SUM(A1:A2)',
+    });
+    expect(out).toEqual({ t: 'n', v: 10 });
+    expect(Object.hasOwn(out ?? {}, 'f')).toBe(false);
+  });
+
+  it('"f" datatype with a non-string formula is NOT a formula', () => {
+    // Mutation `typeof formula==='string'` → `true` would pass the
+    // type check, then crash on `.length` of undefined.
+    const out = translateCell({
+      valuetype: 'n',
+      datatype: 'f',
+      datavalue: 10,
+      // formula deliberately omitted
+    });
+    expect(Object.hasOwn(out ?? {}, 'f')).toBe(false);
+  });
+
+  it('"f" datatype with an empty-string formula is NOT a formula', () => {
+    // Mutation `formula.length > 0` → `true` or `>= 0` would treat an
+    // empty string as a formula and emit `f: ''`.
+    const out = translateCell({
+      valuetype: 'n',
+      datatype: 'f',
+      datavalue: 10,
+      formula: '',
+    });
+    expect(out).toEqual({ t: 'n', v: 10 });
+    expect(Object.hasOwn(out ?? {}, 'f')).toBe(false);
+  });
+
+  it('non-formula numeric cells never have an `f` key', () => {
+    // Pins the `if (isFormula) out.f = cell.formula;` branch at line 173
+    // against a `if (true)` mutation that would emit `f: undefined`.
+    const out = translateCell({ valuetype: 'n', datatype: 'v', datavalue: 7 });
+    expect(Object.hasOwn(out ?? {}, 'f')).toBe(false);
+  });
+
+  it('text cell with numeric datavalue preserves the numeric type of v', () => {
+    // Kills the `main === 't'` branch mutations at line 156: falling
+    // through to `else` wraps datavalue in `String(...)`, changing
+    // `v: 42` (number) into `v: '42'` (string).
+    const out = translateCell({ valuetype: 't', datatype: 't', datavalue: 42 });
+    expect(out).toEqual({ t: 's', v: 42 });
   });
 
   it('blank non-formula cells are omitted (null)', () => {
@@ -492,6 +593,18 @@ describe('translateCell', () => {
     const out = translateCell(
       { valuetype: 'n', datatype: 'v', datavalue: 1, nontextvalueformat: 99 },
       [],
+    );
+    expect(out).not.toHaveProperty('z');
+  });
+
+  it('non-numeric nontextvalueformat is rejected (typeof guard)', () => {
+    // Mutation drops the `typeof fmtIdx === 'number'` guard. If fmtIdx
+    // is a string like '1', `'1' > 0` is true and the lookup would fire
+    // — smuggling `valueformats['1']` through a nominally numeric gate.
+    const out = translateCell(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      { valuetype: 'n', datatype: 'v', datavalue: 1, nontextvalueformat: '1' } as any,
+      ['', '0.00%'],
     );
     expect(out).not.toHaveProperty('z');
   });
@@ -598,6 +711,33 @@ describe('sheetViewToWorksheet', () => {
     expect(ws['!merges']).toEqual([
       { s: { r: 0, c: 0 }, e: { r: 0, c: 1 } },
     ]);
+  });
+
+  it('merge with only rowspan (colspan=1 default)', () => {
+    // Pins the second half of `colspan > 1 || rowspan > 1` at line 223.
+    // A mutation to `colspan > 1 || false` would drop this merge.
+    const ws = sheetViewToWorksheet({
+      cells: {
+        A1: { valuetype: 't', datatype: 't', datavalue: 'x', rowspan: 3 },
+      },
+    });
+    expect(ws['!merges']).toEqual([
+      { s: { r: 0, c: 0 }, e: { r: 2, c: 0 } },
+    ]);
+  });
+
+  it('!ref spans correctly when cells arrive in decreasing column order', () => {
+    // Pins the `rc.c > maxC` guard at line 219 against a mutation that
+    // unconditionally assigns `maxC = rc.c`. Iterating B1 then A1 sets
+    // maxC to 1, then the A1 visit would clobber it back to 0 if the
+    // guard were gone, collapsing !ref to `A1:A1`.
+    const ws = sheetViewToWorksheet({
+      cells: {
+        B1: { valuetype: 'n', datatype: 'v', datavalue: 2 },
+        A1: { valuetype: 'n', datatype: 'v', datavalue: 1 },
+      },
+    });
+    expect(ws['!ref']).toBe('A1:B1');
   });
 });
 
@@ -749,6 +889,25 @@ describe('buildMultiSheetWorkbookFromSheets', () => {
     const bytes = buildMultiSheetWorkbookFromSheets([], 'xlsx');
     const wb = (XLSX as any).read(bytes, { type: 'array' });
     expect(wb.SheetNames).toEqual(['Sheet1']);
+    const sheet = wb.Sheets['Sheet1'];
+    expect(sheet['!ref']).toBe('A1');
+    expect(sheet.A1?.v ?? '').toBe('');
+  });
+
+  it('preserves a first-sheet name matching the mutator placeholder', () => {
+    // Parallels the same test on `buildMultiSheetWorkbook` — pins the
+    // `used: string[] = []` initializer against a seed mutation.
+    const bytes = buildMultiSheetWorkbookFromSheets(
+      [
+        {
+          name: 'Stryker was here',
+          view: { cells: { A1: { valuetype: 'n', datatype: 'v', datavalue: 1 } } },
+        },
+      ],
+      'xlsx',
+    );
+    const wb = (XLSX as any).read(bytes, { type: 'array' });
+    expect(wb.SheetNames).toEqual(['Stryker was here']);
   });
 
   it('sanitizes and deduplicates sheet names', () => {
@@ -773,10 +932,11 @@ describe('parseMultiSheetWorkbook', () => {
     const bytes = buildMultiSheetWorkbook(input, 'xlsx');
     const out = parseMultiSheetWorkbook(bytes);
     expect(out.map((s) => s.name)).toEqual(['Alpha', 'Beta']);
-    expect(out[0]?.csv).toMatch(/a,b/);
-    expect(out[0]?.csv).toMatch(/1,2/);
-    expect(out[1]?.csv).toMatch(/c,d/);
-    expect(out[1]?.csv).toMatch(/3,4/);
+    // Assert the `\n` row separator survived — pins the RS option at
+    // line 477 against a mutation to empty string, which would collapse
+    // the two rows onto one line.
+    expect(out[0]?.csv).toMatch(/a,b\n1,2/);
+    expect(out[1]?.csv).toMatch(/c,d\n3,4/);
   });
 
   it('returns the blank Sheet1 from an empty-build workbook', () => {

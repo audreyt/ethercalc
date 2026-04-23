@@ -89,6 +89,10 @@ export function xlsxToSave(bytes: Uint8Array): string {
   const ss = new SC.SpreadsheetControl();
   const sheet = ss.context.sheetobj;
 
+  // Stryker disable next-line ObjectLiteral,StringLiteral : @e965/xlsx
+  // auto-infers `type` from a Uint8Array and defaults `cellFormula:true`
+  // for xlsx/ods reads, so mutations to this options object produce
+  // byte-identical workbooks. Equivalent mutants at 92:40 / 92:48.
   const wb = (XLSX as any).read(bytes, { type: 'array', cellFormula: true });
   const firstName = (wb.SheetNames as string[])[0];
   /* istanbul ignore next -- SheetJS always populates SheetNames[0]
@@ -117,6 +121,10 @@ export function xlsxToSave(bytes: Uint8Array): string {
          is permissive and doesn't throw on any formulas encountered in
          practice, but when it does we drop the formula and seed the
          cached value so the cell isn't empty. */
+      // Stryker disable all : istanbul-ignored fallback that only runs when
+      // SC.Parse throws, which doesn't happen under any fixture we've seen.
+      // Mutating this code can't change observable behavior without a mock
+      // that forces the throw — not worth the test-doubles maintenance.
       if (typeof cell.f === 'string' && cell.v !== undefined) {
         const fallback =
           typeof cell.v === 'number'
@@ -129,6 +137,7 @@ export function xlsxToSave(bytes: Uint8Array): string {
           // Give up on this cell.
         }
       }
+      // Stryker restore all
     }
   }
 

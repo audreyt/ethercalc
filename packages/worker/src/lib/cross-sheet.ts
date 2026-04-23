@@ -53,6 +53,9 @@ export async function hydrateCrossSheetRefs(
   ownName?: string,
 ): Promise<number> {
   const refs = ss.findCrossSheetRefs();
+  // Stryker disable next-line ConditionalExpression : early-out optimization
+  // that's functionally redundant — an empty `refs` makes the for-loop a
+  // no-op, so dropping the guard produces identical output.
   if (refs.length === 0) return 0;
   let added = 0;
   for (const ref of refs) {
@@ -62,6 +65,10 @@ export async function hydrateCrossSheetRefs(
       save = await fetchSibling(ref);
     } catch {
       // Sibling unreachable (e.g. workers recursion limit). Skip.
+      // Stryker disable next-line BlockStatement : dropping the `continue`
+      // falls through to `if (!save) continue;` below, and `save` is still
+      // undefined because the assignment threw — so the net effect is the
+      // same next-iteration skip.
       continue;
     }
     if (!save) continue;
