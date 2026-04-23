@@ -18,6 +18,8 @@
     "src/socialcalc-callbacks.ts",
     "src/main.ts"
   ],
+  "inPlace_comment": "Skip the tsconfig-preprocessor (and its `import('typescript')`) — we only run Stryker in CI and git worktrees, both of which are disposable, so a mid-run crash cannot damage real sources.",
+  "inPlace": true,
   "coverageAnalysis": "perTest",
   "thresholds": {
     "high": 85,
