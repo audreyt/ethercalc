@@ -24,6 +24,9 @@ node_modules/.playwright/
 reports/
 .stryker-tmp/
 stryker.log
+# `inPlace: true` writes this vitest setup helper next to sources;
+# Stryker deletes it post-run but a killed / interrupted run can leave it.
+stryker-setup-*.js
 
 # Workerd bundle output (scripts/build-workerd-bundle.sh regenerates)
 packages/worker/workerd/worker/
