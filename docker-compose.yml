@@ -1,9 +1,16 @@
 # EtherCalc self-host compose file (§13 Q5).
 #
-# One service — the Miniflare-backed Worker. No Redis: we moved storage
-# to Cloudflare's stack (DO + D1 + KV + R2), which Miniflare simulates
-# locally against the `./ethercalc-data` bind-mounted at /data in the
-# container. `docker compose up -d` is the whole install story.
+# Default service — the Miniflare-backed Worker. No Redis: we moved
+# storage to Cloudflare's stack (DO + D1 + KV + R2), which Miniflare
+# simulates locally against the `./ethercalc-data` bind-mounted at
+# /data in the container. `docker compose up -d` is the whole install
+# story.
+#
+# Migration profile — activated with `--profile migrate`, adds two
+# short-lived services (`legacy-redis` + `migrator`) that ingest a
+# legacy Redis dump.rdb into the new Worker in one shot. Driven by
+# `bin/migrate-legacy.sh`; end users should not invoke the profile
+# directly.
 
 services:
   ethercalc:
@@ -30,3 +37,73 @@ services:
       ETHERCALC_CORS: "${ETHERCALC_CORS:-}"
       ETHERCALC_BASEPATH: "${ETHERCALC_BASEPATH:-}"
       ETHERCALC_EXPIRE: "${ETHERCALC_EXPIRE:-}"
+      # Always forwarded; the migrate endpoint returns 404 when unset
+      # so leaving it blank keeps the route invisible in normal runs.
+      ETHERCALC_MIGRATE_TOKEN: "${ETHERCALC_MIGRATE_TOKEN:-}"
+    # Health check lets the migrator service wait until /_health is
+    # answering before firing the first seed PUT.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/_health >/dev/null || exit 1"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+      start_period: 5s
+
+  # ────────────────────────── migration profile ──────────────────────────
+  # Activated with `docker compose --profile migrate up`. Typical entry
+  # point is `./bin/migrate-legacy.sh`, which wires the dump file, token,
+  # and post-run backup in one go.
+
+  legacy-redis:
+    profiles: ["migrate"]
+    image: redis:7-alpine
+    container_name: ethercalc-legacy-redis
+    # Redis's upstream entrypoint chowns /data/* at startup, which
+    # fails against a read-only bind mount. Bind the user's dump to
+    # an /input/ stage instead, copy it into the container-owned
+    # /data at boot, then exec redis. Side effect: peak disk use
+    # during migration is 2× the dump size (acceptable — migration
+    # is transient, and the host copy is preserved untouched).
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - 'cp /input/dump.rdb /data/dump.rdb && exec redis-server --dir /data --dbfilename dump.rdb --save "" --appendonly no'
+    volumes:
+      # `ETHERCALC_LEGACY_DUMP` is set by `bin/migrate-legacy.sh` to
+      # the absolute path of the user's dump.rdb. `:ro` guarantees the
+      # source file is never modified even if something in the stack
+      # misbehaves.
+      - "${ETHERCALC_LEGACY_DUMP:-./legacy-dump.rdb}:/input/dump.rdb:ro"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+      start_period: 5s
+
+  migrator:
+    profiles: ["migrate"]
+    image: ethercalc:selfhost
+    container_name: ethercalc-migrator
+    # Same image as the worker — bun + bin/ethercalc are already there.
+    # One-shot: `ethercalc migrate`, then exit. `--abort-on-container-
+    # exit` + `--exit-code-from migrator` on `docker compose up` makes
+    # the wrapper script fail loudly if the migrator itself fails.
+    depends_on:
+      legacy-redis:
+        condition: service_healthy
+      ethercalc:
+        condition: service_healthy
+    environment:
+      ETHERCALC_MIGRATE_TOKEN: "${ETHERCALC_MIGRATE_TOKEN:-}"
+    entrypoint: ["/app/bin/ethercalc"]
+    command:
+      - "migrate"
+      - "--source"
+      - "redis://legacy-redis:6379"
+      - "--target"
+      - "http://ethercalc:8000"
+      - "--token"
+      - "${ETHERCALC_MIGRATE_TOKEN:-}"
+      - "--concurrency"
+      - "${ETHERCALC_MIGRATE_CONCURRENCY:-8}"
+    restart: "no"

@@ -92,18 +92,41 @@ Store the HMAC secret as a Worker secret:
 
 ## Migration from a legacy (Redis-backed) EtherCalc
 
-`bin/ethercalc migrate` streams an existing Redis or Zedis instance
-into the new Worker via `PUT /_migrate/seed/:room`:
+### Turnkey (recommended)
+
+If you have a legacy Redis-backed EtherCalc and just want to upgrade:
+
+    git clone https://github.com/audreyt/ethercalc
+    cd ethercalc
+    cp /path/to/your/dump.rdb ./legacy-dump.rdb    # e.g. /var/lib/redis/dump.rdb
+    ./bin/migrate-legacy.sh
+
+One command stands up a temporary Redis loaded with your dump,
+builds and runs the new Worker, streams every room across, and
+writes a dated backup to `./backups/ethercalc-<timestamp>.tar.gz`
+containing both the migrated state and your source dump. On success
+the Worker is left running on http://localhost:8000 — open any
+existing room by its URL to confirm.
+
+Requires only `docker` + the `docker compose` plugin on the host.
+Tested against OrbStack and Docker Desktop on macOS/arm64; Docker
+Engine on Linux.
+
+### Manual (advanced)
+
+`bin/ethercalc migrate` streams a running Redis or Zedis directly
+into a Worker you already have up:
 
     bin/ethercalc migrate \
       --source redis://localhost:6379 \
       --target http://new-worker.example/ \
       --token $ETHERCALC_MIGRATE_TOKEN
 
-The migrator holds O(1-per-room) memory regardless of dump size — the
-Redis server owns RDB decoding. The target endpoint is gated by
-`env.ETHERCALC_MIGRATE_TOKEN` (when unset, the route returns 404).
-Pass `--dry-run` to preview without writing.
+O(1)-per-room memory regardless of dump size — Redis owns the decoding.
+The target endpoint is gated by `env.ETHERCALC_MIGRATE_TOKEN` (when
+unset, the route returns 404). Pass `--dry-run` to preview without
+writing. `--source file:///path` (or bare `/path`) also works for
+on-disk legacy dumps (the Sandstorm grain fallback format).
 
 ## Development
 

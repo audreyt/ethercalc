@@ -1,6 +1,6 @@
 {
   "name": "ethercalc",
-  "version": "0.20260423.0",
+  "version": "0.20260424.0",
   "description": "Multi-User Spreadsheet Server — TypeScript rewrite (Cloudflare fullstack)",
   "homepage": "http://ethercalc.net/",
   "author": "Audrey Tang <audreyt@audreyt.org>",
