@@ -96,9 +96,12 @@ Store the HMAC secret as a Worker secret:
 
 If you have a legacy Redis-backed EtherCalc and just want to upgrade:
 
+    # Preserve the Redis dump outside the repo — this is your rollback point
+    sudo cp /var/lib/redis/dump.rdb ~/ethercalc-dump-$(date +%F).rdb
+
     git clone https://github.com/audreyt/ethercalc
     cd ethercalc
-    cp /path/to/your/dump.rdb ./legacy-dump.rdb    # e.g. /var/lib/redis/dump.rdb
+    cp ~/ethercalc-dump-$(date +%F).rdb ./legacy-dump.rdb
     ./bin/migrate-legacy.sh
 
 One command stands up a temporary Redis loaded with your dump,
@@ -109,8 +112,42 @@ the Worker is left running on http://localhost:8000 — open any
 existing room by its URL to confirm.
 
 Requires only `docker` + the `docker compose` plugin on the host.
+On Ubuntu: `sudo apt install -y docker.io docker-compose-plugin`.
 Tested against OrbStack and Docker Desktop on macOS/arm64; Docker
 Engine on Linux.
+
+### Migrating rooms to a Cloudflare deployment
+
+Once the turnkey path above has verified locally, the same dump can
+be pushed to a Cloudflare Workers deployment. From the repo root:
+
+    # Deploy the worker. Spits out https://ethercalc.<subdomain>.workers.dev
+    cd packages/worker
+    npx wrangler login       # one-time browser auth
+    npx wrangler deploy
+
+    # Mint a migration token and store it as a Cloudflare secret
+    TOKEN=$(openssl rand -hex 16)
+    echo "$TOKEN" | npx wrangler secret put ETHERCALC_MIGRATE_TOKEN
+
+    # Stand up a temporary local Redis loaded with the legacy dump
+    cd ../..
+    docker run -d --name ec-migrate-redis -p 6379:6379 \
+      -v "$PWD/legacy-dump.rdb:/input/dump.rdb:ro" \
+      redis:7-alpine sh -c \
+      'cp /input/dump.rdb /data/dump.rdb && exec redis-server --save "" --appendonly no'
+    sleep 3   # let redis finish loading the dump
+
+    # Push every room up to the Cloudflare deployment
+    ./bin/ethercalc migrate \
+      --source redis://localhost:6379 \
+      --target https://ethercalc.<subdomain>.workers.dev \
+      --token "$TOKEN"
+
+    docker rm -f ec-migrate-redis
+
+Then attach your domain in the Cloudflare dashboard under Workers &
+Pages → your worker → Triggers → Custom Domains.
 
 ### Manual (advanced)
 
