@@ -264,6 +264,35 @@ describe('Phase 8 exports — formula & format roundtrip', () => {
     expect(csv.trim()).toBe('100');
   });
 
+  it('double-quoted cross-sheet formula resolves for dashed room names', async () => {
+    const e = env as unknown as Env;
+    const sibling = 'phase82-dq-sibling-' + Math.random().toString(36).slice(2, 8);
+    const main = 'phase82-dq-main-' + Math.random().toString(36).slice(2, 8);
+
+    const sibId = e.ROOM.idFromName(encodeURI(sibling));
+    const sib = e.ROOM.get(sibId);
+    await sib.fetch('https://do/_do/all', { method: 'DELETE' });
+    await sib.fetch('https://do/_do/snapshot', { method: 'PUT', body: '' });
+    await sib.fetch('https://do/_do/commands', {
+      method: 'POST',
+      body: 'set A1 value n 200',
+    });
+
+    const mainId = e.ROOM.idFromName(encodeURI(main));
+    const m = e.ROOM.get(mainId);
+    await m.fetch('https://do/_do/all', { method: 'DELETE' });
+    await m.fetch('https://do/_do/snapshot', { method: 'PUT', body: '' });
+    await m.fetch(`https://do/_do/commands?name=${encodeURIComponent(main)}`, {
+      method: 'POST',
+      body: `set A1 formula "${sibling}"!A1`,
+    });
+
+    const res = await request('GET', `/_/${main}/csv`);
+    expect(res.status).toBe(200);
+    const csv = await res.text();
+    expect(csv.trim()).toBe('200');
+  });
+
   it('ods export preserves the SUM formula', async () => {
     const res = await request('GET', `/_/${FORMULA_ROOM}/ods`);
     expect(res.status).toBe(200);

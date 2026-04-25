@@ -125,7 +125,7 @@ export class HeadlessSpreadsheet {
 
   /**
    * Enumerate unique sheet names referenced by any formula in this
-   * spreadsheet — e.g. `'other'!A1` or `other!A1`. Used by the DO to
+   * spreadsheet — e.g. `"other"!A1`, `'other'!A1`, or `other!A1`. Used by the DO to
    * pre-fetch sibling sheets into SocialCalc's cache before recalc, so
    * cross-sheet formulas resolve to real values instead of `#NAME?`.
    */
@@ -135,12 +135,13 @@ export class HeadlessSpreadsheet {
     for (const cell of Object.values(cells)) {
       const formula = cell?.formula;
       if (typeof formula !== 'string' || formula.length === 0) continue;
-      // Match both quoted 'name'! and bare name! references. The
-      // capture groups are mutually exclusive; take whichever matched.
-      const re = /(?:'([^']+)'|([A-Za-z_][A-Za-z0-9_.-]*))!/g;
+      // Match double-quoted "name"!, single-quoted 'name'!, and bare
+      // name! references. The capture groups are mutually exclusive;
+      // take whichever matched.
+      const re = /(?:"([^"]+)"|'([^']+)'|([A-Za-z_][A-Za-z0-9_.-]*))!/g;
       let m: RegExpExecArray | null;
       while ((m = re.exec(formula)) !== null) {
-        const name = m[1] ?? m[2];
+        const name = m[1] ?? m[2] ?? m[3];
         if (name) seen.add(name);
       }
     }

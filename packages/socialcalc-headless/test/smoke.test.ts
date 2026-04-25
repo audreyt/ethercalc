@@ -59,6 +59,22 @@ describe('socialcalc headless (Phase 1 spike — Plan A)', () => {
     expect(ss.exportCSV()).toBe('hello,10\n,20\n,30\n');
   });
 
+  it('finds double-quoted cross-sheet references with dashes', () => {
+    const ss = createSpreadsheet();
+    ss.executeCommand(
+      [
+        'set A1 formula "room-with-dashes"!B2',
+        "set A2 formula 'single-quoted-room'!C3",
+        'set A3 formula bare_room!D4',
+      ].join('\n'),
+    );
+    expect(ss.findCrossSheetRefs()).toEqual([
+      'room-with-dashes',
+      'single-quoted-room',
+      'bare_room',
+    ]);
+  });
+
   /**
    * `csvToSave` round-trip. The PUT /_/:room handler stores this as the
    * room snapshot; rehydrated, it must parse as a full spreadsheet save
