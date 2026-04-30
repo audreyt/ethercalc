@@ -145,6 +145,18 @@ describe('parseArgs', () => {
       '60000',
     ]);
     expect(a.healthTimeoutMs).toBe(60_000);
+
+    const zero = parseArgs([
+      '--source',
+      'redis://x',
+      '--target',
+      'http://x',
+      '--token',
+      't',
+      '--health-timeout-ms',
+      '0',
+    ]);
+    expect(zero.healthTimeoutMs).toBe(0);
   });
 
   it('rejects negative or non-numeric --health-timeout-ms', () => {
@@ -186,6 +198,18 @@ describe('parseArgs', () => {
       '16',
     ]);
     expect(a.concurrency).toBe(16);
+
+    const one = parseArgs([
+      '--source',
+      'redis://x',
+      '--target',
+      'http://x',
+      '--token',
+      't',
+      '--concurrency',
+      '1',
+    ]);
+    expect(one.concurrency).toBe(1);
   });
 
   it('rejects non-positive or non-integer --concurrency', () => {
