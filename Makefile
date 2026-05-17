@@ -51,6 +51,7 @@ static/ethercalc.js: $(ETHERCALC_FILES) \
      ./node_modules/uglify-js/bin/uglifyjs
 	@-mkdir -p .git
 	@tmp="$@.tmp"; map_tmp="$@.map.tmp"; \
+	trap 'rm -f "$$tmp" "$$map_tmp" ethercalc.js.map' EXIT; \
 	rm -f "$$tmp" "$$map_tmp" ethercalc.js.map && \
 	echo '// Auto-generated from "make depends"; ALL CHANGES HERE WILL BE LOST!' > "$$tmp" && \
 	bun node_modules/uglify-js/bin/uglifyjs node_modules/socialcalc/dist/SocialCalc.js $(ETHERCALC_FILES) $(UGLIFYJS_ARGS) --source-map ethercalc.js.map --source-map-include-sources >> "$$tmp" && \
