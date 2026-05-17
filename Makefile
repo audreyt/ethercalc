@@ -50,9 +50,13 @@ static/ethercalc.js: $(ETHERCALC_FILES) \
      ./node_modules/socialcalc/dist/SocialCalc.js \
      ./node_modules/uglify-js/bin/uglifyjs
 	@-mkdir -p .git
-	@echo '// Auto-generated from "make depends"; ALL CHANGES HERE WILL BE LOST!' > $@
-	bun node_modules/uglify-js/bin/uglifyjs node_modules/socialcalc/dist/SocialCalc.js $(ETHERCALC_FILES) $(UGLIFYJS_ARGS) --source-map ethercalc.js.map --source-map-include-sources >> $@
-	mv ethercalc.js.map static
+	@tmp="$@.tmp"; map_tmp="$@.map.tmp"; \
+	rm -f "$$tmp" "$$map_tmp" ethercalc.js.map && \
+	echo '// Auto-generated from "make depends"; ALL CHANGES HERE WILL BE LOST!' > "$$tmp" && \
+	bun node_modules/uglify-js/bin/uglifyjs node_modules/socialcalc/dist/SocialCalc.js $(ETHERCALC_FILES) $(UGLIFYJS_ARGS) --source-map ethercalc.js.map --source-map-include-sources >> "$$tmp" && \
+	mv ethercalc.js.map "$$map_tmp" && \
+	mv "$$map_tmp" static/ethercalc.js.map && \
+	mv "$$tmp" "$@"
 
 COFFEE := $(shell command -v coffee 2> /dev/null)
 .coffee.js:
