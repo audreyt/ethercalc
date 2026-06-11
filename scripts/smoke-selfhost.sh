@@ -23,6 +23,7 @@ SLEEP_SECONDS="${SMOKE_SLEEP:-2}"
 cleanup() {
   echo "[smoke] tearing down docker compose stack"
   docker compose down --remove-orphans >/dev/null 2>&1 || true
+  docker rm -f smoke-anonvol >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -107,6 +108,29 @@ for i in $(seq 1 "$ATTEMPTS"); do
         cat /tmp/smoke-optout.txt
         exit 1
       fi
+
+      echo "[smoke] checking plain docker run (anonymous volume, no bind mount)"
+      # Regression guard: with an anonymous volume /data is bun-owned from
+      # the image layer but /data/do is mkdir'd by root in the entrypoint;
+      # the 0.20260611.0 image crashed here (mkdirat: Permission denied).
+      docker compose down --remove-orphans >/dev/null 2>&1
+      docker rm -f smoke-anonvol >/dev/null 2>&1 || true
+      docker run -d --rm --name smoke-anonvol -p "127.0.0.1:18890:8000" ethercalc:selfhost >/dev/null
+      anon_ok=""
+      for k in $(seq 1 "$ATTEMPTS"); do
+        if curl -fsS "http://127.0.0.1:18890/_health" >/dev/null 2>&1; then
+          anon_ok=1
+          break
+        fi
+        sleep "$SLEEP_SECONDS"
+      done
+      if [ -z "$anon_ok" ]; then
+        echo "[smoke] FAIL — anonymous-volume docker run never became healthy"
+        docker logs smoke-anonvol 2>&1 | tail -20 || true
+        docker rm -f smoke-anonvol >/dev/null 2>&1 || true
+        exit 1
+      fi
+      docker rm -f smoke-anonvol >/dev/null 2>&1 || true
 
       echo "[smoke] OK"
       exit 0

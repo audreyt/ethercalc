@@ -82,8 +82,12 @@ if [[ "$(id -u)" == "0" ]] && id "$RUN_AS_USER" >/dev/null 2>&1 \
    && command -v setpriv >/dev/null 2>&1; then
   run_uid="$(id -u "$RUN_AS_USER")"
   run_gid="$(id -g "$RUN_AS_USER")"
-  data_uid="$(stat -c %u "$DATA_DIR" 2>/dev/null || stat -f %u "$DATA_DIR")"
-  if [[ "$data_uid" != "$run_uid" ]]; then
+  # Check the DEEPEST dir, not $DATA_DIR: the mkdir above ran as root, so
+  # even when /data itself is already bun-owned (anonymous/named volumes
+  # initialised from the image layer), a freshly created /data/do is
+  # root-owned and workerd would die on mkdirat(): Permission denied.
+  do_uid="$(stat -c %u "$DO_DIR" 2>/dev/null || stat -f %u "$DO_DIR")"
+  if [[ "$do_uid" != "$run_uid" ]]; then
     echo "workerd-entrypoint: fixing $DATA_DIR ownership for uid $run_uid" >&2
     chown -R "$run_uid:$run_gid" "$DATA_DIR"
   fi

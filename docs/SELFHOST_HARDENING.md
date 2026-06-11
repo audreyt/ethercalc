@@ -208,7 +208,11 @@ should-fixes, all addressed before commit:
 check, wired into the CI `build-selfhost` job), an `ETHERCALC_DISABLE_ROOM_INDEX=0` opt-out reboot
 leg and a DELETE→404 assertion in `scripts/smoke-selfhost.sh`, plus route-level 403 tests for
 `/_roomlinks`/`/_roomtimes` and a keyless-warning suppression assertion in
-`scripts/check-helm-hardening.sh`. Released as `0.20260611.0` (Docker Hub + npm).
+`scripts/check-helm-hardening.sh`. Released as `0.20260611.1` (Docker Hub + npm).
+**Do not use the `0.20260611.0` image tag**: it crashes under plain `docker run` (anonymous
+volume) — the entrypoint created `/data/do` as root before the privilege drop and the ownership
+check keyed on `/data`, which anonymous/named volumes already initialise as `bun`-owned. Fixed in
+`.1` by keying the check on the deepest dir plus an anonymous-volume smoke leg.
 
 ---
 
