@@ -3,7 +3,14 @@ import { describe, it, expect } from 'vitest';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as XLSX from '@e965/xlsx';
 
-import { cellToCommand, xlsxToSave } from '../src/lib/xlsx-import.ts';
+import {
+  ImportTooLargeError,
+  MAX_IMPORT_CELLS,
+  cellToCommand,
+  countWorksheetCells,
+  enforceImportLimit,
+  xlsxToSave,
+} from '../src/lib/xlsx-import.ts';
 
 describe('cellToCommand', () => {
   it('formula cells emit `set <coord> formula <f>`', () => {
@@ -193,6 +200,23 @@ describe('xlsxToSave — roundtrip', () => {
     // xlsxToSave returns an empty SocialCalc save in that case.
     const save = xlsxToSave(new Uint8Array(0));
     expect(save).toContain('socialcalc:version');
+  });
+
+  it('rejects a workbook that exceeds the cell limit (zip-bomb guard)', () => {
+    // Build a fake worksheet with one more cell than the cap. We don't round-
+    // trip real bytes — counting the populated keys is exactly what the guard
+    // does — so the test stays fast while still pinning the limit.
+    const ws: Record<string, unknown> = { '!ref': 'A1:A1', '!merges': [] };
+    for (let i = 0; i < MAX_IMPORT_CELLS + 1; i++) ws[`c${i}`] = { t: 'n', v: i };
+    expect(countWorksheetCells(ws)).toBe(MAX_IMPORT_CELLS + 1);
+    expect(() => enforceImportLimit(countWorksheetCells(ws))).toThrow(
+      ImportTooLargeError,
+    );
+  });
+
+  it('allows a workbook exactly at the cell limit', () => {
+    expect(() => enforceImportLimit(MAX_IMPORT_CELLS)).not.toThrow();
+    expect(countWorksheetCells({ '!ref': 'A1:A1', A1: { t: 'n', v: 1 } })).toBe(1);
   });
 
   it('skips cells whose cellToCommand returns null (e.g. error cells)', () => {

@@ -40,6 +40,7 @@ import {
 import { buildEmailSender } from './handlers/cron.ts';
 import { parseSeedPayload } from './handlers/migrate.ts';
 import { verifyAuth } from './lib/auth.ts';
+import { neutralizeCSVDocument } from './lib/csv-encode.ts';
 import { parseCSV } from './lib/csv-parse.ts';
 import { parseSendemail } from './lib/email.ts';
 import { csvToMarkdown } from './lib/md.ts';
@@ -397,7 +398,10 @@ export class RoomDO implements DurableObject {
 
   async #getCsv(): Promise<Response> {
     const ss = await this.#getSpreadsheet();
-    return textResponse(ss.exportCSV(), TEXT_CSV);
+    // The `.csv` download is opened in desktop spreadsheet apps, so defang
+    // formula/DDE injection (`=`, `+`, `-`, `@`) before emitting. csv.json
+    // stays faithful — it's consumed as JSON, not evaluated as a formula.
+    return textResponse(neutralizeCSVDocument(ss.exportCSV()), TEXT_CSV);
   }
 
   async #getCsvJson(): Promise<Response> {

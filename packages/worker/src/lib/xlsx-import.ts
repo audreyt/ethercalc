@@ -18,6 +18,47 @@
 import * as XLSX from '@e965/xlsx';
 import { loadSocialCalc } from '@ethercalc/socialcalc-headless';
 
+/**
+ * Upper bound on the number of populated cells we will replay from an
+ * imported workbook. Each cell drives a synchronous SocialCalc
+ * `Parse` + `ExecuteSheetCommand` (plus a final full-sheet recalc), so an
+ * unbounded count is a CPU/memory DoS primitive: a small, highly-compressed
+ * xlsx/ods can declare millions of cells. 200k comfortably covers any real
+ * spreadsheet while capping the replay work. Exported so callers/tests can
+ * reference the limit.
+ */
+export const MAX_IMPORT_CELLS = 200_000;
+
+/** Thrown by `xlsxToSave` when an import exceeds {@link MAX_IMPORT_CELLS}. */
+export class ImportTooLargeError extends Error {
+  readonly cellCount: number;
+  constructor(cellCount: number) {
+    super(`xlsx/ods import exceeds ${MAX_IMPORT_CELLS} cells (${cellCount})`);
+    this.name = 'ImportTooLargeError';
+    this.cellCount = cellCount;
+  }
+}
+
+/**
+ * Count the populated cells on a SheetJS worksheet (keys that aren't
+ * `!`-prefixed metadata like `!ref` / `!merges`). This is the number of
+ * synchronous SocialCalc commands the import replay will dispatch.
+ */
+export function countWorksheetCells(ws: Record<string, unknown>): number {
+  return Object.keys(ws).filter((a) => !a.startsWith('!')).length;
+}
+
+/**
+ * Throw {@link ImportTooLargeError} when an import would replay more than
+ * {@link MAX_IMPORT_CELLS} cells. Called before the per-cell replay loop so
+ * an oversized/zip-bombed workbook can't pin the worker isolate.
+ */
+export function enforceImportLimit(cellCount: number): void {
+  if (cellCount > MAX_IMPORT_CELLS) {
+    throw new ImportTooLargeError(cellCount);
+  }
+}
+
 interface SheetJSCell {
   readonly v?: unknown;
   readonly t?: string;
@@ -107,6 +148,11 @@ export function xlsxToSave(bytes: Uint8Array): string {
     s: { r: number; c: number };
     e: { r: number; c: number };
   }> = Array.isArray(ws['!merges']) ? ws['!merges'] : [];
+
+  // Bail before the expensive per-cell SocialCalc replay if the workbook
+  // declares an unreasonable number of cells (zip-bomb / oversized used
+  // range). Counting keys is O(cells) but cheap relative to the replay.
+  enforceImportLimit(countWorksheetCells(ws));
 
   for (const addr of Object.keys(ws)) {
     if (addr.startsWith('!')) continue;
