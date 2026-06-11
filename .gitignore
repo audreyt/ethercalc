@@ -38,6 +38,7 @@ packages/worker/workerd/override.capnp
 
 # Docker-compose bind-mount volume
 ethercalc-data/
+legacy-redis-data/
 
 # report.md is a generated file
 report.md
