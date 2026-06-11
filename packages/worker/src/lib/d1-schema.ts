@@ -9,6 +9,18 @@ const CRON_TABLE_SQL =
   'PRIMARY KEY (room, cell, fire_at))';
 const CRON_INDEX_SQL =
   'CREATE INDEX IF NOT EXISTS cron_triggers_fire_at ON cron_triggers(fire_at)';
+const AUDIT_TABLE_SQL =
+  'CREATE TABLE IF NOT EXISTS audit_log ' +
+  '(room TEXT NOT NULL, seq INTEGER NOT NULL, ts INTEGER NOT NULL, ' +
+  'body TEXT NOT NULL, PRIMARY KEY (room, seq))';
+const AUDIT_INDEX_SQL =
+  'CREATE INDEX IF NOT EXISTS audit_log_room ON audit_log(room)';
+const CHAT_TABLE_SQL =
+  'CREATE TABLE IF NOT EXISTS chat_log ' +
+  '(room TEXT NOT NULL, seq INTEGER NOT NULL, ts INTEGER NOT NULL, ' +
+  'body TEXT NOT NULL, PRIMARY KEY (room, seq))';
+const CHAT_INDEX_SQL =
+  'CREATE INDEX IF NOT EXISTS chat_log_room ON chat_log(room)';
 
 function isMissingTableError(err: unknown, table: string): boolean {
   const message = err instanceof Error ? err.message : String(err);
@@ -56,4 +68,18 @@ export async function withCronSchema<T>(
     [CRON_TABLE_SQL, CRON_INDEX_SQL],
     op,
   );
+}
+
+export async function withAuditSchema<T>(
+  db: D1Database,
+  op: () => Promise<T>,
+): Promise<T> {
+  return withSchemaRetry(db, 'audit_log', [AUDIT_TABLE_SQL, AUDIT_INDEX_SQL], op);
+}
+
+export async function withChatSchema<T>(
+  db: D1Database,
+  op: () => Promise<T>,
+): Promise<T> {
+  return withSchemaRetry(db, 'chat_log', [CHAT_TABLE_SQL, CHAT_INDEX_SQL], op);
 }

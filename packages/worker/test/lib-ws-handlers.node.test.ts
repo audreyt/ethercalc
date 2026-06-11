@@ -387,16 +387,42 @@ describe('handleAskLog', () => {
     };
     const { ctx, calls } = makeCtx({ state });
     await handleAskLog(ctx, { type: 'ask.log', room: 'r', user: 'u' });
+    // Snapshot is authoritative — the log is sent EMPTY so the client (which
+    // resets to the snapshot then replays the log) doesn't double-apply
+    // commands the snapshot already contains. Chat + snapshot still flow.
     expect(calls.replies).toEqual([
       {
         type: 'log',
         room: 'r',
-        log: ['cmd-1'],
+        log: [],
         chat: ['hi'],
         snapshot: 'SAVE',
       },
     ]);
     expect(calls.broadcasts).toHaveLength(0);
+  });
+
+  it('replies with the log for a log-only room (no snapshot to replay onto)', async () => {
+    const state: StorageState = {
+      snapshot: undefined,
+      log: new Map([
+        ['log:0000000000', 'cmd-1'],
+        ['log:0000000001', 'cmd-2'],
+      ]),
+      chat: new Map(),
+      ecell: new Map(),
+      wiped: 0,
+    };
+    const { ctx, calls } = makeCtx({ state });
+    await handleAskLog(ctx, { type: 'ask.log', room: 'r', user: 'u' });
+    // No snapshot → the log IS the state, so it must be replayed.
+    expect(calls.replies[0]!).toEqual({
+      type: 'log',
+      room: 'r',
+      log: ['cmd-1', 'cmd-2'],
+      chat: [],
+      snapshot: '',
+    });
   });
 
   it('replies with empty arrays and empty snapshot when storage is clean', async () => {
@@ -426,11 +452,30 @@ describe('handleAskRecalc', () => {
     };
     const { ctx, calls } = makeCtx({ state });
     await handleAskRecalc(ctx, { type: 'ask.recalc', room: 'r' });
+    // Authoritative snapshot → empty log (same no-double-apply rule as ask.log).
     expect(calls.replies[0]!).toEqual({
       type: 'recalc',
       room: 'r',
-      log: ['a', 'b'],
+      log: [],
       snapshot: 'SAVE',
+    });
+  });
+
+  it('replies with the log for a log-only room (no snapshot)', async () => {
+    const state: StorageState = {
+      snapshot: undefined,
+      log: new Map([['log:0000000000', 'a']]),
+      chat: new Map(),
+      ecell: new Map(),
+      wiped: 0,
+    };
+    const { ctx, calls } = makeCtx({ state });
+    await handleAskRecalc(ctx, { type: 'ask.recalc', room: 'r' });
+    expect(calls.replies[0]!).toEqual({
+      type: 'recalc',
+      room: 'r',
+      log: ['a'],
+      snapshot: '',
     });
   });
 
@@ -704,7 +749,10 @@ describe('dispatchWsMessage end-to-end interactions', () => {
     const logReply = calls.replies.find((r) => r.type === 'log') as
       | (ServerMessage & { log: string[]; snapshot: string })
       | undefined;
-    expect(logReply?.log).toEqual(['set A1 value n 42']);
+    // The execute folds the command into the snapshot (mock → 'SNAP'), so
+    // ask.log returns it via the authoritative snapshot with an EMPTY log —
+    // the client rebuilds from the snapshot without replaying (no double-apply).
+    expect(logReply?.log).toEqual([]);
     expect(logReply?.snapshot).toBe('SNAP');
   });
 

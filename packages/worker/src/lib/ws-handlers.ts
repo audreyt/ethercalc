@@ -193,9 +193,14 @@ export async function handleExecute(
 }
 
 /**
- * `ask.log` — reply to the sender with the full restoration payload
- * (snapshot + ordered log + chat). The legacy client replays log on
- * top of snapshot to reconstruct the UI state.
+ * `ask.log` — reply to the sender with the restoration payload
+ * (snapshot + ordered log + chat). The client resets to the snapshot then
+ * replays the log on top, so the log MUST be empty when a snapshot is
+ * present: RoomDO stores a post-command snapshot that already incorporates
+ * every log entry (see `#getSpreadsheet`), and replaying it again would
+ * DOUBLE-APPLY non-idempotent commands (insertrow/paste/sort) on every
+ * initial load + reconnect. The log is sent only for a log-only room (no
+ * snapshot), where the log is the sole state.
  */
 export async function handleAskLog(
   ctx: WsContext,
@@ -206,12 +211,15 @@ export async function handleAskLog(
     ctx.storage.listPrefix('chat:'),
     ctx.storage.getSnapshot(),
   ]);
-  await ctx.reply(buildLogReply(msg, log, chat, snapshot ?? ''));
+  const replayLog = snapshot ? [] : log;
+  await ctx.reply(buildLogReply(msg, replayLog, chat, snapshot ?? ''));
 }
 
 /**
- * `ask.recalc` — similar to ask.log but omits the chat log. Used by the
- * client when it needs to resync just the spreadsheet state.
+ * `ask.recalc` — like ask.log but omits the chat log. Used when the client
+ * needs to resync just the spreadsheet state. Same authoritative-snapshot
+ * rule as `handleAskLog`: empty log when a snapshot is present so the
+ * client doesn't replay commands the snapshot already contains.
  */
 export async function handleAskRecalc(
   ctx: WsContext,
@@ -224,7 +232,7 @@ export async function handleAskRecalc(
   await ctx.reply({
     type: 'recalc',
     room: msg.room,
-    log,
+    log: snapshot ? [] : log,
     snapshot: snapshot ?? '',
   });
 }

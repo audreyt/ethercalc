@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { withCronSchema, withRoomsSchema } from '../src/lib/d1-schema.ts';
+import {
+  withAuditSchema,
+  withChatSchema,
+  withCronSchema,
+  withRoomsSchema,
+} from '../src/lib/d1-schema.ts';
 
 function makeFakeDb(): {
   db: D1Database;
@@ -92,6 +97,76 @@ describe('withCronSchema', () => {
         throw new Error('D1_ERROR: no such table: rooms: SQLITE_ERROR');
       }),
     ).rejects.toThrow(/no such table: rooms/);
+    expect(execCalls).toEqual([]);
+  });
+});
+
+describe('withAuditSchema', () => {
+  it('retries after creating the audit_log schema on a missing-table error', async () => {
+    const { db, execCalls } = makeFakeDb();
+    let attempts = 0;
+    const result = await withAuditSchema(db, async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        throw new Error('D1_ERROR: no such table: audit_log: SQLITE_ERROR');
+      }
+      return 'ok';
+    });
+    expect(result).toBe('ok');
+    expect(attempts).toBe(2);
+    expect(execCalls).toHaveLength(2);
+    expect(execCalls[0]).toContain('CREATE TABLE IF NOT EXISTS audit_log');
+    expect(execCalls[0]).toContain('room TEXT NOT NULL');
+    expect(execCalls[0]).toContain('seq INTEGER NOT NULL');
+    expect(execCalls[0]).toContain('body TEXT NOT NULL');
+    expect(execCalls[0]).toContain('PRIMARY KEY (room, seq)');
+    expect(execCalls[1]).toContain('CREATE INDEX IF NOT EXISTS audit_log_room');
+    expect(execCalls[1]).toContain('ON audit_log(room)');
+  });
+
+  it('does not retry when the error is about a different table', async () => {
+    const { db, execCalls } = makeFakeDb();
+    await expect(
+      withAuditSchema(db, async () => {
+        throw new Error('D1_ERROR: no such table: chat_log: SQLITE_ERROR');
+      }),
+    ).rejects.toThrow(/no such table: chat_log/);
+    expect(execCalls).toEqual([]);
+  });
+});
+
+describe('withChatSchema', () => {
+  it('retries after creating the chat_log schema on a missing-table error', async () => {
+    const { db, execCalls } = makeFakeDb();
+    let attempts = 0;
+    const result = await withChatSchema(db, async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        throw new Error('D1_ERROR: no such table: chat_log: SQLITE_ERROR');
+      }
+      return 7;
+    });
+    expect(result).toBe(7);
+    expect(attempts).toBe(2);
+    expect(execCalls[0]).toContain('CREATE TABLE IF NOT EXISTS chat_log');
+    // Pin the column-def literal (a blank-out mutation drops these).
+    expect(execCalls[0]).toContain('room TEXT NOT NULL');
+    expect(execCalls[0]).toContain('seq INTEGER NOT NULL');
+    expect(execCalls[0]).toContain('body TEXT NOT NULL');
+    expect(execCalls[0]).toContain('PRIMARY KEY (room, seq)');
+    expect(execCalls[1]).toContain('CREATE INDEX IF NOT EXISTS chat_log_room');
+    expect(execCalls[1]).toContain('ON chat_log(room)');
+  });
+
+  it('does not retry when the error is about a different table', async () => {
+    // Pins the `'chat_log'` table-name literal — a blank-out would make
+    // isMissingTableError match any "no such table" error.
+    const { db, execCalls } = makeFakeDb();
+    await expect(
+      withChatSchema(db, async () => {
+        throw new Error('D1_ERROR: no such table: audit_log: SQLITE_ERROR');
+      }),
+    ).rejects.toThrow(/no such table: audit_log/);
     expect(execCalls).toEqual([]);
   });
 });

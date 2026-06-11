@@ -51,6 +51,13 @@ import {
   mirrorRoomToD1,
 } from './lib/rooms-index.ts';
 import {
+  appendAuditRows,
+  appendChatRows,
+  deleteAuditRows,
+  deleteChatRows,
+  type SeqRow,
+} from './lib/seq-store.ts';
+import {
   hasSnapshot,
   readSnapshot,
   readSnapshotMeta,
@@ -122,11 +129,20 @@ const MAX_CONN = 128;
 const MAX_FRAME = 1024 * 1024;
 
 /**
- * Number of `chat:` entries the alarm handler keeps when it trims. Chat is
- * mirrored to D1 beyond the DO lifetime (§13 Q9 — not yet implemented), so
- * the DO-local copy only needs to cover live catch-up.
+ * Number of `chat:` entries the alarm handler keeps in DO storage when it
+ * trims. Chat is mirrored to D1 (`chat_log`) at append time (§13 Q9), so the
+ * dropped oldest entries stay durable there — the DO copy only needs to
+ * cover live catch-up (`ask.log` returns this recent tail).
  */
 const CHAT_KEEP = 500;
+
+/**
+ * Number of `audit:` entries the alarm keeps in DO storage when it trims.
+ * The full audit record is mirrored to D1 (`audit_log`) at command time, so
+ * the DO copy is only a recent tail. `audit:` is no longer "never truncated"
+ * in the DO — the durable, queryable record lives in D1.
+ */
+const AUDIT_KEEP = 1024;
 
 /**
  * Cadence (ms) at which the housekeeping alarm re-fires while a room stays
@@ -435,12 +451,17 @@ export class RoomDO implements DurableObject {
    * client edits a fresh room (found during 2026-04-20 browser smoke).
    */
   async #applyCommandAndMirror(roomName: string | null, cmdstr: string): Promise<void> {
+    let auditSeq = 0;
     let updatedAt = 0;
     await this.#state.blockConcurrencyWhile(async () => {
-      await this.#appendCommand(cmdstr);
-      updatedAt = Date.now();
+      const applied = await this.#appendCommand(cmdstr);
+      auditSeq = applied.auditSeq;
+      updatedAt = applied.ts;
     });
     await this.#mirrorIndex(roomName, updatedAt);
+    // Offload the audit entry to D1 (the durable record) so the alarm's DO
+    // audit-trim doesn't lose it. Best-effort, outside the lock.
+    await this.#mirrorAudit(roomName, [{ seq: auditSeq, ts: updatedAt, body: cmdstr }]);
   }
 
   async #deleteAll(roomName: string | null): Promise<Response> {
@@ -465,6 +486,7 @@ export class RoomDO implements DurableObject {
       this.#resetVolatile();
     });
     await this.#deleteIndex(roomName);
+    await this.#deleteAuditChatFromD1(roomName);
   }
 
   async #getExists(): Promise<Response> {
@@ -685,6 +707,34 @@ export class RoomDO implements DurableObject {
     // 100× (see CLAUDE.md §14 2026-04-21).
     if (!payload.skipIndex) {
       this.#state.waitUntil(this.#mirrorIndex(roomName, payload.updatedAt));
+    }
+    // Mirror the seeded audit + chat into the durable D1 stores so a migrated
+    // room's history survives the DO-tail trims. Done regardless of skipIndex
+    // (which only governs the rooms index) — fire-and-forget. Skipped when
+    // empty (the common dir-migration case keeps log/chat in-memory only).
+    if (payload.audit.length > 0) {
+      this.#state.waitUntil(
+        this.#mirrorAudit(
+          roomName,
+          payload.audit.map((body, i) => ({
+            seq: i,
+            ts: payload.updatedAt,
+            body: body as string,
+          })),
+        ),
+      );
+    }
+    if (payload.chat.length > 0) {
+      this.#state.waitUntil(
+        this.#mirrorChat(
+          roomName,
+          payload.chat.map((body, i) => ({
+            seq: i,
+            ts: payload.updatedAt,
+            body: body as string,
+          })),
+        ),
+      );
     }
     return plainResponse('OK', 201);
   }
@@ -966,7 +1016,8 @@ export class RoomDO implements DurableObject {
           await this.#state.storage.put(`${prefix}${key}`, value);
         }
       },
-      appendLog: (prefix, value) => this.#appendLogEntry(prefix, value),
+      appendLog: (prefix, value) =>
+        this.#appendLogEntry(prefix, value, attachment.room || messageRoom),
       getSnapshot: async () => (await readSnapshot(this.#state.storage)) ?? undefined,
       deleteAll: async () => {
         // WS `stopHuddle` is the hot path. Mirror the HTTP DELETE flow:
@@ -1064,14 +1115,18 @@ export class RoomDO implements DurableObject {
    * route through this method so the concurrency guard stays in one
    * place.
    */
-  async #appendLogEntry(prefix: string, value: string): Promise<void> {
+  async #appendLogEntry(
+    prefix: string,
+    value: string,
+    roomName: string | null,
+  ): Promise<void> {
     // Today only `chat:` is reachable from the handler layer —
     // `log:`/`audit:` writes go through `applyCommand` → `#appendCommand`.
     // The non-chat fallthrough is a silent no-op rather than a throw to
     // keep `WsStorage.appendLog` honest about its prefix arg.
     /* istanbul ignore else -- @preserve */
     if (prefix === STORAGE_KEYS.chatPrefix) {
-      await this.appendChat(value);
+      await this.appendChat(value, roomName);
     }
   }
 
@@ -1089,11 +1144,12 @@ export class RoomDO implements DurableObject {
    * for wrapping this in `blockConcurrencyWhile` when called from a
    * handler that needs serialization.
    */
-  async #appendCommand(body: string): Promise<void> {
+  async #appendCommand(body: string): Promise<{ auditSeq: number; ts: number }> {
     const ss = await this.#getSpreadsheet();
     await this.#ensureSeqs();
     const logSeq = this.#nextLogSeq!;
     const auditSeq = this.#nextAuditSeq!;
+    const ts = Date.now();
     ss.executeCommand(body);
     // Cross-sheet formulas added in this command may have resolved to
     // `#NAME?` because the referenced siblings weren't in the formula
@@ -1116,7 +1172,7 @@ export class RoomDO implements DurableObject {
 
     await this.#state.storage.put({
       ...newEntries,
-      [STORAGE_KEYS.metaUpdatedAt]: Date.now(),
+      [STORAGE_KEYS.metaUpdatedAt]: ts,
       [logKey(logSeq)]: body,
       [auditKey(auditSeq)]: body,
     });
@@ -1147,6 +1203,7 @@ export class RoomDO implements DurableObject {
     this.#nextLogSeq = logSeq + 1;
     this.#nextAuditSeq = auditSeq + 1;
     await this.#armAlarm();
+    return { auditSeq, ts };
   }
 
   // ─── Internals ─────────────────────────────────────────────────────────
@@ -1279,22 +1336,70 @@ export class RoomDO implements DurableObject {
     await deleteRoomFromD1(this.#env.DB, roomName);
   }
 
+  /**
+   * Single choke-point for best-effort D1 work scoped to this room. No-ops
+   * without a DB binding or a room name; swallows transient errors. The DO
+   * copy is authoritative for live state and the alarm only trims entries
+   * already mirrored, so a dropped D1 write is non-fatal (matches the
+   * rooms-index mirror's reliability model). Centralizing the guard + catch
+   * keeps the audit/chat mirror + delete helpers one line each.
+   */
+  async #d1(
+    roomName: string | null,
+    op: (db: D1Database, room: string) => Promise<unknown>,
+  ): Promise<void> {
+    const db = this.#env.DB;
+    if (!db || !roomName) return;
+    try {
+      await op(db, roomName);
+    } catch {
+      /* best-effort; DO copy persists and the alarm reconciles */
+    }
+  }
+
+  /** Best-effort mirror of audit rows to the durable D1 `audit_log`. */
+  #mirrorAudit(roomName: string | null, rows: readonly SeqRow[]): Promise<void> {
+    return this.#d1(roomName, (db, room) => appendAuditRows(db, room, rows));
+  }
+
+  /** Best-effort mirror of chat rows to the durable D1 `chat_log`. */
+  #mirrorChat(roomName: string | null, rows: readonly SeqRow[]): Promise<void> {
+    return this.#d1(roomName, (db, room) => appendChatRows(db, room, rows));
+  }
+
+  /** Drop a room's durable `audit_log` + `chat_log` rows on deletion. */
+  #deleteAuditChatFromD1(roomName: string | null): Promise<void> {
+    return this.#d1(roomName, async (db, room) => {
+      await deleteAuditRows(db, room);
+      await deleteChatRows(db, room);
+    });
+  }
+
   // ─── Hooks used by future phases (chat/ecell) ──────────────────────────
   // Kept here because WS handlers (Phase 7) will poke these directly; the
   // method shapes are stable now and test coverage locks them in.
 
-  /** Append a chat message. Returns the stored sequence number. */
-  async appendChat(message: string): Promise<number> {
-    return this.#state.blockConcurrencyWhile(async () => {
+  /**
+   * Append a chat message. Returns the stored sequence number. `roomName`
+   * (the DO's own room) is threaded through so the message can be mirrored
+   * to the durable D1 `chat_log`; when omitted (direct unit-test calls) the
+   * D1 mirror is skipped.
+   */
+  async appendChat(message: string, roomName: string | null = null): Promise<number> {
+    const seq = await this.#state.blockConcurrencyWhile(async () => {
       await this.#ensureSeqs();
-      const seq = this.#nextChatSeq!;
-      await this.#state.storage.put(chatKey(seq), message);
-      this.#nextChatSeq = seq + 1;
-      // Arm the alarm so a chat-only room (no edits) still gets its chat
-      // trimmed — otherwise `chat:` grows unbounded with no housekeeping.
+      const s = this.#nextChatSeq!;
+      await this.#state.storage.put(chatKey(s), message);
+      this.#nextChatSeq = s + 1;
+      // Arm the alarm so a chat-only room (no edits) still gets housekeeping
+      // (chat trim / TTL); otherwise `chat:` would never be bounded.
       await this.#armAlarm();
-      return seq;
+      return s;
     });
+    // Mirror to the durable D1 `chat_log` so the alarm's chat-trim drops only
+    // entries that are already durable there. Best-effort, outside the lock.
+    await this.#mirrorChat(roomName, [{ seq, ts: Date.now(), body: message }]);
+    return seq;
   }
 
   /** Upsert an ecell value for a user (LRU-capped). */
@@ -1396,22 +1501,26 @@ export class RoomDO implements DurableObject {
         return;
       }
     }
-    // (a) Trim chat to the most recent CHAT_KEEP entries.
-    await this.#trimChat();
+    // (a) Trim the DO copies of chat + audit to a recent tail. The full
+    // record is mirrored to D1 (chat_log / audit_log) at append time, so the
+    // dropped oldest entries stay durable there.
+    await this.#trimTail(STORAGE_KEYS.chatPrefix, CHAT_KEEP);
+    await this.#trimTail(STORAGE_KEYS.auditPrefix, AUDIT_KEEP);
     // Re-arm while the room is still active (it survived the TTL check).
     await this.#armAlarm();
   }
 
-  /** Delete all but the most recent `CHAT_KEEP` chat entries. */
-  async #trimChat(): Promise<void> {
-    const map = await this.#state.storage.list<string>({
-      prefix: STORAGE_KEYS.chatPrefix,
-    });
+  /**
+   * Delete all but the most recent `keep` entries under `prefix`. The full
+   * record is mirrored to D1 at append time, so the dropped (oldest) entries
+   * remain durable there — the DO copy is only a live-catch-up tail.
+   */
+  async #trimTail(prefix: string, keep: number): Promise<void> {
+    const map = await this.#state.storage.list<string>({ prefix });
     const keys = Array.from(map.keys());
-    if (keys.length <= CHAT_KEEP) return;
+    if (keys.length <= keep) return;
     // list() returns ascending key order; the oldest are at the front.
-    const toDelete = keys.slice(0, keys.length - CHAT_KEEP);
-    await this.#state.storage.delete(toDelete);
+    await this.#state.storage.delete(keys.slice(0, keys.length - keep));
   }
 
   /** Snapshot of all ecells as `{user → cell}`. */

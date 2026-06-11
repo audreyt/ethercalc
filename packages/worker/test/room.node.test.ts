@@ -893,9 +893,30 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
         body: 'set A1 value n 1',
       }),
     );
-    expect(d1Calls).toHaveLength(1);
-    expect(d1Calls[0]!.sql).toContain('INSERT INTO rooms');
-    expect(d1Calls[0]!.params[0]).toBe('beta');
+    const roomsCall = d1Calls.find((c) => c.sql.includes('INSERT INTO rooms'));
+    expect(roomsCall).toBeDefined();
+    expect(roomsCall!.params[0]).toBe('beta');
+    // The command's audit entry is mirrored to the durable D1 audit_log.
+    // Pin (room, …, body) so the SeqRow literal can't be blanked to {}.
+    const auditCall = d1Calls.find((c) => c.sql.includes('INSERT INTO audit_log'));
+    expect(auditCall).toBeDefined();
+    expect(auditCall!.params[0]).toBe('beta');
+    expect(auditCall!.params[3]).toBe('set A1 value n 1');
+  });
+
+  it('does NOT mirror audit when a command arrives without ?name (DB bound)', async () => {
+    // DB present but no room name → the shared #d1 guard (`!db || !roomName`)
+    // skips, so neither the rooms index nor audit_log is touched. Pins the
+    // `!roomName` operand (and the `||`→`&&` mutation, which would INSERT
+    // with a null room).
+    await room.fetch(
+      new Request('https://do/_do/commands', {
+        method: 'POST',
+        body: 'set A1 value n 1',
+      }),
+    );
+    expect(d1Calls.some((c) => c.sql.includes('INSERT INTO audit_log'))).toBe(false);
+    expect(d1Calls.some((c) => c.sql.includes('INSERT INTO rooms'))).toBe(false);
   });
 
   it('POST /_do/commands with empty body does NOT touch D1', async () => {
@@ -912,9 +933,12 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
     await room.fetch(
       new Request('https://do/_do/all?name=gone', { method: 'DELETE' }),
     );
-    expect(d1Calls).toHaveLength(1);
-    expect(d1Calls[0]!.sql).toContain('DELETE FROM rooms');
-    expect(d1Calls[0]!.params).toEqual(['gone']);
+    expect(d1Calls.find((c) => c.sql.includes('DELETE FROM rooms'))?.params).toEqual([
+      'gone',
+    ]);
+    // The room's durable audit + chat rows are dropped too.
+    expect(d1Calls.some((c) => c.sql.includes('DELETE FROM audit_log'))).toBe(true);
+    expect(d1Calls.some((c) => c.sql.includes('DELETE FROM chat_log'))).toBe(true);
   });
 
   it('does NOT mirror when ?name is missing even if DB is bound', async () => {
@@ -972,10 +996,10 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
         cmdstr: 'set A1 value n 1',
       }),
     );
-    expect(d1Calls2).toHaveLength(1);
-    expect(d1Calls2[0]!.sql).toContain('INSERT INTO rooms');
-    expect(d1Calls2[0]!.params[0]).toBe('gamma');
-    expect(typeof d1Calls2[0]!.params[1]).toBe('number');
+    const roomsCall = d1Calls2.find((c) => c.sql.includes('INSERT INTO rooms'));
+    expect(roomsCall).toBeDefined();
+    expect(roomsCall!.params[0]).toBe('gamma');
+    expect(typeof roomsCall!.params[1]).toBe('number');
   });
 
   /**
@@ -1002,8 +1026,11 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
         cmdstr: 'set A1 value n 1',
       }),
     );
-    expect(d1Calls3).toHaveLength(1);
-    expect(d1Calls3[0]!.params[0]).toBe('alpha');
+    // Both the rooms index AND the audit mirror follow the handshake room.
+    const roomsCall = d1Calls3.find((c) => c.sql.includes('INSERT INTO rooms'));
+    expect(roomsCall!.params[0]).toBe('alpha');
+    const auditCall = d1Calls3.find((c) => c.sql.includes('INSERT INTO audit_log'));
+    expect(auditCall!.params[0]).toBe('alpha');
   });
 
   /**
@@ -1030,8 +1057,8 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
         cmdstr: 'set A1 value n 1',
       }),
     );
-    expect(d1Calls4).toHaveLength(1);
-    expect(d1Calls4[0]!.params[0]).toBe('fallback');
+    const roomsCall = d1Calls4.find((c) => c.sql.includes('INSERT INTO rooms'));
+    expect(roomsCall!.params[0]).toBe('fallback');
   });
 
   /**
@@ -1055,9 +1082,10 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
         auth: 'delta',
       }),
     );
-    expect(d1Calls5).toHaveLength(1);
-    expect(d1Calls5[0]!.sql).toContain('DELETE FROM rooms');
-    expect(d1Calls5[0]!.params).toEqual(['delta']);
+    expect(d1Calls5.find((c) => c.sql.includes('DELETE FROM rooms'))?.params).toEqual([
+      'delta',
+    ]);
+    expect(d1Calls5.some((c) => c.sql.includes('DELETE FROM audit_log'))).toBe(true);
   });
 
   it('WS stopHuddle with empty attachment falls back to the frame room for unindex', async () => {
@@ -1077,9 +1105,9 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
         auth: 'fallback-delete',
       }),
     );
-    expect(d1Calls6).toHaveLength(1);
-    expect(d1Calls6[0]!.sql).toContain('DELETE FROM rooms');
-    expect(d1Calls6[0]!.params).toEqual(['fallback-delete']);
+    expect(d1Calls6.find((c) => c.sql.includes('DELETE FROM rooms'))?.params).toEqual([
+      'fallback-delete',
+    ]);
   });
 
   it('WS stopHuddle with failed auth does NOT touch D1', async () => {
@@ -1102,6 +1130,26 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
       }),
     );
     expect(d1Calls7).toHaveLength(0);
+  });
+
+  it('WS chat frame mirrors the message to the durable D1 chat_log', async () => {
+    // appendChat (via the WS chat path) mirrors to chat_log so the alarm's
+    // chat-trim doesn't lose history. Pin (room, …, body) so the SeqRow
+    // literal in appendChat can't be blanked to [] / {}.
+    const rec: FakeStorageRecord = { map: new Map() };
+    const calls: D1Call[] = [];
+    const env = makeEnvWithDb(calls);
+    const { state } = makeWsAwareState('x', rec, []);
+    const wsRoom = new RoomDO(state, env);
+    const ws = makeFakeWs({ sent: [] }, { user: 'u', room: 'epsilon', auth: 'h' });
+    await wsRoom.webSocketMessage(
+      ws,
+      JSON.stringify({ type: 'chat', room: 'epsilon', user: 'u', msg: 'hello-d1' }),
+    );
+    const chatCall = calls.find((c) => c.sql.includes('INSERT INTO chat_log'));
+    expect(chatCall).toBeDefined();
+    expect(chatCall!.params[0]).toBe('epsilon');
+    expect(chatCall!.params[3]).toBe('hello-d1');
   });
 });
 
@@ -1363,11 +1411,20 @@ describe('RoomDO — POST /_do/seed (Phase 11b migration)', () => {
     // fake D1 here resolves synchronously so the INSERT lands before
     // drainWaitUntil(), but we still assert that `waitUntil` was
     // actually called (and that draining is idempotent).
-    expect(state.__waitUntilPromises).toHaveLength(1);
+    // Three mirrors scheduled via waitUntil: rooms index + audit_log + chat_log.
+    expect(state.__waitUntilPromises).toHaveLength(3);
     await drainWaitUntil(state);
     const insert = calls.find((c) => c.sql.startsWith('INSERT INTO rooms'));
     expect(insert).toBeDefined();
     expect(insert?.params).toEqual(['gamma', 1700]);
+    // The seeded audit + chat are mirrored to their durable D1 stores so the
+    // alarm's DO-tail trim can't lose a migrated room's history. Pin the
+    // mapped row contents so the `(body, i) => ({seq, ts, body})` literals
+    // can't be blanked to {}.
+    const auditCall = calls.find((c) => c.sql.includes('INSERT INTO audit_log'));
+    expect(auditCall!.params.slice(0, 4)).toEqual(['gamma', 0, 1700, 'cmd-1']);
+    const chatCall = calls.find((c) => c.sql.includes('INSERT INTO chat_log'));
+    expect(chatCall!.params.slice(0, 4)).toEqual(['gamma', 0, 1700, 'hello']);
   });
 
   it('skipIndex:true suppresses the D1 mirror entirely', async () => {
@@ -2113,7 +2170,9 @@ describe('RoomDO — WebSocket acceptance (Phase 7)', () => {
     };
     expect(reply.type).toBe('log');
     expect(reply.snapshot).toBe('SAVE');
-    expect(reply.log).toEqual(['cmd-1']);
+    // Snapshot is authoritative — the log is sent empty so the client
+    // doesn't double-apply commands the snapshot already contains.
+    expect(reply.log).toEqual([]);
   });
 
   it('webSocketMessage falls back to default attachment when deserialize returns null', async () => {
@@ -2366,7 +2425,8 @@ describe('RoomDO — WebSocket acceptance (Phase 7)', () => {
       log: string[];
     };
     expect(reply.snapshot).toBe('SAVE');
-    expect(reply.log).toEqual(['cmd']);
+    // Authoritative snapshot → empty log (no client-side double-apply).
+    expect(reply.log).toEqual([]);
   });
 
   it('webSocketMessage dispatches ask.recalc with empty storage (empty snapshot branch)', async () => {
@@ -2394,6 +2454,21 @@ describe('RoomDO — WebSocket acceptance (Phase 7)', () => {
       JSON.stringify({ type: 'chat', room: 'r', user: 'u', msg: 'no-ss' }),
     );
     expect(record.map.get(chatKey(0))).toBe('no-ss');
+  });
+
+  it('chat appendLog falls back to the frame room when the attachment room is empty', async () => {
+    // Default attachment is { user: '', room: '', auth: '' }, so the chat
+    // appendLog closure's `attachment.room || messageRoom` takes the
+    // messageRoom branch (the audit/chat-mirror room source).
+    const fresh: FakeStorageRecord = { map: new Map() };
+    const { state } = makeWsAwareState('x', fresh, []);
+    const room = new RoomDO(state, makeEnv());
+    const ws = makeFakeWs({ sent: [] }); // empty attachment
+    await room.webSocketMessage(
+      ws,
+      JSON.stringify({ type: 'chat', room: 'fallback-room', user: 'u', msg: 'm' }),
+    );
+    expect(fresh.map.get(chatKey(0))).toBe('m');
   });
 
   it('broadcast (exclude-self) skips sender when sender is in the peer list', async () => {
