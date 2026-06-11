@@ -99,7 +99,10 @@ async function dispatchMultiSheetExport(
     bundle as ReadonlyArray<{ name: string; view: Parameters<typeof buildMultiSheetWorkbookFromSheets>[0][number]['view'] }>,
     format,
   );
-  return new Response(bytes, {
+  // `bytes as unknown as BodyInit`: workerd accepts a `Uint8Array` body at
+  // runtime; the cast satisfies the stricter `Uint8Array<ArrayBufferLike>`
+  // lib typing that doesn't structurally match `BodyInit`.
+  return new Response(bytes as unknown as BodyInit, {
     status: 200,
     headers: {
       'Content-Type': BINARY_CONTENT_TYPES[format],

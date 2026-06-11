@@ -1755,6 +1755,56 @@ describe('RoomDO — fold: housekeeping alarm', () => {
   });
 });
 
+describe('RoomDO — fold: seq counters survive a trim + isolate restart', () => {
+  // Regression for the seq-collision bug: the log ring-trim and chat trim
+  // delete entries from the FRONT, leaving a non-contiguous key window. A
+  // count-based next-seq (`map.size`) would then land INSIDE that window on
+  // the first write after a cold restart (#next*Seq === null), silently
+  // overwriting a live entry and defeating the ring bound. Next-seq must be
+  // derived from the MAX existing key index + 1.
+
+  it('appendChat derives next-seq from the max key index, not the count', async () => {
+    // Window left by a prior trim: chat:2..5 remain (0,1 trimmed). COUNT is
+    // 4, but the next seq must be 6 (max 5 + 1) — writing chat:4 would
+    // clobber a live entry. Fresh RoomDO so #nextChatSeq === null.
+    const record: FakeStorageRecord = { map: new Map(), alarm: null };
+    for (let i = 2; i <= 5; i++) record.map.set(chatKey(i), `old${i}`);
+    const room = new RoomDO(makeState('x', record), makeEnv());
+    const seq = await room.appendChat('NEW');
+    expect(seq).toBe(6); // max(5)+1, NOT count(4)
+    expect(record.map.get(chatKey(6))).toBe('NEW');
+    expect(record.map.get(chatKey(4))).toBe('old4'); // live entry untouched
+  });
+
+  it('appendChat starts at seq 0 on an empty room (max=-1 → 0)', async () => {
+    const record: FakeStorageRecord = { map: new Map(), alarm: null };
+    const room = new RoomDO(makeState('x', record), makeEnv());
+    const seq = await room.appendChat('first');
+    expect(seq).toBe(0);
+    expect(record.map.get(chatKey(0))).toBe('first');
+  });
+
+  it('POST /_do/commands over a non-contiguous log window resumes from the max index', async () => {
+    // Simulate the post-restart state of a long-lived room whose log was
+    // ring-trimmed: only log:2000..2002 remain. The next command must land
+    // at log:2003 (max 2002 + 1), NOT log:3 (count 3) which would corrupt
+    // the live window. Exercises the log path through #ensureSeqs → #nextSeq.
+    const record: FakeStorageRecord = { map: new Map() };
+    for (let i = 2000; i <= 2002; i++) {
+      record.map.set(logKey(i), `set A1 value n ${i}`);
+    }
+    const room = new RoomDO(makeState('x', record), makeEnv());
+    await room.fetch(
+      new Request('https://do/_do/commands', {
+        method: 'POST',
+        body: 'set A2 value n 42',
+      }),
+    );
+    expect(record.map.get(logKey(2003))).toBe('set A2 value n 42');
+    expect(record.map.get(logKey(2000))).toBe('set A1 value n 2000'); // untouched
+  });
+});
+
 describe('RoomDO — fold: inline WS caps', () => {
   it('rejects a WS upgrade with 503 once the connection cap is reached', async () => {
     // 128 peers already connected (MAX_CONN). getWebSockets() returns them.
@@ -1805,9 +1855,9 @@ describe('RoomDO — fold: inline WS caps', () => {
     const room = new RoomDO(state, makeEnv());
     const log: FakeWsLog = { sent: [] };
     const ws = makeFakeWs(log, { user: 'alice', room: 'r', auth: 'h' });
-    // A valid-shaped chat frame padded past 64 KiB. Without the cap it
-    // would persist a chat entry; with the cap it's silently dropped.
-    const huge = 'x'.repeat(64 * 1024 + 1);
+    // A valid-shaped chat frame padded past MAX_FRAME (1 MiB). Without the
+    // cap it would persist a chat entry; with the cap it's silently dropped.
+    const huge = 'x'.repeat(1024 * 1024 + 1);
     await room.webSocketMessage(
       ws,
       JSON.stringify({ type: 'chat', room: 'r', user: 'alice', msg: huge }),

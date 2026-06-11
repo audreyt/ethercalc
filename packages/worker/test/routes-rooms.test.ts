@@ -219,7 +219,9 @@ describe('Phase 5 routes — full round-trip', () => {
         'content-type':
           'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       },
-      body: bytes,
+      // Cast for the stricter `Uint8Array<ArrayBufferLike>` lib typing that
+      // doesn't structurally match `BodyInit`; valid at runtime.
+      body: bytes as unknown as BodyInit,
     });
     expect(res.status).toBe(201);
 

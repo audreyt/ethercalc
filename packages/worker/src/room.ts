@@ -111,8 +111,15 @@ const ECELL_CAP = 256;
  */
 const MAX_CONN = 128;
 
-/** Maximum accepted size (in UTF-16 code units) of a single WS frame. */
-const MAX_FRAME = 64 * 1024;
+/**
+ * Maximum accepted size (in UTF-16 code units) of a single WS frame.
+ * Generous enough for a large collaborative paste (a `loadclipboard` /
+ * `execute` frame carries the whole clipboard save) while still capping a
+ * single client from forcing a multi-MB `JSON.parse` + storage write.
+ * Pastes larger than this go through the HTTP write path, which has its own
+ * 25 MiB cap (`MAX_WRITE_BYTES` in `src/index.ts`).
+ */
+const MAX_FRAME = 1024 * 1024;
 
 /**
  * Number of `chat:` entries the alarm handler keeps when it trims. Chat is
@@ -150,9 +157,13 @@ function textResponse(body: string, contentType: string, status = 200): Response
 }
 
 function binaryResponse(bytes: Uint8Array, contentType: string, status = 200): Response {
-  // Convert to an ArrayBuffer slice — the DO → worker hop stringifies Response
-  // bodies via streaming, and workerd treats Uint8Array as a valid BodyInit.
-  return new Response(bytes, { status, headers: { 'Content-Type': contentType } });
+  // workerd accepts a `Uint8Array` as a `BodyInit` at runtime; the cast
+  // satisfies the stricter `Uint8Array<ArrayBufferLike>` lib typing that
+  // doesn't structurally match `BodyInit` (the DO → worker hop streams it).
+  return new Response(bytes as unknown as BodyInit, {
+    status,
+    headers: { 'Content-Type': contentType },
+  });
 }
 
 /**
@@ -393,6 +404,11 @@ export class RoomDO implements DurableObject {
       this.#resetVolatile();
     });
     await this.#mirrorIndex(roomName, updatedAt);
+    // Arm the housekeeping alarm so a room created/replaced via PUT and
+    // never subsequently edited still gets TTL expiry. `#putSnapshot`
+    // deleteAll's (which clears any pending alarm) and `#resetVolatile`s,
+    // so we must re-arm here — the command/chat/ecell write paths arm too.
+    await this.#armAlarm();
     return plainResponse('OK', 201);
   }
 
@@ -1206,22 +1222,43 @@ export class RoomDO implements DurableObject {
 
   /**
    * Lazily populate the in-memory sequence counters by scanning storage on
-   * first write. Stored keys are zero-padded (see `@ethercalc/shared`), so
-   * the "next" index is simply the count of existing keys — no parse needed.
+   * first write. Each counter is derived from the HIGHEST existing key
+   * index plus one — NOT the key count. The log ring-trim (`#appendCommand`)
+   * and the chat trim (`#trimChat`) delete entries from the FRONT, so after
+   * a trim the keys are non-contiguous (e.g. `log:0…0976 … log:0…1999`); a
+   * count-based next-seq would then collide with a live key on the first
+   * write after an isolate restart — silently overwriting recent data and
+   * defeating the ring bound. Keys are fixed-width 16-digit zero-padded
+   * (`@ethercalc/shared` padSeq), so the numeric suffix recovers the index
+   * exactly. `audit:` is never trimmed (stays contiguous) but uses the same
+   * derivation for uniformity.
    */
   async #ensureSeqs(): Promise<void> {
     if (this.#nextLogSeq === null) {
-      const map = await this.#state.storage.list({ prefix: STORAGE_KEYS.logPrefix });
-      this.#nextLogSeq = map.size;
+      this.#nextLogSeq = await this.#nextSeq(STORAGE_KEYS.logPrefix);
     }
     if (this.#nextAuditSeq === null) {
-      const map = await this.#state.storage.list({ prefix: STORAGE_KEYS.auditPrefix });
-      this.#nextAuditSeq = map.size;
+      this.#nextAuditSeq = await this.#nextSeq(STORAGE_KEYS.auditPrefix);
     }
     if (this.#nextChatSeq === null) {
-      const map = await this.#state.storage.list({ prefix: STORAGE_KEYS.chatPrefix });
-      this.#nextChatSeq = map.size;
+      this.#nextChatSeq = await this.#nextSeq(STORAGE_KEYS.chatPrefix);
     }
+  }
+
+  /**
+   * The next append sequence for `prefix`: one past the highest existing
+   * key index, or 0 when the prefix is empty. Robust to the non-contiguous
+   * key windows the ring/chat trims leave behind (see `#ensureSeqs`). Keys
+   * are fixed-width 16-digit zero-padded, so `list()`'s lexicographic order
+   * IS numeric order — the LAST key carries the highest index (the same
+   * ordering guarantee `#listPrefix` relies on).
+   */
+  async #nextSeq(prefix: string): Promise<number> {
+    const keys = Array.from(
+      (await this.#state.storage.list<string>({ prefix })).keys(),
+    );
+    const last = keys[keys.length - 1];
+    return last === undefined ? 0 : Number(last.slice(prefix.length)) + 1;
   }
 
   /**
@@ -1253,6 +1290,9 @@ export class RoomDO implements DurableObject {
       const seq = this.#nextChatSeq!;
       await this.#state.storage.put(chatKey(seq), message);
       this.#nextChatSeq = seq + 1;
+      // Arm the alarm so a chat-only room (no edits) still gets its chat
+      // trimmed — otherwise `chat:` grows unbounded with no housekeeping.
+      await this.#armAlarm();
       return seq;
     });
   }
