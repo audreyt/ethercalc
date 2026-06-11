@@ -2,6 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 
 import {
   BindingEmailSender,
+  DisabledEmailSender,
+  EMAIL_DISABLED_MESSAGE,
   STUB_SENT_MESSAGE,
   StubEmailSender,
   buildMimeEnvelope,
@@ -103,6 +105,20 @@ describe('StubEmailSender', () => {
 
   it('exposes the legacy " [E-mail Sent]" literal', () => {
     expect(STUB_SENT_MESSAGE).toBe(' [E-mail Sent]');
+  });
+});
+
+describe('DisabledEmailSender', () => {
+  it('reports the honest "not configured" message instead of a false send', async () => {
+    const sender = new DisabledEmailSender();
+    const res = await sender.send('a@b.com', 'subj', 'body');
+    expect(res).toEqual({ message: EMAIL_DISABLED_MESSAGE });
+    // Must NOT masquerade as a successful send.
+    expect(res.message).not.toBe(STUB_SENT_MESSAGE);
+  });
+
+  it('exposes the exact "not configured" literal', () => {
+    expect(EMAIL_DISABLED_MESSAGE).toBe(' [E-mail not sent: email is not configured]');
   });
 });
 

@@ -108,14 +108,37 @@ export interface EmailSender {
 export const STUB_SENT_MESSAGE = ' [E-mail Sent]';
 
 /**
+ * Message reported when a `sendemail` fires on a deployment that has no
+ * `send_email` binding configured. The legacy stub claimed `" [E-mail
+ * Sent]"` here too, which was a *false* confirmation — the mail never
+ * left the worker. We surface the honest state instead so neither the
+ * `confirmemailsent` WS broadcast nor any operator log can mislead.
+ */
+export const EMAIL_DISABLED_MESSAGE = ' [E-mail not sent: email is not configured]';
+
+/**
  * In-process email transport. Returns the legacy success string for
- * every call. Never rejects. Used under test (no Cloudflare binding)
- * and as the fallback when the Worker's `env.EMAIL` is unbound.
+ * every call. Never rejects. Used as a "successful send" test double and
+ * to pin the legacy `BindingEmailSender` success message.
  */
 export class StubEmailSender implements EmailSender {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async send(_to: string, _subject: string, _body: string): Promise<SendResult> {
     return { message: STUB_SENT_MESSAGE };
+  }
+}
+
+/**
+ * Fallback transport when no Cloudflare `send_email` binding is bound
+ * (the default deploy — `[[send_email]]` is commented out in
+ * wrangler.toml). Sends nothing and reports `EMAIL_DISABLED_MESSAGE` so
+ * the client/operator is told the truth rather than a fake "E-mail
+ * Sent". Never rejects.
+ */
+export class DisabledEmailSender implements EmailSender {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async send(_to: string, _subject: string, _body: string): Promise<SendResult> {
+    return { message: EMAIL_DISABLED_MESSAGE };
   }
 }
 

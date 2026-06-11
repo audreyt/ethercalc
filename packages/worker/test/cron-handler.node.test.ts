@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { buildEmailSender, upsertCronTriggers } from '../src/handlers/cron.ts';
 import {
   BindingEmailSender,
-  StubEmailSender,
+  DisabledEmailSender,
 } from '../src/lib/email.ts';
 import type { Env } from '../src/env.ts';
 
@@ -118,10 +118,10 @@ describe('upsertCronTriggers', () => {
 });
 
 describe('buildEmailSender', () => {
-  it('returns StubEmailSender when env.EMAIL is undefined', () => {
+  it('returns DisabledEmailSender when env.EMAIL is undefined', () => {
     const env = {} as unknown as Env;
     const sender = buildEmailSender(env);
-    expect(sender).toBeInstanceOf(StubEmailSender);
+    expect(sender).toBeInstanceOf(DisabledEmailSender);
   });
 
   it('returns BindingEmailSender when env.EMAIL is bound', () => {

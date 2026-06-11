@@ -24,6 +24,7 @@ import type { Hono } from 'hono';
 import { upsertCronTriggers } from '../handlers/cron.ts';
 import { classifyCommandBody, joinCommands } from '../handlers/post-command.ts';
 import { classifyRequestBody } from '../handlers/rooms.ts';
+import { verifyAuth } from '../lib/auth.ts';
 import { parseSettimetrigger } from '../lib/cron.ts';
 import { doFetch } from '../lib/do-dispatch.ts';
 import {
@@ -155,6 +156,14 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
 
   // ─── _exists ────────────────────────────────────────────────────────
   app.get('/_exists/:room', async (c) => {
+    // Gate the per-name existence oracle behind the same flag as the
+    // batch-enumeration endpoints above (M-1). Without this, even a
+    // deploy that disables `/_rooms` still leaks "does room X exist" to
+    // anyone, one cheap probe at a time. `ETHERCALC_CORS=1` (the prod
+    // default in wrangler.toml) now turns this into a 403 too.
+    if (c.env.ETHERCALC_CORS) {
+      return sizedResponse('_exists not available with CORS', 403, TEXT_CT);
+    }
     const room = c.req.param('room') ?? '';
     const res = await doFetch(c.env, room, '/_do/exists');
     const { exists } = (await res.json()) as { exists: 0 | 1 };
@@ -262,6 +271,16 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
   // ─── DELETE /_/:room ───────────────────────────────────────────────
   app.delete('/_/:room', async (c) => {
     const room = c.req.param('room') ?? '';
+    // H-2: permanently wiping a room (incl. the never-truncated audit) is
+    // a destructive verb, so gate it on the per-room capability HMAC the
+    // same way the WS `stopHuddle` path does. When no `ETHERCALC_KEY` is
+    // set (anonymous mode), `verifyAuth` returns true for any non-'0'
+    // auth, so this is a no-op and DELETE stays open — matching the
+    // documented anonymous contract (§6.4). When a KEY *is* configured it
+    // closes the HTTP-vs-WS asymmetry where DELETE ignored the key.
+    if (!(await verifyAuth(c.env.ETHERCALC_KEY, room, c.req.query('auth') ?? ''))) {
+      return sizedResponse('Forbidden', 403, TEXT_CT);
+    }
     await doFetch(c.env, room, '/_do/all', { method: 'DELETE' });
     return sizedResponse('OK', 201, TEXT_CT);
   });
@@ -341,12 +360,22 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
           const snapshot = await snapshotRes.text();
           const cellLine = new RegExp(`cell:${cascadeRef}:t:/(.+)`, 'i').exec(snapshot);
           if (cellLine) {
-            const foreignRoom = cellLine[1]!.replace(/\r?$/, '');
-            await doFetch(c.env, foreignRoom, '/_do/rename', {
-              method: 'POST',
-              body: JSON.stringify({ to: `${foreignRoom}.bak` }),
-              headers: { 'Content-Type': 'application/json' },
-            });
+            const targetRoom = cellLine[1]!.replace(/\r?$/, '');
+            // SECURITY (H-4): `targetRoom` is read from cell text that any
+            // anonymous writer fully controls. The legitimate use is the
+            // multi-sheet editor cascade-deleting one of its OWN sub-sheets,
+            // which are always named `<room>.<n>` (see client-multi
+            // Foldr.ts — the TOC seeds `/${id}.1`). Restrict the rename to
+            // that namespace so a POST can never move/destroy an unrelated
+            // tenant's room. A foreign target is silently ignored, matching
+            // legacy's "proceed with the command regardless" on a no-match.
+            if (targetRoom.startsWith(`${room}.`)) {
+              await doFetch(c.env, targetRoom, '/_do/rename', {
+                method: 'POST',
+                body: JSON.stringify({ to: `${targetRoom}.bak` }),
+                headers: { 'Content-Type': 'application/json' },
+              });
+            }
           }
         }
       }

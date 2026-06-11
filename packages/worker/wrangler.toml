@@ -3,10 +3,14 @@ main = "src/index.ts"
 compatibility_date = "2024-11-12"
 compatibility_flags = ["nodejs_compat"]
 
-# Keep the `*.workers.dev` hostname alongside the custom domain — it's
-# handy for debugging and used by migration tooling in `/tmp/reseed-*.ts`.
-# Without this, adding any `routes` entry disables workers.dev by default.
-workers_dev = true
+# Disable the `*.workers.dev` hostname for production (L-14). It serves the
+# identical Worker but lives OUTSIDE the `ethercalc.net` zone, so any zone-
+# scoped WAF / Rate Limiting rules (the whole §13 Q7 abuse-prevention plan)
+# do NOT apply to it — an attacker could hit the workers.dev URL and bypass
+# every rate-limit. With this false, only the zone-protected custom domains
+# below serve traffic. Migration tooling must target the custom domain
+# (https://ethercalc.net) rather than the old workers.dev URL.
+workers_dev = false
 
 # Custom domains. Requires the `ethercalc.net` zone to live under this
 # Cloudflare account (one-time nameserver swap at the registrar). On

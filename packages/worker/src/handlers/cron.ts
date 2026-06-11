@@ -12,8 +12,10 @@
  *
  * 2. `buildEmailSender(env)` — factory that returns a
  *    `BindingEmailSender` when `env.EMAIL` is bound, otherwise a
- *    `StubEmailSender`. Callers never branch on the binding directly;
- *    the factory keeps the business logic environment-agnostic.
+ *    `DisabledEmailSender` (no binding configured → report the honest
+ *    "not configured" state instead of a false "E-mail Sent"). Callers
+ *    never branch on the binding directly; the factory keeps the
+ *    business logic environment-agnostic.
  *
  * Pure of `Date.now()` — every helper takes values as arguments.
  * Pure of network — only the D1 binding and the injected sender are
@@ -21,8 +23,8 @@
  */
 import {
   BindingEmailSender,
+  DisabledEmailSender,
   type EmailSender,
-  StubEmailSender,
 } from '../lib/email.ts';
 import { withCronSchema } from '../lib/d1-schema.ts';
 import type { Env } from '../env.ts';
@@ -68,12 +70,14 @@ export async function upsertCronTriggers(
 }
 
 /**
- * Factory: return a live sender when `env.EMAIL` is bound, else the
- * stub. The caller's async contract is identical regardless — both
- * impls return `{ message: string }` and neither rejects.
+ * Factory: return a live sender when `env.EMAIL` is bound, else a
+ * `DisabledEmailSender` that reports email is not configured (rather
+ * than the legacy false "E-mail Sent"). The caller's async contract is
+ * identical regardless — both impls return `{ message: string }` and
+ * neither rejects.
  */
 export function buildEmailSender(env: Env): EmailSender {
-  if (!env.EMAIL) return new StubEmailSender();
+  if (!env.EMAIL) return new DisabledEmailSender();
   const from = env.EMAIL_FROM ?? 'noreply@ethercalc.invalid';
   return new BindingEmailSender(env.EMAIL, from);
 }

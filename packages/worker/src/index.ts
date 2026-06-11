@@ -7,6 +7,7 @@
  */
 /* istanbul ignore file */
 import { Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import { cors } from 'hono/cors';
 
 import { buildHealthBody } from './handlers/health.ts';
@@ -44,6 +45,16 @@ export function buildApp(): Hono<{ Bindings: Env }> {
   // All API endpoints are CORS-friendly — external embeds (hackfoldr,
   // third-party dashboards) fetch /_/:room/csv etc cross-origin.
   app.use('*', cors());
+  // Cap the body of the anonymous write routes (POST `/_`, PUT/POST
+  // `/_/:room`) so an unauthenticated client can't force the worker to
+  // buffer + persist an unbounded payload (§5). 25 MiB comfortably covers
+  // any real interactive snapshot/command batch; genuinely huge rooms are
+  // seeded through the token-gated, chunked `/_migrate/*` path which is
+  // intentionally not capped here. GET exports under `/_/:room/*` carry no
+  // request body, so the limit is a no-op for them.
+  const MAX_WRITE_BYTES = 25 * 1024 * 1024;
+  app.use('/_', bodyLimit({ maxSize: MAX_WRITE_BYTES }));
+  app.use('/_/*', bodyLimit({ maxSize: MAX_WRITE_BYTES }));
   app.get('/_health', (c) => c.json(buildHealthBody()));
   // Phase 7: native WS + legacy socket.io shim. Register early so their
   // literal prefixes win against the `/:room` catch-all. `/_ws/:room` is
