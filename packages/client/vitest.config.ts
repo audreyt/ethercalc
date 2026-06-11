@@ -4,8 +4,8 @@ import { defineConfig } from 'vitest/config';
  * Client package tests. Run under the Node environment using mock WebSocket
  * and mock SocialCalc so we don't need jsdom. See CLAUDE.md §8 Phase 10.
  *
- * Coverage gate (100%) applies to ws-adapter, socialcalc-callbacks, main
- * and graph.
+ * Coverage gate (100%) applies to ws-adapter, socialcalc-callbacks, main,
+ * graph and sanitize-html.
  */
 export default defineConfig({
   test: {
@@ -18,6 +18,7 @@ export default defineConfig({
         'src/socialcalc-callbacks.ts',
         'src/main.ts',
         'src/graph.ts',
+        'src/sanitize-html.ts',
       ],
       reporter: ['text', 'json-summary', 'lcov'],
       thresholds: {

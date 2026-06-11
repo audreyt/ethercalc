@@ -39,6 +39,10 @@ import {
   type BinaryFormat,
   buildMultiSheetWorkbookFromSheets,
 } from '../lib/xlsx-build.ts';
+import {
+  DANGEROUS_ELEMENTS,
+  attributeAction,
+} from '../lib/html-sanitize.ts';
 import type { Env } from '../env.ts';
 
 const TEXT_CT = 'text/plain; charset=utf-8';
@@ -136,6 +140,53 @@ interface ExportFormat {
   readonly attachmentExt?: string;
   /** If set, emit this `Content-Security-Policy` on the response. */
   readonly csp?: string;
+  /**
+   * If set, run the (text) body through `HTMLRewriter` to strip
+   * script-bearing markup before it leaves the worker. Defence-in-depth
+   * beyond the CSP for the HTML export — see `lib/html-sanitize.ts`.
+   */
+  readonly sanitizeHtml?: boolean;
+}
+
+/**
+ * Strip script-bearing markup from an HTML body using Cloudflare's native
+ * `HTMLRewriter`. Removes `<script>`/`<iframe>`/`<object>`/`<embed>` whole,
+ * drops every `on*` event-handler attribute, and clears `href`/`src` URLs
+ * with a dangerous scheme (`javascript:`/`data:`/`vbscript:`). Safe
+ * formatting, links, and images survive — `text-html` stays a feature.
+ *
+ * The decision rules live in `lib/html-sanitize.ts` (pure, coverage-gated);
+ * this wiring is workerd-only so the file carries `istanbul ignore file`.
+ */
+function sanitizeHtmlBody(html: string, headers: Record<string, string>): Response {
+  let rewriter = new HTMLRewriter();
+  for (const tag of DANGEROUS_ELEMENTS) {
+    rewriter = rewriter.on(tag, {
+      element(el) {
+        el.remove();
+      },
+    });
+  }
+  rewriter = rewriter.on('*', {
+    element(el) {
+      // `el.attributes` yields `[name, value]` pairs at runtime (workerd).
+      // The ambient `Element` type tsgo resolves here disagrees on the
+      // attribute shape across lib/workers-types, so we read through the
+      // runtime contract explicitly. We collect first because
+      // `removeAttribute` mutates the element while we iterate.
+      const attrIter = el.attributes as unknown as Iterable<readonly string[]>;
+      const attrs: Array<readonly string[]> = [];
+      for (const attr of attrIter) attrs.push(attr);
+      for (const attr of attrs) {
+        const name = attr[0] ?? '';
+        const value = attr[1] ?? '';
+        if (attributeAction(name, value) === 'remove') {
+          el.removeAttribute(name);
+        }
+      }
+    },
+  });
+  return rewriter.transform(new Response(html, { headers }));
 }
 
 const FORMATS: Readonly<Record<string, ExportFormat>> = {
@@ -144,6 +195,7 @@ const FORMATS: Readonly<Record<string, ExportFormat>> = {
     contentType: 'text/html; charset=utf-8',
     binary: false,
     csp: HTML_EXPORT_CSP,
+    sanitizeHtml: true,
   },
   csv: {
     doPath: '/_do/csv',
@@ -214,6 +266,10 @@ async function dispatchExport(
     return new Response(body, { status: res.status, headers });
   }
   const body = await res.text();
+  if (format.sanitizeHtml) {
+    // 200-only: error bodies are plain text the DO never wraps in markup.
+    return sanitizeHtmlBody(body, headers);
+  }
   return new Response(body, { status: res.status, headers });
 }
 

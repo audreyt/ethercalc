@@ -105,6 +105,21 @@ cp "$SOCIALCALC_JS" "$DEST/static/socialcalc.js"
 # copy so the served runtime matches legacy EtherCalc behavior.
 perl -0pi -e 's/\(function \(root, factory\) {\n    "use strict";/\(function \(root, factory\) {/; s/function \(window\) {\n"use strict";/function \(window\) {/' "$DEST/static/socialcalc.js"
 
+# Stored-XSS hardening for the live editor. SocialCalc's FormatValueForDisplay
+# renders a `valueformat===text-html` cell's value straight into the cell
+# div's innerHTML — the branch body is a bare `;` no-op (displayvalue already
+# equals the raw value). A malicious cell (anonymous write is by design) can
+# therefore plant `<img onerror=…>` / `<script>` that runs in the deployment
+# origin when any collaborator opens the room. We sanitise the value through
+# the DOMPurify-backed `SocialCalc.sanitizeHTML` hook the client installs at
+# boot (packages/client/src/sanitize-html.ts). text-html stays a feature —
+# safe formatting/links/images survive; only the dangerous bits are stripped.
+# When the hook is absent (e.g. an old cached asset) we fall back to the raw
+# value, i.e. exactly the legacy behaviour. The marker comment is unique.
+perl -0pi -e 's/(if \(valueformat=="text-html"\) \{ \/\/ HTML - output as it as is\n)\s*;\n/$1      displayvalue = (SocialCalc.sanitizeHTML ? SocialCalc.sanitizeHTML(displayvalue) : displayvalue);\n/' "$DEST/static/socialcalc.js"
+grep -q 'SocialCalc.sanitizeHTML(displayvalue)' "$DEST/static/socialcalc.js" \
+  || die "text-html sanitize hook not injected into socialcalc.js (upstream render sink changed?)"
+
 # Built single-sheet client — served at /static/player.js.
 cp "$PLAYER_JS" "$DEST/static/player.js"
 

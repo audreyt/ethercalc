@@ -181,6 +181,16 @@ async function replayAgainstWorker(scenario: HttpScenario): Promise<{
  * oracle emits `Content-Type: text/html; charset=utf-8` for `.ico`
  * bytes (Express-static mime-table bug). Per §13 Q1 the rewrite
  * corrects it to `image/vnd.microsoft.icon`.
+ *
+ * `static/get-socialcalc-js` is now ALSO intentionally divergent (per
+ * §13 Q1, design "h5"): `scripts/build-assets.sh` injects an XSS
+ * sanitisation hook into the served runtime's `valueformat===text-html`
+ * render sink (the live-editor stored-XSS fix) — one extra line:
+ *   `displayvalue = (SocialCalc.sanitizeHTML ? SocialCalc.sanitizeHTML(displayvalue) : displayvalue);`
+ * so the served `static/socialcalc.js` is deliberately no longer
+ * byte-identical to the legacy `SocialCalc.js`. We still assert the served
+ * file CONTAINS the upstream runtime and the injected hook (see the
+ * dedicated test below) rather than dropping the surface entirely.
  */
 const PHASE5_EXPECTED_PASS = [
   // Phase 4 — stateless redirects + 404s
@@ -194,8 +204,6 @@ const PHASE5_EXPECTED_PASS = [
   'rooms-index/get-rooms-empty',
   'rooms-index/get-roomlinks-empty',
   'rooms-index/get-roomtimes-empty',
-  // Phase 5.2 — ASSETS restored via miniflare inline `assets` option
-  'static/get-socialcalc-js',
 ] as const;
 
 describe('oracle replay — Phase 4 + 5 + 5.1 + 5.2 subset (10/13 green)', () => {
@@ -222,6 +230,25 @@ describe('oracle replay — Phase 4 + 5 + 5.1 + 5.2 subset (10/13 green)', () =>
       }
     });
   }
+
+  // The served `static/socialcalc.js` no longer byte-matches the legacy
+  // oracle fixture (design "h5": `build-assets.sh` injects the text-html
+  // XSS sanitisation hook). Assert instead that the asset is still served
+  // AND carries the injected hook — that's the security-relevant invariant.
+  it('serves static/socialcalc.js with the text-html sanitisation hook injected', async () => {
+    const req = new Request('https://example.test/static/socialcalc.js');
+    const ctx = createExecutionContext();
+    const res = await worker.fetch(req, env as never, ctx);
+    await waitOnExecutionContext(ctx);
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    // Upstream runtime still present.
+    expect(body).toContain('SocialCalc');
+    // The render sink's text-html branch now routes through the hook.
+    expect(body).toContain(
+      'SocialCalc.sanitizeHTML ? SocialCalc.sanitizeHTML(displayvalue) : displayvalue',
+    );
+  });
 
   // Meta-check: floor is 10/13
   // Favicon fails per §13 Q1. Start page was modified with glassmorphic UI.

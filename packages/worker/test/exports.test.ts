@@ -201,6 +201,65 @@ describe('Phase 8 exports — GET /_/:room/<format>', () => {
   });
 });
 
+describe('Phase 8 exports — HTML XSS sanitisation (text-html cells)', () => {
+  const XSS_ROOM = 'xss-html-' + Math.random().toString(36).slice(2, 8);
+
+  beforeAll(async () => {
+    const e = env as unknown as Env;
+    const id = e.ROOM.idFromName(encodeURI(XSS_ROOM));
+    const stub = e.ROOM.get(id);
+    await stub.fetch('https://do/_do/all', { method: 'DELETE' });
+    await stub.fetch('https://do/_do/snapshot', { method: 'PUT', body: '' });
+    // `text th <html>` plants a text-html cell — SocialCalc renders its value
+    // verbatim into the export <table> (the XSS sink). One payload per cell.
+    const cmds = [
+      'set A1 text th <img src=x onerror=alert(1)>',
+      'set A2 text th <script>alert(1)</script>',
+      'set A3 text th <a href="javascript:alert(1)">x</a>',
+      'set A4 text th <iframe src="https://evil"></iframe>',
+      // Benign markup that MUST survive the sanitiser.
+      'set B1 text th <b>bold</b>',
+      'set B2 text th <a href="https://example.test">link</a>',
+    ];
+    for (const c of cmds) {
+      const res = await stub.fetch('https://do/_do/commands', {
+        method: 'POST',
+        body: c,
+      });
+      expect(res.status).toBe(202);
+    }
+  });
+
+  it('strips script-bearing markup but keeps safe formatting', async () => {
+    const res = await request('GET', `/_/${XSS_ROOM}/html`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('text/html; charset=utf-8');
+    const body = await res.text();
+    const lower = body.toLowerCase();
+
+    // Dangerous bits gone.
+    expect(lower).not.toContain('onerror');
+    expect(lower).not.toContain('<script');
+    expect(lower).not.toContain('javascript:');
+    expect(lower).not.toContain('<iframe');
+
+    // text-html stays a feature — safe markup and the cell text survive.
+    expect(lower).toContain('<b>bold</b>');
+    expect(body).toContain('https://example.test');
+    expect(body).toContain('>link</a>');
+    // Anchor text from the javascript: payload is kept; only the href dies.
+    expect(body).toContain('>x</a>');
+    // The table scaffolding itself is untouched.
+    expect(lower).toContain('<table');
+  });
+
+  it('still emits the XSS-neutralising CSP + nosniff alongside the stripped body', async () => {
+    const res = await request('GET', `/_/${XSS_ROOM}/html`);
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(res.headers.get('content-security-policy')).toContain("default-src 'none'");
+  });
+});
+
 describe('Phase 8 exports — formula & format roundtrip', () => {
   const FORMULA_ROOM = 'phase8-formula-' + Math.random().toString(36).slice(2, 8);
 
