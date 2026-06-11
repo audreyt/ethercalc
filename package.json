@@ -6,7 +6,7 @@
   "author": "Audrey Tang <audreyt@audreyt.org>",
   "repository": {
     "type": "git",
-    "url": "https://github.com/audreyt/ethercalc"
+    "url": "git+https://github.com/audreyt/ethercalc.git"
   },
   "license": "CC0-1.0",
   "keywords": [
@@ -21,7 +21,7 @@
     "socialcalc"
   ],
   "bin": {
-    "ethercalc": "./bin/ethercalc"
+    "ethercalc": "bin/ethercalc"
   },
   "files": [
     "bin/",
@@ -47,7 +47,15 @@
     "README.md",
     "CLAUDE.md",
     "API.md",
-    "Changes.txt"
+    "Changes.txt",
+    "!**/node_modules",
+    "!**/coverage",
+    "!**/reports",
+    "!**/.stryker-tmp",
+    "!**/test-results",
+    "!**/playwright-report",
+    "!**/.dev.vars",
+    "!**/dist/**/*.map"
   ],
   "workspaces": [
     "packages/*"
