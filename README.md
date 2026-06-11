@@ -127,6 +127,30 @@ Store the HMAC secret as a Worker secret:
 
     npx wrangler secret put ETHERCALC_KEY
 
+## Staying on legacy (Redis-backed) EtherCalc
+
+`audreyt/ethercalc:latest` (and every `0.20260422.*` / `0.20260611.*` tag)
+ships the 2026 TypeScript rewrite. It stores rooms in Durable Object SQLite
+files, **not** Redis — pulling `latest` over an existing Redis-backed
+install will look broken until you migrate.
+
+To keep using Redis without migrating yet, pin the last pre-rewrite release:
+
+    docker pull audreyt/ethercalc:0.20201228.1
+
+Or use the bundled compose file (builds the same image locally if the tag
+is not cached yet):
+
+    git clone https://github.com/audreyt/ethercalc
+    cd ethercalc
+    # Reuse your existing Redis data directory:
+    ETHERCALC_LEGACY_REDIS_DATA=/var/lib/redis docker compose -f docker-compose.legacy.yml up -d
+
+Room state lives in Redis (`appendonly yes`). The legacy stack listens on
+port 8000 and speaks socket.io — same URLs and behaviour as pre-2026
+self-hosts. When you are ready to move forward, see the migration section
+below.
+
 ## Migration from a legacy (Redis-backed) EtherCalc
 
 ### Turnkey (recommended)

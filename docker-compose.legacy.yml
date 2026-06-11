@@ -1,0 +1,45 @@
+# Legacy Redis-backed EtherCalc — the pre-2026 Node/LiveScript stack.
+#
+# Use this when you want to keep an existing Redis data directory and are
+# not ready to migrate to the new workerd/Durable Object self-host path.
+#
+#   docker compose -f docker-compose.legacy.yml up -d
+#
+# Pin the image explicitly — `audreyt/ethercalc:latest` now ships the
+# TypeScript rewrite and does not speak Redis.
+
+services:
+  ethercalc:
+    build:
+      context: .
+      dockerfile: deploy/legacy/Dockerfile
+    image: audreyt/ethercalc:0.20201228.1
+    container_name: ethercalc-legacy
+    restart: unless-stopped
+    ports:
+      - "${ETHERCALC_PORT:-8000}:8000"
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      ETHERCALC_KEY: "${ETHERCALC_KEY:-}"
+      ETHERCALC_BASEPATH: "${ETHERCALC_BASEPATH:-}"
+      ETHERCALC_EXPIRE: "${ETHERCALC_EXPIRE:-}"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    container_name: ethercalc-legacy-redis
+    restart: unless-stopped
+    volumes:
+      # Point at your existing Redis data dir, e.g.
+      # ETHERCALC_LEGACY_REDIS_DATA=/var/lib/redis docker compose -f docker-compose.legacy.yml up -d
+      - "${ETHERCALC_LEGACY_REDIS_DATA:-./legacy-redis-data}:/data"
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 3s
