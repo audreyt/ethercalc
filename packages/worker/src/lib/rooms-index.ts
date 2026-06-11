@@ -1,4 +1,5 @@
 import { withRoomsSchema } from './d1-schema.ts';
+import { isPublicRoomIndexEntry } from './formdata-sibling.ts';
 
 /**
  * D1-backed cross-room index helpers (Phase 5.1).
@@ -47,6 +48,7 @@ export async function mirrorRoomToD1(
   room: string,
   updatedAt: number,
 ): Promise<void> {
+  if (!isPublicRoomIndexEntry(room)) return;
   await withRoomsSchema(db, async () => {
     await db
       .prepare(
@@ -82,11 +84,12 @@ export async function bulkMirrorRoomsToD1(
   db: D1Database,
   entries: readonly { readonly room: string; readonly updatedAt: number }[],
 ): Promise<void> {
-  if (entries.length === 0) return;
+  const publicEntries = entries.filter((e) => isPublicRoomIndexEntry(e.room));
+  if (publicEntries.length === 0) return;
   await withRoomsSchema(db, async () => {
-    const placeholders = entries.map(() => '(?, ?)').join(', ');
+    const placeholders = publicEntries.map(() => '(?, ?)').join(', ');
     const params: (string | number)[] = [];
-    for (const e of entries) {
+    for (const e of publicEntries) {
       params.push(e.room, e.updatedAt);
     }
     await db
@@ -123,7 +126,7 @@ export async function listRooms(db: D1Database): Promise<string[]> {
     // D1's `.all()` guarantees `results: Array<T>` when the query is a
     // SELECT that succeeded. In practice the binding also sets it to an
     // empty array for zero-row responses, so we can read it directly.
-    return res.results.map((r) => r.room);
+    return res.results.map((r) => r.room).filter(isPublicRoomIndexEntry);
   });
 }
 
@@ -145,6 +148,7 @@ export async function listRoomTimes(
       .all<{ room: string; updated_at: number }>();
     const out: Record<string, number> = {};
     for (const row of res.results) {
+      if (!isPublicRoomIndexEntry(row.room)) continue;
       out[row.room] = row.updated_at;
     }
     return out;

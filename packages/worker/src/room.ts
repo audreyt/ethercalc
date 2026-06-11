@@ -44,6 +44,7 @@ import { neutralizeCSVDocument } from './lib/csv-encode.ts';
 import { parseCSV } from './lib/csv-parse.ts';
 import { parseSendemail } from './lib/email.ts';
 import { csvToMarkdown } from './lib/md.ts';
+import { formdataSiblingRoom } from './lib/formdata-sibling.ts';
 import { encodeRoom } from './lib/room-name.ts';
 import { hydrateCrossSheetRefs } from './lib/cross-sheet.ts';
 import {
@@ -487,6 +488,28 @@ export class RoomDO implements DurableObject {
     });
     await this.#deleteIndex(roomName);
     await this.#deleteAuditChatFromD1(roomName);
+    await this.#deleteFormdataSibling(roomName);
+  }
+
+  /**
+   * Best-effort wipe of the submitform sibling `<room>_formdata` DO when
+   * the main room is deleted. Skips when `roomName` is already a form-data
+   * sibling or missing (issue #442).
+   */
+  async #deleteFormdataSibling(roomName: string | null): Promise<void> {
+    if (!roomName) return;
+    const sibling = formdataSiblingRoom(roomName);
+    if (!sibling) return;
+    try {
+      const id = this.#env.ROOM.idFromName(encodeRoom(sibling));
+      const stub = this.#env.ROOM.get(id);
+      await stub.fetch(
+        `https://do.local/_do/all?name=${encodeURIComponent(sibling)}`,
+        { method: 'DELETE' },
+      );
+    } catch {
+      // Sibling may not exist; legacy delete was silent on orphans too.
+    }
   }
 
   async #getExists(): Promise<Response> {

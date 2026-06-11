@@ -70,6 +70,12 @@ describe('mirrorRoomToD1', () => {
     await mirrorRoomToD1(db, 'r', t);
     expect(calls[0]!.params[1]).toBe(t);
   });
+
+  it('skips form-data sibling rooms (#533)', async () => {
+    const { db, calls } = makeFakeDb();
+    await mirrorRoomToD1(db, 'sheet_formdata', 99);
+    expect(calls).toHaveLength(0);
+  });
 });
 
 describe('bulkMirrorRoomsToD1', () => {
@@ -98,6 +104,21 @@ describe('bulkMirrorRoomsToD1', () => {
     await bulkMirrorRoomsToD1(db, [{ room: 'solo', updatedAt: 99 }]);
     expect(calls[0]!.sql).toContain('VALUES (?, ?)');
     expect(calls[0]!.params).toEqual(['solo', 99]);
+  });
+
+  it('drops form-data siblings from bulk batches (#533)', async () => {
+    const { db, calls } = makeFakeDb();
+    await bulkMirrorRoomsToD1(db, [
+      { room: 'main', updatedAt: 1 },
+      { room: 'main_formdata', updatedAt: 2 },
+    ]);
+    expect(calls[0]!.params).toEqual(['main', 1]);
+  });
+
+  it('no-ops when every entry is a form-data sibling', async () => {
+    const { db, calls } = makeFakeDb();
+    await bulkMirrorRoomsToD1(db, [{ room: 'x_formdata', updatedAt: 1 }]);
+    expect(calls).toHaveLength(0);
   });
 });
 
@@ -132,6 +153,17 @@ describe('listRooms', () => {
     const out = await listRooms(db);
     expect(out).toEqual([]);
   });
+
+  it('filters form-data siblings from the listing (#533)', async () => {
+    const { db } = makeFakeDb({
+      'SELECT room FROM rooms ORDER BY room ASC': [
+        { room: 'alpha' },
+        { room: 'alpha_formdata' },
+        { room: 'beta' },
+      ],
+    });
+    expect(await listRooms(db)).toEqual(['alpha', 'beta']);
+  });
 });
 
 describe('listRoomTimes', () => {
@@ -154,6 +186,17 @@ describe('listRoomTimes', () => {
     const { db } = makeFakeDb({});
     const out = await listRoomTimes(db);
     expect(out).toEqual({});
+  });
+
+  it('filters form-data siblings from the times hash (#533)', async () => {
+    const { db } = makeFakeDb({
+      'SELECT room, updated_at FROM rooms ORDER BY updated_at DESC, room ASC': [
+        { room: 'newer_formdata', updated_at: 300 },
+        { room: 'newer', updated_at: 250 },
+        { room: 'oldest', updated_at: 100 },
+      ],
+    });
+    expect(await listRoomTimes(db)).toEqual({ newer: 250, oldest: 100 });
   });
 });
 
