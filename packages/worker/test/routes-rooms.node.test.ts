@@ -362,4 +362,32 @@ describe('route glue — env.ROOM dispatch shapes', () => {
     expect(res.headers.get('content-type')).toBe('application/json; charset=utf-8');
     expect(await res.text()).toBe('{}');
   });
+
+  it('GET /_roomlinks returns 403 when room index is disabled', async () => {
+    const { env } = makeFakeRoomNamespace(() => new Response());
+    const app = buildApp();
+    const res = await app.fetch(
+      new Request('https://t.test/_roomlinks'),
+      {
+        ...env,
+        ETHERCALC_DISABLE_ROOM_INDEX: '1',
+      } as never,
+    );
+    expect(res.status).toBe(403);
+    expect(await res.text()).toBe('_roomlinks not available with CORS');
+  });
+
+  it('GET /_roomtimes returns 403 when room index is disabled', async () => {
+    const { env } = makeFakeRoomNamespace(() => new Response());
+    const app = buildApp();
+    const res = await app.fetch(
+      new Request('https://t.test/_roomtimes'),
+      {
+        ...env,
+        ETHERCALC_DISABLE_ROOM_INDEX: '1',
+      } as never,
+    );
+    expect(res.status).toBe(403);
+    expect(await res.text()).toBe('_roomtimes not available with CORS');
+  });
 });

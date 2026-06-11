@@ -98,6 +98,10 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /data
+            # Writable scratch space — the rootfs is read-only by default
+            # (values.yaml securityContext), and SQLite/libc expect /tmp.
+            - name: tmp
+              mountPath: /tmp
       volumes:
         - name: data
           {{- if .Values.persistence.enabled }}
@@ -106,6 +110,8 @@ spec:
           {{- else }}
           emptyDir: {}
           {{- end }}
+        - name: tmp
+          emptyDir: {}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

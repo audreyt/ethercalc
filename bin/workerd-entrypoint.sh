@@ -48,25 +48,11 @@ if [[ -z "$WORKERD_BIN" ]]; then
   exit 127
 fi
 
-# Rewrite the socket address if it differs from config.capnp's baked-in
-# `*:33411`. workerd's capnp format doesn't support env-var expansion,
-# and cross-config imports can't inherit sibling constants, so the
-# simplest portable tactic is: copy the config to a tmp path, sed the
-# address line, serve from the tmp copy. Cheap — the config is <100
-# lines and we only do this once at startup.
-CONFIG_SRC="$APP_ROOT/packages/worker/workerd/config.capnp"
-CONFIG_DIR="$APP_ROOT/packages/worker/workerd"
-if [[ "$PORT" != "33411" || "$HOST" != "0.0.0.0" ]]; then
-  # The config uses `embed "worker/index.js"` which is resolved relative
-  # to the config file's directory, so we must write the modified copy
-  # alongside the original — not into /tmp.
-  CONFIG_PATH="$CONFIG_DIR/config.runtime.capnp"
-  # Socket address in config.capnp looks like: `address = "*:33411",`
-  # Swap the whole `"…"` literal for `"$HOST:$PORT"`.
-  sed -E "s|address = \"[^\"]*\"|address = \"$HOST:$PORT\"|" "$CONFIG_SRC" > "$CONFIG_PATH"
-else
-  CONFIG_PATH="$CONFIG_SRC"
-fi
+# The socket bind is overridden on the command line via `--socket-addr`
+# (the socket is named "http" in config.capnp), so nothing is ever
+# written to the app dir at startup — which is what lets Helm run the
+# container with `readOnlyRootFilesystem: true` (SH-8).
+CONFIG_PATH="$APP_ROOT/packages/worker/workerd/config.capnp"
 
 is_loopback_host() {
   case "$1" in
@@ -84,7 +70,34 @@ if [[ -z "${ETHERCALC_KEY:-}" ]] && ! is_loopback_host "$HOST"; then
   echo "workerd-entrypoint: WARNING: no ETHERCALC_KEY set; anonymous read/write/delete is open. Restrict ingress or set ETHERCALC_KEY." >&2
 fi
 
+# Privilege drop (SH-8). The image deliberately has no `USER` directive:
+# `docker compose` bind-mounts ./ethercalc-data, which on Linux hosts is
+# created root-owned — so the entrypoint starts as root, fixes the data
+# dir's ownership (existing deployments upgrade cleanly), then drops to
+# the unprivileged `bun` user for the actual server process. Under
+# Kubernetes the chart sets runAsNonRoot + fsGroup instead, so this
+# branch is skipped and workerd execs directly.
+RUN_AS_USER="${ETHERCALC_RUN_AS_USER:-bun}"
+if [[ "$(id -u)" == "0" ]] && id "$RUN_AS_USER" >/dev/null 2>&1 \
+   && command -v setpriv >/dev/null 2>&1; then
+  run_uid="$(id -u "$RUN_AS_USER")"
+  run_gid="$(id -g "$RUN_AS_USER")"
+  data_uid="$(stat -c %u "$DATA_DIR" 2>/dev/null || stat -f %u "$DATA_DIR")"
+  if [[ "$data_uid" != "$run_uid" ]]; then
+    echo "workerd-entrypoint: fixing $DATA_DIR ownership for uid $run_uid" >&2
+    chown -R "$run_uid:$run_gid" "$DATA_DIR"
+  fi
+  echo "workerd-entrypoint: dropping privileges to $RUN_AS_USER" >&2
+  exec setpriv --reuid="$run_uid" --regid="$run_gid" --init-groups \
+      "$WORKERD_BIN" serve \
+      "$CONFIG_PATH" \
+      --socket-addr "http=$HOST:$PORT" \
+      -ddo="$DO_DIR" \
+      -dassets="$ASSETS_DIR"
+fi
+
 exec "$WORKERD_BIN" serve \
     "$CONFIG_PATH" \
+    --socket-addr "http=$HOST:$PORT" \
     -ddo="$DO_DIR" \
     -dassets="$ASSETS_DIR"

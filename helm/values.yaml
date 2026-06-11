@@ -25,8 +25,25 @@ serviceAccount:
 podAnnotations: {}
 podLabels: {}
 
-podSecurityContext: {}
-securityContext: {}
+# Restricted-profile defaults (SH-8). The image's unprivileged user is
+# `bun` (uid/gid 1000); fsGroup makes the PVC writable without the
+# entrypoint's root chown path, and the entrypoint never writes to the
+# rootfs (socket override is a workerd CLI flag), so a read-only root
+# filesystem works out of the box. /tmp is an emptyDir mount.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  fsGroupChangePolicy: OnRootMismatch
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
 
 service:
   type: ClusterIP

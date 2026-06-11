@@ -77,6 +77,37 @@ for i in $(seq 1 "$ATTEMPTS"); do
         exit 1
       fi
       curl -fsS -X DELETE "$BASE_URL/_/$room" >/dev/null
+      # DELETE returns 201 unconditionally (legacy semantics), so prove
+      # the room is actually gone rather than trusting the status code.
+      gone_code="$(curl -sS -o /dev/null -w '%{http_code}' "$BASE_URL/_/$room")"
+      if [ "$gone_code" != "404" ]; then
+        echo "[smoke] FAIL — room still readable after DELETE (got $gone_code)"
+        exit 1
+      fi
+
+      echo "[smoke] checking ETHERCALC_DISABLE_ROOM_INDEX=0 opt-out boot"
+      docker compose down --remove-orphans >/dev/null 2>&1
+      ETHERCALC_DISABLE_ROOM_INDEX=0 docker compose up -d
+      optout_ok=""
+      for j in $(seq 1 "$ATTEMPTS"); do
+        if curl -fsS "$HEALTH_URL" >/dev/null 2>&1; then
+          optout_ok=1
+          break
+        fi
+        sleep "$SLEEP_SECONDS"
+      done
+      if [ -z "$optout_ok" ]; then
+        echo "[smoke] FAIL — opt-out boot never became healthy"
+        docker compose logs ethercalc | tail -30
+        exit 1
+      fi
+      optout_code="$(curl -sS -o /tmp/smoke-optout.txt -w '%{http_code}' "$BASE_URL/_exists/smoke-room")"
+      if [ "$optout_code" != "200" ]; then
+        echo "[smoke] FAIL — expected 200 for /_exists with opt-out, got $optout_code"
+        cat /tmp/smoke-optout.txt
+        exit 1
+      fi
+
       echo "[smoke] OK"
       exit 0
     else

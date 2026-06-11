@@ -58,6 +58,13 @@ RUN ./scripts/build-workerd-bundle.sh \
 
 # Persistent storage for Durable Object state. `workerd serve`'s
 # on-disk DO backend writes SQLite files under /data/do/<uniqueKey>/.
+# Owned by the unprivileged `bun` user (uid 1000, ships with oven/bun)
+# so named volumes initialise writable. No `USER` directive on purpose:
+# Linux bind mounts (./ethercalc-data) arrive root-owned, so the
+# entrypoint starts as root, chowns the data dir once, then drops to
+# `bun` via setpriv before exec'ing workerd (SH-8). Kubernetes deploys
+# skip the drop — the Helm chart sets runAsNonRoot + fsGroup instead.
+RUN mkdir -p /data && chown bun:bun /data
 VOLUME ["/data"]
 
 EXPOSE 8000

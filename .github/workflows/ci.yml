@@ -118,7 +118,7 @@ jobs:
   build-selfhost:
     name: build:selfhost — docker image + smoke
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     needs: test
     # Mirrors CLAUDE.md §11.1 item 10. Uses the Dockerfile + docker-compose
     # at the repo root and hits /_health via scripts/smoke-selfhost.sh.
@@ -130,6 +130,9 @@ jobs:
 
       - name: Smoke — build image, compose up, curl /_health, compose down
         run: ./scripts/smoke-selfhost.sh
+
+      - name: Smoke — proxy recipe (nginx -t + compose stack + WS upgrade)
+        run: ./scripts/smoke-proxy.sh
 
   helm-lint:
     name: helm — lint + template

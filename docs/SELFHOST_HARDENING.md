@@ -1,7 +1,7 @@
 # Self-Host Hardening — Implementor Handoff
 
-> **Status:** main self-host hardening pass applied; Sandstorm branch work, Helm pod hardening, and
-> optional in-Worker rate/room quotas remain · **Owner:** Audrey Tang · **Drafted:** 2026-06-11
+> **Status:** main self-host hardening pass applied incl. SH-8 (non-root + RO rootfs); Sandstorm
+> branch work and optional in-Worker rate/room quotas remain · **Owner:** Audrey Tang · **Drafted:** 2026-06-11
 > **Source:** a six-surface parallel audit + adversarial verification of the self-host
 > deployment paths against the already-shipped worker code, followed by the 2026-06-11
 > implementation pass recorded below.
@@ -203,10 +203,12 @@ should-fixes, all addressed before commit:
   CLAUDE.md synced (Miniflare→workerd sweep completed in §1.1/§9/§13 Q5, new §13 Q11 decision row,
   §14 session entry).
 
-Deferred as optional follow-ups (beyond the §2.5 residuals): CI validation of the proxy recipe
-(compose-up smoke or stubbed `nginx -t`), a smoke-script leg for the `ETHERCALC_DISABLE_ROOM_INDEX=0`
-opt-out boot, and a smoke assertion that DELETE actually removed the room (the endpoint returns
-`201 OK` unconditionally, legacy semantics).
+~~Deferred as optional follow-ups~~ All three landed later the same day alongside SH-8:
+`scripts/smoke-proxy.sh` (stubbed `nginx -t` + full proxy-compose stack + WS-upgrade-through-nginx
+check, wired into the CI `build-selfhost` job), an `ETHERCALC_DISABLE_ROOM_INDEX=0` opt-out reboot
+leg and a DELETE→404 assertion in `scripts/smoke-selfhost.sh`, plus route-level 403 tests for
+`/_roomlinks`/`/_roomtimes` and a keyless-warning suppression assertion in
+`scripts/check-helm-hardening.sh`. Released as `0.20260611.0` (Docker Hub + npm).
 
 ---
 
@@ -407,21 +409,34 @@ during normal operation.
 
 ---
 
-### SH-8 — Helm pod/container hardening  ·  NICE-TO-HAVE · config
+### SH-8 — Helm pod/container hardening  ·  DONE on `main` (2026-06-11) · config
 
 **Gap (low-impact — container-isolation defense-in-depth, orthogonal to the anonymous-abuse surface).**
-`helm/values.yaml` leaves `podSecurityContext:{}` / `securityContext:{}` empty; the Dockerfile has
-no `USER` (oven/bun base runs as **root**). A default `helm install` yields a root pod, writable rootfs,
+`helm/values.yaml` left `podSecurityContext:{}` / `securityContext:{}` empty; the Dockerfile had
+no `USER` (oven/bun base runs as **root**). A default `helm install` yielded a root pod, writable rootfs,
 full caps, `allowPrivilegeEscalation` defaulting true, no seccomp.
 
-**Fix.** Ship non-root `securityContext` defaults in `values.yaml` (`runAsNonRoot: true`,
-`allowPrivilegeEscalation: false`, `capabilities: { drop: [ALL] }`, `seccompProfile: RuntimeDefault`)
-and add a `USER` to the Dockerfile. **Caveat:** `readOnlyRootFilesystem: true` needs an `emptyDir`
-carve-out — `bin/workerd-entrypoint.sh` writes `config.runtime.capnp` into the app dir, not just
-`/data`. Optionally add an opt-in `networkPolicy.enabled` template (low value — see audit; the app
-exposes the same anonymous surface to in-cluster peers as to the ingress, so it changes *who* not *what*).
+**Fix implemented.**
+- `helm/values.yaml` ships restricted defaults: `runAsNonRoot: true` + uid/gid/fsGroup 1000 +
+  `seccompProfile: RuntimeDefault` (pod), `allowPrivilegeEscalation: false` +
+  `capabilities: {drop: [ALL]}` + `readOnlyRootFilesystem: true` (container).
+  `deployment.yaml` mounts an `emptyDir` at `/tmp`.
+- The `readOnlyRootFilesystem` blocker is gone at the source: the entrypoint no longer writes
+  `config.runtime.capnp` into the app dir — the socket bind is overridden via
+  `workerd serve --socket-addr http=$HOST:$PORT` instead, so nothing touches the rootfs at startup.
+- **Docker keeps no `USER` directive deliberately**: Linux `docker compose` bind mounts arrive
+  root-owned (and existing deployments' `./ethercalc-data` is root-owned from older images), so the
+  entrypoint starts as root, chowns `$DATA_DIR` once if mismatched, then **drops to the
+  unprivileged `bun` user via `setpriv`** before exec'ing workerd. The server process is never
+  root; upgrades stay seamless. `ETHERCALC_RUN_AS_USER` overrides the target user. Under
+  Kubernetes the chart's `runAsNonRoot` skips the drop branch entirely (fsGroup makes the PVC
+  writable). `/data` is also pre-owned by `bun` at image build so named volumes initialise writable.
+- `scripts/check-helm-hardening.sh` asserts the restricted render (and that the keyless-ingress
+  warning is suppressed when a key is set). NetworkPolicy template not added (per the audit: it
+  changes *who* can reach the anonymous surface, not *what* it exposes).
 
-**Acceptance.** `helm template` renders a restricted `securityContext`; the container starts as non-root.
+**Acceptance.** `helm template` renders a restricted `securityContext`; the container's workerd
+process runs as uid 1000 on both Docker and Kubernetes paths.
 
 ---
 
@@ -490,11 +505,11 @@ forwards it, but the worker reads `BASEPATH` (not `ETHERCALC_BASEPATH`). `config
 | SH-5 | TLS guidance into self-hosting docs + sample proxy | DONE on `main` | docs | README, sample compose |
 | SH-6 | Enforce/remove Sandstorm viewer role | SHOULD-FIX (SS) | small-code | `sandstorm` branch + worker auth/WS |
 | SH-7 | Disarm Sandstorm migrate token post-first-load | NICE (SS) | small-code | `run_grain.sh` (`sandstorm` branch) |
-| SH-8 | Helm pod securityContext / non-root | NICE | config | `helm/values.yaml`, `Dockerfile`, `helm/templates/deployment.yaml` |
+| SH-8 | Helm pod securityContext / non-root | DONE on `main` | config | `helm/values.yaml`, `Dockerfile`, entrypoint `setpriv` drop |
 | SH-9 | Helm fail-loud on empty key + ingress | DONE on `main` | docs | `helm/templates/NOTES.txt` |
 | SH-10 | Wire `ETHERCALC_BASEPATH` on Docker path | DONE on `main` | config | `config.capnp`, CLI map |
 
-**Remaining suggested order:** Helm SH-8 → Sandstorm branch SH-6/SH-7 → optional in-Worker limiter /
+**Remaining suggested order:** Sandstorm branch SH-6/SH-7 → optional in-Worker limiter /
 room-creation quota if the proxy baseline proves insufficient.
 
 ---
