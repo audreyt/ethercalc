@@ -21,6 +21,7 @@ export interface MainDeps {
   stdout: (s: string) => void;
   stderr: (s: string) => void;
   exec: (cmd: string, args: string[], env: Record<string, string>) => number;
+  env?: Record<string, string | undefined>;
 }
 
 /**
@@ -49,7 +50,7 @@ export function main(argv: readonly string[], deps: MainDeps): number {
     deps.stdout(`${HELP_TEXT}\n`);
     return 0;
   }
-  const plan = buildLaunchPlan(flags);
+  const plan = buildLaunchPlan(flags, deps.env);
   for (const w of plan.warnings) {
     deps.stderr(`${w}\n`);
   }

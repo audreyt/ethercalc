@@ -6,7 +6,7 @@ metadata:
     {{- include "ethercalc.labels" . | nindent 4 }}
 spec:
   # HARD INVARIANT: replicas MUST stay 1 and strategy MUST be Recreate.
-  # The worker is a single-process Miniflare runtime — two pods sharing
+  # The worker is a single-process workerd runtime; two pods sharing
   # the PVC would corrupt Durable Object state silently, with no
   # consensus layer to reconcile them. See chart values.yaml preamble.
   replicas: 1
@@ -61,6 +61,8 @@ spec:
             - name: ETHERCALC_DEFAULT_ROOM
               value: {{ .Values.config.defaultRoom | quote }}
             {{- end }}
+            - name: ETHERCALC_DISABLE_ROOM_INDEX
+              value: {{ ternary "1" "0" .Values.config.disableRoomIndex | quote }}
             {{- if .Values.config.cors }}
             - name: ETHERCALC_CORS
               value: "1"

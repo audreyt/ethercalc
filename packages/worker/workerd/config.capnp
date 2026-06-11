@@ -34,7 +34,7 @@ const config :Workerd.Config = (
     (name = "do", disk = (path = "do-storage", writable = true)),
 
     # Internet service — left unbound. The worker never makes outbound
-    # fetches (it's all local DO + D1 + assets), so no outbound HTTP
+    # fetches (it's all local DO + assets under this standalone config), so no outbound HTTP
     # egress is needed.
   ],
 
@@ -75,17 +75,22 @@ const mainWorker :Workerd.Worker = (
     # routes set it explicitly where needed (see src/routes/assets.ts).
     (name = "ASSETS", service = "assets"),
 
-    # Env-var bindings. Text values are baked into the capnp at startup.
-    (name = "BASEPATH", text = ""),
+    # URL base path. Docker/Helm expose the legacy `ETHERCALC_BASEPATH`
+    # operator knob, while the Worker binding itself is `BASEPATH` to match
+    # wrangler.toml and the legacy app's internal variable name.
+    (name = "BASEPATH", fromEnvironment = "ETHERCALC_BASEPATH"),
 
     # `fromEnvironment` pulls the value from the workerd process env at
     # startup. The grain's run_grain.sh exports this before exec'ing
     # workerd; for non-Sandstorm self-host, the Dockerfile's CMD does.
     (name = "ETHERCALC_MIGRATE_TOKEN", fromEnvironment = "ETHERCALC_MIGRATE_TOKEN"),
 
-    # Optional env vars, read from the process env. Missing values
-    # arrive as empty strings — the worker code checks for that.
+    # Optional env vars, read from the process env. NOTE: a missing
+    # env var arrives in the Worker as `null`, NOT an empty string
+    # (verified with workerd 1.20260420.1) — worker code must guard
+    # with truthiness / `!= null`, never `!== undefined`.
     (name = "ETHERCALC_KEY", fromEnvironment = "ETHERCALC_KEY"),
+    (name = "ETHERCALC_DISABLE_ROOM_INDEX", fromEnvironment = "ETHERCALC_DISABLE_ROOM_INDEX"),
     (name = "ETHERCALC_CORS", fromEnvironment = "ETHERCALC_CORS"),
     (name = "ETHERCALC_EXPIRE", fromEnvironment = "ETHERCALC_EXPIRE"),
     (name = "DEVMODE", fromEnvironment = "DEVMODE"),

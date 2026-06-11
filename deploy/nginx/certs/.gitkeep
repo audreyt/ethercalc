@@ -1,0 +1,2 @@
+# Place fullchain.pem and privkey.pem here for the HTTPS proxy recipe.
+# Contents of this directory (except this file) are gitignored.

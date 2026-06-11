@@ -22,6 +22,14 @@ EtherCalc {{ .Chart.AppVersion }} is installing.
      open http://localhost:8000
 {{- end }}
 
+{{- if and .Values.ingress.enabled (not .Values.secrets.existingSecret) (not .Values.secrets.key) }}
+
+⚠️  SECURITY: ingress is enabled and no ETHERCALC_KEY is configured.
+    This preserves EtherCalc's anonymous collaboration mode, but anyone
+    who reaches the ingress can read, edit, and delete rooms whose URLs
+    they know. Restrict ingress or set secrets.key for internet-facing use.
+{{- end }}
+
 3. Persistence:
 {{- if .Values.persistence.enabled }}
      Durable Object state persists to a {{ .Values.persistence.size }} PVC.
@@ -41,6 +49,6 @@ EtherCalc {{ .Chart.AppVersion }} is installing.
      kubectl -n {{ .Release.Namespace }} rollout restart deploy/{{ include "ethercalc.fullname" . }}
 
 ⚠️  IMPORTANT: replicas is hard-locked at 1. The worker is a single-
-    process Miniflare runtime — two pods sharing the PVC will corrupt
+    process workerd runtime — two pods sharing the PVC will corrupt
     rooms. Scaling out requires Cloudflare Workers + Durable Objects
     deployment (see packages/worker/README.md).

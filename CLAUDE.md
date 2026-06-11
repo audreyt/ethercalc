@@ -17,7 +17,7 @@ Ship a greenfield TypeScript implementation of EtherCalc that:
 1. **Passes a golden-fixture oracle-equivalence suite** against the current `main` branch — every §6.1 HTTP endpoint (identical status/headers/body for deterministic formats, structural equivalence for HTML/XLSX/ODS), every §6.2 WS message, every §6.3 Redis key pattern mapped to the new storage layer with equivalent semantics. Small allow-list of "sensible fixes" (§13 Q1) documented in §6.1.
 2. **Runs locally under Miniflare** with the full feature set — DO WebSockets, D1 snapshots, KV indexes, R2 — no Redis/Node dependency.
 3. **Deploys to Cloudflare Workers** via `wrangler deploy`.
-4. **Is self-hostable** via `docker compose up` (Miniflare container, persistent volume, no CF account needed — §13 Q5).
+4. **Is self-hostable** via `docker compose up` (standalone workerd container, persistent volume, no CF account needed — §13 Q5).
 5. **Maintains 100% coverage** on gated packages in CI. Any PR dropping a metric below 100 fails.
 6. **Preserves the public HTTP API** byte-for-byte where deterministic (minus sensible fixes).
 7. **Client speaks new WS protocol** (raw JSON). Legacy `/socket.io/*` shim retained indefinitely for external embeds (§13 Q4).
@@ -67,7 +67,7 @@ Ship a greenfield TypeScript implementation of EtherCalc that:
 | Cron                          | External cron pinging `/_timetrigger`            | **Cron Triggers** invoking the Worker                         |
 | Email                         | `nodemailer` + gmail xoauth2                     | **`send_email` binding** or stub                              |
 | Secrets                       | CLI flag `--key`                                 | Worker secret `ETHERCALC_KEY` **and** CLI `--key` (§13 Q6)    |
-| Self-host                     | `docker-compose.yml` (Node + Redis)              | Miniflare image (§13 Q5)                                      |
+| Self-host                     | `docker-compose.yml` (Node + Redis)              | standalone workerd image (§13 Q5)                             |
 
 ### 3.2 Request flow
 
@@ -164,7 +164,7 @@ Per-package `stryker.conf.json` with a `break` threshold pinned to the measured 
 
 ### 6.1 HTTP endpoints
 
-`BASEPATH` is a prefix (default empty). `KEY` gates edit/view if set. `CORS` toggles headers + disables `_rooms*`.
+`BASEPATH` is a prefix (default empty). `KEY` gates edit/view if set. `CORS` is now a legacy room-index gate; CORS headers are emitted unconditionally for embed compatibility. Prefer `ETHERCALC_DISABLE_ROOM_INDEX` for self-host discovery control.
 
 | Method | Path                              | Content-Type req/res                                     | Notes                                                                                                                         |
 | ------ | --------------------------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
@@ -177,11 +177,11 @@ Per-package `stryker.conf.json` with a `break` threshold pinned to the measured 
 | GET    | `/static/form:part.js`            | `application/javascript`                                 | Literal colon in path; routed via `/static/:file{form.+\.js}` constrained segment.                                            |
 | GET    | `/_new`, `/=_new`                 | 302 → new room (+`/edit` if KEY)                         | Auto-generated uuid.                                                                                                          |
 | GET    | `/_timetrigger`                   | `application/json`                                       | Legacy cron endpoint; fires due triggers.                                                                                     |
-| GET    | `/_rooms`                         | `application/json`                                       | `403` if CORS.                                                                                                                |
+| GET    | `/_rooms`                         | `application/json`                                       | `403` if room-index gate (`ETHERCALC_DISABLE_ROOM_INDEX`, legacy `CORS` fallback — §13 Q11).                                  |
 | GET    | `/_roomlinks`                     | `text/html`                                              | **Sensible-fix** (§13 Q1) — legacy emitted JSON body with HTML CT.                                                            |
 | GET    | `/_roomtimes`                     | `application/json`                                       | Sorted desc by `updated_at`.                                                                                                  |
 | GET    | `/_from/:template`                | 302 → new room                                           | Copies template via DO-to-DO fetch.                                                                                           |
-| GET    | `/_exists/:room`                  | `application/json` (**bare** boolean)                    | Per oracle F-05.                                                                                                              |
+| GET    | `/_exists/:room`                  | `application/json` (**bare** boolean)                    | Per oracle F-05. Gated like `/_rooms` (§13 Q11).                                                                              |
 | GET    | `/:room`                          | → `index.html` (or `multi/index.html` for `=`)           | Redirect to `?auth=0` / `?auth=<hmac>` if `KEY` set.                                                                          |
 | GET    | `/:template/form`                 | 302 → `/<room>_<uuid>/app`                               | Uses `/_do/clone`.                                                                                                            |
 | GET    | `/:template/appeditor`            | → `panels.html`                                          |                                                                                                                               |
@@ -250,7 +250,7 @@ Remaining items worth flagging. Resolved risks are documented in the code; see g
 
 2. **Docker Desktop on macOS/ARM + workerd networking quirk**: `docker compose up` binds 0.0.0.0:8000 inside the container, but Docker Desktop's virtio networking on Apple Silicon returns zero bytes to host curls. Linux CI runners don't reproduce it. Dev-affordance only. If a contributor reports "docker compose up works but curl hangs", answer is "run `bun run --cwd packages/worker dev` directly, or use Linux/WSL".
 
-3. **CLI env vars partially wired**: `ETHERCALC_EXPIRE`, `ETHERCALC_CORS`, `ETHERCALC_BASEPATH` are set by `bin/ethercalc` into Miniflare env, but the worker doesn't fully read them yet. `ETHERCALC_KEY` IS read. Wire the rest as their governing routes mature.
+3. **Self-host env wiring**: `bin/ethercalc` forwards Worker bindings via `--var` for the local wrangler-dev path; Docker/workerd maps `ETHERCALC_BASEPATH` to the Worker's `BASEPATH` binding in `config.capnp`. `ETHERCALC_CORS` is now a legacy room-index gate only; CORS headers are emitted unconditionally for embed compatibility. Prefer `ETHERCALC_DISABLE_ROOM_INDEX` for self-host discovery control.
 
 4. **Third-party bundled libs** (`third-party/class-js/`, `third-party/wikiwyg/`, plus jQuery + vex inlined into `static/ethercalc.js`): some are IE-era. Audit before re-bundling under Vite in the client pipeline.
 
@@ -291,7 +291,7 @@ Phases 0–11 complete (see §14 for merge history). Remaining:
 ethercalc/
   CLAUDE.md                 # this file
   bin/ethercalc             # CLI wrapping wrangler dev / Miniflare
-  Dockerfile                # Miniflare self-host image
+  Dockerfile                # standalone workerd self-host image
   docker-compose.yml        # self-host compose (§13 Q5)
   assets/                   # curated by scripts/build-assets.sh
   migrations/               # D1 migrations
@@ -357,7 +357,7 @@ Legacy LS/compiled JS (`src/*.ls`, root `*.js`, `multi/`, `Makefile`, `webpack.c
 7. Oracle replay (docker oracle + `wrangler dev --local`).
 8. Playwright e2e against `wrangler dev`.
 9. `wrangler deploy --dry-run`.
-10. `build-selfhost`: build Miniflare image, `docker compose up`, smoke curl `/_health`.
+10. `build-selfhost`: build standalone workerd image, `docker compose up`, smoke curl `/_health`.
 11. `mutation-gate`: Stryker on packages with `src/` changes vs merge-base. Conditionally required.
 
 ### 11.2 Nightly
@@ -397,12 +397,13 @@ Canonical record as of 2026-04-19. Do not re-ask. To change a decision, edit it 
 | 2 | `multi/` React 0.12 UI | **Port to React 18 + TypeScript.** Preserve `/=:room` URL scheme. | §1.1, §9 |
 | 3 | Email strategy | **Cloudflare `send_email` binding.** Old gmail-xoauth2 dropped. Tests use stub transport. | §3.1 |
 | 4 | Legacy socket.io shim | **Keep indefinitely** (no sunset date). External embeds depend on it. | §3.1 |
-| 5 | Docker self-host | **Yes.** Miniflare container with persistent volume; no CF account required. | §1.1, §3.1 |
+| 5 | Docker self-host | **Yes.** Standalone workerd container with persistent volume; no CF account required. *(2026-06-11: image moved from Miniflare to bare workerd; Miniflare remains the local-dev/test simulator.)* | §1.1, §3.1 |
 | 6 | Secrets | **Both.** CLI `--key` for self-host; Worker secret `ETHERCALC_KEY` for CF deploy. | §3.1 |
 | 7 | Rate limiting | **None at application layer.** Rely on CF platform / WAF. | §1.2 |
 | 8 | `/static/socialcalc.js` | **Keep serving.** External embeds depend on this path. | §6.1 |
 | 9 | `chat-<room>` persistence | **Mirror to D1** beyond DO lifetime. | §3.3, §10.2 |
 | 10 | Snapshot TTL (`--expire`) | **DO `setAlarm`.** CLI flag honored. | §10.2 |
+| 11 | Self-host room discovery + abuse layer (2026-06-11) | **`ETHERCALC_DISABLE_ROOM_INDEX` gates `/_rooms*` + `/_exists`; defaults ON in Docker/workerd/Helm, overridable.** Legacy `ETHERCALC_CORS` honoured as fallback, boolean-string parsed (`'0'`/`'false'` = off — sensible fix vs old truthiness). CORS headers stay unconditional for embeds. Abuse prevention for self-host = documented nginx proxy recipe (`docker-compose.proxy.yml`), not in-Worker limiting; Q7 unchanged for hosted. | §3.1, §6.1, docs/SELFHOST_HARDENING.md |
 
 ---
 
@@ -420,6 +421,7 @@ Append one entry per session.
 | 2026-04-21 | 11b/12 | **Migration is RESP-only; RDB parser removed.** `packages/migrate/` now streams from a live Redis/Zedis via RESP (SCAN + pipelined GET/LRANGE/HGETALL) into the worker's `PUT /_migrate/seed/:room`. Dropped ~3 300 LOC: hand-rolled RDB parser + LZF worker-thread pool + `ChunkedReader` streaming parser + `WranglerTarget` shell-out + all rdb/lzf/extract-rooms/stream tests. CLI surface simplified to `--source redis://…` + `--target http://…` + `--token …` (+ `--dry-run`). `bin/ethercalc migrate` no longer imports `node:worker_threads` / `node:fs`. 100 tests, 100% coverage on migrate; 492 node tests, 100% on worker. Also added `PUT /_migrate/seed/:room` route + `POST /_do/seed` handler on worker side; gated by `env.ETHERCALC_MIGRATE_TOKEN` (unset → 404). Wiped 5.2 GB halfway-migrated Miniflare store. | (this commit) |
 | 2026-04-23 | 7/8/16A | **Formula-preserving exports + cross-sheet formulas landed.** `54c191e` rewrote xlsx/ods/fods export to walk `sheet.cells` directly into SheetJS `{v, t, f, z, c}` cells — preserves formulas, number formats, merged ranges, cell comments. `ecb18d3` added the multi-sheet export routes that were 501 stubs (walks TOC + `/_do/sheet-data`), xlsx/ods import with formula fidelity (SheetJS → SocialCalc `set A1 formula SUM(A1:A2)` commands), and cross-sheet formula resolution via `findCrossSheetRefs` + `/_do/snapshot` DO-to-DO fetch + `addSiblingSheet`. §7 item 2 removed (renumbered 3→2, 4→3, 5→4, 6→5, 7→6); §8 Phase 8 last checkbox ticked; §16.A "Not yet exercised" cross-sheet bullet dropped. Closes #55, #234, #289, #305, #573, #717, #762, #783, #795 on the issue tracker. Merged to `sandstorm` as `b896a36`. | 54c191e, ecb18d3 |
 | 2026-04-22 | 12 | **Filesystem source for first-load Sandstorm migration.** Added `packages/migrate/src/sources/filesystem-source.ts` to enumerate rooms out of a legacy `src/db.ls`-written on-disk dump (what EtherCalc falls back to when no Redis is reachable — notably the Sandstorm grain, app id `a0n6hwm32zjsrzes8gnjg734dh6jwt7x83xdgytspe761pe2asw0`, which sets `OPENSHIFT_DATA_DIR=/var`). Auto-detects `dump.json` (flat map of legacy Redis keys) vs `dump/` directory (per-key `snapshot-*.txt` raw + `audit-*.txt` with legacy `\\n/\\r/\\\\` escape encoding). Log/chat/ecell absent in dir mode — matches legacy in-memory-only behavior so migrated rooms look the same as what the user last saw. CLI accepts `--source file:///path` or bare `/abs/path`; scheme validated at parse time via new `parseSource` helper in `cli-args.ts`. `RunDeps.connectRedis` and new `RunDeps.fs` are both optional; `bin/ethercalc` wires `node:fs/promises` into `fs`. 166 migrate tests, 100% coverage retained. Usage from a Sandstorm `run_grain.sh`: boot worker, block on `/_health`, run `./bin/ethercalc migrate --source file:///var --target http://127.0.0.1:$PORT --token $TOKEN`, drop a `.migrated` sentinel, proceed. Also extracted the oversized-entry filter to shared `filter-oversized.ts` (redis-source.ts now imports from there). | (this commit) |
+| 2026-06-11 | selfhost | **Self-host hardening pass + workerd null-binding fixes.** Room-index gate `ETHERCALC_DISABLE_ROOM_INDEX` (legacy `ETHERCALC_CORS` fallback, §13 Q11) defaulted ON across Dockerfile/compose/entrypoint/Helm; keyless non-loopback startup warnings (CLI + entrypoint + Helm NOTES); `ETHERCALC_BASEPATH`→`BASEPATH` wired in `config.capnp`; nginx proxy recipe (`docker-compose.proxy.yml` + `deploy/nginx/`) with WS read timeouts, split conn zones, commented 443 path; smoke asserts the four 403s + anonymous CRUD + `GET /` 200. Post-review fixes (38-agent adversarial pass, see `docs/SELFHOST_HARDENING.md` §2.6): **workerd delivers unset `fromEnvironment` bindings as `null`, not `''`** — capnp comment corrected, `shouldDisableRoomIndex` null-guarded, and pre-existing `GET /` → `/null` redirect on the Docker path fixed (`assets.ts` truthiness guard); CLI inherits `ETHERCALC_BASEPATH` from env; Helm chart 0.2.0. | (this commit) |
 
 ---
 

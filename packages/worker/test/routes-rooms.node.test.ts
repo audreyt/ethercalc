@@ -95,6 +95,44 @@ describe('route glue — env.ROOM dispatch shapes', () => {
     expect(await res.text()).toBe('true');
   });
 
+  it('GET /_exists/:room returns 403 when room index is disabled', async () => {
+    const { env, calls } = makeFakeRoomNamespace(() =>
+      new Response(JSON.stringify({ exists: 1 }), {
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    const app = buildApp();
+    const res = await app.fetch(
+      new Request('https://t.test/_exists/foo'),
+      {
+        ...env,
+        ETHERCALC_DISABLE_ROOM_INDEX: '1',
+      } as never,
+    );
+    expect(res.status).toBe(403);
+    expect(await res.text()).toBe('_exists not available with CORS');
+    expect(calls).toHaveLength(0);
+  });
+
+  it('GET /_exists/:room honours explicit room-index opt-out over legacy CORS', async () => {
+    const { env } = makeFakeRoomNamespace(() =>
+      new Response(JSON.stringify({ exists: 1 }), {
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    const app = buildApp();
+    const res = await app.fetch(
+      new Request('https://t.test/_exists/foo'),
+      {
+        ...env,
+        ETHERCALC_DISABLE_ROOM_INDEX: '0',
+        ETHERCALC_CORS: '1',
+      } as never,
+    );
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe('true');
+  });
+
   it('GET /_/:room reads /_do/snapshot via DO', async () => {
     const { env, calls } = makeFakeRoomNamespace(() =>
       new Response('SC-SAVE', {
@@ -273,6 +311,34 @@ describe('route glue — env.ROOM dispatch shapes', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toBe('application/json; charset=utf-8');
     expect(await res.text()).toBe('[]');
+  });
+
+  it('GET /_rooms returns 403 when room index is disabled', async () => {
+    const { env } = makeFakeRoomNamespace(() => new Response());
+    const app = buildApp();
+    const res = await app.fetch(
+      new Request('https://t.test/_rooms'),
+      {
+        ...env,
+        ETHERCALC_DISABLE_ROOM_INDEX: '1',
+      } as never,
+    );
+    expect(res.status).toBe(403);
+    expect(await res.text()).toBe('_rooms not available with CORS');
+  });
+
+  it('GET /_rooms keeps the legacy ETHERCALC_CORS fallback', async () => {
+    const { env } = makeFakeRoomNamespace(() => new Response());
+    const app = buildApp();
+    const res = await app.fetch(
+      new Request('https://t.test/_rooms'),
+      {
+        ...env,
+        ETHERCALC_CORS: '1',
+      } as never,
+    );
+    expect(res.status).toBe(403);
+    expect(await res.text()).toBe('_rooms not available with CORS');
   });
 
   it('GET /_roomlinks returns [] with HTML content-type', async () => {

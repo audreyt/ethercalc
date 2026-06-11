@@ -1,0 +1,53 @@
+# Alternate internet-facing self-host recipe. It keeps workerd off the host
+# network and places nginx in front for TLS termination and abuse throttling.
+#
+#   docker compose -f docker-compose.proxy.yml up -d
+#
+# The nginx config lives at deploy/nginx/ethercalc.conf. For production HTTPS:
+# place certificates under deploy/nginx/certs/, uncomment the 443 listener in
+# that config, AND uncomment the 443 ports mapping on the proxy service below
+# — or adapt the same upstream/limit rules to your existing edge.
+
+services:
+  ethercalc:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ethercalc:selfhost
+    restart: unless-stopped
+    expose:
+      - "8000"
+    volumes:
+      - ./ethercalc-data:/data
+    environment:
+      ETHERCALC_PORT: "${ETHERCALC_PORT:-8000}"
+      ETHERCALC_HOST: "0.0.0.0"
+      ETHERCALC_KEY: "${ETHERCALC_KEY:-}"
+      ETHERCALC_DISABLE_ROOM_INDEX: "${ETHERCALC_DISABLE_ROOM_INDEX:-1}"
+      ETHERCALC_CORS: "${ETHERCALC_CORS:-}"
+      # No ETHERCALC_BASEPATH here on purpose: the bundled nginx config
+      # proxies at the URL root and does not strip a prefix, so setting a
+      # basepath behind it produces broken links.
+      ETHERCALC_EXPIRE: "${ETHERCALC_EXPIRE:-}"
+      ETHERCALC_MIGRATE_TOKEN: "${ETHERCALC_MIGRATE_TOKEN:-}"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/_health >/dev/null || exit 1"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+      start_period: 5s
+
+  proxy:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      ethercalc:
+        condition: service_healthy
+    ports:
+      - "${ETHERCALC_PROXY_HTTP_PORT:-80}:80"
+      # Uncomment for HTTPS (together with the 443 listener in
+      # deploy/nginx/ethercalc.conf and certs in deploy/nginx/certs/):
+      # - "${ETHERCALC_PROXY_HTTPS_PORT:-443}:443"
+    volumes:
+      - ./deploy/nginx/ethercalc.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/nginx/certs:/etc/nginx/certs:ro

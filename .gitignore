@@ -41,3 +41,6 @@ ethercalc-data/
 
 # report.md is a generated file
 report.md
+# TLS material for the self-host proxy recipe — never commit
+deploy/nginx/certs/*
+!deploy/nginx/certs/.gitkeep

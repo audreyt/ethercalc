@@ -132,7 +132,10 @@ export function registerAssets(app: Hono<{ Bindings: Env }>): void {
   // page) is preserved — this is what ethercalc.net serves.
   app.get('/', async (c) => {
     const defaultRoom = c.env.ETHERCALC_DEFAULT_ROOM;
-    if (defaultRoom !== undefined && defaultRoom !== '') {
+    // Truthiness, not `!== undefined`: workerd delivers an unset
+    // `fromEnvironment` binding as `null`, which would otherwise
+    // redirect every `docker compose up` visitor to `/null`.
+    if (defaultRoom) {
       const basepath = c.env.BASEPATH ?? '';
       return new Response('', {
         status: 302,

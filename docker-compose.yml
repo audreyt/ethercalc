@@ -1,10 +1,9 @@
 # EtherCalc self-host compose file (§13 Q5).
 #
-# Default service — the Miniflare-backed Worker. No Redis: we moved
-# storage to Cloudflare's stack (DO + D1 + KV + R2), which Miniflare
-# simulates locally against the `./ethercalc-data` bind-mounted at
-# /data in the container. `docker compose up -d` is the whole install
-# story.
+# Default service — the standalone workerd Worker. No Redis: room state
+# lives in Durable Object SQLite files under the `./ethercalc-data`
+# bind-mounted at /data in the container. `docker compose up -d` is the
+# whole install story.
 #
 # Migration profile — activated with `--profile migrate`, adds two
 # short-lived services (`legacy-redis` + `migrator`) that ingest a
@@ -24,8 +23,8 @@ services:
       # Host 8000 matches the legacy port from the old compose file.
       - "8000:8000"
     volumes:
-      # Persistent state for D1/KV/R2/Durable Object stores. Survives
-      # container restarts. Created on first `up` if missing.
+      # Persistent Durable Object state. Survives container restarts.
+      # Created on first `up` if missing.
       - ./ethercalc-data:/data
     environment:
       # All variables are optional; sensible defaults live in the image.
@@ -34,6 +33,7 @@ services:
       ETHERCALC_PORT: "${ETHERCALC_PORT:-8000}"
       ETHERCALC_HOST: "${ETHERCALC_HOST:-0.0.0.0}"
       ETHERCALC_KEY: "${ETHERCALC_KEY:-}"
+      ETHERCALC_DISABLE_ROOM_INDEX: "${ETHERCALC_DISABLE_ROOM_INDEX:-1}"
       ETHERCALC_CORS: "${ETHERCALC_CORS:-}"
       ETHERCALC_BASEPATH: "${ETHERCALC_BASEPATH:-}"
       ETHERCALC_EXPIRE: "${ETHERCALC_EXPIRE:-}"

@@ -12,7 +12,6 @@ Or with overrides:
 
 ```bash
 helm install my-ethercalc ./helm \
-  --set config.cors=true \
   --set secrets.key="$(openssl rand -hex 32)" \
   --set ingress.enabled=true \
   --set ingress.hosts[0].host=ethercalc.example.com \
@@ -45,12 +44,33 @@ See `values.yaml` for the full list. Common overrides:
 | `persistence.size`       | `10Gi`                   | PVC size.                                             |
 | `persistence.storageClass` | `""` (cluster default) | Override storage class.                               |
 | `config.basepath`        | `""`                     | URL prefix when behind a reverse proxy.               |
-| `config.cors`            | `false`                  | Enable CORS.                                          |
+| `config.disableRoomIndex` | `true`                  | Hide `/_rooms*` and `/_exists/:room`.                 |
+| `config.cors`            | `false`                  | Legacy room-index gate; CORS headers stay permissive. |
 | `config.defaultRoom`     | `""`                     | Redirect `/` to this room.                            |
 | `config.expire`          | `""`                     | Seconds before inactive rooms are pruned.             |
 | `secrets.key`            | `""`                     | HMAC key for read-only vs. edit auth.                 |
 | `secrets.migrateToken`   | `""`                     | Gates `PUT /_migrate/seed/:room`.                     |
 | `ingress.enabled`        | `false`                  | Create an Ingress resource.                           |
+
+## Security notes
+
+EtherCalc preserves anonymous collaboration: anyone who knows a room URL
+can read and edit unless you set `secrets.key`. For internet-facing
+Ingress deployments, set a key or make sure the ingress is intentionally
+public, and add rate limiting at the ingress controller. For nginx
+ingress, start with annotations such as:
+
+```yaml
+ingress:
+  annotations:
+    nginx.ingress.kubernetes.io/limit-rps: "10"
+    nginx.ingress.kubernetes.io/limit-connections: "20"
+```
+
+Leave `config.disableRoomIndex=true` unless you deliberately want public
+room enumeration. For public scratch deployments, consider setting
+`config.expire`, for example `2592000` for a 30-day inactivity TTL.
+TLS should be terminated by your Ingress or load balancer.
 
 ## Upgrading
 

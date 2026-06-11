@@ -12,7 +12,8 @@
 #   ETHERCALC_DATA_DIR      — persistent root (default /data) — the DO
 #                             service writes SQLite files under $DIR/do/
 #   ETHERCALC_ASSETS_DIR    — curated asset tree (default /app/assets)
-#   ETHERCALC_MIGRATE_TOKEN, ETHERCALC_KEY, ETHERCALC_CORS, …
+#   ETHERCALC_MIGRATE_TOKEN, ETHERCALC_KEY,
+#   ETHERCALC_DISABLE_ROOM_INDEX, ETHERCALC_CORS, …
 #     — forwarded to the worker via `fromEnvironment` bindings in
 #       packages/worker/workerd/config.capnp. No action needed here.
 
@@ -26,6 +27,10 @@ ASSETS_DIR="${ETHERCALC_ASSETS_DIR:-$APP_ROOT/assets}"
 DO_DIR="$DATA_DIR/do"
 
 mkdir -p "$DO_DIR"
+
+# Self-host defaults: hide cross-room discovery unless the operator opts out.
+# This does not affect anonymous read/write of known room URLs.
+export ETHERCALC_DISABLE_ROOM_INDEX="${ETHERCALC_DISABLE_ROOM_INDEX:-1}"
 
 # Locate the workerd binary. `bun install` drops the platform-matched
 # package under node_modules/.bun/@cloudflare+workerd-<arch>-<abi>/.
@@ -63,7 +68,21 @@ else
   CONFIG_PATH="$CONFIG_SRC"
 fi
 
+is_loopback_host() {
+  case "$1" in
+    127.*|::1|localhost)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 echo "workerd-entrypoint: binding $HOST:$PORT  DO=$DO_DIR  assets=$ASSETS_DIR" >&2
+if [[ -z "${ETHERCALC_KEY:-}" ]] && ! is_loopback_host "$HOST"; then
+  echo "workerd-entrypoint: WARNING: no ETHERCALC_KEY set; anonymous read/write/delete is open. Restrict ingress or set ETHERCALC_KEY." >&2
+fi
 
 exec "$WORKERD_BIN" serve \
     "$CONFIG_PATH" \

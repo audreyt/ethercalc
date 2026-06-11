@@ -12,6 +12,11 @@ import type { ParsedFlags } from './parse.ts';
 const DEFAULT_PORT = 8000;
 const DEFAULT_HOST = '0.0.0.0';
 
+export interface InheritedEnv {
+  readonly ETHERCALC_KEY?: string;
+  readonly ETHERCALC_BASEPATH?: string;
+}
+
 /**
  * Result of mapping a `ParsedFlags` to a launch plan. The orchestrator
  * spawns `wrangler dev <wranglerArgs>` with `env` merged onto the parent
@@ -42,12 +47,16 @@ export interface LaunchPlan {
  *   --cors       → env ETHERCALC_CORS=1
  *   --port       → wrangler `--port <n>`  and env ETHERCALC_PORT (worker-side mirror)
  *   --host       → wrangler `--ip <addr>` and env ETHERCALC_HOST
- *   --basepath   → env ETHERCALC_BASEPATH
+ *   --basepath   → env BASEPATH (+ legacy mirror ETHERCALC_BASEPATH);
+ *                  inherited ETHERCALC_BASEPATH honoured when flag absent
  *   --expire     → env ETHERCALC_EXPIRE
  *   --persist-to → wrangler `--persist-to <dir>`
  *   --keyfile, --certfile → WARNING: deferred, no wrangler TLS option yet.
  */
-export function buildLaunchPlan(flags: ParsedFlags): LaunchPlan {
+export function buildLaunchPlan(
+  flags: ParsedFlags,
+  inheritedEnv: InheritedEnv = {},
+): LaunchPlan {
   const wranglerArgs: string[] = ['dev'];
   const env: Record<string, string> = {};
   const warnings: string[] = [];
@@ -66,14 +75,19 @@ export function buildLaunchPlan(flags: ParsedFlags): LaunchPlan {
     wranglerArgs.push('--persist-to', flags.persistTo);
   }
 
-  if (flags.key !== undefined) {
-    env['ETHERCALC_KEY'] = flags.key;
+  const key = flags.key ?? inheritedEnv.ETHERCALC_KEY;
+  if (key !== undefined && key !== '') {
+    env['ETHERCALC_KEY'] = key;
   }
   if (flags.cors === true) {
     env['ETHERCALC_CORS'] = '1';
   }
-  if (flags.basepath !== undefined) {
-    env['ETHERCALC_BASEPATH'] = flags.basepath;
+  // `--basepath` wins; an exported ETHERCALC_BASEPATH works too so the
+  // README env table holds on the CLI path, not just Docker/workerd.
+  const basepath = flags.basepath ?? inheritedEnv.ETHERCALC_BASEPATH;
+  if (basepath !== undefined && basepath !== '') {
+    env['BASEPATH'] = basepath;
+    env['ETHERCALC_BASEPATH'] = basepath;
   }
   if (flags.expire !== undefined) {
     env['ETHERCALC_EXPIRE'] = String(flags.expire);
@@ -91,5 +105,16 @@ export function buildLaunchPlan(flags: ParsedFlags): LaunchPlan {
     );
   }
 
+  if ((key === undefined || key === '') && !isLoopbackHost(host)) {
+    warnings.push(
+      'warning: no ETHERCALC_KEY set; anonymous read/write/delete is open. ' +
+        'Restrict ingress or set --key/ETHERCALC_KEY.',
+    );
+  }
+
   return { wranglerArgs, env, warnings };
+}
+
+function isLoopbackHost(host: string): boolean {
+  return host === 'localhost' || host === '::1' || host.startsWith('127.');
 }

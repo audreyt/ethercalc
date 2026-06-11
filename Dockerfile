@@ -67,13 +67,15 @@ EXPOSE 8000
 #   ETHERCALC_PORT                — listening port (default 8000)
 #   ETHERCALC_HOST                — listening address (default 0.0.0.0)
 #   ETHERCALC_KEY                 — HMAC secret for --key auth (§6.4)
-#   ETHERCALC_CORS                — "1" to enable permissive CORS headers
+#   ETHERCALC_DISABLE_ROOM_INDEX  — "1" to hide /_rooms* and /_exists
+#   ETHERCALC_CORS                — legacy room-index gate; CORS headers are always on
 #   ETHERCALC_BASEPATH            — URL prefix when running behind a reverse proxy
 #   ETHERCALC_EXPIRE              — seconds of inactivity before a room is pruned
 #   ETHERCALC_DEFAULT_ROOM        — single-grain default room (302 from `/`)
 #   ETHERCALC_MIGRATE_TOKEN       — enable PUT /_migrate/seed
 ENV ETHERCALC_PORT=8000 \
     ETHERCALC_HOST=0.0.0.0 \
+    ETHERCALC_DISABLE_ROOM_INDEX=1 \
     ETHERCALC_DATA_DIR=/data
 
 CMD ["bash", "/app/bin/workerd-entrypoint.sh"]

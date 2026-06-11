@@ -163,6 +163,9 @@ jobs:
       - name: helm template — persistence disabled
         run: helm template ci ./helm --set persistence.enabled=false > /dev/null
 
+      - name: helm hardening assertions
+        run: bash scripts/check-helm-hardening.sh
+
   e2e:
     name: e2e — Playwright against wrangler dev
     runs-on: ubuntu-latest

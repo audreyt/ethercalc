@@ -54,23 +54,32 @@ if (argv[0] === 'migrate') {
 // bindings (CF would reject unknown ones anyway, but being explicit
 // is cheap).
 const WRANGLER_VAR_PASSTHROUGH: readonly string[] = [
+  'BASEPATH',
+  'DEVMODE',
+  'ETHERCALC_CORS',
+  'ETHERCALC_DEFAULT_ROOM',
+  'ETHERCALC_DISABLE_ROOM_INDEX',
+  'ETHERCALC_EXPIRE',
+  'ETHERCALC_KEY',
   'ETHERCALC_MIGRATE_TOKEN',
 ];
 
 const code = main(argv, {
   stdout: (s) => process.stdout.write(s),
   stderr: (s) => process.stderr.write(s),
+  env: process.env,
   exec: (cmd, args, extraEnv) => {
     const extraArgs: string[] = [];
+    const mergedEnv = { ...process.env, ...extraEnv };
     for (const key of WRANGLER_VAR_PASSTHROUGH) {
-      const value = process.env[key];
+      const value = mergedEnv[key];
       if (value !== undefined && value !== '') {
         extraArgs.push('--var', `${key}:${value}`);
       }
     }
     const result = spawnSync(cmd, [...args, ...extraArgs], {
       cwd: workerCwd,
-      env: { ...process.env, ...extraEnv },
+      env: mergedEnv,
       stdio: 'inherit',
     });
     if (result.error) {

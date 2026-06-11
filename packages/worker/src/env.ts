@@ -1,6 +1,12 @@
 /**
  * Environment bindings available to the Worker at runtime. Kept in one place
  * so Hono's generic type argument stays in sync with `wrangler.toml`.
+ *
+ * Runtime caveat: under standalone workerd (`config.capnp`
+ * `fromEnvironment` bindings), an env var that is UNSET in the process
+ * environment arrives here as `null`, not `undefined` and not `''`.
+ * Guard optional string fields with truthiness or `!= null`, never
+ * `!== undefined` (see `lib/room-index-access.ts`).
  */
 export interface Env {
   /** One Durable Object per spreadsheet room. */
@@ -110,12 +116,26 @@ export interface Env {
   readonly ETHERCALC_MIGRATE_TOKEN?: string;
 
   /**
-   * When truthy (`'1'`), disables room-enumeration endpoints (`/_rooms`,
-   * `/_roomlinks`, `/_roomtimes`) with a 403 — same as the legacy
-   * `--cors` flag. Set via `--cors` in the CLI or as a Worker variable
-   * in `wrangler.toml` for production Cloudflare deploys.
+   * Legacy room-index gate, kept for hosted/back-compat (`wrangler.toml`
+   * pins `'1'` for production Cloudflare deploys; the CLI `--cors` flag
+   * sets it too). When enabled it 403s the cross-room discovery
+   * endpoints: `/_rooms`, `/_roomlinks`, `/_roomtimes`, and
+   * `/_exists/:room`. CORS *headers* are no longer affected — they are
+   * emitted unconditionally for embed compatibility. Sensible-fix note:
+   * parsed via `flagEnabled` (boolean-string), so `'0'`/`'false'`/`'no'`/
+   * `'off'` now read as gate-OFF, where the pre-2026-06 code treated any
+   * non-empty string as gate-ON. Prefer `ETHERCALC_DISABLE_ROOM_INDEX`
+   * below for new configs.
    */
   readonly ETHERCALC_CORS?: string;
+
+  /**
+   * Clearly named self-host switch for hiding cross-room discovery endpoints:
+   * `/_rooms`, `/_roomlinks`, `/_roomtimes`, and `/_exists/:room`. When unset,
+   * the Worker falls back to the legacy `ETHERCALC_CORS` gate above so hosted
+   * deployments keep their existing default.
+   */
+  readonly ETHERCALC_DISABLE_ROOM_INDEX?: string;
 
   /**
    * Room TTL in SECONDS (legacy `--expire` / Redis `EXPIRE` semantics,

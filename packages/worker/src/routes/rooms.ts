@@ -39,6 +39,7 @@ import {
   listRoomTimes,
   renderRoomLinks,
 } from '../lib/rooms-index.ts';
+import { shouldDisableRoomIndex } from '../lib/room-index-access.ts';
 import type { Env } from '../env.ts';
 
 const TEXT_CT = 'text/plain; charset=utf-8';
@@ -101,7 +102,7 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
   // opts out of the index) we short-circuit to the empty-state body
   // shapes the oracle recorded.
   app.get('/_rooms', async (c) => {
-    if (c.env.ETHERCALC_CORS) {
+    if (shouldDisableRoomIndex(c.env)) {
       return sizedResponse('_rooms not available with CORS', 403, TEXT_CT);
     }
     if (!c.env.DB) return sizedResponse('[]', 200, JSON_CT);
@@ -109,7 +110,7 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
     return sizedResponse(JSON.stringify(rooms), 200, JSON_CT);
   });
   app.get('/_roomlinks', async (c) => {
-    if (c.env.ETHERCALC_CORS) {
+    if (shouldDisableRoomIndex(c.env)) {
       return sizedResponse('_roomlinks not available with CORS', 403, TEXT_CT);
     }
     // Sensible-fix (§13 Q1): oracle emitted JSON in a text/html
@@ -121,7 +122,7 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
     return sizedResponse(body, 200, HTML_CT);
   });
   app.get('/_roomtimes', async (c) => {
-    if (c.env.ETHERCALC_CORS) {
+    if (shouldDisableRoomIndex(c.env)) {
       return sizedResponse('_roomtimes not available with CORS', 403, TEXT_CT);
     }
     if (!c.env.DB) return sizedResponse('{}', 200, JSON_CT);
@@ -156,12 +157,13 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
 
   // ─── _exists ────────────────────────────────────────────────────────
   app.get('/_exists/:room', async (c) => {
-    // Gate the per-name existence oracle behind the same flag as the
+    // Gate the per-name existence oracle behind the same switch as the
     // batch-enumeration endpoints above (M-1). Without this, even a
     // deploy that disables `/_rooms` still leaks "does room X exist" to
-    // anyone, one cheap probe at a time. `ETHERCALC_CORS=1` (the prod
-    // default in wrangler.toml) now turns this into a 403 too.
-    if (c.env.ETHERCALC_CORS) {
+    // anyone, one cheap probe at a time. Hosted still uses the legacy
+    // `ETHERCALC_CORS=1` fallback; self-hosts should prefer the explicit
+    // `ETHERCALC_DISABLE_ROOM_INDEX=1`.
+    if (shouldDisableRoomIndex(c.env)) {
       return sizedResponse('_exists not available with CORS', 403, TEXT_CT);
     }
     const room = c.req.param('room') ?? '';

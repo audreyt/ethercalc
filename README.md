@@ -33,9 +33,9 @@ Via Docker (no Bun needed on the host — the image carries it):
     cd ethercalc
     docker compose up -d
 
-Both paths boot the same Miniflare-backed Worker, persist state
-under `./ethercalc-data/` (or `/data` in the container), and need no
-Cloudflare account.
+The CLI path boots wrangler/Miniflare; the Docker path boots standalone
+workerd. Both need no Cloudflare account, and Docker persists room state
+under `./ethercalc-data/` (or `/data` in the container).
 
 ## Self-hosting
 
@@ -43,10 +43,27 @@ Cloudflare account.
     cd ethercalc
     docker compose up -d
 
-This boots the Miniflare-backed Worker on `http://localhost:8000` and
-persists all spreadsheet state (Durable Objects, D1, KV, R2) to
-`./ethercalc-data/` in the repo. No Redis, no Node runtime, no
-Cloudflare account.
+This boots the standalone workerd Worker on `http://localhost:8000` and
+persists spreadsheet room state to `./ethercalc-data/` in the repo. No
+Redis, no Node runtime, no Cloudflare account.
+
+For an internet-facing self-host, put EtherCalc behind a reverse proxy
+that terminates TLS and applies rate limits. The app deliberately keeps
+anonymous read/write for anyone who knows a room URL; the edge is where
+you bound request volume. A runnable nginx recipe is included:
+
+    docker compose -f docker-compose.proxy.yml up -d
+
+The proxy config at `deploy/nginx/ethercalc.conf` sets a 25 MiB body
+limit to match the Worker write cap, limits request/connection rates per
+source address, and forwards WebSocket upgrades (with long read
+timeouts, so idle spreadsheets stay connected). For production HTTPS:
+place your certificates under `deploy/nginx/certs/`, uncomment the 443
+listener in that file, **and** uncomment the 443 ports mapping in
+`docker-compose.proxy.yml` — or copy the same limits to your existing
+nginx/caddy/traefik edge. The bundled proxy serves the app at the URL
+root; don't combine it with `ETHERCALC_BASEPATH` (the config does no
+prefix stripping).
 
 ### Environment variables
 
@@ -57,9 +74,23 @@ Override defaults by exporting these before `docker compose up`:
 | `ETHERCALC_PORT`      | `8000`      | Listening port (remaps container bind).           |
 | `ETHERCALC_HOST`      | `0.0.0.0`   | Listening address.                                |
 | `ETHERCALC_KEY`       | *(unset)*   | HMAC secret; enables read-only vs. edit auth.     |
-| `ETHERCALC_CORS`      | *(unset)*   | `1` enables permissive CORS headers.              |
+| `ETHERCALC_DISABLE_ROOM_INDEX` | `1` | Hide `/_rooms*` and `/_exists/:room`. Set `0` to reopen (on the Docker image the directory endpoints then return empty bodies — there is no D1 index; only `/_exists` becomes a live oracle). |
+| `ETHERCALC_CORS`      | *(unset)*   | Legacy room-index gate; CORS headers are always permissive for embeds. |
 | `ETHERCALC_BASEPATH`  | *(unset)*   | URL prefix, e.g. `/ethercalc` behind a proxy.     |
 | `ETHERCALC_EXPIRE`    | *(unset)*   | Seconds of inactivity before a room is pruned.    |
+
+Recommended public-instance settings:
+
+- Set `ETHERCALC_KEY` if you want edit/delete URLs to require a per-room
+  HMAC rather than anonymous write/delete.
+- Leave `ETHERCALC_DISABLE_ROOM_INDEX=1` unless you intentionally want a
+  public room directory and existence oracle.
+- Set `ETHERCALC_EXPIRE` for public scratch instances, e.g.
+  `ETHERCALC_EXPIRE=2592000` for a 30-day inactivity TTL.
+- Keep the container on plain HTTP and terminate TLS at the reverse
+  proxy. If a local proxy fronts the container, publish the container
+  port on loopback, e.g. `127.0.0.1:8000:8000`; do not change
+  `ETHERCALC_HOST`, which must stay reachable inside the container.
 
 On Apple Silicon, Docker Desktop's virtio networking has an
 intermittent quirk that can make `curl localhost:8000` hang even
@@ -70,7 +101,7 @@ against a healthy container. If you hit it, run the worker directly
 
 For non-Docker runs (local dev, systemd, etc.) use the `bin/ethercalc`
 wrapper. It accepts the legacy flag surface and forwards to
-`wrangler dev` + Miniflare env vars:
+`wrangler dev` + Miniflare/`--var` bindings:
 
     bin/ethercalc [--key SECRET] [--cors] [--port N] [--host ADDR] \
                   [--expire SEC] [--basepath PREFIX] \
@@ -80,6 +111,12 @@ Run `bin/ethercalc --help` for the full flag table. `--keyfile` /
 `--certfile` are accepted for backward compatibility but currently
 print a warning — `wrangler dev` does not expose TLS. Terminate TLS at
 a reverse proxy (nginx/caddy/traefik).
+
+The `ETHERCALC_*` environment variables from the table above work here
+too (exported before `bin/ethercalc`). Note that the CLI forwards them
+to `wrangler dev` as `--var` arguments, which are visible in the local
+process list — on shared machines, prefer a loopback bind or put
+secrets in `packages/worker/.dev.vars` instead of the environment.
 
 ## Deploy to Cloudflare
 

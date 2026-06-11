@@ -27,7 +27,7 @@ function makeDeps(execImpl?: MainDeps['exec']): {
 
 describe('main — happy paths', () => {
   it('runs wrangler with the documented default bind when argv is empty', () => {
-    const { deps, execCalls } = makeDeps();
+    const { deps, stderr, execCalls } = makeDeps();
     const code = main([], deps);
     expect(code).toBe(0);
     expect(execCalls).toHaveLength(1);
@@ -39,6 +39,7 @@ describe('main — happy paths', () => {
       ETHERCALC_PORT: '8000',
       ETHERCALC_HOST: '0.0.0.0',
     });
+    expect(stderr.join('')).toContain('no ETHERCALC_KEY');
   });
 
   it('forwards --port/--host to wrangler args', () => {
@@ -50,13 +51,26 @@ describe('main — happy paths', () => {
   });
 
   it('passes --key as ETHERCALC_KEY env', () => {
-    const { deps, execCalls } = makeDeps();
+    const { deps, stderr, execCalls } = makeDeps();
     main(['--key', 'secret'], deps);
     expect(execCalls[0]?.env).toEqual({
       ETHERCALC_PORT: '8000',
       ETHERCALC_HOST: '0.0.0.0',
       ETHERCALC_KEY: 'secret',
     });
+    expect(stderr.join('')).not.toContain('no ETHERCALC_KEY');
+  });
+
+  it('inherits ETHERCALC_KEY from deps.env', () => {
+    const { deps, stderr, execCalls } = makeDeps();
+    deps.env = { ETHERCALC_KEY: 'from-env' };
+    main([], deps);
+    expect(execCalls[0]?.env).toEqual({
+      ETHERCALC_PORT: '8000',
+      ETHERCALC_HOST: '0.0.0.0',
+      ETHERCALC_KEY: 'from-env',
+    });
+    expect(stderr.join('')).not.toContain('no ETHERCALC_KEY');
   });
 
   it('propagates the exec exit code', () => {
