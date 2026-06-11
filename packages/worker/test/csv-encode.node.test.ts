@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 
-import { encodeCSV, encodeCSVField } from '../src/lib/csv-encode.ts';
+import {
+  encodeCSV,
+  encodeCSVField,
+  neutralizeCSVDocument,
+  neutralizeCSVFormula,
+} from '../src/lib/csv-encode.ts';
 import { parseCSV } from '../src/lib/csv-parse.ts';
 
 /**
@@ -61,5 +66,52 @@ describe('encodeCSV', () => {
       ['/r.4', 'with\nnewline'],
     ];
     expect(parseCSV(encodeCSV(rows))).toEqual(rows);
+  });
+});
+
+describe('neutralizeCSVFormula', () => {
+  it('prefixes formula-trigger leading characters with a quote', () => {
+    expect(neutralizeCSVFormula('=1+1')).toBe("'=1+1");
+    expect(neutralizeCSVFormula('+cmd')).toBe("'+cmd");
+    expect(neutralizeCSVFormula('@SUM(A1)')).toBe("'@SUM(A1)");
+    expect(neutralizeCSVFormula('=HYPERLINK("http://x","go")')).toBe(
+      '\'=HYPERLINK("http://x","go")',
+    );
+    expect(neutralizeCSVFormula('\t=evil')).toBe("'\t=evil");
+    expect(neutralizeCSVFormula('\r=evil')).toBe("'\r=evil");
+  });
+
+  it('leaves plain numbers (including signed/scientific) untouched', () => {
+    expect(neutralizeCSVFormula('-5')).toBe('-5');
+    expect(neutralizeCSVFormula('+3.14')).toBe('+3.14');
+    expect(neutralizeCSVFormula('-1e9')).toBe('-1e9');
+    expect(neutralizeCSVFormula('.5')).toBe('.5');
+    expect(neutralizeCSVFormula('42')).toBe('42');
+  });
+
+  it('leaves ordinary text untouched', () => {
+    expect(neutralizeCSVFormula('hello')).toBe('hello');
+    expect(neutralizeCSVFormula('')).toBe('');
+    expect(neutralizeCSVFormula('a=b')).toBe('a=b');
+  });
+});
+
+describe('neutralizeCSVDocument', () => {
+  it('round-trips benign documents byte-for-byte', () => {
+    expect(neutralizeCSVDocument('a,b\n1,2\n')).toBe('a,b\n1,2\n');
+    expect(neutralizeCSVDocument('')).toBe('');
+  });
+
+  it('defangs formula cells while preserving structure + numbers', () => {
+    expect(neutralizeCSVDocument('=1+1,-5\n@foo,bar\n')).toBe(
+      "'=1+1,-5\n'@foo,bar\n",
+    );
+  });
+
+  it('quotes a defanged field that also needs CSV quoting', () => {
+    // A single quoted field whose content is `=A,B`: leading `=` triggers
+    // neutralization, and the embedded comma then forces RFC-4180 quoting of
+    // the now-`'=`-prefixed value.
+    expect(neutralizeCSVDocument('"=A,B"\n')).toBe("\"'=A,B\"\n");
   });
 });

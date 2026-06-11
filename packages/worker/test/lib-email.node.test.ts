@@ -6,6 +6,7 @@ import {
   StubEmailSender,
   buildMimeEnvelope,
   parseSendemail,
+  stripHeaderInjection,
   type SendEmailBinding,
 } from '../src/lib/email.ts';
 
@@ -64,6 +65,33 @@ describe('parseSendemail', () => {
     // Four tokens, non-'sendemail' verb — hits the verb check only.
     expect(parseSendemail('settimetrigger A1 1 2')).toBeNull();
   });
+
+  it('strips CR/LF/control bytes from to + subject (header injection)', () => {
+    // A cell carrying a literal newline tries to smuggle a Bcc header and a
+    // forged Content-Type. After sanitizing, to/subject collapse to a single
+    // header-safe line; body is left intact.
+    const parsed = parseSendemail(
+      'sendemail victim@x.com\r\nBcc:evil@x.com Subj\r\nContent-Type:text/html body',
+    );
+    expect(parsed).not.toBeNull();
+    expect(parsed!.to).toBe('victim@x.comBcc:evil@x.com');
+    expect(parsed!.subject).toBe('SubjContent-Type:text/html');
+    expect(parsed!.to).not.toMatch(/[\r\n]/);
+    expect(parsed!.subject).not.toMatch(/[\r\n]/);
+  });
+});
+
+describe('stripHeaderInjection', () => {
+  it('removes CR, LF, NUL and DEL but preserves spaces + printables', () => {
+    expect(stripHeaderInjection('a b@c.com')).toBe('a b@c.com');
+    expect(stripHeaderInjection('a\r\nb')).toBe('ab');
+    expect(stripHeaderInjection('a\x00b\x1fc\x7fd')).toBe('abcd');
+    expect(stripHeaderInjection('a\tb')).toBe('ab');
+  });
+
+  it('is a no-op for already-clean values', () => {
+    expect(stripHeaderInjection('Subject Line 123')).toBe('Subject Line 123');
+  });
 });
 
 describe('StubEmailSender', () => {
@@ -97,6 +125,24 @@ describe('buildMimeEnvelope', () => {
         'hello',
       ].join('\r\n'),
     );
+  });
+
+  it('cannot be made to emit an injected header line', () => {
+    const raw = buildMimeEnvelope(
+      'noreply@example.com',
+      'u@example.com\r\nBcc: evil@example.com',
+      'hi\r\nContent-Type: text/html',
+      'body',
+    );
+    // Exactly the five header lines + blank + body — no smuggled header.
+    const [headerBlock] = raw.split('\r\n\r\n');
+    expect(headerBlock!.split('\r\n')).toEqual([
+      'From: noreply@example.com',
+      'To: u@example.comBcc: evil@example.com',
+      'Subject: hiContent-Type: text/html',
+      'MIME-Version: 1.0',
+      'Content-Type: text/plain; charset=utf-8',
+    ]);
   });
 });
 

@@ -32,6 +32,22 @@ export interface SendemailParsed {
 }
 
 /**
+ * Strip characters that would let an attacker-controlled cell value break
+ * out of an RFC822 header line: CR, LF, and the NUL/control bytes that
+ * could fold a header or smuggle a second one (Cc/Bcc/Content-Type) or an
+ * arbitrary MIME body. The `to`/`subject` fields flow straight into header
+ * lines (`To: …`, `Subject: …`) and into the Cloudflare `send_email`
+ * binding's `to`, so both are sanitized at the boundary.
+ *
+ * Benign inputs (no control bytes) are returned unchanged, so this is a
+ * no-op for every real payload — it only neutralizes injection attempts.
+ */
+export function stripHeaderInjection(value: string): string {
+  // eslint-disable-next-line no-control-regex
+  return value.replace(/[\x00-\x1f\x7f]/g, '');
+}
+
+/**
  * Parse a raw SocialCalc command of the form
  *   sendemail <to> <subject> <body>
  *
@@ -55,8 +71,11 @@ export function parseSendemail(cmdstr: string): SendemailParsed | null {
   if (parts[0] !== 'sendemail') return null;
   const decode = (s: string): string => s.replace(/%20/g, ' ');
   return {
-    to: decode(parts[1]!),
-    subject: decode(parts[2]!),
+    // `to`/`subject` become RFC822 header lines downstream — strip any
+    // literal CR/LF/control bytes so an attacker-controlled cell can't
+    // inject extra headers (Cc/Bcc/Content-Type) or a second MIME part.
+    to: stripHeaderInjection(decode(parts[1]!)),
+    subject: stripHeaderInjection(decode(parts[2]!)),
     // Join trailing tokens back so a body that happened to contain a
     // literal space (encoded as %20) survives intact. Legacy only
     // indexed [3], but in practice the client always URL-encoded so a
@@ -166,11 +185,13 @@ export function buildMimeEnvelope(
   subject: string,
   body: string,
 ): string {
-  // RFC822 requires CRLF line endings. `\r\n` everywhere.
+  // RFC822 requires CRLF line endings. `\r\n` everywhere. Header values are
+  // re-sanitized here (defense-in-depth alongside `parseSendemail`) so this
+  // function can never emit a folded/injected header regardless of caller.
   const headers = [
-    `From: ${from}`,
-    `To: ${to}`,
-    `Subject: ${subject}`,
+    `From: ${stripHeaderInjection(from)}`,
+    `To: ${stripHeaderInjection(to)}`,
+    `Subject: ${stripHeaderInjection(subject)}`,
     'MIME-Version: 1.0',
     'Content-Type: text/plain; charset=utf-8',
   ];

@@ -100,9 +100,29 @@ async function dispatchMultiSheetExport(
     headers: {
       'Content-Type': BINARY_CONTENT_TYPES[format],
       'Content-Disposition': attachmentHeader(room, format),
+      'X-Content-Type-Options': 'nosniff',
     },
   });
 }
+
+/**
+ * Content-Security-Policy for the HTML export. SocialCalc emits cells whose
+ * `valueformat===text-html` are NOT escaped (socialcalc.bundled.ts), so an
+ * attacker who can write a room (anonymous write is by design) could plant
+ * `<img src=x onerror=…>` / `<script>` that would run in the deployment
+ * origin when someone opens `/:room.html`. The exported document is a static
+ * `<table>` with inline styles, so we lock it down to exactly that:
+ *
+ *   - `default-src 'none'` blocks scripts, fetch, frames, objects, etc.
+ *     (this alone neutralizes `<script>` and inline `onerror` handlers).
+ *   - `style-src 'unsafe-inline'` keeps the table's inline cell styling.
+ *   - `img-src` is intentionally omitted (covered by `default-src 'none'`)
+ *     so injected `<img>` never loads its `onerror` payload.
+ *
+ * `frame-ancestors` is deliberately NOT set — the HTML export is a
+ * documented external-embed surface (§13 Q8), so we must stay iframe-able.
+ */
+const HTML_EXPORT_CSP = "default-src 'none'; style-src 'unsafe-inline'";
 
 /** Format registry for dispatcher. Keyed by URL suffix / slot. */
 interface ExportFormat {
@@ -114,6 +134,8 @@ interface ExportFormat {
   readonly binary: boolean;
   /** If set, emit `Content-Disposition: attachment; filename="<room>.<ext>"`. */
   readonly attachmentExt?: string;
+  /** If set, emit this `Content-Security-Policy` on the response. */
+  readonly csp?: string;
 }
 
 const FORMATS: Readonly<Record<string, ExportFormat>> = {
@@ -121,6 +143,7 @@ const FORMATS: Readonly<Record<string, ExportFormat>> = {
     doPath: '/_do/html',
     contentType: 'text/html; charset=utf-8',
     binary: false,
+    csp: HTML_EXPORT_CSP,
   },
   csv: {
     doPath: '/_do/csv',
@@ -174,7 +197,15 @@ async function dispatchExport(
   if (res.status === 404) {
     return new Response('', { status: 404, headers: { 'Content-Type': TEXT_CT } });
   }
-  const headers: Record<string, string> = { 'Content-Type': format.contentType };
+  const headers: Record<string, string> = {
+    'Content-Type': format.contentType,
+    // Stop browsers from MIME-sniffing an export (e.g. a `.csv` whose first
+    // bytes look like HTML) into an executable type.
+    'X-Content-Type-Options': 'nosniff',
+  };
+  if (format.csp) {
+    headers['Content-Security-Policy'] = format.csp;
+  }
   if (format.attachmentExt) {
     headers['Content-Disposition'] = attachmentHeader(room, format.attachmentExt);
   }
