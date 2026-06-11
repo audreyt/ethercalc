@@ -84,6 +84,49 @@ const TEXT_CSV = 'text/csv; charset=utf-8';
 const TEXT_HTML = 'text/html; charset=utf-8';
 const TEXT_MARKDOWN = 'text/x-markdown; charset=utf-8';
 
+/**
+ * Ring-buffer length for the command log. The stored snapshot is
+ * authoritative on hydrate (see `#getSpreadsheet`), so `log:` is now a
+ * pure client-catch-up buffer: `ask.log` returns the recent tail alongside
+ * the snapshot, and any client that has fallen further behind than this
+ * window resets to the snapshot instead of replaying. `#appendCommand`
+ * deletes `log:<seq - LOG_RING>` as it writes `log:<seq>`, so the live
+ * log never holds more than `LOG_RING` entries. `audit:` is NEVER trimmed
+ * here (it is the append-only record).
+ */
+const LOG_RING = 1024;
+
+/**
+ * Cap on distinct `ecell:<user>` keys retained per room. ecells are keyed
+ * by an arbitrary client-supplied username, so without a bound an attacker
+ * could blow per-room storage by cycling usernames. We evict the
+ * least-recently-written entry once the cap is exceeded (`#trackEcell`).
+ */
+const ECELL_CAP = 256;
+
+/**
+ * Maximum concurrent WebSocket connections accepted per room. Past this we
+ * reject the upgrade — a coarse DoS backstop complementing the CF platform
+ * layer (CLAUDE.md §13 Q7 keeps real rate limiting at the edge).
+ */
+const MAX_CONN = 128;
+
+/** Maximum accepted size (in UTF-16 code units) of a single WS frame. */
+const MAX_FRAME = 64 * 1024;
+
+/**
+ * Number of `chat:` entries the alarm handler keeps when it trims. Chat is
+ * mirrored to D1 beyond the DO lifetime (§13 Q9 — not yet implemented), so
+ * the DO-local copy only needs to cover live catch-up.
+ */
+const CHAT_KEEP = 500;
+
+/**
+ * Cadence (ms) at which the housekeeping alarm re-fires while a room stays
+ * active. One hour keeps chat-trim/TTL checks cheap without a tight loop.
+ */
+const ALARM_INTERVAL_MS = 60 * 60 * 1000;
+
 function plainResponse(body: string, status = 200): Response {
   return new Response(body, {
     status,
@@ -112,6 +155,36 @@ function binaryResponse(bytes: Uint8Array, contentType: string, status = 200): R
   return new Response(bytes, { status, headers: { 'Content-Type': contentType } });
 }
 
+/**
+ * Fold a base snapshot + since-base command log into a single
+ * authoritative SocialCalc save. Used on ingest by `#postSeed` and
+ * `#postInstall` so the stored snapshot already incorporates every log
+ * command (the hydrate path no longer replays the log over a present
+ * snapshot — see `#getSpreadsheet`). `createSpreadsheet({snapshot, log})`
+ * applies each log line exactly once on top of the base, then we
+ * serialise the result.
+ */
+function foldSnapshot(snapshot: string, log: readonly string[]): string {
+  const ss = createSpreadsheet(
+    snapshot ? { snapshot, log } : { log },
+  );
+  return ss.createSpreadsheetSave();
+}
+
+/**
+ * Parse the legacy `--expire` / `ETHERCALC_EXPIRE` value (a TTL in
+ * SECONDS, matching the old Redis `EXPIRE` semantics) into milliseconds.
+ * Returns `null` when unset, non-numeric, or non-positive — in those
+ * cases the alarm handler skips TTL expiry entirely (rooms live forever,
+ * the production default).
+ */
+function parseExpireMs(raw: string | undefined): number | null {
+  if (raw === undefined) return null;
+  const seconds = Number(raw);
+  if (!Number.isFinite(seconds) || seconds <= 0) return null;
+  return seconds * 1000;
+}
+
 export class RoomDO implements DurableObject {
   readonly #state: DurableObjectState;
   readonly #env: Env;
@@ -120,6 +193,16 @@ export class RoomDO implements DurableObject {
   #nextLogSeq: number | null = null;
   #nextAuditSeq: number | null = null;
   #nextChatSeq: number | null = null;
+  /**
+   * In-memory LRU order of `ecell:<user>` keys (least-recently-written
+   * first). Lazily seeded from storage on first ecell write so the cap is
+   * enforced even after an isolate restart. Bounds distinct ecell keys to
+   * `ECELL_CAP` so a client cycling arbitrary usernames can't grow storage
+   * without limit.
+   */
+  #ecellOrder: string[] | null = null;
+  /** Whether the housekeeping alarm is known to be armed (cheap dedupe). */
+  #alarmArmed = false;
   /**
    * Cached room name — set from `?name=…` on each request and retained
    * for cross-sheet formula resolution (so sibling DO lookups can skip
@@ -307,6 +390,7 @@ export class RoomDO implements DurableObject {
       this.#nextLogSeq = 0;
       this.#nextAuditSeq = 0;
       this.#nextChatSeq = 0;
+      this.#resetVolatile();
     });
     await this.#mirrorIndex(roomName, updatedAt);
     return plainResponse('OK', 201);
@@ -362,6 +446,7 @@ export class RoomDO implements DurableObject {
       this.#nextLogSeq = 0;
       this.#nextAuditSeq = 0;
       this.#nextChatSeq = 0;
+      this.#resetVolatile();
     });
     await this.#deleteIndex(roomName);
   }
@@ -477,6 +562,7 @@ export class RoomDO implements DurableObject {
       this.#nextLogSeq = 0;
       this.#nextAuditSeq = 0;
       this.#nextChatSeq = 0;
+      this.#resetVolatile();
     });
     return plainResponse('OK', 201);
   }
@@ -508,6 +594,25 @@ export class RoomDO implements DurableObject {
       return new Response(parsed.error, { status: 400 });
     }
     const payload = parsed.value;
+    // Fold base+log into one authoritative snapshot on ingest. Since
+    // `#getSpreadsheet` no longer replays the log over a present
+    // snapshot, a seeded room that carried a base snapshot + since-base
+    // log would otherwise read back as just the base (log silently
+    // dropped) — or, under the old double-apply hydrate, with every log
+    // command applied twice. Folding here makes the stored snapshot the
+    // single source of truth.
+    //
+    // Two shapes survive folding:
+    //   - base snapshot present (with or without log) → fold to a save.
+    //   - log-only room (no base snapshot) → fold the log onto an empty
+    //     sheet, producing a real snapshot. This collapses the legacy
+    //     "commands but never folded" rooms into a normal snapshot room.
+    //   - neither → empty room; keep the "no snapshot" shape.
+    const hasState = payload.snapshot.length > 0 || payload.log.length > 0;
+    const foldedSnapshot = hasState
+      ? foldSnapshot(payload.snapshot, payload.log as string[])
+      : '';
+    const logTail = (payload.log as string[]).slice(-LOG_RING);
     await this.#state.blockConcurrencyWhile(async () => {
       await this.#state.storage.deleteAll();
       // One batched `storage.put(entries)` call instead of N
@@ -526,12 +631,14 @@ export class RoomDO implements DurableObject {
       // per-value ceiling. `snapshotEntries` returns either `{snapshot:
       // …}` (fast path) or `{snapshot:meta:{chunks}, snapshot:chunk:<i>:
       // …}` (>100 KiB, split). Skipped entirely for empty snapshots so
-      // log-only rooms keep the "no snapshot" shape.
-      if (payload.snapshot.length > 0) {
-        Object.assign(entries, snapshotEntries(payload.snapshot));
+      // truly empty rooms keep the "no snapshot" shape.
+      if (foldedSnapshot.length > 0) {
+        Object.assign(entries, snapshotEntries(foldedSnapshot));
       }
-      for (let i = 0; i < payload.log.length; i++) {
-        entries[logKey(i)] = payload.log[i] as string;
+      // Keep only the bounded recent log tail for client catch-up — the
+      // folded snapshot already incorporates the full log.
+      for (let i = 0; i < logTail.length; i++) {
+        entries[logKey(i)] = logTail[i] as string;
       }
       for (let i = 0; i < payload.audit.length; i++) {
         entries[auditKey(i)] = payload.audit[i] as string;
@@ -544,10 +651,12 @@ export class RoomDO implements DurableObject {
       }
       await this.#state.storage.put(entries);
       this.#ss = null;
-      this.#nextLogSeq = payload.log.length;
+      this.#nextLogSeq = logTail.length;
       this.#nextAuditSeq = payload.audit.length;
       this.#nextChatSeq = payload.chat.length;
+      this.#resetVolatile();
     });
+    await this.#armAlarm();
     // The D1 mirror is a cross-DO write that happens on every seed. Two
     // opt-outs, from the caller's perspective:
     //   - `payload.skipIndex=true` — the caller plans to batch index
@@ -666,24 +775,34 @@ export class RoomDO implements DurableObject {
     if (!audit.every((e) => typeof e === 'string')) {
       return new Response('install body.audit must be string[]', { status: 400 });
     }
+    // Fold base+log into a single authoritative snapshot on ingest.
+    // `#getSpreadsheet` no longer replays the log when a snapshot is
+    // present, so the snapshot we store here must already incorporate the
+    // incoming `log` commands — otherwise a renamed room would silently
+    // lose every since-base command. The bounded recent tail (≤ LOG_RING)
+    // is kept only for client catch-up; audit carries the full record.
+    const foldedSnapshot = foldSnapshot(parsed.snapshot as string, log as string[]);
+    const logTail = (log as string[]).slice(-LOG_RING);
     await this.#state.blockConcurrencyWhile(async () => {
       await this.#state.storage.deleteAll();
       const entries: Record<string, unknown> = {
-        ...snapshotEntries(parsed.snapshot as string),
+        ...snapshotEntries(foldedSnapshot),
         [STORAGE_KEYS.metaUpdatedAt]: Date.now(),
       };
-      for (let i = 0; i < log.length; i++) {
-        entries[logKey(i)] = log[i] as string;
+      for (let i = 0; i < logTail.length; i++) {
+        entries[logKey(i)] = logTail[i] as string;
       }
       for (let i = 0; i < audit.length; i++) {
         entries[auditKey(i)] = audit[i] as string;
       }
       await this.#state.storage.put(entries);
       this.#ss = null;
-      this.#nextLogSeq = log.length;
+      this.#nextLogSeq = logTail.length;
       this.#nextAuditSeq = audit.length;
       this.#nextChatSeq = 0;
+      this.#resetVolatile();
     });
+    await this.#armAlarm();
     return plainResponse('OK', 201);
   }
 
@@ -748,18 +867,22 @@ export class RoomDO implements DurableObject {
    * can gate writes without re-verifying on every frame.
    */
   #acceptWebSocket(request: Request): Response {
-    /* istanbul ignore else -- @preserve
-     *   The else branch calls `upgradeWebSocket`, which needs
-     *   `WebSocketPair`, `state.acceptWebSocket`, and a Workers
-     *   `Response` accepting `status: 101` + `webSocket`. None of these
-     *   exist in Node; end-to-end coverage lives in the workers-pool
-     *   integration tests (`test/ws.test.ts`,
-     *   `test/legacy-socketio.test.ts`, `test/room.test.ts`).
-     */
     if (request.headers.get('Upgrade') !== 'websocket') {
       return plainResponse('Expected Upgrade: websocket', 426);
     }
-    /* istanbul ignore next -- @preserve — see above. */
+    // Per-room connection cap — a coarse DoS backstop. The hibernation API
+    // keeps every accepted socket retrievable via `getWebSockets()`, so a
+    // simple count is the live connection total for this room.
+    if (this.#state.getWebSockets().length >= MAX_CONN) {
+      return plainResponse('Too many connections', 503);
+    }
+    /* istanbul ignore next -- @preserve
+     *   `upgradeWebSocket` needs `WebSocketPair`, `state.acceptWebSocket`,
+     *   and a Workers `Response` accepting `status: 101` + `webSocket`.
+     *   None of these exist in Node; end-to-end coverage lives in the
+     *   workers-pool integration tests (`test/ws.test.ts`,
+     *   `test/legacy-socketio.test.ts`, `test/room.test.ts`).
+     */
     return upgradeWebSocket(this.#state, request);
   }
 
@@ -770,6 +893,9 @@ export class RoomDO implements DurableObject {
    */
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
     if (typeof message !== 'string') return;
+    // Per-frame byte cap — drop oversized frames before parsing so a
+    // single client can't force a multi-MB JSON.parse + storage write.
+    if (message.length > MAX_FRAME) return;
     const parsed = parseClientMessage(message);
     if (!parsed) return;
     const attachment =
@@ -814,7 +940,15 @@ export class RoomDO implements DurableObject {
       listPrefix: (prefix) => this.#listPrefix(prefix),
       listHash: (prefix) => this.#listHash(prefix),
       putHash: async (prefix, key, value) => {
-        await this.#state.storage.put(`${prefix}${key}`, value);
+        // ecell writes carry an attacker-controllable username key, so
+        // they go through the LRU-capped path. Any other prefix (none
+        // today) writes straight through.
+        /* istanbul ignore else -- @preserve: only ecell: reaches putHash today */
+        if (prefix === STORAGE_KEYS.ecellPrefix) {
+          await this.#putEcellCapped(key, value);
+        } else {
+          await this.#state.storage.put(`${prefix}${key}`, value);
+        }
       },
       appendLog: (prefix, value) => this.#appendLogEntry(prefix, value),
       getSnapshot: async () => (await readSnapshot(this.#state.storage)) ?? undefined,
@@ -986,8 +1120,17 @@ export class RoomDO implements DurableObject {
       if (stale.length > 0) await this.#state.storage.delete(stale);
     }
 
+    // Ring-buffer the log: now that the snapshot is authoritative on
+    // hydrate, `log:` only needs to retain the most recent `LOG_RING`
+    // entries for client catch-up. Drop the entry that just fell off the
+    // tail. `audit:` is intentionally NOT trimmed.
+    if (logSeq >= LOG_RING) {
+      await this.#state.storage.delete(logKey(logSeq - LOG_RING));
+    }
+
     this.#nextLogSeq = logSeq + 1;
     this.#nextAuditSeq = auditSeq + 1;
+    await this.#armAlarm();
   }
 
   // ─── Internals ─────────────────────────────────────────────────────────
@@ -1007,8 +1150,18 @@ export class RoomDO implements DurableObject {
   async #getSpreadsheet(): Promise<HeadlessSpreadsheet> {
     if (this.#ss) return this.#ss;
     const snapshot = await readSnapshot(this.#state.storage);
-    const log = await this.#listPrefix(STORAGE_KEYS.logPrefix);
-    const ss = createSpreadsheet(snapshot ? { snapshot, log } : { log });
+    // The stored snapshot is AUTHORITATIVE on hydrate. `#appendCommand`
+    // writes a freshly-serialized POST-command snapshot every time it
+    // also appends to `log:`, so the snapshot already includes every
+    // command the log holds. Replaying the log on top of it (the old
+    // behaviour) double-applied every command — idempotent for plain
+    // `set A1 …` but corrupting for `insertrow`/`paste`/`sort`/`move` on
+    // a cold rehydrate (new isolate, or a seeded room). Build from the
+    // snapshot ALONE; only replay the log in the no-snapshot (log-only)
+    // case, where there is no folded state to replay onto.
+    const ss = snapshot
+      ? createSpreadsheet({ snapshot })
+      : createSpreadsheet({ log: await this.#listPrefix(STORAGE_KEYS.logPrefix) });
     // #ownName is set by the fetch handler on every request; when it's
     // unset (e.g. direct construction in unit tests) we skip cross-sheet
     // resolution so tests don't require a full env.ROOM stub.
@@ -1104,9 +1257,121 @@ export class RoomDO implements DurableObject {
     });
   }
 
-  /** Upsert an ecell value for a user. */
+  /** Upsert an ecell value for a user (LRU-capped). */
   async putEcell(user: string, cell: string): Promise<void> {
+    await this.#putEcellCapped(user, cell);
+  }
+
+  /**
+   * Upsert one `ecell:<user>` entry with least-recently-written eviction
+   * once the room exceeds `ECELL_CAP` distinct users. The LRU order is
+   * lazily seeded from storage so the cap survives an isolate restart.
+   *
+   * Re-writing an existing user moves it to the most-recent slot without
+   * growing the set. A brand-new user that overflows the cap evicts the
+   * oldest entry from both the in-memory order and storage. This stops an
+   * attacker cycling arbitrary usernames from blowing per-room storage.
+   */
+  async #putEcellCapped(user: string, cell: string): Promise<void> {
+    if (this.#ecellOrder === null) {
+      const map = await this.#state.storage.list<string>({
+        prefix: STORAGE_KEYS.ecellPrefix,
+      });
+      // list() returns lexicographic key order — not write order — but
+      // that's a stable, deterministic seed; subsequent writes refine it
+      // toward true recency.
+      this.#ecellOrder = Array.from(map.keys()).map((k) =>
+        k.slice(STORAGE_KEYS.ecellPrefix.length),
+      );
+    }
+    const order = this.#ecellOrder;
+    const existing = order.indexOf(user);
+    if (existing !== -1) order.splice(existing, 1);
+    order.push(user);
+    const evicted: string[] = [];
+    while (order.length > ECELL_CAP) {
+      // shift() over a non-empty array (length > cap ≥ 1) never returns
+      // undefined; the `?? ''`-free assertion keeps the type honest.
+      const victim = order.shift() as string;
+      evicted.push(ecellKey(victim));
+    }
     await this.#state.storage.put(ecellKey(user), cell);
+    if (evicted.length > 0) await this.#state.storage.delete(evicted);
+    await this.#armAlarm();
+  }
+
+  /**
+   * Reset in-memory state that a full storage wipe (`deleteAll`) or
+   * re-seed invalidates: the LRU ecell order (now empty / re-seeded) and
+   * the cached alarm-armed flag (the writer re-arms afterwards). Kept
+   * separate from the seq-counter resets above so each wipe site reads
+   * clearly.
+   */
+  #resetVolatile(): void {
+    this.#ecellOrder = null;
+    this.#alarmArmed = false;
+  }
+
+  /**
+   * Arm the housekeeping alarm if it isn't already pending. Called from
+   * every write path. We avoid a `getAlarm()` round-trip on the hot path
+   * by caching the armed state in `#alarmArmed`; the alarm handler clears
+   * it before re-arming, and the very first arm reads `getAlarm()` once to
+   * recover state across isolate restarts.
+   */
+  async #armAlarm(): Promise<void> {
+    if (this.#alarmArmed) return;
+    const current = await this.#state.storage.getAlarm();
+    if (current !== null) {
+      this.#alarmArmed = true;
+      return;
+    }
+    await this.#state.storage.setAlarm(Date.now() + ALARM_INTERVAL_MS);
+    this.#alarmArmed = true;
+  }
+
+  /**
+   * Housekeeping alarm (CLAUDE.md §13 Q10). Fires roughly hourly while a
+   * room stays active. Two jobs:
+   *   (a) Trim `chat:*` down to the most recent `CHAT_KEEP` entries — chat
+   *       is mirrored to D1 beyond the DO lifetime, so the DO copy only
+   *       needs to cover live catch-up.
+   *   (b) TTL / `--expire`: when `ETHERCALC_EXPIRE` is set and the room
+   *       hasn't been touched within the TTL, wipe it (same hammer as
+   *       `DELETE /_do/all`).
+   * Re-arms itself if the room is still active so the cadence continues
+   * without an external pinger.
+   */
+  async alarm(): Promise<void> {
+    this.#alarmArmed = false;
+    // (b) TTL expiry — if configured and the room is stale, drop it and
+    // do NOT re-arm (the room is gone).
+    const ttlMs = parseExpireMs(this.#env.ETHERCALC_EXPIRE);
+    if (ttlMs !== null) {
+      const updatedAt = await this.#state.storage.get<number>(
+        STORAGE_KEYS.metaUpdatedAt,
+      );
+      if (typeof updatedAt === 'number' && Date.now() - updatedAt >= ttlMs) {
+        await this.#deleteAllAndUnindex(this.#ownName ?? null);
+        return;
+      }
+    }
+    // (a) Trim chat to the most recent CHAT_KEEP entries.
+    await this.#trimChat();
+    // Re-arm while the room is still active (it survived the TTL check).
+    await this.#armAlarm();
+  }
+
+  /** Delete all but the most recent `CHAT_KEEP` chat entries. */
+  async #trimChat(): Promise<void> {
+    const map = await this.#state.storage.list<string>({
+      prefix: STORAGE_KEYS.chatPrefix,
+    });
+    const keys = Array.from(map.keys());
+    if (keys.length <= CHAT_KEEP) return;
+    // list() returns ascending key order; the oldest are at the front.
+    const toDelete = keys.slice(0, keys.length - CHAT_KEEP);
+    await this.#state.storage.delete(toDelete);
   }
 
   /** Snapshot of all ecells as `{user → cell}`. */

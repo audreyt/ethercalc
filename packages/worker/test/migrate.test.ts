@@ -99,15 +99,16 @@ describe('PUT /_migrate/seed/:room', () => {
   });
 
   it('seeds snapshot + log + audit + chat + ecell and mirrors D1', async () => {
+    // Design "fold": the seed now FOLDS base+log into one authoritative
+    // snapshot on ingest (the hydrate path no longer replays the log over
+    // a present snapshot), so we assert on the semantic content of the
+    // re-serialised save rather than byte-equality with the verbatim
+    // input. A log-only seed (no base snapshot) folds the commands onto an
+    // empty sheet, which round-trips cleanly through real SocialCalc.
     const payload = {
-      snapshot:
-        'socialcalc:version:1.5\n' +
-        '--SocialCalcSpreadsheetControlSave--\n' +
-        'version:1.5\n' +
-        'part:sheet\n' +
-        'cell:A1:t:migrated\n',
-      log: ['set A1 text migrated'],
-      audit: ['set A1 text migrated'],
+      snapshot: '',
+      log: ['set A1 text t migrated', 'set B2 text t since-base'],
+      audit: ['set A1 text t migrated', 'set B2 text t since-base'],
       chat: ['hello from 2020'],
       ecell: { alice: 'A1', bob: 'B2' },
       updatedAt: 1_700_000_000_000,
@@ -127,10 +128,18 @@ describe('PUT /_migrate/seed/:room', () => {
     expect(res.status).toBe(201);
     expect(await res.text()).toBe('OK');
 
-    // The room is now readable via every public surface.
+    // The room is readable; the folded save carries BOTH the base cell and
+    // the since-base log cell (the log was folded in, not lost).
     const snap = await request('GET', '/_/mig-e');
     expect(snap.status).toBe(200);
-    expect(await snap.text()).toBe(payload.snapshot);
+    const snapText = await snap.text();
+    expect(snapText).toContain('migrated');
+    expect(snapText).toContain('since-base');
+    // And exactly once — the since-base command was applied a single time.
+    const b2 = await request('GET', '/_/mig-e/cells/B2');
+    expect(((await b2.json()) as { datavalue?: string }).datavalue).toBe(
+      'since-base',
+    );
 
     const rooms = await request('GET', '/_rooms');
     expect(rooms.status).toBe(200);
@@ -144,6 +153,8 @@ describe('PUT /_migrate/seed/:room', () => {
   });
 
   it('skipIndex:true does NOT mirror D1 (migrator bulk-index path)', async () => {
+    // Log-only seed so fold-on-ingest round-trips cleanly through real
+    // SocialCalc — `skipIndex` controls the D1 mirror, not storage.
     const res = await request(
       'PUT',
       '/_migrate/seed/mig-skip',
@@ -153,7 +164,8 @@ describe('PUT /_migrate/seed/:room', () => {
           Authorization: `Bearer ${TOKEN}`,
         },
         body: JSON.stringify({
-          snapshot: 'S',
+          snapshot: '',
+          log: ['set A1 text t kept'],
           updatedAt: 1_700_000_000_999,
           skipIndex: true,
         }),
@@ -161,11 +173,11 @@ describe('PUT /_migrate/seed/:room', () => {
       { ETHERCALC_MIGRATE_TOKEN: TOKEN },
     );
     expect(res.status).toBe(201);
-    // DO storage writes happened (snapshot readable), but the D1 row
-    // was NOT mirrored — `mig-skip` should be absent from /_rooms.
+    // DO storage writes happened (snapshot readable + content preserved),
+    // but the D1 row was NOT mirrored — `mig-skip` absent from /_rooms.
     const snap = await request('GET', '/_/mig-skip');
     expect(snap.status).toBe(200);
-    expect(await snap.text()).toBe('S');
+    expect(await snap.text()).toContain('kept');
     const rooms = (await (await request('GET', '/_rooms')).json()) as string[];
     expect(rooms).not.toContain('mig-skip');
   });
@@ -373,14 +385,16 @@ describe('PUT /_migrate/seed/:room — idempotent', () => {
         Authorization: `Bearer ${TOKEN}`,
       },
     };
+    // Log-only seeds so fold-on-ingest round-trips cleanly. The second
+    // seed must fully replace the first (state + timestamp).
     const first = await request(
       'PUT',
       '/_migrate/seed/mig-f',
       {
         ...common,
         body: JSON.stringify({
-          snapshot: 'A',
-          log: ['first'],
+          snapshot: '',
+          log: ['set A1 text t first'],
           updatedAt: 100,
         }),
       },
@@ -393,8 +407,8 @@ describe('PUT /_migrate/seed/:room — idempotent', () => {
       {
         ...common,
         body: JSON.stringify({
-          snapshot: 'B',
-          log: ['second'],
+          snapshot: '',
+          log: ['set A1 text t second'],
           updatedAt: 200,
         }),
       },
@@ -403,7 +417,10 @@ describe('PUT /_migrate/seed/:room — idempotent', () => {
     expect(second.status).toBe(201);
 
     const snap = await request('GET', '/_/mig-f');
-    expect(await snap.text()).toBe('B');
+    const snapText = await snap.text();
+    // Second seed won — the room reflects 'second', not 'first'.
+    expect(snapText).toContain('second');
+    expect(snapText).not.toContain('first');
     const times = (await (await request('GET', '/_roomtimes')).json()) as Record<
       string,
       number

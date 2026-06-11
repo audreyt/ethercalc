@@ -116,4 +116,14 @@ export interface Env {
    * in `wrangler.toml` for production Cloudflare deploys.
    */
   readonly ETHERCALC_CORS?: string;
+
+  /**
+   * Room TTL in SECONDS (legacy `--expire` / Redis `EXPIRE` semantics,
+   * §13 Q10). When set, the RoomDO's housekeeping `alarm()` wipes any
+   * room whose `meta:updated_at` is older than this TTL — the DO-storage
+   * equivalent of the legacy `EXPIRE snapshot-<room>`. Unset (the
+   * default) means rooms live forever. Wired by `bin/ethercalc` into the
+   * Miniflare env; on Cloudflare it's an optional `[vars]` entry.
+   */
+  readonly ETHERCALC_EXPIRE?: string;
 }

@@ -28,12 +28,24 @@ import type { Env } from '../src/env.ts';
 
 interface FakeStorageRecord {
   map: Map<string, unknown>;
+  /** Pending alarm time (ms epoch), or null when disarmed. */
+  alarm?: number | null;
 }
 
 /** Minimal in-memory DO storage — enough for the behaviors RoomDO exercises. */
 function fakeStorage(record: FakeStorageRecord): DurableObjectStorage {
   const m = record.map;
+  if (record.alarm === undefined) record.alarm = null;
   return {
+    async getAlarm(): Promise<number | null> {
+      return record.alarm ?? null;
+    },
+    async setAlarm(scheduledTime: number): Promise<void> {
+      record.alarm = scheduledTime;
+    },
+    async deleteAlarm(): Promise<void> {
+      record.alarm = null;
+    },
     async get(key: unknown): Promise<unknown> {
       // Support the single-key `get(key)` and the batched
       // `get(keys[])` forms — the chunked-snapshot reader uses the
@@ -1261,7 +1273,7 @@ describe('RoomDO — cross-DO rename primitives (Phase 6)', () => {
     expect(await res.text()).toMatch(/install body\.audit must be string\[\]/);
   });
 
-  it('POST /_do/install writes snapshot + log + audit, returns 201', async () => {
+  it('POST /_do/install folds base+log into the snapshot, keeps log tail + audit, returns 201', async () => {
     const record: FakeStorageRecord = { map: new Map() };
     record.map.set('stale', 'yes'); // should be wiped
     const room = new RoomDO(makeState('x', record), makeEnv());
@@ -1276,7 +1288,12 @@ describe('RoomDO — cross-DO rename primitives (Phase 6)', () => {
       }),
     );
     expect(res.status).toBe(201);
-    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('socialcalc:v1');
+    // Fold-on-ingest: the stored snapshot is the FOLDED save (the mocked
+    // createSpreadsheetSave returns 'SNAP'), not the verbatim base — the
+    // hydrate path no longer replays the log over a present snapshot, so
+    // the log must already be baked into the snapshot here.
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('SNAP');
+    // Log tail kept for client catch-up; audit kept verbatim.
     expect(record.map.get(logKey(0))).toBe('cmd-1');
     expect(record.map.get(logKey(1))).toBe('cmd-2');
     expect(record.map.get(auditKey(0))).toBe('cmd-1');
@@ -1293,7 +1310,8 @@ describe('RoomDO — cross-DO rename primitives (Phase 6)', () => {
       }),
     );
     expect(res.status).toBe(201);
-    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('SAVE');
+    // Folded snapshot (mock returns 'SNAP'); no log/audit present.
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('SNAP');
   });
 });
 
@@ -1327,7 +1345,9 @@ describe('RoomDO — POST /_do/seed (Phase 11b migration)', () => {
     expect(res.status).toBe(201);
     expect(await res.text()).toBe('OK');
     expect(record.map.has('stale')).toBe(false);
-    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('socialcalc:v1');
+    // Fold-on-ingest: stored snapshot is the FOLDED save (mock → 'SNAP'),
+    // with the log baked in. The log tail is retained for client catch-up.
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('SNAP');
     expect(record.map.get(STORAGE_KEYS.metaUpdatedAt)).toBe(1700);
     expect(record.map.get(logKey(0))).toBe('cmd-1');
     expect(record.map.get(logKey(1))).toBe('cmd-2');
@@ -1375,7 +1395,13 @@ describe('RoomDO — POST /_do/seed (Phase 11b migration)', () => {
     expect(calls.find((c) => c.sql.startsWith('INSERT INTO rooms'))).toBeUndefined();
   });
 
-  it('log-only rooms (empty snapshot) skip the snapshot storage key', async () => {
+  it('log-only rooms (no base snapshot) fold the log into a snapshot on ingest', async () => {
+    // Previously this asserted log-only rooms kept the "no snapshot"
+    // shape, expecting the hydrate path to replay the log. That path no
+    // longer replays over a present snapshot, so a log-only seed must
+    // FOLD the log onto an empty sheet and store the result — otherwise
+    // the room would read back empty. The mocked createSpreadsheetSave
+    // returns 'SNAP'.
     const record: FakeStorageRecord = { map: new Map() };
     const state = makeState('x', record);
     const room = new RoomDO(state, makeEnv());
@@ -1389,9 +1415,25 @@ describe('RoomDO — POST /_do/seed (Phase 11b migration)', () => {
       }),
     );
     expect(res.status).toBe(201);
-    expect(record.map.has(STORAGE_KEYS.snapshot)).toBe(false);
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('SNAP');
     expect(record.map.get(STORAGE_KEYS.metaUpdatedAt)).toBe(500);
     expect(record.map.get(logKey(0))).toBe('cmd');
+    await drainWaitUntil(state);
+  });
+
+  it('truly empty rooms (no snapshot, no log) keep the "no snapshot" shape', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const state = makeState('x', record);
+    const room = new RoomDO(state, makeEnv());
+    const res = await room.fetch(
+      new Request('https://do/_do/seed', {
+        method: 'POST',
+        body: JSON.stringify({ updatedAt: 500 }),
+      }),
+    );
+    expect(res.status).toBe(201);
+    expect(record.map.has(STORAGE_KEYS.snapshot)).toBe(false);
+    expect(record.map.get(STORAGE_KEYS.metaUpdatedAt)).toBe(500);
     await drainWaitUntil(state);
   });
 
@@ -1458,6 +1500,320 @@ describe('RoomDO — POST /_do/seed (Phase 11b migration)', () => {
     expect(stored).toBeGreaterThanOrEqual(before);
     expect(stored).toBeLessThanOrEqual(after);
     await drainWaitUntil(state);
+  });
+});
+
+/**
+ * Design "fold" — storage-growth bounds + the latent double-apply fix.
+ * These exercise the ring-buffer log trim, the ecell LRU cap, the
+ * housekeeping alarm (TTL expiry + chat trim + re-arm), and the inline
+ * WS connection/frame caps. The end-to-end double-apply regression (real
+ * SocialCalc, non-idempotent command) lives in `room.test.ts` because the
+ * Node suite mocks SocialCalc.
+ */
+describe('RoomDO — fold: log ring buffer', () => {
+  it('trims log:<seq - LOG_RING> as it appends past the ring window', async () => {
+    // LOG_RING is 1024. Pre-seed the seq counters so the next append is
+    // seq 1024 — that write must delete log:0000…0000 (seq 0).
+    const record: FakeStorageRecord = { map: new Map() };
+    // Seed exactly 1024 existing log+audit entries would be slow; instead
+    // pre-populate the boundary entry plus enough counter state via two
+    // sentinel keys so #ensureSeqs derives the right next-seq. We do it by
+    // setting the lowest and a marker at seq 1023, then asserting on the
+    // appended seq. Simpler: set log:0 and log:1023, drive seq via a full
+    // count. We instead directly seed 1024 entries cheaply.
+    for (let i = 0; i < 1024; i++) record.map.set(logKey(i), `c${i}`);
+    for (let i = 0; i < 1024; i++) record.map.set(auditKey(i), `c${i}`);
+    const room = new RoomDO(makeState('x', record), makeEnv());
+    await room.fetch(
+      new Request('https://do/_do/commands', { method: 'POST', body: 'newcmd' }),
+    );
+    // Appended at seq 1024 → log:1024 present, log:0 evicted, audit:0 kept.
+    expect(record.map.get(logKey(1024))).toBe('newcmd');
+    expect(record.map.has(logKey(0))).toBe(false);
+    expect(record.map.get(auditKey(0))).toBe('c0'); // audit never trimmed
+    expect(record.map.get(auditKey(1024))).toBe('newcmd');
+  });
+
+  it('does NOT trim before the ring window fills', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('x', record), makeEnv());
+    await room.fetch(
+      new Request('https://do/_do/commands', { method: 'POST', body: 'first' }),
+    );
+    // seq 0 < LOG_RING → no delete. log:0 stays.
+    expect(record.map.get(logKey(0))).toBe('first');
+  });
+});
+
+describe('RoomDO — fold: ecell LRU cap', () => {
+  it('evicts the least-recently-written user once the cap is exceeded', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('x', record), makeEnv());
+    // Write ECELL_CAP (256) distinct users, then one more — the first
+    // (oldest) must be evicted.
+    for (let i = 0; i < 256; i++) await room.putEcell(`u${i}`, `A${i}`);
+    expect(record.map.has(ecellKey('u0'))).toBe(true);
+    await room.putEcell('u256', 'Z1');
+    expect(record.map.has(ecellKey('u0'))).toBe(false); // evicted
+    expect(record.map.has(ecellKey('u256'))).toBe(true);
+    // The set stays at the cap.
+    const ecells = Array.from(record.map.keys()).filter((k) =>
+      k.startsWith(STORAGE_KEYS.ecellPrefix),
+    );
+    expect(ecells.length).toBe(256);
+  });
+
+  it('re-writing an existing user refreshes recency without growing the set', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('x', record), makeEnv());
+    for (let i = 0; i < 256; i++) await room.putEcell(`u${i}`, `A${i}`);
+    // Touch u0 — it becomes most-recent, so the next overflow evicts u1.
+    await room.putEcell('u0', 'A0-updated');
+    await room.putEcell('u256', 'Z1');
+    expect(record.map.get(ecellKey('u0'))).toBe('A0-updated'); // survived
+    expect(record.map.has(ecellKey('u1'))).toBe(false); // evicted instead
+  });
+
+  it('seeds the LRU order from storage on first write (survives isolate restart)', async () => {
+    // Pre-seed 256 ecells directly in storage (as a warm DO would have on
+    // disk after a restart), then write one more via a fresh RoomDO whose
+    // in-memory order starts null. The seed branch must read the existing
+    // keys so the cap is honoured immediately.
+    const record: FakeStorageRecord = { map: new Map() };
+    for (let i = 0; i < 256; i++) record.map.set(ecellKey(`u${i}`), `A${i}`);
+    const room = new RoomDO(makeState('x', record), makeEnv());
+    await room.putEcell('newcomer', 'Z9');
+    // One of the pre-seeded users was evicted; total ecell keys == cap.
+    const ecells = Array.from(record.map.keys()).filter((k) =>
+      k.startsWith(STORAGE_KEYS.ecellPrefix),
+    );
+    expect(ecells.length).toBe(256);
+    expect(record.map.has(ecellKey('newcomer'))).toBe(true);
+  });
+
+  it('routes WS my.ecell writes through the capped path', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const { state } = makeWsAwareState('x', record, []);
+    const room = new RoomDO(state, makeEnv());
+    const ws = makeFakeWs({ sent: [] }, { user: 'alice', room: 'r', auth: 'h' });
+    await room.webSocketMessage(
+      ws,
+      JSON.stringify({ type: 'my.ecell', room: 'r', user: 'alice', ecell: 'A1' }),
+    );
+    expect(record.map.get(ecellKey('alice'))).toBe('A1');
+  });
+});
+
+describe('RoomDO — fold: housekeeping alarm', () => {
+  it('arms the alarm on the first write and dedupes subsequent arms', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('x', record), makeEnv());
+    const before = Date.now();
+    await room.fetch(
+      new Request('https://do/_do/commands', { method: 'POST', body: 'c1' }),
+    );
+    const firstArm = record.alarm as number;
+    expect(typeof firstArm).toBe('number');
+    // Armed roughly one hour out (ALARM_INTERVAL_MS = 60*60*1000). Asserting
+    // the magnitude pins the interval arithmetic — a 1000× error (e.g.
+    // 60*60/1000 = 3.6 ms, or 60/60*1000 = 1000 ms) would land the alarm in
+    // the immediate past/near-future and fail this bound.
+    expect(firstArm).toBeGreaterThan(before + 30 * 60 * 1000);
+    expect(firstArm).toBeLessThan(before + 90 * 60 * 1000);
+    // A second write must NOT re-arm (cached #alarmArmed short-circuits).
+    record.alarm = 999; // sentinel — if re-armed it'd be overwritten
+    await room.fetch(
+      new Request('https://do/_do/commands', { method: 'POST', body: 'c2' }),
+    );
+    expect(record.alarm).toBe(999);
+  });
+
+  it('recovers an already-armed alarm from storage across a restart (getAlarm != null)', async () => {
+    // Fresh RoomDO (#alarmArmed false) but storage already has an alarm
+    // pending — the arm path must observe it via getAlarm() and NOT push a
+    // new time.
+    const record: FakeStorageRecord = { map: new Map(), alarm: 12345 };
+    const room = new RoomDO(makeState('x', record), makeEnv());
+    await room.putEcell('alice', 'A1'); // triggers #armAlarm
+    expect(record.alarm).toBe(12345); // unchanged — recovered, not re-set
+  });
+
+  it('alarm() trims chat to the most recent CHAT_KEEP entries and re-arms', async () => {
+    const record: FakeStorageRecord = { map: new Map(), alarm: 1 };
+    // Non-chat keys present so that a mis-scoped list({}) (no prefix) would
+    // mis-count and either delete the snapshot or under-trim chat —
+    // pinning the `{prefix: chatPrefix}` filter.
+    record.map.set(STORAGE_KEYS.snapshot, 'SAVE');
+    record.map.set(ecellKey('alice'), 'A1');
+    // 600 chat entries → trim down to the last 500.
+    for (let i = 0; i < 600; i++) record.map.set(chatKey(i), `m${i}`);
+    const room = new RoomDO(makeState('x', record), makeEnv());
+    record.alarm = null; // simulate the alarm having fired (disarmed)
+    await room.alarm();
+    const chatKeys = Array.from(record.map.keys()).filter((k) =>
+      k.startsWith(STORAGE_KEYS.chatPrefix),
+    );
+    expect(chatKeys.length).toBe(500);
+    expect(record.map.has(chatKey(0))).toBe(false); // oldest dropped
+    expect(record.map.has(chatKey(599))).toBe(true); // newest kept
+    // Non-chat keys untouched by the chat-scoped trim.
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('SAVE');
+    expect(record.map.get(ecellKey('alice'))).toBe('A1');
+    // Re-armed for the next cycle.
+    expect(typeof record.alarm).toBe('number');
+  });
+
+  it('alarm() leaves chat untouched at EXACTLY CHAT_KEEP (boundary)', async () => {
+    // Exactly 500 entries → `keys.length <= CHAT_KEEP` is true, no trim.
+    // Pinning the boundary kills the `<=`→`<` and `<=`→false mutants.
+    const record: FakeStorageRecord = { map: new Map(), alarm: null };
+    for (let i = 0; i < 500; i++) record.map.set(chatKey(i), `m${i}`);
+    const room = new RoomDO(makeState('x', record), makeEnv());
+    await room.alarm();
+    const chatKeys = Array.from(record.map.keys()).filter((k) =>
+      k.startsWith(STORAGE_KEYS.chatPrefix),
+    );
+    expect(chatKeys.length).toBe(500); // untouched
+  });
+
+  it('alarm() trims exactly one when CHAT_KEEP + 1 entries exist (boundary)', async () => {
+    // 501 entries → trims the single oldest, leaving 500. Pins the
+    // `keys.length - CHAT_KEEP` slice arithmetic and the `<=` boundary.
+    const record: FakeStorageRecord = { map: new Map(), alarm: null };
+    for (let i = 0; i < 501; i++) record.map.set(chatKey(i), `m${i}`);
+    const room = new RoomDO(makeState('x', record), makeEnv());
+    await room.alarm();
+    const chatKeys = Array.from(record.map.keys()).filter((k) =>
+      k.startsWith(STORAGE_KEYS.chatPrefix),
+    );
+    expect(chatKeys.length).toBe(500);
+    expect(record.map.has(chatKey(0))).toBe(false); // exactly the oldest gone
+    expect(record.map.has(chatKey(1))).toBe(true);
+  });
+
+  it('alarm() wipes a stale room when ETHERCALC_EXPIRE is set and TTL exceeded', async () => {
+    const record: FakeStorageRecord = { map: new Map(), alarm: null };
+    record.map.set(STORAGE_KEYS.snapshot, 'SAVE');
+    record.map.set(chatKey(0), 'm0');
+    // updated_at far in the past → stale relative to a 60s TTL.
+    record.map.set(STORAGE_KEYS.metaUpdatedAt, Date.now() - 120_000);
+    const env: Env = {
+      ROOM: {} as DurableObjectNamespace,
+      ETHERCALC_EXPIRE: '60', // seconds
+    };
+    const room = new RoomDO(makeState('x', record), env);
+    await room.alarm();
+    // Whole room wiped — no snapshot, no chat — and NOT re-armed.
+    expect(record.map.size).toBe(0);
+    expect(record.alarm).toBeNull();
+  });
+
+  it('alarm() keeps a fresh room when ETHERCALC_EXPIRE is set but TTL not exceeded', async () => {
+    const record: FakeStorageRecord = { map: new Map(), alarm: null };
+    record.map.set(STORAGE_KEYS.snapshot, 'SAVE');
+    record.map.set(STORAGE_KEYS.metaUpdatedAt, Date.now()); // just touched
+    const env: Env = {
+      ROOM: {} as DurableObjectNamespace,
+      ETHERCALC_EXPIRE: '3600',
+    };
+    const room = new RoomDO(makeState('x', record), env);
+    await room.alarm();
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('SAVE'); // survived
+    expect(typeof record.alarm).toBe('number'); // re-armed
+  });
+
+  it('alarm() treats a non-positive / non-numeric ETHERCALC_EXPIRE as no TTL', async () => {
+    // parseExpireMs returns null for '0' (non-positive) and 'abc'
+    // (non-finite) → no TTL expiry, room preserved.
+    for (const bad of ['0', 'abc']) {
+      const record: FakeStorageRecord = { map: new Map(), alarm: null };
+      record.map.set(STORAGE_KEYS.snapshot, 'SAVE');
+      record.map.set(STORAGE_KEYS.metaUpdatedAt, Date.now() - 1_000_000);
+      const env: Env = {
+        ROOM: {} as DurableObjectNamespace,
+        ETHERCALC_EXPIRE: bad,
+      };
+      const room = new RoomDO(makeState('x', record), env);
+      await room.alarm();
+      expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('SAVE');
+    }
+  });
+
+  it('alarm() skips TTL expiry when meta:updated_at is missing', async () => {
+    // ETHERCALC_EXPIRE set, but no stored timestamp → the `typeof number`
+    // guard short-circuits and the room is preserved + chat trimmed.
+    const record: FakeStorageRecord = { map: new Map(), alarm: null };
+    record.map.set(STORAGE_KEYS.snapshot, 'SAVE');
+    const env: Env = {
+      ROOM: {} as DurableObjectNamespace,
+      ETHERCALC_EXPIRE: '60',
+    };
+    const room = new RoomDO(makeState('x', record), env);
+    await room.alarm();
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('SAVE');
+  });
+});
+
+describe('RoomDO — fold: inline WS caps', () => {
+  it('rejects a WS upgrade with 503 once the connection cap is reached', async () => {
+    // 128 peers already connected (MAX_CONN). getWebSockets() returns them.
+    const peers = Array.from({ length: 128 }, () =>
+      makeFakeWs({ sent: [] }),
+    );
+    const record: FakeStorageRecord = { map: new Map() };
+    const { state } = makeWsAwareState('x', record, peers);
+    const room = new RoomDO(state, makeEnv());
+    const res = await room.fetch(
+      new Request('https://do/_do/ws', {
+        headers: { Upgrade: 'websocket' },
+      }),
+    );
+    expect(res.status).toBe(503);
+    expect(await res.text()).toBe('Too many connections');
+  });
+
+  it('still 426s a non-upgrade request before the connection-cap check', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('x', record), makeEnv());
+    const res = await room.fetch(new Request('https://do/_do/ws'));
+    expect(res.status).toBe(426);
+  });
+
+  it('passes the connection-cap check under the limit (reaches the workerd-only upgrade)', async () => {
+    // Below MAX_CONN with a valid Upgrade header → the cap check's FALSE
+    // branch executes and control reaches `upgradeWebSocket`, which is
+    // workerd-only (needs `WebSocketPair`). In Node that throws — we only
+    // assert the throw to prove the cap check was passed (covering the
+    // `< MAX_CONN` branch); the real 101 path is exercised in the
+    // workers-pool tests.
+    const record: FakeStorageRecord = { map: new Map() };
+    const { state } = makeWsAwareState('x', record, []); // 0 peers < cap
+    const room = new RoomDO(state, makeEnv());
+    await expect(
+      room.fetch(
+        new Request('https://do/_do/ws', {
+          headers: { Upgrade: 'websocket' },
+        }),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('drops an oversized WS frame (> MAX_FRAME) before parsing', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const { state } = makeWsAwareState('x', record, []);
+    const room = new RoomDO(state, makeEnv());
+    const log: FakeWsLog = { sent: [] };
+    const ws = makeFakeWs(log, { user: 'alice', room: 'r', auth: 'h' });
+    // A valid-shaped chat frame padded past 64 KiB. Without the cap it
+    // would persist a chat entry; with the cap it's silently dropped.
+    const huge = 'x'.repeat(64 * 1024 + 1);
+    await room.webSocketMessage(
+      ws,
+      JSON.stringify({ type: 'chat', room: 'r', user: 'alice', msg: huge }),
+    );
+    expect(record.map.has(chatKey(0))).toBe(false); // nothing persisted
+    expect(log.sent).toHaveLength(0); // nothing broadcast
   });
 });
 
