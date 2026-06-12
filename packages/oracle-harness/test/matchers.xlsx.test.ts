@@ -7,6 +7,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 
 import { encodeBase64, matchXlsx } from '../src/matchers.ts';
 import {
+  OPTIONAL_XLSX_ZIP_ENTRIES,
   VOLATILE_XLSX_DOCPROPS,
   canonicalizeZipEntry,
   compareZipArchives,
@@ -106,6 +107,17 @@ describe('zip-canonical helpers', () => {
     const a = buildBasicXlsx();
     const b = buildBasicXlsx();
     const r = compareZipArchives(a, b, VOLATILE_XLSX_DOCPROPS);
+    expect(r.equal).toBe(true);
+    expect(r.diff).toBeUndefined();
+  });
+
+  it('compareZipArchives ignores optional entry-list drift', () => {
+    const full = unzipOrError(buildBasicXlsx(), 'full').entries!;
+    const withoutSharedStrings = { ...full };
+    delete withoutSharedStrings['xl/sharedStrings.xml'];
+    const a = zipSync(full);
+    const b = zipSync(withoutSharedStrings);
+    const r = compareZipArchives(a, b, VOLATILE_XLSX_DOCPROPS, OPTIONAL_XLSX_ZIP_ENTRIES);
     expect(r.equal).toBe(true);
     expect(r.diff).toBeUndefined();
   });

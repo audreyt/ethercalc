@@ -269,6 +269,30 @@ describe('runWsScenario', () => {
         new Response('nope', { status: 200, headers: { 'content-type': 'text/plain' } }),
     });
     expect(bodyMismatch.error).toMatch(/length differs/);
+
+    const ignoreBody: WsScenario = {
+      name: 'ws/ask-log',
+      kind: 'ws',
+      steps: [
+        {
+          type: 'http',
+          request: { method: 'GET', path: '/_/r' },
+          expect: {
+            status: 200,
+            headers: {},
+            bodyBase64: encodeBase64(new TextEncoder().encode('recorded')),
+            bodyMatcher: 'ignore',
+          },
+        },
+      ],
+    };
+    const ignored = await runWsScenario(ignoreBody, {
+      targetUrl: 'http://host.test',
+      transport: 'native',
+      mode: 'replay',
+      fetcher: async () => new Response('different body', { status: 200 }),
+    });
+    expect(ignored.ok).toBe(true);
   });
 
   it('honors sleep steps and multi-id sessions', async () => {

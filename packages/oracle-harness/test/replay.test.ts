@@ -218,6 +218,24 @@ describe('replayOne', () => {
     }
   });
 
+  it('reports body read failures', async () => {
+    const scenario = mkRecording();
+    const r = await replayOne(scenario, {
+      targetUrl: 'http://target.test',
+      recordedDir: '',
+      fetcher: async () =>
+        ({
+          status: 200,
+          headers: new Headers({ 'content-type': 'text/plain' }),
+          arrayBuffer: async () => {
+            throw new Error('zlib error');
+          },
+        }) as unknown as Response,
+    });
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/body read failed: zlib error/);
+  });
+
   it('defaults to the exact matcher when none recorded', async () => {
     const scenario = mkRecording({
       expect: {

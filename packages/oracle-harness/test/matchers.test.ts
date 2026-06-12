@@ -135,6 +135,35 @@ describe('matchCommandEcho', () => {
     });
     expect(r).toMatch(/command echo mismatch/);
   });
+
+  it('rejects invalid expected JSON', () => {
+    const r = matchCommandEcho({
+      expectedBase64: b64('not json'),
+      actualBytes: bytes('{"command":"x"}'),
+    });
+    expect(r).toMatch(/expected body is not valid JSON/);
+  });
+
+  it('rejects invalid actual JSON', () => {
+    const r = matchCommandEcho({
+      expectedBase64: b64('{"command":"x"}'),
+      actualBytes: bytes('not json'),
+    });
+    expect(r).toMatch(/actual body is not valid JSON/);
+  });
+
+  it('rejects non-textual command shapes', () => {
+    const r = matchCommandEcho({
+      expectedBase64: b64('{"command":[1,2]}'),
+      actualBytes: bytes('{"command":"set A1 text t x"}'),
+    });
+    expect(r).toMatch(/command echo mismatch/);
+  });
+
+  it('fails if expected is null', () => {
+    const r = matchCommandEcho({ expectedBase64: null, actualBytes: bytes('{}') });
+    expect(r).toMatch(/null/);
+  });
 });
 
 describe('matchScsave', () => {
@@ -284,5 +313,14 @@ describe('dispatchMatcher', () => {
         actualBytes: bytes('[null,42,{"link":42},{"link":"/other/app"}]'),
       }),
     ).toMatch(/roomlinks-empty mismatch/);
+    expect(
+      dispatchMatcher('command-echo', {
+        expectedBase64: b64('{"command":"x"}'),
+        actualBytes: bytes('{"command":"x"}'),
+      }),
+    ).toBeNull();
+    expect(
+      dispatchMatcher('command-echo', { expectedBase64: null, actualBytes: bytes('{}') }),
+    ).toMatch(/null/);
   });
 });
