@@ -127,6 +127,7 @@ export function canonicalizeZipEntry(
   bytes: Uint8Array,
   volatile: VolatileMap,
   optionalPaths: ReadonlySet<string> = new Set(),
+  allEntries?: Readonly<Record<string, Uint8Array>>,
 ): string {
   if (isXmlPath(path)) {
     const text = new TextDecoder().decode(bytes);
@@ -141,6 +142,9 @@ export function canonicalizeZipEntry(
     }
     if (path === 'xl/workbook.xml') {
       return canonicalizeXlsxWorkbookXml(text);
+    }
+    if (isXlsxWorksheetPath(path)) {
+      return canonicalizeXlsxWorksheetXml(text, allEntries);
     }
     if (path === 'content.xml') {
       return canonicalizeOdsContentXml(text);
@@ -196,8 +200,8 @@ export function compareZipArchives(
     };
   }
   for (const path of comparable) {
-    const ec = canonicalizeZipEntry(path, e.entries![path]!, volatile, optionalPaths);
-    const ac = canonicalizeZipEntry(path, a.entries![path]!, volatile, optionalPaths);
+    const ec = canonicalizeZipEntry(path, e.entries![path]!, volatile, optionalPaths, e.entries);
+    const ac = canonicalizeZipEntry(path, a.entries![path]!, volatile, optionalPaths, a.entries);
     if (ec !== ac) {
       return {
         equal: false,
@@ -258,6 +262,53 @@ export function canonicalizeWorkbookRelsXml(
     const target = el.getAttribute('Target');
     if (target && optionalTargets.has(target)) toRemove.push(el);
     el.removeAttribute('Id');
+  });
+  for (const el of toRemove) el.parentNode?.removeChild(el);
+  normalizeDomNode(de as unknown as Parameters<typeof normalizeDomNode>[0]);
+  return de.outerHTML;
+}
+
+/** Drop SheetJS vs legacy worksheet scaffolding and normalize string cells. */
+export function canonicalizeXlsxWorksheetXml(
+  raw: string,
+  allEntries?: Readonly<Record<string, Uint8Array>>,
+): string {
+  const sharedStrings = parseXlsxSharedStrings(allEntries?.['xl/sharedStrings.xml']);
+  const doc = new DOMParser().parseFromString(raw, 'text/xml');
+  const de = (doc as unknown as { documentElement: DomElementWithAttrs | null }).documentElement;
+  if (!de) throw new HtmlParseError('linkedom could not parse xml as a rooted document');
+  const toRemove: DomElementWithAttrs[] = [];
+  walk(de, (el) => {
+    if (el.nodeType !== 1) return;
+    const name = el.nodeName;
+    if (name === 'sheetPr' || name.endsWith(':sheetPr')) {
+      toRemove.push(el);
+      return;
+    }
+    if (name === 'ignoredErrors' || name.endsWith(':ignoredErrors')) {
+      toRemove.push(el);
+      return;
+    }
+    if (name === 'dimension' || name.endsWith(':dimension')) {
+      const ref = el.getAttribute('ref');
+      if (ref?.includes(':')) {
+        const [start, end] = ref.split(':');
+        if (start === end) el.setAttribute('ref', start!);
+      }
+      return;
+    }
+    if (name !== 'c' && !name.endsWith(':c')) return;
+    const t = el.getAttribute('t');
+    const vEl = firstChildElement(el, 'v');
+    if (!vEl) return;
+    if (t === 's') {
+      const idx = Number.parseInt(textContent(vEl), 10);
+      const resolved = sharedStrings[idx] ?? '';
+      el.removeAttribute('t');
+      setTextContent(vEl, resolved);
+      return;
+    }
+    if (t === 'str') el.removeAttribute('t');
   });
   for (const el of toRemove) el.parentNode?.removeChild(el);
   normalizeDomNode(de as unknown as Parameters<typeof normalizeDomNode>[0]);
@@ -408,6 +459,7 @@ interface DomElementWithParent extends DomElement {
 
 interface DomElementWithAttrs extends DomElementWithParent {
   getAttribute(name: string): string | null;
+  setAttribute(name: string, value: string): void;
   removeAttribute(name: string): void;
 }
 
@@ -418,6 +470,52 @@ function isXmlPath(path: string): boolean {
     path === '[Content_Types].xml' ||
     path === 'manifest.rdf'
   );
+}
+
+function isXlsxWorksheetPath(path: string): boolean {
+  return /^xl\/worksheets\/sheet\d+\.xml$/.test(path);
+}
+
+function parseXlsxSharedStrings(bytes: Uint8Array | undefined): readonly string[] {
+  if (!bytes) return [];
+  const text = new TextDecoder().decode(bytes);
+  const doc = new DOMParser().parseFromString(text, 'text/xml');
+  const de = (doc as unknown as { documentElement: DomElementWithAttrs | null }).documentElement;
+  if (!de) return [];
+  const out: string[] = [];
+  walk(de, (el) => {
+    if (el.nodeType !== 1) return;
+    const name = el.nodeName;
+    if (name !== 'si' && !name.endsWith(':si')) return;
+    const tEl = firstChildElement(el, 't');
+    out.push(tEl ? textContent(tEl) : '');
+  });
+  return out;
+}
+
+function firstChildElement(
+  parent: DomElementWithAttrs,
+  localName: string,
+): DomElementWithAttrs | null {
+  for (let i = 0; i < parent.childNodes.length; i++) {
+    const child = parent.childNodes[i]! as DomElementWithAttrs;
+    if (child.nodeType !== 1) continue;
+    if (xmlLocalName(child.nodeName) === localName) return child;
+  }
+  return null;
+}
+
+function xmlLocalName(name: string): string {
+  const idx = name.lastIndexOf(':');
+  return idx >= 0 ? name.slice(idx + 1) : name;
+}
+
+function textContent(el: DomElementWithAttrs): string {
+  return (el as unknown as { textContent: string }).textContent;
+}
+
+function setTextContent(el: DomElementWithAttrs, value: string): void {
+  (el as unknown as { textContent: string }).textContent = value;
 }
 
 function bytesToHex(bytes: Uint8Array): string {

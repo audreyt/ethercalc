@@ -12,6 +12,7 @@ import {
   canonicalizeContentTypesXml,
   canonicalizeWorkbookRelsXml,
   canonicalizeXlsxWorkbookXml,
+  canonicalizeXlsxWorksheetXml,
   canonicalizeZipEntry,
   compareZipArchives,
   unzipOrError,
@@ -159,6 +160,51 @@ describe('zip-canonical helpers', () => {
     expect(canonicalizeXlsxWorkbookXml(legacy)).toBe(canonicalizeXlsxWorkbookXml(worker));
   });
 
+  it('canonicalizeXlsxWorksheetXml normalizes shared-string vs inline layout drift', () => {
+    const sharedStrings = new TextEncoder().encode(
+      `<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1"><si><t>oracle</t></si></sst>`,
+    );
+    const legacy = `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetPr codeName="Sheet1"/><dimension ref="A1"/><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c></row></sheetData></worksheet>`;
+    const worker = `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:A1"/><sheetData><row r="1"><c r="A1" t="str"><v>oracle</v></c></row></sheetData><ignoredErrors><ignoredError sqref="A1:A1"/></ignoredErrors></worksheet>`;
+    const entries = { 'xl/sharedStrings.xml': sharedStrings };
+    expect(canonicalizeXlsxWorksheetXml(legacy, entries)).toBe(
+      canonicalizeXlsxWorksheetXml(worker, entries),
+    );
+  });
+
+  it('canonicalizeZipEntry routes xl/worksheets/sheet1.xml', () => {
+    const xml = `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="str"><v>x</v></c></row></sheetData></worksheet>`;
+    const out = canonicalizeZipEntry('xl/worksheets/sheet1.xml', new TextEncoder().encode(xml), {});
+    expect(out).toContain('<v>x</v>');
+    expect(out).not.toContain('t="str"');
+  });
+
+  it('canonicalizeXlsxWorksheetXml throws on malformed xml', () => {
+    expect(() => canonicalizeXlsxWorksheetXml('<')).toThrow(/xml/);
+  });
+
+  it('canonicalizeXlsxWorksheetXml handles edge branches in layout normalization', () => {
+    const sharedStrings = new TextEncoder().encode(
+      `<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><si/><si><ns0:t xmlns:ns0="http://schemas.openxmlformats.org/spreadsheetml/2006/main">hi</ns0:t></si></sst>`,
+    );
+    const xml = `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+      <dimension ref="A1:B2"/>
+      <sheetData>
+        <row r="1"><c r="A1" t="s"><v>9</v></c><c r="B1"/></row>
+        <row r="2"><c r="A2"><ns0:v xmlns:ns0="http://schemas.openxmlformats.org/spreadsheetml/2006/main">1</ns0:v></c><c r="Z2"><w/></c></row>
+      </sheetData>
+    </worksheet>`;
+    const emptyShared = canonicalizeXlsxWorksheetXml(
+      `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="3"><c r="A3" t="s">text<ns0:v xmlns:ns0="http://schemas.openxmlformats.org/spreadsheetml/2006/main">0</ns0:v></c></row></sheetData></worksheet>`,
+      { 'xl/sharedStrings.xml': new Uint8Array(0) },
+    );
+    expect(emptyShared).toContain('ns0:v');
+    const out = canonicalizeXlsxWorksheetXml(xml, { 'xl/sharedStrings.xml': sharedStrings });
+    expect(out).toContain('ref="A1:B2"');
+    expect(out).toContain('<v />');
+    expect(out).toContain('ns0:v');
+  });
+
   it('canonicalizeZipEntry routes xl/workbook.xml', () => {
     const xml = `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><workbookPr date1904="false"/></workbook>`;
     const out = canonicalizeZipEntry('xl/workbook.xml', new TextEncoder().encode(xml), {});
@@ -179,10 +225,19 @@ describe('zip-canonical helpers', () => {
 
   it('compareZipArchives ignores optional entry-list drift', () => {
     const full = unzipOrError(buildBasicXlsx(), 'full').entries!;
-    const withoutSharedStrings = { ...full };
-    delete withoutSharedStrings['xl/sharedStrings.xml'];
+    const workerLayout = { ...full };
+    delete workerLayout['xl/sharedStrings.xml'];
+    workerLayout['xl/worksheets/sheet1.xml'] = new TextEncoder().encode(
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1"><c r="A1" t="str"><v>hello</v></c></row>
+    <row r="2"><c r="A2"><v>42</v></c></row>
+  </sheetData>
+</worksheet>`,
+    );
     const a = zipSync(full);
-    const b = zipSync(withoutSharedStrings);
+    const b = zipSync(workerLayout);
     const r = compareZipArchives(a, b, VOLATILE_XLSX_DOCPROPS, OPTIONAL_XLSX_ZIP_ENTRIES);
     expect(r.equal).toBe(true);
     expect(r.diff).toBeUndefined();
