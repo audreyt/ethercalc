@@ -1316,6 +1316,21 @@ describe('RoomDO — cross-DO rename primitives (Phase 6)', () => {
     expect(await res.text()).toMatch(/clone body must be \{to: string\}/);
   });
 
+  it('POST /_do/clone PUTs empty body when source has no snapshot', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const siblingCalls: SiblingCall[] = [];
+    const room = new RoomDO(makeState('x', record), makeRenameEnv(siblingCalls));
+    const res = await room.fetch(
+      new Request('https://do/_do/clone', {
+        method: 'POST',
+        body: JSON.stringify({ to: 'tpl_empty' }),
+      }),
+    );
+    expect(res.status).toBe(201);
+    expect(siblingCalls).toHaveLength(1);
+    expect(String(siblingCalls[0]!.init?.body)).toBe('');
+  });
+
   it('POST /_do/clone PUTs snapshot to target and preserves source', async () => {
     const record: FakeStorageRecord = { map: new Map() };
     record.map.set(STORAGE_KEYS.snapshot, 'TPL-SNAP');
