@@ -10,6 +10,25 @@ EtherCalc bundles SocialCalc from the audreyt/socialcalc fork; see
 
 
 ==============================================================================
+0.20260612.4 — 2026-06-12
+==============================================================================
+
+Self-host hardening (SH-2/SH-3 completion)
+- ETHERCALC_RATELIMIT optional per-IP HTTP token bucket (default off).
+- ETHERCALC_ROOM_CREATE_LIMIT caps room minting per source (proxy compose
+  defaults on: 6/min).
+- docker-compose.proxy.yml defaults ETHERCALC_EXPIRE=2592000 (30-day TTL).
+
+Sandstorm (SH-6/SH-7)
+- ETHERCALC_SANDSTORM=1 honours viewer vs editor via X-Sandstorm-Permissions.
+- run_grain.sh disarms ETHERCALC_MIGRATE_TOKEN after first-load migration.
+- sandstorm-pkgdef appVersion 202606124.
+
+Helm
+- config.rateLimit and config.roomCreateLimit env wiring.
+
+
+==============================================================================
 0.20260612.3 — 2026-06-12
 ==============================================================================
 

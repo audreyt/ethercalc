@@ -88,6 +88,7 @@ Override defaults by exporting these before `docker compose up`:
 | `ETHERCALC_BASEPATH`  | *(unset)*   | URL prefix, e.g. `/ethercalc` behind a proxy.     |
 | `ETHERCALC_EXPIRE`    | *(unset)*   | Seconds of inactivity before a room is pruned.    |
 | `ETHERCALC_RATELIMIT` | *(unset)*   | Optional in-Worker per-IP limit (off by default). `1` or `10` = 10 req/s; `60:600` = 600 per minute. Belt-and-suspenders behind nginx — not a substitute for the proxy. |
+| `ETHERCALC_ROOM_CREATE_LIMIT` | *(unset)* | Optional per-IP cap on room creation (`POST /_`, `/_new`, `/_from`, `PUT /_/room`). `1` = 6/min. Proxy compose defaults this on. |
 
 Recommended public-instance settings:
 

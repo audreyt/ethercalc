@@ -17,6 +17,12 @@ import {
   isRateLimitExemptPath,
   rateLimitConfigFromEnv,
 } from './lib/rate-limit.ts';
+import {
+  createRateLimitStore as createRoomCreateStore,
+  isRoomCreationRoute,
+  roomCreateLimitFromEnv,
+} from './lib/room-create-limit.ts';
+import { sandstormBlocksMutation } from './lib/sandstorm-access.ts';
 import { registerAssets, registerRoomCatchAll } from './routes/assets.ts';
 import { registerExports } from './routes/exports.ts';
 import { registerLegacySocketIo } from './routes/legacy-socketio.ts';
@@ -47,6 +53,7 @@ export { scheduled } from './scheduled.ts';
  * `registerRoomCatchAll`.
  */
 const rateLimitStore = createRateLimitStore();
+const roomCreateStore = createRoomCreateStore();
 
 export function buildApp(): Hono<{ Bindings: Env }> {
   const app = new Hono<{ Bindings: Env }>();
@@ -71,6 +78,43 @@ export function buildApp(): Hono<{ Bindings: Env }> {
         c.header('Retry-After', String(result.retryAfterSec));
       }
       return c.text('Too Many Requests', 429);
+    }
+    await next();
+  });
+  // SH-3: optional per-IP cap on room-creation endpoints (default off).
+  app.use('*', async (c, next) => {
+    const config = roomCreateLimitFromEnv(c.env);
+    if (
+      !config ||
+      isRateLimitExemptPath(c.req.path) ||
+      !isRoomCreationRoute(c.req.method, c.req.path)
+    ) {
+      await next();
+      return;
+    }
+    const result = roomCreateStore.consume(
+      clientIpFromHeaders(c.req.raw.headers),
+      config,
+    );
+    if (!result.allowed) {
+      if (result.retryAfterSec != null) {
+        c.header('Retry-After', String(result.retryAfterSec));
+      }
+      return c.text('Too Many Requests', 429);
+    }
+    await next();
+  });
+  // SH-6: Sandstorm viewer role — block mutations without `modify`.
+  app.use('*', async (c, next) => {
+    if (
+      sandstormBlocksMutation(
+        c.env,
+        c.req.method,
+        c.req.path,
+        c.req.raw.headers,
+      )
+    ) {
+      return c.text('Forbidden', 403);
     }
     await next();
   });

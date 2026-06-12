@@ -44,9 +44,14 @@ export function registerWs(app: Hono<{ Bindings: Env }>): void {
     const room = c.req.param('room') ?? '';
     const stub = roomStub(c.env, room);
     const doUrl = buildDoUrl(room, new URL(c.req.url));
+    const fwd = new Headers({ Upgrade: 'websocket' });
+    const sandstormPerms = c.req.header('X-Sandstorm-Permissions');
+    if (sandstormPerms) {
+      fwd.set('X-Sandstorm-Permissions', sandstormPerms);
+    }
     const req = new Request(doUrl, {
       method: 'GET',
-      headers: { Upgrade: 'websocket' },
+      headers: fwd,
     });
     return stub.fetch(req);
   });

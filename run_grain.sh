@@ -17,13 +17,10 @@
 #   3. Run until Sandstorm signals exit, then shut the worker down
 #      cleanly so DO storage gets a chance to flush.
 #
-# Why a grain-local migrate token:
-#   The PUT /_migrate/seed endpoint on the worker is gated on
-#   `env.ETHERCALC_MIGRATE_TOKEN` (returns 404 if unset). Because the
-#   worker is only reachable from within the grain's sandbox, a fixed
-#   token is safe — it's defense-in-depth, not the primary isolation.
-#   The Sandstorm grain's filesystem and network are already private
-#   to the user.
+# Migrate token (SH-7): the bearer is passed only to the one-shot
+# `ethercalc migrate` subprocess while workerd is briefly started with
+# `ETHERCALC_MIGRATE_TOKEN` set. Normal grain operation runs workerd
+# without the token so `PUT /_migrate/seed/*` returns 404.
 set -euo pipefail
 
 # Resolve the app directory from the script's own path. Under
@@ -33,7 +30,7 @@ set -euo pipefail
 APP_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$APP_DIR"
 
-export ETHERCALC_MIGRATE_TOKEN="sandstorm-grain-local"
+MIGRATE_TOKEN="sandstorm-grain-local"
 # Each Sandstorm grain IS a single spreadsheet — `/` should land in
 # the live sheet, not the ethercalc.net "create new" landing. The
 # legacy LiveScript EtherCalc initialized a `sheet1` room on grain
@@ -41,6 +38,8 @@ export ETHERCALC_MIGRATE_TOKEN="sandstorm-grain-local"
 # seamlessly (the migrated `/var/dump.json` content is under
 # `sheet1`).
 export ETHERCALC_DEFAULT_ROOM="sheet1"
+# SH-6: honour Sandstorm viewer vs editor roles via bridge headers.
+export ETHERCALC_SANDSTORM="1"
 # Wrangler/Bun used to need HOME/TMPDIR set in the grain sandbox; now
 # that we run workerd directly neither is load-bearing, but keep them
 # exported — bunx is still invoked by the `ethercalc migrate` CLI for
@@ -61,28 +60,45 @@ if [ -z "$WORKERD_BIN" ]; then
   exit 127
 fi
 
-# Boot workerd in the background, pointing the DO disk service at /var
-# and the assets service at the symlinked assets/ tree (the bundle
-# layout script-build-workerd-bundle.sh produces).
-"$WORKERD_BIN" serve \
+WORKER_PID=""
+
+start_workerd() {
+  local migrate_token="${1:-}"
+  local -a extra_env=()
+  if [ -n "$migrate_token" ]; then
+    extra_env+=(ETHERCALC_MIGRATE_TOKEN="$migrate_token")
+  fi
+  env "${extra_env[@]}" \
+    "$WORKERD_BIN" serve \
     "$APP_DIR/packages/worker/workerd/config.capnp" \
     -ddo="/var/do-storage" \
     -dassets="$APP_DIR/assets" \
     &
-WORKER_PID=$!
+  WORKER_PID=$!
+}
+
+stop_workerd() {
+  if [ -n "$WORKER_PID" ]; then
+    kill -TERM "$WORKER_PID" 2>/dev/null || true
+    wait "$WORKER_PID" 2>/dev/null || true
+    WORKER_PID=""
+  fi
+}
 
 # Forward SIGTERM/SIGINT so DO storage flushes before the grain tears
 # down. workerd traps SIGTERM cleanly and writes pending .sqlite pages.
-trap 'kill -TERM "$WORKER_PID" 2>/dev/null; wait "$WORKER_PID" 2>/dev/null; exit 0' TERM INT
+trap 'stop_workerd; exit 0' TERM INT
 
-# Wait for /_health before proceeding with migration. workerd normally
-# responds in <1s; we give it up to 60s for a cold grain.
-for _ in $(seq 1 60); do
-  if curl -sf http://127.0.0.1:33411/_health > /dev/null 2>&1; then
-    break
-  fi
-  sleep 1
-done
+wait_for_health() {
+  for _ in $(seq 1 60); do
+    if curl -sf http://127.0.0.1:33411/_health > /dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "run_grain: ERROR — workerd failed /_health within 60s" >&2
+  return 1
+}
 
 # First-load migration from the legacy LiveScript EtherCalc. That
 # version ran Node + the db.ls filesystem fallback (no Redis on
@@ -104,15 +120,18 @@ if [ ! -f /var/.migrated ]; then
 
   if [ -n "$LEGACY_SOURCE" ]; then
     echo "run_grain: migrating legacy EtherCalc dump at $LEGACY_SOURCE" >&2
+    start_workerd "$MIGRATE_TOKEN"
+    wait_for_health
     if bun "$APP_DIR"/bin/ethercalc migrate \
         --source "$LEGACY_SOURCE" \
         --target http://127.0.0.1:33411 \
-        --token "$ETHERCALC_MIGRATE_TOKEN"; then
+        --token "$MIGRATE_TOKEN"; then
       echo "run_grain: legacy migration complete" >&2
       touch /var/.migrated
     else
       echo "run_grain: legacy migration FAILED — will retry on next boot" >&2
     fi
+    stop_workerd
   else
     # Fresh grain, no legacy state. Mark sentinel so the /var probes
     # don't fire on every subsequent continueCommand invocation.
@@ -120,4 +139,6 @@ if [ ! -f /var/.migrated ]; then
   fi
 fi
 
+# Normal operation — migrate seed routes stay disarmed (SH-7).
+start_workerd
 wait $WORKER_PID

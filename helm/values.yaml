@@ -106,6 +106,8 @@ config:
   # Optional in-Worker per-IP HTTP limit (off by default). "1" = 10 req/s;
   # belt-and-suspenders behind ingress rate limits — not a substitute.
   rateLimit: ""
+  # Optional per-IP cap on room creation (POST /_, /_new, /_from, PUT /_/room).
+  roomCreateLimit: ""
 
 # Secrets held in a Kubernetes Secret, never in values.yaml plaintext in
 # production. Set `existingSecret: <name>` to reference an external Secret

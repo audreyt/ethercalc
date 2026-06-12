@@ -40,6 +40,11 @@ import {
 import { buildEmailSender } from './handlers/cron.ts';
 import { parseSeedPayload } from './handlers/migrate.ts';
 import { verifyAuth } from './lib/auth.ts';
+import {
+  isSandstormEnforced,
+  sandstormAllowsWsWrite,
+  sandstormCanModify,
+} from './lib/sandstorm-access.ts';
 import { neutralizeCSVDocument } from './lib/csv-encode.ts';
 import { parseCSV } from './lib/csv-parse.ts';
 import { parseSendemail } from './lib/email.ts';
@@ -998,7 +1003,10 @@ export class RoomDO implements DurableObject {
      *   workers-pool integration tests (`test/ws.test.ts`,
      *   `test/legacy-socketio.test.ts`, `test/room.test.ts`).
      */
-    return upgradeWebSocket(this.#state, request);
+    const wsOpts = isSandstormEnforced(this.#env)
+      ? { sandstormModify: sandstormCanModify(request.headers) }
+      : undefined;
+    return upgradeWebSocket(this.#state, request, wsOpts);
   }
 
   /**
@@ -1102,6 +1110,12 @@ export class RoomDO implements DurableObject {
         this.#sendTo(ws, msg);
       },
       verifyAuth: async () => {
+        // Sandstorm viewers lack `modify` — block WS writes (SH-6).
+        if (
+          !sandstormAllowsWsWrite(env, attachment.sandstormModify)
+        ) {
+          return false;
+        }
         // Execute/ecell/stopHuddle carry their own per-message `auth`
         // string; legacy verified against that field (src/main.ls:516).
         // Messages without an auth field pass empty string → rejected by

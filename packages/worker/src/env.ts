@@ -155,4 +155,16 @@ export interface Env {
    * seconds. Keyed on `CF-Connecting-IP` / first `X-Forwarded-For` hop.
    */
   readonly ETHERCALC_RATELIMIT?: string;
+
+  /**
+   * Optional per-IP cap on room-creation routes (SH-3). Unset → off.
+   * Bare `1`/`true` → 6 new rooms per minute per source.
+   */
+  readonly ETHERCALC_ROOM_CREATE_LIMIT?: string;
+
+  /**
+   * When truthy, honour Sandstorm `X-Sandstorm-Permissions` (SH-6).
+   * Set by `run_grain.sh`; inert on Cloudflare/Docker self-host.
+   */
+  readonly ETHERCALC_SANDSTORM?: string;
 }

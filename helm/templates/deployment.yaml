@@ -75,6 +75,10 @@ spec:
             - name: ETHERCALC_RATELIMIT
               value: {{ .Values.config.rateLimit | quote }}
             {{- end }}
+            {{- if .Values.config.roomCreateLimit }}
+            - name: ETHERCALC_ROOM_CREATE_LIMIT
+              value: {{ .Values.config.roomCreateLimit | quote }}
+            {{- end }}
             - name: ETHERCALC_KEY
               valueFrom:
                 secretKeyRef:

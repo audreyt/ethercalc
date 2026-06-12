@@ -1,7 +1,7 @@
 # Self-Host Hardening — Implementor Handoff
 
 > **Status:** main self-host hardening pass applied incl. SH-2 limiter + SH-8 (non-root + RO rootfs);
-> Sandstorm branch work (SH-6/SH-7) and optional SH-3 room-creation quota remain · **Owner:** Audrey Tang · **Drafted:** 2026-06-11
+> SH-3 room-creation cap + Sandstorm SH-6/SH-7 landed 2026-06-12 · **Owner:** Audrey Tang · **Drafted:** 2026-06-11
 > **Source:** a six-surface parallel audit + adversarial verification of the self-host
 > deployment paths against the already-shipped worker code, followed by the 2026-06-11
 > implementation pass recorded below.
@@ -313,7 +313,7 @@ deploys. The optional in-Worker limiter is off by default and covered by `test/r
 
 ---
 
-### SH-3 — Bound room *count* / recommend `ETHERCALC_EXPIRE`  ·  DOCS DONE on `main` · docs (+ optional code)
+### SH-3 — Bound room *count* / recommend `ETHERCALC_EXPIRE`  ·  DONE on `main` · docs + code
 
 **Gap (verified real, subset of SH-2).** Per-room storage is bounded, but **room count is not**:
 `generateRoomId()` lets any anonymous client mint unlimited rooms (`POST /_`, `/_new`,
@@ -330,8 +330,9 @@ disk/PVC-exhaustion vector (Helm PVC is 10Gi, single replica, `Recreate`).
   creation-rate cap (TTL only bounds *steady-state*, not a burst). This overlaps SH-2's limiter; if SH-2
   builds the in-Worker limiter, extend it to cover `POST /_`/`/_new`. Worker code → gates apply.
 
-**Acceptance.** README + helm docs recommend `ETHERCALC_EXPIRE` with a 30-day example; no global
-room-creation quota has been added yet.
+**Acceptance.** README + helm docs recommend `ETHERCALC_EXPIRE` with a 30-day example.
+`ETHERCALC_ROOM_CREATE_LIMIT` caps creation routes per IP (proxy compose defaults on);
+`docker-compose.proxy.yml` defaults `ETHERCALC_EXPIRE=2592000`.
 
 ---
 
@@ -374,7 +375,7 @@ right knob when a *local* proxy fronts the container (not `ETHERCALC_HOST`).
 
 ---
 
-### SH-6 — Honor (or remove) the Sandstorm viewer role  ·  SHOULD-FIX (Sandstorm-scoped) · small-code · `sandstorm` branch
+### SH-6 — Honor (or remove) the Sandstorm viewer role  ·  DONE on `main` · small-code
 
 **Gap (verified real, low severity, Sandstorm only).** `sandstorm-pkgdef.capnp` `bridgeConfig` declares
 a `modify` permission with editor/viewer roles, but the worker **never reads** the
@@ -396,7 +397,7 @@ the viewer role.
 
 ---
 
-### SH-7 — Disarm the Sandstorm migrate token after first-load  ·  NICE-TO-HAVE (Sandstorm) · small-code · `sandstorm` branch
+### SH-7 — Disarm the Sandstorm migrate token after first-load  ·  DONE on `main` · small-code
 
 **Gap (verified real, low severity).** `run_grain.sh` exports a **fixed, public**
 `ETHERCALC_MIGRATE_TOKEN="sandstorm-grain-local"` *unconditionally*, leaving `PUT /_migrate/seed/:room`,
@@ -503,11 +504,11 @@ forwards it, but the worker reads `BASEPATH` (not `ETHERCALC_BASEPATH`). `config
 |----|-------|----------|--------|----------------------|
 | SH-1 | Default `ETHERCALC_DISABLE_ROOM_INDEX=1` for self-host | DONE on `main` | config | `docker-compose.yml`, `Dockerfile`, `config.capnp`+entrypoint, `helm/values.yaml` |
 | SH-2 | Self-host rate-limit / abuse layer | DONE on `main` | docs + opt code | proxy compose/nginx, `helm/values.yaml`, README; `src/lib/rate-limit.ts`+`src/index.ts` |
-| SH-3 | Room-count bound / recommend `ETHERCALC_EXPIRE` | DOCS DONE on `main` | docs (+opt code) | README, `helm/README.md`; opt worker code |
+| SH-3 | Room-count bound / recommend `ETHERCALC_EXPIRE` | DONE on `main` | docs + code | `ETHERCALC_ROOM_CREATE_LIMIT`, proxy compose TTL default |
 | SH-4 | Startup warning when no `ETHERCALC_KEY` | DONE on `main` | small-code | `bin/workerd-entrypoint.sh`, `packages/cli/src/`, `NOTES.txt` |
 | SH-5 | TLS guidance into self-hosting docs + sample proxy | DONE on `main` | docs | README, sample compose |
-| SH-6 | Enforce/remove Sandstorm viewer role | SHOULD-FIX (SS) | small-code | `sandstorm` branch + worker auth/WS |
-| SH-7 | Disarm Sandstorm migrate token post-first-load | NICE (SS) | small-code | `run_grain.sh` (`sandstorm` branch) |
+| SH-6 | Enforce/remove Sandstorm viewer role | DONE on `main` | small-code | `ETHERCALC_SANDSTORM`, `sandstorm-access.ts`, WS headers |
+| SH-7 | Disarm Sandstorm migrate token post-first-load | DONE on `main` | small-code | `run_grain.sh` |
 | SH-8 | Helm pod securityContext / non-root | DONE on `main` | config | `helm/values.yaml`, `Dockerfile`, entrypoint `setpriv` drop |
 | SH-9 | Helm fail-loud on empty key + ingress | DONE on `main` | docs | `helm/templates/NOTES.txt` |
 | SH-10 | Wire `ETHERCALC_BASEPATH` on Docker path | DONE on `main` | config | `config.capnp`, CLI map |

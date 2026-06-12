@@ -19,6 +19,8 @@ export interface WsAttachment {
   readonly room: string;
   /** Pre-supplied hmac (or '0' for view-only) as provided at handshake. */
   readonly auth: string;
+  /** Sandstorm SH-6: whether `modify` was granted at handshake. */
+  readonly sandstormModify?: boolean;
 }
 
 /**
@@ -29,6 +31,7 @@ export interface WsAttachment {
 export function upgradeWebSocket(
   state: DurableObjectState,
   request: Request,
+  opts?: { readonly sandstormModify?: boolean },
 ): Response {
   const url = new URL(request.url);
   const user = url.searchParams.get('user') ?? '';
@@ -38,7 +41,14 @@ export function upgradeWebSocket(
   const client = pair[0];
   const server = pair[1];
   state.acceptWebSocket(server);
-  const attachment: WsAttachment = { user, room, auth };
+  const attachment: WsAttachment = {
+    user,
+    room,
+    auth,
+    ...(opts?.sandstormModify !== undefined
+      ? { sandstormModify: opts.sandstormModify }
+      : {}),
+  };
   server.serializeAttachment(attachment);
   return new Response(null, { status: 101, webSocket: client });
 }

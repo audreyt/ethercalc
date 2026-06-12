@@ -1154,6 +1154,35 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
     ]);
   });
 
+  it('WS stopHuddle is blocked for Sandstorm viewers without modify', async () => {
+    const record7b: FakeStorageRecord = {
+      map: new Map([[STORAGE_KEYS.snapshot, 'v2:sheet']]),
+    };
+    const d1Calls7b: D1Call[] = [];
+    const env: Env = {
+      ...makeEnvWithDb(d1Calls7b),
+      ETHERCALC_SANDSTORM: '1',
+    };
+    const { state } = makeWsAwareState('x', record7b, []);
+    const wsRoom = new RoomDO(state, env);
+    const ws = makeFakeWs({ sent: [] }, {
+      user: 'u',
+      room: 'r',
+      auth: 'r',
+      sandstormModify: false,
+    });
+    await wsRoom.webSocketMessage(
+      ws,
+      JSON.stringify({
+        type: 'stopHuddle',
+        room: 'r',
+        auth: 'r',
+      }),
+    );
+    expect(record7b.map.has(STORAGE_KEYS.snapshot)).toBe(true);
+    expect(d1Calls7b).toHaveLength(0);
+  });
+
   it('WS stopHuddle with failed auth does NOT touch D1', async () => {
     const record7: FakeStorageRecord = { map: new Map() };
     const d1Calls7: D1Call[] = [];

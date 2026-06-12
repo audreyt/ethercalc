@@ -94,6 +94,8 @@ const mainWorker :Workerd.Worker = (
     (name = "ETHERCALC_CORS", fromEnvironment = "ETHERCALC_CORS"),
     (name = "ETHERCALC_EXPIRE", fromEnvironment = "ETHERCALC_EXPIRE"),
     (name = "ETHERCALC_RATELIMIT", fromEnvironment = "ETHERCALC_RATELIMIT"),
+    (name = "ETHERCALC_ROOM_CREATE_LIMIT", fromEnvironment = "ETHERCALC_ROOM_CREATE_LIMIT"),
+    (name = "ETHERCALC_SANDSTORM", fromEnvironment = "ETHERCALC_SANDSTORM"),
     (name = "DEVMODE", fromEnvironment = "DEVMODE"),
 
     # Single-grain default room. Sandstorm grains set this to `sheet1`

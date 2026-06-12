@@ -28,7 +28,8 @@ services:
       # No ETHERCALC_BASEPATH here on purpose: the bundled nginx config
       # proxies at the URL root and does not strip a prefix, so setting a
       # basepath behind it produces broken links.
-      ETHERCALC_EXPIRE: "${ETHERCALC_EXPIRE:-}"
+      ETHERCALC_EXPIRE: "${ETHERCALC_EXPIRE:-2592000}"
+      ETHERCALC_ROOM_CREATE_LIMIT: "${ETHERCALC_ROOM_CREATE_LIMIT:-1}"
       ETHERCALC_MIGRATE_TOKEN: "${ETHERCALC_MIGRATE_TOKEN:-}"
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8000/_health >/dev/null || exit 1"]
