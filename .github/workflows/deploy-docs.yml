@@ -38,8 +38,13 @@ jobs:
       - name: Build Starlight site
         run: bun run --cwd packages/docs build
 
+      - name: Ensure Pages project exists
+        run: |
+          bun x wrangler pages project list | grep -q ethercalc-docs \
+            || bun x wrangler pages project create ethercalc-docs --production-branch=main
+
       - name: Deploy to Cloudflare Pages
-        run: bun x wrangler pages deploy packages/docs/dist --project-name=ethercalc-docs --branch=main
+        run: bun x wrangler pages deploy packages/docs/dist --project-name=ethercalc-docs --branch=main --commit-dirty=true
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

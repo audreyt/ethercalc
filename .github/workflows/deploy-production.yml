@@ -42,7 +42,7 @@ jobs:
           ./scripts/build-assets.sh
 
       - name: Deploy to Cloudflare Workers
-        run: bun x wrangler deploy
+        run: bun x wrangler deploy --env=""
         working-directory: packages/worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

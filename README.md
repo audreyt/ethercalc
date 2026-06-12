@@ -1,7 +1,7 @@
 # EtherCalc
 
 * Overview: https://ethercalc.net/
-* User guide: `packages/docs/` Starlight site (`bun run --cwd packages/docs dev` → `/user-guide/`)
+* User guide: [docs.ethercalc.net](https://docs.ethercalc.net) (Starlight; fallback [ethercalc-docs.pages.dev](https://ethercalc-docs.pages.dev) while DNS propagates). Local: `bun run --cwd packages/docs dev`
 * 中文版: http://tw.ethercalc.net/
 * 简体中文: http://cn.ethercalc.net/
 * REST API: [API.md](./API.md)
