@@ -10,6 +10,20 @@ EtherCalc bundles SocialCalc from the audreyt/socialcalc fork; see
 
 
 ==============================================================================
+0.20260612.3 — 2026-06-12
+==============================================================================
+
+Security
+- astro 6.4.6 + @astrojs/starlight 0.40.0 (docs): closes GHSA-j687-52p2-xcff,
+  GHSA-xr5h-phrj-8vxv.
+- hono 4.12.25 (worker): multiple advisory fixes in the 4.12.x line.
+
+Maintenance
+- Oracle rooms-index fixtures corrected; docs canonical URL docs.ethercalc.net.
+- GitHub Actions Cloudflare deploy auth (OAuth refresh + account id).
+
+
+==============================================================================
 0.20260612.2 — 2026-06-12
 ==============================================================================
 

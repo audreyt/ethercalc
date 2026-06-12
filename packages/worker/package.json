@@ -19,7 +19,7 @@
   "dependencies": {
     "@ethercalc/socialcalc-headless": "workspace:*",
     "@ethercalc/socketio-shim": "workspace:*",
-    "hono": "^4.6.10",
+    "hono": "^4.12.25",
     "@e965/xlsx": "^0.20.3"
   },
   "devDependencies": {

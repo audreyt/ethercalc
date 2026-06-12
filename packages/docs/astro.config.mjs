@@ -7,9 +7,13 @@ export default defineConfig({
     starlight({
       title: 'EtherCalc',
       description: 'Multi-user spreadsheet server on Cloudflare Workers',
-      social: {
-        github: 'https://github.com/audreyt/ethercalc',
-      },
+      social: [
+        {
+          icon: 'github',
+          label: 'GitHub',
+          href: 'https://github.com/audreyt/ethercalc',
+        },
+      ],
       sidebar: [
         { label: 'Introduction', link: '/' },
         {
