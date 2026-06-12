@@ -124,5 +124,6 @@ export const NORMALIZATION_RULES: Readonly<Record<BodyMatcher, string>> = {
   'rooms-empty': 'JSON array; drop `oracle-phase3-template_<uuid>` clone rooms before comparing to `[]`.',
   'roomtimes-empty': 'JSON object; drop clone-room keys before comparing to `{}`.',
   'roomlinks-empty': 'JSON array; drop entries whose link matches the form-clone pattern before comparing to `[]`.',
+  'command-echo': 'POST 202 JSON: compare command text; legacy uses array, worker uses string.',
   ignore: 'Body not checked.',
 };
