@@ -51,6 +51,17 @@ export const VOLATILE_XLSX_DOCPROPS: Readonly<Record<string, readonly string[]>>
   'docProps/app.xml': ['AppVersion', 'TotalTime'],
 };
 
+/** Zip paths that may appear on only one side (SheetJS / legacy layout drift). */
+export const OPTIONAL_XLSX_ZIP_ENTRIES: ReadonlySet<string> = new Set([
+  'xl/sharedStrings.xml',
+  'xl/metadata.xml',
+]);
+
+export const OPTIONAL_ODS_ZIP_ENTRIES: ReadonlySet<string> = new Set([
+  'meta.xml',
+  'styles.xml',
+]);
+
 /** ods volatile element names keyed by path-within-zip. */
 export const VOLATILE_ODS_META: Readonly<Record<string, readonly string[]>> = {
   'meta.xml': [
@@ -135,21 +146,37 @@ export function compareZipArchives(
   expected: Uint8Array,
   actual: Uint8Array,
   volatile: VolatileMap,
+  optionalPaths: ReadonlySet<string> = new Set(),
 ): ZipCompareResult {
   const e = unzipOrError(expected, 'expected body');
   if (e.diff) return { equal: false, diff: e.diff };
   const a = unzipOrError(actual, 'actual body');
   if (a.diff) return { equal: false, diff: a.diff };
 
-  const ePaths = Object.keys(e.entries!).sort();
-  const aPaths = Object.keys(a.entries!).sort();
-  if (ePaths.length !== aPaths.length || ePaths.some((p, i) => p !== aPaths[i])) {
+  const eSet = new Set(Object.keys(e.entries!));
+  const aSet = new Set(Object.keys(a.entries!));
+  const allPaths = [...new Set([...eSet, ...aSet])].sort();
+  const comparable: string[] = [];
+  const eOnly: string[] = [];
+  const aOnly: string[] = [];
+  for (const path of allPaths) {
+    const inE = eSet.has(path);
+    const inA = aSet.has(path);
+    if (inE && inA) {
+      comparable.push(path);
+      continue;
+    }
+    if (optionalPaths.has(path)) continue;
+    if (inE) eOnly.push(path);
+    else aOnly.push(path);
+  }
+  if (eOnly.length > 0 || aOnly.length > 0) {
     return {
       equal: false,
-      diff: `zip entry list differs:\n--- expected\n${ePaths.join('\n')}\n--- actual\n${aPaths.join('\n')}`,
+      diff: `zip entry list differs:\n--- expected-only\n${eOnly.join('\n')}\n--- actual-only\n${aOnly.join('\n')}`,
     };
   }
-  for (const path of ePaths) {
+  for (const path of comparable) {
     const ec = canonicalizeZipEntry(path, e.entries![path]!, volatile);
     const ac = canonicalizeZipEntry(path, a.entries![path]!, volatile);
     if (ec !== ac) {

@@ -149,8 +149,12 @@ async function runStep(step: WsStep, ctx: StepContext): Promise<WsRunResult> {
       const actualHeaders = normalizeHeaders(headersToRecord(response.headers));
       const headerErr = diffHeaders(step.expect.headers, actualHeaders);
       if (headerErr) return { ok: false, error: headerErr };
-      const bodyBuffer = new Uint8Array(await response.arrayBuffer());
       const matcher = step.expect.bodyMatcher ?? 'exact';
+      if (matcher === 'ignore') {
+        ctx.recordedSteps.push(step);
+        return { ok: true };
+      }
+      const bodyBuffer = new Uint8Array(await response.arrayBuffer());
       const bodyErr = dispatchMatcher(matcher, {
         expectedBase64: step.expect.bodyBase64,
         actualBytes: bodyBuffer,

@@ -91,6 +91,8 @@ export async function replayOne(
   const actualHeaders = normalizeHeaders(headersToRecord(response.headers));
   const headerErr = diffHeaders(normalized.expect.headers, actualHeaders);
   if (headerErr) return { scenario: normalized, ok: false, error: headerErr };
+  const matcher = normalized.expect.bodyMatcher ?? 'exact';
+  if (matcher === 'ignore') return { scenario: normalized, ok: true };
   let bodyBuffer: Uint8Array;
   try {
     bodyBuffer = new Uint8Array(await response.arrayBuffer());
@@ -101,7 +103,6 @@ export async function replayOne(
       error: `body read failed: ${(err as Error).message}`,
     };
   }
-  const matcher = normalized.expect.bodyMatcher ?? 'exact';
   const bodyErr = dispatchMatcher(matcher, {
     expectedBase64: normalized.expect.bodyBase64,
     actualBytes: bodyBuffer,

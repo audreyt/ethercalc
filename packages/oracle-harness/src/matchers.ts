@@ -4,6 +4,8 @@ import { canonicalizeHtml } from './html-canonical.ts';
 import { FORM_CLONE_ROOM_RE } from './ws-normalize.ts';
 import {
   compareZipArchives,
+  OPTIONAL_ODS_ZIP_ENTRIES,
+  OPTIONAL_XLSX_ZIP_ENTRIES,
   VOLATILE_ODS_META,
   VOLATILE_XLSX_DOCPROPS,
 } from './zip-canonical.ts';
@@ -278,7 +280,8 @@ function compareZipBodies(
 ): MatcherResult {
   if (ctx.expectedBase64 === null) return `expected body is null but matcher is "${label}"`;
   const expected = decodeBase64(ctx.expectedBase64);
-  const result = compareZipArchives(expected, ctx.actualBytes, volatile);
+  const optional = label === 'xlsx' ? OPTIONAL_XLSX_ZIP_ENTRIES : OPTIONAL_ODS_ZIP_ENTRIES;
+  const result = compareZipArchives(expected, ctx.actualBytes, volatile, optional);
   if (result.equal) return null;
   // `compareZipArchives` always populates `diff` when `equal: false`,
   // but TS can't prove it without a union type — hence the cast.
