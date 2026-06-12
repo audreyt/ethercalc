@@ -162,12 +162,39 @@ describe('NORMALIZERS registry', () => {
     expect(out.expect?.bodyMatcher).toBe('html');
   });
 
+  it('has hooks for xlsx/ods exports and F-13 room-index matchers', () => {
+    expect(getNormalizer('exports/get-xlsx')!(mkScenario({ name: 'exports/get-xlsx' })).expect
+      ?.bodyMatcher).toBe('xlsx');
+    expect(getNormalizer('exports/get-ods')!(mkScenario({ name: 'exports/get-ods' })).expect
+      ?.bodyMatcher).toBe('ods');
+    expect(
+      getNormalizer('rooms-index/get-rooms-empty')!(
+        mkScenario({ name: 'rooms-index/get-rooms-empty' }),
+      ).expect?.bodyMatcher,
+    ).toBe('rooms-empty');
+    expect(
+      getNormalizer('rooms-index/get-roomtimes-empty')!(
+        mkScenario({ name: 'rooms-index/get-roomtimes-empty' }),
+      ).expect?.bodyMatcher,
+    ).toBe('roomtimes-empty');
+    expect(
+      getNormalizer('rooms-index/get-roomlinks-empty')!(
+        mkScenario({ name: 'rooms-index/get-roomlinks-empty' }),
+      ).expect?.bodyMatcher,
+    ).toBe('roomlinks-empty');
+  });
+
   it('exposes the registry object', () => {
     expect(Object.keys(NORMALIZERS)).toEqual([
       'misc/get-new-redirect',
       'exports/get-snapshot',
       'exports/get-html',
       'form/get-template-form-redirect',
+      'exports/get-xlsx',
+      'exports/get-ods',
+      'rooms-index/get-rooms-empty',
+      'rooms-index/get-roomtimes-empty',
+      'rooms-index/get-roomlinks-empty',
     ]);
   });
 });

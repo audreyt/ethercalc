@@ -1,0 +1,49 @@
+---
+title: Architecture
+description: Cloudflare fullstack layout for the EtherCalc rewrite
+---
+
+## Component map
+
+```
+Browser ──HTTP/WS──> Worker (Hono)
+                       ├── static assets (Workers Assets)
+                       ├── stateless routes (rooms list) → D1
+                       └── per-room routes → RoomDO
+                             ├── SocialCalc (in-memory)
+                             ├── DO storage (snapshot/log/audit/chat/ecell)
+                             └── WebSocket clients
+```
+
+Each spreadsheet **room** maps to one **Durable Object** (`RoomDO`). The DO holds authoritative snapshot and command log state; D1 mirrors room metadata for cross-room queries.
+
+## Storage
+
+**Per-room DO storage**
+
+- `snapshot` — SocialCalc save string (`v2:` prefix on write; v1 fallback on read)
+- `log:<seq>` / `audit:<seq>` / `chat:<seq>` — append-only command streams
+- `ecell:<user>` — editing-cell cursor positions
+
+**D1**
+
+- `rooms(room, updated_at, cors_public)` — room index
+- `cron_triggers` — scheduled cell triggers
+
+## WebSocket protocol
+
+Native clients connect at:
+
+```
+wss://<host>/_ws/:room?user=<user>&auth=<hmac>
+```
+
+Frames are JSON objects with a `type` field (`execute`, `ask.log`, `log`, `snapshot`, …). Legacy embeds continue to use `/socket.io/*`; the worker translates v0.9 wire format to the native protocol.
+
+## SocialCalc in a Durable Object
+
+SocialCalc runs headlessly inside the DO via `@ethercalc/socialcalc-headless` — a DOM-shimmed eval wrapper around the upstream `socialcalc` UMD bundle. Commands execute synchronously; `RecalcSheet` is kicked after batches.
+
+## Equivalence testing
+
+The [oracle harness](/oracle/) records HTTP and WebSocket transcripts from the legacy Node oracle and replays them against this worker to prove behavioral parity.

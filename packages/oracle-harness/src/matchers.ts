@@ -1,6 +1,7 @@
 import type { BodyMatcher } from '@ethercalc/shared/oracle-scenarios';
 
 import { canonicalizeHtml } from './html-canonical.ts';
+import { FORM_CLONE_ROOM_RE } from './ws-normalize.ts';
 import {
   compareZipArchives,
   VOLATILE_ODS_META,
@@ -108,6 +109,86 @@ export function matchIgnore(_ctx: MatcherContext): MatcherResult {
   return null;
 }
 
+/** `GET /_rooms` on a fresh oracle — ignore form-clone suffix rooms (F-13). */
+export function matchRoomsEmpty(ctx: MatcherContext): MatcherResult {
+  return matchFilteredJsonArray(
+    ctx,
+    (room) => typeof room === 'string' && !FORM_CLONE_ROOM_RE.test(room),
+    'rooms-empty',
+  );
+}
+
+/** `GET /_roomtimes` — ignore form-clone keys left in Redis after replay (F-13). */
+export function matchRoomtimesEmpty(ctx: MatcherContext): MatcherResult {
+  if (ctx.expectedBase64 === null) return 'expected body is null but matcher is "roomtimes-empty"';
+  const dec = new TextDecoder();
+  let expected: Record<string, unknown>;
+  let actual: Record<string, unknown>;
+  try {
+    expected = JSON.parse(dec.decode(decodeBase64(ctx.expectedBase64))) as Record<string, unknown>;
+  } catch (err) {
+    return `expected body is not valid JSON: ${(err as Error).message}`;
+  }
+  try {
+    actual = JSON.parse(dec.decode(ctx.actualBytes)) as Record<string, unknown>;
+  } catch (err) {
+    return `actual body is not valid JSON: ${(err as Error).message}`;
+  }
+  const filtered: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(actual)) {
+    if (!FORM_CLONE_ROOM_RE.test(key)) filtered[key] = value;
+  }
+  return deepEqual(expected, filtered)
+    ? null
+    : `roomtimes-empty mismatch: expected ${stableStringify(expected)}, got ${stableStringify(filtered)}`;
+}
+
+/** `GET /_roomlinks` — ignore clone-room link rows after form redirect (F-13). */
+export function matchRoomlinksEmpty(ctx: MatcherContext): MatcherResult {
+  return matchFilteredJsonArray(
+    ctx,
+    (entry) => !isFormCloneRoomlink(entry),
+    'roomlinks-empty',
+  );
+}
+
+function isFormCloneRoomlink(entry: unknown): boolean {
+  if (typeof entry === 'string') return FORM_CLONE_ROOM_RE.test(entry);
+  if (!entry || typeof entry !== 'object') return false;
+  const link = (entry as { link?: unknown }).link;
+  if (typeof link !== 'string') return false;
+  const room = link.replace(/^\//, '').split('/')[0] || '';
+  return FORM_CLONE_ROOM_RE.test(room);
+}
+
+function matchFilteredJsonArray(
+  ctx: MatcherContext,
+  keep: (entry: unknown) => boolean,
+  label: BodyMatcher,
+): MatcherResult {
+  if (ctx.expectedBase64 === null) return `expected body is null but matcher is "${label}"`;
+  const dec = new TextDecoder();
+  let expected: unknown[];
+  let actual: unknown[];
+  try {
+    expected = JSON.parse(dec.decode(decodeBase64(ctx.expectedBase64))) as unknown[];
+  } catch (err) {
+    return `expected body is not valid JSON: ${(err as Error).message}`;
+  }
+  try {
+    actual = JSON.parse(dec.decode(ctx.actualBytes)) as unknown[];
+  } catch (err) {
+    return `actual body is not valid JSON: ${(err as Error).message}`;
+  }
+  if (!Array.isArray(expected) || !Array.isArray(actual)) {
+    return `${label} mismatch: expected JSON array`;
+  }
+  const filtered = actual.filter(keep);
+  return deepEqual(expected, filtered)
+    ? null
+    : `${label} mismatch: expected ${stableStringify(expected)}, got ${stableStringify(filtered)}`;
+}
+
 /**
  * Structural HTML matcher. Parses both sides with `linkedom`,
  * canonicalizes (drop whitespace-only text nodes, sort attributes,
@@ -183,6 +264,9 @@ export const MATCHERS: Readonly<Record<BodyMatcher, (ctx: MatcherContext) => Mat
   html: matchHtml,
   xlsx: matchXlsx,
   ods: matchOds,
+  'rooms-empty': matchRoomsEmpty,
+  'roomtimes-empty': matchRoomtimesEmpty,
+  'roomlinks-empty': matchRoomlinksEmpty,
 };
 
 /** Dispatch a body comparison to the right matcher. */

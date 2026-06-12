@@ -1,0 +1,33 @@
+---
+title: EtherCalc
+description: TypeScript rewrite of EtherCalc on Cloudflare Workers
+---
+
+EtherCalc is a real-time, multi-user spreadsheet server. This documentation covers the TypeScript rewrite that runs on Cloudflare Workers with Durable Objects, D1, KV, and R2 — and can also be self-hosted with a standalone `workerd` container.
+
+## Quick start
+
+```bash
+git clone https://github.com/audreyt/ethercalc
+cd ethercalc && bun install
+bun run --cwd packages/worker dev   # wrangler dev on http://127.0.0.1:8787
+```
+
+Open `http://127.0.0.1:8787/_new` to create a sheet.
+
+## What changed
+
+| Concern | Legacy (Node + Redis) | New (Workers) |
+| ------- | --------------------- | ------------- |
+| HTTP | Express 3 / zappajs | Hono on Workers |
+| Live state | in-memory + Redis | Durable Object per room |
+| Realtime | socket.io 0.9/1.x | native WebSocket (JSON) + legacy shim |
+| Self-host | Node + Redis compose | standalone workerd image |
+
+The public HTTP API is preserved byte-for-byte where deterministic. WebSocket clients speak raw JSON at `/_ws/:room`; the `/socket.io/*` shim remains for external embeds.
+
+## Next steps
+
+- [Architecture](/architecture/) — components, request flow, storage model
+- [Self-hosting](/self-host/) — Docker, Helm, nginx hardening
+- [Oracle testing](/oracle/) — equivalence fixtures against the legacy oracle

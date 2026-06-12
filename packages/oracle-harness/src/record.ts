@@ -5,11 +5,13 @@ import type {
   BodyMatcher,
   HttpScenario,
   Scenario,
+  WsScenario,
 } from '@ethercalc/shared/oracle-scenarios';
 
 import { encodeBase64 } from './matchers.ts';
 import { headersToRecord, normalizeHeaders } from './headers.ts';
 import { applyNormalizer } from './normalize.ts';
+import { runWsScenario } from './ws-runner.ts';
 
 /**
  * The JSON artifact format. A recorded scenario is just a cloned
@@ -18,7 +20,7 @@ import { applyNormalizer } from './normalize.ts';
  * schema — it just parses the same `HttpScenario` type.
  */
 export interface RecordedFile {
-  readonly scenario: HttpScenario;
+  readonly scenario: HttpScenario | WsScenario;
 }
 
 export interface RecordOptions {
@@ -38,10 +40,14 @@ export interface RecordOptions {
   readonly matcherForResponse?: (status: number, headers: Record<string, string>) => BodyMatcher;
   /** Injected logger so tests can assert progress output. */
   readonly log?: (line: string) => void;
+  /** Oracle speaks socket.io v0.9; the worker speaks native `/_ws/:room`. */
+  readonly wsTransport?: import('./ws-transport.ts').WsTransport;
+  readonly wsFactory?: import('./ws-transport.ts').WsFactory;
+  readonly ioClientFactory?: import('./ws-transport.ts').IoClientFactory;
 }
 
 export interface RecordResult {
-  readonly scenario: HttpScenario;
+  readonly scenario: HttpScenario | WsScenario;
   readonly path: string;
 }
 
@@ -153,9 +159,33 @@ export async function recordOne(
   return { scenario: recorded, path };
 }
 
+/** Record a single WS scenario transcript against the oracle. */
+export async function recordWsOne(
+  scenario: WsScenario,
+  opts: RecordOptions,
+): Promise<RecordResult> {
+  const writer = opts.writer ?? defaultWriter;
+  const result = await runWsScenario(scenario, {
+    targetUrl: opts.targetUrl,
+    transport: opts.wsTransport ?? 'socketio',
+    mode: 'record',
+    ...(opts.fetcher !== undefined ? { fetcher: opts.fetcher } : {}),
+    ...(opts.wsFactory !== undefined ? { wsFactory: opts.wsFactory } : {}),
+    ...(opts.ioClientFactory !== undefined ? { ioClientFactory: opts.ioClientFactory } : {}),
+  });
+  if (!result.ok || !result.scenario) {
+    throw new Error(result.error ?? `failed to record ws scenario ${scenario.name}`);
+  }
+  const recorded = result.scenario;
+  const path = scenarioPath(opts.outDir, scenario.name);
+  await persistRecording(path, { scenario: recorded }, writer);
+  opts.log?.(`recorded ${scenario.name} → ws`);
+  return { scenario: recorded, path };
+}
+
 /**
- * Record an iterable of scenarios in order. WebSocket scenarios are
- * skipped with a TODO — see Phase 7 in the plan.
+ * Record an iterable of scenarios in order. HTTP and WS scenarios share
+ * the same artifact layout under `tests/oracle/recorded/`.
  */
 export async function recordAll(
   scenarios: Iterable<Scenario>,
@@ -164,10 +194,7 @@ export async function recordAll(
   const results: RecordResult[] = [];
   for (const scenario of scenarios) {
     if (scenario.kind === 'ws') {
-      // TODO(Phase 7): record WebSocket transcripts. For now the
-      // harness only handles stateless HTTP scenarios; WS scenarios
-      // sit in scenarios/ws/ but the recorder will skip them.
-      opts.log?.(`skipping ws scenario ${scenario.name} (Phase 7)`);
+      results.push(await recordWsOne(scenario, opts));
       continue;
     }
     results.push(await recordOne(scenario, opts));

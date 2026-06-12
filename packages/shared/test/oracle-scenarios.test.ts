@@ -5,7 +5,18 @@ import { NORMALIZATION_RULES, type Scenario } from '../src/oracle-scenarios.ts';
 describe('NORMALIZATION_RULES', () => {
   it('has an entry for every BodyMatcher variant', () => {
     expect(Object.keys(NORMALIZATION_RULES).sort()).toEqual(
-      ['exact', 'html', 'ignore', 'json', 'ods', 'scsave', 'xlsx'].sort(),
+      [
+        'exact',
+        'html',
+        'ignore',
+        'json',
+        'ods',
+        'roomlinks-empty',
+        'rooms-empty',
+        'roomtimes-empty',
+        'scsave',
+        'xlsx',
+      ].sort(),
     );
   });
 

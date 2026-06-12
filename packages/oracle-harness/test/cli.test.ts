@@ -39,6 +39,17 @@ describe('parseArgs', () => {
     expect(parseArgs(['replay', '--recorded', 'custom']).dir).toBe('custom');
   });
 
+  it('parses --ws-transport', () => {
+    expect(parseArgs(['replay', '--ws-transport', 'socketio']).wsTransport).toBe('socketio');
+    expect(parseArgs(['replay', '--ws-transport', 'native']).wsTransport).toBe('native');
+  });
+
+  it('rejects invalid --ws-transport values', () => {
+    expect(() => parseArgs(['replay', '--ws-transport', 'bogus'])).toThrow(
+      /native, socketio, or socketio-v09/,
+    );
+  });
+
   it('rejects unknown subcommands', () => {
     expect(() => parseArgs(['serve'])).toThrow(/unknown command/);
   });
@@ -103,6 +114,31 @@ describe('main', () => {
     expect(logs.some((l) => l.includes('1/1 passed'))).toBe(true);
   });
 
+  it('record forwards --ws-transport to the recorder', async () => {
+    const code = await main(['record', '--ws-transport', 'socketio'], {
+      log: () => {},
+      record: async (_scenarios, opts) => {
+        expect(opts.wsTransport).toBe('socketio');
+        return [];
+      },
+      replay: async () => [],
+      scenarios: [],
+    });
+    expect(code).toBe(0);
+  });
+
+  it('replay forwards --ws-transport to the replayer', async () => {
+    const code = await main(['replay', '--ws-transport', 'native'], {
+      log: () => {},
+      record: async () => [],
+      replay: async (opts) => {
+        expect(opts.wsTransport).toBe('native');
+        return [{ scenario, ok: true }] as ReplayResult[];
+      },
+    });
+    expect(code).toBe(0);
+  });
+
   it('replay returns 1 if any result fails', async () => {
     const code = await main(['replay'], {
       log: () => {},
@@ -133,10 +169,55 @@ describe('main', () => {
   });
 
   it('falls back to the bundled record/replay + scenarios when deps are empty', async () => {
-    // Stub the global fetch so the real recordAll does no network I/O.
+    // Stub fetch + WebSocket so the real recordAll does no network I/O.
     const originalFetch = globalThis.fetch;
-    (globalThis as { fetch: typeof fetch }).fetch = async () =>
-      new Response('', { status: 200, headers: { 'content-type': 'text/plain' } });
+    const g = globalThis as { fetch: typeof fetch; WebSocket?: unknown };
+    const originalWs = g.WebSocket;
+    class StubWebSocket {
+      readyState = 1;
+      private listeners = new Map<string, Array<(ev: { data?: string }) => void>>();
+      send(data: string) {
+        const packet = data.includes('"name":"data"') ? data : null;
+        const payload =
+          packet !== null
+            ? (JSON.parse(packet.split(':').slice(3).join(':')) as { args: unknown[] }).args[0]
+            : JSON.parse(data);
+        if (
+          payload &&
+          typeof payload === 'object' &&
+          (payload as { type?: string }).type === 'ask.log'
+        ) {
+          const reply = JSON.stringify({
+            type: 'log',
+            room: (payload as { room: string }).room,
+            log: [],
+            chat: [],
+            snapshot: '',
+          });
+          const frame = packet !== null
+            ? `5:::{"name":"data","args":[${reply}]}`
+            : reply;
+          queueMicrotask(() => {
+            for (const fn of this.listeners.get('message') ?? []) fn({ data: frame });
+          });
+        }
+      }
+      close() {}
+      addEventListener(type: string, fn: (ev: { data?: string }) => void) {
+        const bucket = this.listeners.get(type) ?? [];
+        bucket.push(fn);
+        this.listeners.set(type, bucket);
+        if (type === 'open') queueMicrotask(() => fn({}));
+      }
+      removeEventListener() {}
+    }
+    g.WebSocket = StubWebSocket as unknown as typeof WebSocket;
+    g.fetch = async (url) => {
+      if (String(url).includes('/socket.io/1/')) {
+        return new Response('abc123:60:60:websocket,xhr-polling');
+      }
+      return new Response('', { status: 200, headers: { 'content-type': 'text/plain' } });
+    };
     const { mkdtemp, rm, readdir } = await import('node:fs/promises');
     const { tmpdir: tmpd } = await import('node:os');
     const { join: pathJoin } = await import('node:path');
@@ -147,10 +228,11 @@ describe('main', () => {
         log: (line) => logs.push(line),
       });
       expect(code).toBe(0);
-      const names = await readdir(dir);
+      const names = await readdir(dir, { recursive: true });
       expect(names.length).toBeGreaterThan(0);
     } finally {
-      (globalThis as { fetch: typeof fetch }).fetch = originalFetch;
+      g.fetch = originalFetch;
+      g.WebSocket = originalWs;
       await rm(dir, { recursive: true, force: true });
     }
     expect(logs.some((l) => /recorded \d+ scenarios/.test(l))).toBe(true);

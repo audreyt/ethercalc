@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { HackFoldr, type FetchImpl } from '../src/Foldr.ts';
+import {
+  HackFoldr,
+  parseTocBody,
+  tocRowsEqual,
+  type FetchImpl,
+} from '../src/Foldr.ts';
 
 interface FakeRequest {
   url: string;
@@ -519,6 +524,116 @@ describe('HackFoldr', () => {
       f.id = 'r';
       await f.postInitCsv();
       expect(calls[0]?.body).toBe('"",""\n"",""\n"",""');
+    });
+  });
+
+  describe('parseTocBody()', () => {
+    it('returns [] for non-array or empty input', () => {
+      expect(parseTocBody(null)).toEqual([]);
+      expect(parseTocBody([])).toEqual([]);
+    });
+  });
+
+  describe('tocRowsEqual()', () => {
+    it('compares link, title, and row index', () => {
+      const a = [{ link: '/a', title: 'A', row: 2 }];
+      const b = [{ link: '/a', title: 'A', row: 2 }];
+      const c = [{ link: '/a', title: 'B', row: 2 }];
+      expect(tocRowsEqual(a, b)).toBe(true);
+      expect(tocRowsEqual(a, c)).toBe(false);
+      expect(tocRowsEqual(a, [])).toBe(false);
+    });
+  });
+
+  describe('refreshToc()', () => {
+    it('returns false when id is unset', async () => {
+      const f = new HackFoldr('http://x', { fetchImpl: makeFetch([]).fetchImpl });
+      await expect(f.refreshToc()).resolves.toBe(false);
+    });
+
+    it('returns false and keeps rows on fetch failure', async () => {
+      const { fetchImpl } = makeFetch([{ throwError: true }]);
+      const f = new HackFoldr('http://x', { fetchImpl });
+      f.id = 'r';
+      f.rows = [{ link: '/r.1', title: 'Sheet1', row: 2 }];
+      await expect(f.refreshToc()).resolves.toBe(false);
+      expect(f.rows).toEqual([{ link: '/r.1', title: 'Sheet1', row: 2 }]);
+    });
+
+    it('returns false when the server TOC is unchanged', async () => {
+      const { fetchImpl } = makeFetch([
+        { json: [['#url', '#title'], ['/r.1', 'Sheet1'], ['/r.2', 'Sheet2']] },
+      ]);
+      const f = new HackFoldr('http://x', { fetchImpl });
+      f.id = 'r';
+      f.rows = [
+        { link: '/r.1', title: 'Sheet1', row: 2 },
+        { link: '/r.2', title: 'Sheet2', row: 3 },
+      ];
+      await expect(f.refreshToc()).resolves.toBe(false);
+    });
+
+    it('updates rows and returns true when a peer adds a tab', async () => {
+      const { fetchImpl } = makeFetch([
+        {
+          json: [
+            ['#url', '#title'],
+            ['/r.1', 'Sheet1'],
+            ['/r.2', 'Sheet2'],
+            ['/r.3', 'PeerTab'],
+          ],
+        },
+      ]);
+      const f = new HackFoldr('http://x', { fetchImpl });
+      f.id = 'r';
+      f.rows = [
+        { link: '/r.1', title: 'Sheet1', row: 2 },
+        { link: '/r.2', title: 'Sheet2', row: 3 },
+      ];
+      await expect(f.refreshToc()).resolves.toBe(true);
+      expect(f.rows).toEqual([
+        { link: '/r.1', title: 'Sheet1', row: 2 },
+        { link: '/r.2', title: 'Sheet2', row: 3 },
+        { link: '/r.3', title: 'PeerTab', row: 4 },
+      ]);
+    });
+
+    it('updates rows and returns true when a peer renames a tab', async () => {
+      const { fetchImpl } = makeFetch([
+        { json: [['#url', '#title'], ['/r.1', 'RenamedByPeer']] },
+      ]);
+      const f = new HackFoldr('http://x', { fetchImpl });
+      f.id = 'r';
+      f.rows = [{ link: '/r.1', title: 'Sheet1', row: 2 }];
+      await expect(f.refreshToc()).resolves.toBe(true);
+      expect(f.at(0)).toMatchObject({ title: 'RenamedByPeer' });
+    });
+
+    it('updates rows and returns true when a peer deletes a tab', async () => {
+      const { fetchImpl } = makeFetch([
+        { json: [['#url', '#title'], ['/r.1', 'Sheet1']] },
+      ]);
+      const f = new HackFoldr('http://x', { fetchImpl });
+      f.id = 'r';
+      f.rows = [
+        { link: '/r.1', title: 'Sheet1', row: 2 },
+        { link: '/r.2', title: 'Gone', row: 3 },
+      ];
+      await expect(f.refreshToc()).resolves.toBe(true);
+      expect(f.rows).toHaveLength(1);
+    });
+
+    it('does not seed Sheet1 or flip init flags on refresh', async () => {
+      const { fetchImpl } = makeFetch([{ json: [] }]);
+      const f = new HackFoldr('http://x', { fetchImpl });
+      f.id = 'r';
+      f.rows = [{ link: '/r.1', title: 'Sheet1', row: 2 }];
+      f.wasNonExistent = false;
+      f.wasEmpty = false;
+      await expect(f.refreshToc()).resolves.toBe(false);
+      expect(f.rows).toEqual([{ link: '/r.1', title: 'Sheet1', row: 2 }]);
+      expect(f.wasNonExistent).toBe(false);
+      expect(f.wasEmpty).toBe(false);
     });
   });
 

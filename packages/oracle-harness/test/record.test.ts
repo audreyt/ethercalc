@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   defaultFetcher,
@@ -12,11 +12,13 @@ import {
   persistRecording,
   recordAll,
   recordOne,
+  recordWsOne,
   scenarioPath,
   type RecordedFile,
 } from '../src/record.ts';
 import type { HttpScenario, WsScenario } from '@ethercalc/shared/oracle-scenarios';
 import { encodeBase64 } from '../src/matchers.ts';
+import { stubIoClient, stubWsFactory } from './ws-mock.ts';
 
 describe('defaultFetcher', () => {
   it('delegates to the global fetch', async () => {
@@ -187,10 +189,11 @@ describe('recordOne / recordAll', () => {
       log: (line) => logs.push(line),
     });
     expect(result.path).toBe(join(dir, 'static', 'sample.json'));
-    expect(result.scenario.expect?.status).toBe(200);
-    expect(result.scenario.expect?.headers).toEqual({ 'content-type': 'text/plain' });
-    expect(result.scenario.expect?.bodyBase64).toBe(encodeBase64(new TextEncoder().encode('hello')));
-    expect(result.scenario.expect?.bodyMatcher).toBe('exact');
+    const recorded = result.scenario as HttpScenario;
+    expect(recorded.expect?.status).toBe(200);
+    expect(recorded.expect?.headers).toEqual({ 'content-type': 'text/plain' });
+    expect(recorded.expect?.bodyBase64).toBe(encodeBase64(new TextEncoder().encode('hello')));
+    expect(recorded.expect?.bodyMatcher).toBe('exact');
     expect(logs).toEqual(['recorded static/sample → 200']);
     const onDisk = JSON.parse(await readFile(result.path, 'utf8'));
     expect(onDisk.scenario.expect.status).toBe(200);
@@ -243,18 +246,87 @@ describe('recordOne / recordAll', () => {
     expect(parsed.scenario.expect.bodyMatcher).toBe('scsave');
   });
 
-  it('skips ws scenarios with a TODO log line', async () => {
-    const ws: WsScenario = { name: 'ws/demo', kind: 'ws', steps: [] };
-    const logs: string[] = [];
-    const results = await recordAll([ws], {
+  it('records ws scenarios via recordWsOne', async () => {
+    const ws: WsScenario = {
+      name: 'ws/connect',
+      kind: 'ws',
+      steps: [
+        { type: 'connect', url: '/_ws/r?user=u&auth=0' },
+        { type: 'close' },
+      ],
+    };
+    const writes: string[] = [];
+    const result = await recordWsOne(ws, {
       targetUrl: 'http://oracle.test',
       outDir: dir,
       fetcher: async () => new Response(''),
-      writer: async () => {},
-      log: (line) => logs.push(line),
+      writer: async (_p, c) => {
+        writes.push(c);
+      },
+      wsTransport: 'native',
+      wsFactory: stubWsFactory(),
     });
-    expect(results).toHaveLength(0);
-    expect(logs).toEqual(['skipping ws scenario ws/demo (Phase 7)']);
+    expect(result.path).toBe(join(dir, 'ws', 'connect.json'));
+    expect(writes).toHaveLength(1);
+  });
+
+  it('passes ioClientFactory when recording via socket.io 1.x', async () => {
+    const ws: WsScenario = {
+      name: 'ws/connect',
+      kind: 'ws',
+      steps: [
+        { type: 'connect', url: '/_ws/r?user=u&auth=0' },
+        { type: 'close' },
+      ],
+    };
+    const stub = stubIoClient();
+    const result = await recordWsOne(ws, {
+      targetUrl: 'http://oracle.test',
+      outDir: dir,
+      writer: async () => {},
+      wsTransport: 'socketio',
+      ioClientFactory: stub.factory,
+    });
+    expect(result.path).toBe(join(dir, 'ws', 'connect.json'));
+  });
+
+  it('throws with a fallback message when ws recording returns not-ok', async () => {
+    const ws: WsScenario = {
+      name: 'ws/connect',
+      kind: 'ws',
+      steps: [{ type: 'connect', url: '/_ws/r?user=u&auth=0' }],
+    };
+    const original = await import('../src/ws-runner.ts');
+    const spy = vi.spyOn(original, 'runWsScenario').mockResolvedValueOnce({ ok: false });
+    try {
+      await expect(
+        recordWsOne(ws, {
+          targetUrl: 'http://oracle.test',
+          outDir: dir,
+        }),
+      ).rejects.toThrow(/failed to record ws scenario/);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('throws when ws recording fails', async () => {
+    const ws: WsScenario = {
+      name: 'ws/connect',
+      kind: 'ws',
+      steps: [
+        { type: 'connect', url: '/_ws/r?user=u&auth=0' },
+        { type: 'expect', msg: { type: 'log' }, timeoutMs: 20 },
+      ],
+    };
+    await expect(
+      recordWsOne(ws, {
+        targetUrl: 'http://oracle.test',
+        outDir: dir,
+        wsTransport: 'native',
+        wsFactory: stubWsFactory(),
+      }),
+    ).rejects.toThrow(/timed out|failed to record/);
   });
 
   it('records an iterable of http scenarios in order', async () => {

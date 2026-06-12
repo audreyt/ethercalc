@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import {
   ALL_HTTP_SCENARIOS,
+  ALL_SCENARIOS,
   EXPORT_SCENARIOS,
   FORM_SCENARIOS,
   MISC_SCENARIOS,
   ROOM_CRUD_SCENARIOS,
   ROOMS_INDEX_SCENARIOS,
   STATIC_SCENARIOS,
+  WS_SCENARIOS,
 } from '../src/scenarios/index.ts';
 
 describe('scenario catalog', () => {
@@ -49,11 +51,21 @@ describe('scenario catalog', () => {
     ]);
   });
 
-  it('exposes three export scenarios', () => {
+  it('exposes five export scenarios', () => {
     expect(EXPORT_SCENARIOS.map((s) => s.name)).toEqual([
       'exports/get-snapshot',
       'exports/get-csv',
       'exports/get-html',
+      'exports/get-xlsx',
+      'exports/get-ods',
+    ]);
+  });
+
+  it('exposes three ws scenarios', () => {
+    expect(WS_SCENARIOS.map((s) => s.name)).toEqual([
+      'ws/connect',
+      'ws/ask-log',
+      'ws/execute-command',
     ]);
   });
 
@@ -66,7 +78,17 @@ describe('scenario catalog', () => {
   it('ALL_HTTP_SCENARIOS concatenates every group with unique names', () => {
     const names = ALL_HTTP_SCENARIOS.map((s) => s.name);
     expect(new Set(names).size).toBe(names.length);
-    expect(names.length).toBe(22);
+    expect(names.length).toBe(24);
+  });
+
+  it('ALL_SCENARIOS includes ws scenarios after exports', () => {
+    const names = ALL_SCENARIOS.map((s) => s.name);
+    expect(new Set(names).size).toBe(names.length);
+    expect(names.length).toBe(27);
+    expect(names.indexOf('exports/get-ods')).toBeLessThan(names.indexOf('ws/connect'));
+    expect(names.indexOf('ws/execute-command')).toBeLessThan(
+      names.indexOf('form/get-template-form-redirect'),
+    );
   });
 
   it('runs room-index before room mutations and exports before teardown', () => {
@@ -82,10 +104,19 @@ describe('scenario catalog', () => {
     );
   });
 
-  it('every scenario is http and has a deterministic path', () => {
+  it('every http scenario has a deterministic path', () => {
     for (const s of ALL_HTTP_SCENARIOS) {
       expect(s.kind).toBe('http');
       expect(s.request.path.startsWith('/')).toBe(true);
+    }
+  });
+
+  it('every ws scenario declares connect steps with /_ws paths', () => {
+    for (const s of WS_SCENARIOS) {
+      expect(s.kind).toBe('ws');
+      expect(s.steps.some((step) => step.type === 'connect' && step.url.includes('/_ws/'))).toBe(
+        true,
+      );
     }
   });
 });

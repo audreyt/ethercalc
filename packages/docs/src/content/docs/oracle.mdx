@@ -1,0 +1,30 @@
+---
+title: Oracle testing
+description: Golden-fixture equivalence against the legacy EtherCalc oracle
+---
+
+The **oracle** is a pinned pre-rewrite EtherCalc build (Node + Redis) that serves as the semantic ground truth. The **target** is this TypeScript Worker. The `@ethercalc/oracle-harness` package records and replays scenarios to prove equivalence.
+
+## Runbook
+
+```bash
+# Start the legacy oracle
+docker compose -f tests/oracle/docker-compose.yml up -d
+
+# Record fixtures (oracle on :8000)
+bun run --cwd packages/oracle-harness record
+
+# Replay against local worker
+bun run --cwd packages/worker dev &
+bun run --cwd packages/oracle-harness replay --target http://127.0.0.1:8787
+```
+
+## Scenario catalog
+
+27 scenarios cover static assets, room CRUD, exports (CSV/HTML/XLSX/ODS), form clone redirect, room index, and WebSocket paths (`connect`, `ask.log`, `execute`).
+
+WS recording uses **socket.io 1.x** (what the legacy oracle actually runs). Worker replay uses the **native** `/_ws/:room` transport.
+
+## Normalization
+
+Volatile fields (timestamps, socket IDs, snapshot bodies) are normalized before comparison. HTML/XLSX/ODS responses use structural canonicalizers. See `packages/oracle-harness/src/normalize.ts` and `CLAUDE.md` §4.2 in the repository.

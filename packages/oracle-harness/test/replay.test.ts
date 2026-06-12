@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { encodeBase64 } from '../src/matchers.ts';
 import {
@@ -11,10 +11,13 @@ import {
   parseRecordedFileName,
   replayAll,
   replayOne,
+  replayWsOne,
   sortRecordedByScenarioOrder,
 } from '../src/replay.ts';
-import { ALL_HTTP_SCENARIOS } from '../src/scenarios/index.ts';
-import type { HttpScenario } from '@ethercalc/shared/oracle-scenarios';
+import * as wsRunner from '../src/ws-runner.ts';
+import { ALL_SCENARIOS } from '../src/scenarios/index.ts';
+import type { HttpScenario, WsScenario } from '@ethercalc/shared/oracle-scenarios';
+import { stubIoClient, stubWsFactory } from './ws-mock.ts';
 
 function mkRecording(overrides: Partial<HttpScenario> = {}): HttpScenario {
   const base: HttpScenario = {
@@ -57,8 +60,25 @@ describe('parseRecordedFile', () => {
     expect(parseRecordedFile(file).scenario.name).toBe('static/sample');
   });
 
-  it('throws when the scenario kind is missing', () => {
-    expect(() => parseRecordedFile('{"scenario":{"name":"x","kind":"ws"}}')).toThrow(/http scenario/);
+  it('parses a recorded ws artifact', () => {
+    const ws: WsScenario = {
+      name: 'ws/connect',
+      kind: 'ws',
+      steps: [
+        { type: 'connect', url: '/_ws/r?user=u' },
+        { type: 'expect', msg: { type: 'ignore' } },
+      ],
+    };
+    expect(parseRecordedFile(JSON.stringify({ scenario: ws })).scenario.name).toBe('ws/connect');
+  });
+
+  it('throws when ws scenario has no steps', () => {
+    const ws: WsScenario = { name: 'ws/connect', kind: 'ws', steps: [] };
+    expect(() => parseRecordedFile(JSON.stringify({ scenario: ws }))).toThrow(/no recorded ws/);
+  });
+
+  it('throws when scenario is missing entirely', () => {
+    expect(() => parseRecordedFile('{}')).toThrow(/no scenario/);
   });
 
   it('throws when expect is missing', () => {
@@ -215,14 +235,113 @@ describe('replayOne', () => {
   });
 });
 
+describe('replayWsOne', () => {
+  it('replays a ws scenario via the runner', async () => {
+    const scenario: WsScenario = {
+      name: 'ws/connect',
+      kind: 'ws',
+      steps: [
+        { type: 'connect', url: '/_ws/r?user=u&auth=0' },
+        { type: 'close' },
+      ],
+    };
+    const result = await replayWsOne(scenario, {
+      targetUrl: 'http://target.test',
+      recordedDir: '',
+      wsTransport: 'native',
+      wsFactory: stubWsFactory(),
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('defaults wsTransport to native when replaying', async () => {
+    const scenario: WsScenario = {
+      name: 'ws/connect',
+      kind: 'ws',
+      steps: [
+        { type: 'connect', url: '/_ws/r?user=u&auth=0' },
+        { type: 'close' },
+      ],
+    };
+    const result = await replayWsOne(scenario, {
+      targetUrl: 'http://target.test',
+      recordedDir: '',
+      wsFactory: stubWsFactory(),
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('returns failure when the runner reports an error', async () => {
+    const scenario: WsScenario = {
+      name: 'ws/connect',
+      kind: 'ws',
+      steps: [
+        { type: 'connect', url: '/_ws/r?user=u&auth=0' },
+        { type: 'expect', msg: { type: 'log' }, timeoutMs: 20 },
+      ],
+    };
+    const result = await replayWsOne(scenario, {
+      targetUrl: 'http://target.test',
+      recordedDir: '',
+      wsTransport: 'native',
+      wsFactory: stubWsFactory(),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/timed out/);
+  });
+
+  it('replays with only required options', async () => {
+    const scenario: WsScenario = {
+      name: 'ws/connect',
+      kind: 'ws',
+      steps: [{ type: 'close' }],
+    };
+    const spy = vi.spyOn(wsRunner, 'runWsScenario').mockResolvedValueOnce({ ok: true });
+    try {
+      const result = await replayWsOne(scenario, {
+        targetUrl: 'http://target.test',
+        recordedDir: '',
+      });
+      expect(result.ok).toBe(true);
+      expect(spy.mock.calls[0]![1]).not.toHaveProperty('fetcher');
+      expect(spy.mock.calls[0]![1]).not.toHaveProperty('wsFactory');
+      expect(spy.mock.calls[0]![1]).not.toHaveProperty('ioClientFactory');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('returns failure without an error field when the runner omits one', async () => {
+    const scenario: WsScenario = {
+      name: 'ws/connect',
+      kind: 'ws',
+      steps: [{ type: 'connect', url: '/_ws/r?user=u&auth=0' }],
+    };
+    const spy = vi.spyOn(wsRunner, 'runWsScenario').mockResolvedValueOnce({ ok: false });
+    try {
+      const result = await replayWsOne(scenario, {
+        targetUrl: 'http://target.test',
+        recordedDir: '',
+        fetcher: async () => new Response(''),
+        wsFactory: stubWsFactory(),
+        ioClientFactory: stubIoClient().factory,
+      });
+      expect(result.ok).toBe(false);
+      expect(result.error).toBeUndefined();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
 describe('sortRecordedByScenarioOrder', () => {
-  it('orders files by ALL_HTTP_SCENARIOS rank', () => {
+  it('orders files by ALL_SCENARIOS rank', () => {
     const files = [
       '/rec/exports/get-csv.json',
       '/rec/static/get-root-index.json',
       '/rec/room-crud/put-export-room.json',
     ];
-    const sorted = sortRecordedByScenarioOrder(files, ALL_HTTP_SCENARIOS);
+    const sorted = sortRecordedByScenarioOrder(files, ALL_SCENARIOS);
     expect(sorted.map(parseRecordedFileName)).toEqual([
       'static/get-root-index',
       'room-crud/put-export-room',
@@ -250,7 +369,7 @@ describe('sortRecordedByScenarioOrder', () => {
       '/rec/static/get-root-index.json',
       '/rec/custom/aaa.json',
     ];
-    const sorted = sortRecordedByScenarioOrder(files, ALL_HTTP_SCENARIOS);
+    const sorted = sortRecordedByScenarioOrder(files, ALL_SCENARIOS);
     expect(sorted.map(parseRecordedFileName)).toEqual([
       'static/get-root-index',
       'custom/aaa',
@@ -260,7 +379,7 @@ describe('sortRecordedByScenarioOrder', () => {
 
   it('places a single known file before unknown files', () => {
     const files = ['/rec/custom/extra.json', '/rec/misc/get-new-redirect.json'];
-    const sorted = sortRecordedByScenarioOrder(files, ALL_HTTP_SCENARIOS);
+    const sorted = sortRecordedByScenarioOrder(files, ALL_SCENARIOS);
     expect(sorted.map(parseRecordedFileName)).toEqual(['misc/get-new-redirect', 'custom/extra']);
   });
 });
@@ -299,6 +418,26 @@ describe('replayAll', () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+
+  it('replays ws artifacts from disk', async () => {
+    const ws: WsScenario = {
+      name: 'ws/connect',
+      kind: 'ws',
+      steps: [
+        { type: 'connect', url: '/_ws/r?user=u&auth=0' },
+        { type: 'close' },
+      ],
+    };
+    const results = await replayAll({
+      targetUrl: 'http://target.test',
+      recordedDir: '/virtual',
+      listFiles: async () => ['/ws.json'],
+      readFile: async () => JSON.stringify({ scenario: ws }),
+      wsTransport: 'native',
+      wsFactory: stubWsFactory(),
+    });
+    expect(results[0]!.ok).toBe(true);
   });
 
   it('iterates over recorded files, logs outcomes, and returns results', async () => {

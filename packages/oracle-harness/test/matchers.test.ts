@@ -180,5 +180,89 @@ describe('dispatchMatcher', () => {
     expect(
       dispatchMatcher('xlsx', { expectedBase64: b64(''), actualBytes: bytes('') }),
     ).toMatch(/xlsx mismatch/);
+    expect(
+      dispatchMatcher('rooms-empty', {
+        expectedBase64: b64('[]'),
+        actualBytes: bytes('["oracle-phase3-template_abc123def456"]'),
+      }),
+    ).toBeNull();
+    expect(
+      dispatchMatcher('roomtimes-empty', {
+        expectedBase64: b64('{}'),
+        actualBytes: bytes('{"oracle-phase3-template_abc123def456":123}'),
+      }),
+    ).toBeNull();
+    expect(
+      dispatchMatcher('roomlinks-empty', {
+        expectedBase64: b64('[]'),
+        actualBytes: bytes('["oracle-phase3-template_abc123def456"]'),
+      }),
+    ).toBeNull();
+    expect(
+      dispatchMatcher('roomlinks-empty', {
+        expectedBase64: b64('[]'),
+        actualBytes: bytes('[{"link":"/oracle-phase3-template_abc123def456/app"}]'),
+      }),
+    ).toBeNull();
+    expect(
+      dispatchMatcher('roomlinks-empty', {
+        expectedBase64: b64('[]'),
+        actualBytes: bytes('[{"link":"/"}]'),
+      }),
+    ).toMatch(/roomlinks-empty mismatch/);
+    expect(
+      dispatchMatcher('rooms-empty', { expectedBase64: null, actualBytes: bytes('[]') }),
+    ).toMatch(/null/);
+    expect(
+      dispatchMatcher('rooms-empty', {
+        expectedBase64: b64('not-json'),
+        actualBytes: bytes('[]'),
+      }),
+    ).toMatch(/not valid JSON/);
+    expect(
+      dispatchMatcher('roomtimes-empty', {
+        expectedBase64: b64('{}'),
+        actualBytes: bytes('not-json'),
+      }),
+    ).toMatch(/not valid JSON/);
+    expect(
+      dispatchMatcher('roomtimes-empty', { expectedBase64: null, actualBytes: bytes('{}') }),
+    ).toMatch(/null/);
+    expect(
+      dispatchMatcher('roomtimes-empty', {
+        expectedBase64: b64('not-json'),
+        actualBytes: bytes('{}'),
+      }),
+    ).toMatch(/not valid JSON/);
+    expect(
+      dispatchMatcher('roomlinks-empty', {
+        expectedBase64: b64('[]'),
+        actualBytes: bytes('not-json'),
+      }),
+    ).toMatch(/not valid JSON/);
+    expect(
+      dispatchMatcher('rooms-empty', {
+        expectedBase64: b64('[]'),
+        actualBytes: bytes('{}'),
+      }),
+    ).toMatch(/expected JSON array/);
+    expect(
+      dispatchMatcher('rooms-empty', {
+        expectedBase64: b64('[]'),
+        actualBytes: bytes('["other-room"]'),
+      }),
+    ).toMatch(/rooms-empty mismatch/);
+    expect(
+      dispatchMatcher('roomtimes-empty', {
+        expectedBase64: b64('{}'),
+        actualBytes: bytes('{"other-room":1}'),
+      }),
+    ).toMatch(/roomtimes-empty mismatch/);
+    expect(
+      dispatchMatcher('roomlinks-empty', {
+        expectedBase64: b64('[]'),
+        actualBytes: bytes('[null,42,{"link":42},{"link":"/other/app"}]'),
+      }),
+    ).toMatch(/roomlinks-empty mismatch/);
   });
 });

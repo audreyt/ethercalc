@@ -71,6 +71,14 @@ export const NORMALIZERS: Readonly<Record<string, NormalizeHook>> = {
     );
     return relaxContentLength(withLocation);
   },
+  // `GET /_/:room/xlsx` — structural zip/XML comparison (Phase 8a matcher).
+  'exports/get-xlsx': (scenario) => setBodyMatcher(scenario, 'xlsx'),
+  // `GET /_/:room/ods` — structural zip/XML comparison (Phase 8a matcher).
+  'exports/get-ods': (scenario) => setBodyMatcher(scenario, 'ods'),
+  // F-13: form redirect leaves a clone room in Redis; ignore it on replay.
+  'rooms-index/get-rooms-empty': (scenario) => setBodyMatcher(scenario, 'rooms-empty'),
+  'rooms-index/get-roomtimes-empty': (scenario) => setBodyMatcher(scenario, 'roomtimes-empty'),
+  'rooms-index/get-roomlinks-empty': (scenario) => setBodyMatcher(scenario, 'roomlinks-empty'),
 };
 
 /** Look up a normalizer by scenario name; return `null` if none registered. */

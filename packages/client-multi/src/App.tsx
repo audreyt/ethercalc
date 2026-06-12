@@ -14,6 +14,7 @@ import {
   reducer,
   titleTaken,
 } from './state.ts';
+import { useTocPoll } from './useTocPoll.ts';
 import styles from './styles.module.css';
 
 export interface AppProps {
@@ -41,6 +42,10 @@ export const App: FC<AppProps> = ({
   const onFirstFocus = useCallback(() => {
     firstFocusUsed.current = true;
   }, []);
+  const onTocSync = useCallback(() => {
+    dispatch({ type: 'syncToc' });
+  }, []);
+  useTocPoll(foldr, onTocSync);
 
   const clampedIndex = Math.max(0, Math.min(state.activeIndex, foldr.lastIndex()));
 

@@ -25,6 +25,9 @@ export type BodyMatcher =
   | 'ods' // structurally equal after unzip + XML canonical form
   | 'scsave' // SocialCalc save: ignore version line + metadata ordering
   | 'json' // parse both and deepEqual
+  | 'rooms-empty' // JSON room list `[]` ignoring form-clone suffix rooms (F-13)
+  | 'roomtimes-empty' // JSON `{}` ignoring form-clone room keys (F-13)
+  | 'roomlinks-empty' // JSON `[]` ignoring form-clone room links (F-13)
   | 'ignore'; // body not compared
 
 export interface HttpResponseExpectation {
@@ -117,5 +120,8 @@ export const NORMALIZATION_RULES: Readonly<Record<BodyMatcher, string>> = {
   ods: 'Unzip; sort entries by name; compare each XML after canonical formatting.',
   scsave: 'SocialCalc save: drop `version:...` line; compare sheet/cell lines exactly; metadata section ordering ignored.',
   json: 'Parse both sides; deep structural equality.',
+  'rooms-empty': 'JSON array; drop `oracle-phase3-template_<uuid>` clone rooms before comparing to `[]`.',
+  'roomtimes-empty': 'JSON object; drop clone-room keys before comparing to `{}`.',
+  'roomlinks-empty': 'JSON array; drop entries whose link matches the form-clone pattern before comparing to `[]`.',
   ignore: 'Body not checked.',
 };

@@ -2,7 +2,7 @@
   "name": "@ethercalc/oracle-harness",
   "version": "0.0.0",
   "private": true,
-  "description": "Oracle recorder/replayer \u2014 captures the current main branch's HTTP/WS responses so the TypeScript rewrite can be proven equivalent.",
+  "description": "Oracle recorder/replayer — captures the current main branch's HTTP/WS responses so the TypeScript rewrite can be proven equivalent.",
   "license": "CC0-1.0",
   "type": "module",
   "main": "./src/index.ts",
@@ -23,8 +23,10 @@
   },
   "dependencies": {
     "@ethercalc/shared": "workspace:*",
+    "@ethercalc/socketio-shim": "workspace:*",
     "fflate": "^0.8.2",
-    "linkedom": "^0.18.12"
+    "linkedom": "^0.18.12",
+    "socket.io-client": "1.0.6"
   },
   "devDependencies": {
     "@stryker-mutator/core": "^9.6.1",

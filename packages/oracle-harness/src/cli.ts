@@ -3,12 +3,13 @@ import { fileURLToPath } from 'node:url';
 
 import { recordAll } from './record.ts';
 import { replayAll } from './replay.ts';
-import { ALL_HTTP_SCENARIOS } from './scenarios/index.ts';
+import { ALL_SCENARIOS } from './scenarios/index.ts';
+import type { WsTransport } from './ws-transport.ts';
 
 /**
  * Parse argv of the shape:
  *   oracle-harness record [--target http://...] [--out path]
- *   oracle-harness replay [--target http://...] [--recorded path]
+ *   oracle-harness replay [--target http://...] [--recorded path] [--ws-transport native|socketio]
  *
  * Returns a normalized object; throws on unknown subcommand or flag.
  * Sensible defaults match the repo layout (oracle on :8000, recordings
@@ -20,6 +21,8 @@ export interface CliOptions {
   readonly command: CliCommand;
   readonly targetUrl: string;
   readonly dir: string;
+  /** WS wire transport; oracle replay uses socket.io 1.x, worker uses native. */
+  readonly wsTransport?: WsTransport;
 }
 
 export const DEFAULT_TARGET = 'http://127.0.0.1:8000';
@@ -38,6 +41,7 @@ export function parseArgs(argv: readonly string[]): CliOptions {
   }
   let targetUrl = DEFAULT_TARGET;
   let dir = DEFAULT_RECORDED_DIR;
+  let wsTransport: WsTransport | undefined;
   for (let i = 0; i < rest.length; i++) {
     const flag = rest[i];
     const value = rest[i + 1];
@@ -53,16 +57,29 @@ export function parseArgs(argv: readonly string[]): CliOptions {
       i++;
       continue;
     }
+    if (flag === '--ws-transport') {
+      if (value !== 'native' && value !== 'socketio' && value !== 'socketio-v09') {
+        throw new Error('--ws-transport must be native, socketio, or socketio-v09');
+      }
+      wsTransport = value;
+      i++;
+      continue;
+    }
     throw new Error(`unknown flag: ${JSON.stringify(flag)}`);
   }
-  return { command: raw as CliCommand, targetUrl, dir };
+  return {
+    command: raw as CliCommand,
+    targetUrl,
+    dir,
+    ...(wsTransport !== undefined ? { wsTransport } : {}),
+  };
 }
 
 export interface MainDeps {
   readonly log?: (line: string) => void;
   readonly record?: typeof recordAll;
   readonly replay?: typeof replayAll;
-  readonly scenarios?: typeof ALL_HTTP_SCENARIOS;
+  readonly scenarios?: typeof ALL_SCENARIOS;
 }
 
 /** Async entrypoint; returns an exit code. */
@@ -73,18 +90,24 @@ export async function main(
   const log = deps.log ?? ((line: string) => process.stdout.write(`${line}\n`));
   const record = deps.record ?? recordAll;
   const replay = deps.replay ?? replayAll;
-  const scenarios = deps.scenarios ?? ALL_HTTP_SCENARIOS;
+  const scenarios = deps.scenarios ?? ALL_SCENARIOS;
   const opts = parseArgs(argv);
   if (opts.command === 'record') {
     const results = await record(scenarios, {
       targetUrl: opts.targetUrl,
       outDir: opts.dir,
       log,
+      ...(opts.wsTransport !== undefined ? { wsTransport: opts.wsTransport } : {}),
     });
     log(`recorded ${results.length} scenarios → ${opts.dir}`);
     return 0;
   }
-  const results = await replay({ targetUrl: opts.targetUrl, recordedDir: opts.dir, log });
+  const results = await replay({
+    targetUrl: opts.targetUrl,
+    recordedDir: opts.dir,
+    log,
+    ...(opts.wsTransport !== undefined ? { wsTransport: opts.wsTransport } : {}),
+  });
   const failed = results.filter((r) => !r.ok);
   log(`replay: ${results.length - failed.length}/${results.length} passed`);
   return failed.length === 0 ? 0 : 1;

@@ -4,3 +4,6 @@ export * from './normalize.ts';
 export * from './record.ts';
 export * from './replay.ts';
 export * from './scenarios/index.ts';
+export * from './ws-normalize.ts';
+export * from './ws-runner.ts';
+export * from './ws-transport.ts';

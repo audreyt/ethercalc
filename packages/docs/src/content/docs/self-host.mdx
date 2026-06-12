@@ -1,0 +1,32 @@
+---
+title: Self-hosting
+description: Run EtherCalc without a Cloudflare account
+---
+
+EtherCalc ships a standalone `workerd` Docker image — no Cloudflare account required.
+
+## Docker Compose
+
+```bash
+docker compose up
+```
+
+The service listens on `http://127.0.0.1:8000` by default. Data persists in a Docker volume under `/data`.
+
+## Environment variables
+
+| Variable | Purpose |
+| -------- | ------- |
+| `ETHERCALC_KEY` | Edit/view HMAC secret (unset = anonymous mode) |
+| `ETHERCALC_BASEPATH` | URL prefix (maps to Worker `BASEPATH`) |
+| `ETHERCALC_DISABLE_ROOM_INDEX` | Gate `/_rooms`, `/_roomlinks`, `/_roomtimes`, `/_exists` (default **on** in Docker) |
+
+Room discovery is disabled by default on self-host images to reduce abuse surface. Override only on trusted networks.
+
+## Hardening
+
+For internet-facing deployments, put nginx in front with rate limits and WebSocket read timeouts. See `docs/SELFHOST_HARDENING.md` in the repository for the proxy recipe (`docker-compose.proxy.yml`).
+
+## Local development
+
+Contributors typically run `bun run --cwd packages/worker dev` (Miniflare) instead of Docker — faster iteration, same feature set.

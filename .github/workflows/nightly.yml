@@ -214,7 +214,7 @@ jobs:
           exit 1
 
       - name: Replay recorded scenarios against legacy oracle
-        run: bun run --cwd packages/oracle-harness replay --target http://127.0.0.1:8000
+        run: bun run --cwd packages/oracle-harness replay --target http://127.0.0.1:8000 --ws-transport socketio
 
       - name: Build assets for worker replay
         run: |

@@ -1,0 +1,63 @@
+name: Deploy Production
+
+# Manual production deploy to Cloudflare Workers (ethercalc.net).
+# Requires repository secrets:
+#   CLOUDFLARE_API_TOKEN — Workers deploy token
+#   CLOUDFLARE_ACCOUNT_ID — Cloudflare account id
+#
+# Does NOT run automatically; invoke via Actions → Deploy Production → Run workflow.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "deploy" to confirm production deploy to ethercalc.net'
+        required: true
+        type: string
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: wrangler deploy (production)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: inputs.confirm == 'deploy'
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build client assets
+        run: |
+          bun run --cwd packages/client build
+          bun run --cwd packages/client-multi build
+          ./scripts/build-assets.sh
+
+      - name: Deploy to Cloudflare Workers
+        run: bun x wrangler deploy
+        working-directory: packages/worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Post-deploy smoke (optional)
+        if: vars.PRODUCTION_SMOKE_URL != ''
+        run: curl -sf "${{ vars.PRODUCTION_SMOKE_URL }}/_health"
+
+  rejected:
+    name: confirmation check
+    runs-on: ubuntu-latest
+    if: inputs.confirm != 'deploy'
+    steps:
+      - name: Abort — confirmation mismatch
+        run: |
+          echo 'Input confirm must be exactly "deploy". Got:' "${{ inputs.confirm }}"
+          exit 1

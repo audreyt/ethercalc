@@ -89,44 +89,9 @@ export class HackFoldr {
    */
   async fetch(id: string): Promise<this> {
     this.id = id;
-    const url = `${this.base}/_/${this.id}/csv.json`;
-    let body: unknown;
-    try {
-      const res = await this.fetchImpl(url);
-      body = res.ok ? await res.json() : null;
-    } catch {
-      body = null;
-    }
-
+    const body = await this.loadTocJson();
     if (Array.isArray(body) && body.length > 0) {
-      // Drop header row (legacy `res.body.shift()`).
-      const rowsIn = body.slice(1) as unknown[];
-      const parsed: FoldrRow[] = [];
-      rowsIn.forEach((raw, idx) => {
-        if (!Array.isArray(raw)) return;
-        const link = typeof raw[0] === 'string' ? raw[0] : '';
-        let title = typeof raw[1] === 'string' ? raw[1] : '';
-        if (!link || link.startsWith('#')) return;
-        if (!title) title = 'Sheet' + (idx + 1);
-        parsed.push({ link, title, row: idx + 2 });
-      });
-      // Legacy seeding can POST the same link more than once (see
-      // FINDINGS.md). Duplicate React keys made every tab but one vanish
-      // on rename (#635); a stale "Sheet1" row also reappeared as a ghost
-      // tab after delete/rename cycles (#727). Keep one entry per link,
-      // preferring the last server row (most recent title + row index).
-      const byLink = new Map<string, number>();
-      const deduped: FoldrRow[] = [];
-      for (const row of parsed) {
-        const at = byLink.get(row.link);
-        if (at !== undefined) {
-          deduped[at] = row;
-        } else {
-          byLink.set(row.link, deduped.length);
-          deduped.push(row);
-        }
-      }
-      this.rows = deduped;
+      this.rows = parseTocBody(body);
     } else {
       this.wasNonExistent = true;
     }
@@ -138,6 +103,30 @@ export class HackFoldr {
       await this.push(seed);
     }
     return this;
+  }
+
+  /**
+   * Re-fetch the TOC without seeding or touching init flags. Returns `true`
+   * when the in-memory row list changed (add/rename/delete from a peer).
+   */
+  async refreshToc(): Promise<boolean> {
+    if (!this.id) return false;
+    const body = await this.loadTocJson();
+    if (!Array.isArray(body) || body.length === 0) return false;
+    const next = parseTocBody(body);
+    if (tocRowsEqual(this.rows, next)) return false;
+    this.rows = next;
+    return true;
+  }
+
+  private async loadTocJson(): Promise<unknown> {
+    const url = `${this.base}/_/${this.id}/csv.json`;
+    try {
+      const res = await this.fetchImpl(url);
+      return res.ok ? await res.json() : null;
+    } catch {
+      return null;
+    }
   }
 
   /** Append a new row (writes to server, then pushes locally). */
@@ -269,6 +258,53 @@ export class HackFoldr {
       return null;
     }
   }
+}
+
+/**
+ * Parse a `csv.json` body (array-of-arrays) into deduped TOC rows.
+ * Exported for unit tests; `fetch` and `refreshToc` both use this.
+ */
+export function parseTocBody(body: unknown): FoldrRow[] {
+  if (!Array.isArray(body) || body.length === 0) return [];
+  const rowsIn = body.slice(1) as unknown[];
+  const parsed: FoldrRow[] = [];
+  rowsIn.forEach((raw, idx) => {
+    if (!Array.isArray(raw)) return;
+    const link = typeof raw[0] === 'string' ? raw[0] : '';
+    let title = typeof raw[1] === 'string' ? raw[1] : '';
+    if (!link || link.startsWith('#')) return;
+    if (!title) title = 'Sheet' + (idx + 1);
+    parsed.push({ link, title, row: idx + 2 });
+  });
+  // Legacy seeding can POST the same link more than once (see FINDINGS.md).
+  // Duplicate React keys made every tab but one vanish on rename (#635); a
+  // stale "Sheet1" row also reappeared as a ghost tab after delete/rename
+  // cycles (#727). Keep one entry per link, preferring the last server row.
+  const byLink = new Map<string, number>();
+  const deduped: FoldrRow[] = [];
+  for (const row of parsed) {
+    const at = byLink.get(row.link);
+    if (at !== undefined) {
+      deduped[at] = row;
+    } else {
+      byLink.set(row.link, deduped.length);
+      deduped.push(row);
+    }
+  }
+  return deduped;
+}
+
+/** Shallow compare of two TOC row lists (link, title, row index). */
+export function tocRowsEqual(a: readonly FoldrRow[], b: readonly FoldrRow[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const left = a[i]!;
+    const right = b[i]!;
+    if (left.link !== right.link || left.title !== right.title || left.row !== right.row) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function escapeCsv(s: string): string {

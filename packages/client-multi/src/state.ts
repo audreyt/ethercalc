@@ -23,7 +23,8 @@ export interface AppState {
 export type AppAction =
   | { type: 'setActive'; index: number }
   | { type: 'bumpRev' }
-  | { type: 'bumpRev+setActive'; index: number };
+  | { type: 'bumpRev+setActive'; index: number }
+  | { type: 'syncToc' };
 
 export function createInitialState(foldr: HackFoldr): AppState {
   return { foldr, activeIndex: 0, rev: 0 };
@@ -37,6 +38,12 @@ export function reducer(state: AppState, action: AppAction): AppState {
       return { ...state, rev: state.rev + 1 };
     case 'bumpRev+setActive':
       return { ...state, rev: state.rev + 1, activeIndex: action.index };
+    case 'syncToc':
+      return {
+        ...state,
+        rev: state.rev + 1,
+        activeIndex: Math.min(state.activeIndex, state.foldr.lastIndex()),
+      };
   }
 }
 

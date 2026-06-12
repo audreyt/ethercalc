@@ -1,0 +1,15 @@
+{
+  "scenario": {
+    "name": "ws/connect",
+    "kind": "ws",
+    "steps": [
+      {
+        "type": "connect",
+        "url": "/_ws/oracle-phase3-ws?user=oracle-harness&auth=harness"
+      },
+      {
+        "type": "close"
+      }
+    ]
+  }
+}

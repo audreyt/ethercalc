@@ -14,7 +14,7 @@
         "location": "re:^/oracle-phase3-template_[a-z0-9]{12}/app$",
         "vary": "Accept"
       },
-      "bodyBase64": "Rm91bmQuIFJlZGlyZWN0aW5nIHRvIC9vcmFjbGUtcGhhc2UzLXRlbXBsYXRlX3A3bGQzaXRweHdpNS9hcHA=",
+      "bodyBase64": "Rm91bmQuIFJlZGlyZWN0aW5nIHRvIC9vcmFjbGUtcGhhc2UzLXRlbXBsYXRlX2IyY2d6MnAzNGp0aC9hcHA=",
       "bodyMatcher": "ignore"
     }
   }

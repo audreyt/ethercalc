@@ -37,11 +37,21 @@ const AUTH_IN_HREF_RE = /auth=0/;
 const AUTH_QUERY_RE = /\?auth=/;
 const AUTH_IS_ZERO_RE = /\??auth=0/;
 
-export function parseMultiEnv(loc: { href: string; search: string }): MultiEnv {
-  const viteApi =
-    typeof import.meta.env.VITE_ETHERCALC_BASE === 'string'
-      ? import.meta.env.VITE_ETHERCALC_BASE
-      : '';
+/** Resolve `VITE_ETHERCALC_BASE` with an optional test override. */
+export function resolveViteApiBase(
+  override: string | undefined,
+  envValue: unknown = import.meta.env.VITE_ETHERCALC_BASE,
+): string {
+  if (override !== undefined) return override;
+  return typeof envValue === 'string' ? envValue : '';
+}
+
+export function parseMultiEnv(
+  loc: { href: string; search: string },
+  /** Test seam — production callers omit this. */
+  viteBaseOverride?: string,
+): MultiEnv {
+  const viteApi = resolveViteApiBase(viteBaseOverride);
   let basePath: string =
     viteApi.length > 0
       ? viteApi.replace(/\/$/, '')

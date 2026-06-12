@@ -47,6 +47,16 @@ describe('reducer', () => {
     expect(s.rev).toBe(1);
     expect(s.activeIndex).toBe(5);
   });
+
+  it('syncToc bumps rev and clamps activeIndex to the last tab', () => {
+    const f = makeFoldr([{ link: '/a', title: 'A', row: 2 }]);
+    const s = reducer(
+      { ...createInitialState(f), activeIndex: 4, rev: 2 },
+      { type: 'syncToc' },
+    );
+    expect(s.rev).toBe(3);
+    expect(s.activeIndex).toBe(0);
+  });
 });
 
 describe('titleTaken', () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_INDEX, parseMultiEnv } from '../src/url.ts';
+import { DEFAULT_INDEX, parseMultiEnv, resolveViteApiBase } from '../src/url.ts';
 
 function loc(href: string, search = ''): { href: string; search: string } {
   return { href, search };
@@ -81,5 +81,29 @@ describe('parseMultiEnv', () => {
   it('does not push state when ?auth is absent', () => {
     const env = parseMultiEnv(loc('https://x.com/=foo', ''));
     expect(env.pushStatePath).toBeNull();
+  });
+
+  it('honors an explicit VITE_ETHERCALC_BASE override', () => {
+    const env = parseMultiEnv(loc('https://x.com/=r'), 'https://api.example.com/');
+    expect(env.basePath).toBe('https://api.example.com');
+  });
+
+  it('falls through when the vite base override is empty', () => {
+    const env = parseMultiEnv(loc('https://x.com/=r'), '');
+    expect(env.basePath).toBe('.');
+  });
+});
+
+describe('resolveViteApiBase', () => {
+  it('returns the override when provided', () => {
+    expect(resolveViteApiBase('https://api.test/')).toBe('https://api.test/');
+  });
+
+  it('reads a string env value', () => {
+    expect(resolveViteApiBase(undefined, 'https://env.test')).toBe('https://env.test');
+  });
+
+  it('returns empty string for non-string env values', () => {
+    expect(resolveViteApiBase(undefined, 42)).toBe('');
   });
 });

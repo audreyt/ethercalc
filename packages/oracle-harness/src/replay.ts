@@ -1,12 +1,13 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import type { HttpScenario } from '@ethercalc/shared/oracle-scenarios';
+import type { HttpScenario, WsScenario } from '@ethercalc/shared/oracle-scenarios';
 
 import { diffHeaders, headersToRecord, normalizeHeaders } from './headers.ts';
 import { dispatchMatcher } from './matchers.ts';
 import { buildScenarioRequestInit, defaultFetcher, type RecordedFile } from './record.ts';
-import { ALL_HTTP_SCENARIOS } from './scenarios/index.ts';
+import { ALL_SCENARIOS } from './scenarios/index.ts';
+import { runWsScenario } from './ws-runner.ts';
 
 export interface ReplayOptions {
   readonly targetUrl: string;
@@ -17,10 +18,14 @@ export interface ReplayOptions {
   /** File read; tests inject a stub. */
   readonly readFile?: (path: string) => Promise<string>;
   readonly log?: (line: string) => void;
+  /** Worker replay uses native WS; oracle self-check uses socket.io. */
+  readonly wsTransport?: import('./ws-transport.ts').WsTransport;
+  readonly wsFactory?: import('./ws-transport.ts').WsFactory;
+  readonly ioClientFactory?: import('./ws-transport.ts').IoClientFactory;
 }
 
 export interface ReplayResult {
-  readonly scenario: HttpScenario;
+  readonly scenario: HttpScenario | WsScenario;
   readonly ok: boolean;
   readonly error?: string;
 }
@@ -43,13 +48,20 @@ export async function listRecordedFiles(dir: string): Promise<readonly string[]>
 /** Parse a recorded JSON artifact. Throws on malformed input. */
 export function parseRecordedFile(raw: string): RecordedFile {
   const parsed = JSON.parse(raw) as RecordedFile;
-  if (!parsed.scenario || parsed.scenario.kind !== 'http') {
-    throw new Error('recorded artifact is not an http scenario');
+  if (!parsed.scenario) {
+    throw new Error('recorded artifact has no scenario');
   }
-  if (!parsed.scenario.expect) {
+  if (parsed.scenario.kind === 'http' && !parsed.scenario.expect) {
     throw new Error(`scenario ${parsed.scenario.name} has no recorded expectation`);
   }
+  if (parsed.scenario.kind === 'ws' && !hasRecordedWsExpectations(parsed.scenario)) {
+    throw new Error(`scenario ${parsed.scenario.name} has no recorded ws expectations`);
+  }
   return parsed;
+}
+
+function hasRecordedWsExpectations(scenario: WsScenario): boolean {
+  return scenario.steps.length > 0;
 }
 
 /**
@@ -87,6 +99,25 @@ export async function replayOne(
   return { scenario, ok: true };
 }
 
+/** Replay a single recorded WS scenario against the target. */
+export async function replayWsOne(
+  scenario: WsScenario,
+  opts: ReplayOptions,
+): Promise<ReplayResult> {
+  const result = await runWsScenario(scenario, {
+    targetUrl: opts.targetUrl,
+    transport: opts.wsTransport ?? 'native',
+    mode: 'replay',
+    ...(opts.fetcher !== undefined ? { fetcher: opts.fetcher } : {}),
+    ...(opts.wsFactory !== undefined ? { wsFactory: opts.wsFactory } : {}),
+    ...(opts.ioClientFactory !== undefined ? { ioClientFactory: opts.ioClientFactory } : {}),
+  });
+  if (result.ok) return { scenario, ok: true };
+  return result.error !== undefined
+    ? { scenario, ok: false, error: result.error }
+    : { scenario, ok: false };
+}
+
 /**
  * Sort recorded artifacts in scenario-catalog order so stateful batches
  * (PUT → export → DELETE) replay against a fresh oracle the same way
@@ -95,7 +126,7 @@ export async function replayOne(
  */
 export function sortRecordedByScenarioOrder(
   files: readonly string[],
-  scenarios: readonly HttpScenario[],
+  scenarios: readonly (HttpScenario | WsScenario)[],
 ): readonly string[] {
   const rank = new Map(scenarios.map((s, i) => [s.name, i]));
   return [...files].sort((a, b) => {
@@ -125,12 +156,15 @@ export async function replayAll(opts: ReplayOptions): Promise<readonly ReplayRes
   const reader = opts.readFile ?? ((p) => readFile(p, 'utf8'));
   const files = sortRecordedByScenarioOrder(
     await lister(opts.recordedDir),
-    ALL_HTTP_SCENARIOS,
+    ALL_SCENARIOS,
   );
   const results: ReplayResult[] = [];
   for (const file of files) {
     const parsed = parseRecordedFile(await reader(file));
-    const result = await replayOne(parsed.scenario, opts);
+    const result =
+      parsed.scenario.kind === 'ws'
+        ? await replayWsOne(parsed.scenario, opts)
+        : await replayOne(parsed.scenario, opts);
     if (opts.log) {
       if (result.ok) opts.log(`  ok  ${parsed.scenario.name}`);
       else opts.log(`  FAIL ${parsed.scenario.name}: ${result.error}`);
