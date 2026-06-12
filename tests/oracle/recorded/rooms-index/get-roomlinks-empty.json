@@ -9,10 +9,10 @@
     "expect": {
       "status": 200,
       "headers": {
-        "content-length": "268",
+        "content-length": "2",
         "content-type": "text/html; charset=utf-8"
       },
-      "bodyBase64": "WwogICI8YSBocmVmPS9vcmFjbGUtcGhhc2UzLWV4cG9ydD5vcmFjbGUtcGhhc2UzLWV4cG9ydDwvYT4iLAogICI8YSBocmVmPS9vcmFjbGUtcGhhc2UzLXRlbXBsYXRlX2JrNWljb2RzaHR5aD5vcmFjbGUtcGhhc2UzLXRlbXBsYXRlX2JrNWljb2RzaHR5aDwvYT4iLAogICI8YSBocmVmPS9vcmFjbGUtcGhhc2UzLXdzPm9yYWNsZS1waGFzZTMtd3M8L2E+IiwKICAiPGEgaHJlZj0vb3JhY2xlLXBoYXNlMy10ZW1wbGF0ZT5vcmFjbGUtcGhhc2UzLXRlbXBsYXRlPC9hPiIKXQ==",
+      "bodyBase64": "W10=",
       "bodyMatcher": "roomlinks-empty"
     }
   }

@@ -2,7 +2,7 @@ import starlight from '@astrojs/starlight';
 import { defineConfig } from 'astro/config';
 
 export default defineConfig({
-  site: 'https://ethercalc.net',
+  site: 'https://docs.ethercalc.net',
   integrations: [
     starlight({
       title: 'EtherCalc',

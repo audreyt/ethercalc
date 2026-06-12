@@ -9,10 +9,10 @@
     "expect": {
       "status": 200,
       "headers": {
-        "content-length": "159",
+        "content-length": "2",
         "content-type": "application/json; charset=utf-8"
       },
-      "bodyBase64": "ewogICJ0aW1lc3RhbXAtb3JhY2xlLXBoYXNlMy13cyI6ICIxNzgxMjM5MDc2OTkyIiwKICAidGltZXN0YW1wLW9yYWNsZS1waGFzZTMtZXhwb3J0IjogIjE3ODEyMzg4NzQyMjMiLAogICJ0aW1lc3RhbXAtb3JhY2xlLXBoYXNlMy10ZW1wbGF0ZSI6ICIxNzgxMjM3MjI4NTk1Igp9",
+      "bodyBase64": "e30=",
       "bodyMatcher": "roomtimes-empty"
     }
   }

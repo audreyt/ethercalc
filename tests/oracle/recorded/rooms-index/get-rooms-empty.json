@@ -9,10 +9,10 @@
     "expect": {
       "status": 200,
       "headers": {
-        "content-length": "119",
+        "content-length": "2",
         "content-type": "application/json; charset=utf-8"
       },
-      "bodyBase64": "WwogICJvcmFjbGUtcGhhc2UzLWV4cG9ydCIsCiAgIm9yYWNsZS1waGFzZTMtdGVtcGxhdGVfYms1aWNvZHNodHloIiwKICAib3JhY2xlLXBoYXNlMy13cyIsCiAgIm9yYWNsZS1waGFzZTMtdGVtcGxhdGUiCl0=",
+      "bodyBase64": "W10=",
       "bodyMatcher": "rooms-empty"
     }
   }
