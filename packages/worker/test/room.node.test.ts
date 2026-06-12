@@ -944,6 +944,7 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
   it('DELETE /_do/all cascades to the submitform sibling DO (#442)', async () => {
     const siblingDeletes: string[] = [];
     const env: Env = {
+      ...makeEnvWithDb(d1Calls),
       ROOM: {
         idFromName: (n: string) => ({ name: n } as unknown as DurableObjectId),
         get: (id: DurableObjectId) => ({
@@ -953,7 +954,6 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
           },
         } as unknown as DurableObjectStub),
       } as unknown as DurableObjectNamespace,
-      DB: makeEnvWithDb(d1Calls).DB,
     };
     const cascadeRoom = new RoomDO(makeState('cascade', record), env);
     await cascadeRoom.fetch(
@@ -967,6 +967,7 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
   it('DELETE on a _formdata room does NOT cascade further (#442)', async () => {
     const siblingDeletes: string[] = [];
     const env: Env = {
+      ...makeEnvWithDb(d1Calls),
       ROOM: {
         idFromName: () => ({} as unknown as DurableObjectId),
         get: () => ({
@@ -976,7 +977,6 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
           },
         } as unknown as DurableObjectStub),
       } as unknown as DurableObjectNamespace,
-      DB: makeEnvWithDb(d1Calls).DB,
     };
     const fdRoom = new RoomDO(makeState('fd', record), env);
     await fdRoom.fetch(
