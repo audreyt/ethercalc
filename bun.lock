@@ -115,7 +115,7 @@
       "name": "@ethercalc/socialcalc-headless",
       "version": "0.0.0",
       "dependencies": {
-        "socialcalc": "github:audreyt/socialcalc#67d340c",
+        "socialcalc": "^3.0.1",
       },
       "devDependencies": {
         "@cloudflare/vitest-pool-workers": "^0.14.8",
@@ -1066,7 +1066,7 @@
 
     "signal-exit": ["signal-exit@4.1.0", "", {}, "sha512-bzyZ1e88w9O1iNJbKnOlvYTrWPDl46O1bG0D3XInv+9tkPrxrN8jUUTiFlDkkmKWgn1M6CfIA13SuGqOa9Korw=="],
 
-    "socialcalc": ["socialcalc@github:audreyt/socialcalc#67d340c", {}, "audreyt-socialcalc-67d340c", "sha512-VVggKsEbCPnoUQrb0f+62yxqJbfRLWpOqgpMD5cvnHl+xv9SfNUvmiH7nNSn+Y4kXS+va4SBc8Mvs8Y2THsLKw=="],
+    "socialcalc": ["socialcalc@3.0.1", "", {}, "sha512-hyk6699Dt7TPA51PA3WfWSH4QkQ6M2STFQk5W4+My407t36Lv6KLT/ek4lYcEX0+U6ZGNaW343rYLgrWDPadsQ=="],
 
     "source-map": ["source-map@0.7.6", "", {}, "sha512-i5uvt8C3ikiWeNZSVZNWcfZPItFQOsYTUAOkcUPGd8DqDy1uOUikjt5dG+uRlwyvR108Fb9DOd4GvXfT0N2/uQ=="],
 
