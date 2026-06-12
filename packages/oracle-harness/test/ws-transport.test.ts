@@ -1,5 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
 
+vi.mock('socket.io-client', () => ({
+  default: () => ({
+    connected: true,
+    on(event: string, fn: (...args: unknown[]) => void) {
+      if (event === 'connect') queueMicrotask(() => fn());
+    },
+    emit() {},
+    disconnect() {},
+    removeAllListeners() {},
+  }),
+}));
+
 import { decodeFrame, PacketType } from '@ethercalc/socketio-shim/framing';
 import {
   defaultIoClientFactory,
@@ -154,6 +166,15 @@ describe('openWsSession — native', () => {
 });
 
 describe('openWsSession — socket.io 1.x', () => {
+  it('uses defaultIoClientFactory when ioClientFactory is omitted', async () => {
+    const session = await openWsSession({
+      targetUrl: 'http://oracle.test:8000',
+      connectUrl: '/ignored',
+      transport: 'socketio',
+    });
+    session.close();
+  });
+
   it('uses socket.io-client data events', async () => {
     const { stubIoClient } = await import('./ws-mock.ts');
     const stub = stubIoClient();

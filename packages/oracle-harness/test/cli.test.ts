@@ -6,6 +6,8 @@ import {
   main,
   parseArgs,
 } from '../src/cli.ts';
+import { recordAll } from '../src/record.ts';
+import type { IoClientLike } from '../src/ws-transport.ts';
 import type { RecordResult } from '../src/record.ts';
 import type { ReplayResult } from '../src/replay.ts';
 import type { HttpScenario } from '@ethercalc/shared/oracle-scenarios';
@@ -168,56 +170,80 @@ describe('main', () => {
     expect(writes.join('')).toMatch(/1\/1 passed/);
   });
 
-  it('falls back to the bundled record/replay + scenarios when deps are empty', async () => {
-    // Stub fetch + WebSocket so the real recordAll does no network I/O.
+  it('falls back to recordAll when record dep is omitted', async () => {
+    const stubFetch: typeof fetch = async () =>
+      new Response('[]', {
+        status: 200,
+        headers: {
+          'content-type': 'application/json; charset=utf-8',
+          'content-length': '2',
+        },
+      });
     const originalFetch = globalThis.fetch;
-    const g = globalThis as { fetch: typeof fetch; WebSocket?: unknown };
-    const originalWs = g.WebSocket;
-    class StubWebSocket {
-      readyState = 1;
-      private listeners = new Map<string, Array<(ev: { data?: string }) => void>>();
-      send(data: string) {
-        const packet = data.includes('"name":"data"') ? data : null;
-        const payload =
-          packet !== null
-            ? (JSON.parse(packet.split(':').slice(3).join(':')) as { args: unknown[] }).args[0]
-            : JSON.parse(data);
-        if (
-          payload &&
-          typeof payload === 'object' &&
-          (payload as { type?: string }).type === 'ask.log'
-        ) {
-          const reply = JSON.stringify({
-            type: 'log',
-            room: (payload as { room: string }).room,
-            log: [],
-            chat: [],
-            snapshot: '',
-          });
-          const frame = packet !== null
-            ? `5:::{"name":"data","args":[${reply}]}`
-            : reply;
-          queueMicrotask(() => {
-            for (const fn of this.listeners.get('message') ?? []) fn({ data: frame });
-          });
-        }
-      }
-      close() {}
-      addEventListener(type: string, fn: (ev: { data?: string }) => void) {
-        const bucket = this.listeners.get(type) ?? [];
-        bucket.push(fn);
-        this.listeners.set(type, bucket);
-        if (type === 'open') queueMicrotask(() => fn({}));
-      }
-      removeEventListener() {}
+    globalThis.fetch = stubFetch;
+
+    const { mkdtemp, rm } = await import('node:fs/promises');
+    const { tmpdir: tmpd } = await import('node:os');
+    const { join: pathJoin } = await import('node:path');
+    const dir = await mkdtemp(pathJoin(tmpd(), 'oracle-harness-main-record-'));
+    try {
+      const code = await main(['record', '--out', dir], {
+        log: () => {},
+        scenarios: [
+          {
+            name: 'rooms-index/get-rooms-empty',
+            kind: 'http',
+            request: { method: 'GET', path: '/_rooms' },
+          },
+        ],
+      });
+      expect(code).toBe(0);
+    } finally {
+      globalThis.fetch = originalFetch;
+      await rm(dir, { recursive: true, force: true });
     }
-    g.WebSocket = StubWebSocket as unknown as typeof WebSocket;
-    g.fetch = async (url) => {
-      if (String(url).includes('/socket.io/1/')) {
-        return new Response('abc123:60:60:websocket,xhr-polling');
-      }
-      return new Response('', { status: 200, headers: { 'content-type': 'text/plain' } });
+  });
+
+  it('falls back to the bundled scenarios when deps are empty', async () => {
+    const mockIoClientFactory = (): IoClientLike => {
+      const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
+      return {
+        connected: true,
+        on(event, fn) {
+          if (!listeners.has(event)) listeners.set(event, new Set());
+          listeners.get(event)!.add(fn);
+          if (event === 'connect') queueMicrotask(() => fn());
+        },
+        emit(event, ...args) {
+          if (event !== 'data') return;
+          const msg = args[0];
+          if (!msg || typeof msg !== 'object') return;
+          const typed = msg as { type?: string; room?: string };
+          if (typed.type === 'ask.log') {
+            const reply = {
+              type: 'log',
+              room: typed.room,
+              log: [],
+              chat: [],
+              snapshot: '',
+            };
+            queueMicrotask(() => {
+              for (const fn of listeners.get('data') ?? []) fn(reply);
+            });
+          }
+        },
+        disconnect() {},
+        removeAllListeners() {
+          listeners.clear();
+        },
+      };
     };
+
+    const originalFetch = globalThis.fetch;
+    const stubFetch: typeof fetch = async () =>
+      new Response('', { status: 200, headers: { 'content-type': 'text/plain' } });
+    globalThis.fetch = stubFetch;
+
     const { mkdtemp, rm, readdir } = await import('node:fs/promises');
     const { tmpdir: tmpd } = await import('node:os');
     const { join: pathJoin } = await import('node:path');
@@ -226,13 +252,18 @@ describe('main', () => {
     try {
       const code = await main(['record', '--out', dir], {
         log: (line) => logs.push(line),
+        record: (scenarios, opts) =>
+          recordAll(scenarios, {
+            ...opts,
+            fetcher: stubFetch,
+            ioClientFactory: mockIoClientFactory,
+          }),
       });
       expect(code).toBe(0);
       const names = await readdir(dir, { recursive: true });
       expect(names.length).toBeGreaterThan(0);
     } finally {
-      g.fetch = originalFetch;
-      g.WebSocket = originalWs;
+      globalThis.fetch = originalFetch;
       await rm(dir, { recursive: true, force: true });
     }
     expect(logs.some((l) => /recorded \d+ scenarios/.test(l))).toBe(true);
