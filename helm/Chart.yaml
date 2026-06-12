@@ -5,7 +5,7 @@ type: application
 # Chart version bumps on chart changes; appVersion follows the image tag
 # produced by `.github/workflows/publish-image.yml`.
 version: 0.3.1
-appVersion: "0.20260611.1"
+appVersion: "0.20260612.2"
 home: https://ethercalc.net/
 sources:
   - https://github.com/audreyt/ethercalc

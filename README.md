@@ -130,7 +130,7 @@ Store the HMAC secret as a Worker secret:
 
 ## Staying on legacy (Redis-backed) EtherCalc
 
-`audreyt/ethercalc:latest` (and every `0.20260422.*` / `0.20260611.*` tag)
+`audreyt/ethercalc:latest` (and every `0.20260422.*` / `0.20260611.*` / `0.20260612.*` tag)
 ships the 2026 TypeScript rewrite. It stores rooms in Durable Object SQLite
 files, **not** Redis — pulling `latest` over an existing Redis-backed
 install will look broken until you migrate.
