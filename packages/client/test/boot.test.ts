@@ -229,8 +229,18 @@ describe('legacy export bindings', () => {
   it('does not treat empty __MULTI__.rows as multi-sheet (#232)', () => {
     const open = vi.fn();
     const dialogOpen = vi.fn();
+    const cell = { setAttribute: vi.fn() };
+    const listeners: Record<string, Array<(event: { target?: EventTarget | null }) => void>> = {};
+    const target = {
+      closest: vi.fn(() => cell),
+    } as unknown as EventTarget;
     const host = makeHost({
       open,
+      document: {
+        addEventListener: (type, listener) => {
+          (listeners[type] ??= []).push(listener);
+        },
+      },
       parent: { location: { href: 'http://h/sheet1/view', pathname: '/sheet1/view' } },
       vex: {
         defaultOptions: {},
@@ -245,16 +255,8 @@ describe('legacy export bindings', () => {
     host.SocialCalc.Constants.s_loc_export_format = 'fmt';
     host.SocialCalc.Constants.s_loc_cancel = 'Cancel';
 
-    const cell = { setAttribute: vi.fn() };
-    const listeners: Record<string, Array<(event: { target?: EventTarget | null }) => void>> = {};
-    host.document = {
-      addEventListener: (type, listener) => {
-        (listeners[type] ??= []).push(listener);
-      },
-    } as typeof host.document;
-
     installLegacyExportBindings(host);
-    listeners.click?.[0]?.({ target: { closest: () => cell } });
+    listeners.click?.[0]?.({ target });
 
     const opts = dialogOpen.mock.calls[0]?.[0] as {
       buttons: Array<{ text: string; click?: () => void }>;
