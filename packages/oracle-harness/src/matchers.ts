@@ -109,6 +109,36 @@ export function matchIgnore(_ctx: MatcherContext): MatcherResult {
   return null;
 }
 
+/** `POST /_/:room` 202 body — compare command text, not JSON shape. */
+export function matchCommandEcho(ctx: MatcherContext): MatcherResult {
+  if (ctx.expectedBase64 === null) return 'expected body is null but matcher is "command-echo"';
+  const dec = new TextDecoder();
+  let expectedValue: unknown;
+  let actualValue: unknown;
+  try {
+    expectedValue = JSON.parse(dec.decode(decodeBase64(ctx.expectedBase64)));
+  } catch (err) {
+    return `expected body is not valid JSON: ${(err as Error).message}`;
+  }
+  try {
+    actualValue = JSON.parse(dec.decode(ctx.actualBytes));
+  } catch (err) {
+    return `actual body is not valid JSON: ${(err as Error).message}`;
+  }
+  const expCmd = commandEchoText((expectedValue as { command?: unknown }).command);
+  const actCmd = commandEchoText((actualValue as { command?: unknown }).command);
+  if (expCmd === actCmd) return null;
+  return `command echo mismatch: expected ${JSON.stringify(expCmd)}, got ${JSON.stringify(actCmd)}`;
+}
+
+function commandEchoText(command: unknown): string | null {
+  if (typeof command === 'string') return command;
+  if (Array.isArray(command) && command.every((c) => typeof c === 'string')) {
+    return command.join('\n');
+  }
+  return null;
+}
+
 /** `GET /_rooms` on a fresh oracle — ignore form-clone suffix rooms (F-13). */
 export function matchRoomsEmpty(ctx: MatcherContext): MatcherResult {
   return matchFilteredJsonArray(
@@ -267,6 +297,7 @@ export const MATCHERS: Readonly<Record<BodyMatcher, (ctx: MatcherContext) => Mat
   'rooms-empty': matchRoomsEmpty,
   'roomtimes-empty': matchRoomtimesEmpty,
   'roomlinks-empty': matchRoomlinksEmpty,
+  'command-echo': matchCommandEcho,
 };
 
 /** Dispatch a body comparison to the right matcher. */

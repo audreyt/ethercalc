@@ -81,4 +81,18 @@ describe('diffHeaders', () => {
     expect(err).toMatch(/location/);
     expect(err).toMatch(/undefined/);
   });
+
+  it('skips optional legacy headers when the target omits them', () => {
+    expect(diffHeaders({ 'content-length': '413' }, { 'content-type': 'text/plain' })).toBeNull();
+    expect(diffHeaders({ 'accept-ranges': 'bytes' }, { 'content-type': 'text/html' })).toBeNull();
+  });
+
+  it('relaxes cache-control when both sides use public max-age=0', () => {
+    expect(
+      diffHeaders(
+        { 'cache-control': 'public, max-age=0' },
+        { 'cache-control': 'public, max-age=0, must-revalidate' },
+      ),
+    ).toBeNull();
+  });
 });

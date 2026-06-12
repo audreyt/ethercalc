@@ -5,6 +5,7 @@ import type { HttpScenario, WsScenario } from '@ethercalc/shared/oracle-scenario
 
 import { diffHeaders, headersToRecord, normalizeHeaders } from './headers.ts';
 import { dispatchMatcher } from './matchers.ts';
+import { applyNormalizer } from './normalize.ts';
 import { buildScenarioRequestInit, defaultFetcher, type RecordedFile } from './record.ts';
 import { ALL_SCENARIOS } from './scenarios/index.ts';
 import { runWsScenario } from './ws-runner.ts';
@@ -74,29 +75,39 @@ export async function replayOne(
   opts: ReplayOptions,
 ): Promise<ReplayResult> {
   const fetcher = opts.fetcher ?? defaultFetcher;
-  if (!scenario.expect) {
+  const normalized = applyNormalizer(scenario);
+  if (!normalized.expect) {
     return { scenario, ok: false, error: 'scenario has no `expect` — re-record against the oracle' };
   }
-  const url = new URL(scenario.request.path, opts.targetUrl).toString();
-  const response = await fetcher(url, buildScenarioRequestInit(scenario));
-  if (response.status !== scenario.expect.status) {
+  const url = new URL(normalized.request.path, opts.targetUrl).toString();
+  const response = await fetcher(url, buildScenarioRequestInit(normalized));
+  if (response.status !== normalized.expect.status) {
     return {
-      scenario,
+      scenario: normalized,
       ok: false,
-      error: `status: expected ${scenario.expect.status}, got ${response.status}`,
+      error: `status: expected ${normalized.expect.status}, got ${response.status}`,
     };
   }
   const actualHeaders = normalizeHeaders(headersToRecord(response.headers));
-  const headerErr = diffHeaders(scenario.expect.headers, actualHeaders);
-  if (headerErr) return { scenario, ok: false, error: headerErr };
-  const bodyBuffer = new Uint8Array(await response.arrayBuffer());
-  const matcher = scenario.expect.bodyMatcher ?? 'exact';
+  const headerErr = diffHeaders(normalized.expect.headers, actualHeaders);
+  if (headerErr) return { scenario: normalized, ok: false, error: headerErr };
+  let bodyBuffer: Uint8Array;
+  try {
+    bodyBuffer = new Uint8Array(await response.arrayBuffer());
+  } catch (err) {
+    return {
+      scenario: normalized,
+      ok: false,
+      error: `body read failed: ${(err as Error).message}`,
+    };
+  }
+  const matcher = normalized.expect.bodyMatcher ?? 'exact';
   const bodyErr = dispatchMatcher(matcher, {
-    expectedBase64: scenario.expect.bodyBase64,
+    expectedBase64: normalized.expect.bodyBase64,
     actualBytes: bodyBuffer,
   });
-  if (bodyErr) return { scenario, ok: false, error: bodyErr };
-  return { scenario, ok: true };
+  if (bodyErr) return { scenario: normalized, ok: false, error: bodyErr };
+  return { scenario: normalized, ok: true };
 }
 
 /** Replay a single recorded WS scenario against the target. */

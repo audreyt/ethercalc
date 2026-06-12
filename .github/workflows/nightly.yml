@@ -236,7 +236,9 @@ jobs:
       - name: Replay against worker (wrangler dev)
         run: |
           # wrangler must run from packages/worker; replay from repo root.
-          (cd packages/worker && bun x wrangler dev --port 8787 --ip 127.0.0.1) &
+          # Room-index routes must match legacy oracle (wrangler.toml defaults
+          # ETHERCALC_CORS=1 which gates /_rooms* and /_exists).
+          (cd packages/worker && bun x wrangler dev --port 8787 --ip 127.0.0.1 --var ETHERCALC_DISABLE_ROOM_INDEX:0) &
           pid=$!
           for i in $(seq 1 60); do
             curl -sf http://127.0.0.1:8787/_health >/dev/null 2>&1 && break

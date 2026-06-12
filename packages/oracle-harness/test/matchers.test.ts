@@ -4,6 +4,7 @@ import {
   decodeBase64,
   dispatchMatcher,
   encodeBase64,
+  matchCommandEcho,
   matchExact,
   matchIgnore,
   matchJson,
@@ -114,6 +115,25 @@ describe('matchJson', () => {
   it('fails if expected is null', () => {
     const r = matchJson({ expectedBase64: null, actualBytes: bytes('{}') });
     expect(r).toMatch(/null/);
+  });
+});
+
+describe('matchCommandEcho', () => {
+  it('accepts legacy array vs worker string command shapes', () => {
+    expect(
+      matchCommandEcho({
+        expectedBase64: b64('{"command":["set B1 text t phase3"]}'),
+        actualBytes: bytes('{"command":"set B1 text t phase3"}'),
+      }),
+    ).toBeNull();
+  });
+
+  it('rejects different command text', () => {
+    const r = matchCommandEcho({
+      expectedBase64: b64('{"command":["set A1 text t x"]}'),
+      actualBytes: bytes('{"command":"set B1 text t phase3"}'),
+    });
+    expect(r).toMatch(/command echo mismatch/);
   });
 });
 

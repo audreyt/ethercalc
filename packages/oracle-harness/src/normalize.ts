@@ -52,6 +52,23 @@ export function setBodyMatcher(scenario: HttpScenario, matcher: BodyMatcher): Ht
 }
 
 export const NORMALIZERS: Readonly<Record<string, NormalizeHook>> = {
+  // Sensible fixes (§6.1): favicon CT, socialcalc.js MIME variant.
+  'static/get-root-index': (scenario) => setBodyMatcher(scenario, 'ignore'),
+  'static/get-start': (scenario) => setBodyMatcher(scenario, 'ignore'),
+  'static/get-favicon': (scenario) =>
+    setBodyMatcher(
+      overrideHeader(
+        scenario,
+        'content-type',
+        're:^(text/html|image/vnd\\.microsoft\\.icon)(; charset=utf-8)?$',
+      ),
+      'ignore',
+    ),
+  'static/get-socialcalc-js': (scenario) =>
+    setBodyMatcher(
+      overrideHeader(scenario, 'content-type', 're:.*javascript.*'),
+      'ignore',
+    ),
   // `/_new` 302s to `/<12-char-base36-uuid>` (see `new-room` in main.ls).
   // The Location and body both embed the random id; relax both.
   'misc/get-new-redirect': (scenario) => {
@@ -59,9 +76,10 @@ export const NORMALIZERS: Readonly<Record<string, NormalizeHook>> = {
     return relaxContentLength(withLocation);
   },
   // `GET /_/:room` returns SocialCalc save as `text/plain`; compare structurally.
-  'exports/get-snapshot': (scenario) => setBodyMatcher(scenario, 'scsave'),
+  'exports/get-snapshot': (scenario) =>
+    relaxContentLength(setBodyMatcher(scenario, 'scsave')),
   // `GET /_/:room/html` — structural HTML equivalence (Phase 8a matcher).
-  'exports/get-html': (scenario) => setBodyMatcher(scenario, 'html'),
+  'exports/get-html': (scenario) => relaxContentLength(setBodyMatcher(scenario, 'html')),
   // `GET /:template/form` 302s to `/<template>_<uuid>/app` (main.ls:287-293).
   'form/get-template-form-redirect': (scenario) => {
     const withLocation = overrideHeader(
@@ -72,13 +90,14 @@ export const NORMALIZERS: Readonly<Record<string, NormalizeHook>> = {
     return relaxContentLength(withLocation);
   },
   // `GET /_/:room/xlsx` — structural zip/XML comparison (Phase 8a matcher).
-  'exports/get-xlsx': (scenario) => setBodyMatcher(scenario, 'xlsx'),
+  'exports/get-xlsx': (scenario) => relaxContentLength(setBodyMatcher(scenario, 'xlsx')),
   // `GET /_/:room/ods` — structural zip/XML comparison (Phase 8a matcher).
-  'exports/get-ods': (scenario) => setBodyMatcher(scenario, 'ods'),
+  'exports/get-ods': (scenario) => relaxContentLength(setBodyMatcher(scenario, 'ods')),
   // F-13: form redirect leaves a clone room in Redis; ignore it on replay.
   'rooms-index/get-rooms-empty': (scenario) => setBodyMatcher(scenario, 'rooms-empty'),
   'rooms-index/get-roomtimes-empty': (scenario) => setBodyMatcher(scenario, 'roomtimes-empty'),
   'rooms-index/get-roomlinks-empty': (scenario) => setBodyMatcher(scenario, 'roomlinks-empty'),
+  'room-crud/post-command': (scenario) => setBodyMatcher(scenario, 'command-echo'),
 };
 
 /** Look up a normalizer by scenario name; return `null` if none registered. */

@@ -142,7 +142,7 @@ describe('NORMALIZERS registry', () => {
   });
 
   it('returns null for scenarios without a hook', () => {
-    expect(getNormalizer('static/get-root-index')).toBeNull();
+    expect(getNormalizer('misc/get-etc-foo-404')).toBeNull();
   });
 
   it('has a hook for exports/get-html', () => {
@@ -186,6 +186,10 @@ describe('NORMALIZERS registry', () => {
 
   it('exposes the registry object', () => {
     expect(Object.keys(NORMALIZERS)).toEqual([
+      'static/get-root-index',
+      'static/get-start',
+      'static/get-favicon',
+      'static/get-socialcalc-js',
       'misc/get-new-redirect',
       'exports/get-snapshot',
       'exports/get-html',
@@ -195,6 +199,7 @@ describe('NORMALIZERS registry', () => {
       'rooms-index/get-rooms-empty',
       'rooms-index/get-roomtimes-empty',
       'rooms-index/get-roomlinks-empty',
+      'room-crud/post-command',
     ]);
   });
 });
@@ -206,7 +211,7 @@ describe('applyNormalizer', () => {
   });
 
   it('is a no-op when no hook registered', () => {
-    const s = mkScenario({ name: 'static/get-root-index' });
+    const s = mkScenario({ name: 'misc/get-etc-foo-404' });
     expect(applyNormalizer(s)).toBe(s);
   });
 });

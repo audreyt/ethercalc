@@ -26,6 +26,16 @@ export const VOLATILE_HEADERS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Headers legacy Express always sent but Workers may omit. When the
+ * target leaves them off we do not fail the scenario.
+ */
+export const OPTIONAL_IF_ABSENT: ReadonlySet<string> = new Set([
+  'content-length',
+  'accept-ranges',
+  'last-modified',
+]);
+
+/**
  * Return a new Headers-like record with volatile entries removed and
  * all keys lowercased. Idempotent — safe to call on already-normalized
  * input.
@@ -83,7 +93,18 @@ export function diffHeaders(
   actual: Readonly<Record<string, string>>,
 ): string | null {
   for (const [name, expectedValue] of Object.entries(expected)) {
-    const actualValue = actual[name.toLowerCase()];
+    const lower = name.toLowerCase();
+    const actualValue = actual[lower];
+    if (actualValue === undefined && OPTIONAL_IF_ABSENT.has(lower)) continue;
+    // Cache-Control wording differs (`must-revalidate` suffix on Workers).
+    if (
+      lower === 'cache-control' &&
+      actualValue !== undefined &&
+      expectedValue.includes('public, max-age=0') &&
+      actualValue.includes('public, max-age=0')
+    ) {
+      continue;
+    }
     if (!matchHeaderValue(expectedValue, actualValue)) {
       return `header ${JSON.stringify(name)}: expected ${JSON.stringify(expectedValue)}, got ${JSON.stringify(actualValue)}`;
     }

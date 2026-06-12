@@ -28,6 +28,7 @@ export type BodyMatcher =
   | 'rooms-empty' // JSON room list `[]` ignoring form-clone suffix rooms (F-13)
   | 'roomtimes-empty' // JSON `{}` ignoring form-clone room keys (F-13)
   | 'roomlinks-empty' // JSON `[]` ignoring form-clone room links (F-13)
+  | 'command-echo' // POST /_/:room 202: legacy wraps command in array, worker returns string
   | 'ignore'; // body not compared
 
 export interface HttpResponseExpectation {
