@@ -25,6 +25,20 @@ describe('socialcalc headless (Phase 1 spike — Plan A)', () => {
     expect(ss.exportCSV()).toBe('1\n2\n3\n');
   });
 
+  it('SUM(N:N) treats N as a column, not the N() function (#534)', () => {
+    const ss = createSpreadsheet();
+    ss.executeCommand(
+      [
+        'set N1 value n 1',
+        'set N2 value n 2',
+        'set N3 value n 3',
+        'set A1 formula SUM(N:N)',
+        'recalc',
+      ].join('\n'),
+    );
+    expect(ss.exportCell('A1')?.datavalue).toBe(6);
+  });
+
   it('loads from snapshot and applies log', () => {
     const ss1 = createSpreadsheet();
     ss1.executeCommand('set A1 value n 42');
