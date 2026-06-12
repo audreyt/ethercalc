@@ -11,8 +11,10 @@ This branch is the TypeScript rewrite on the Cloudflare fullstack
 (Hono + Workers + Durable Objects + D1 + KV + R2). It deploys to
 Cloudflare via `wrangler deploy`, and **self-hosts anywhere via
 `docker compose up`** with no Cloudflare account required. See
-[CLAUDE.md](./CLAUDE.md) for the plan-of-record, full architecture,
-and phase status.
+[CLAUDE.md](./CLAUDE.md) for agent context and
+[docs.ethercalc.net](https://docs.ethercalc.net) for architecture.
+The full rewrite plan lives in
+[docs/historic/REWRITE_ULTRAPLAN.md](./docs/historic/REWRITE_ULTRAPLAN.md).
 
 Integrated with content management systems:
 

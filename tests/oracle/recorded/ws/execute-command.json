@@ -56,7 +56,7 @@
           "room": "oracle-phase3-ws",
           "log": [],
           "chat": [],
-          "snapshot": "re:.*oracle.*"
+          "snapshot": "re:.*ws-phase3.*"
         },
         "match": "partial"
       },

@@ -166,25 +166,36 @@ jobs:
           echo "Stryker failed for packages/${{ matrix.package }}; see uploaded report."
           exit 1
 
-  # Summary step — a single cell at the top of the matrix report so the
-  # "Nightly" status on the main README badge is one-glance green/red.
+  # Summary — one job so the README nightly badge reflects mutation,
+  # oracle replay, and staging dry-run together.
   summary:
     name: nightly summary
     runs-on: ubuntu-latest
-    needs: mutation
+    needs: [mutation, oracle-replay, staging-dry-run]
     if: always()
     steps:
-      - name: Report matrix outcome
+      - name: Report nightly outcome
         run: |
-          echo "Nightly mutation matrix: ${{ needs.mutation.result }}"
-          # `result` is 'success' only if every matrix cell passed.
-          if [[ "${{ needs.mutation.result }}" == "success" ]]; then
-            echo "All packages cleared their break thresholds."
+          echo "mutation:       ${{ needs.mutation.result }}"
+          echo "oracle-replay:  ${{ needs.oracle-replay.result }}"
+          echo "staging-dry-run: ${{ needs.staging-dry-run.result }}"
+          failed=0
+          check() {
+            local job="$1" result="$2"
+            if [[ "$result" != "success" ]]; then
+              echo "FAIL: $job ($result)"
+              failed=1
+            fi
+          }
+          check mutation "${{ needs.mutation.result }}"
+          check oracle-replay "${{ needs.oracle-replay.result }}"
+          check staging-dry-run "${{ needs.staging-dry-run.result }}"
+          if [[ "$failed" -eq 0 ]]; then
+            echo "Nightly green — mutation, oracle replay, staging dry-run."
             exit 0
-          else
-            echo "At least one package regressed; see per-package issues."
-            exit 1
           fi
+          echo "Nightly red — see failed job(s) above."
+          exit 1
 
   oracle-replay:
     name: oracle replay (legacy docker + worker)

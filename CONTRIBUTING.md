@@ -9,7 +9,7 @@ bun install
 bun run --cwd packages/worker dev    # http://127.0.0.1:8787
 ```
 
-See [CLAUDE.md](./CLAUDE.md) for architecture and [packages/docs/](packages/docs/) for the Starlight docs site (`bun run --cwd packages/docs dev`).
+See [CLAUDE.md](./CLAUDE.md) for agent context, [packages/docs/](packages/docs/) for the Starlight docs site (`bun run --cwd packages/docs dev`), and [docs/historic/REWRITE_ULTRAPLAN.md](./docs/historic/REWRITE_ULTRAPLAN.md) for the archived rewrite plan.
 
 ## Tests and coverage
 
@@ -74,11 +74,11 @@ Comment with evidence (probe output, commit SHA, docs link) before closing.
 
 ## Sandstorm packaging
 
-Sandstorm-specific files live at the repo root: `SANDSTORM.md`, `run_grain.sh`, `sandstorm-pkgdef.capnp`. Build with `spk pack` on the `sandstorm` distribution branch workflow described in `SANDSTORM.md`.
+Sandstorm packaging lives on `main`: `SANDSTORM.md`, `run_grain.sh`, `sandstorm-pkgdef.capnp`. Build and sign with `spk pack` locally — see **Who publishes the `.spk`?** in `SANDSTORM.md` (app-owner keyring, not CI).
 
 ## Pull requests
 
 1. One logical change per PR when possible.
 2. Add or update tests; keep coverage at 100% on gated paths.
 3. Run `bun run typecheck` and affected package tests locally.
-4. Update [CLAUDE.md](./CLAUDE.md) §14 session log if the change is architectural.
+4. Update [CLAUDE.md](./CLAUDE.md) session log if the change is architectural.

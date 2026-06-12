@@ -6,8 +6,9 @@ alongside the worker — four pieces of grain-specific glue:
   - `sandstorm-pkgdef.capnp` — the Sandstorm package definition
     (Cap'n Proto), signed with the EtherCalc app ID
     `a0n6hwm32zjsrzes8gnjg734dh6jwt7x83xdgytspe761pe2asw0`.
-  - `pgp-signature`, `pgp-keyring` — PGP material used by `spk`
-    to sign/verify the package.
+  - `pgp-signature`, `pgp-keyring` — PGP material embedded in the
+    pkgdef for market metadata. **Not committed to git** — keep them on
+    the packager's machine next to `sandstorm-pkgdef.capnp`.
   - `run_grain.sh` — the grain's boot script. Starts standalone
     `workerd` on port 33411 (the port sandstorm-http-bridge proxies),
     waits for `/_health`, then migrates any legacy `/var/dump*` content
@@ -36,6 +37,36 @@ On a machine with Sandstorm + `spk` installed:
 
 The resulting `ethercalc.spk` is the upgrade artifact for Sandstorm's
 app market listing.
+
+## Who publishes the `.spk`?
+
+**You (the app owner), not a downstream maintainer.** EtherCalc's
+Sandstorm app ID (`a0n6hwm32zjsrzes8gnjg734dh6jwt7x83xdgytspe761pe2asw0`)
+is its public key; the matching **private signing key lives in your local
+`spk` keyring** from when the app was first created. Every `spk pack` and
+market upload must be signed with that same key — there is no separate
+Sandstorm CI credential in this repo.
+
+What is **not** automated today:
+
+- No GitHub Actions job builds or uploads `.spk` files.
+- `pgp-signature` / `pgp-keyring` are referenced by `sandstorm-pkgdef.capnp`
+  but intentionally absent from git (author PGP for market metadata only).
+
+Release checklist on a machine with Sandstorm + `spk` + the app private key:
+
+1. Check out the release tag on `main`.
+2. Bump `appVersion` / `appMarketingVersion` in `sandstorm-pkgdef.capnp`.
+3. `bun run build:assets` (and `scripts/build-workerd-bundle.sh` if the
+   worker bundle changed).
+4. `spk dev` once to refresh `sandstorm-files.list` if file layout changed.
+5. `spk pack ethercalc.spk`.
+6. Upload via Sandstorm dev tools or hand the `.spk` to whoever operates
+   your Sandstorm host's app market (still signed by **your** key).
+
+If `spk pack` fails with a signing/keyring error, the private key is not
+on that machine — recover it from your Sandstorm key backup or the
+machine that originally ran `spk init`, not from this repository.
 
 ## Legacy-grain migration path
 

@@ -106,7 +106,7 @@ describe('WS_NORMALIZERS', () => {
     };
     const out = applyWsNormalizer(scenario);
     expect(out.steps[0]).toMatchObject({
-      msg: { log: [], chat: [], snapshot: 're:.*oracle.*' },
+      msg: { log: [], chat: [], snapshot: 're:.*ws-phase3.*' },
     });
   });
 
@@ -130,7 +130,7 @@ describe('WS_NORMALIZERS', () => {
     const out = applyWsNormalizer(scenario);
     expect(out.steps[0]).toMatchObject({
       match: 'partial',
-      msg: { log: ['x'], chat: ['y'], snapshot: 're:.*oracle.*' },
+      msg: { log: ['x'], chat: ['y'], snapshot: 're:.*ws-phase3.*' },
     });
   });
 

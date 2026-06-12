@@ -71,7 +71,7 @@ function normalizeAskLogExpectStep(step: WsExpectStep): WsExpectStep {
       room: msg.room,
       log: msg.log ?? [],
       chat: msg.chat ?? [],
-      snapshot: 're:.*oracle.*',
+      snapshot: 're:.*ws-phase3.*',
     },
   };
 }

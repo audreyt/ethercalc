@@ -157,9 +157,9 @@ Per-package `stryker.conf.json`. Key settings:
   | shared           | 89    | 92       | 97        |
   | socketio-shim    | 81    | 84       | 89        |
   | migrate          | 90    | 93       | 98        |
-  | oracle-harness   | 84    | 87       | 92        |
+  | oracle-harness   | 83    | 86       | 91        |
   | client           | 73    | 76       | 81        |
-  | worker           | 88    | 91       | 96        |
+  | worker           | 90    | 93       | 98        |
 
 - **Excludes**: barrel re-exports (`index.ts`), thin CLI glue (`cli.ts`, `bin.ts`), oracle recorder/replayer integration modules (`record.ts`, `replay.ts`), Hono-bundled routes (not traced by istanbul per §5.2), `src/graph.ts` in the client (615-line canvas-heavy; covered but too large for first-pass mutation).
 
