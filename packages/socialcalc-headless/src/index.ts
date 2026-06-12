@@ -12,6 +12,8 @@ type SocialCalcNamespace = Record<string, unknown> & {
   ExecuteSheetCommand: (sheet: unknown, cmd: unknown, saveundo: boolean) => string | undefined;
   ScheduleSheetCommands: (sheet: unknown, cmdstr: string, saveundo: boolean) => void;
   RecalcSheet: (sheet: unknown) => void;
+  OffsetFormulaCoords: (formula: string, coloffset: number, rowoffset: number) => string;
+  DetermineValueType: (rawvalue: string) => { type: string };
   Clipboard: { clipboard: string };
   Formula?: {
     AddSheetToCache: (name: string, str: string, live?: boolean) => unknown;
