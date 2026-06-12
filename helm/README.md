@@ -48,6 +48,7 @@ See `values.yaml` for the full list. Common overrides:
 | `config.cors`            | `false`                  | Legacy room-index gate; CORS headers stay permissive. |
 | `config.defaultRoom`     | `""`                     | Redirect `/` to this room.                            |
 | `config.expire`          | `""`                     | Seconds before inactive rooms are pruned.             |
+| `config.rateLimit`       | `""`                     | Optional in-Worker per-IP limit (`1` = 10 req/s).     |
 | `secrets.key`            | `""`                     | HMAC key for read-only vs. edit auth.                 |
 | `secrets.migrateToken`   | `""`                     | Gates `PUT /_migrate/seed/:room`.                     |
 | `ingress.enabled`        | `false`                  | Create an Ingress resource.                           |
@@ -70,6 +71,8 @@ ingress:
 Leave `config.disableRoomIndex=true` unless you deliberately want public
 room enumeration. For public scratch deployments, consider setting
 `config.expire`, for example `2592000` for a 30-day inactivity TTL.
+Optionally set `config.rateLimit=1` for an extra in-Worker cap when
+ingress rate limits are already in place.
 TLS should be terminated by your Ingress or load balancer.
 
 ## Upgrading

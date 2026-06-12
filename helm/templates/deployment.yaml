@@ -71,6 +71,10 @@ spec:
             - name: ETHERCALC_EXPIRE
               value: {{ .Values.config.expire | quote }}
             {{- end }}
+            {{- if .Values.config.rateLimit }}
+            - name: ETHERCALC_RATELIMIT
+              value: {{ .Values.config.rateLimit | quote }}
+            {{- end }}
             - name: ETHERCALC_KEY
               valueFrom:
                 secretKeyRef:

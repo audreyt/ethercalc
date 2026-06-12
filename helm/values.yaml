@@ -103,6 +103,9 @@ config:
   cors: false
   # Seconds of inactivity before a room is pruned. Leave empty to disable.
   expire: ""
+  # Optional in-Worker per-IP HTTP limit (off by default). "1" = 10 req/s;
+  # belt-and-suspenders behind ingress rate limits — not a substitute.
+  rateLimit: ""
 
 # Secrets held in a Kubernetes Secret, never in values.yaml plaintext in
 # production. Set `existingSecret: <name>` to reference an external Secret
