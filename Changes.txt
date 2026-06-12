@@ -1,4 +1,162 @@
 Changes
+=======
+
+This file is organised in reverse-chronological order: newest releases first,
+with the original SocialCalc daily development log (2007–2010) preserved
+verbatim at the bottom.
+
+EtherCalc bundles SocialCalc from the audreyt/socialcalc fork; see
+../socialcalc/Changes.txt for SocialCalc library release notes (v3.0.x).
+
+
+==============================================================================
+0.20260612.2 — 2026-06-12
+==============================================================================
+
+Dependencies
+- socialcalc 3.0.3 on npm, then ^3.0.4 (quote-escaping, https text-links,
+  page-up/down visible-row span). Closes #88, #358, #493, #501, #512.
+
+Features
+- Oracle harness: 27 scenarios (WS connect/ask-log/execute; XLSX/ODS exports).
+- Starlight docs site; production deploy workflow (manual dispatch).
+- client-multi: useTocPoll live TOC sync.
+
+Fixes
+- import: decode ArrayBuffer before CSV drag-drop detection (#435).
+- client-multi: keep same-origin basePath in production builds; only redirect
+  localhost:8080 → :8000 in Vite dev. Fixes Sandstorm export/API #292.
+- client: viewer export treats empty __MULTI__.rows as single-sheet mode.
+  Fixes #232.
+
+Docs and tooling
+- Migrate GitHub wiki to Starlight user guide (syntax, forms, tips, FAQ).
+- Restore Sandstorm packaging on main (SANDSTORM.md, run_grain.sh, capnp).
+- CONTRIBUTING.md triage runbook; docs build in CI; deploy-docs workflow.
+- Triage scripts expanded; closed #25, #59, #262, #288, #335, #494, #789,
+  #800 with FAQ answers.
+
+
+==============================================================================
+0.20260612.1 — 2026-06-12
+==============================================================================
+
+Dependencies
+- socialcalc 3.0.2 → 3.0.3: CSV formula import (#304), formatted export
+  (#355, #638), currency division (#577), filldown without editor.range2
+  (#314, #564, #769, #785).
+
+Features
+- POST /_do/clone + GET /:template/form 302 for form templates.
+- Oracle harness: 22 scenarios (room CRUD, csv/html export, form redirect);
+  structural HTML matcher; nightly oracle-replay + staging dry-run.
+- client-multi: stable tab keys (#635), rowsRev iframe sync (#698), Foldr
+  link dedupe (#727).
+- E2E: fill-down persistence, multi rename, form clone specs.
+
+Infrastructure
+- Legacy LS/webpack tree removed from main; oracle docker pins pre-rewrite SHA.
+- Triage batch-close of 29 verified-fixed issues.
+
+
+==============================================================================
+0.20260611.1 — 2026-06-11
+==============================================================================
+
+Self-host hardening
+- ETHERCALC_DISABLE_ROOM_INDEX gates room discovery (default ON in Docker,
+  Helm, workerd); legacy ETHERCALC_CORS honoured as fallback.
+- nginx proxy recipe (docker-compose.proxy.yml); keyless non-loopback warnings.
+- Helm chart 0.3.1: restricted securityContext (non-root, RO rootfs).
+- workerd null-binding fixes (unset env → null, not '').
+
+Fixes
+- Docker entrypoint chown keyed on /data/do — fixes anonymous-volume crash in
+  0.20260611.0. **Do not use the 0.20260611.0 image tag.**
+
+
+==============================================================================
+0.20260424.0 — 2026-04-24
+==============================================================================
+
+Migration
+- bin/migrate-legacy.sh: turnkey Redis dump.rdb → workerd self-host in three
+  commands; migrate profile in docker-compose.yml; backup tarball + manifest.
+
+
+==============================================================================
+0.20260423.0 — 2026-04-23
+==============================================================================
+
+Export / import
+- xlsx/ods/fods export walks sheet.cells — formulas, formats, merges,
+  comments preserved (#55, #234, #289, #305, #573, #717, #762, #783, #795).
+- Multi-sheet export routes (GET /_/=:room/xlsx etc.) implemented.
+- xlsx/ods import emits SocialCalc formula commands.
+- Cross-sheet formulas via findCrossSheetRefs + /_do/snapshot sibling fetch.
+
+
+==============================================================================
+0.20260422.3 — 2026-04-22
+==============================================================================
+
+Self-host
+- Docker image runs workerd serve directly (no wrangler metadata fetch hang).
+- client export via fetch → blob download (popup-blocker + Sandstorm safe).
+- CLI spawns bunx wrangler (no node/npm in container).
+
+Quality
+- Mutation ratchets across gated packages; README.mkdn → README.md for npm.
+
+
+==============================================================================
+0.20260422.0 — 2026-04-22
+==============================================================================
+
+Major release — TypeScript rewrite on npm
+- Full Cloudflare stack (Hono + Durable Objects + D1 + KV + R2); Miniflare
+  locally; standalone workerd Docker self-host.
+- Native WebSocket protocol + socket.io shim; React 18 client-multi.
+- Redis → DO/D1 migration tool; oracle equivalence harness; 100% coverage CI.
+- Republishes npm line after 0.20201228.1 (last LiveScript release).
+
+
+==============================================================================
+Legacy EtherCalc (Node + Redis + LiveScript, pre-rewrite)
+==============================================================================
+
+Last npm/Docker release before the TypeScript rewrite: 0.20201228.1.
+Pin this tag (or docker-compose.legacy.yml) to stay on Redis-backed EtherCalc.
+
+  20191008.0 — Sandstorm version bump.
+  20190418.0 — livescript 1.6.0; multi-sheet tab-loss fix (#635, #640).
+  20160501.1 — Graph tab charting; F2 input toggle; Russian translation.
+  20160122.5 — Excel multi-spreadsheet export; row/column select-all.
+  20150822.1 — Initial Sandstorm App Market release.
+
+Earlier npm tags (0.20120522.x through 0.20170704.x) tracked the Node/
+Express + socket.io 0.9 era. See git tags for the full list.
+
+
+==============================================================================
+Sweet SocialCalc 0.x (2008)
+==============================================================================
+
+These release markers appear inline in the historical development log below.
+
+  0.1   — 2008-01-26
+  0.6   — 2008-02-07
+  0.6.1 — 2008-02-08
+  0.6.3 — 2008-02-15
+
+
+==============================================================================
+Historical Development Log (2007-12-27 through 2010-07-05)
+==============================================================================
+
+The following is the original SocialCalc daily development log, preserved
+verbatim for historical reference.
+
 
 2007-12-27:
 Fixed missing 'nl' entry in typelookup plus entry. (=false+1 was failing)
@@ -655,7 +813,13 @@ Made click without drag on drag palette not do any commands.
 Put in a fix for Safari 5 problem with copy/paste (involving onbeforepaste default behavior).
 
 
-TO DO:
+==============================================================================
+Historical TO DO (circa 2010)
+==============================================================================
+
+Preserved from the original Changes.txt for historical reference. Many items
+are obsolete (Perl-side modules no longer in this repo), done (undo limit),
+or subsumed by the TypeScript rewrite and socialcalc 3.x modernisation.
 
 Check out <= and >= Test Criteria!
 
