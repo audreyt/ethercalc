@@ -2,8 +2,9 @@ name: Deploy Production
 
 # Manual production deploy to Cloudflare Workers (ethercalc.net).
 # Requires repository secrets:
-#   CLOUDFLARE_API_TOKEN — Workers deploy token
 #   CLOUDFLARE_ACCOUNT_ID — Cloudflare account id
+#   CLOUDFLARE_API_TOKEN — long-lived dashboard API token (preferred), OR
+#   CLOUDFLARE_OAUTH_REFRESH_TOKEN — wrangler-login refresh token (scripts/ci-cloudflare-token.sh)
 #
 # Does NOT run automatically; invoke via Actions → Deploy Production → Run workflow.
 
@@ -41,11 +42,16 @@ jobs:
           bun run --cwd packages/client-multi build
           ./scripts/build-assets.sh
 
+      - name: Cloudflare API token
+        run: ./scripts/ci-cloudflare-token.sh
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_OAUTH_REFRESH_TOKEN: ${{ secrets.CLOUDFLARE_OAUTH_REFRESH_TOKEN }}
+
       - name: Deploy to Cloudflare Workers
         run: bun x wrangler deploy --env=""
         working-directory: packages/worker
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
       - name: Post-deploy smoke (optional)
