@@ -1,7 +1,7 @@
 # Self-Host Hardening — Implementor Handoff
 
-> **Status:** main self-host hardening pass applied incl. SH-8 (non-root + RO rootfs); Sandstorm
-> branch work and optional in-Worker rate/room quotas remain · **Owner:** Audrey Tang · **Drafted:** 2026-06-11
+> **Status:** main self-host hardening pass applied incl. SH-2 limiter + SH-8 (non-root + RO rootfs);
+> Sandstorm branch work (SH-6/SH-7) and optional SH-3 room-creation quota remain · **Owner:** Audrey Tang · **Drafted:** 2026-06-11
 > **Source:** a six-surface parallel audit + adversarial verification of the self-host
 > deployment paths against the already-shipped worker code, followed by the 2026-06-11
 > implementation pass recorded below.
@@ -165,8 +165,9 @@ render itself passed.
 
 - SH-6 and SH-7 remain Sandstorm-branch work.
 - SH-8 remains as Helm/container isolation defence-in-depth.
-- SH-2's in-Worker token bucket and SH-3's global room-creation quota remain optional follow-ups; the
-  shipped baseline is an explicit edge/proxy recipe, not app-layer throttling.
+- SH-2's optional in-Worker token bucket (`ETHERCALC_RATELIMIT`) landed 2026-06-12; SH-3's global
+  room-creation quota remains an optional follow-up. The mandatory baseline is still the edge/proxy
+  recipe — the Worker limiter is belt-and-suspenders only.
 
 ---
 
@@ -277,38 +278,36 @@ new flag parser and the legacy fallback.
 
 ---
 
-### SH-2 — Self-host abuse-prevention layer (the §13 Q7 gap)  ·  BASELINE DONE on `main` · docs (+ optional code)
+### SH-2 — Self-host abuse-prevention layer (the §13 Q7 gap)  ·  DONE on `main` · docs + optional code
 
-**Gap (verified real).** There is **no** application-layer rate limiting anywhere — a repo grep for
+**Gap (verified real at audit time).** There was **no** application-layer rate limiting — a repo grep for
 `rate.?limit|throttle|429|token.?bucket|x-forwarded-for|cf-connecting-ip` over `packages/worker/src`
-returns **only** the comment at `src/room.ts` ("real rate limiting at the edge", §13 Q7). The shipped
+returned **only** the comment at `src/room.ts` ("real rate limiting at the edge", §13 Q7). The shipped
 per-room caps (`MAX_CONN=128`, `MAX_FRAME`, 25 MiB body limit, storage trims) bound *per-room /
 per-request* blast radius but **not request frequency or per-source volume**: an attacker spreads load
 across unlimited distinct rooms, hammers CPU-heavy exports (`/:room.xlsx|ods|fods` — per-request SheetJS
 + SocialCalc recalc), and churns WS connects. §13 Q7 deferred *all* abuse-prevention to the CF
 platform, which is absent for Path A/B.
 
-**Chosen baseline on `main`: reverse-proxy-required, documented.** §13 Q7 has no self-host
-answer inside the Worker. This pass did not add an in-Worker limiter; it shipped the operator edge
-recipe instead:
+**Chosen baseline on `main`: reverse-proxy-required, documented.** §13 Q7 has no mandatory self-host
+answer inside the Worker for hosted deploys. The 2026-06-11 pass shipped the operator edge recipe;
+2026-06-12 added an optional in-Worker limiter gated by `ETHERCALC_RATELIMIT` (default off):
 
 - `docker-compose.proxy.yml` + `deploy/nginx/ethercalc.conf` add nginx in front with `limit_req`,
   `limit_conn`, WebSocket forwarding, and `client_max_body_size 25m` aligned to the app cap.
 - Helm ships commented nginx-ingress rate-limit annotations in `helm/values.yaml` and documents them in
   `helm/README.md`.
-- README now states that internet-facing self-hosts need a TLS-terminating, rate-limiting proxy.
-- **(Optional, opt-in) In-Worker token bucket.** A lightweight per-IP limiter keyed on
-  `CF-Connecting-IP` / `X-Forwarded-For`, **gated behind an env flag** (e.g. `ETHERCALC_RATELIMIT=…`),
-  default off (so CF deploys and trusted LANs are unaffected). If built: it's worker code → 100%
-  coverage + mutation gates apply; put the pure logic in `src/lib/` and the middleware wiring in
-  `src/index.ts` (coverage-excluded). Note this revisits §13 Q7 — record the decision in CLAUDE.md.
+- README now **requires** the proxy compose for internet-facing self-hosts; plain `docker compose up`
+  is documented as LAN/dev only.
+- **(Optional, opt-in) In-Worker token bucket** — `src/lib/rate-limit.ts` + middleware in
+  `src/index.ts`. Per-IP limiter keyed on `CF-Connecting-IP` / `X-Forwarded-For`, gated by
+  `ETHERCALC_RATELIMIT` (default off). Recorded in CLAUDE.md §13 Q7/Q11.
 
 **Constraints.** §2.1 (don't gate anonymous writes themselves — limit *rate*, not *access*),
 §2.3 (if code, gates apply).
 
-**Acceptance.** A documented, runnable proxy recipe exists; full flood demonstration remains an
-operator/integration exercise. If a later in-Worker limiter is added, it must be off by default and
-verified on/off by tests.
+**Acceptance.** A documented, runnable proxy recipe exists; README mandates it for internet-facing
+deploys. The optional in-Worker limiter is off by default and covered by `test/rate-limit.node.test.ts`.
 
 **Depends on:** none, but pairs naturally with SH-5 (the same proxy terminates TLS).
 
@@ -503,7 +502,7 @@ forwards it, but the worker reads `BASEPATH` (not `ETHERCALC_BASEPATH`). `config
 | ID | Title | Priority | Effort | Surfaces / key files |
 |----|-------|----------|--------|----------------------|
 | SH-1 | Default `ETHERCALC_DISABLE_ROOM_INDEX=1` for self-host | DONE on `main` | config | `docker-compose.yml`, `Dockerfile`, `config.capnp`+entrypoint, `helm/values.yaml` |
-| SH-2 | Self-host rate-limit / abuse layer | BASELINE DONE on `main` | docs (+opt code) | proxy compose/nginx, `helm/values.yaml`, README; opt `src/lib/`+`src/index.ts` |
+| SH-2 | Self-host rate-limit / abuse layer | DONE on `main` | docs + opt code | proxy compose/nginx, `helm/values.yaml`, README; `src/lib/rate-limit.ts`+`src/index.ts` |
 | SH-3 | Room-count bound / recommend `ETHERCALC_EXPIRE` | DOCS DONE on `main` | docs (+opt code) | README, `helm/README.md`; opt worker code |
 | SH-4 | Startup warning when no `ETHERCALC_KEY` | DONE on `main` | small-code | `bin/workerd-entrypoint.sh`, `packages/cli/src/`, `NOTES.txt` |
 | SH-5 | TLS guidance into self-hosting docs + sample proxy | DONE on `main` | docs | README, sample compose |

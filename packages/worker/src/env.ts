@@ -146,4 +146,13 @@ export interface Env {
    * Miniflare env; on Cloudflare it's an optional `[vars]` entry.
    */
   readonly ETHERCALC_EXPIRE?: string;
+
+  /**
+   * Optional per-IP HTTP rate limit for self-host (§13 Q7). Unset or
+   * false-like → off (hosted deploys rely on the Cloudflare edge).
+   * Bare `1`/`true`/`on` → 10 r/s with burst 30 (nginx recipe default).
+   * Plain number `N` → `N` requests/s; `window:max` → `max` per `window`
+   * seconds. Keyed on `CF-Connecting-IP` / first `X-Forwarded-For` hop.
+   */
+  readonly ETHERCALC_RATELIMIT?: string;
 }

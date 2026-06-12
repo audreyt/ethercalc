@@ -8,11 +8,21 @@ EtherCalc ships a standalone `workerd` Docker image — no Cloudflare account re
 
 ## Docker Compose
 
+**Trusted LAN / local dev:**
+
 ```bash
 docker compose up
 ```
 
-The service listens on `http://127.0.0.1:8000` by default. Data persists in a Docker volume under `/data`.
+The service listens on `http://127.0.0.1:8000` by default. Data persists in a Docker volume under `/data`. This path has no TLS and no rate limiting — do not expose it directly to the public internet.
+
+**Internet-facing (required):**
+
+```bash
+docker compose -f docker-compose.proxy.yml up -d
+```
+
+The bundled nginx recipe terminates TLS (when you mount certs), limits request and connection rates per source address, and forwards WebSocket upgrades with long read timeouts.
 
 ## Environment variables
 
@@ -21,12 +31,13 @@ The service listens on `http://127.0.0.1:8000` by default. Data persists in a Do
 | `ETHERCALC_KEY` | Edit/view HMAC secret (unset = anonymous mode) |
 | `ETHERCALC_BASEPATH` | URL prefix (maps to Worker `BASEPATH`) |
 | `ETHERCALC_DISABLE_ROOM_INDEX` | Gate `/_rooms`, `/_roomlinks`, `/_roomtimes`, `/_exists` (default **on** in Docker) |
+| `ETHERCALC_RATELIMIT` | Optional in-Worker per-IP limit (default **off**). `1` = 10 req/s; not a substitute for nginx |
 
 Room discovery is disabled by default on self-host images to reduce abuse surface. Override only on trusted networks.
 
 ## Hardening
 
-For internet-facing deployments, put nginx in front with rate limits and WebSocket read timeouts. See `docs/SELFHOST_HARDENING.md` in the repository for the proxy recipe (`docker-compose.proxy.yml`).
+Internet-facing self-hosts **must** use the proxy compose (or an equivalent edge). See `docs/SELFHOST_HARDENING.md` for the full threat model, nginx config (`deploy/nginx/ethercalc.conf`), and optional `ETHERCALC_RATELIMIT` belt-and-suspenders.
 
 ## Sandstorm
 

@@ -11,6 +11,12 @@ import { bodyLimit } from 'hono/body-limit';
 import { cors } from 'hono/cors';
 
 import { buildHealthBody } from './handlers/health.ts';
+import {
+  clientIpFromHeaders,
+  createRateLimitStore,
+  isRateLimitExemptPath,
+  rateLimitConfigFromEnv,
+} from './lib/rate-limit.ts';
 import { registerAssets, registerRoomCatchAll } from './routes/assets.ts';
 import { registerExports } from './routes/exports.ts';
 import { registerLegacySocketIo } from './routes/legacy-socketio.ts';
@@ -40,11 +46,34 @@ export { scheduled } from './scheduled.ts';
  * `registerRoomCrud` between the two calls — never after
  * `registerRoomCatchAll`.
  */
+const rateLimitStore = createRateLimitStore();
+
 export function buildApp(): Hono<{ Bindings: Env }> {
   const app = new Hono<{ Bindings: Env }>();
   // All API endpoints are CORS-friendly — external embeds (hackfoldr,
   // third-party dashboards) fetch /_/:room/csv etc cross-origin.
   app.use('*', cors());
+  // Optional self-host abuse belt-and-suspenders (§13 Q7). Default off;
+  // when `ETHERCALC_RATELIMIT` is set, apply a per-IP token bucket before
+  // routing. Health probes stay exempt.
+  app.use('*', async (c, next) => {
+    const config = rateLimitConfigFromEnv(c.env);
+    if (!config || isRateLimitExemptPath(c.req.path)) {
+      await next();
+      return;
+    }
+    const result = rateLimitStore.consume(
+      clientIpFromHeaders(c.req.raw.headers),
+      config,
+    );
+    if (!result.allowed) {
+      if (result.retryAfterSec != null) {
+        c.header('Retry-After', String(result.retryAfterSec));
+      }
+      return c.text('Too Many Requests', 429);
+    }
+    await next();
+  });
   // Cap the body of the anonymous write routes (POST `/_`, PUT/POST
   // `/_/:room`) so an unauthenticated client can't force the worker to
   // buffer + persist an unbounded payload (§5). 25 MiB comfortably covers

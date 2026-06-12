@@ -40,18 +40,26 @@ under `./ethercalc-data/` (or `/data` in the container).
 
 ## Self-hosting
 
+### Local / trusted LAN
+
     git clone https://github.com/audreyt/ethercalc
     cd ethercalc
     docker compose up -d
 
 This boots the standalone workerd Worker on `http://localhost:8000` and
 persists spreadsheet room state to `./ethercalc-data/` in the repo. No
-Redis, no Node runtime, no Cloudflare account.
+Redis, no Node runtime, no Cloudflare account. **Use this path only on
+a trusted network** (localhost, office LAN, VPN). It binds plaintext HTTP
+with no rate limiting or TLS.
 
-For an internet-facing self-host, put EtherCalc behind a reverse proxy
-that terminates TLS and applies rate limits. The app deliberately keeps
-anonymous read/write for anyone who knows a room URL; the edge is where
-you bound request volume. A runnable nginx recipe is included:
+### Internet-facing (required)
+
+If the instance is reachable from the public internet, **you must put a
+reverse proxy in front** that terminates TLS and applies rate limits.
+Plain `docker compose up` alone is not suitable for that threat model.
+The app deliberately keeps anonymous read/write for anyone who knows a
+room URL; the edge is where you bound request volume. A runnable nginx
+recipe ships in the repo:
 
     docker compose -f docker-compose.proxy.yml up -d
 
@@ -79,6 +87,7 @@ Override defaults by exporting these before `docker compose up`:
 | `ETHERCALC_CORS`      | *(unset)*   | Legacy room-index gate; CORS headers are always permissive for embeds. |
 | `ETHERCALC_BASEPATH`  | *(unset)*   | URL prefix, e.g. `/ethercalc` behind a proxy.     |
 | `ETHERCALC_EXPIRE`    | *(unset)*   | Seconds of inactivity before a room is pruned.    |
+| `ETHERCALC_RATELIMIT` | *(unset)*   | Optional in-Worker per-IP limit (off by default). `1` or `10` = 10 req/s; `60:600` = 600 per minute. Belt-and-suspenders behind nginx — not a substitute for the proxy. |
 
 Recommended public-instance settings:
 
@@ -88,10 +97,14 @@ Recommended public-instance settings:
   public room directory and existence oracle.
 - Set `ETHERCALC_EXPIRE` for public scratch instances, e.g.
   `ETHERCALC_EXPIRE=2592000` for a 30-day inactivity TTL.
+- **Always** use `docker-compose.proxy.yml` (or your own nginx/caddy/
+  traefik edge with equivalent limits) when the service is internet-facing.
 - Keep the container on plain HTTP and terminate TLS at the reverse
   proxy. If a local proxy fronts the container, publish the container
   port on loopback, e.g. `127.0.0.1:8000:8000`; do not change
   `ETHERCALC_HOST`, which must stay reachable inside the container.
+- Optionally set `ETHERCALC_RATELIMIT=1` for an extra in-Worker per-IP
+  cap when nginx is already in place.
 
 On Apple Silicon, Docker Desktop's virtio networking has an
 intermittent quirk that can make `curl localhost:8000` hang even

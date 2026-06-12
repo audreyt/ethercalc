@@ -78,6 +78,7 @@ EXPOSE 8000
 #   ETHERCALC_CORS                — legacy room-index gate; CORS headers are always on
 #   ETHERCALC_BASEPATH            — URL prefix when running behind a reverse proxy
 #   ETHERCALC_EXPIRE              — seconds of inactivity before a room is pruned
+#   ETHERCALC_RATELIMIT           — optional per-IP HTTP limit (off by default)
 #   ETHERCALC_DEFAULT_ROOM        — single-grain default room (302 from `/`)
 #   ETHERCALC_MIGRATE_TOKEN       — enable PUT /_migrate/seed
 ENV ETHERCALC_PORT=8000 \
