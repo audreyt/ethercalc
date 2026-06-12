@@ -9,6 +9,7 @@ import { encodeBase64, matchXlsx } from '../src/matchers.ts';
 import {
   OPTIONAL_XLSX_ZIP_ENTRIES,
   VOLATILE_XLSX_DOCPROPS,
+  canonicalizeContentTypesXml,
   canonicalizeZipEntry,
   compareZipArchives,
   unzipOrError,
@@ -109,6 +110,41 @@ describe('zip-canonical helpers', () => {
     const r = compareZipArchives(a, b, VOLATILE_XLSX_DOCPROPS);
     expect(r.equal).toBe(true);
     expect(r.diff).toBeUndefined();
+  });
+
+  it('canonicalizeContentTypesXml drops optional overrides and data defaults', () => {
+    const legacy = `<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+      <Default Extension="xml" ContentType="application/xml"/>
+      <Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>
+      <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+    </Types>`;
+    const worker = `<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+      <Default Extension="data" ContentType="application/vnd.openxmlformats-officedocument.model+data"/>
+      <Default Extension="xml" ContentType="application/xml"/>
+      <Override PartName="/xl/metadata.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheetMetadata+xml"/>
+      <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+    </Types>`;
+    const lc = canonicalizeContentTypesXml(legacy, OPTIONAL_XLSX_ZIP_ENTRIES);
+    const wc = canonicalizeContentTypesXml(worker, OPTIONAL_XLSX_ZIP_ENTRIES);
+    expect(lc).toBe(wc);
+    expect(lc).toContain('/xl/workbook.xml');
+    expect(lc).not.toContain('sharedStrings');
+    expect(lc).not.toContain('metadata');
+    expect(lc).not.toContain('model+data');
+  });
+
+  it('canonicalizeContentTypesXml accepts optional paths with a leading slash', () => {
+    const xml = `<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+      <Override PartName="/xl/metadata.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheetMetadata+xml"/>
+      <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+    </Types>`;
+    const out = canonicalizeContentTypesXml(xml, new Set(['/xl/metadata.xml']));
+    expect(out).toContain('/xl/workbook.xml');
+    expect(out).not.toContain('metadata');
+  });
+
+  it('canonicalizeContentTypesXml throws on malformed xml', () => {
+    expect(() => canonicalizeContentTypesXml('<', OPTIONAL_XLSX_ZIP_ENTRIES)).toThrow(/xml/);
   });
 
   it('compareZipArchives ignores optional entry-list drift', () => {

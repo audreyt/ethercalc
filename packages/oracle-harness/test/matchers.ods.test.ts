@@ -6,7 +6,9 @@ import { describe, it, expect, beforeAll } from 'vitest';
 
 import { encodeBase64, matchOds } from '../src/matchers.ts';
 import {
+  OPTIONAL_ODS_ZIP_ENTRIES,
   VOLATILE_ODS_META,
+  canonicalizeOdsManifestXml,
   canonicalizeXmlWithDrops,
 } from '../src/zip-canonical.ts';
 import { buildBasicOds, buildCorruptedZip } from './zip-fixtures.ts';
@@ -54,6 +56,38 @@ describe('zip-canonical helpers (ods)', () => {
 
   it('canonicalizeXmlWithDrops throws on malformed xml', () => {
     expect(() => canonicalizeXmlWithDrops('<', [])).toThrow(/xml/);
+  });
+
+  it('canonicalizeOdsManifestXml drops optional file entries', () => {
+    const legacy = `<manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0">
+      <manifest:file-entry manifest:full-path="/" manifest:media-type="application/vnd.oasis.opendocument.spreadsheet"/>
+      <manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/>
+      <manifest:file-entry manifest:full-path="manifest.rdf" manifest:media-type="application/rdf+xml"/>
+    </manifest:manifest>`;
+    const worker = `<manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0">
+      <manifest:file-entry manifest:full-path="/" manifest:media-type="application/vnd.oasis.opendocument.spreadsheet"/>
+      <manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/>
+      <manifest:file-entry manifest:full-path="styles.xml" manifest:media-type="text/xml"/>
+      <manifest:file-entry manifest:full-path="meta.xml" manifest:media-type="text/xml"/>
+      <manifest:file-entry manifest:full-path="manifest.rdf" manifest:media-type="application/rdf+xml"/>
+    </manifest:manifest>`;
+    expect(canonicalizeOdsManifestXml(legacy, OPTIONAL_ODS_ZIP_ENTRIES)).toBe(
+      canonicalizeOdsManifestXml(worker, OPTIONAL_ODS_ZIP_ENTRIES),
+    );
+  });
+
+  it('canonicalizeOdsManifestXml accepts un-prefixed full-path attributes', () => {
+    const xml = `<manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0">
+      <manifest:file-entry full-path="meta.xml" manifest:media-type="text/xml"/>
+      <manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/>
+    </manifest:manifest>`;
+    const out = canonicalizeOdsManifestXml(xml, OPTIONAL_ODS_ZIP_ENTRIES);
+    expect(out).toContain('content.xml');
+    expect(out).not.toContain('meta.xml');
+  });
+
+  it('canonicalizeOdsManifestXml throws on malformed xml', () => {
+    expect(() => canonicalizeOdsManifestXml('<', OPTIONAL_ODS_ZIP_ENTRIES)).toThrow(/xml/);
   });
 
   it('canonicalizeXmlWithDrops leaves non-matching children alone', () => {

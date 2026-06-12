@@ -126,9 +126,16 @@ export function canonicalizeZipEntry(
   path: string,
   bytes: Uint8Array,
   volatile: VolatileMap,
+  optionalPaths: ReadonlySet<string> = new Set(),
 ): string {
   if (isXmlPath(path)) {
     const text = new TextDecoder().decode(bytes);
+    if (path === '[Content_Types].xml') {
+      return canonicalizeContentTypesXml(text, optionalPaths);
+    }
+    if (path === 'META-INF/manifest.xml') {
+      return canonicalizeOdsManifestXml(text, optionalPaths);
+    }
     return canonicalizeXmlWithDrops(text, volatile[path] ?? []);
   }
   // Binary: emit a hex digest-ish stable string. We don't hash because
@@ -177,8 +184,8 @@ export function compareZipArchives(
     };
   }
   for (const path of comparable) {
-    const ec = canonicalizeZipEntry(path, e.entries![path]!, volatile);
-    const ac = canonicalizeZipEntry(path, a.entries![path]!, volatile);
+    const ec = canonicalizeZipEntry(path, e.entries![path]!, volatile, optionalPaths);
+    const ac = canonicalizeZipEntry(path, a.entries![path]!, volatile, optionalPaths);
     if (ec !== ac) {
       return {
         equal: false,
@@ -189,16 +196,60 @@ export function compareZipArchives(
   return { equal: true };
 }
 
+/** Drop MIME catalog rows for zip paths that may exist on only one side. */
+export function canonicalizeContentTypesXml(
+  raw: string,
+  optionalZipPaths: ReadonlySet<string>,
+): string {
+  const optionalParts = new Set(
+    [...optionalZipPaths].map((p) => (p.startsWith('/') ? p : `/${p}`)),
+  );
+  const doc = new DOMParser().parseFromString(raw, 'text/xml');
+  const de = (doc as unknown as { documentElement: DomElementWithAttrs | null }).documentElement;
+  if (!de) throw new HtmlParseError('linkedom could not parse xml as a rooted document');
+  const toRemove: DomElementWithAttrs[] = [];
+  walk(de, (el) => {
+    if (el.nodeType !== 1) return;
+    const name = el.nodeName;
+    if (name === 'Override' || name.endsWith(':Override')) {
+      const part = el.getAttribute('PartName');
+      if (part && optionalParts.has(part)) toRemove.push(el);
+      return;
+    }
+    if (name === 'Default' || name.endsWith(':Default')) {
+      if (el.getAttribute('Extension') === 'data') toRemove.push(el);
+    }
+  });
+  for (const el of toRemove) el.parentNode?.removeChild(el);
+  normalizeDomNode(de as unknown as Parameters<typeof normalizeDomNode>[0]);
+  return de.outerHTML;
+}
+
+/** Drop manifest rows for ODS paths that may exist on only one exporter. */
+export function canonicalizeOdsManifestXml(
+  raw: string,
+  optionalZipPaths: ReadonlySet<string>,
+): string {
+  const doc = new DOMParser().parseFromString(raw, 'text/xml');
+  const de = (doc as unknown as { documentElement: DomElementWithAttrs | null }).documentElement;
+  if (!de) throw new HtmlParseError('linkedom could not parse xml as a rooted document');
+  const toRemove: DomElementWithAttrs[] = [];
+  walk(de, (el) => {
+    if (el.nodeType !== 1) return;
+    const name = el.nodeName;
+    if (name !== 'manifest:file-entry' && !name.endsWith(':file-entry')) return;
+    const fullPath = el.getAttribute('manifest:full-path') ?? el.getAttribute('full-path');
+    if (fullPath && optionalZipPaths.has(fullPath.replace(/^\//, ''))) toRemove.push(el);
+  });
+  for (const el of toRemove) el.parentNode?.removeChild(el);
+  normalizeDomNode(de as unknown as Parameters<typeof normalizeDomNode>[0]);
+  return de.outerHTML;
+}
+
 /**
  * Parse as XML, drop any element (at any depth) whose `nodeName`
  * matches one of `dropNames`, and re-serialize through
  * `normalizeDomNode` for whitespace/attribute normalization.
- *
- * Depth-walk matters because ODS buries its volatile metadata under
- * `<office:meta>` inside `<office:document-meta>`, not at the root.
- *
- * Throws on parse failure so the caller can tag it with the entry
- * path that failed.
  */
 export function canonicalizeXmlWithDrops(raw: string, dropNames: readonly string[]): string {
   const doc = new DOMParser().parseFromString(raw, 'text/xml');
@@ -233,6 +284,10 @@ function walk(node: DomElementWithParent, visit: (n: DomElementWithParent) => vo
 
 interface DomElementWithParent extends DomElement {
   readonly parentNode?: DomElementWithParent | null;
+}
+
+interface DomElementWithAttrs extends DomElementWithParent {
+  getAttribute(name: string): string | null;
 }
 
 function isXmlPath(path: string): boolean {

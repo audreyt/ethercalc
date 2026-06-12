@@ -128,6 +128,15 @@ describe('matchCommandEcho', () => {
     ).toBeNull();
   });
 
+  it('joins multi-line legacy command arrays with newlines', () => {
+    expect(
+      matchCommandEcho({
+        expectedBase64: b64('{"command":["set A1 text t x","set B1 value n 1"]}'),
+        actualBytes: bytes('{"command":"set A1 text t x\\nset B1 value n 1"}'),
+      }),
+    ).toBeNull();
+  });
+
   it('rejects different command text', () => {
     const r = matchCommandEcho({
       expectedBase64: b64('{"command":["set A1 text t x"]}'),

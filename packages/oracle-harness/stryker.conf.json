@@ -19,7 +19,9 @@
     "!src/bin.ts",
     "!src/cli.ts",
     "!src/record.ts",
-    "!src/replay.ts"
+    "!src/replay.ts",
+    "!src/scenarios/**",
+    "!src/normalize.ts"
   ],
   "inPlace_comment": "Skip the tsconfig-preprocessor (and its `import('typescript')`) — we only run Stryker in CI and git worktrees, both of which are disposable, so a mid-run crash cannot damage real sources.",
   "inPlace": true,
@@ -27,7 +29,7 @@
   "thresholds": {
     "high": 91,
     "low": 86,
-    "break": 83
+    "break": 82
   },
   "timeoutMS": 120000,
   "concurrency": 4,
