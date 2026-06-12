@@ -6,6 +6,7 @@ describe('NORMALIZATION_RULES', () => {
   it('has an entry for every BodyMatcher variant', () => {
     expect(Object.keys(NORMALIZATION_RULES).sort()).toEqual(
       [
+        'command-echo',
         'exact',
         'html',
         'ignore',
