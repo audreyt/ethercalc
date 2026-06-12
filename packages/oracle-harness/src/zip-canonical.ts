@@ -136,6 +136,12 @@ export function canonicalizeZipEntry(
     if (path === 'META-INF/manifest.xml') {
       return canonicalizeOdsManifestXml(text, optionalPaths);
     }
+    if (path === 'xl/_rels/workbook.xml.rels') {
+      return canonicalizeWorkbookRelsXml(text, optionalPaths);
+    }
+    if (path === 'content.xml') {
+      return canonicalizeOdsContentXml(text);
+    }
     return canonicalizeXmlWithDrops(text, volatile[path] ?? []);
   }
   // Binary: emit a hex digest-ish stable string. We don't hash because
@@ -225,6 +231,56 @@ export function canonicalizeContentTypesXml(
   return de.outerHTML;
 }
 
+/** Drop workbook relationships that point at optional xlsx parts. */
+export function canonicalizeWorkbookRelsXml(
+  raw: string,
+  optionalZipPaths: ReadonlySet<string>,
+): string {
+  const optionalTargets = new Set(
+    [...optionalZipPaths]
+      .filter((p) => p.startsWith('xl/'))
+      .map((p) => p.slice('xl/'.length)),
+  );
+  const doc = new DOMParser().parseFromString(raw, 'text/xml');
+  const de = (doc as unknown as { documentElement: DomElementWithAttrs | null }).documentElement;
+  if (!de) throw new HtmlParseError('linkedom could not parse xml as a rooted document');
+  const toRemove: DomElementWithAttrs[] = [];
+  walk(de, (el) => {
+    if (el.nodeType !== 1) return;
+    const name = el.nodeName;
+    if (name !== 'Relationship' && !name.endsWith(':Relationship')) return;
+    const target = el.getAttribute('Target');
+    if (target && optionalTargets.has(target)) toRemove.push(el);
+    el.removeAttribute('Id');
+  });
+  for (const el of toRemove) el.parentNode?.removeChild(el);
+  normalizeDomNode(de as unknown as Parameters<typeof normalizeDomNode>[0]);
+  return de.outerHTML;
+}
+
+/** Drop ODS automatic-styles scaffolding that SheetJS adds. */
+export function canonicalizeOdsContentXml(raw: string): string {
+  const doc = new DOMParser().parseFromString(raw, 'text/xml');
+  const de = (doc as unknown as { documentElement: DomElementWithAttrs | null }).documentElement;
+  if (!de) throw new HtmlParseError('linkedom could not parse xml as a rooted document');
+  const toRemove: DomElementWithAttrs[] = [];
+  walk(de, (el) => {
+    if (el.nodeType !== 1) return;
+    const name = el.nodeName;
+    if (name === 'office:automatic-styles' || name.endsWith(':automatic-styles')) {
+      toRemove.push(el);
+      return;
+    }
+    if (name === 'table:table' || name.endsWith(':table')) {
+      el.removeAttribute('table:style-name');
+      el.removeAttribute('style-name');
+    }
+  });
+  for (const el of toRemove) el.parentNode?.removeChild(el);
+  normalizeDomNode(de as unknown as Parameters<typeof normalizeDomNode>[0]);
+  return de.outerHTML;
+}
+
 /** Drop manifest rows for ODS paths that may exist on only one exporter. */
 export function canonicalizeOdsManifestXml(
   raw: string,
@@ -253,7 +309,7 @@ export function canonicalizeOdsManifestXml(
  */
 export function canonicalizeXmlWithDrops(raw: string, dropNames: readonly string[]): string {
   const doc = new DOMParser().parseFromString(raw, 'text/xml');
-  const de = (doc as unknown as { documentElement: DomElementWithParent | null }).documentElement;
+  const de = (doc as unknown as { documentElement: DomElementWithAttrs | null }).documentElement;
   if (!de) throw new HtmlParseError('linkedom could not parse xml as a rooted document');
   if (dropNames.length > 0) {
     const set = new Set(dropNames);
@@ -265,20 +321,20 @@ export function canonicalizeXmlWithDrops(raw: string, dropNames: readonly string
 
 /** Walk the tree rooted at `node`, removing any element whose `nodeName` matches `set`. */
 function removeMatchingDescendants(
-  node: DomElementWithParent,
+  node: DomElementWithAttrs,
   set: Set<string>,
 ): void {
-  const toRemove: DomElementWithParent[] = [];
+  const toRemove: DomElementWithAttrs[] = [];
   walk(node, (el) => {
     if (el.nodeType === 1 && set.has(el.nodeName)) toRemove.push(el);
   });
   for (const el of toRemove) el.parentNode?.removeChild(el);
 }
 
-function walk(node: DomElementWithParent, visit: (n: DomElementWithParent) => void): void {
+function walk(node: DomElementWithAttrs, visit: (n: DomElementWithAttrs) => void): void {
   visit(node);
   for (let i = 0; i < node.childNodes.length; i++) {
-    walk(node.childNodes[i]! as DomElementWithParent, visit);
+    walk(node.childNodes[i]! as DomElementWithAttrs, visit);
   }
 }
 
@@ -288,6 +344,7 @@ interface DomElementWithParent extends DomElement {
 
 interface DomElementWithAttrs extends DomElementWithParent {
   getAttribute(name: string): string | null;
+  removeAttribute(name: string): void;
 }
 
 function isXmlPath(path: string): boolean {

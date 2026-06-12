@@ -10,6 +10,7 @@ import {
   OPTIONAL_XLSX_ZIP_ENTRIES,
   VOLATILE_XLSX_DOCPROPS,
   canonicalizeContentTypesXml,
+  canonicalizeWorkbookRelsXml,
   canonicalizeZipEntry,
   compareZipArchives,
   unzipOrError,
@@ -141,6 +142,18 @@ describe('zip-canonical helpers', () => {
     const out = canonicalizeContentTypesXml(xml, new Set(['/xl/metadata.xml']));
     expect(out).toContain('/xl/workbook.xml');
     expect(out).not.toContain('metadata');
+  });
+
+  it('canonicalizeWorkbookRelsXml drops optional relationship targets', () => {
+    const legacy = `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId2" Target="sharedStrings.xml" Type="sharedStrings"/><Relationship Id="rId1" Target="worksheets/sheet1.xml" Type="worksheet"/></Relationships>`;
+    const worker = `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId4" Target="metadata.xml" Type="sheetMetadata"/><Relationship Id="rId1" Target="worksheets/sheet1.xml" Type="worksheet"/></Relationships>`;
+    expect(canonicalizeWorkbookRelsXml(legacy, OPTIONAL_XLSX_ZIP_ENTRIES)).toBe(
+      canonicalizeWorkbookRelsXml(worker, OPTIONAL_XLSX_ZIP_ENTRIES),
+    );
+  });
+
+  it('canonicalizeWorkbookRelsXml throws on malformed xml', () => {
+    expect(() => canonicalizeWorkbookRelsXml('<', OPTIONAL_XLSX_ZIP_ENTRIES)).toThrow(/xml/);
   });
 
   it('canonicalizeContentTypesXml throws on malformed xml', () => {

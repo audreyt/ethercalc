@@ -8,6 +8,7 @@ import { encodeBase64, matchOds } from '../src/matchers.ts';
 import {
   OPTIONAL_ODS_ZIP_ENTRIES,
   VOLATILE_ODS_META,
+  canonicalizeOdsContentXml,
   canonicalizeOdsManifestXml,
   canonicalizeXmlWithDrops,
 } from '../src/zip-canonical.ts';
@@ -84,6 +85,16 @@ describe('zip-canonical helpers (ods)', () => {
     const out = canonicalizeOdsManifestXml(xml, OPTIONAL_ODS_ZIP_ENTRIES);
     expect(out).toContain('content.xml');
     expect(out).not.toContain('meta.xml');
+  });
+
+  it('canonicalizeOdsContentXml ignores automatic-styles layout drift', () => {
+    const legacy = `<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"><office:body><office:spreadsheet><table:table><table:table-row><table:table-cell><text:p>oracle</text:p></table:table-cell></table:table-row></table:table></office:spreadsheet></office:body></office:document-content>`;
+    const worker = `<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"><office:automatic-styles/><office:body><office:spreadsheet><table:table table:style-name="ta1"><table:table-row><table:table-cell><text:p>oracle</text:p></table:table-cell></table:table-row></table:table></office:spreadsheet></office:body></office:document-content>`;
+    expect(canonicalizeOdsContentXml(legacy)).toBe(canonicalizeOdsContentXml(worker));
+  });
+
+  it('canonicalizeOdsContentXml throws on malformed xml', () => {
+    expect(() => canonicalizeOdsContentXml('<')).toThrow(/xml/);
   });
 
   it('canonicalizeOdsManifestXml throws on malformed xml', () => {
