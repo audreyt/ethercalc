@@ -7,6 +7,7 @@ import {
   getNormalizer,
   overrideHeader,
   relaxContentLength,
+  setBodyMatcher,
 } from '../src/normalize.ts';
 import type { HttpScenario } from '@ethercalc/shared/oracle-scenarios';
 
@@ -75,6 +76,22 @@ describe('relaxContentLength', () => {
   });
 });
 
+describe('setBodyMatcher', () => {
+  it('overrides the recorded matcher', () => {
+    const out = setBodyMatcher(mkScenario(), 'scsave');
+    expect(out.expect?.bodyMatcher).toBe('scsave');
+  });
+
+  it('returns scenario unchanged when expect is missing', () => {
+    const bare: HttpScenario = {
+      name: 'exports/get-snapshot',
+      kind: 'http',
+      request: { method: 'GET', path: '/_/x' },
+    };
+    expect(setBodyMatcher(bare, 'scsave')).toBe(bare);
+  });
+});
+
 describe('NORMALIZERS registry', () => {
   it('has a hook for misc/get-new-redirect', () => {
     const hook = getNormalizer('misc/get-new-redirect');
@@ -84,12 +101,74 @@ describe('NORMALIZERS registry', () => {
     expect(out.expect?.headers['content-length']).toBe('re:^\\d+$');
   });
 
+  it('has a hook for exports/get-snapshot', () => {
+    const hook = getNormalizer('exports/get-snapshot');
+    expect(hook).not.toBeNull();
+    const out = hook!(
+      mkScenario({
+        name: 'exports/get-snapshot',
+        expect: {
+          status: 200,
+          headers: { 'content-type': 'text/plain; charset=utf-8' },
+          bodyBase64: encodeBase64(new Uint8Array()),
+          bodyMatcher: 'exact',
+        },
+      }),
+    );
+    expect(out.expect?.bodyMatcher).toBe('scsave');
+  });
+
+  it('has a hook for form/get-template-form-redirect', () => {
+    const hook = getNormalizer('form/get-template-form-redirect');
+    expect(hook).not.toBeNull();
+    const out = hook!(
+      mkScenario({
+        name: 'form/get-template-form-redirect',
+        expect: {
+          status: 302,
+          headers: {
+            location: '/oracle-phase3-template_abc123def456/app',
+            'content-length': '42',
+          },
+          bodyBase64: encodeBase64(new Uint8Array()),
+          bodyMatcher: 'ignore',
+        },
+      }),
+    );
+    expect(out.expect?.headers.location).toBe(
+      're:^/oracle-phase3-template_[a-z0-9]{12}/app$',
+    );
+    expect(out.expect?.headers['content-length']).toBe('re:^\\d+$');
+  });
+
   it('returns null for scenarios without a hook', () => {
     expect(getNormalizer('static/get-root-index')).toBeNull();
   });
 
+  it('has a hook for exports/get-html', () => {
+    const hook = getNormalizer('exports/get-html');
+    expect(hook).not.toBeNull();
+    const out = hook!(
+      mkScenario({
+        name: 'exports/get-html',
+        expect: {
+          status: 200,
+          headers: { 'content-type': 'text/html; charset=utf-8' },
+          bodyBase64: encodeBase64(new Uint8Array()),
+          bodyMatcher: 'exact',
+        },
+      }),
+    );
+    expect(out.expect?.bodyMatcher).toBe('html');
+  });
+
   it('exposes the registry object', () => {
-    expect(Object.keys(NORMALIZERS)).toContain('misc/get-new-redirect');
+    expect(Object.keys(NORMALIZERS)).toEqual([
+      'misc/get-new-redirect',
+      'exports/get-snapshot',
+      'exports/get-html',
+      'form/get-template-form-redirect',
+    ]);
   });
 });
 

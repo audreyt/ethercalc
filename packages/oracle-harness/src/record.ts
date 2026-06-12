@@ -54,6 +54,13 @@ export function defaultMatcherForResponse(
   if (status === 204 || status === 304) return 'ignore';
   const ct = (headers['content-type'] ?? '').toLowerCase();
   if (ct.includes('application/json')) return 'json';
+  // Empty bodies (404 blocks, etc.) — header carries the semantic weight.
+  if (headers['content-length'] === '0') return 'ignore';
+  if (ct.includes('text/x-socialcalc')) return 'scsave';
+  if (ct.includes('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')) {
+    return 'xlsx';
+  }
+  if (ct.includes('application/vnd.oasis.opendocument.spreadsheet')) return 'ods';
   return 'exact';
 }
 
@@ -93,17 +100,12 @@ export const defaultWriter = (path: string, contents: string): Promise<void> =>
 /** Default HTTP fetcher. Wrap the global so tests can stub it via the shared helper. */
 export const defaultFetcher: typeof fetch = (input, init) => fetch(input, init);
 
-/** Record a single HTTP scenario against the oracle. */
-export async function recordOne(
-  scenario: HttpScenario,
-  opts: RecordOptions,
-): Promise<RecordResult> {
-  const fetcher = opts.fetcher ?? defaultFetcher;
-  const writer = opts.writer ?? defaultWriter;
-  const matcherFor = opts.matcherForResponse ?? defaultMatcherForResponse;
-
+/**
+ * Build the `RequestInit` for a scenario. Shared by record and replay so
+ * PUT/POST bodies round-trip identically.
+ */
+export function buildScenarioRequestInit(scenario: HttpScenario): RequestInit {
   const requestHeaders = scenario.request.headers ?? {};
-  const url = new URL(scenario.request.path, opts.targetUrl).toString();
   // `redirect: 'manual'` is essential: the oracle often replies with a
   // 302 (`/_new`, `/:room/edit`, ...), and we want to capture that
   // verbatim — not silently follow the redirect and record a 200.
@@ -116,7 +118,20 @@ export async function recordOne(
         .map((ch) => ch.charCodeAt(0)),
     );
   }
-  const response = await fetcher(url, init);
+  return init;
+}
+
+/** Record a single HTTP scenario against the oracle. */
+export async function recordOne(
+  scenario: HttpScenario,
+  opts: RecordOptions,
+): Promise<RecordResult> {
+  const fetcher = opts.fetcher ?? defaultFetcher;
+  const writer = opts.writer ?? defaultWriter;
+  const matcherFor = opts.matcherForResponse ?? defaultMatcherForResponse;
+
+  const url = new URL(scenario.request.path, opts.targetUrl).toString();
+  const response = await fetcher(url, buildScenarioRequestInit(scenario));
   const rawHeaders = headersToRecord(response.headers);
   const headers = normalizeHeaders(rawHeaders);
   const bodyBase64 = await encodeResponseBody(response);

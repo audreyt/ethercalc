@@ -1,4 +1,4 @@
-import type { HttpScenario } from '@ethercalc/shared/oracle-scenarios';
+import type { BodyMatcher, HttpScenario } from '@ethercalc/shared/oracle-scenarios';
 
 /**
  * Per-scenario post-record normalization hooks. Applied after the
@@ -42,11 +42,33 @@ export function relaxContentLength(scenario: HttpScenario): HttpScenario {
   return scenario;
 }
 
+/** Override the recorded body matcher (e.g. scsave for text/plain snapshots). */
+export function setBodyMatcher(scenario: HttpScenario, matcher: BodyMatcher): HttpScenario {
+  if (!scenario.expect) return scenario;
+  return {
+    ...scenario,
+    expect: { ...scenario.expect, bodyMatcher: matcher },
+  };
+}
+
 export const NORMALIZERS: Readonly<Record<string, NormalizeHook>> = {
   // `/_new` 302s to `/<12-char-base36-uuid>` (see `new-room` in main.ls).
   // The Location and body both embed the random id; relax both.
   'misc/get-new-redirect': (scenario) => {
     const withLocation = overrideHeader(scenario, 'location', 're:^/[a-z0-9]{12}$');
+    return relaxContentLength(withLocation);
+  },
+  // `GET /_/:room` returns SocialCalc save as `text/plain`; compare structurally.
+  'exports/get-snapshot': (scenario) => setBodyMatcher(scenario, 'scsave'),
+  // `GET /_/:room/html` — structural HTML equivalence (Phase 8a matcher).
+  'exports/get-html': (scenario) => setBodyMatcher(scenario, 'html'),
+  // `GET /:template/form` 302s to `/<template>_<uuid>/app` (main.ls:287-293).
+  'form/get-template-form-redirect': (scenario) => {
+    const withLocation = overrideHeader(
+      scenario,
+      'location',
+      're:^/oracle-phase3-template_[a-z0-9]{12}/app$',
+    );
     return relaxContentLength(withLocation);
   },
 };

@@ -1,0 +1,19 @@
+{
+  "scenario": {
+    "name": "exports/get-html",
+    "kind": "http",
+    "request": {
+      "method": "GET",
+      "path": "/_/oracle-phase3-export/html"
+    },
+    "expect": {
+      "status": 200,
+      "headers": {
+        "content-length": "311",
+        "content-type": "text/html; charset=utf-8"
+      },
+      "bodyBase64": "PHRhYmxlIHN0eWxlPSJib3JkZXItY29sbGFwc2U6Y29sbGFwc2U7d2lkdGg6ODBweCI+PGNvbGdyb3VwPjxjb2wgd2lkdGg9IjgwIj48L2NvbD48L2NvbGdyb3VwPgo8dGJvZHk+PHRyPjx0ZCB3aWR0aD0iODAiIGhlaWdodD0iMSI+PC90ZD48L3RyPgo8dHI+PHRkIGlkPSJjZWxsX0ExIiBzdHlsZT0icGFkZGluZzoycHggMnB4IDFweCAycHg7dmVydGljYWwtYWxpZ246dG9wO2ZvbnQtc2l6ZTpzbWFsbDtmb250LWZhbWlseTpWZXJkYW5hLEFyaWFsLEhlbHZldGljYSxzYW5zLXNlcmlmOyI+b3JhY2xlPC90ZD48L3RyPjwvdGJvZHk+PC90YWJsZT4=",
+      "bodyMatcher": "html"
+    }
+  }
+}

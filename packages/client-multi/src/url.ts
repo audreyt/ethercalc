@@ -31,14 +31,23 @@ export interface MultiEnv {
 /** Fallback room name when the URL doesn't match the `/=<room>` pattern. */
 export const DEFAULT_INDEX = 'foobar';
 
-const DEV_HOST_RE = /(?:127\.0\.0\.1|localhost|\.local):8080/;
+const DEV_HOST_RE = /(?:127\.0\.0\.1|localhost|\.local):\d+/;
 const INDEX_RE = /\/=([^_][^/?]*)(?:\?.*)?$/;
 const AUTH_IN_HREF_RE = /auth=0/;
 const AUTH_QUERY_RE = /\?auth=/;
 const AUTH_IS_ZERO_RE = /\??auth=0/;
 
 export function parseMultiEnv(loc: { href: string; search: string }): MultiEnv {
-  let basePath: string = DEV_HOST_RE.test(loc.href) ? 'http://127.0.0.1:8000' : '.';
+  const viteApi =
+    typeof import.meta.env.VITE_ETHERCALC_BASE === 'string'
+      ? import.meta.env.VITE_ETHERCALC_BASE
+      : '';
+  let basePath: string =
+    viteApi.length > 0
+      ? viteApi.replace(/\/$/, '')
+      : DEV_HOST_RE.test(loc.href)
+        ? 'http://127.0.0.1:8000'
+        : '.';
 
   const indexMatch = INDEX_RE.exec(loc.href);
   const index = indexMatch ? (indexMatch[1] as string) : DEFAULT_INDEX;

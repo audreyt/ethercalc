@@ -7,6 +7,8 @@ import styles from '../styles.module.css';
 export interface TabBarProps {
   readonly rows: readonly FoldrRow[];
   readonly activeIndex: number;
+  /** Bumped whenever `rows` mutates in-place — keeps iframe postMessage in sync. */
+  readonly rowsRev: number;
   readonly basePath: string;
   readonly suffix: string;
   readonly index: string;
@@ -28,6 +30,7 @@ export interface TabBarProps {
 export const TabBar: FC<TabBarProps> = ({
   rows,
   activeIndex,
+  rowsRev,
   basePath,
   suffix,
   index,
@@ -51,7 +54,7 @@ export const TabBar: FC<TabBarProps> = ({
           const value = `tab-${i}`;
           return (
             <Tabs.Trigger
-              key={title}
+              key={row.link}
               value={value}
               className={styles['tabTitle']}
               aria-label={title}
@@ -61,14 +64,14 @@ export const TabBar: FC<TabBarProps> = ({
           );
         })}
       </Tabs.List>
-      {rows.map((row, i) => {
+        {rows.map((row, i) => {
         const title = row.title;
         const value = `tab-${i}`;
         const link = row.link || `/${encodeURIComponent(title)}`;
         const src = `${basePath}${link}${suffix}`;
         return (
           <Tabs.Content
-            key={title}
+            key={row.link}
             value={value}
             forceMount
             className={`${styles['tabItem']} ${styles['wrapper']}`}
@@ -77,6 +80,7 @@ export const TabBar: FC<TabBarProps> = ({
             <SheetFrame
               src={src}
               rows={rows}
+              rowsRev={rowsRev}
               index={index}
               isFirst={i === 0}
               firstFocusUsed={firstFocusUsed}

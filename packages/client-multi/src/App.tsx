@@ -60,7 +60,7 @@ export const App: FC<AppProps> = ({
     const promptFn = promptImpl ?? ((m, s) => window.prompt(m, s));
     const title = promptFn('Rename Sheet', seed);
     if (!title) return;
-    if (titleTaken(foldr.titles(), title)) return;
+    if (titleTaken(foldr.titles(), title, clampedIndex)) return;
     await foldr.setAt(clampedIndex, { title });
     dispatch({ type: 'bumpRev' });
   };
@@ -84,6 +84,7 @@ export const App: FC<AppProps> = ({
       <TabBar
         rows={foldr.rows}
         activeIndex={clampedIndex}
+        rowsRev={state.rev}
         basePath={basePath}
         suffix={suffix}
         index={index}

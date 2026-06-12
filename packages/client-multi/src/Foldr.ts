@@ -101,15 +101,32 @@ export class HackFoldr {
     if (Array.isArray(body) && body.length > 0) {
       // Drop header row (legacy `res.body.shift()`).
       const rowsIn = body.slice(1) as unknown[];
-      this.rows = [];
+      const parsed: FoldrRow[] = [];
       rowsIn.forEach((raw, idx) => {
         if (!Array.isArray(raw)) return;
         const link = typeof raw[0] === 'string' ? raw[0] : '';
         let title = typeof raw[1] === 'string' ? raw[1] : '';
         if (!link || link.startsWith('#')) return;
         if (!title) title = 'Sheet' + (idx + 1);
-        this.rows.push({ link, title, row: idx + 2 });
+        parsed.push({ link, title, row: idx + 2 });
       });
+      // Legacy seeding can POST the same link more than once (see
+      // FINDINGS.md). Duplicate React keys made every tab but one vanish
+      // on rename (#635); a stale "Sheet1" row also reappeared as a ghost
+      // tab after delete/rename cycles (#727). Keep one entry per link,
+      // preferring the last server row (most recent title + row index).
+      const byLink = new Map<string, number>();
+      const deduped: FoldrRow[] = [];
+      for (const row of parsed) {
+        const at = byLink.get(row.link);
+        if (at !== undefined) {
+          deduped[at] = row;
+        } else {
+          byLink.set(row.link, deduped.length);
+          deduped.push(row);
+        }
+      }
+      this.rows = deduped;
     } else {
       this.wasNonExistent = true;
     }

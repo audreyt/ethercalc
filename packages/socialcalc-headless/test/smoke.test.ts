@@ -71,6 +71,14 @@ describe('socialcalc headless (Phase 1 spike — Plan A)', () => {
     expect((ss.exportCell('A1') as { datavalue?: number } | null)?.datavalue).toBe(6);
   });
 
+  it('filldown without editor.range2 increments and persists (#314)', () => {
+    const ss = createSpreadsheet();
+    ss.executeCommand(
+      ['set A1 value n 1', 'set A2 value n 2', 'filldown A1:A5 all', 'recalc'].join('\n'),
+    );
+    expect(ss.exportCSV().trim().split('\n')).toEqual(['1', '2', '3', '4', '5']);
+  });
+
   it('loads from snapshot and applies log', () => {
     const ss1 = createSpreadsheet();
     ss1.executeCommand('set A1 value n 42');

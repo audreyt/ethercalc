@@ -1,0 +1,23 @@
+{
+  "scenario": {
+    "name": "room-crud/post-command",
+    "kind": "http",
+    "request": {
+      "method": "POST",
+      "path": "/_/oracle-phase3-export",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "bodyBase64": "eyJjb21tYW5kIjoic2V0IEIxIHRleHQgdCBwaGFzZTMifQ=="
+    },
+    "expect": {
+      "status": 202,
+      "headers": {
+        "content-length": "49",
+        "content-type": "application/json; charset=utf-8"
+      },
+      "bodyBase64": "ewogICJjb21tYW5kIjogWwogICAgInNldCBCMSB0ZXh0IHQgcGhhc2UzIgogIF0KfQ==",
+      "bodyMatcher": "json"
+    }
+  }
+}

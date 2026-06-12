@@ -16,6 +16,7 @@ describe('<SheetFrame />', () => {
       <SheetFrame
         src="/a"
         rows={[]}
+        rowsRev={0}
         index="room"
         isFirst={false}
         firstFocusUsed={false}
@@ -35,6 +36,7 @@ describe('<SheetFrame />', () => {
       <SheetFrame
         src="/b"
         rows={[{ link: '/b', title: 'B', row: 2 }]}
+        rowsRev={0}
         index="room"
         isFirst={true}
         firstFocusUsed={false}
@@ -67,6 +69,51 @@ describe('<SheetFrame />', () => {
     expect(onFirstFocus).toHaveBeenCalledTimes(1);
   });
 
+  it('re-posts when rowsRev bumps after an in-place title rename', () => {
+    const postSpy = vi.fn();
+    const rows = [{ link: '/b', title: 'Sheet1', row: 2 }];
+
+    const { container, rerender } = render(
+      <SheetFrame
+        src="/b"
+        rows={rows}
+        rowsRev={0}
+        index="room"
+        isFirst={false}
+        firstFocusUsed={true}
+      />,
+    );
+    const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+    Object.defineProperty(iframe, 'contentDocument', {
+      get: () => ({ readyState: 'complete' }),
+      configurable: true,
+    });
+    Object.defineProperty(iframe, 'contentWindow', {
+      get: () => ({ postMessage: postSpy, focus: vi.fn() }),
+      configurable: true,
+    });
+    vi.runOnlyPendingTimers();
+    vi.advanceTimersByTime(100);
+    expect(postSpy).toHaveBeenCalledTimes(1);
+
+    rows[0]!.title = 'Budget';
+    rerender(
+      <SheetFrame
+        src="/b"
+        rows={rows}
+        rowsRev={1}
+        index="room"
+        isFirst={false}
+        firstFocusUsed={true}
+      />,
+    );
+    vi.runOnlyPendingTimers();
+    vi.advanceTimersByTime(100);
+    expect(postSpy).toHaveBeenCalledTimes(2);
+    const payload = JSON.parse(postSpy.mock.calls[1]?.[0] as string);
+    expect(payload.rows[0].title).toBe('Budget');
+  });
+
   it('retries on a tight 1ms schedule while doc.readyState is not complete', () => {
     let state = 'loading';
     const postSpy = vi.fn();
@@ -75,6 +122,7 @@ describe('<SheetFrame />', () => {
       <SheetFrame
         src="/c"
         rows={[]}
+        rowsRev={0}
         index="room"
         isFirst={false}
         firstFocusUsed={false}
@@ -110,6 +158,7 @@ describe('<SheetFrame />', () => {
       <SheetFrame
         src="/d"
         rows={[]}
+        rowsRev={0}
         index="room"
         isFirst={true}
         firstFocusUsed={true}
@@ -135,7 +184,7 @@ describe('<SheetFrame />', () => {
   it('does nothing when contentDocument is missing', () => {
     const postSpy = vi.fn();
     const { container } = render(
-      <SheetFrame src="/e" rows={[]} index="room" isFirst={false} firstFocusUsed={false} />,
+      <SheetFrame src="/e" rows={[]} rowsRev={0} index="room" isFirst={false} firstFocusUsed={false} />,
     );
     const iframe = container.querySelector('iframe') as HTMLIFrameElement;
     Object.defineProperty(iframe, 'contentDocument', {
@@ -153,7 +202,7 @@ describe('<SheetFrame />', () => {
   it('skips posting when contentWindow disappears before the 100ms fires', () => {
     const postSpy = vi.fn();
     const { container, unmount } = render(
-      <SheetFrame src="/f" rows={[]} index="room" isFirst={true} firstFocusUsed={false} />,
+      <SheetFrame src="/f" rows={[]} rowsRev={0} index="room" isFirst={true} firstFocusUsed={false} />,
     );
     const iframe = container.querySelector('iframe') as HTMLIFrameElement;
     Object.defineProperty(iframe, 'contentDocument', {
@@ -175,7 +224,7 @@ describe('<SheetFrame />', () => {
     const focusSpy = vi.fn();
 
     const { container } = render(
-      <SheetFrame src="/g" rows={[]} index="room" isFirst={true} firstFocusUsed={false} />,
+      <SheetFrame src="/g" rows={[]} rowsRev={0} index="room" isFirst={true} firstFocusUsed={false} />,
     );
     const iframe = container.querySelector('iframe') as HTMLIFrameElement;
     Object.defineProperty(iframe, 'contentDocument', {
@@ -195,7 +244,7 @@ describe('<SheetFrame />', () => {
   it('skips the 100ms inner fire when the component unmounts during polling', () => {
     const postSpy = vi.fn();
     const { container, unmount } = render(
-      <SheetFrame src="/h" rows={[]} index="room" isFirst={false} firstFocusUsed={true} />,
+      <SheetFrame src="/h" rows={[]} rowsRev={0} index="room" isFirst={false} firstFocusUsed={true} />,
     );
     const iframe = container.querySelector('iframe') as HTMLIFrameElement;
     let state = 'loading';
@@ -220,7 +269,7 @@ describe('<SheetFrame />', () => {
   it('skips posting when contentWindow is null at inner-timer time', () => {
     const postSpy = vi.fn();
     const { container } = render(
-      <SheetFrame src="/i" rows={[]} index="room" isFirst={true} firstFocusUsed={false} />,
+      <SheetFrame src="/i" rows={[]} rowsRev={0} index="room" isFirst={true} firstFocusUsed={false} />,
     );
     const iframe = container.querySelector('iframe') as HTMLIFrameElement;
     let winValid = true;
@@ -242,7 +291,7 @@ describe('<SheetFrame />', () => {
 
   it('unmount is safe when the iframe has no contentDocument (no timer scheduled)', () => {
     const { container, unmount } = render(
-      <SheetFrame src="/j" rows={[]} index="room" isFirst={false} firstFocusUsed={false} />,
+      <SheetFrame src="/j" rows={[]} rowsRev={0} index="room" isFirst={false} firstFocusUsed={false} />,
     );
     const iframe = container.querySelector('iframe') as HTMLIFrameElement;
     Object.defineProperty(iframe, 'contentDocument', {
@@ -256,7 +305,7 @@ describe('<SheetFrame />', () => {
   it('swallows a late timer firing after unmount (cancelled early-return)', () => {
     const postSpy = vi.fn();
     const { container, unmount } = render(
-      <SheetFrame src="/k" rows={[]} index="room" isFirst={false} firstFocusUsed={true} />,
+      <SheetFrame src="/k" rows={[]} rowsRev={0} index="room" isFirst={false} firstFocusUsed={true} />,
     );
     const iframe = container.querySelector('iframe') as HTMLIFrameElement;
     let state: 'loading' | 'complete' = 'loading';

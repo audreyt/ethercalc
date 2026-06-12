@@ -81,6 +81,53 @@ Oracle's code path at `main.ls:252-262` iterates a Redis hash; on an
 empty Redis that's `{}` with `Content-Length: 2`. Recorded as
 `bodyMatcher: "json"` → passes.
 
+### F-10 — `GET /_/:room` snapshot is `text/plain`, not `text/x-socialcalc`
+
+Oracle serves the SocialCalc save string with `Content-Type: text/plain;
+charset=utf-8` (`main.ls:319`, `api -> [Text, it]`). The recorder's
+default matcher would therefore pick `exact`; scenario
+`exports/get-snapshot` registers a `NormalizeHook` that rewrites
+`bodyMatcher` to `scsave` so version-line drift doesn't invalidate
+recordings.
+
+Files: `packages/oracle-harness/src/normalize.ts`,
+`packages/oracle-harness/src/scenarios/exports.ts`.
+
+### F-11 — `GET /:template/form` Location embeds `new-room()` uuid
+
+`main.ls:287-293` — clones the template snapshot into
+`<template>_<12-char-base36>` and 302s to `/<that-room>/app`. Scenario
+`form/get-template-form-redirect` relaxes `Location` to
+`re:^/oracle-phase3-template_[a-z0-9]{12}/app$` and ignores the
+redirect body (same pattern as F-02).
+
+### F-12 — `POST /_/:room` JSON command response is `{command: ...}`
+
+Oracle returns `202` with `application/json` body `{command: "<cmdstr>"}`
+where `command` may be a string or joined array (`main.ls:446`).
+Scenario `room-crud/post-command` records `set B1 text t phase3` after
+the export batch so csv/html fixtures stay stable.
+
+### F-13 — `GET /:template/form` leaves a clone room in Redis after replay
+
+The form handler clones into `<template>_<uuid>` and we never DELETE
+that sibling. After a full record pass the oracle's Redis holds the
+clone even though `room-crud/delete-template-room` removed the
+template itself. Replaying immediately on the **same** oracle fails
+`rooms-index/*-empty` (non-empty `_rooms`). Fix: `docker compose down
+-v` (or a fresh Redis) before replay, or accept 19/22 on a hot oracle.
+Fresh-oracle replay is 22/22.
+
+Files: `packages/oracle-harness/src/scenarios/form.ts`,
+`packages/oracle-harness/src/replay.ts` (`sortRecordedByScenarioOrder`).
+
+### F-14 — Replay must forward `request.bodyBase64` (PUT/POST bodies)
+
+`replay.ts` originally only replayed method+headers; stateful scenarios
+(`PUT /_/:room`, `POST /_/:room`) silently sent empty bodies and GET
+exports 404'd. Fixed via shared `buildScenarioRequestInit()` in
+`record.ts`.
+
 ### F-09 — Docker compose v1 vs v2 subtleties
 
 The modern `docker compose` (v2 plugin) is what our Dockerfile targets.

@@ -1,0 +1,19 @@
+{
+  "scenario": {
+    "name": "exports/get-snapshot",
+    "kind": "http",
+    "request": {
+      "method": "GET",
+      "path": "/_/oracle-phase3-export"
+    },
+    "expect": {
+      "status": 200,
+      "headers": {
+        "content-length": "413",
+        "content-type": "text/plain; charset=utf-8"
+      },
+      "bodyBase64": "c29jaWFsY2FsYzp2ZXJzaW9uOjEuNQpNSU1FLVZlcnNpb246IDEuMApDb250ZW50LVR5cGU6IG11bHRpcGFydC9taXhlZDsgYm91bmRhcnk9U29jaWFsQ2FsY1NwcmVhZHNoZWV0Q29udHJvbFNhdmUKLS1Tb2NpYWxDYWxjU3ByZWFkc2hlZXRDb250cm9sU2F2ZQpDb250ZW50LXR5cGU6IHRleHQvcGxhaW47IGNoYXJzZXQ9VVRGLTgKCiMgU29jaWFsQ2FsYyBTcHJlYWRzaGVldCBDb250cm9sIFNhdmUKdmVyc2lvbjoxLjAKcGFydDpzaGVldAotLVNvY2lhbENhbGNTcHJlYWRzaGVldENvbnRyb2xTYXZlCkNvbnRlbnQtdHlwZTogdGV4dC9wbGFpbjsgY2hhcnNldD1VVEYtOAoKdmVyc2lvbjoxLjUKY2VsbDpBMTp0Om9yYWNsZQpzaGVldDpjOjE6cjoxOnR2ZjoxCi0tU29jaWFsQ2FsY1NwcmVhZHNoZWV0Q29udHJvbFNhdmUtLQo=",
+      "bodyMatcher": "scsave"
+    }
+  }
+}

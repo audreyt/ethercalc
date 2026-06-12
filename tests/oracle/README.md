@@ -81,20 +81,27 @@ bun run --cwd packages/oracle-harness replay \
 ```
 
 Replay asserts status, non-volatile headers, and the body per the
-recorded `bodyMatcher` (`exact` / `json` / `scsave` / `ignore`; the
-structural HTML / XLSX / ODS matchers fire `not implemented — Phase 8`
-until we wire them up).
+recorded `bodyMatcher` (`exact` / `json` / `scsave` / `ignore` /
+`html` / `xlsx` / `ods`). The recorder picks structural matchers from
+`Content-Type` (`text/html` → `html`, xlsx/ods MIME types → zip
+canonicalizers); per-scenario hooks in `normalize.ts` can override
+(e.g. `exports/get-snapshot` forces `scsave` on `text/plain` bodies).
 
 ## Sanity check
 
-Replay against the oracle itself should always pass — it's the
-round-trip that validates a recording session:
+Replay against the oracle itself validates the golden set. Use a
+**fresh Redis** (the form redirect leaves a clone room behind after
+record — see FINDINGS F-13):
 
 ```bash
+docker compose -f tests/oracle/docker-compose.yml down -v
+docker compose -f tests/oracle/docker-compose.yml up -d
 bun run --cwd packages/oracle-harness replay \
-  --target http://127.0.0.1:8000 \
-  --recorded tests/oracle/recorded
+  --target http://127.0.0.1:8000
 ```
+
+`record` / `replay` default `--out` / `--recorded` to the repo-root
+`tests/oracle/recorded` regardless of cwd.
 
 Output line `replay: N/N passed` confirms the golden set is internally
 consistent.

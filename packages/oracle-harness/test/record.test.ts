@@ -70,6 +70,34 @@ describe('defaultMatcherForResponse', () => {
     expect(defaultMatcherForResponse(200, { 'content-type': 'text/plain' })).toBe('exact');
     expect(defaultMatcherForResponse(200, {})).toBe('exact');
   });
+
+  it('uses ignore for zero-length bodies regardless of content-type', () => {
+    expect(
+      defaultMatcherForResponse(404, {
+        'content-type': 'text/html; charset=utf-8',
+        'content-length': '0',
+      }),
+    ).toBe('ignore');
+  });
+
+  it('uses structural matchers for binary export MIME types', () => {
+    expect(
+      defaultMatcherForResponse(200, {
+        'content-type': 'text/x-socialcalc; charset=utf-8',
+      }),
+    ).toBe('scsave');
+    expect(
+      defaultMatcherForResponse(200, {
+        'content-type':
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      }),
+    ).toBe('xlsx');
+    expect(
+      defaultMatcherForResponse(200, {
+        'content-type': 'application/vnd.oasis.opendocument.spreadsheet',
+      }),
+    ).toBe('ods');
+  });
 });
 
 describe('scenarioPath', () => {

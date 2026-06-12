@@ -56,6 +56,9 @@ describe('titleTaken', () => {
   it('returns false for unique titles', () => {
     expect(titleTaken(['Sheet1'], 'Sheet2')).toBe(false);
   });
+  it('ignores the tab at exceptIndex so renames keep the same title', () => {
+    expect(titleTaken(['Budget', 'Sheet2'], 'budget', 0)).toBe(false);
+  });
 });
 
 describe('computeNextRow', () => {

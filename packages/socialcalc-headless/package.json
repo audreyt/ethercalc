@@ -16,7 +16,7 @@
     "typecheck": "tsgo --noEmit"
   },
   "dependencies": {
-    "socialcalc": "^3.0.2"
+    "socialcalc": "github:audreyt/socialcalc#6ee504a"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.14.8",

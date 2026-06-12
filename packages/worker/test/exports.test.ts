@@ -447,6 +447,15 @@ describe('Phase 8.1 exports — multi-sheet', () => {
       await toc.fetch('https://do/_do/commands', { method: 'POST', body: c });
     }
 
+    const tocJson = await request('GET', `/_/${MULTI_ROOM}/csv.json`);
+    expect(tocJson.status).toBe(200);
+    expect(tocJson.headers.get('content-type')).toBe(
+      'application/json; charset=utf-8',
+    );
+    const grid = (await tocJson.json()) as string[][];
+    expect(grid.length).toBeGreaterThanOrEqual(3);
+    expect(grid[1]?.[0]).toBe(`/${MULTI_ROOM}.1`);
+
     const res = await request('GET', `/_/=${MULTI_ROOM}/xlsx`);
     expect(res.status).toBe(200);
     const bytes = new Uint8Array(await res.arrayBuffer());

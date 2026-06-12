@@ -1,0 +1,20 @@
+{
+  "scenario": {
+    "name": "exports/get-csv",
+    "kind": "http",
+    "request": {
+      "method": "GET",
+      "path": "/_/oracle-phase3-export/csv"
+    },
+    "expect": {
+      "status": 200,
+      "headers": {
+        "content-disposition": "attachment; filename=\"oracle-phase3-export.csv\"",
+        "content-length": "7",
+        "content-type": "text/csv; charset=utf-8"
+      },
+      "bodyBase64": "b3JhY2xlCg==",
+      "bodyMatcher": "exact"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "scenario": {
+    "name": "room-crud/delete-template-room",
+    "kind": "http",
+    "request": {
+      "method": "DELETE",
+      "path": "/_/oracle-phase3-template"
+    },
+    "expect": {
+      "status": 201,
+      "headers": {
+        "content-length": "2",
+        "content-type": "text/plain; charset=utf-8"
+      },
+      "bodyBase64": "T0s=",
+      "bodyMatcher": "exact"
+    }
+  }
+}

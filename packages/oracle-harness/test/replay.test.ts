@@ -8,9 +8,12 @@ import { encodeBase64 } from '../src/matchers.ts';
 import {
   listRecordedFiles,
   parseRecordedFile,
+  parseRecordedFileName,
   replayAll,
   replayOne,
+  sortRecordedByScenarioOrder,
 } from '../src/replay.ts';
+import { ALL_HTTP_SCENARIOS } from '../src/scenarios/index.ts';
 import type { HttpScenario } from '@ethercalc/shared/oracle-scenarios';
 
 function mkRecording(overrides: Partial<HttpScenario> = {}): HttpScenario {
@@ -153,6 +156,32 @@ describe('replayOne', () => {
     expect(sawHeaders).toEqual({ Accept: 'text/plain' });
   });
 
+  it('forwards request bodyBase64 to the target', async () => {
+    const body = encodeBase64(new TextEncoder().encode('payload'));
+    const scenario = mkRecording({
+      request: {
+        method: 'PUT',
+        path: '/_/room',
+        headers: { 'Content-Type': 'text/plain' },
+        bodyBase64: body,
+      },
+      expect: {
+        status: 201,
+        headers: {},
+        bodyBase64: encodeBase64(new TextEncoder().encode('OK')),
+        bodyMatcher: 'exact',
+      },
+    });
+    let sawBody: RequestInit['body'];
+    const fetcher: typeof fetch = async (_url, init) => {
+      sawBody = init?.body;
+      return new Response('OK', { status: 201 });
+    };
+    await replayOne(scenario, { targetUrl: 'http://target.test', recordedDir: '', fetcher });
+    expect(sawBody).toBeInstanceOf(Uint8Array);
+    expect(new TextDecoder().decode(sawBody as Uint8Array)).toBe('payload');
+  });
+
   it('falls back to the bundled defaultFetcher when none is injected', async () => {
     const originalFetch = globalThis.fetch;
     const scenario = mkRecording();
@@ -183,6 +212,56 @@ describe('replayOne', () => {
       fetcher: async () => new Response('hi', { status: 200 }),
     });
     expect(r.ok).toBe(true);
+  });
+});
+
+describe('sortRecordedByScenarioOrder', () => {
+  it('orders files by ALL_HTTP_SCENARIOS rank', () => {
+    const files = [
+      '/rec/exports/get-csv.json',
+      '/rec/static/get-root-index.json',
+      '/rec/room-crud/put-export-room.json',
+    ];
+    const sorted = sortRecordedByScenarioOrder(files, ALL_HTTP_SCENARIOS);
+    expect(sorted.map(parseRecordedFileName)).toEqual([
+      'static/get-root-index',
+      'room-crud/put-export-room',
+      'exports/get-csv',
+    ]);
+  });
+
+  it('extracts scenario names from nested paths', () => {
+    expect(parseRecordedFileName('/a/b/misc/get-new-redirect.json')).toBe(
+      'misc/get-new-redirect',
+    );
+  });
+
+  it('extracts scenario names from flat paths', () => {
+    expect(parseRecordedFileName('orphan.json')).toBe('orphan');
+  });
+
+  it('handles edge-case paths without a family directory', () => {
+    expect(parseRecordedFileName('/')).toBe('');
+  });
+
+  it('sorts unknown files after catalogued ones and lexicographically among themselves', () => {
+    const files = [
+      '/rec/custom/zzz.json',
+      '/rec/static/get-root-index.json',
+      '/rec/custom/aaa.json',
+    ];
+    const sorted = sortRecordedByScenarioOrder(files, ALL_HTTP_SCENARIOS);
+    expect(sorted.map(parseRecordedFileName)).toEqual([
+      'static/get-root-index',
+      'custom/aaa',
+      'custom/zzz',
+    ]);
+  });
+
+  it('places a single known file before unknown files', () => {
+    const files = ['/rec/custom/extra.json', '/rec/misc/get-new-redirect.json'];
+    const sorted = sortRecordedByScenarioOrder(files, ALL_HTTP_SCENARIOS);
+    expect(sorted.map(parseRecordedFileName)).toEqual(['misc/get-new-redirect', 'custom/extra']);
   });
 });
 

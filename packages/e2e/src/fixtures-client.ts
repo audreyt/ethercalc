@@ -8,7 +8,7 @@
  * at that point these fixtures become redundant and the client-multi
  * smoke tests can point at `workerBase` directly.
  */
-import { test as base, mergeTests } from '@playwright/test';
+
 import {
   ChildProcess,
   spawn,
@@ -31,12 +31,11 @@ export interface ClientFixtures {
   clientBase: string;
 }
 
-const clientTest = base.extend<NonNullable<unknown>, ClientFixtures>({
+const clientTest = workerTest.extend<NonNullable<unknown>, ClientFixtures>({
   clientBase: [
-    // eslint-disable-next-line no-empty-pattern
-    async ({}, use) => {
+    async ({ workerBase }, use) => {
       const port = await pickFreePort();
-      const { process: proc, baseUrl } = await startVite({ port });
+      const { process: proc, baseUrl } = await startVite({ port, workerBase });
       try {
         await use(baseUrl);
       } finally {
@@ -54,13 +53,14 @@ const clientTest = base.extend<NonNullable<unknown>, ClientFixtures>({
  * Combined fixture that exposes both the Worker (`workerBase`) and the
  * client Vite server (`clientBase`) — use this in tests that need both.
  */
-export const test = mergeTests(workerTest, clientTest);
+export const test = clientTest;
 export { expect } from '@playwright/test';
 
 async function startVite(args: {
   port: number;
+  workerBase: string;
 }): Promise<{ process: ChildProcess; baseUrl: string }> {
-  const { port } = args;
+  const { port, workerBase } = args;
   const cmd = 'bun';
   // `x vite dev` keeps us consistent with wrangler's invocation style; the
   // `--port` flag pins Vite to the random port we chose and `--host 127.0.0.1`
@@ -84,6 +84,7 @@ async function startVite(args: {
     env: {
       ...process.env,
       FORCE_COLOR: '0',
+      VITE_ETHERCALC_BASE: workerBase,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: true,

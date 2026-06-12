@@ -14,6 +14,7 @@ describe('<TabBar />', () => {
       <TabBar
         rows={sampleRows}
         activeIndex={0}
+        rowsRev={0}
         basePath="."
         suffix=""
         index="room"
@@ -33,6 +34,7 @@ describe('<TabBar />', () => {
       <TabBar
         rows={sampleRows}
         activeIndex={0}
+        rowsRev={0}
         basePath=".."
         suffix="/edit"
         index="room"
@@ -53,6 +55,7 @@ describe('<TabBar />', () => {
       <TabBar
         rows={[{ link: '', title: 'Hello World', row: 2 }]}
         activeIndex={0}
+        rowsRev={0}
         basePath="."
         suffix=""
         index="room"
@@ -74,6 +77,7 @@ describe('<TabBar />', () => {
         basePath="."
         suffix=""
         index="room"
+        rowsRev={0}
         onChange={onChange}
         firstFocusUsed={false}
         onFirstFocus={() => {}}
@@ -88,6 +92,7 @@ describe('<TabBar />', () => {
       <TabBar
         rows={sampleRows}
         activeIndex={99}
+        rowsRev={0}
         basePath="."
         suffix=""
         index="room"
@@ -105,12 +110,53 @@ describe('<TabBar />', () => {
     expect(activeContent.length).toBeGreaterThanOrEqual(1);
   });
 
+  it('keeps all tabs mounted when one title changes (stable link keys)', () => {
+    const { rerender, container } = render(
+      <TabBar
+        rows={[
+          { link: '/a', title: 'Sheet1', row: 2 },
+          { link: '/b', title: 'Sheet2', row: 3 },
+        ]}
+        activeIndex={0}
+        rowsRev={0}
+        basePath="."
+        suffix=""
+        index="room"
+        onChange={() => {}}
+        firstFocusUsed={false}
+        onFirstFocus={() => {}}
+      />,
+    );
+    expect(screen.getAllByRole('tab')).toHaveLength(2);
+
+    rerender(
+      <TabBar
+        rows={[
+          { link: '/a', title: 'Budget', row: 2 },
+          { link: '/b', title: 'Sheet2', row: 3 },
+        ]}
+        activeIndex={0}
+        rowsRev={1}
+        basePath="."
+        suffix=""
+        index="room"
+        onChange={() => {}}
+        firstFocusUsed={false}
+        onFirstFocus={() => {}}
+      />,
+    );
+    expect(screen.getByRole('tab', { name: 'Budget' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Sheet2' })).toBeInTheDocument();
+    expect(container.querySelectorAll('iframe')).toHaveLength(2);
+  });
+
   it('clamps negative activeIndex to 0', () => {
     const onChange = vi.fn();
     render(
       <TabBar
         rows={sampleRows}
         activeIndex={-5}
+        rowsRev={0}
         basePath="."
         suffix=""
         index="room"

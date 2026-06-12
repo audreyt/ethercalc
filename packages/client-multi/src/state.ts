@@ -89,9 +89,17 @@ export function computeNextRow(foldr: HackFoldr, index: string): FoldrRow {
 
 /**
  * True when `candidate` (case-insensitive) is already among `titles`.
- * Mirrors the legacy duplicate-check in `on-rename`.
+ * Mirrors the legacy duplicate-check in `on-rename`, except we skip
+ * `exceptIndex` so renaming a tab to its current title (or changing
+ * case only) is allowed.
  */
-export function titleTaken(titles: readonly string[], candidate: string): boolean {
+export function titleTaken(
+  titles: readonly string[],
+  candidate: string,
+  exceptIndex?: number,
+): boolean {
   const lc = candidate.toLowerCase();
-  return titles.some((t) => t.toLowerCase() === lc);
+  return titles.some(
+    (t, i) => i !== exceptIndex && t.toLowerCase() === lc,
+  );
 }

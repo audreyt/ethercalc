@@ -62,6 +62,25 @@ describe('HackFoldr', () => {
   });
 
   describe('fetch()', () => {
+    it('dedupes duplicate links, keeping the last server row (#727)', async () => {
+      const { fetchImpl } = makeFetch([
+        {
+          json: [
+            ['#url', '#title'],
+            ['/r.1', 'Sheet1'],
+            ['/r.1', 'Sheet1'],
+            ['/r.2', 'Sheet2'],
+          ],
+        },
+      ]);
+      const f = new HackFoldr('http://x', { fetchImpl });
+      await f.fetch('r');
+      expect(f.rows).toEqual([
+        { link: '/r.1', title: 'Sheet1', row: 3 },
+        { link: '/r.2', title: 'Sheet2', row: 4 },
+      ]);
+    });
+
     it('parses a TOC response, dropping the header row', async () => {
       const { fetchImpl, calls } = makeFetch([
         { json: [['#url', '#title'], ['/r.1', 'Sheet1'], ['/r.2', 'Sheet2']] },

@@ -1,3 +1,6 @@
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { recordAll } from './record.ts';
 import { replayAll } from './replay.ts';
 import { ALL_HTTP_SCENARIOS } from './scenarios/index.ts';
@@ -20,7 +23,11 @@ export interface CliOptions {
 }
 
 export const DEFAULT_TARGET = 'http://127.0.0.1:8000';
-export const DEFAULT_RECORDED_DIR = 'tests/oracle/recorded';
+/** Repo-root `tests/oracle/recorded`, regardless of process cwd. */
+export const DEFAULT_RECORDED_DIR = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '../../../tests/oracle/recorded',
+);
 
 export function parseArgs(argv: readonly string[]): CliOptions {
   const [raw, ...rest] = argv;

@@ -5,7 +5,8 @@ import type { HttpScenario } from '@ethercalc/shared/oracle-scenarios';
 
 import { diffHeaders, headersToRecord, normalizeHeaders } from './headers.ts';
 import { dispatchMatcher } from './matchers.ts';
-import { defaultFetcher, type RecordedFile } from './record.ts';
+import { buildScenarioRequestInit, defaultFetcher, type RecordedFile } from './record.ts';
+import { ALL_HTTP_SCENARIOS } from './scenarios/index.ts';
 
 export interface ReplayOptions {
   readonly targetUrl: string;
@@ -65,12 +66,7 @@ export async function replayOne(
     return { scenario, ok: false, error: 'scenario has no `expect` — re-record against the oracle' };
   }
   const url = new URL(scenario.request.path, opts.targetUrl).toString();
-  // `redirect: 'manual'` must match what the recorder did, or we'd
-  // observe a 200 for scenarios the oracle recorded as 302.
-  const init: RequestInit = { method: scenario.request.method, redirect: 'manual' };
-  const requestHeaders = scenario.request.headers ?? {};
-  if (Object.keys(requestHeaders).length > 0) init.headers = { ...requestHeaders };
-  const response = await fetcher(url, init);
+  const response = await fetcher(url, buildScenarioRequestInit(scenario));
   if (response.status !== scenario.expect.status) {
     return {
       scenario,
@@ -91,11 +87,46 @@ export async function replayOne(
   return { scenario, ok: true };
 }
 
+/**
+ * Sort recorded artifacts in scenario-catalog order so stateful batches
+ * (PUT → export → DELETE) replay against a fresh oracle the same way
+ * they were recorded. Unlisted files sort lexicographically after known
+ * scenarios.
+ */
+export function sortRecordedByScenarioOrder(
+  files: readonly string[],
+  scenarios: readonly HttpScenario[],
+): readonly string[] {
+  const rank = new Map(scenarios.map((s, i) => [s.name, i]));
+  return [...files].sort((a, b) => {
+    const nameA = parseRecordedFileName(a);
+    const nameB = parseRecordedFileName(b);
+    const rankA = rank.get(nameA);
+    const rankB = rank.get(nameB);
+    if (rankA !== undefined && rankB !== undefined) return rankA - rankB;
+    if (rankA !== undefined) return -1;
+    if (rankB !== undefined) return 1;
+    return nameA.localeCompare(nameB);
+  });
+}
+
+/** Extract `family/scenario` from a `.../family/scenario.json` path. */
+export function parseRecordedFileName(path: string): string {
+  const parts = path.split('/');
+  const base = parts[parts.length - 1]!;
+  const stem = base.replace(/\.json$/, '');
+  const dir = parts.length >= 2 ? parts[parts.length - 2] : undefined;
+  return dir ? `${dir}/${stem}` : stem;
+}
+
 /** Replay every recorded artifact in `opts.recordedDir` against the target. */
 export async function replayAll(opts: ReplayOptions): Promise<readonly ReplayResult[]> {
   const lister = opts.listFiles ?? listRecordedFiles;
   const reader = opts.readFile ?? ((p) => readFile(p, 'utf8'));
-  const files = await lister(opts.recordedDir);
+  const files = sortRecordedByScenarioOrder(
+    await lister(opts.recordedDir),
+    ALL_HTTP_SCENARIOS,
+  );
   const results: ReplayResult[] = [];
   for (const file of files) {
     const parsed = parseRecordedFile(await reader(file));

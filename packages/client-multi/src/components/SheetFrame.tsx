@@ -4,6 +4,8 @@ import type { FoldrRow } from '../Foldr.ts';
 export interface SheetFrameProps {
   readonly src: string;
   readonly rows: readonly FoldrRow[];
+  /** Mirrors App `rev` — `rows` mutates in-place so this drives re-postMessage. */
+  readonly rowsRev: number;
   readonly index: string;
   readonly isFirst: boolean;
   /** Called the first time *any* frame receives focus — matches legacy boot. */
@@ -26,6 +28,7 @@ export interface SheetFrameProps {
 export const SheetFrame: FC<SheetFrameProps> = ({
   src,
   rows,
+  rowsRev,
   index,
   isFirst,
   onFirstFocus,
@@ -71,7 +74,7 @@ export const SheetFrame: FC<SheetFrameProps> = ({
       // explicit null-check and keep the cleanup straight-line.
       clearTimeout(timeoutHandle as ReturnType<typeof setTimeout>);
     };
-  }, [src, rows, index, isFirst, firstFocusUsed, onFirstFocus]);
+  }, [src, rows, rowsRev, index, isFirst, firstFocusUsed, onFirstFocus]);
 
   return <iframe ref={ref} key={src} src={src} />;
 };

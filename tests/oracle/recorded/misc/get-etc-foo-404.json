@@ -13,7 +13,7 @@
         "content-type": "text/html; charset=utf-8"
       },
       "bodyBase64": "",
-      "bodyMatcher": "exact"
+      "bodyMatcher": "ignore"
     }
   }
 }

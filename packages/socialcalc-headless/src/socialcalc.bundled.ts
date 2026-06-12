@@ -3339,26 +3339,45 @@ SocialCalc.ExecuteSheetCommand = function(sheet, cmd, saveundo) {
             function valid_datatype(type) {
 		return type == "v" || type == "c";
             }
-            var editor = SocialCalc.GetSpreadsheetControlObject().editor;
-            var range = editor.range2;
+            /** @param {any} startcell @param {any} endcell */
+            function increment_from_cells(startcell, endcell) {
+               if (valid_datatype(startcell.datatype) && valid_datatype(endcell.datatype)) {
+                  return endcell.datavalue - startcell.datavalue;
+                  }
+               return undefined;
+               }
+            var csco = SocialCalc.GetSpreadsheetControlObject();
+            var editor = csco && csco.editor;
+            var range = editor && editor.range2;
             var returnval = undefined;
-            if (range.hasrange) {
-                var startcell, endcell;
+            var startcell, endcell;
+            if (range && range.hasrange) {
                 if (down && (range.bottom - range.top == 1) && range.left == range.right) {
                   startcell = sheet.GetAssuredCell(SocialCalc.crToCoord(range.left, range.top));
                   endcell = sheet.GetAssuredCell(SocialCalc.crToCoord(range.left, range.bottom));
-                  if (valid_datatype(startcell.datatype) && valid_datatype(endcell.datatype)) {
-                      returnval =  endcell.datavalue - startcell.datavalue;
-                  }
+                  returnval = increment_from_cells(startcell, endcell);
                 } else if (!down && range.left != range.right) {
                   startcell = sheet.GetAssuredCell(SocialCalc.crToCoord(range.left, range.top));
                   endcell = sheet.GetAssuredCell(SocialCalc.crToCoord(range.right, range.top));
-                  if (valid_datatype(startcell.datatype) && valid_datatype(endcell.datatype)) {
-                      returnval =  endcell.datavalue - startcell.datavalue;
+                  returnval = increment_from_cells(startcell, endcell);
 		  }
                 }
-            }
-           editor.Range2Remove();
+            if (returnval === undefined) {
+               // Fall back to the command range so filldown/fillright replay on the
+               // server (no editor.range2) still compute increments from the first
+               // two source cells in the fill direction.
+               if (down && cr2.row > cr1.row && cr1.col == cr2.col) {
+                  startcell = sheet.GetAssuredCell(SocialCalc.crToCoord(cr1.col, cr1.row));
+                  endcell = sheet.GetAssuredCell(SocialCalc.crToCoord(cr1.col, cr1.row + 1));
+                  returnval = increment_from_cells(startcell, endcell);
+                  }
+               else if (!down && cr2.col > cr1.col && cr1.row == cr2.row) {
+                  startcell = sheet.GetAssuredCell(SocialCalc.crToCoord(cr1.col, cr1.row));
+                  endcell = sheet.GetAssuredCell(SocialCalc.crToCoord(cr1.col + 1, cr1.row));
+                  returnval = increment_from_cells(startcell, endcell);
+                  }
+               }
+            if (editor) editor.Range2Remove();
            return returnval;
          }
 	 var inc;
