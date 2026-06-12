@@ -68,7 +68,7 @@ describe('socialcalc headless (Phase 1 spike — Plan A)', () => {
         'recalc',
       ].join('\n'),
     );
-    expect(ss.exportCell('A1')?.datavalue).toBe(6);
+    expect((ss.exportCell('A1') as { datavalue?: number } | null)?.datavalue).toBe(6);
   });
 
   it('loads from snapshot and applies log', () => {
