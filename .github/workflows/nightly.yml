@@ -235,7 +235,8 @@ jobs:
 
       - name: Replay against worker (wrangler dev)
         run: |
-          bun x wrangler dev --port 8787 --ip 127.0.0.1 &
+          # wrangler must run from packages/worker; replay from repo root.
+          (cd packages/worker && bun x wrangler dev --port 8787 --ip 127.0.0.1) &
           pid=$!
           for i in $(seq 1 60); do
             curl -sf http://127.0.0.1:8787/_health >/dev/null 2>&1 && break
@@ -243,7 +244,6 @@ jobs:
           done
           bun run --cwd packages/oracle-harness replay --target http://127.0.0.1:8787
           kill $pid || true
-        working-directory: packages/worker
 
       - name: Tear down oracle
         if: always()
