@@ -71,6 +71,22 @@ describe('socialcalc headless (Phase 1 spike — Plan A)', () => {
     expect((ss.exportCell('A1') as { datavalue?: number } | null)?.datavalue).toBe(6);
   });
 
+  it('OffsetFormulaCoords doubles every embedded quote (#88, #493, #512)', () => {
+    const SC = loadSocialCalc();
+    const inner =
+      'IF(B4=TODAY(),"<span style=""background-color:rgb(81,184,72)"">_______</span>","")';
+    const offset = SC.OffsetFormulaCoords(inner, 0, 1);
+    expect(offset).toBe(
+      'IF(B5=TODAY(),"<span style=""background-color:rgb(81,184,72)"">_______</span>","")',
+    );
+  });
+
+  it('DetermineValueType treats https URLs as text-link (#501)', () => {
+    const SC = loadSocialCalc();
+    const url = 'https://www.linkedin.com/in/clémentine-delacroix';
+    expect(SC.DetermineValueType(url).type).toBe('tl');
+  });
+
   it('filldown without editor.range2 increments and persists (#314)', () => {
     const ss = createSpreadsheet();
     ss.executeCommand(

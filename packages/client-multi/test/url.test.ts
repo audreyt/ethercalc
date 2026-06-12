@@ -31,19 +31,24 @@ describe('parseMultiEnv', () => {
     expect(env.index).toBe('foo');
   });
 
-  it('flips basePath to http://127.0.0.1:8000 on localhost:8080', () => {
-    const env = parseMultiEnv(loc('http://localhost:8080/=r'));
+  it('flips basePath to http://127.0.0.1:8000 on localhost:8080 in Vite dev', () => {
+    const env = parseMultiEnv(loc('http://localhost:8080/=r'), undefined, true);
     expect(env.basePath).toBe('http://127.0.0.1:8000');
   });
 
-  it('flips basePath on 127.0.0.1:8080', () => {
-    const env = parseMultiEnv(loc('http://127.0.0.1:8080/=r'));
+  it('flips basePath on 127.0.0.1:8080 in Vite dev', () => {
+    const env = parseMultiEnv(loc('http://127.0.0.1:8080/=r'), undefined, true);
     expect(env.basePath).toBe('http://127.0.0.1:8000');
   });
 
-  it('flips basePath on *.local:8080', () => {
-    const env = parseMultiEnv(loc('http://foo.local:8080/=r'));
+  it('flips basePath on *.local:8080 in Vite dev', () => {
+    const env = parseMultiEnv(loc('http://foo.local:8080/=r'), undefined, true);
     expect(env.basePath).toBe('http://127.0.0.1:8000');
+  });
+
+  it('keeps same-origin basePath on localhost:8080 in production (Sandstorm #292)', () => {
+    const env = parseMultiEnv(loc('http://localhost:8080/=sheet1'), undefined, false);
+    expect(env.basePath).toBe('.');
   });
 
   it('marks read-only when auth=0 appears in the href', () => {
@@ -72,6 +77,8 @@ describe('parseMultiEnv', () => {
   it('preserves non-default basePath (dev) when ?auth is present', () => {
     const env = parseMultiEnv(
       loc('http://localhost:8080/=foo?auth=0', '?auth=0'),
+      undefined,
+      true,
     );
     // Already http://127.0.0.1:8000, not `.`, so it stays.
     expect(env.basePath).toBe('http://127.0.0.1:8000');

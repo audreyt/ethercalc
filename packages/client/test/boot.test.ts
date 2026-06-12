@@ -150,6 +150,14 @@ describe('legacy export bindings', () => {
         parentPathname: '/room1.2',
       }),
     ).toBe('http://127.0.0.1:3210/=room1.ods');
+
+    // #232 — viewer mode must not build multi-sheet export URLs for single rooms.
+    expect(
+      buildLegacyExportUrl('xlsx', 'sheet1', {
+        isMultiple: false,
+        parentPathname: '/sheet1/view',
+      }),
+    ).toBe('../sheet1.xlsx');
   });
 
   it('binds the top-left export cell and opens the legacy dialog', () => {
@@ -216,6 +224,43 @@ describe('legacy export bindings', () => {
 
     opts.callback?.();
     expect(host.SocialCalc.Keyboard?.passThru).toBe(false);
+  });
+
+  it('does not treat empty __MULTI__.rows as multi-sheet (#232)', () => {
+    const open = vi.fn();
+    const dialogOpen = vi.fn();
+    const host = makeHost({
+      open,
+      parent: { location: { href: 'http://h/sheet1/view', pathname: '/sheet1/view' } },
+      vex: {
+        defaultOptions: {},
+        dialog: {
+          open: dialogOpen,
+          buttons: { YES: {}, NO: {} },
+        },
+      },
+    });
+    (host as BootHost & { __MULTI__?: { rows: unknown[] } }).__MULTI__ = { rows: [] };
+    host.SocialCalc._room = 'sheet1';
+    host.SocialCalc.Constants.s_loc_export_format = 'fmt';
+    host.SocialCalc.Constants.s_loc_cancel = 'Cancel';
+
+    const cell = { setAttribute: vi.fn() };
+    const listeners: Record<string, Array<(event: { target?: EventTarget | null }) => void>> = {};
+    host.document = {
+      addEventListener: (type, listener) => {
+        (listeners[type] ??= []).push(listener);
+      },
+    } as typeof host.document;
+
+    installLegacyExportBindings(host);
+    listeners.click?.[0]?.({ target: { closest: () => cell } });
+
+    const opts = dialogOpen.mock.calls[0]?.[0] as {
+      buttons: Array<{ text: string; click?: () => void }>;
+    };
+    opts.buttons[0]?.click?.();
+    expect(open).toHaveBeenCalledWith('../sheet1.xlsx');
   });
 });
 

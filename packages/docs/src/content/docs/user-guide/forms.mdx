@@ -1,0 +1,52 @@
+---
+title: Forms
+description: Build shareable forms from an EtherCalc template
+draft: false
+---
+
+EtherCalc can turn a spreadsheet into a data-entry form. Submitted answers land in a companion `_formdata` room.
+
+## URLs
+
+For a room named `foo` on `https://calc.example.org`:
+
+| Purpose | URL |
+| ------- | --- |
+| Master spreadsheet | `https://calc.example.org/foo` |
+| Form builder (appeditor) | `https://calc.example.org/foo/appeditor` |
+| Live form (share this) | `https://calc.example.org/foo/form` |
+| Form app view | `https://calc.example.org/foo/app` |
+| Submitted responses | `https://calc.example.org/foo_formdata/view` |
+
+The rewrite also supports cloning a template via `GET /:template/form` → `/<template>_<id>/app`.
+
+## Input fields
+
+In a cell, use `TEXTBOX`:
+
+```
+=TEXTBOX("Label text")
+```
+
+You cannot use `=TEXTBOX("")` — the quotes are required even when the label is empty.
+
+Explore other controls via the **Fx** menu → **Button & Input** (buttons, checkboxes, etc.).
+
+## Submit button
+
+```
+=submit("Send")
+```
+
+Any label string works.
+
+## Publishing
+
+1. Design the form in the spreadsheet pane of `/appeditor`.
+2. Open the **Form** tab → **Live form** to get the shareable URL.
+3. Read responses at `foo_formdata/view`.
+
+## Security notes
+
+- The form URL does not hide the master sheet or results URLs. Do not use this for secrets.
+- Anyone with a room link can edit unless the host configured `ETHERCALC_KEY` auth.

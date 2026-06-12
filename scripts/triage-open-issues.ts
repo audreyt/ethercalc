@@ -3,7 +3,8 @@
  * Run: bun scripts/triage-open-issues.ts [--http http://127.0.0.1:8787]
  */
 import { readFileSync, writeFileSync } from 'node:fs';
-import { createSpreadsheet, csvToSave } from '../packages/socialcalc-headless/src/index.ts';
+import { createSpreadsheet, csvToSave, loadSocialCalc } from '../packages/socialcalc-headless/src/index.ts';
+import { isPublicRoomIndexEntry } from '../packages/worker/src/lib/formdata-sibling.ts';
 
 type Bucket =
   | 'close_fixed'
@@ -124,18 +125,22 @@ function runFormulaTests(): void {
     add(304, 'CSV formulas as literals', hasFormula ? 'close_fixed' : 'keep_broken', hasFormula ? 'csvToSave has formula cells' : 'formulas stored as text literals');
   }
 
-  // #577 money /2
+  // #577 money /2 — valuetype preserved through division (socialcalc 3.0.2+)
   {
     const s = createSpreadsheet();
-    s.executeCommand('set A1 value n 142.234\nformat A1 value-numberformat $#,##0.00\nset C1 formula A1/2\nrecalc');
-    const c1 = cellText(s, 'C1');
-    add(577, 'Money /2', c1.includes('$') ? 'close_fixed' : 'keep_broken', `A1/2 → ${c1}`);
+    s.executeCommand(
+      ['set A1 constant n$ 142.234 $142.234', 'set C1 formula A1/2', 'recalc'].join('\n'),
+    );
+    const vt = (cell(s, 'C1') as { valuetype?: string } | null)?.valuetype;
+    add(577, 'Money /2', vt === 'n$' ? 'close_fixed' : 'keep_broken', `C1 valuetype=${vt ?? 'missing'}`);
   }
 
-  // #638 csv rounding
+  // #638 csv rounding — nontextvalueformat on export (socialcalc 3.0.2+)
   {
     const s = createSpreadsheet();
-    s.executeCommand('set A1 value n 1.9859735\nformat A1 value-numberformat #,##0\nrecalc');
+    s.executeCommand(
+      ['set A1 value n 1.9859735', 'set A1 nontextvalueformat #,##0', 'recalc'].join('\n'),
+    );
     add(638, 'CSV export rounding', s.exportCSV().trim() === '2' ? 'close_fixed' : 'keep_broken', `csv="${s.exportCSV().trim()}"`);
   }
 
@@ -152,6 +157,25 @@ function runFormulaTests(): void {
     s.executeCommand('set A1 text t 11:30\nrecalc');
     const csv = s.exportCSV().trim();
     add(646, 'Hour export', csv.includes('0.479') ? 'keep_broken' : 'close_fixed', `csv="${csv}"`);
+  }
+
+  // #88 / #493 / #512 — formula quote escaping (socialcalc 3.0.4)
+  {
+    const SC = loadSocialCalc();
+    const inner =
+      'IF(B4=TODAY(),"<span style=""background-color:rgb(81,184,72)"">_______</span>","")';
+    const ok = SC.OffsetFormulaCoords(inner, 0, 1).includes('B5=TODAY()');
+    const ev = ok ? 'OffsetFormulaCoords preserves doubled quotes' : 'quote escaping still broken';
+    add(88, '(minor) Fix for OffsetFormulaCoords', ok ? 'close_fixed' : 'keep_broken', ev);
+    add(493, 'vb style quotes', ok ? 'close_fixed' : 'keep_ui', ev);
+    add(512, 'paste HTML formula quotes', ok ? 'close_fixed' : 'keep_ui', ev);
+  }
+
+  // #501 — https text-link (socialcalc 3.0.4)
+  {
+    const SC = loadSocialCalc();
+    const ok = SC.DetermineValueType('https://example.com/café').type === 'tl';
+    add(501, 'Inserting link with non-ascii chars', ok ? 'close_fixed' : 'keep_ui', ok ? 'https → tl' : 'not text-link');
   }
 
   // #314 / #564 / #769 / #785 — filldown without editor.range2 (socialcalc 3.0.3)
@@ -274,17 +298,31 @@ async function runHttpTests(base: string): Promise<void> {
     add(642, 'odata import/export', ods === 200 && fods === 200 ? 'close_fixed' : 'keep_enhancement', `ods=${ods}, fods=${fods}`);
   }
 
-  // #533 _formdata in _rooms
+  // #533 _formdata in _rooms — filter in listRooms; live check when index is open
   {
-    const rooms = await fetch(`${base}/_rooms`);
-    if (rooms.status === 403) {
-      add(533, '_formdata in _rooms', 'untested', '_rooms gated (403) in dev');
+    const roomsRes = await fetch(`${base}/_rooms`);
+    if (roomsRes.status === 403) {
+      const filtered = ['room', 'room_formdata', 'room_formdata_formdata'].filter(isPublicRoomIndexEntry);
+      add(
+        533,
+        '_formdata in _rooms',
+        filtered.every((r) => !r.endsWith('_formdata')) ? 'close_fixed' : 'keep_broken',
+        'isPublicRoomIndexEntry filters _formdata (rooms-index.node.test.ts); _rooms gated in dev',
+      );
     } else {
-      const list = (await rooms.json()) as string[];
+      const list = (await roomsRes.json()) as string[];
       const bad = list.filter((r) => r.endsWith('_formdata'));
       add(533, '_formdata in _rooms', bad.length === 0 ? 'close_fixed' : 'keep_broken', bad.length ? `${bad.length} _formdata rooms` : 'clean list');
     }
   }
+
+  // #232 viewer export — single-room view must not emit /=room.xlsx (#232)
+  add(
+    232,
+    'Sandstorm viewer export',
+    'close_fixed',
+    'boot.ts: isMultiple requires __MULTI__.rows.length > 0; view mode builds ../room.xlsx not ../=room.xlsx',
+  );
 
   // #807 websocket — native WS endpoint
   add(635, 'Multi sheets tabs disappears on rename', 'close_fixed', 'client-multi TabBar uses stable key={row.link} (2026-06-12)');
@@ -312,17 +350,19 @@ async function runHttpTests(base: string): Promise<void> {
   // #732 intranet vs cloud
   add(732, 'Intranet vs cloud', 'close_obsolete', 'Legacy deployment-specific networking issue');
 
-  // #292 sandstorm localhost
-  add(292, 'Sandstorm localhost:8080', 'keep_broken', 'Legacy grain hardcoded 127.0.0.1:8000 — needs Sandstorm-specific fix');
+  // #292 sandstorm localhost — client-multi only redirects to :8000 in Vite dev
+  add(292, 'Sandstorm localhost:8080', 'close_fixed', 'parseMultiEnv keeps same-origin basePath in production builds (import.meta.env.DEV gate)');
 
-  // #232 sandstorm viewer export
-  add(232, 'Sandstorm viewer export', 'untested', 'Sandstorm grain specific');
+  // #335 sandstorm API names — display tab title ≠ room id (by design; use TOC link slug)
+  add(
+    335,
+    'Sandstorm API sheet names',
+    'keep_question',
+    'Multi-sheet sub-rooms use TOC link ids (e.g. room.2), not tab labels; Sandstorm grain auto-names differ',
+  );
 
-  // #335 sandstorm API names
-  add(335, 'Sandstorm API sheet names', 'untested', 'Sandstorm-specific');
-
-  // #453 sandstorm scroll
-  add(453, 'Sandstorm scroll', 'untested', 'Sandstorm-specific UI');
+  // #453 sandstorm scroll — oversized row/col layout edge case; needs grain repro
+  add(453, 'Sandstorm scroll', 'keep_ui', 'SocialCalc scroll/layout with heavily expanded rows/cols — no repro fixture');
 
   // #587 where are files
   add(587, 'Where are my files', 'close_fixed', 'DO storage + D1 index; no Redis KEYS');
@@ -339,8 +379,8 @@ async function runHttpTests(base: string): Promise<void> {
   // #800 limitations
   add(800, 'Limitations', 'keep_question', '7M rows impossible in browser SocialCalc');
 
-  // #804 user manual
-  add(804, 'User manual question', 'keep_question', 'Wiki/docs question');
+  // #804 user manual — Starlight user guide at packages/docs/
+  add(804, 'User manual question', 'close_fixed', 'User guide migrated to packages/docs user-guide/ (replaces GH wiki)');
 
   // #798 presentation
   add(798, 'Presentation mode', 'keep_enhancement', 'Feature request');
@@ -353,7 +393,7 @@ function classifyRemaining(): void {
   const done = new Set(triage.map((t) => t.issue));
 
   const obsolete = new Set([
-    20, 101, 167, 184, 229, 294, 295, 335, 340, 369, 416, 496, 505, 545, 587, 604, 614, 633, 657, 668, 686, 719, 732, 755, 768, 770, 789, 798, 800, 804, 807, 809, 828,
+    20, 101, 167, 184, 229, 294, 295, 335, 340, 369, 416, 496, 505, 545, 587, 604, 614, 633, 657, 668, 686, 719, 732, 755, 768, 770, 789, 798, 800, 807, 809, 828,
   ]);
 
   const enhancement = new Set([
@@ -361,10 +401,10 @@ function classifyRemaining(): void {
   ]);
 
   const ui = new Set([
-    34, 43, 45, 70, 83, 86, 137, 156, 162, 196, 226, 232, 238, 263, 267, 301, 314, 327, 358, 398, 425, 435, 450, 453, 479, 484, 490, 493, 498, 501, 503, 512, 532, 535, 564, 589, 608, 615, 622, 623, 624, 625, 635, 639, 686, 769, 785,
+    34, 43, 45, 70, 83, 86, 137, 156, 162, 196, 226, 232, 238, 263, 267, 301, 327, 398, 425, 435, 450, 453, 479, 484, 490, 498, 503, 532, 535, 589, 608, 615, 622, 623, 624, 625, 639, 686,
   ]);
 
-  const question = new Set([25, 59, 262, 288, 416, 494, 535, 587, 657, 789, 800, 804]);
+  const question = new Set([25, 59, 262, 288, 416, 494, 535, 587, 657, 789, 800]);
 
   const wontfix = new Set([19, 260]);
 

@@ -137,16 +137,13 @@ export function openLegacyExportDialog(host: BootHost): void {
   };
   const parentLocation =
     readParentLocation() ?? { pathname: host.location.pathname };
-  const isMultiple =
-    Boolean(
-      (host as BootHost & { __MULTI__?: { rows?: unknown[] } }).__MULTI__?.rows ??
-        (
-          typeof window !== 'undefined'
-            ? (window as Window & { __MULTI__?: { rows?: unknown[] } }).__MULTI__?.rows
-            : undefined
-        ),
-    ) ||
-    /\.[1-9]\d*$/.test(room);
+  const multiRows =
+    (host as BootHost & { __MULTI__?: { rows?: unknown[] } }).__MULTI__?.rows ??
+    (typeof window !== 'undefined'
+      ? (window as Window & { __MULTI__?: { rows?: unknown[] } }).__MULTI__?.rows
+      : undefined);
+  // Empty `rows: []` is truthy — must check length (#232 viewer export).
+  const isMultiple = (multiRows?.length ?? 0) > 0 || /\.[1-9]\d*$/.test(room);
   // Production path: synthetic `<a>` click. `window.open()` is
   // popup-blocked in Chrome when called from inside the vex-dialog
   // button handler (it's one async tick removed from the direct user

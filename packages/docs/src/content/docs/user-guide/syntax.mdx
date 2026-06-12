@@ -1,0 +1,70 @@
+---
+title: Syntax
+description: Formulas, dates, text formatting, and links in EtherCalc cells
+draft: false
+---
+
+EtherCalc cells accept the same core types as SocialCalc.
+
+## Formulas
+
+Start with `=`:
+
+```
+=sqrt(3)/2
+=if(1+1<0, "surprise!", "ok")
+=SUM(A1:A10)
+```
+
+EtherCalc implements [OpenFormula](https://en.wikipedia.org/wiki/OpenFormula)-style functions. The authoritative function list lives in the SocialCalc source:
+
+- [formula1.js](https://github.com/audreyt/socialcalc/blob/main/js/formula1.js) — function definitions
+- [SocialCalc.Formula.FunctionList](https://github.com/audreyt/socialcalc/blob/main/js/socialcalc-3.js) — registered names at runtime
+
+Functions such as `DAVERAGE`, `DCOUNT`, `DMAX`, `DSUM`, `COUNTIF`, and `SUMIF` take a **criteria** argument. Criteria can be:
+
+- a number (optionally prefixed with `<`, `<=`, `=`, `>=`, `>`, `<>`), or
+- a text string containing `*` or `?` (Excel-style wildcards) or a JavaScript regular expression.
+
+## Dates and plain text
+
+| Input | Example |
+| ----- | ------- |
+| Date (default `mm/dd/yyyy`, year ≥ 1900) | `12/25/2016` |
+| Text forced as literal | `'hello world` (leading single quote) |
+
+## Default text formatting (wikitext)
+
+In cells using the default text format, you can write:
+
+| Effect | Syntax |
+| ------ | ------ |
+| Bold | `the point is *collaboration*` |
+| Italic | `the point is _collaboration_` |
+| Strikethrough | `can I -haz- cheezburger` |
+| Teletype | `` it reads `SOS` `` (backticks) |
+| Horizontal rule | `--` at the start of the cell |
+| Heading | `^^Section 4` (one or more `^` at the start) |
+| Hyperlink | `Leonard Nimoy as "Spock"<https://en.wikipedia.org/wiki/Spock>` |
+
+The wikitext parser is modeled after [Socialtext syntax](https://www.socialtext.net/help/wikitext_syntax). EtherCalc's implementation is in [`third-party/wikiwyg`](https://github.com/audreyt/ethercalc/tree/main/third-party/wikiwyg).
+
+## HTML formatting
+
+For colors and richer layout:
+
+1. Select a range.
+2. Open the **Format** tab → **Text** → choose **HTML**.
+3. Enter HTML, for example: `<span style="color:red; background:yellow">hello</span>`
+
+See [MDN HTML formatting](https://developer.mozilla.org/en-US/docs/Web/HTML) for element reference.
+
+## Cross-sheet references
+
+Reference another room (sheet) by name:
+
+```
+="sheet1"!A1
+```
+
+See [Tips & tricks](/user-guide/tips/) for conditional-formatting recipes that use HTML formulas.

@@ -1,0 +1,82 @@
+---
+title: FAQ
+description: Common questions about EtherCalc — limits, licensing, audit logs, Sandstorm
+draft: false
+---
+
+Answers to recurring questions from [GitHub issues](https://github.com/audreyt/ethercalc/issues). For how-to topics see the rest of the [user guide](/user-guide/).
+
+## How big can a sheet get?
+
+EtherCalc runs **SocialCalc in the browser**. Every cell you see is rendered in the DOM. Practical limits are far below desktop Excel:
+
+- Thousands of populated cells work fine for typical collaboration use cases.
+- **Millions of rows** (for example 7M × 200) are **not supported**. EtherCalc is not a big-data store; use a database or columnar analytics stack for that scale.
+
+For programmatic bulk load, `PUT /_/:room` with CSV or XLSX is usually faster than typing cells one by one. See [API.md](https://github.com/audreyt/ethercalc/blob/main/API.md).
+
+## What license applies?
+
+The EtherCalc TypeScript rewrite is **[CC0-1.0](https://github.com/audreyt/ethercalc/blob/main/package.json)** (public domain dedication).
+
+SocialCalc is bundled from the [`audreyt/socialcalc`](https://github.com/audreyt/socialcalc) fork (upstream CPAL). The legacy `socialcalcspreadsheetcontrol.js` / `socialcalctableeditor.js` filenames from older READMEs are gone — the worker ships a single headless bundle.
+
+## How do I delete a spreadsheet?
+
+`DELETE /_/:room` removes the room (snapshot, log, audit, chat, ecells) and drops it from the room index. Example:
+
+```bash
+curl -X DELETE 'https://ethercalc.example.com/_/my-room'
+```
+
+On hosted instances without `ETHERCALC_KEY`, anyone with the URL can delete — treat room names as unlisted secrets. Self-hosters can gate discovery with `ETHERCALC_DISABLE_ROOM_INDEX`; see [Self-hosting](/self-host/).
+
+## Is it safe to delete or truncate the audit trail?
+
+**Operationally:** yes, if you accept losing history.
+
+- The **audit log** (`audit:<seq>` keys) is append-only and never folded into the snapshot. Truncating it does not corrupt the live sheet.
+- **`DELETE /_/:room`** wipes everything for that room, including audit.
+- There is no supported HTTP endpoint to delete *only* audit while keeping the sheet; you would need direct access to storage (Redis in legacy, Durable Object storage in the rewrite).
+
+For compliance retention, export audit periodically (`/_/:room` save string includes audit in the worker model) rather than deleting in place.
+
+## Sandstorm: why don't API room names match tab titles?
+
+Each Sandstorm grain is **one spreadsheet**. The default room is `sheet1` (`ETHERCALC_DEFAULT_ROOM` in `run_grain.sh`), not the display name you gave the grain in the Sandstorm UI.
+
+Multi-sheet workbooks (`/=:room`) use **URL slug ids** from the TOC link column (for example `mybook.2`), not the human-readable tab label. Use `GET /_/:room/cells` or the save string to discover actual ids. See [Sandstorm packaging](https://github.com/audreyt/ethercalc/blob/main/SANDSTORM.md).
+
+## Sandstorm: export failed with "Cannot GET /sheet1/=sheet1.xlsx"
+
+Fixed in client-multi: production builds no longer redirect API calls to `http://127.0.0.1:8000` when the grain is served on `localhost:8080`. Exports use same-origin paths like `/_/sheet1/xlsx`.
+
+Viewer mode (`?auth=0`) hides multi-sheet export controls when there is no TOC; single-sheet CSV/JSON export still works via the API.
+
+## Can I save SocialCalc text and reload it later?
+
+Yes, via the HTTP API:
+
+1. `GET /_/:room` — fetch the SocialCalc save string.
+2. `PUT /_/:room` with `Content-Type: text/plain` (or the `sc` format) — replace the room snapshot.
+
+The in-browser clipboard UI is optimized for copy/paste between live sessions, not version-control round-trips. For git-friendly diffs, prefer the `GET /_/:room` save string or `GET /_/:room/csv`.
+
+## Excel F9 "evaluate and store" (paste values)
+
+EtherCalc does not implement Excel's **F9** "replace formula with current value" shortcut. Workarounds:
+
+- Copy the displayed value and paste-special as text.
+- Use `PUT` with CSV/JSON export data if you need a value-only snapshot server-side.
+
+## Quotes and URLs disappear when pasting clipboard data
+
+SocialCalc's clipboard parser strips decorative quotes around wiki-style links. This is upstream SocialCalc behavior when converting between TSV/CSV and the internal clipboard format. Workarounds:
+
+- Paste URLs without wrapping quotes, or use `text-wiki` formatting with explicit `[[url label]]` syntax (see [Syntax](/user-guide/syntax/)).
+- Load data via `PUT /_/:room` CSV instead of the clipboard dialog.
+
+## Where should I ask questions?
+
+- [Stack Exchange — ethercalc tag](https://webapps.stackexchange.com/questions/tagged/ethercalc)
+- [GitHub issues](https://github.com/audreyt/ethercalc/issues) for bugs and feature requests

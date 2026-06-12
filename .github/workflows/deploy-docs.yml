@@ -1,0 +1,55 @@
+name: Deploy Docs
+
+# Publish the Starlight site to Cloudflare Pages (project: ethercalc-docs).
+# Requires repository secrets:
+#   CLOUDFLARE_API_TOKEN — Pages deploy token
+#   CLOUDFLARE_ACCOUNT_ID — Cloudflare account id
+#
+# Manual deploy only; wire DNS (e.g. docs.ethercalc.net) to the Pages project.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "deploy" to confirm docs deploy'
+        required: true
+        type: string
+
+concurrency:
+  group: deploy-docs
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Cloudflare Pages (docs)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: inputs.confirm == 'deploy'
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build Starlight site
+        run: bun run --cwd packages/docs build
+
+      - name: Deploy to Cloudflare Pages
+        run: bun x wrangler pages deploy packages/docs/dist --project-name=ethercalc-docs --branch=main
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+  rejected:
+    name: confirmation check
+    runs-on: ubuntu-latest
+    if: inputs.confirm != 'deploy'
+    steps:
+      - name: Abort — confirmation mismatch
+        run: |
+          echo 'Input confirm must be exactly "deploy". Got:' "${{ inputs.confirm }}"
+          exit 1

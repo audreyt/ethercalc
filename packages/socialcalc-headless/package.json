@@ -16,7 +16,7 @@
     "typecheck": "tsgo --noEmit"
   },
   "dependencies": {
-    "socialcalc": "^3.0.3"
+    "socialcalc": "^3.0.4"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.14.8",

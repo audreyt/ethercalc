@@ -2,8 +2,10 @@
  * URL/env parsing that mirrors the legacy `multi/main.ls` preamble.
  *
  *   BasePath = '.' normally.
- *     If location.href contains `(127.0.0.1|localhost|*.local):8080`, BasePath
- *     becomes `http://127.0.0.1:8000` (dev Vite → same-origin EtherCalc API).
+ *     In Vite dev only, if location.href contains
+ *     `(127.0.0.1|localhost|*.local):8080`, BasePath becomes
+ *     `http://127.0.0.1:8000` (client-multi dev server → wrangler API).
+ *     Production builds (including Sandstorm grains on localhost:8080) keep `.`.
  *     If any `?auth=` param exists and BasePath is `.`, it is bumped to `..`
  *     (the page moves one path segment deeper once we push history).
  *
@@ -50,12 +52,14 @@ export function parseMultiEnv(
   loc: { href: string; search: string },
   /** Test seam — production callers omit this. */
   viteBaseOverride?: string,
+  /** Test seam — defaults to `import.meta.env.DEV`. */
+  isDev: boolean = import.meta.env.DEV,
 ): MultiEnv {
   const viteApi = resolveViteApiBase(viteBaseOverride);
   let basePath: string =
     viteApi.length > 0
       ? viteApi.replace(/\/$/, '')
-      : DEV_HOST_RE.test(loc.href)
+      : isDev && DEV_HOST_RE.test(loc.href)
         ? 'http://127.0.0.1:8000'
         : '.';
 

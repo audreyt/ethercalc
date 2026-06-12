@@ -1,0 +1,53 @@
+---
+title: Tips & tricks
+description: Cross-sheet refs, conditional coloring, export, and more
+draft: false
+---
+
+## Cross-sheet cell reference
+
+To show `sheet1!A1` inside `sheet2` cell `B3`:
+
+1. Go to `B3` on `sheet2`.
+2. Enter: `="sheet1"!A1`
+
+## Conditional background color (workaround)
+
+EtherCalc has no built-in conditional-formatting panel. You can fake fill colors with an HTML formula:
+
+1. Select the target cell (e.g. `B2`).
+2. Format → Text → **HTML**.
+3. Enter:
+
+```
+=if(A1="foo","<span style=""background-color:rgb(81,184,72);color:rgb(81,184,72)"">_______</span>","<span style=""background-color:rgb(226,86,43);color:rgb(226,86,43)"">_______</span>")
+```
+
+The `IF` picks green or red underscore runs; matching pen and background colors make the cell look filled.
+
+## Export
+
+Append a format extension to the room URL:
+
+| Format | URL |
+| ------ | --- |
+| CSV | `https://calc.example.org/foo.csv` or `/_/:room/csv` |
+| XLSX | `https://calc.example.org/foo.xlsx` |
+| HTML | `https://calc.example.org/foo.html` |
+| ODS | `/_/:room/ods` |
+
+Multi-sheet workbooks use the `/=:room` prefix — see [API.md](https://github.com/audreyt/ethercalc/blob/main/API.md).
+
+## Read-only links
+
+When `ETHERCALC_KEY` is set, append `?auth=0` for view-only access. With a key configured, edit links carry an HMAC: `?auth=<hmac>`.
+
+## Self-host path prefix
+
+Running behind a subpath? Set `ETHERCALC_BASEPATH` (Docker) or `BASEPATH` (Worker). See [Self-hosting](/self-host/).
+
+## Related issues & recipes
+
+- [Non-root install](https://github.com/audreyt/ethercalc/issues/333)
+- [Read-only URLs](https://github.com/audreyt/ethercalc/issues/332)
+- [Count cells containing `?`](https://github.com/audreyt/ethercalc/issues/328)

@@ -98,6 +98,9 @@ jobs:
       - name: migrate — tests + 100% coverage gate
         run: bun run --cwd packages/migrate test:coverage
 
+      - name: docs — Starlight production build
+        run: bun run --cwd packages/docs build
+
       - name: Upload coverage artifacts
         if: always()
         uses: actions/upload-artifact@v7

@@ -1,6 +1,7 @@
 ---
 title: Oracle testing
 description: Golden-fixture equivalence against the legacy EtherCalc oracle
+draft: false
 ---
 
 The **oracle** is a pinned pre-rewrite EtherCalc build (Node + Redis) that serves as the semantic ground truth. The **target** is this TypeScript Worker. The `@ethercalc/oracle-harness` package records and replays scenarios to prove equivalence.

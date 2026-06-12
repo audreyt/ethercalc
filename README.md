@@ -1,6 +1,7 @@
 # EtherCalc
 
 * Overview: https://ethercalc.net/
+* User guide: `packages/docs/` Starlight site (`bun run --cwd packages/docs dev` → `/user-guide/`)
 * 中文版: http://tw.ethercalc.net/
 * 简体中文: http://cn.ethercalc.net/
 * REST API: [API.md](./API.md)

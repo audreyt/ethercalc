@@ -1,6 +1,7 @@
 ---
 title: EtherCalc
 description: TypeScript rewrite of EtherCalc on Cloudflare Workers
+draft: false
 ---
 
 EtherCalc is a real-time, multi-user spreadsheet server. This documentation covers the TypeScript rewrite that runs on Cloudflare Workers with Durable Objects, D1, KV, and R2 — and can also be self-hosted with a standalone `workerd` container.
@@ -28,6 +29,7 @@ The public HTTP API is preserved byte-for-byte where deterministic. WebSocket cl
 
 ## Next steps
 
+- [User guide](/user-guide/) — formulas, forms, tips (replaces the old GitHub wiki)
 - [Architecture](/architecture/) — components, request flow, storage model
 - [Self-hosting](/self-host/) — Docker, Helm, nginx hardening
 - [Oracle testing](/oracle/) — equivalence fixtures against the legacy oracle

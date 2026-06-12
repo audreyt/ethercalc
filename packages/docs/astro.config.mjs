@@ -12,6 +12,16 @@ export default defineConfig({
       },
       sidebar: [
         { label: 'Introduction', link: '/' },
+        {
+          label: 'User guide',
+          items: [
+            { label: 'Overview', link: '/user-guide/' },
+            { label: 'Syntax', link: '/user-guide/syntax/' },
+            { label: 'Forms', link: '/user-guide/forms/' },
+            { label: 'Tips & tricks', link: '/user-guide/tips/' },
+            { label: 'FAQ', link: '/user-guide/faq/' },
+          ],
+        },
         { label: 'Architecture', link: '/architecture/' },
         { label: 'Self-hosting', link: '/self-host/' },
         { label: 'Oracle testing', link: '/oracle/' },

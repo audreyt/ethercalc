@@ -1,6 +1,7 @@
 ---
 title: Self-hosting
 description: Run EtherCalc without a Cloudflare account
+draft: false
 ---
 
 EtherCalc ships a standalone `workerd` Docker image — no Cloudflare account required.
@@ -26,6 +27,10 @@ Room discovery is disabled by default on self-host images to reduce abuse surfac
 ## Hardening
 
 For internet-facing deployments, put nginx in front with rate limits and WebSocket read timeouts. See `docs/SELFHOST_HARDENING.md` in the repository for the proxy recipe (`docker-compose.proxy.yml`).
+
+## Sandstorm
+
+Each Sandstorm grain runs one spreadsheet (`ETHERCALC_DEFAULT_ROOM=sheet1`). Packaging files (`run_grain.sh`, `sandstorm-pkgdef.capnp`) and the `.spk` build recipe are in [SANDSTORM.md](https://github.com/audreyt/ethercalc/blob/main/SANDSTORM.md). Legacy grains auto-migrate `/var/dump*` on first boot.
 
 ## Local development
 

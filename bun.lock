@@ -130,7 +130,7 @@
       "name": "@ethercalc/socialcalc-headless",
       "version": "0.0.0",
       "dependencies": {
-        "socialcalc": "^3.0.3",
+        "socialcalc": "^3.0.4",
       },
       "devDependencies": {
         "@cloudflare/vitest-pool-workers": "^0.14.8",
@@ -1705,7 +1705,7 @@
 
     "smol-toml": ["smol-toml@1.6.1", "", {}, "sha512-dWUG8F5sIIARXih1DTaQAX4SsiTXhInKf1buxdY9DIg4ZYPZK5nGM1VRIYmEbDbsHt7USo99xSLFu5Q1IqTmsg=="],
 
-    "socialcalc": ["socialcalc@3.0.3", "", {}, "sha512-fms2jwsQaIngDrGZJvMwuWn+Tvp8byEMmXAX4VDlvnH/Ys7nqsJRRUQ3B+h88OazvX79MxEGIpCF6R9tbze7oQ=="],
+    "socialcalc": ["socialcalc@3.0.4", "", {}, "sha512-7RBWF2Ph5HgRwGA69zxTYeH/JMXF7IJ1JP0NGKb2inIEqxaqITG3PAtRU4mk3ldb5F9Gg0aeWM+PpwS/DFMuKg=="],
 
     "socket.io-client": ["socket.io-client@1.0.6", "", { "dependencies": { "component-bind": "1.0.0", "component-emitter": "1.1.2", "debug": "0.7.4", "engine.io-client": "1.3.1", "has-binary-data": "0.1.1", "indexof": "0.0.1", "object-component": "0.0.3", "parseuri": "0.0.2", "socket.io-parser": "2.2.0", "to-array": "0.1.3" } }, "sha512-itdtz6fQBTFIDBP4+hJox0OlT+SbCVdENjPgjMup3ehu7OsiG6t0FYBXCx+k/upt9lbeyp9BmUNNi5EfnGa5Vw=="],
 
