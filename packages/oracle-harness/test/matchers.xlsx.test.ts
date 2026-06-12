@@ -11,6 +11,7 @@ import {
   VOLATILE_XLSX_DOCPROPS,
   canonicalizeContentTypesXml,
   canonicalizeWorkbookRelsXml,
+  canonicalizeXlsxWorkbookXml,
   canonicalizeZipEntry,
   compareZipArchives,
   unzipOrError,
@@ -150,6 +151,22 @@ describe('zip-canonical helpers', () => {
     expect(canonicalizeWorkbookRelsXml(legacy, OPTIONAL_XLSX_ZIP_ENTRIES)).toBe(
       canonicalizeWorkbookRelsXml(worker, OPTIONAL_XLSX_ZIP_ENTRIES),
     );
+  });
+
+  it('canonicalizeXlsxWorkbookXml drops date1904 metadata drift', () => {
+    const legacy = `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><workbookPr date1904="false"/></workbook>`;
+    const worker = `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><workbookPr/></workbook>`;
+    expect(canonicalizeXlsxWorkbookXml(legacy)).toBe(canonicalizeXlsxWorkbookXml(worker));
+  });
+
+  it('canonicalizeZipEntry routes xl/workbook.xml', () => {
+    const xml = `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><workbookPr date1904="false"/></workbook>`;
+    const out = canonicalizeZipEntry('xl/workbook.xml', new TextEncoder().encode(xml), {});
+    expect(out).not.toContain('date1904');
+  });
+
+  it('canonicalizeXlsxWorkbookXml throws on malformed xml', () => {
+    expect(() => canonicalizeXlsxWorkbookXml('<')).toThrow(/xml/);
   });
 
   it('canonicalizeWorkbookRelsXml throws on malformed xml', () => {

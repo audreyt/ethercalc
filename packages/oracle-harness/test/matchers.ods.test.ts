@@ -9,8 +9,10 @@ import {
   OPTIONAL_ODS_ZIP_ENTRIES,
   VOLATILE_ODS_META,
   canonicalizeOdsContentXml,
+  canonicalizeOdsManifestRdf,
   canonicalizeOdsManifestXml,
   canonicalizeXmlWithDrops,
+  canonicalizeZipEntry,
 } from '../src/zip-canonical.ts';
 import { buildBasicOds, buildCorruptedZip } from './zip-fixtures.ts';
 
@@ -91,6 +93,57 @@ describe('zip-canonical helpers (ods)', () => {
     const legacy = `<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"><office:body><office:spreadsheet><table:table><table:table-row><table:table-cell><text:p>oracle</text:p></table:table-cell></table:table-row></table:table></office:spreadsheet></office:body></office:document-content>`;
     const worker = `<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"><office:automatic-styles/><office:body><office:spreadsheet><table:table table:style-name="ta1"><table:table-row><table:table-cell><text:p>oracle</text:p></table:table-cell></table:table-row></table:table></office:spreadsheet></office:body></office:document-content>`;
     expect(canonicalizeOdsContentXml(legacy)).toBe(canonicalizeOdsContentXml(worker));
+  });
+
+  it('canonicalizeOdsManifestRdf drops optional file entries', () => {
+    const legacy = `<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="content.xml"/><rdf:Description rdf:about=""><rdf:type rdf:resource="http://docs.oasis-open.org/ns/office/1.2/meta/pkg#Document"/></rdf:Description></rdf:RDF>`;
+    const worker = `<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="content.xml"/><rdf:Description rdf:about="styles.xml"/><rdf:Description rdf:about=""><ns0:hasPart xmlns:ns0="http://docs.oasis-open.org/ns/office/1.2/meta/pkg#" rdf:resource="styles.xml"/></rdf:Description><rdf:Description rdf:about=""><rdf:type rdf:resource="http://docs.oasis-open.org/ns/office/1.2/meta/pkg#Document"/></rdf:Description></rdf:RDF>`;
+    expect(canonicalizeOdsManifestRdf(legacy, OPTIONAL_ODS_ZIP_ENTRIES)).toBe(
+      canonicalizeOdsManifestRdf(worker, OPTIONAL_ODS_ZIP_ENTRIES),
+    );
+  });
+
+  it('canonicalizeOdsManifestRdf drops about= and resource=/ optional paths', () => {
+    const worker = `<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+      <rdf:Description rdf:about="meta.xml"/>
+      <rdf:Description rdf:about=""><ns0:hasPart xmlns:ns0="http://docs.oasis-open.org/ns/office/1.2/meta/pkg#" rdf:resource="/styles.xml"/></rdf:Description>
+      <rdf:Description rdf:about=""><ns0:hasPart xmlns:ns0="http://docs.oasis-open.org/ns/office/1.2/meta/pkg#" rdf:resource="meta.xml"/></rdf:Description>
+    </rdf:RDF>`;
+    const out = canonicalizeOdsManifestRdf(worker, OPTIONAL_ODS_ZIP_ENTRIES);
+    expect(out).not.toContain('meta.xml');
+    expect(out).not.toContain('styles.xml');
+  });
+
+  it('canonicalizeOdsManifestRdf accepts unprefixed hasPart/resource and prunes empty Description', () => {
+    const xml = `<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+      <rdf:Description about=""><hasPart resource="styles.xml"/></rdf:Description>
+      <rdf:Description about=""><rdf:type rdf:resource="http://docs.oasis-open.org/ns/office/1.2/meta/pkg#Document"/></rdf:Description>
+    </rdf:RDF>`;
+    const out = canonicalizeOdsManifestRdf(xml, OPTIONAL_ODS_ZIP_ENTRIES);
+    expect(out).not.toContain('styles.xml');
+    expect(out).not.toContain('<hasPart');
+    expect(out).toContain('pkg#Document');
+  });
+
+  it('canonicalizeOdsManifestRdf keeps non-optional hasPart and bare Description nodes', () => {
+    const xml = `<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+      <rdf:Description rdf:about="content.xml"/>
+      <rdf:Description><hasPart/></rdf:Description>
+      <rdf:Description><hasPart rdf:resource="content.xml"/></rdf:Description>
+    </rdf:RDF>`;
+    const out = canonicalizeOdsManifestRdf(xml, OPTIONAL_ODS_ZIP_ENTRIES);
+    expect(out).toContain('content.xml');
+    expect(out).toContain('<hasPart');
+  });
+
+  it('canonicalizeZipEntry routes manifest.rdf', () => {
+    const xml = `<?xml version="1.0"?><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="content.xml"/></rdf:RDF>`;
+    const out = canonicalizeZipEntry('manifest.rdf', new TextEncoder().encode(xml), {}, OPTIONAL_ODS_ZIP_ENTRIES);
+    expect(out).toContain('content.xml');
+  });
+
+  it('canonicalizeOdsManifestRdf throws on malformed xml', () => {
+    expect(() => canonicalizeOdsManifestRdf('<', OPTIONAL_ODS_ZIP_ENTRIES)).toThrow(/xml/);
   });
 
   it('canonicalizeOdsContentXml throws on malformed xml', () => {

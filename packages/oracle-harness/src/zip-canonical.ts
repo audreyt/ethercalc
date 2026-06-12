@@ -139,8 +139,14 @@ export function canonicalizeZipEntry(
     if (path === 'xl/_rels/workbook.xml.rels') {
       return canonicalizeWorkbookRelsXml(text, optionalPaths);
     }
+    if (path === 'xl/workbook.xml') {
+      return canonicalizeXlsxWorkbookXml(text);
+    }
     if (path === 'content.xml') {
       return canonicalizeOdsContentXml(text);
+    }
+    if (path === 'manifest.rdf') {
+      return canonicalizeOdsManifestRdf(text, optionalPaths);
     }
     return canonicalizeXmlWithDrops(text, volatile[path] ?? []);
   }
@@ -258,6 +264,64 @@ export function canonicalizeWorkbookRelsXml(
   return de.outerHTML;
 }
 
+/** Drop legacy-only workbook metadata that SheetJS omits. */
+export function canonicalizeXlsxWorkbookXml(raw: string): string {
+  const doc = new DOMParser().parseFromString(raw, 'text/xml');
+  const de = (doc as unknown as { documentElement: DomElementWithAttrs | null }).documentElement;
+  if (!de) throw new HtmlParseError('linkedom could not parse xml as a rooted document');
+  walk(de, (el) => {
+    if (el.nodeType !== 1) return;
+    const name = el.nodeName;
+    if (name === 'workbookPr' || name.endsWith(':workbookPr')) {
+      el.removeAttribute('date1904');
+    }
+  });
+  normalizeDomNode(de as unknown as Parameters<typeof normalizeDomNode>[0]);
+  return de.outerHTML;
+}
+
+/** Drop RDF manifest entries for optional ODS parts. */
+export function canonicalizeOdsManifestRdf(
+  raw: string,
+  optionalZipPaths: ReadonlySet<string>,
+): string {
+  const doc = new DOMParser().parseFromString(raw, 'text/xml');
+  const de = (doc as unknown as { documentElement: DomElementWithAttrs | null }).documentElement;
+  if (!de) throw new HtmlParseError('linkedom could not parse xml as a rooted document');
+  const toRemove: DomElementWithAttrs[] = [];
+  walk(de, (el) => {
+    if (el.nodeType !== 1) return;
+    const name = el.nodeName;
+    const about = el.getAttribute('rdf:about') ?? el.getAttribute('about');
+    if (about && about !== '' && about !== '/') {
+      const path = about.replace(/^\//, '');
+      if (optionalZipPaths.has(path)) toRemove.push(el);
+    }
+    if (name.endsWith(':hasPart') || name === 'hasPart') {
+      const resource = el.getAttribute('rdf:resource') ?? el.getAttribute('resource') ?? '';
+      const path = resource.replace(/^\//, '');
+      if (optionalZipPaths.has(path)) toRemove.push(el);
+    }
+  });
+  for (const el of toRemove) el.parentNode?.removeChild(el);
+  const emptyDescriptions: DomElementWithAttrs[] = [];
+  walk(de, (el) => {
+    if (el.nodeType !== 1) return;
+    const name = el.nodeName;
+    if (!name.endsWith(':Description') && name !== 'Description') return;
+    const about = el.getAttribute('rdf:about') ?? el.getAttribute('about') ?? '';
+    if (about !== '') return;
+    let hasElements = false;
+    walk(el, (child) => {
+      if (child !== el && child.nodeType === 1) hasElements = true;
+    });
+    if (!hasElements) emptyDescriptions.push(el);
+  });
+  for (const el of emptyDescriptions) el.parentNode?.removeChild(el);
+  normalizeDomNode(de as unknown as Parameters<typeof normalizeDomNode>[0]);
+  return de.outerHTML;
+}
+
 /** Drop ODS automatic-styles scaffolding that SheetJS adds. */
 export function canonicalizeOdsContentXml(raw: string): string {
   const doc = new DOMParser().parseFromString(raw, 'text/xml');
@@ -348,7 +412,12 @@ interface DomElementWithAttrs extends DomElementWithParent {
 }
 
 function isXmlPath(path: string): boolean {
-  return path.endsWith('.xml') || path.endsWith('.rels') || path === '[Content_Types].xml';
+  return (
+    path.endsWith('.xml') ||
+    path.endsWith('.rels') ||
+    path === '[Content_Types].xml' ||
+    path === 'manifest.rdf'
+  );
 }
 
 function bytesToHex(bytes: Uint8Array): string {
