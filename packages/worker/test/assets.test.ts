@@ -20,7 +20,7 @@ import worker from '../src/index.ts';
  *   - `/static/socialcalc.js`, `/static/player.js`
  *   - `/static/form<part>.js` — colon-route
  *   - `/:template/appeditor` — panels.html
- *   - `/:template/form` — stubbed 503 until Phase 5
+ *   - `/:template/form` — 302 to `/<template>_<id>/app`
  *   - `/:room` (no-KEY → serves; KEY-no-auth → 302)
  *   - `/:room` with `=` prefix → multi/index.html
  *
@@ -282,12 +282,13 @@ describe('GET /:template/appeditor', () => {
 });
 
 describe('GET /:template/form', () => {
-  it('returns the Phase 5 stub with status 503', async () => {
+  it('302 redirects to /<template>_<id>/app', async () => {
     const stub = buildFullStub();
     const res = await call('/tpl/form', { ASSETS: stub.ASSETS });
-    expect(res.status).toBe(503);
-    expect(res.headers.get('Content-Type')).toBe('text/plain; charset=UTF-8');
-    expect(await res.text()).toContain('Phase 5');
+    expect(res.status).toBe(302);
+    const loc = res.headers.get('Location') ?? '';
+    expect(loc).toMatch(/\/tpl_[0-9a-z]{12}\/app$/);
+    expect(await res.text()).toContain(loc);
   });
 });
 

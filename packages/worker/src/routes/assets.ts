@@ -43,8 +43,9 @@ import { buildFormPartPath } from '../handlers/static-form.ts';
 import {
   buildRoomEntry,
   buildTemplateFormRedirect,
-  TEMPLATE_FORM_STUB_STATUS,
 } from '../handlers/room-entry.ts';
+import { doFetch } from '../lib/do-dispatch.ts';
+import { encodeRoom, generateRoomId } from '../lib/room-name.ts';
 import type { Env } from '../env.ts';
 
 /**
@@ -220,21 +221,29 @@ export function registerAssets(app: Hono<{ Bindings: Env }>): void {
   // longer-literal-path match first.
   app.get('/:template/appeditor', async (c) => serveAsset(c.env, '/panels.html'));
 
-  // `/:template/form` — Phase 4.1 template-duplicate redirect (§6.1).
-  // Requires Room CRUD (Phase 5) which is landing in a parallel agent;
-  // until then, return a 503 with the body the builder emits so tests
-  // can assert the stub shape. When Phase 5 wires `env.ROOM.get(...)
-  // .fetch('/_do/clone')` this handler swaps to the real path.
+  // `/:template/form` — duplicate template snapshot into `<template>_<id>`
+  // and redirect to `/app` (legacy main.ls:287-293).
   app.get('/:template/form', async (c) => {
-    const result = buildTemplateFormRedirect({ template: c.req.param('template') });
-    if (result.status === 302) {
-      return new Response(result.body, {
-        status: 302,
-        headers: { ...result.headers },
+    const template = c.req.param('template') ?? '';
+    const newId = generateRoomId();
+    const newRoom = `${encodeRoom(template)}_${newId}`;
+    try {
+      await doFetch(c.env, template, '/_do/clone', {
+        method: 'POST',
+        body: JSON.stringify({ to: newRoom }),
+        headers: { 'Content-Type': 'application/json' },
       });
+    } catch {
+      // Legacy always redirected; clone failure yields an empty new room.
     }
+    const result = buildTemplateFormRedirect({
+      template,
+      basepath: c.env.BASEPATH ?? '',
+      idGen: () => newId,
+      phase5Ready: true,
+    });
     return new Response(result.body, {
-      status: TEMPLATE_FORM_STUB_STATUS,
+      status: 302,
       headers: { ...result.headers },
     });
   });

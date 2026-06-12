@@ -322,6 +322,9 @@ export class RoomDO implements DurableObject {
     if (path === '/_do/install' && request.method === 'POST') {
       return this.#postInstall(request);
     }
+    if (path === '/_do/clone' && request.method === 'POST') {
+      return this.#postClone(request);
+    }
     // ─── Phase 11b: full-fidelity migration seed ─────────────────────
     // `POST /_do/seed` is the migration entry point — it replaces the
     // entire room (snapshot + log + audit + chat + ecell + meta
@@ -625,6 +628,29 @@ export class RoomDO implements DurableObject {
       this.#nextChatSeq = 0;
       this.#resetVolatile();
     });
+    return plainResponse('OK', 201);
+  }
+
+  /**
+   * Snapshot-only DO-to-DO copy for `GET /:template/form` (legacy
+   * main.ls:287-293). Leaves the source room intact.
+   */
+  async #postClone(request: Request): Promise<Response> {
+    const parsed = (await request.json()) as { to?: unknown };
+    const to = parsed.to;
+    if (typeof to !== 'string' || to.length === 0) {
+      return new Response('clone body must be {to: string}', { status: 400 });
+    }
+    const snapshot = await readSnapshot(this.#state.storage);
+    const targetId = this.#env.ROOM.idFromName(encodeRoom(to));
+    const targetStub = this.#env.ROOM.get(targetId);
+    const putRes = await targetStub.fetch(
+      `https://do.local/_do/snapshot?name=${encodeURIComponent(to)}`,
+      { method: 'PUT', body: snapshot ?? '' },
+    );
+    if (!putRes.ok) {
+      return new Response(`clone failed: ${putRes.status}`, { status: 502 });
+    }
     return plainResponse('OK', 201);
   }
 

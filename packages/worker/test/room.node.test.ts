@@ -1303,6 +1303,54 @@ describe('RoomDO — cross-DO rename primitives (Phase 6)', () => {
     expect(record.map.size).toBe(0);
   });
 
+  it('POST /_do/clone with missing body.to returns 400', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('x', record), makeRenameEnv([]));
+    const res = await room.fetch(
+      new Request('https://do/_do/clone', {
+        method: 'POST',
+        body: JSON.stringify({}),
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(await res.text()).toMatch(/clone body must be \{to: string\}/);
+  });
+
+  it('POST /_do/clone PUTs snapshot to target and preserves source', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    record.map.set(STORAGE_KEYS.snapshot, 'TPL-SNAP');
+    record.map.set(logKey(0), 'set A1 value n 1');
+    const siblingCalls: SiblingCall[] = [];
+    const room = new RoomDO(makeState('x', record), makeRenameEnv(siblingCalls));
+    const res = await room.fetch(
+      new Request('https://do/_do/clone', {
+        method: 'POST',
+        body: JSON.stringify({ to: 'tpl_abc' }),
+      }),
+    );
+    expect(res.status).toBe(201);
+    expect(siblingCalls).toHaveLength(1);
+    expect(siblingCalls[0]!.init?.method).toBe('PUT');
+    expect(String(siblingCalls[0]!.init?.body)).toBe('TPL-SNAP');
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('TPL-SNAP');
+    expect(record.map.get(logKey(0))).toBe('set A1 value n 1');
+  });
+
+  it('POST /_do/clone returns 502 when target PUT fails', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    record.map.set(STORAGE_KEYS.snapshot, 'snap');
+    const room = new RoomDO(makeState('x', record), makeRenameEnv([], 500));
+    const res = await room.fetch(
+      new Request('https://do/_do/clone', {
+        method: 'POST',
+        body: JSON.stringify({ to: 'tpl_x' }),
+      }),
+    );
+    expect(res.status).toBe(502);
+    expect(await res.text()).toMatch(/^clone failed: \d+/);
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('snap');
+  });
+
   it('POST /_do/rename returns 502 when sibling install fails', async () => {
     const record: FakeStorageRecord = { map: new Map() };
     record.map.set(STORAGE_KEYS.snapshot, 'snap');

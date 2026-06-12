@@ -25,6 +25,38 @@ describe('socialcalc headless (Phase 1 spike — Plan A)', () => {
     expect(ss.exportCSV()).toBe('1\n2\n3\n');
   });
 
+  it('csvToSave preserves formulas from leading = (#304)', () => {
+    const save = csvToSave('1,=A1*2\n');
+    const ss = createSpreadsheet({ snapshot: save });
+    const cell = ss.exportCell('B1') as { datatype?: string; formula?: string } | null;
+    expect(cell?.datatype).toBe('f');
+    expect(cell?.formula).toBe('A1*2');
+  });
+
+  it('exportCSV applies number formats (#638)', () => {
+    const ss = createSpreadsheet();
+    ss.executeCommand(
+      ['set A1 value n 1.9859735', 'set A1 nontextvalueformat #,##0', 'recalc'].join('\n'),
+    );
+    expect(ss.exportCSV().trim()).toBe('2');
+  });
+
+  it('exportCSV formats date cells (#355)', () => {
+    const ss = createSpreadsheet();
+    ss.executeCommand(
+      ['set A1 value d 2010-01-01', 'set A1 nontextvalueformat m/d/yyyy', 'recalc'].join('\n'),
+    );
+    expect(ss.exportCSV().trim()).toMatch(/1\/1\/2010/);
+  });
+
+  it('formula division keeps currency valuetype (#577)', () => {
+    const ss = createSpreadsheet();
+    ss.executeCommand(
+      ['set A1 constant n$ 142.234 $142.234', 'set C1 formula A1/2', 'recalc'].join('\n'),
+    );
+    expect((ss.exportCell('C1') as { valuetype?: string } | null)?.valuetype).toBe('n$');
+  });
+
   it('SUM(N:N) treats N as a column, not the N() function (#534)', () => {
     const ss = createSpreadsheet();
     ss.executeCommand(
