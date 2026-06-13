@@ -120,12 +120,18 @@ export function cellToCommand(coord: string, cell: SheetJSCell): string | null {
 }
 
 /**
- * Convert a binary workbook (xlsx / ods / fods bytes) into a full
- * SocialCalc spreadsheet save. Only the first sheet is imported — the
- * multi-sheet import path (`PUT /=:room.xlsx`) handles fan-out to
- * per-sub-sheet DOs separately.
+ * Replay an xlsx/ods/fods workbook's first sheet into a fresh
+ * `SpreadsheetControl` and return both the control and its sheet object.
+ *
+ * Shared by `xlsxToSave` (full-snapshot import on PUT) and
+ * `xlsxToLoadClipboardCommands` (paste-into-room import on POST). When the
+ * workbook is empty the returned sheet simply has no cells, which both
+ * callers handle gracefully (empty save / empty clipboard).
+ *
+ * Throws {@link ImportTooLargeError} when the workbook declares more than
+ * {@link MAX_IMPORT_CELLS} populated cells.
  */
-export function xlsxToSave(bytes: Uint8Array): string {
+function replayWorkbook(bytes: Uint8Array): { ss: any; sheet: any } {
   const SC = loadSocialCalc() as any;
   const ss = new SC.SpreadsheetControl();
   const sheet = ss.context.sheetobj;
@@ -138,11 +144,11 @@ export function xlsxToSave(bytes: Uint8Array): string {
   const firstName = (wb.SheetNames as string[])[0];
   /* istanbul ignore next -- SheetJS always populates SheetNames[0]
      (defaulting to "Sheet1") even for empty input. Defensive guard. */
-  if (!firstName) return ss.CreateSpreadsheetSave();
+  if (!firstName) return { ss, sheet };
   const ws = wb.Sheets[firstName];
   /* istanbul ignore next -- SheetJS guarantees Sheets[SheetNames[0]]
      exists. Defensive guard against malformed workbook shapes. */
-  if (!ws) return ss.CreateSpreadsheetSave();
+  if (!ws) return { ss, sheet };
 
   const merges: Array<{
     s: { r: number; c: number };
@@ -210,7 +216,67 @@ export function xlsxToSave(bytes: Uint8Array): string {
     sheet.attribs.needsrecalc = 'no';
   }
 
+  return { ss, sheet };
+}
+
+/**
+ * Convert a binary workbook (xlsx / ods / fods bytes) into a full
+ * SocialCalc spreadsheet save. Only the first sheet is imported — the
+ * multi-sheet import path (`PUT /=:room.xlsx`) handles fan-out to
+ * per-sub-sheet DOs separately.
+ */
+export function xlsxToSave(bytes: Uint8Array): string {
+  const { ss } = replayWorkbook(bytes);
   return ss.CreateSpreadsheetSave();
+}
+
+/**
+ * Convert a binary workbook into the pair of SocialCalc commands a
+ * `POST /_/:room` runs to *paste* the imported cells into an existing
+ * room without clobbering its other content:
+ *
+ *   ['loadclipboard <encoded-clipboard-save>', 'paste A1 all']
+ *
+ * The first command loads a range save (a `CreateSheetSave(range)` with a
+ * `copiedfrom:` trailer) into the shared SocialCalc clipboard — encoded
+ * with `encodeForSave` so the `:`/`\n`/`\\` separators survive the
+ * single-line command shape `decodeFromSave` reverses on the DO. The
+ * second pastes that clipboard at A1.
+ *
+ * This mirrors the legacy server's xlsx-POST path, which decoded the body
+ * through the `J` library into exactly this loadclipboard+paste pair and
+ * replied `202 {command}`. Going through commands (rather than replacing
+ * the whole snapshot, like PUT does) preserves the room's pre-existing
+ * cells and emits a WS-broadcastable edit.
+ *
+ * Returns an empty array when the workbook has no cells to paste — the
+ * caller treats that as a no-op import rather than dispatching a `paste`
+ * of an empty clipboard. Throws {@link ImportTooLargeError} for oversized
+ * workbooks via {@link replayWorkbook}.
+ */
+export function xlsxToLoadClipboardCommands(bytes: Uint8Array): string[] {
+  const SC = loadSocialCalc() as any;
+  const { sheet } = replayWorkbook(bytes);
+
+  // Nothing populated → no-op import. `attribs.lastrow`/`lastcol` default
+  // to 1 even for an empty sheet, so they can't distinguish "one cell" from
+  // "zero cells"; the populated `cells` map can. Skipping the paste here
+  // avoids emitting a `loadclipboard` of an empty range (which `paste`
+  // would treat as a clipboard-clear no-op anyway).
+  if (Object.keys(sheet.cells as Record<string, unknown>).length === 0) {
+    return [];
+  }
+
+  // A range argument makes CreateSheetSave emit a `copiedfrom:` trailer,
+  // which the `paste` executor reads to size the destination range. Use
+  // the populated extent (A1 → last col/row) so the clipboard covers
+  // exactly the imported cells.
+  const lastCol = colLetters((sheet.attribs.lastcol as number) - 1);
+  const lastRow = sheet.attribs.lastrow as number;
+  const range = `A1:${lastCol}${lastRow}`;
+  const clipboardSave: string = sheet.CreateSheetSave(range);
+  const encoded: string = SC.encodeForSave(clipboardSave);
+  return [`loadclipboard ${encoded}`, 'paste A1 all'];
 }
 
 function colLetters(c: number): string {

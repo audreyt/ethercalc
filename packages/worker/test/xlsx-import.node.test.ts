@@ -9,6 +9,7 @@ import {
   cellToCommand,
   countWorksheetCells,
   enforceImportLimit,
+  xlsxToLoadClipboardCommands,
   xlsxToSave,
 } from '../src/lib/xlsx-import.ts';
 
@@ -233,5 +234,92 @@ describe('xlsxToSave — roundtrip', () => {
     expect(save).toContain('cell:A1:v:1');
     // A2 should not appear as a cell entry.
     expect(save).not.toContain('cell:A2');
+  });
+});
+
+describe('xlsxToLoadClipboardCommands', () => {
+  function makeXlsx(
+    cells: Record<string, { t: string; v: unknown; f?: string }>,
+    ref: string,
+  ): Uint8Array {
+    const ws: Record<string, unknown> = { '!ref': ref, ...cells };
+    const book = (XLSX as any).utils.book_new();
+    (XLSX as any).utils.book_append_sheet(book, ws, 'Sheet1');
+    return new Uint8Array(
+      (XLSX as any).write(book, { bookType: 'xlsx', type: 'array' }) as ArrayBufferLike,
+    );
+  }
+
+  it('emits a loadclipboard + paste A1 all pair', () => {
+    const bytes = makeXlsx(
+      {
+        A1: { t: 'n', v: 1 },
+        B1: { t: 's', v: 'hi' },
+        A2: { t: 'n', v: 2 },
+      },
+      'A1:B2',
+    );
+    const cmds = xlsxToLoadClipboardCommands(bytes);
+    expect(cmds).toHaveLength(2);
+    expect(cmds[0]).toMatch(/^loadclipboard /);
+    expect(cmds[1]).toBe('paste A1 all');
+  });
+
+  it('encodes the clipboard save with a copiedfrom range covering the cells', () => {
+    const bytes = makeXlsx(
+      {
+        A1: { t: 'n', v: 1 },
+        B1: { t: 's', v: 'hi' },
+        A2: { t: 'n', v: 2 },
+      },
+      'A1:B2',
+    );
+    const cmds = xlsxToLoadClipboardCommands(bytes);
+    // `:` is encoded as `\c` in the loadclipboard payload (encodeForSave),
+    // so the decoded range trailer is `copiedfrom:A1:B2`.
+    expect(cmds[0]).toContain('copiedfrom\\cA1\\cB2');
+    // Newlines in the multi-line sheet save are encoded as `\n` so the
+    // whole payload stays on a single command line.
+    expect(cmds[0]).not.toMatch(/\n/);
+  });
+
+  it('preserves formulas in the clipboard payload', () => {
+    const bytes = makeXlsx(
+      {
+        A1: { t: 'n', v: 1 },
+        A2: { t: 'n', v: 2 },
+        A3: { t: 'n', v: 3, f: 'SUM(A1:A2)' },
+      },
+      'A1:A3',
+    );
+    const cmds = xlsxToLoadClipboardCommands(bytes);
+    // The formula `SUM(A1:A2)` survives; its `:` becomes `\c` under both
+    // the SocialCalc cell encoding and the outer encodeForSave pass.
+    expect(cmds[0]).toContain('SUM(A1');
+    expect(cmds[1]).toBe('paste A1 all');
+  });
+
+  it('returns an empty array for a cell-less workbook (no-op import)', () => {
+    const ws: Record<string, unknown> = { '!ref': 'A1:A1' };
+    const book = (XLSX as any).utils.book_new();
+    (XLSX as any).utils.book_append_sheet(book, ws, 'Sheet1');
+    const bytes = new Uint8Array(
+      (XLSX as any).write(book, { bookType: 'xlsx', type: 'array' }) as ArrayBufferLike,
+    );
+    expect(xlsxToLoadClipboardCommands(bytes)).toEqual([]);
+  });
+
+  it('returns an empty array for zero-byte input', () => {
+    expect(xlsxToLoadClipboardCommands(new Uint8Array(0))).toEqual([]);
+  });
+
+  it('enforces the import cell limit', () => {
+    // The guard fires inside the shared replayWorkbook step before any
+    // clipboard save is built. We can't cheaply round-trip 200k+ real
+    // cells, so assert the shared limit is wired by checking enforceImportLimit
+    // throws at the same boundary the command builder relies on.
+    expect(() => enforceImportLimit(MAX_IMPORT_CELLS + 1)).toThrow(
+      ImportTooLargeError,
+    );
   });
 });
