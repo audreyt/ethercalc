@@ -27,6 +27,7 @@ import { registerAssets, registerRoomCatchAll } from './routes/assets.ts';
 import { registerExports } from './routes/exports.ts';
 import { registerLegacySocketIo } from './routes/legacy-socketio.ts';
 import { registerMigrate } from './routes/migrate.ts';
+import { registerMultiSheetImport } from './routes/multi-import.ts';
 import { registerRoomRoutes } from './routes/rooms.ts';
 import { registerStateless } from './routes/stateless.ts';
 import { registerTimetrigger } from './routes/timetrigger.ts';
@@ -152,6 +153,9 @@ export function buildApp(): Hono<{ Bindings: Env }> {
   // `/:room` catch-all (so `/foo.csv` routes to the csv exporter rather
   // than being treated as a room-entry request).
   registerExports(app);
+  // Multi-sheet workbook IMPORT (PUT /=:room.xlsx etc) — register alongside
+  // the multi-sheet exports, before the `/:room` catch-all.
+  registerMultiSheetImport(app);
   registerStateless(app);
   registerAssets(app);
   registerRoomCatchAll(app);
