@@ -2,24 +2,28 @@
 
 ## Client asset strategy (option chosen)
 
-**B, revised:** boot `vite dev` as a second child process in a fixture,
-not the Workers Assets pipeline. The Worker's `wrangler.toml` has the
-`[assets]` block commented out today (Phase 4 deferred it to Phase 11
-because the legacy repo root contains >25 MiB files that trip the
-per-asset size limit). Vite dev gives us SPA fallback for `/=<room>`
-for free — `curl http://127.0.0.1:<port>/=test-room` returns the
-`index.html` shell without extra config.
+**Update (2026-06-13):** the Worker's `wrangler.toml` now ships a live
+`[assets]` block (`directory = "../../assets"`, populated by
+`scripts/build-assets.sh` into a curated dir that avoids the legacy
+repo's >25 MiB files). So the **single-sheet** smoke takes only the
+`workerBase` fixture and navigates to `${workerBase}/<room>` — the
+Worker serves `index.html` + `player.js` + `socialcalc.js` directly.
 
-Option A (mount `dist/` via a static server) was rejected because it
-adds a new dependency (`serve`, `sirv-cli`, or equivalent) for
-something Vite already does.
+Historical note (kept for context): before the binding landed, the
+single-sheet smoke was a `test.skip` placeholder and the original plan
+boot `vite dev` as a second child process for the SPA. Vite dev gives
+SPA fallback for `/=<room>` for free — `curl
+http://127.0.0.1:<port>/=test-room` returns the `index.html` shell
+without extra config. Option A (mount `dist/` via a static server) was
+rejected because it adds a new dependency (`serve`, `sirv-cli`, or
+equivalent) for something Vite already does.
 
-When Phase 11 finishes, the plan is:
+Remaining cleanup for the **multi-sheet** smoke:
 
-1. Drop `src/fixtures-client.ts`.
-2. Have both `client-single-smoke` and `client-multi-smoke` take only
-   the `workerBase` fixture, and navigate to
-   `${workerBase}/<room>` / `${workerBase}/=<room>` respectively.
+1. Drop `src/fixtures-client.ts` once `assets/multi/` is rebuilt as part
+   of the standard e2e setup.
+2. Have `client-multi-smoke` take only the `workerBase` fixture and
+   navigate to `${workerBase}/=<room>`, matching the single-sheet smoke.
 
 ## Boot strategy: fixtures, not `webServer`
 
@@ -34,8 +38,9 @@ picked fixtures only and documented it at the top of
   nothing across the whole run, which loses isolation guarantees the
   brief asks for.
 - One downside: a no-fixture `import from '@playwright/test'` in a spec
-  would see no base URL. That's OK — the only spec that does this is
-  `client-single-smoke.spec.ts`, which is a `test.skip` placeholder.
+  would see no base URL. All specs now import a fixture
+  (`src/fixtures.ts` or `src/fixtures-client.ts`) and use `workerBase` /
+  `clientBase` accordingly, so none navigate against an unset base URL.
 
 ## Surprised by
 
@@ -56,10 +61,13 @@ picked fixtures only and documented it at the top of
 
 ## Known gaps / blocked
 
-- **Single-sheet SocialCalc boot** — blocked on Phase 11 Workers Assets.
-  The single-sheet client needs `index.html` + `player.js` + SocialCalc
-  served from one origin so the inline boot script can wire up. Will
-  land when the curated `assets/` directory is populated.
+- **Single-sheet SocialCalc boot** — UNBLOCKED and landed. The Worker's
+  `[assets]` binding (`directory = "../../assets"`, populated by
+  `scripts/build-assets.sh`) now serves `index.html` + `player.js` +
+  `socialcalc.js` from one origin, so `client-single-smoke.spec.ts`
+  drives a real Chromium page against `workerBase`, waits for the editor
+  grid to render into `#tableeditor`, and asserts the SocialCalc runtime
+  + control booted. The earlier `test.skip` placeholder is gone.
 - **Parallelism** — set `workers: 1` in `playwright.config.ts` because
   concurrent wrangler dev instances on a CI runner hammer each other.
   When spec count grows past ~20, revisit to allow `workers: 2`.
