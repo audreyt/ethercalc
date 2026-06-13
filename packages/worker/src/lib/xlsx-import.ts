@@ -122,8 +122,8 @@ export function cellToCommand(coord: string, cell: SheetJSCell): string | null {
 /**
  * Convert a binary workbook (xlsx / ods / fods bytes) into a full
  * SocialCalc spreadsheet save. Only the first sheet is imported — the
- * multi-sheet import path (`PUT /=:room.xlsx`) handles fan-out to
- * per-sub-sheet DOs separately.
+ * multi-sheet import path (`PUT /=:room.xlsx`) is `buildMultiSheetImport`
+ * + `routes/multi-import.ts`.
  */
 export function xlsxToSave(bytes: Uint8Array): string {
   // Stryker disable next-line ObjectLiteral,StringLiteral : @e965/xlsx

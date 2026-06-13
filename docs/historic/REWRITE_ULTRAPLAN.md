@@ -275,7 +275,7 @@ Phases 0–11 complete (see §14 for merge history). Remaining:
 ### Phase 8 — Export polish
 - [x] csv/csv.json/html/xlsx/ods/fods/md implemented via SocialCalc + SheetJS + pure GFM.
 - [x] xlsx/ods/fods exports walk `sheet.cells` — formulas, number formats, merges, comments preserved (`54c191e`).
-- [x] Multi-sheet xlsx/ods/fods export + xlsx/ods import with formula fidelity (`ecb18d3`).
+- [x] Multi-sheet xlsx/ods/fods export + xlsx/ods import with formula fidelity (`ecb18d3`) + multi-sheet import routes (`PUT /=:room.{xlsx,ods,fods}`).
 - [x] Cross-sheet formulas (`'other'!A1`) via `findCrossSheetRefs` + `/_do/snapshot` DO-to-DO fetch (`ecb18d3`).
 
 ### Phase 11 — Loose ends
