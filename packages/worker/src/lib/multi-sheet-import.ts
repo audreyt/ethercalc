@@ -45,12 +45,19 @@ export function buildMultiSheetImport(
   room: string,
 ): MultiSheetImport {
   const wb = (XLSX as any).read(bytes, { type: 'array', cellFormula: true });
+  /* istanbul ignore next -- SheetJS always populates SheetNames as an array
+     (defaulting to ["Sheet1"]) even for empty input; the `: []` fallback is a
+     defensive guard against a malformed workbook shape that XLSX.read never
+     actually produces. Mirrors the same guard in `xlsxToSave`. */
   const names: string[] = Array.isArray(wb.SheetNames) ? wb.SheetNames : [];
 
   // Bound the WHOLE workbook before any per-sheet SocialCalc replay.
   let totalCells = 0;
   for (const name of names) {
     const ws = wb.Sheets[name];
+    /* istanbul ignore next -- SheetJS guarantees a Sheets entry for every
+       SheetNames entry; the `if (ws)` false arm is a defensive guard against
+       a malformed workbook shape XLSX.read never produces. */
     if (ws) totalCells += countWorksheetCells(ws);
   }
   enforceImportLimit(totalCells);
@@ -60,9 +67,10 @@ export function buildMultiSheetImport(
   let idx = 0;
   for (const name of names) {
     const ws = wb.Sheets[name];
-    // Defensive: a SheetName without a Sheets entry is skipped (mirrors
-    // parseMultiSheetWorkbook's old guard). Covered by tests via a workbook
-    // whose every name resolves, plus the empty-workbook case.
+    /* istanbul ignore next -- defensive: a SheetName without a matching Sheets
+       entry is skipped. SheetJS never emits such a workbook (every name in
+       SheetNames has a Sheets entry), so this `continue` is unreachable via
+       any real xlsx/ods/fods bytes; same posture as `xlsxToSave`'s guards. */
     if (!ws) continue;
     idx++;
     const subroom = `${room}.${idx}`;
