@@ -78,13 +78,13 @@ describe('scenario catalog', () => {
   it('ALL_HTTP_SCENARIOS concatenates every group with unique names', () => {
     const names = ALL_HTTP_SCENARIOS.map((s) => s.name);
     expect(new Set(names).size).toBe(names.length);
-    expect(names.length).toBe(24);
+    expect(names.length).toBe(26);
   });
 
   it('ALL_SCENARIOS includes ws scenarios after exports', () => {
     const names = ALL_SCENARIOS.map((s) => s.name);
     expect(new Set(names).size).toBe(names.length);
-    expect(names.length).toBe(27);
+    expect(names.length).toBe(29);
     expect(names.indexOf('exports/get-ods')).toBeLessThan(names.indexOf('ws/connect'));
     expect(names.indexOf('ws/execute-command')).toBeLessThan(
       names.indexOf('form/get-template-form-redirect'),

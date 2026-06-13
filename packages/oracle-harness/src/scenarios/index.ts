@@ -3,6 +3,7 @@ import type { HttpScenario, Scenario, WsScenario } from '@ethercalc/shared/oracl
 import { EXPORT_SCENARIOS } from './exports.ts';
 import { FORM_SCENARIOS } from './form.ts';
 import { MISC_SCENARIOS } from './misc.ts';
+import { MULTI_IMPORT_SCENARIOS } from './multi-import.ts';
 import {
   ROOM_CRUD_SETUP_SCENARIOS,
   ROOM_CRUD_TEARDOWN_SCENARIOS,
@@ -16,6 +17,7 @@ export { MISC_SCENARIOS } from './misc.ts';
 export { ROOMS_INDEX_SCENARIOS } from './rooms-index.ts';
 export { ROOM_CRUD_SCENARIOS, ROOM_CRUD_SETUP_SCENARIOS, ROOM_CRUD_TEARDOWN_SCENARIOS } from './room-crud.ts';
 export { EXPORT_SCENARIOS } from './exports.ts';
+export { MULTI_IMPORT_SCENARIOS } from './multi-import.ts';
 export { FORM_SCENARIOS } from './form.ts';
 export { WS_SCENARIOS } from './ws.ts';
 
@@ -30,6 +32,7 @@ export const ALL_HTTP_SCENARIOS: readonly HttpScenario[] = [
   ...ROOMS_INDEX_SCENARIOS,
   ...ROOM_CRUD_SETUP_SCENARIOS,
   ...EXPORT_SCENARIOS,
+  ...MULTI_IMPORT_SCENARIOS,
   ...FORM_SCENARIOS,
   ...ROOM_CRUD_TEARDOWN_SCENARIOS,
 ];
@@ -41,6 +44,7 @@ export const ALL_SCENARIOS: readonly Scenario[] = [
   ...ROOMS_INDEX_SCENARIOS,
   ...ROOM_CRUD_SETUP_SCENARIOS,
   ...EXPORT_SCENARIOS,
+  ...MULTI_IMPORT_SCENARIOS,
   ...WS_SCENARIOS,
   ...FORM_SCENARIOS,
   ...ROOM_CRUD_TEARDOWN_SCENARIOS,
