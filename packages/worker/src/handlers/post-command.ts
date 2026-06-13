@@ -18,10 +18,13 @@
  *   text/plain         -> use body literally
  *   else (xlsx/ods)    -> run J lib to produce a loadclipboard command
  *
- * For Phase 6 we DO NOT implement the xlsx -> loadclipboard decoder
- * (that lands in Phase 8 alongside the export side). xlsx/ods POSTs
- * return 501 at the HTTP layer; this function signals that with kind
- * 'xlsx-deferred'.
+ * For xlsx/ods bodies this classifier returns kind 'xlsx-deferred' as a
+ * pure signal; the glue layer (`src/routes/rooms.ts`) decodes the bytes
+ * into a `loadclipboard <save>` + `paste A1 all` command pair via
+ * `xlsxToLoadClipboardCommands` and dispatches it like any other command,
+ * replying 202 {command} — matching the legacy J-library behavior. (The
+ * kind name predates the import landing; it now means "needs binary
+ * decode", not "returns 501".)
  */
 
 /** The command types returned to the caller. */
@@ -50,7 +53,8 @@ const XLSX_MIMES: readonly string[] = [
  *   - json-command  (JSON with a non-empty .command; forward as-is)
  *   - text-command  (plain text / text/x-socialcalc; subject to
  *                    isLoadClipboard / isMultiCascade checks in the glue)
- *   - xlsx-deferred (501)
+ *   - xlsx-deferred (binary workbook; the glue decodes it into a
+ *                    loadclipboard+paste command pair and replies 202)
  *
  * The caller is responsible for applying loadclipboard enrichment,
  * multi-cascade rename, and the text-wiki filter before dispatching
