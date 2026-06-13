@@ -132,10 +132,12 @@ export function xlsxToSave(bytes: Uint8Array): string {
   // byte-identical workbooks. Equivalent mutants at 92:40 / 92:48.
   const wb = (XLSX as any).read(bytes, { type: 'array', cellFormula: true });
   const firstName = (wb.SheetNames as string[])[0];
-  const ws = firstName ? wb.Sheets[firstName] : undefined;
-  /* istanbul ignore next -- SheetJS always populates SheetNames[0] and its
-     Sheets entry even for empty input; defensive guard against malformed
-     workbook shapes. */
+  /* istanbul ignore next -- SheetJS always populates SheetNames[0]
+     (defaulting to "Sheet1") even for empty input. Defensive guard. */
+  if (!firstName) return worksheetToSave({});
+  const ws = wb.Sheets[firstName];
+  /* istanbul ignore next -- SheetJS guarantees Sheets[SheetNames[0]] exists;
+     defensive guard against malformed workbook shapes. */
   if (!ws) return worksheetToSave({});
   enforceImportLimit(countWorksheetCells(ws));
   return worksheetToSave(ws);
