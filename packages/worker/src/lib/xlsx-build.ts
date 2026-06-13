@@ -23,8 +23,6 @@
  *   - `buildMultiSheetWorkbook`: an array of `{name, csv}` → one sheet per
  *     entry, names passed through `sanitizeSheetName` so SheetJS accepts
  *     them (31-char cap + `:\/?*[]` forbidden + unique).
- *   - `parseMultiSheetWorkbook`: inverse; bytes → array of `{name, csv}`
- *     keyed by the original SheetNames order. Used by `PUT /=:room.xlsx`.
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -456,35 +454,4 @@ export function buildMultiSheetWorkbook(
     compression: true,
   });
   return new Uint8Array(out as ArrayBufferLike);
-}
-
-/**
- * Parse a workbook (any format SheetJS can read — xlsx/ods/fods) and return
- * one `{name, csv}` entry per sheet, in workbook order.
- *
- * CSV values are produced via `XLSX.utils.sheet_to_csv` with default FS/RS
- * (`,` and `\n`) so the result round-trips through `parseCSV`.
- */
-export function parseMultiSheetWorkbook(
-  bytes: Uint8Array,
-  readFn: (data: any, opts: any) => any = (XLSX as any).read,
-): Array<{ name: string; csv: string }> {
-  const wb = readFn(bytes, { type: 'array' });
-  // Defensive fallback: SheetJS always produces an Array for SheetNames,
-  // but a hand-forged workbook might not. The `: []` branch is covered
-  // by the tests.
-  const names: string[] = Array.isArray(wb.SheetNames) ? wb.SheetNames : [];
-  const out: Array<{ name: string; csv: string }> = [];
-  for (const name of names) {
-    const sheet = wb.Sheets[name];
-    // Same defensive guard: a SheetName without a matching Sheets entry
-    // would throw on `sheet_to_csv`.
-    if (!sheet) continue;
-    const csv: string = (XLSX as any).utils.sheet_to_csv(sheet, {
-      FS: ',',
-      RS: '\n',
-    });
-    out.push({ name, csv });
-  }
-  return out;
 }

@@ -122,14 +122,10 @@ export function cellToCommand(coord: string, cell: SheetJSCell): string | null {
 /**
  * Convert a binary workbook (xlsx / ods / fods bytes) into a full
  * SocialCalc spreadsheet save. Only the first sheet is imported — the
- * multi-sheet import path (`PUT /=:room.xlsx`) handles fan-out to
- * per-sub-sheet DOs separately.
+ * multi-sheet import path (`PUT /=:room.xlsx`) is `buildMultiSheetImport`
+ * + `routes/multi-import.ts`.
  */
 export function xlsxToSave(bytes: Uint8Array): string {
-  const SC = loadSocialCalc() as any;
-  const ss = new SC.SpreadsheetControl();
-  const sheet = ss.context.sheetobj;
-
   // Stryker disable next-line ObjectLiteral,StringLiteral : @e965/xlsx
   // auto-infers `type` from a Uint8Array and defaults `cellFormula:true`
   // for xlsx/ods reads, so mutations to this options object produce
@@ -138,21 +134,30 @@ export function xlsxToSave(bytes: Uint8Array): string {
   const firstName = (wb.SheetNames as string[])[0];
   /* istanbul ignore next -- SheetJS always populates SheetNames[0]
      (defaulting to "Sheet1") even for empty input. Defensive guard. */
-  if (!firstName) return ss.CreateSpreadsheetSave();
+  if (!firstName) return worksheetToSave({});
   const ws = wb.Sheets[firstName];
-  /* istanbul ignore next -- SheetJS guarantees Sheets[SheetNames[0]]
-     exists. Defensive guard against malformed workbook shapes. */
-  if (!ws) return ss.CreateSpreadsheetSave();
+  /* istanbul ignore next -- SheetJS guarantees Sheets[SheetNames[0]] exists;
+     defensive guard against malformed workbook shapes. */
+  if (!ws) return worksheetToSave({});
+  enforceImportLimit(countWorksheetCells(ws));
+  return worksheetToSave(ws);
+}
+
+/**
+ * Convert a single SheetJS worksheet into a SocialCalc spreadsheet save.
+ * Formula-preserving (see {@link cellToCommand}). Does NOT enforce the
+ * cell-limit — callers do, so the multi-sheet path can bound the whole
+ * workbook rather than each sheet independently.
+ */
+export function worksheetToSave(ws: Record<string, unknown>): string {
+  const SC = loadSocialCalc() as any;
+  const ss = new SC.SpreadsheetControl();
+  const sheet = ss.context.sheetobj;
 
   const merges: Array<{
     s: { r: number; c: number };
     e: { r: number; c: number };
   }> = Array.isArray(ws['!merges']) ? ws['!merges'] : [];
-
-  // Bail before the expensive per-cell SocialCalc replay if the workbook
-  // declares an unreasonable number of cells (zip-bomb / oversized used
-  // range). Counting keys is O(cells) but cheap relative to the replay.
-  enforceImportLimit(countWorksheetCells(ws));
 
   for (const addr of Object.keys(ws)) {
     if (addr.startsWith('!')) continue;

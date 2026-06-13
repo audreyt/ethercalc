@@ -1,9 +1,9 @@
 # EtherCalc — Agent context
 
-> **Status:** rewrite complete (2026-06-12) · **Owner:** Audrey Tang
+> **Status:** rewrite complete · **Owner:** Audrey Tang · doc updated 2026-06-13
 >
-> Slim agent doc. Full rewrite ultraplan archived at
-> [`docs/historic/REWRITE_ULTRAPLAN.md`](./docs/historic/REWRITE_ULTRAPLAN.md).
+> Slim agent doc. Rewrite ultraplan + per-session history archived in
+> [`docs/historic/REWRITE_ULTRAPLAN.md`](./docs/historic/REWRITE_ULTRAPLAN.md) (§14).
 
 ## What this repo is
 
@@ -57,10 +57,11 @@ bun run --cwd packages/worker test         # workers-pool + node unit tests
 
 ## CI gates (PR)
 
-Lint → typecheck → node tests (100% coverage) → workers-pool → oracle
-replay → Playwright e2e → `wrangler deploy --dry-run` → self-host smoke →
-conditional `mutation-gate`. Nightly: full Stryker matrix + oracle replay
-against legacy docker + staging dry-run (`.github/workflows/nightly.yml`).
+Typecheck → node tests (100% coverage) → workers-pool → Playwright e2e →
+`wrangler deploy --dry-run` → self-host smoke → conditional `mutation-gate`.
+Nightly: full Stryker matrix + oracle replay against legacy docker + staging
+dry-run (`.github/workflows/nightly.yml`). (Oracle replay is nightly-only,
+not a PR gate; code lint is not yet wired into PR CI.)
 
 ## Package map
 
@@ -68,18 +69,24 @@ against legacy docker + staging dry-run (`.github/workflows/nightly.yml`).
 packages/worker/          Hono Worker + RoomDO
 packages/socialcalc-headless/   SocialCalc in workerd
 packages/shared/          WS messages, storage keys
+packages/socketio-shim/   legacy /socket.io/* compat shim
 packages/client/          single-sheet UI
 packages/client-multi/    multi-sheet UI (React 18)
 packages/oracle-harness/  record/replay + canonicalizers
 packages/migrate/         Redis/filesystem → worker seed
+packages/cli/             ethercalc CLI (bin/ethercalc)
 packages/docs/            Starlight site
 packages/e2e/             Playwright
 ```
 
 ## Live risks
 
-1. **Vite `?raw` vs wrangler `[[rules]]`** — vitest-pool-workers drops
-   `wrangler.configPath` inline (see `packages/worker/vitest.config.ts`).
+1. **vitest-pool-workers config shape** — keep
+   `packages/worker/vitest.config.ts` off `wrangler.configPath` (inline `main`
+   + bindings); merging the wrangler config mangles the `[[rules]]` Text glob.
+   The runtime `?raw` import is gone (SocialCalc is now a build-time
+   `createSocialCalcFactory()`), but keep the `[[rules]]` entry for `wrangler
+   deploy`.
 2. **Docker Desktop macOS/ARM** — virtio networking may hang host curls;
    use `bun run --cwd packages/worker dev` instead.
 3. **workerd null bindings** — unset env vars arrive as `null`, not `''`.
@@ -88,11 +95,6 @@ packages/e2e/             Playwright
 
 ## Session log
 
-| Date | Summary |
-| ---- | ------- |
-| 2026-06-12 | Nightly fixes: oracle `last-modified` + ws snapshot matchers; mutation floors worker 90 / oracle-harness 83; nightly summary covers oracle + staging. CLAUDE.md slimmed; ultraplan → `docs/historic/`. Sandstorm publish doc (app-owner `spk`, not CI). |
-| 2026-06-12 | Release 0.20260612.4 — SH-2/3 rate limit + room-create cap, Sandstorm SH-6/SH-7, proxy defaults. Nightly oracle-replay + staging dry-run added. Docs site + production deploy workflow. |
-| 2026-06-11 | Self-host hardening (room-index gate, nginx proxy recipe, workerd image, Helm 0.3.1). Released 0.20260611.1. |
-| 2026-04-19 | Rewrite landed — DO SocialCalc, native WS, exports, migrate tool, e2e, mutation ratchet. |
-
-Older entries: `docs/historic/REWRITE_ULTRAPLAN.md` §14.
+Per-session history is in `docs/historic/REWRITE_ULTRAPLAN.md` §14 (append-only,
+newest last). Latest: candidate `0.20260612.5` — oracle-harness zip-canonical
+drift + mutation floor 83→80 (unreleased; no `packages/worker/src/` changes).

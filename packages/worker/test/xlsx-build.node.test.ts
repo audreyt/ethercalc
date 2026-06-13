@@ -10,7 +10,6 @@ import {
   csvToBinaryWorkbook,
   encodeColumn,
   parseCoord,
-  parseMultiSheetWorkbook,
   sanitizeSheetName,
   sheetViewToBinaryWorkbook,
   sheetViewToWorksheet,
@@ -920,45 +919,5 @@ describe('buildMultiSheetWorkbookFromSheets', () => {
     );
     const wb = (XLSX as any).read(bytes, { type: 'array' });
     expect(wb.SheetNames).toEqual(['A_B', 'A_B (2)']);
-  });
-});
-
-describe('parseMultiSheetWorkbook', () => {
-  it('round-trips through build+parse preserving sheet order and content', () => {
-    const input = [
-      { name: 'Alpha', csv: 'a,b\n1,2\n' },
-      { name: 'Beta', csv: 'c,d\n3,4\n' },
-    ];
-    const bytes = buildMultiSheetWorkbook(input, 'xlsx');
-    const out = parseMultiSheetWorkbook(bytes);
-    expect(out.map((s) => s.name)).toEqual(['Alpha', 'Beta']);
-    // Assert the `\n` row separator survived — pins the RS option at
-    // line 477 against a mutation to empty string, which would collapse
-    // the two rows onto one line.
-    expect(out[0]?.csv).toMatch(/a,b\n1,2/);
-    expect(out[1]?.csv).toMatch(/c,d\n3,4/);
-  });
-
-  it('returns the blank Sheet1 from an empty-build workbook', () => {
-    const bytes = buildMultiSheetWorkbook([], 'xlsx');
-    const out = parseMultiSheetWorkbook(bytes);
-    expect(out.length).toBe(1);
-    expect(out[0]?.name).toBe('Sheet1');
-  });
-
-  it('skips sheets declared in SheetNames but missing from Sheets', () => {
-    const syntheticWb = {
-      SheetNames: ['Real', 'Phantom'],
-      Sheets: { Real: (XLSX as any).utils.aoa_to_sheet([['x']]) },
-    };
-    const mockRead = () => syntheticWb;
-    const out = parseMultiSheetWorkbook(new Uint8Array(), mockRead);
-    expect(out.map((s) => s.name)).toEqual(['Real']);
-  });
-
-  it('tolerates a workbook whose SheetNames is missing (defensive)', () => {
-    const mockRead = () => ({ Sheets: {} });
-    const out = parseMultiSheetWorkbook(new Uint8Array(), mockRead);
-    expect(out).toEqual([]);
   });
 });
