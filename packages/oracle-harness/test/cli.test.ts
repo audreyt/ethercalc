@@ -205,36 +205,65 @@ describe('main', () => {
   });
 
   it('falls back to the bundled scenarios when deps are empty', async () => {
+    // Shared `data` bus across every client the factory hands out, so a
+    // frame emitted by one peer reaches the others' listeners — this is
+    // what lets the multi-client broadcast verbs (chat / my.ecell / ecell /
+    // ask.ecell / stopHuddle) resolve their peer-side `expect` steps, while
+    // the reply-only verbs (ask.log / ask.ecells / ask.recalc) still satisfy
+    // the sender. The double mirrors the documented server replies in
+    // `src/lib/ws-handlers.ts`.
+    const dataBus = new Set<(...args: unknown[]) => void>();
+    const fanout = (reply: unknown): void => {
+      queueMicrotask(() => {
+        for (const fn of dataBus) fn(reply);
+      });
+    };
+    const replyFor = (msg: { type?: string; room?: string }): unknown | null => {
+      switch (msg.type) {
+        case 'ask.log':
+          return { type: 'log', room: msg.room, log: [], chat: [], snapshot: '' };
+        case 'ask.ecells':
+          return { type: 'ecells', room: msg.room, ecells: {} };
+        case 'ask.recalc':
+          return { type: 'recalc', room: msg.room, log: [], snapshot: '' };
+        // Broadcast verbs: echo the server-shaped frame back onto the bus so
+        // the peer client observes it. We forward the original payload, which
+        // already carries every field the `expect` asserts.
+        case 'chat':
+        case 'my.ecell':
+        case 'ecell':
+        case 'ask.ecell':
+        case 'stopHuddle':
+          return msg;
+        default:
+          return null;
+      }
+    };
     const mockIoClientFactory = (): IoClientLike => {
-      const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
+      const localData = new Set<(...args: unknown[]) => void>();
       return {
         connected: true,
         on(event, fn) {
-          if (!listeners.has(event)) listeners.set(event, new Set());
-          listeners.get(event)!.add(fn);
-          if (event === 'connect') queueMicrotask(() => fn());
+          if (event === 'connect') {
+            queueMicrotask(() => fn());
+            return;
+          }
+          if (event === 'data') {
+            localData.add(fn);
+            dataBus.add(fn);
+          }
         },
         emit(event, ...args) {
           if (event !== 'data') return;
           const msg = args[0];
           if (!msg || typeof msg !== 'object') return;
-          const typed = msg as { type?: string; room?: string };
-          if (typed.type === 'ask.log') {
-            const reply = {
-              type: 'log',
-              room: typed.room,
-              log: [],
-              chat: [],
-              snapshot: '',
-            };
-            queueMicrotask(() => {
-              for (const fn of listeners.get('data') ?? []) fn(reply);
-            });
-          }
+          const reply = replyFor(msg as { type?: string; room?: string });
+          if (reply !== null) fanout(reply);
         },
         disconnect() {},
         removeAllListeners() {
-          listeners.clear();
+          for (const fn of localData) dataBus.delete(fn);
+          localData.clear();
         },
       };
     };
