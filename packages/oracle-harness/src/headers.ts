@@ -23,6 +23,7 @@ export const VOLATILE_HEADERS: ReadonlySet<string> = new Set([
   'etag',
   'x-powered-by',
   'connection',
+  'last-modified',
 ]);
 
 /**
@@ -33,7 +34,6 @@ export const OPTIONAL_IF_ABSENT: ReadonlySet<string> = new Set([
   'content-length',
   'content-type',
   'accept-ranges',
-  'last-modified',
   'vary',
 ]);
 
