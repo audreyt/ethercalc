@@ -295,6 +295,71 @@ describe('runWsScenario', () => {
     expect(ignored.ok).toBe(true);
   });
 
+  it('reports fetch failures for inline http steps without crashing', async () => {
+    // Mirrors the replayOne fix: a Bun ZlibError at fetch time must
+    // surface as a per-step failure, not propagate up and kill the run.
+    const scenario: WsScenario = {
+      name: 'ws/http-throw',
+      kind: 'ws',
+      steps: [
+        {
+          type: 'http',
+          request: { method: 'GET', path: '/_/r' },
+          expect: {
+            status: 200,
+            headers: {},
+            bodyBase64: encodeBase64(new Uint8Array()),
+            bodyMatcher: 'ignore',
+          },
+        },
+      ],
+    };
+    const result = await runWsScenario(scenario, {
+      targetUrl: 'http://host.test',
+      transport: 'native',
+      mode: 'replay',
+      fetcher: async () => {
+        throw new Error('ZlibError: bad gzip body');
+      },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/fetch failed: ZlibError/);
+  });
+
+  it('reports body read failures for inline http steps', async () => {
+    const scenario: WsScenario = {
+      name: 'ws/http-body-throw',
+      kind: 'ws',
+      steps: [
+        {
+          type: 'http',
+          request: { method: 'GET', path: '/_/r' },
+          expect: {
+            status: 200,
+            headers: {},
+            bodyBase64: encodeBase64(new TextEncoder().encode('expected')),
+            bodyMatcher: 'exact',
+          },
+        },
+      ],
+    };
+    const result = await runWsScenario(scenario, {
+      targetUrl: 'http://host.test',
+      transport: 'native',
+      mode: 'replay',
+      fetcher: async () =>
+        ({
+          status: 200,
+          headers: new Headers(),
+          arrayBuffer: async () => {
+            throw new Error('zlib error');
+          },
+        }) as unknown as Response,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/body read failed: zlib error/);
+  });
+
   it('honors sleep steps and multi-id sessions', async () => {
     const sockets: MockWebSocket[] = [];
     const scenario: WsScenario = {

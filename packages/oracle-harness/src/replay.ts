@@ -80,7 +80,19 @@ export async function replayOne(
     return { scenario, ok: false, error: 'scenario has no `expect` — re-record against the oracle' };
   }
   const url = new URL(normalized.request.path, opts.targetUrl).toString();
-  const response = await fetcher(url, buildScenarioRequestInit(normalized));
+  let response: Response;
+  try {
+    response = await fetcher(url, buildScenarioRequestInit(normalized));
+  } catch (err) {
+    // Network-layer errors (connection refused, Bun ZlibError on a
+    // gzip-tagged 404, etc.) must NOT crash the whole replay — the
+    // caller iterates scenarios and reports per-scenario failures.
+    return {
+      scenario: normalized,
+      ok: false,
+      error: `fetch failed: ${(err as Error).message}`,
+    };
+  }
   if (response.status !== normalized.expect.status) {
     return {
       scenario: normalized,

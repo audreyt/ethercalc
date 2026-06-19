@@ -116,7 +116,15 @@ export function buildScenarioRequestInit(scenario: HttpScenario): RequestInit {
   // 302 (`/_new`, `/:room/edit`, ...), and we want to capture that
   // verbatim — not silently follow the redirect and record a 200.
   const init: RequestInit = { method: scenario.request.method, redirect: 'manual' };
-  if (Object.keys(requestHeaders).length > 0) init.headers = { ...requestHeaders };
+  // Default `accept-encoding: identity` so the server never gzip-encodes
+  // the response. Bun's fetch auto-decompresses `Content-Encoding: gzip`
+  // bodies and has been observed — nightly #70, 2026-06-19 — to throw a
+  // ZlibError on the empty 404 workerd returns for unmatched routes,
+  // crashing the whole replay with exit code 2. Record/replay never
+  // inspect transport-level compression, so asking for identity sidesteps
+  // the decompression path entirely. Scenario-supplied headers override
+  // the default through object spread (later keys win for the same case).
+  init.headers = { 'accept-encoding': 'identity', ...requestHeaders };
   if (scenario.request.bodyBase64 !== undefined) {
     init.body = new Uint8Array(
       atob(scenario.request.bodyBase64)
