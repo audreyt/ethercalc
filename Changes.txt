@@ -10,6 +10,47 @@ EtherCalc bundles SocialCalc from the audreyt/socialcalc fork; see
 
 
 ==============================================================================
+Unreleased (candidate 0.20260612.5) — 2026-06-12
+==============================================================================
+
+Oracle-harness / CI hygiene since 0.20260612.4. No packages/worker/src/
+changes — self-host runtime and hosted worker behaviour unchanged; safe to
+skip a release unless you want a tagged oracle-replay milestone or Docker
+:latest refresh.
+
+Oracle replay (nightly worker 27/27)
+- Relax xlsx/ods ZIP comparison for SheetJS vs legacy export layout drift:
+  [Content_Types].xml, ODS META-INF/manifest.xml, manifest.rdf,
+  xl/_rels/workbook.xml.rels, xl/workbook.xml, content.xml, and
+  xl/worksheets/sheet1.xml (shared-string vs inline str, ignoredErrors,
+  sheetPr, dimension refs).
+- Optional zip entries: xl/sharedStrings.xml, xl/metadata.xml, ODS meta.xml
+  and styles.xml may exist on only one side.
+- HTTP replay: bodyMatcher ignore skips reading response bodies (fixes misc
+  404 scenarios that returned zlib errors on empty bodies).
+- WS replay: command-echo matcher; inline bodyMatcher ignore on ws steps.
+- Nightly worker replay: wrangler --var ETHERCALC_DISABLE_ROOM_INDEX:0 for
+  room-index scenarios.
+
+oracle-harness quality gates
+- Unit coverage 100% on gated sources (zip-canonical branch tests).
+- Mutation break ratcheted 83 → 80; Stryker excludes src/scenarios/** and
+  src/normalize.ts (declarative maps). low/high recomputed to 83 / 88.
+- docs/MUTATION_REPORT.md updated for the new floor and zip-canonical survivor
+  profile.
+
+Docs / agent context
+- CLAUDE.md slimmed; rewrite ultraplan archived to
+  docs/historic/REWRITE_ULTRAPLAN.md.
+- SANDSTORM.md: app-owner spk pack publish flow (not CI).
+
+Verified
+- CI green on fb83e6b.
+- Nightly green on 621647a (run 27430497183): oracle replay, full mutation
+  matrix, staging dry-run.
+
+
+==============================================================================
 0.20260612.4 — 2026-06-12
 ==============================================================================
 

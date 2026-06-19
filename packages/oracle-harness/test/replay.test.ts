@@ -173,7 +173,7 @@ describe('replayOne', () => {
       return new Response('');
     };
     await replayOne(scenario, { targetUrl: 'http://target.test', recordedDir: '', fetcher });
-    expect(sawHeaders).toEqual({ Accept: 'text/plain' });
+    expect(sawHeaders).toMatchObject({ Accept: 'text/plain' });
   });
 
   it('forwards request bodyBase64 to the target', async () => {
@@ -216,6 +216,47 @@ describe('replayOne', () => {
     } finally {
       (globalThis as { fetch: typeof fetch }).fetch = originalFetch;
     }
+  });
+
+  it('defaults to accept-encoding: identity to dodge Bun gzip-decompression flakes', async () => {
+    // Nightly #70 (2026-06-19) crashed with `ZlibError fetching ...` when
+    // wrangler's 404 for /etc/foo came back with `Content-Encoding: gzip`
+    // and an empty body; Bun's auto-decompress threw at fetch time.
+    // Asserting on the request default guards the regression.
+    const scenario = mkRecording();
+    let sawHeaders: RequestInit['headers'];
+    const fetcher: typeof fetch = async (_url, init) => {
+      sawHeaders = init?.headers;
+      return new Response('hi', { status: 200, headers: { 'content-type': 'text/plain' } });
+    };
+    await replayOne(scenario, { targetUrl: 'http://target.test', recordedDir: '', fetcher });
+    expect((sawHeaders as Record<string, string>)['accept-encoding']).toBe('identity');
+  });
+
+  it('lets scenario-supplied accept-encoding override the identity default', async () => {
+    const scenario = mkRecording({
+      request: { method: 'GET', path: '/x', headers: { 'accept-encoding': 'gzip' } },
+    });
+    let sawHeaders: RequestInit['headers'];
+    const fetcher: typeof fetch = async (_url, init) => {
+      sawHeaders = init?.headers;
+      return new Response('hi', { status: 200, headers: { 'content-type': 'text/plain' } });
+    };
+    await replayOne(scenario, { targetUrl: 'http://target.test', recordedDir: '', fetcher });
+    expect((sawHeaders as Record<string, string>)['accept-encoding']).toBe('gzip');
+  });
+
+  it('reports fetch failures without crashing the replay run', async () => {
+    const scenario = mkRecording();
+    const r = await replayOne(scenario, {
+      targetUrl: 'http://target.test',
+      recordedDir: '',
+      fetcher: async () => {
+        throw new Error('ZlibError: bad gzip body');
+      },
+    });
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/fetch failed: ZlibError/);
   });
 
   it('reports body read failures', async () => {

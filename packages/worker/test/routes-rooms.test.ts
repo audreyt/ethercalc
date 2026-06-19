@@ -327,15 +327,103 @@ describe('Phase 5 routes — full round-trip', () => {
     expect(body.command[body.command.length - 1]).toMatch(/^paste A\d+ all$/);
   });
 
-  it('POST /_/:room with xlsx content-type returns 501', async () => {
+  it('POST /_/:room with xlsx body imports the cells (202, not 501)', async () => {
+    // Build a tiny xlsx with A1=1, A2=2, A3=SUM(A1:A2) and POST it as a
+    // command body. The handler decodes it into a loadclipboard+paste
+    // pair, runs it through the DO, and replies 202 {command: [...]}.
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const XLSX = await import('@e965/xlsx');
+    const ws = {
+      '!ref': 'A1:A3',
+      A1: { t: 'n', v: 1 },
+      A2: { t: 'n', v: 2 },
+      A3: { t: 'n', v: 3, f: 'SUM(A1:A2)' },
+    };
+    const book = (XLSX as any).utils.book_new();
+    (XLSX as any).utils.book_append_sheet(book, ws, 'Sheet1');
+    const bytes = new Uint8Array(
+      (XLSX as any).write(book, { bookType: 'xlsx', type: 'array' }) as ArrayBufferLike,
+    );
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+
     const res = await request('POST', '/_/post-xlsx', {
       headers: {
         'content-type':
           'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       },
-      body: 'PK\x03\x04',
+      body: bytes as unknown as BodyInit,
     });
-    expect(res.status).toBe(501);
+    expect(res.status).toBe(202);
+    expect(res.headers.get('content-type')).toBe('application/json; charset=utf-8');
+    const body = (await res.json()) as { command: string[] };
+    expect(Array.isArray(body.command)).toBe(true);
+    expect(body.command[0]).toMatch(/^loadclipboard /);
+    expect(body.command[body.command.length - 1]).toBe('paste A1 all');
+
+    // The imported cells (and the recalculated SUM) are present afterward.
+    const cells = await request('GET', '/_/post-xlsx/csv.json');
+    expect(cells.status).toBe(200);
+    const grid = (await cells.json()) as string[][];
+    expect(grid).toEqual([['1'], ['2'], ['3']]);
+  });
+
+  it('POST /_/:room xlsx pastes INTO a room without clobbering existing cells', async () => {
+    // Seed an existing cell via a normal command, then POST an xlsx body.
+    // The paste lands the imported cells while the pre-existing cell that
+    // the import doesn't overwrite survives (unlike PUT, which replaces
+    // the whole snapshot).
+    await request('POST', '/_/post-xlsx-merge', {
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ command: 'set C5 text t keepme' }),
+    });
+
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const XLSX = await import('@e965/xlsx');
+    const ws = { '!ref': 'A1:A1', A1: { t: 's', v: 'imported' } };
+    const book = (XLSX as any).utils.book_new();
+    (XLSX as any).utils.book_append_sheet(book, ws, 'Sheet1');
+    const bytes = new Uint8Array(
+      (XLSX as any).write(book, { bookType: 'xlsx', type: 'array' }) as ArrayBufferLike,
+    );
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+
+    const res = await request('POST', '/_/post-xlsx-merge', {
+      headers: {
+        'content-type':
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      },
+      body: bytes as unknown as BodyInit,
+    });
+    expect(res.status).toBe(202);
+
+    const get = await request('GET', '/_/post-xlsx-merge');
+    expect(get.status).toBe(200);
+    const saved = await get.text();
+    expect(saved).toContain('cell:A1:t:imported');
+    expect(saved).toContain('cell:C5:t:keepme');
+  });
+
+  it('POST /_/:room with an empty/cell-less xlsx body is a no-op 202', async () => {
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const XLSX = await import('@e965/xlsx');
+    const ws = { '!ref': 'A1:A1' };
+    const book = (XLSX as any).utils.book_new();
+    (XLSX as any).utils.book_append_sheet(book, ws, 'Sheet1');
+    const bytes = new Uint8Array(
+      (XLSX as any).write(book, { bookType: 'xlsx', type: 'array' }) as ArrayBufferLike,
+    );
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+
+    const res = await request('POST', '/_/post-xlsx-empty', {
+      headers: {
+        'content-type':
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      },
+      body: bytes as unknown as BodyInit,
+    });
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as { command: string[] };
+    expect(body.command).toEqual([]);
   });
 
   it('POST /_/:room with array command joins them for the DO batch', async () => {

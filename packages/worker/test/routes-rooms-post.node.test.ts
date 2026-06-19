@@ -81,10 +81,19 @@ describe('POST /_/:room — command execution', () => {
     expect(calls).toHaveLength(0);
   });
 
-  it('returns 501 for xlsx body without touching DO', async () => {
-    const { env, calls } = makeFakeRoomNamespace(() => {
-      throw new Error('should not reach DO');
-    });
+  it('decodes an xlsx body into a loadclipboard+paste dispatch (202)', async () => {
+    const { env, calls } = makeFakeRoomNamespace(
+      () => new Response(null, { status: 202 }),
+    );
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const XLSX = await import('@e965/xlsx');
+    const ws = { '!ref': 'A1:A1', A1: { t: 's', v: 'hi' } };
+    const book = (XLSX as any).utils.book_new();
+    (XLSX as any).utils.book_append_sheet(book, ws, 'Sheet1');
+    const bytes = new Uint8Array(
+      (XLSX as any).write(book, { bookType: 'xlsx', type: 'array' }) as ArrayBufferLike,
+    );
+    /* eslint-enable @typescript-eslint/no-explicit-any */
     const app = buildApp();
     const res = await app.fetch(
       new Request('https://t.test/_/r', {
@@ -93,12 +102,52 @@ describe('POST /_/:room — command execution', () => {
           'content-type':
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         },
-        body: 'PKZIP',
+        body: bytes as unknown as BodyInit,
       }),
       env as never,
     );
-    expect(res.status).toBe(501);
-    expect(calls).toHaveLength(0);
+    expect(res.status).toBe(202);
+    expect(res.headers.get('content-type')).toBe('application/json; charset=utf-8');
+    const body = (await res.json()) as { command: string[] };
+    expect(body.command[0]).toMatch(/^loadclipboard /);
+    expect(body.command[body.command.length - 1]).toBe('paste A1 all');
+    // The decoded command pair is dispatched to the DO as a newline batch.
+    const dispatch = calls.find((c) => c.url.includes('/_do/commands'));
+    expect(dispatch).toBeDefined();
+    expect(dispatch!.method).toBe('POST');
+    expect(dispatch!.bodyText).toBe(body.command.join('\n'));
+  });
+
+  it('an empty/cell-less xlsx body is a no-op 202 that skips the DO', async () => {
+    const { env, calls } = makeFakeRoomNamespace(() => {
+      throw new Error('should not reach DO');
+    });
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const XLSX = await import('@e965/xlsx');
+    const ws = { '!ref': 'A1:A1' };
+    const book = (XLSX as any).utils.book_new();
+    (XLSX as any).utils.book_append_sheet(book, ws, 'Sheet1');
+    const bytes = new Uint8Array(
+      (XLSX as any).write(book, { bookType: 'xlsx', type: 'array' }) as ArrayBufferLike,
+    );
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+    const app = buildApp();
+    const res = await app.fetch(
+      new Request('https://t.test/_/r', {
+        method: 'POST',
+        headers: {
+          'content-type':
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        },
+        body: bytes as unknown as BodyInit,
+      }),
+      env as never,
+    );
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as { command: string[] };
+    expect(body.command).toEqual([]);
+    // No commands → no DO dispatch.
+    expect(calls.find((c) => c.url.includes('/_do/commands'))).toBeUndefined();
   });
 
   it('filters the banned text-wiki format command (echoed but not executed)', async () => {

@@ -24,6 +24,10 @@ import type { Hono } from 'hono';
 import { upsertCronTriggers } from '../handlers/cron.ts';
 import { classifyCommandBody, joinCommands } from '../handlers/post-command.ts';
 import { classifyRequestBody } from '../handlers/rooms.ts';
+import {
+  ImportTooLargeError,
+  xlsxToLoadClipboardCommands,
+} from '../lib/xlsx-import.ts';
 import { verifyAuth } from '../lib/auth.ts';
 import { parseSettimetrigger } from '../lib/cron.ts';
 import { doFetch } from '../lib/do-dispatch.ts';
@@ -291,9 +295,13 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
   //
   // Phase 6 implementation. Direct port of src/main.ls:406-446:
   //
-  //   1. classify body (JSON {command} / text / xlsx-deferred)
+  //   1. classify body (JSON {command} / text / xlsx)
   //   2. empty body -> 400 'Please send command'
-  //   3. xlsx -> 501 (J-lib decoder deferred to Phase 8)
+  //   3. xlsx/ods -> decode the workbook into a `loadclipboard <save>` +
+  //      `paste A1 all` command pair and run it through this same POST
+  //      path (matches the legacy J-library decode that replied 202
+  //      {command}). The cells paste INTO the room, preserving any
+  //      existing content -- unlike PUT, which replaces the snapshot.
   //   4. apply text-wiki filter -- the banned command is silently
   //      dropped at the top (sec 7 item 12); we return 202 with the
   //      original command echoed so clients don't re-issue it.
@@ -321,7 +329,36 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
     const ct = c.req.header('content-type') ?? '';
     const classified = classifyCommandBody(ct, bytes);
 
-    if (classified.kind === 'xlsx-deferred') return xlsxDeferredResponse();
+    // xlsx/ods body: decode the workbook into a `loadclipboard <save>` +
+    // `paste A1 all` command pair and dispatch it through the shared tail
+    // below (same as a JSON-array command). The paste lands the imported
+    // cells INTO the room without clobbering existing content. An empty
+    // body classifies as `empty` (-> 400); an empty/cell-less workbook
+    // yields no commands, which we treat as a no-op 202 echo.
+    if (classified.kind === 'xlsx-deferred') {
+      let commands: string[];
+      try {
+        commands = xlsxToLoadClipboardCommands(bytes);
+      } catch (err) {
+        if (err instanceof ImportTooLargeError) {
+          return sizedResponse(err.message, 413, TEXT_CT);
+        }
+        /* istanbul ignore next -- xlsxToLoadClipboardCommands only throws
+           ImportTooLargeError in practice; any other failure (malformed
+           workbook) is swallowed by SheetJS into an empty sheet. */
+        return sizedResponse('Could not import workbook', 400, TEXT_CT);
+      }
+      if (commands.length > 0) {
+        await doFetch(c.env, room, '/_do/commands', {
+          method: 'POST',
+          body: commands.join('\n'),
+        });
+      }
+      return new Response(JSON.stringify({ command: commands }), {
+        status: 202,
+        headers: { 'Content-Type': JSON_CT },
+      });
+    }
     if (classified.kind === 'empty') {
       return sizedResponse('Please send command', 400, TEXT_CT);
     }

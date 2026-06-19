@@ -29,16 +29,22 @@ bun run --cwd packages/e2e report
 | `redirects.spec.ts`           | `/_new`, `/=_new`, `/:room/{edit,view,app}` redirect as per CLAUDE.md §6. |
 | `blocked.spec.ts`             | `/etc/*` and `/var/*` stay 404 with `text/html` empty body.               |
 | `client-multi-smoke.spec.ts`  | React 18 SPA mounts on `/=<room>`, Radix tablist renders.                 |
-| `client-single-smoke.spec.ts` | Skipped: waits on Phase 11 Workers Assets pipeline.                       |
+| `client-single-smoke.spec.ts` | SocialCalc single-sheet UI boots on `/:room` via the Worker's ASSETS.     |
 
 ## Strategy for client assets (current)
 
-Worker has no live `[assets]` binding yet (see
-`packages/worker/wrangler.toml`). Until Phase 11 lands the curated
-`assets/` directory, the client-multi smoke test boots `vite dev` on a
-fixture-owned port and the single-sheet smoke is `test.skip`-ed. Once
-Phase 11 wires Workers Assets, both smoke specs point at `workerBase`
-directly and the client Vite fixture goes away.
+The Worker now has the Workers Assets binding wired
+(`[assets] directory = "../../assets"` in `packages/worker/wrangler.toml`,
+populated by `scripts/build-assets.sh`), so the **single-sheet** smoke
+points at `workerBase` directly: `GET /:room` serves `index.html`, which
+pulls in `static/socialcalc.js` + `static/player.js` and mounts the
+editor — no extra fixture needed.
+
+The **multi-sheet** SPA still boots `vite dev` on a fixture-owned port:
+its dev-mode SPA fallback for `/=<room>` is convenient and avoids
+rebuilding `assets/multi/` on every run. Pointing it at `workerBase`
+(dropping the Vite fixture) is the remaining cleanup once the multi
+build is part of the standard e2e setup.
 
 ## Expanding coverage as phases land
 
@@ -50,8 +56,8 @@ directly and the client Vite fixture goes away.
   sees the update via `page.waitForFunction`.
 - Phase 8 (exports): `/_/:room/csv`, `/:room.html`, `/:room.xlsx` —
   assert via `@ethercalc/oracle-harness` structural matchers.
-- Phase 10/10b (realtime client): drop the skip on
-  `client-single-smoke.spec.ts` — wait for `window.SocialCalc`, edit a
-  cell, reload, assert persistence.
+- Phase 10/10b (realtime client): extend `client-single-smoke.spec.ts`
+  (which already boots the single-sheet UI) to edit a cell, reload, and
+  assert persistence over the live WS round-trip.
 - Phase 11 (assets): drop the Vite fixture; both SPAs come via Workers
   Assets served by the Worker.
