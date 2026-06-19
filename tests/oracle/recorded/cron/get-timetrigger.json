@@ -1,19 +1,19 @@
 {
   "scenario": {
-    "name": "rooms-index/get-rooms-empty",
+    "name": "cron/get-timetrigger",
     "kind": "http",
     "request": {
       "method": "GET",
-      "path": "/_rooms"
+      "path": "/_timetrigger"
     },
     "expect": {
       "status": 200,
       "headers": {
-        "content-length": "2",
+        "content-length": "re:^\\d+$",
         "content-type": "application/json; charset=utf-8"
       },
-      "bodyBase64": "W10=",
-      "bodyMatcher": "rooms-empty"
+      "bodyBase64": "",
+      "bodyMatcher": "ignore"
     }
   }
 }

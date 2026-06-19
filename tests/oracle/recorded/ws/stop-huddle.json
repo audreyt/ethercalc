@@ -1,0 +1,90 @@
+{
+  "scenario": {
+    "name": "ws/stop-huddle",
+    "kind": "ws",
+    "steps": [
+      {
+        "type": "http",
+        "request": {
+          "method": "PUT",
+          "path": "/_/oracle-phase3-ws",
+          "headers": {
+            "Content-Type": "text/x-socialcalc; charset=utf-8"
+          },
+          "bodyBase64": "c29jaWFsY2FsYzp2ZXJzaW9uOjEuNQpNSU1FLVZlcnNpb246IDEuMApDb250ZW50LVR5cGU6IG11bHRpcGFydC9taXhlZDsgYm91bmRhcnk9U29jaWFsQ2FsY1NwcmVhZHNoZWV0Q29udHJvbFNhdmUKLS1Tb2NpYWxDYWxjU3ByZWFkc2hlZXRDb250cm9sU2F2ZQpDb250ZW50LXR5cGU6IHRleHQvcGxhaW47IGNoYXJzZXQ9VVRGLTgKCiMgU29jaWFsQ2FsYyBTcHJlYWRzaGVldCBDb250cm9sIFNhdmUKdmVyc2lvbjoxLjAKcGFydDpzaGVldAotLVNvY2lhbENhbGNTcHJlYWRzaGVldENvbnRyb2xTYXZlCkNvbnRlbnQtdHlwZTogdGV4dC9wbGFpbjsgY2hhcnNldD1VVEYtOAoKdmVyc2lvbjoxLjUKY2VsbDpBMTp0Om9yYWNsZQpzaGVldDpjOjE6cjoxOnR2ZjoxCi0tU29jaWFsQ2FsY1NwcmVhZHNoZWV0Q29udHJvbFNhdmUtLQo="
+        },
+        "expect": {
+          "status": 201,
+          "headers": {
+            "content-length": "2",
+            "content-type": "text/plain; charset=utf-8"
+          },
+          "bodyBase64": "T0s=",
+          "bodyMatcher": "exact"
+        }
+      },
+      {
+        "type": "connect",
+        "id": "a",
+        "url": "/_ws/oracle-phase3-ws?user=oracle-harness&auth=harness"
+      },
+      {
+        "type": "connect",
+        "id": "b",
+        "url": "/_ws/oracle-phase3-ws?user=oracle-harness-peer&auth=harness"
+      },
+      {
+        "type": "send",
+        "id": "b",
+        "msg": {
+          "type": "ask.log",
+          "room": "oracle-phase3-ws",
+          "user": "oracle-harness-peer"
+        }
+      },
+      {
+        "type": "expect",
+        "id": "b",
+        "msg": {
+          "type": "log",
+          "room": "oracle-phase3-ws",
+          "log": [],
+          "chat": [],
+          "snapshot": "re:.*"
+        },
+        "match": "partial"
+      },
+      {
+        "type": "sleep",
+        "ms": 50
+      },
+      {
+        "type": "send",
+        "id": "a",
+        "msg": {
+          "type": "stopHuddle",
+          "room": "oracle-phase3-ws",
+          "auth": "harness"
+        }
+      },
+      {
+        "type": "expect",
+        "id": "b",
+        "msg": {
+          "type": "stopHuddle",
+          "room": "oracle-phase3-ws",
+          "auth": "harness"
+        },
+        "match": "partial"
+      },
+      {
+        "type": "close",
+        "id": "a"
+      },
+      {
+        "type": "close",
+        "id": "b"
+      }
+    ]
+  }
+}

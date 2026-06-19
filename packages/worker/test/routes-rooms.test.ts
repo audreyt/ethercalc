@@ -334,10 +334,11 @@ describe('Phase 5 routes — full round-trip', () => {
     /* eslint-disable @typescript-eslint/no-explicit-any */
     const XLSX = await import('@e965/xlsx');
     const ws = {
-      '!ref': 'A1:A3',
+      '!ref': 'A1:A4',
       A1: { t: 'n', v: 1 },
       A2: { t: 'n', v: 2 },
       A3: { t: 'n', v: 3, f: 'SUM(A1:A2)' },
+      A4: { t: 's', v: 'C:\\new:line\nnext' },
     };
     const book = (XLSX as any).utils.book_new();
     (XLSX as any).utils.book_append_sheet(book, ws, 'Sheet1');
@@ -364,7 +365,12 @@ describe('Phase 5 routes — full round-trip', () => {
     const cells = await request('GET', '/_/post-xlsx/csv.json');
     expect(cells.status).toBe(200);
     const grid = (await cells.json()) as string[][];
-    expect(grid).toEqual([['1'], ['2'], ['3']]);
+    expect(grid).toEqual([['1'], ['2'], ['3'], ['C:\\new:line\nnext']]);
+
+    const a4 = await request('GET', '/_/post-xlsx/cells/A4');
+    expect(a4.status).toBe(200);
+    const a4Json = (await a4.json()) as { datavalue?: string };
+    expect(a4Json.datavalue).toBe('C:\\new:line\nnext');
   });
 
   it('POST /_/:room xlsx pastes INTO a room without clobbering existing cells', async () => {

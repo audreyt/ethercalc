@@ -1,0 +1,19 @@
+{
+  "scenario": {
+    "name": "exports/get-cells",
+    "kind": "http",
+    "request": {
+      "method": "GET",
+      "path": "/_/oracle-phase3-export/cells"
+    },
+    "expect": {
+      "status": 200,
+      "headers": {
+        "content-length": "re:^\\d+$",
+        "content-type": "application/json; charset=utf-8"
+      },
+      "bodyBase64": "eyJBMSI6eyJjb29yZCI6IkExIiwiZGF0YXZhbHVlIjoib3JhY2xlIiwiZGF0YXR5cGUiOiJ0IiwiZm9ybXVsYSI6IiIsInZhbHVldHlwZSI6InQiLCJyZWFkb25seSI6ZmFsc2UsImRpc3BsYXlzdHJpbmciOiJvcmFjbGUifX0=",
+      "bodyMatcher": "json"
+    }
+  }
+}

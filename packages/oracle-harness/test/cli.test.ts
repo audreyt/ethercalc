@@ -253,6 +253,12 @@ describe('main', () => {
             dataBus.add(fn);
           }
         },
+        off(event, fn) {
+          if (event === 'data') {
+            localData.delete(fn);
+            dataBus.delete(fn);
+          }
+        },
         emit(event, ...args) {
           if (event !== 'data') return;
           const msg = args[0];

@@ -190,14 +190,13 @@ describe('NORMALIZERS registry', () => {
       'exports/get-csv-json',
       'exports/get-cells',
       'exports/get-cell-a1',
-      'cron/get-timetrigger',
     ]) {
       const hook = getNormalizer(name);
       expect(hook).not.toBeNull();
       expect(hook!(mkScenario({ name })).expect?.bodyMatcher).toBe('json');
     }
-    // fods / md — no structural matcher / documented divergence → ignore.
-    for (const name of ['exports/get-fods', 'exports/get-md']) {
+    // fods / md / cron — no structural matcher / documented divergence → ignore.
+    for (const name of ['exports/get-fods', 'exports/get-md', 'cron/get-timetrigger']) {
       const hook = getNormalizer(name);
       expect(hook).not.toBeNull();
       expect(hook!(mkScenario({ name })).expect?.bodyMatcher).toBe('ignore');

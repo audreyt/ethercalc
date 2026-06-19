@@ -4,10 +4,13 @@ import { describe, it, expect } from 'vitest';
 import * as XLSX from '@e965/xlsx';
 
 import {
+  ImportArchiveTooLargeError,
   ImportTooLargeError,
+  MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES,
   MAX_IMPORT_CELLS,
   cellToCommand,
   countWorksheetCells,
+  enforceImportArchiveLimit,
   enforceImportLimit,
   xlsxToLoadClipboardCommands,
   xlsxToSave,
@@ -31,8 +34,10 @@ describe('cellToCommand', () => {
     expect(cellToCommand('A1', { t: 'n', v: Infinity })).toBeNull();
   });
 
-  it('string cells emit `set <coord> text t <v>`', () => {
-    expect(cellToCommand('A1', { t: 's', v: 'hello' })).toBe('set A1 text t hello');
+  it('encodes text cell values for SocialCalc command syntax', () => {
+    expect(cellToCommand('A1', { t: 's', v: 'C:\\new:line\nnext' })).toBe(
+      'set A1 text t C\\c\\bnew\\cline\\nnext',
+    );
   });
 
   it('missing string value stringifies to empty', () => {
@@ -60,13 +65,11 @@ describe('cellToCommand', () => {
   });
 
   it('unknown type falls back to formatted text (`w`) when present', () => {
-    expect(cellToCommand('A1', { t: 'z', w: 'formatted' })).toBe(
-      'set A1 text t formatted',
-    );
+    expect(cellToCommand('A1', { t: 'z', w: 'a:b' })).toBe('set A1 text t a\\cb');
   });
 
   it('unknown type falls back to stringified raw value when only `v` is present', () => {
-    expect(cellToCommand('A1', { t: 'z', v: 123 })).toBe('set A1 text t 123');
+    expect(cellToCommand('A1', { t: 'z', v: 'x\ny' })).toBe('set A1 text t x\\ny');
   });
 
   it('unknown type with no value returns null', () => {
@@ -100,6 +103,19 @@ describe('xlsxToSave — roundtrip', () => {
     expect(save).toContain('cell:A1:v:1');
     // SocialCalc encodes text as `cell:A2:t:hello`.
     expect(save).toContain('cell:A2:t:hello');
+  });
+
+  it('preserves encoded text through xlsxToSave', () => {
+    const bytes = makeXlsx(
+      {
+        A1: { t: 's', v: 'one\ntwo' },
+        A2: { t: 's', v: 'C:\\temp:folder' },
+      },
+      'A1:A2',
+    );
+    const save = xlsxToSave(bytes);
+    expect(save).toContain('cell:A1:t:one\\ntwo');
+    expect(save).toContain('cell:A2:t:C\\c\\btemp\\cfolder');
   });
 
   it('formulas roundtrip and recalc to the expected value', () => {
@@ -321,5 +337,72 @@ describe('xlsxToLoadClipboardCommands', () => {
     expect(() => enforceImportLimit(MAX_IMPORT_CELLS + 1)).toThrow(
       ImportTooLargeError,
     );
+  });
+});
+
+function makeFakeZipCentralDirectory(
+  entries: Array<{ name: string; compressedSize: number; uncompressedSize: number }>
+): Uint8Array {
+  const cdHeaders: Uint8Array[] = [];
+  let cdOffset = 0;
+  for (const entry of entries) {
+    const nameBytes = new TextEncoder().encode(entry.name);
+    const header = new Uint8Array(46 + nameBytes.length);
+    header[0] = 0x50;
+    header[1] = 0x4b;
+    header[2] = 0x01;
+    header[3] = 0x02;
+    header[20] = entry.compressedSize & 0xff;
+    header[21] = (entry.compressedSize >> 8) & 0xff;
+    header[22] = (entry.compressedSize >> 16) & 0xff;
+    header[23] = (entry.compressedSize >> 24) & 0xff;
+    header[24] = entry.uncompressedSize & 0xff;
+    header[25] = (entry.uncompressedSize >> 8) & 0xff;
+    header[26] = (entry.uncompressedSize >> 16) & 0xff;
+    header[27] = (entry.uncompressedSize >> 24) & 0xff;
+    header[28] = nameBytes.length & 0xff;
+    header[29] = (nameBytes.length >> 8) & 0xff;
+    header.set(nameBytes, 46);
+    cdHeaders.push(header);
+    cdOffset += header.length;
+  }
+  const eocd = new Uint8Array(22);
+  eocd[0] = 0x50;
+  eocd[1] = 0x4b;
+  eocd[2] = 0x05;
+  eocd[3] = 0x06;
+  eocd[8] = entries.length & 0xff;
+  eocd[9] = (entries.length >> 8) & 0xff;
+  eocd[10] = entries.length & 0xff;
+  eocd[11] = (entries.length >> 8) & 0xff;
+  eocd[12] = cdOffset & 0xff;
+  eocd[13] = (cdOffset >> 8) & 0xff;
+  eocd[14] = (cdOffset >> 16) & 0xff;
+  eocd[15] = (cdOffset >> 24) & 0xff;
+  eocd[16] = 0;
+  eocd[17] = 0;
+  eocd[18] = 0;
+  eocd[19] = 0;
+  const result = new Uint8Array(cdOffset + eocd.length);
+  let pos = 0;
+  for (const header of cdHeaders) {
+    result.set(header, pos);
+    pos += header.length;
+  }
+  result.set(eocd, pos);
+  return result;
+}
+
+describe('enforceImportArchiveLimit', () => {
+  it('throws ImportArchiveTooLargeError when uncompressed size exceeds limit for relevant files', () => {
+    expect(() => enforceImportArchiveLimit(makeFakeZipCentralDirectory([
+      { name: 'xl/worksheets/sheet2.xml', compressedSize: 10, uncompressedSize: MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES + 1 },
+    ]))).toThrow(ImportArchiveTooLargeError);
+  });
+
+  it('does not throw when huge file is not relevant to sheet parsing', () => {
+    expect(() => enforceImportArchiveLimit(makeFakeZipCentralDirectory([
+      { name: 'xl/media/image1.png', compressedSize: 10, uncompressedSize: MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES + 1 },
+    ]))).not.toThrow();
   });
 });

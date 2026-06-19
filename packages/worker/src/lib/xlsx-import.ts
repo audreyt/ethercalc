@@ -39,6 +39,123 @@ export class ImportTooLargeError extends Error {
   }
 }
 
+export const MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES = 25 * 1024 * 1024;
+
+export class ImportArchiveTooLargeError extends Error {
+  readonly byteCount: number;
+  readonly limit: number;
+  constructor(byteCount: number, limit = MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES) {
+    super(`xlsx/ods import expands to ${byteCount} bytes (limit ${limit})`);
+    this.name = 'ImportArchiveTooLargeError';
+    this.byteCount = byteCount;
+    this.limit = limit;
+  }
+}
+
+export function enforceImportArchiveLimit(bytes: Uint8Array): void {
+  const b = bytes as any;
+  if (b.length < 2 || b[0] !== 0x50 || b[1] !== 0x4b) {
+    return;
+  }
+  if (b.length < 22) {
+    return;
+  }
+  let eocdOffset = -1;
+  const startScan = b.length - 22;
+  const endScan = Math.max(0, b.length - 22 - 0xffff);
+  for (let i = startScan; i >= endScan; i--) {
+    if (
+      b[i] === 0x50 &&
+      b[i + 1] === 0x4b &&
+      b[i + 2] === 0x05 &&
+      b[i + 3] === 0x06
+    ) {
+      eocdOffset = i;
+      break;
+    }
+  }
+  if (eocdOffset === -1) {
+    return;
+  }
+  const entryCount = b[eocdOffset + 10] | (b[eocdOffset + 11] << 8);
+  const cdSize = ((b[eocdOffset + 12]) | (b[eocdOffset + 13] << 8) | (b[eocdOffset + 14] << 16) | (b[eocdOffset + 15] << 24)) >>> 0;
+  const cdOffset = ((b[eocdOffset + 16]) | (b[eocdOffset + 17] << 8) | (b[eocdOffset + 18] << 16) | (b[eocdOffset + 19] << 24)) >>> 0;
+
+  if (entryCount === 0xffff || cdSize === 0xffffffff || cdOffset === 0xffffffff) {
+    throw new ImportArchiveTooLargeError(Number.MAX_SAFE_INTEGER);
+  }
+
+  let offset = cdOffset;
+  if (offset + 4 <= b.length) {
+    const sig = ((b[offset] | (b[offset + 1] << 8) | (b[offset + 2] << 16) | (b[offset + 3] << 24)) >>> 0);
+    if (sig !== 0x02014b50) {
+      const expectedEocdOffset = cdOffset + cdSize;
+      if (expectedEocdOffset < eocdOffset) {
+        const prefixLength = eocdOffset - expectedEocdOffset;
+        const testOffset = cdOffset + prefixLength;
+        if (testOffset + 4 <= b.length) {
+          const testSig = ((b[testOffset] | (b[testOffset + 1] << 8) | (b[testOffset + 2] << 16) | (b[testOffset + 3] << 24)) >>> 0);
+          if (testSig === 0x02014b50) {
+            offset = testOffset;
+          }
+        }
+      }
+    }
+  }
+
+  let totalUncompressedSize = 0;
+  for (let i = 0; i < entryCount; i++) {
+    if (offset + 46 > b.length) {
+      return;
+    }
+    const signature = ((b[offset] | (b[offset + 1] << 8) | (b[offset + 2] << 16) | (b[offset + 3] << 24)) >>> 0);
+    if (signature !== 0x02014b50) {
+      return;
+    }
+    const compressedSize = ((b[offset + 20] | (b[offset + 21] << 8) | (b[offset + 22] << 16) | (b[offset + 23] << 24)) >>> 0);
+    const uncompressedSize = ((b[offset + 24] | (b[offset + 25] << 8) | (b[offset + 26] << 16) | (b[offset + 27] << 24)) >>> 0);
+    const fileNameLength = b[offset + 28] | (b[offset + 29] << 8);
+    const extraLength = b[offset + 30] | (b[offset + 31] << 8);
+    const commentLength = b[offset + 32] | (b[offset + 33] << 8);
+
+    if (compressedSize === 0xffffffff || uncompressedSize === 0xffffffff) {
+      throw new ImportArchiveTooLargeError(Number.MAX_SAFE_INTEGER);
+    }
+
+    if (offset + 46 + fileNameLength > b.length) {
+      return;
+    }
+
+    const nameBytes = bytes.subarray(offset + 46, offset + 46 + fileNameLength);
+    const name = new TextDecoder().decode(nameBytes);
+    const normName = name.replace(/^\/+/, '').toLowerCase();
+
+    const isRelevant =
+      normName === '[content_types].xml' ||
+      normName === 'xl/workbook.xml' ||
+      normName === 'xl/_rels/workbook.xml.rels' ||
+      normName === 'xl/sharedstrings.xml' ||
+      normName === 'xl/styles.xml' ||
+      normName === 'content.xml' ||
+      normName === 'styles.xml' ||
+      normName === 'meta.xml' ||
+      /^xl\/worksheets\/sheet\d+\.xml$/.test(normName) ||
+      /^xl\/worksheets\/_rels\/sheet\d+\.xml\.rels$/.test(normName);
+
+    if (isRelevant) {
+      if (uncompressedSize > MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES) {
+        throw new ImportArchiveTooLargeError(uncompressedSize);
+      }
+      totalUncompressedSize += uncompressedSize;
+      if (totalUncompressedSize > MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES) {
+        throw new ImportArchiveTooLargeError(totalUncompressedSize);
+      }
+    }
+
+    offset += 46 + fileNameLength + extraLength + commentLength;
+  }
+}
+
 /**
  * Count the populated cells on a SheetJS worksheet (keys that aren't
  * `!`-prefixed metadata like `!ref` / `!merges`). This is the number of
@@ -81,6 +198,11 @@ interface SheetJSCell {
  *   - anything else graceful-degrades to the formatted text (`w`) or the
  *     stringified `v`.
  */
+function encodeCellTextForCommand(value: unknown): string {
+  const SC = loadSocialCalc() as any;
+  return SC.encodeForSave(String(value ?? ''));
+}
+
 export function cellToCommand(coord: string, cell: SheetJSCell): string | null {
   // Formulas take priority — the cached value is kept by recalc.
   if (typeof cell.f === 'string' && cell.f.length > 0) {
@@ -96,7 +218,7 @@ export function cellToCommand(coord: string, cell: SheetJSCell): string | null {
     }
     case 's':
       // Allow empty string — preserves explicitly-blanked cells.
-      return `set ${coord} text t ${String(cell.v ?? '')}`;
+      return `set ${coord} text t ${encodeCellTextForCommand(cell.v ?? '')}`;
     case 'b':
       return `set ${coord} value n ${cell.v ? 1 : 0}`;
     case 'd': {
@@ -113,8 +235,8 @@ export function cellToCommand(coord: string, cell: SheetJSCell): string | null {
       return null;
     default:
       // Unknown type — try the formatted text, then raw value.
-      if (cell.w !== undefined) return `set ${coord} text t ${cell.w}`;
-      if (cell.v !== undefined) return `set ${coord} text t ${String(cell.v)}`;
+      if (cell.w !== undefined) return `set ${coord} text t ${encodeCellTextForCommand(cell.w)}`;
+      if (cell.v !== undefined) return `set ${coord} text t ${encodeCellTextForCommand(cell.v)}`;
       return null;
   }
 }
@@ -136,11 +258,13 @@ function replayWorkbook(bytes: Uint8Array): { ss: any; sheet: any } {
   const ss = new SC.SpreadsheetControl();
   const sheet = ss.context.sheetobj;
 
+  enforceImportArchiveLimit(bytes);
+
   // Stryker disable next-line ObjectLiteral,StringLiteral : @e965/xlsx
   // auto-infers `type` from a Uint8Array and defaults `cellFormula:true`
   // for xlsx/ods reads, so mutations to this options object produce
   // byte-identical workbooks. Equivalent mutants at 92:40 / 92:48.
-  const wb = (XLSX as any).read(bytes, { type: 'array', cellFormula: true });
+  const wb = (XLSX as any).read(bytes, { type: 'array', cellFormula: true, sheets: 0 });
   const firstName = (wb.SheetNames as string[])[0];
   /* istanbul ignore next -- SheetJS always populates SheetNames[0]
      (defaulting to "Sheet1") even for empty input. Defensive guard. */
@@ -181,7 +305,7 @@ function replayWorkbook(bytes: Uint8Array): { ss: any; sheet: any } {
         const fallback =
           typeof cell.v === 'number'
             ? `set ${addr} value n ${cell.v}`
-            : `set ${addr} text t ${String(cell.v)}`;
+            : `set ${addr} text t ${encodeCellTextForCommand(cell.v)}`;
         try {
           const parse = new SC.Parse(fallback);
           SC.ExecuteSheetCommand(sheet, parse, false);

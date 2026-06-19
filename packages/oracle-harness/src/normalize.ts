@@ -75,16 +75,18 @@ export const NORMALIZERS: Readonly<Record<string, NormalizeHook>> = {
     const withLocation = overrideHeader(scenario, 'location', 're:^/[a-z0-9]{12}$');
     return relaxContentLength(withLocation);
   },
-  // `GET /_timetrigger` — JSON hash of remaining fire-at minutes. Empty
-  // (`{}`) on a fresh oracle; compare structurally with the json matcher.
-  'cron/get-timetrigger': (scenario) => setBodyMatcher(scenario, 'json'),
+  // `GET /_timetrigger` — JSON hash of remaining fire-at minutes. The legacy
+  // oracle returns an empty body, so we assert the status and ignore the body.
+  'cron/get-timetrigger': (scenario) =>
+    relaxContentLength(setBodyMatcher(scenario, 'ignore')),
   // `GET /_/:room` returns SocialCalc save as `text/plain`; compare structurally.
   'exports/get-snapshot': (scenario) =>
     relaxContentLength(setBodyMatcher(scenario, 'scsave')),
   // `GET /_/:room/html` — structural HTML equivalence (Phase 8a matcher).
   'exports/get-html': (scenario) => relaxContentLength(setBodyMatcher(scenario, 'html')),
-  // `GET /_/:room/csv.json` — deterministic `string[][]`; json matcher.
-  'exports/get-csv-json': (scenario) => setBodyMatcher(scenario, 'json'),
+  // `GET /_/:room/csv.json` — 1D cell JSON; json matcher.
+  'exports/get-csv-json': (scenario) =>
+    relaxContentLength(setBodyMatcher(scenario, 'json')),
   // `GET /_/:room/fods` — no structural fods matcher exists; assert the
   // envelope only (status + CT + Content-Disposition), ignore the body.
   'exports/get-fods': (scenario) =>
@@ -94,9 +96,11 @@ export const NORMALIZERS: Readonly<Record<string, NormalizeHook>> = {
   'exports/get-md': (scenario) =>
     relaxContentLength(setBodyMatcher(scenario, 'ignore')),
   // `GET /_/:room/cells` — full cell map JSON; json matcher.
-  'exports/get-cells': (scenario) => setBodyMatcher(scenario, 'json'),
+  'exports/get-cells': (scenario) =>
+    relaxContentLength(setBodyMatcher(scenario, 'json')),
   // `GET /_/:room/cells/:cell` — single cell JSON; json matcher.
-  'exports/get-cell-a1': (scenario) => setBodyMatcher(scenario, 'json'),
+  'exports/get-cell-a1': (scenario) =>
+    relaxContentLength(setBodyMatcher(scenario, 'json')),
   // `GET /:template/form` 302s to `/<template>_<uuid>/app` (main.ls:287-293).
   'form/get-template-form-redirect': (scenario) => {
     const withLocation = overrideHeader(

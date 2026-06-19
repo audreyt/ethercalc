@@ -29,7 +29,7 @@ bun run --cwd packages/e2e report
 | `redirects.spec.ts`           | `/_new`, `/=_new`, `/:room/{edit,view,app}` redirect as per CLAUDE.md §6. |
 | `blocked.spec.ts`             | `/etc/*` and `/var/*` stay 404 with `text/html` empty body.               |
 | `client-multi-smoke.spec.ts`  | React 18 SPA mounts on `/=<room>`, Radix tablist renders.                 |
-| `client-single-smoke.spec.ts` | SocialCalc single-sheet UI boots on `/:room` via the Worker's ASSETS.     |
+| `client-single-smoke.spec.ts` | SocialCalc single-sheet UI boots, edits cell, asserts persistence and reload. |
 
 ## Strategy for client assets (current)
 
@@ -56,8 +56,6 @@ build is part of the standard e2e setup.
   sees the update via `page.waitForFunction`.
 - Phase 8 (exports): `/_/:room/csv`, `/:room.html`, `/:room.xlsx` —
   assert via `@ethercalc/oracle-harness` structural matchers.
-- Phase 10/10b (realtime client): extend `client-single-smoke.spec.ts`
-  (which already boots the single-sheet UI) to edit a cell, reload, and
-  assert persistence over the live WS round-trip.
+- Phase 10/10b (realtime client): `client-single-smoke.spec.ts` verifies editor boot, renders grid, edits A1, and reload-hydrates over live WS.
 - Phase 11 (assets): drop the Vite fixture; both SPAs come via Workers
   Assets served by the Worker.

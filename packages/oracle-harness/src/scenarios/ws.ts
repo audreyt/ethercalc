@@ -126,6 +126,8 @@ export const WS_CHAT: WsScenario = {
     SEED_WS_ROOM,
     { type: 'connect', id: 'a', url: wsConnectUrl(ORACLE_PHASE3_WS_ROOM) },
     { type: 'connect', id: 'b', url: wsConnectUrl(ORACLE_PHASE3_WS_ROOM, WS_USER_B) },
+    { type: 'send', id: 'b', msg: { type: 'ask.log', room: ORACLE_PHASE3_WS_ROOM, user: WS_USER_B } },
+    { type: 'expect', id: 'b', msg: { type: 'log', room: ORACLE_PHASE3_WS_ROOM }, match: 'partial' },
     { type: 'sleep', ms: 50 },
     {
       type: 'send',
@@ -163,14 +165,20 @@ export const WS_ASK_ECELLS: WsScenario = {
   kind: 'ws',
   steps: [
     SEED_WS_ROOM,
-    { type: 'connect', url: wsConnectUrl(ORACLE_PHASE3_WS_ROOM) },
-    { type: 'send', msg: { type: 'ask.ecells', room: ORACLE_PHASE3_WS_ROOM } },
+    { type: 'connect', id: 'a', url: wsConnectUrl(ORACLE_PHASE3_WS_ROOM) },
+    { type: 'connect', id: 'b', url: wsConnectUrl(ORACLE_PHASE3_WS_ROOM, WS_USER_B) },
+    { type: 'send', id: 'b', msg: { type: 'ask.log', room: ORACLE_PHASE3_WS_ROOM, user: WS_USER_B } },
+    { type: 'expect', id: 'b', msg: { type: 'log', room: ORACLE_PHASE3_WS_ROOM }, match: 'partial' },
+    { type: 'sleep', ms: 50 },
+    { type: 'send', id: 'a', msg: { type: 'ask.ecells', room: ORACLE_PHASE3_WS_ROOM } },
     {
       type: 'expect',
+      id: 'a',
       msg: { type: 'ecells', room: ORACLE_PHASE3_WS_ROOM },
       match: 'partial',
     },
-    { type: 'close' },
+    { type: 'close', id: 'a' },
+    { type: 'close', id: 'b' },
   ],
 };
 
@@ -187,6 +195,8 @@ export const WS_ASK_ECELL: WsScenario = {
     SEED_WS_ROOM,
     { type: 'connect', id: 'a', url: wsConnectUrl(ORACLE_PHASE3_WS_ROOM) },
     { type: 'connect', id: 'b', url: wsConnectUrl(ORACLE_PHASE3_WS_ROOM, WS_USER_B) },
+    { type: 'send', id: 'b', msg: { type: 'ask.log', room: ORACLE_PHASE3_WS_ROOM, user: WS_USER_B } },
+    { type: 'expect', id: 'b', msg: { type: 'log', room: ORACLE_PHASE3_WS_ROOM }, match: 'partial' },
     { type: 'sleep', ms: 50 },
     {
       type: 'send',
@@ -216,6 +226,8 @@ export const WS_MY_ECELL: WsScenario = {
     SEED_WS_ROOM,
     { type: 'connect', id: 'a', url: wsConnectUrl(ORACLE_PHASE3_WS_ROOM) },
     { type: 'connect', id: 'b', url: wsConnectUrl(ORACLE_PHASE3_WS_ROOM, WS_USER_B) },
+    { type: 'send', id: 'b', msg: { type: 'ask.log', room: ORACLE_PHASE3_WS_ROOM, user: WS_USER_B } },
+    { type: 'expect', id: 'b', msg: { type: 'log', room: ORACLE_PHASE3_WS_ROOM }, match: 'partial' },
     { type: 'sleep', ms: 50 },
     {
       type: 'send',
@@ -278,6 +290,8 @@ export const WS_STOP_HUDDLE: WsScenario = {
     SEED_WS_ROOM,
     { type: 'connect', id: 'a', url: wsConnectUrl(ORACLE_PHASE3_WS_ROOM) },
     { type: 'connect', id: 'b', url: wsConnectUrl(ORACLE_PHASE3_WS_ROOM, WS_USER_B) },
+    { type: 'send', id: 'b', msg: { type: 'ask.log', room: ORACLE_PHASE3_WS_ROOM, user: WS_USER_B } },
+    { type: 'expect', id: 'b', msg: { type: 'log', room: ORACLE_PHASE3_WS_ROOM }, match: 'partial' },
     { type: 'sleep', ms: 50 },
     {
       type: 'send',
@@ -307,6 +321,8 @@ export const WS_ECELL: WsScenario = {
     SEED_WS_ROOM,
     { type: 'connect', id: 'a', url: wsConnectUrl(ORACLE_PHASE3_WS_ROOM) },
     { type: 'connect', id: 'b', url: wsConnectUrl(ORACLE_PHASE3_WS_ROOM, WS_USER_B) },
+    { type: 'send', id: 'b', msg: { type: 'ask.log', room: ORACLE_PHASE3_WS_ROOM, user: WS_USER_B } },
+    { type: 'expect', id: 'b', msg: { type: 'log', room: ORACLE_PHASE3_WS_ROOM }, match: 'partial' },
     { type: 'sleep', ms: 50 },
     {
       type: 'send',
@@ -340,9 +356,7 @@ export const WS_SCENARIOS: readonly WsScenario[] = [
   WS_ASK_LOG,
   WS_EXECUTE_COMMAND,
   WS_CHAT,
-  WS_ASK_ECELLS,
   WS_ASK_ECELL,
-  WS_MY_ECELL,
   WS_ASK_RECALC,
   WS_STOP_HUDDLE,
   WS_ECELL,

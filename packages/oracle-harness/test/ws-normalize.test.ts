@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { applyWsNormalizer, FORM_CLONE_ROOM_RE, getWsNormalizer } from '../src/ws-normalize.ts';
+import { applyWsNormalizer, FORM_CLONE_ROOM_RE, AUTOGEN_ROOM_RE, isReplayGeneratedRoom, getWsNormalizer } from '../src/ws-normalize.ts';
 import type { WsScenario } from '@ethercalc/shared/oracle-scenarios';
 
 describe('FORM_CLONE_ROOM_RE', () => {
@@ -10,7 +10,78 @@ describe('FORM_CLONE_ROOM_RE', () => {
   });
 });
 
+describe('isReplayGeneratedRoom', () => {
+  it('matches generated rooms', () => {
+    expect(AUTOGEN_ROOM_RE.test('abc123def456')).toBe(true);
+    expect(AUTOGEN_ROOM_RE.test('oracle-phase3-template_abc123def456')).toBe(false);
+    expect(isReplayGeneratedRoom('oracle-phase3-template_abc123def456')).toBe(true);
+    expect(isReplayGeneratedRoom('abc123def456')).toBe(true);
+    expect(isReplayGeneratedRoom('other-room')).toBe(false);
+  });
+});
+
 describe('WS_NORMALIZERS', () => {
+  it('normalizes ask-recalc expects', () => {
+    const scenario: WsScenario = {
+      name: 'ws/ask-recalc',
+      kind: 'ws',
+      steps: [
+        {
+          type: 'expect',
+          msg: {
+            type: 'recalc',
+            room: 'r',
+            log: ['x'],
+            snapshot: 'literal-save',
+          },
+        },
+        {
+          type: 'expect',
+          msg: {
+            type: 'recalc',
+            room: 'r',
+            snapshot: 'literal-save',
+          },
+        },
+      ],
+    };
+    const out = applyWsNormalizer(scenario);
+    expect(out.steps[0]).toEqual({
+      type: 'expect',
+      match: 'partial',
+      msg: {
+        type: 'recalc',
+        room: 'r',
+        log: ['x'],
+        snapshot: 're:.*',
+      },
+    });
+    expect(out.steps[1]).toEqual({
+      type: 'expect',
+      match: 'partial',
+      msg: {
+        type: 'recalc',
+        room: 'r',
+        log: [],
+        snapshot: 're:.*',
+      },
+    });
+  });
+
+  it('leaves non-expect, non-recalc, or missing snapshot steps unchanged in ask-recalc', () => {
+    const scenario: WsScenario = {
+      name: 'ws/ask-recalc',
+      kind: 'ws',
+      steps: [
+        { type: 'send', msg: { type: 'recalc' } },
+        { type: 'expect', msg: { type: 'log', room: 'r', snapshot: 'x' } },
+        { type: 'expect', msg: { type: 'recalc', room: 'r', snapshot: 42 } },
+      ],
+    };
+    const out = applyWsNormalizer(scenario);
+    expect(out.steps).toEqual(scenario.steps);
+  });
+
   it('relaxes ask.log snapshot to a regex partial match', () => {
     const scenario: WsScenario = {
       name: 'ws/ask-log',

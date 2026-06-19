@@ -13,11 +13,11 @@
     "expect": {
       "status": 202,
       "headers": {
-        "content-length": "49",
+        "content-length": "re:^\\d+$",
         "content-type": "application/json; charset=utf-8"
       },
       "bodyBase64": "ewogICJjb21tYW5kIjogWwogICAgInNldCBCMSB0ZXh0IHQgcGhhc2UzIgogIF0KfQ==",
-      "bodyMatcher": "json"
+      "bodyMatcher": "command-echo"
     }
   }
 }

@@ -61,13 +61,13 @@ picked fixtures only and documented it at the top of
 
 ## Known gaps / blocked
 
-- **Single-sheet SocialCalc boot** — UNBLOCKED and landed. The Worker's
+- **Single-sheet SocialCalc boot & edit** — UNBLOCKED and landed. The Worker's
   `[assets]` binding (`directory = "../../assets"`, populated by
   `scripts/build-assets.sh`) now serves `index.html` + `player.js` +
   `socialcalc.js` from one origin, so `client-single-smoke.spec.ts`
-  drives a real Chromium page against `workerBase`, waits for the editor
-  grid to render into `#tableeditor`, and asserts the SocialCalc runtime
-  + control booted. The earlier `test.skip` placeholder is gone.
+  drives a real Chromium page against `workerBase`, boots the editor,
+  types a cell value, verifies server persistence, and asserts reload
+  hydration over live WebSockets. The earlier `test.skip` placeholder is gone.
 - **Parallelism** — set `workers: 1` in `playwright.config.ts` because
   concurrent wrangler dev instances on a CI runner hammer each other.
   When spec count grows past ~20, revisit to allow `workers: 2`.

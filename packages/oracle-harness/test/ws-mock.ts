@@ -54,8 +54,22 @@ export function stubIoClient(): StubIoClient {
         listeners.set(event, bucket);
         if (event === 'connect') queueMicrotask(() => fn());
       },
+      off(event: string, fn: (...args: unknown[]) => void) {
+        const bucket = listeners.get(event) ?? [];
+        const idx = bucket.indexOf(fn);
+        if (idx !== -1) bucket.splice(idx, 1);
+        listeners.set(event, bucket);
+      },
       emit(event: string, msg: unknown) {
-        if (event === 'data') sent.push(msg);
+        if (event === 'data') {
+          sent.push(msg);
+          const payload = msg as { type?: string; room?: string };
+          if (payload && payload.type === 'ask.log') {
+            queueMicrotask(() => {
+              emitData({ type: 'log', room: payload.room });
+            });
+          }
+        }
       },
       disconnect() {
         live = false;

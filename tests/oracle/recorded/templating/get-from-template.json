@@ -1,20 +1,20 @@
 {
   "scenario": {
-    "name": "form/get-template-form-redirect",
+    "name": "templating/get-from-template",
     "kind": "http",
     "request": {
       "method": "GET",
-      "path": "/oracle-phase3-template/form"
+      "path": "/_from/oracle-phase3-template"
     },
     "expect": {
       "status": 302,
       "headers": {
         "content-length": "re:^\\d+$",
         "content-type": "text/plain; charset=UTF-8",
-        "location": "re:^/oracle-phase3-template_[a-z0-9]{12}/app$",
+        "location": "re:^/[a-z0-9]{12}$",
         "vary": "Accept"
       },
-      "bodyBase64": "Rm91bmQuIFJlZGlyZWN0aW5nIHRvIC9vcmFjbGUtcGhhc2UzLXRlbXBsYXRlXzVzb3dzeHI0MmlrMS9hcHA=",
+      "bodyBase64": "Rm91bmQuIFJlZGlyZWN0aW5nIHRvIC9pNW16cWFmcGV0cWI=",
       "bodyMatcher": "ignore"
     }
   }

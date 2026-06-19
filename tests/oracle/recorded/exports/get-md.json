@@ -1,0 +1,19 @@
+{
+  "scenario": {
+    "name": "exports/get-md",
+    "kind": "http",
+    "request": {
+      "method": "GET",
+      "path": "/_/oracle-phase3-export/md"
+    },
+    "expect": {
+      "status": 200,
+      "headers": {
+        "content-length": "re:^\\d+$",
+        "content-type": "text/x-markdown; charset=utf-8"
+      },
+      "bodyBase64": "fG9yYWNsZXwKfCAtLS0tIHwK",
+      "bodyMatcher": "ignore"
+    }
+  }
+}

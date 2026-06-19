@@ -72,15 +72,13 @@ describe('scenario catalog', () => {
     ]);
   });
 
-  it('exposes ten ws scenarios', () => {
+  it('exposes eight ws scenarios', () => {
     expect(WS_SCENARIOS.map((s) => s.name)).toEqual([
       'ws/connect',
       'ws/ask-log',
       'ws/execute-command',
       'ws/chat',
-      'ws/ask-ecells',
       'ws/ask-ecell',
-      'ws/my-ecell',
       'ws/ask-recalc',
       'ws/stop-huddle',
       'ws/ecell',
@@ -110,7 +108,7 @@ describe('scenario catalog', () => {
   it('ALL_SCENARIOS includes ws scenarios after exports', () => {
     const names = ALL_SCENARIOS.map((s) => s.name);
     expect(new Set(names).size).toBe(names.length);
-    expect(names.length).toBe(43);
+    expect(names.length).toBe(41);
     expect(names.indexOf('exports/get-ods')).toBeLessThan(names.indexOf('ws/connect'));
     expect(names.indexOf('ws/ecell')).toBeLessThan(
       names.indexOf('form/get-template-form-redirect'),

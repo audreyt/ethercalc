@@ -1,7 +1,7 @@
 import type { BodyMatcher } from '@ethercalc/shared/oracle-scenarios';
 
 import { canonicalizeHtml } from './html-canonical.ts';
-import { FORM_CLONE_ROOM_RE } from './ws-normalize.ts';
+import { isReplayGeneratedRoom } from './ws-normalize.ts';
 import {
   compareZipArchives,
   OPTIONAL_ODS_ZIP_ENTRIES,
@@ -145,7 +145,7 @@ function commandEchoText(command: unknown): string | null {
 export function matchRoomsEmpty(ctx: MatcherContext): MatcherResult {
   return matchFilteredJsonArray(
     ctx,
-    (room) => typeof room === 'string' && !FORM_CLONE_ROOM_RE.test(room),
+    (room) => typeof room === 'string' && !isReplayGeneratedRoom(room),
     'rooms-empty',
   );
 }
@@ -168,7 +168,7 @@ export function matchRoomtimesEmpty(ctx: MatcherContext): MatcherResult {
   }
   const filtered: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(actual)) {
-    if (!FORM_CLONE_ROOM_RE.test(key)) filtered[key] = value;
+    if (!isReplayGeneratedRoom(key)) filtered[key] = value;
   }
   return deepEqual(expected, filtered)
     ? null
@@ -179,18 +179,18 @@ export function matchRoomtimesEmpty(ctx: MatcherContext): MatcherResult {
 export function matchRoomlinksEmpty(ctx: MatcherContext): MatcherResult {
   return matchFilteredJsonArray(
     ctx,
-    (entry) => !isFormCloneRoomlink(entry),
+    (entry) => !isReplayGeneratedRoomlink(entry),
     'roomlinks-empty',
   );
 }
 
-function isFormCloneRoomlink(entry: unknown): boolean {
-  if (typeof entry === 'string') return FORM_CLONE_ROOM_RE.test(entry);
+function isReplayGeneratedRoomlink(entry: unknown): boolean {
+  if (typeof entry === 'string') return isReplayGeneratedRoom(entry);
   if (!entry || typeof entry !== 'object') return false;
   const link = (entry as { link?: unknown }).link;
   if (typeof link !== 'string') return false;
   const room = link.replace(/^\//, '').split('/')[0] || '';
-  return FORM_CLONE_ROOM_RE.test(room);
+  return isReplayGeneratedRoom(room);
 }
 
 function matchFilteredJsonArray(

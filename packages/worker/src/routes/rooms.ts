@@ -25,6 +25,7 @@ import { upsertCronTriggers } from '../handlers/cron.ts';
 import { classifyCommandBody, joinCommands } from '../handlers/post-command.ts';
 import { classifyRequestBody } from '../handlers/rooms.ts';
 import {
+  ImportArchiveTooLargeError,
   ImportTooLargeError,
   xlsxToLoadClipboardCommands,
 } from '../lib/xlsx-import.ts';
@@ -340,7 +341,7 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
       try {
         commands = xlsxToLoadClipboardCommands(bytes);
       } catch (err) {
-        if (err instanceof ImportTooLargeError) {
+        if (err instanceof ImportTooLargeError || err instanceof ImportArchiveTooLargeError) {
           return sizedResponse(err.message, 413, TEXT_CT);
         }
         /* istanbul ignore next -- xlsxToLoadClipboardCommands only throws

@@ -27,10 +27,9 @@
  *     mounts.
  *   - no uncaught page errors.
  *
- * Like the multi-sheet smoke, this deliberately does NOT assert on live
- * collaboration / cell content — the WS round-trip and seeded snapshot
- * depend on backend state we don't drive here. The intent is "the
- * single-sheet UI boots and renders," mirroring `client-multi-smoke`.
+ * This verifies: runtime boot, editor render, a real keyboard edit into
+ * A1, server persistence via `GET /_/:room/cells/A1`, and reload
+ * hydration.
  */
 import { test, expect } from '../src/fixtures.ts';
 
@@ -38,11 +37,13 @@ test.describe('client-single smoke', () => {
   test('SocialCalc single-sheet UI boots at /:room', async ({
     workerBase,
     page,
+    request,
   }) => {
     const errors: string[] = [];
     page.on('pageerror', (err) => errors.push(err.message));
 
-    await page.goto(`${workerBase}/smoke-single-room`);
+    const room = `smoke-single-${Date.now().toString(36)}`;
+    await page.goto(`${workerBase}/${room}`);
 
     // The runtime + client load and mount asynchronously: index.html pulls
     // in jquery → socialcalc.js → player.js (a module), then player.js's
@@ -76,11 +77,46 @@ test.describe('client-single smoke', () => {
     ).toBe(true);
     // index.html derives `_room` from the URL path segment before the
     // runtime loads; the client preserves it through boot.
-    expect(runtime.room).toBe('smoke-single-room');
+    expect(runtime.room).toBe(room);
     expect(
       runtime.booted,
       'player.js should have constructed the SpreadsheetControl singleton',
     ).toBe(true);
+
+    // Real edit path
+    await editorTable.click();
+    await page.evaluate(() => {
+      const sc = (window as unknown as {
+        SocialCalc?: {
+          CurrentSpreadsheetControlObject?: {
+            editor?: { MoveECell: (coord: string) => string };
+          };
+          KeyboardFocus?: () => void;
+        };
+      }).SocialCalc;
+      const editor = sc?.CurrentSpreadsheetControlObject?.editor;
+      if (!editor || !sc?.KeyboardFocus) throw new Error('SocialCalc editor not ready');
+      editor.MoveECell('A1');
+      sc.KeyboardFocus();
+    });
+    await page.keyboard.type('single smoke persisted');
+    await page.keyboard.press('Enter');
+
+    await expect.poll(async () => {
+      const res = await request.get(`${workerBase}/_/${room}/cells/A1`);
+      if (res.status() !== 200) return null;
+      const cell = (await res.json()) as { datavalue?: unknown } | null;
+      return cell?.datavalue ?? null;
+    }, { timeout: 10_000 }).toBe('single smoke persisted');
+
+    await page.reload();
+    await expect(page.locator('#tableeditor table').first()).toBeVisible({ timeout: 15_000 });
+    await expect.poll(async () => page.evaluate(() => {
+      const sc = (window as unknown as {
+        SocialCalc?: { CurrentSpreadsheetControlObject?: { context?: { sheetobj?: { cells?: Record<string, { datavalue?: unknown }> } } } };
+      }).SocialCalc;
+      return sc?.CurrentSpreadsheetControlObject?.context?.sheetobj?.cells?.['A1']?.datavalue ?? null;
+    }), { timeout: 10_000 }).toBe('single smoke persisted');
 
     expect(errors, `uncaught page errors: ${errors.join(' | ')}`).toHaveLength(
       0,
