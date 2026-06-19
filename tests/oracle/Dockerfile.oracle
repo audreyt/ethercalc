@@ -35,6 +35,9 @@ RUN git init . \
     && git fetch --depth 1 origin ${ORACLE_SHA} \
     && git checkout FETCH_HEAD
 
+# Add runtime-compat patch to stringify nextTriggerTime to avoid TypeError on newer Bun/Node
+RUN sed -i "s/nextTriggerTime, 'utf8'/String(nextTriggerTime), 'utf8'/g" main.js sc.js
+
 RUN bun install
 
 EXPOSE 8000

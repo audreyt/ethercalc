@@ -341,13 +341,15 @@ describe('xlsxToLoadClipboardCommands', () => {
 });
 
 function makeFakeZipCentralDirectory(
-  entries: Array<{ name: string; compressedSize: number; uncompressedSize: number }>
+  entries: Array<{ name: string; compressedSize: number; uncompressedSize: number; extraLength?: number; commentLength?: number }>
 ): Uint8Array {
   const cdHeaders: Uint8Array[] = [];
   let cdOffset = 0;
   for (const entry of entries) {
     const nameBytes = new TextEncoder().encode(entry.name);
-    const header = new Uint8Array(46 + nameBytes.length);
+    const extraLen = entry.extraLength ?? 0;
+    const commentLen = entry.commentLength ?? 0;
+    const header = new Uint8Array(46 + nameBytes.length + extraLen + commentLen);
     header[0] = 0x50;
     header[1] = 0x4b;
     header[2] = 0x01;
@@ -362,6 +364,10 @@ function makeFakeZipCentralDirectory(
     header[27] = (entry.uncompressedSize >> 24) & 0xff;
     header[28] = nameBytes.length & 0xff;
     header[29] = (nameBytes.length >> 8) & 0xff;
+    header[30] = extraLen & 0xff;
+    header[31] = (extraLen >> 8) & 0xff;
+    header[32] = commentLen & 0xff;
+    header[33] = (commentLen >> 8) & 0xff;
     header.set(nameBytes, 46);
     cdHeaders.push(header);
     cdOffset += header.length;
@@ -404,5 +410,222 @@ describe('enforceImportArchiveLimit', () => {
     expect(() => enforceImportArchiveLimit(makeFakeZipCentralDirectory([
       { name: 'xl/media/image1.png', compressedSize: 10, uncompressedSize: MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES + 1 },
     ]))).not.toThrow();
+  });
+
+  it('early return for non-ZIP inputs', () => {
+    expect(() => enforceImportArchiveLimit(new Uint8Array([0, 0]))).not.toThrow();
+    expect(() => enforceImportArchiveLimit(new Uint8Array([0x50, 0]))).not.toThrow();
+  });
+
+  it('early return if EOCD is absent', () => {
+    expect(() => enforceImportArchiveLimit(new Uint8Array([0x50, 0x4b, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]))).not.toThrow();
+  });
+
+  it('rejects ZIP64 sentinel values', () => {
+    const bytes1 = makeFakeZipCentralDirectory([]);
+    const eocdOffset = bytes1.length - 22;
+    bytes1[eocdOffset + 10] = 0xff;
+    bytes1[eocdOffset + 11] = 0xff;
+    expect(() => enforceImportArchiveLimit(bytes1)).toThrow(ImportArchiveTooLargeError);
+
+    const bytes2 = makeFakeZipCentralDirectory([]);
+    bytes2[eocdOffset + 12] = 0xff;
+    bytes2[eocdOffset + 13] = 0xff;
+    bytes2[eocdOffset + 14] = 0xff;
+    bytes2[eocdOffset + 15] = 0xff;
+    expect(() => enforceImportArchiveLimit(bytes2)).toThrow(ImportArchiveTooLargeError);
+
+    const bytes3 = makeFakeZipCentralDirectory([]);
+    bytes3[eocdOffset + 16] = 0xff;
+    bytes3[eocdOffset + 17] = 0xff;
+    bytes3[eocdOffset + 18] = 0xff;
+    bytes3[eocdOffset + 19] = 0xff;
+    expect(() => enforceImportArchiveLimit(bytes3)).toThrow(ImportArchiveTooLargeError);
+
+    const bytes4 = makeFakeZipCentralDirectory([
+      { name: 'xl/workbook.xml', compressedSize: 10, uncompressedSize: 0xffffffff }
+    ]);
+    expect(() => enforceImportArchiveLimit(bytes4)).toThrow(ImportArchiveTooLargeError);
+
+    const bytes5 = makeFakeZipCentralDirectory([
+      { name: 'xl/workbook.xml', compressedSize: 0xffffffff, uncompressedSize: 10 }
+    ]);
+    expect(() => enforceImportArchiveLimit(bytes5)).toThrow(ImportArchiveTooLargeError);
+  });
+
+  it('rejects aggregate uncompressed size over limit', () => {
+    const bytes = makeFakeZipCentralDirectory([
+      { name: 'xl/workbook.xml', compressedSize: 10, uncompressedSize: 20 * 1024 * 1024, extraLength: 10, commentLength: 20 },
+      { name: 'xl/sharedstrings.xml', compressedSize: 10, uncompressedSize: 6 * 1024 * 1024 },
+    ]);
+    expect(() => enforceImportArchiveLimit(bytes)).toThrow(ImportArchiveTooLargeError);
+  });
+
+  it('normalizes leading slash and casing', () => {
+    const bytes = makeFakeZipCentralDirectory([
+      { name: '/XL/Worksheets/Sheet1.XML', compressedSize: 10, uncompressedSize: 26 * 1024 * 1024 }
+    ]);
+    expect(() => enforceImportArchiveLimit(bytes)).toThrow(ImportArchiveTooLargeError);
+  });
+
+  it('early return for malformed entry lengths', () => {
+    const bytes = makeFakeZipCentralDirectory([
+      { name: 'xl/workbook.xml', compressedSize: 10, uncompressedSize: 10 }
+    ]);
+    const truncated = bytes.subarray(0, 20);
+    expect(() => enforceImportArchiveLimit(truncated)).not.toThrow();
+  });
+
+  it('early return if CD entry signature mismatch', () => {
+    const bytes = makeFakeZipCentralDirectory([
+      { name: 'xl/workbook.xml', compressedSize: 10, uncompressedSize: 10 }
+    ]);
+    bytes[0] = 0;
+    expect(() => enforceImportArchiveLimit(bytes)).not.toThrow();
+  });
+
+  it('early return if file name goes out of bounds', () => {
+    const bytes = makeFakeZipCentralDirectory([
+      { name: 'xl/workbook.xml', compressedSize: 10, uncompressedSize: 10 }
+    ]);
+    bytes[28] = 0xff;
+    bytes[29] = 0xff;
+    expect(() => enforceImportArchiveLimit(bytes)).not.toThrow();
+  });
+
+  it('handles prepended prefix bytes correctly', () => {
+    const bytes = makeFakeZipCentralDirectory([
+      { name: 'xl/workbook.xml', compressedSize: 10, uncompressedSize: 26 * 1024 * 1024 }
+    ]);
+    const padded = new Uint8Array(10 + bytes.length);
+    padded.set(bytes, 10);
+    padded[0] = 0x50;
+    padded[1] = 0x4b;
+    const eocdOffset = padded.length - 22;
+    padded[eocdOffset + 16] = 0;
+    padded[eocdOffset + 17] = 0;
+    padded[eocdOffset + 18] = 0;
+    padded[eocdOffset + 19] = 0;
+    expect(() => enforceImportArchiveLimit(padded)).toThrow(ImportArchiveTooLargeError);
+  });
+
+  it('throws ImportArchiveTooLargeError for each relevant XML entry shape', () => {
+    const relevantNames = [
+      '[content_types].xml',
+      'xl/workbook.xml',
+      'xl/_rels/workbook.xml.rels',
+      'xl/sharedstrings.xml',
+      'xl/styles.xml',
+      'content.xml',
+      'styles.xml',
+      'meta.xml',
+      'xl/worksheets/sheet1.xml',
+      'xl/worksheets/_rels/sheet1.xml.rels',
+    ];
+    for (const name of relevantNames) {
+      expect(() => enforceImportArchiveLimit(makeFakeZipCentralDirectory([
+        { name, compressedSize: 10, uncompressedSize: MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES + 1 },
+      ]))).toThrow(ImportArchiveTooLargeError);
+    }
+  });
+
+  it('early return boundaries for non-ZIP / length checks', () => {
+    expect(() => enforceImportArchiveLimit(new Uint8Array([0x51, 0x4b]))).not.toThrow();
+    expect(() => enforceImportArchiveLimit(new Uint8Array([0x50, 0x4c]))).not.toThrow();
+
+    const bytesShort = new Uint8Array(21);
+    bytesShort[0] = 0x50;
+    bytesShort[1] = 0x4b;
+    expect(() => enforceImportArchiveLimit(bytesShort)).not.toThrow();
+  });
+
+  it('finds EOCD with a trailing comment', () => {
+    const bytes = makeFakeZipCentralDirectory([
+      { name: 'xl/workbook.xml', compressedSize: 10, uncompressedSize: MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES + 1 }
+    ]);
+    const withComment = new Uint8Array(bytes.length + 10);
+    withComment.set(bytes, 0);
+    const eocdOffset = bytes.length - 22;
+    withComment[eocdOffset + 20] = 10;
+    withComment[eocdOffset + 21] = 0;
+    withComment.set(new Uint8Array(10), bytes.length);
+    expect(() => enforceImportArchiveLimit(withComment)).toThrow(ImportArchiveTooLargeError);
+  });
+
+  it('does not throw when uncompressed size is exactly equal to the limit', () => {
+    const bytes1 = makeFakeZipCentralDirectory([
+      { name: 'xl/workbook.xml', compressedSize: 10, uncompressedSize: MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES },
+    ]);
+    expect(() => enforceImportArchiveLimit(bytes1)).not.toThrow();
+
+    const bytes2 = makeFakeZipCentralDirectory([
+      { name: 'xl/workbook.xml', compressedSize: 10, uncompressedSize: 15 * 1024 * 1024 },
+      { name: 'xl/sharedstrings.xml', compressedSize: 10, uncompressedSize: 10 * 1024 * 1024 },
+    ]);
+    expect(() => enforceImportArchiveLimit(bytes2)).not.toThrow();
+  });
+
+  it('handles large entry counts and non-zero shift offsets correctly', () => {
+    const entries = Array.from({ length: 256 }, (_, i) => ({
+      name: `xl/worksheets/sheet${i + 1}.xml`,
+      compressedSize: 0x10000,
+      uncompressedSize: i === 255 ? MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES + 1 : 10,
+    }));
+    const bytes = makeFakeZipCentralDirectory(entries);
+    
+    const padded = new Uint8Array(256 + bytes.length);
+    padded.set(bytes, 256);
+    padded[0] = 0x50;
+    padded[1] = 0x4b;
+    const eocdOffset = padded.length - 22;
+    padded[eocdOffset + 16] = 0;
+    padded[eocdOffset + 17] = 0;
+    padded[eocdOffset + 18] = 0;
+    padded[eocdOffset + 19] = 0;
+
+    expect(() => enforceImportArchiveLimit(padded)).toThrow(ImportArchiveTooLargeError);
+  });
+
+  it('early return boundaries for non-ZIP / length checks', () => {
+    expect(() => enforceImportArchiveLimit(new Uint8Array([0x51, 0x4b]))).not.toThrow();
+    expect(() => enforceImportArchiveLimit(new Uint8Array([0x50, 0x4c]))).not.toThrow();
+
+    const bytes1 = new Uint8Array(1);
+    bytes1[0] = 0x50;
+    expect(() => enforceImportArchiveLimit(bytes1)).not.toThrow();
+
+    const bytes2 = new Uint8Array(2);
+    bytes2[0] = 0x50;
+    bytes2[1] = 0x4b;
+    expect(() => enforceImportArchiveLimit(bytes2)).not.toThrow();
+
+    const bytes21 = new Uint8Array(21);
+    bytes21[0] = 0x50;
+    bytes21[1] = 0x4b;
+    expect(() => enforceImportArchiveLimit(bytes21)).not.toThrow();
+
+    const bytes22 = new Uint8Array(22);
+    bytes22[0] = 0x50;
+    bytes22[1] = 0x4b;
+    expect(() => enforceImportArchiveLimit(bytes22)).not.toThrow();
+  });
+
+  it('finds EOCD with a trailing comment', () => {
+    const bytes = makeFakeZipCentralDirectory([
+      { name: 'xl/workbook.xml', compressedSize: 10, uncompressedSize: MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES + 1 }
+    ]);
+    const withComment = new Uint8Array(bytes.length + 10);
+    withComment.set(bytes, 0);
+    const eocdOffset = bytes.length - 22;
+    withComment[eocdOffset + 20] = 10;
+    withComment[eocdOffset + 21] = 0;
+    withComment.set(new Uint8Array(10), bytes.length);
+    expect(() => enforceImportArchiveLimit(withComment)).toThrow(ImportArchiveTooLargeError);
+
+    const withMaxComment = new Uint8Array(bytes.length + 0xffff);
+    withMaxComment.set(bytes, 0);
+    withMaxComment[eocdOffset + 20] = 0xff;
+    withMaxComment[eocdOffset + 21] = 0xff;
+    expect(() => enforceImportArchiveLimit(withMaxComment)).toThrow(ImportArchiveTooLargeError);
   });
 });
