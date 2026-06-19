@@ -17,7 +17,7 @@
         "content-type": "text/plain; charset=utf-8",
         "location": "re:^/_/[a-z0-9]{12}$"
       },
-      "bodyBase64": "L2xuc2N6M2VydHNuMg==",
+      "bodyBase64": "L3hoZG1jbTNlNWs4bw==",
       "bodyMatcher": "ignore"
     }
   }

@@ -14,7 +14,7 @@
         "location": "re:^/[a-z0-9]{12}$",
         "vary": "Accept"
       },
-      "bodyBase64": "Rm91bmQuIFJlZGlyZWN0aW5nIHRvIC9pNW16cWFmcGV0cWI=",
+      "bodyBase64": "Rm91bmQuIFJlZGlyZWN0aW5nIHRvIC9yeGZlbmV6MGdmeno=",
       "bodyMatcher": "ignore"
     }
   }
