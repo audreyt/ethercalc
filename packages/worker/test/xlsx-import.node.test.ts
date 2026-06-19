@@ -72,6 +72,10 @@ describe('cellToCommand', () => {
     expect(cellToCommand('A1', { t: 'z', v: 'x\ny' })).toBe('set A1 text t x\\ny');
   });
 
+  it('graceful fallback for null formatted/raw text', () => {
+    expect(cellToCommand('A1', { t: 'z', w: null } as any)).toBe('set A1 text t ');
+  });
+
   it('unknown type with no value returns null', () => {
     expect(cellToCommand('A1', { t: 'z' })).toBeNull();
   });
@@ -472,15 +476,20 @@ describe('enforceImportArchiveLimit', () => {
     const bytes = makeFakeZipCentralDirectory([
       { name: 'xl/workbook.xml', compressedSize: 10, uncompressedSize: 10 }
     ]);
-    const truncated = bytes.subarray(0, 20);
-    expect(() => enforceImportArchiveLimit(truncated)).not.toThrow();
+    const eocdOffset = bytes.length - 22;
+    const cdOffset = eocdOffset + 20;
+    bytes[eocdOffset + 16] = cdOffset & 0xff;
+    bytes[eocdOffset + 17] = (cdOffset >> 8) & 0xff;
+    bytes[eocdOffset + 18] = (cdOffset >> 16) & 0xff;
+    bytes[eocdOffset + 19] = (cdOffset >> 24) & 0xff;
+    expect(() => enforceImportArchiveLimit(bytes)).not.toThrow();
   });
 
   it('early return if CD entry signature mismatch', () => {
     const bytes = makeFakeZipCentralDirectory([
       { name: 'xl/workbook.xml', compressedSize: 10, uncompressedSize: 10 }
     ]);
-    bytes[0] = 0;
+    bytes[2] = 0;
     expect(() => enforceImportArchiveLimit(bytes)).not.toThrow();
   });
 
@@ -507,6 +516,23 @@ describe('enforceImportArchiveLimit', () => {
     padded[eocdOffset + 18] = 0;
     padded[eocdOffset + 19] = 0;
     expect(() => enforceImportArchiveLimit(padded)).toThrow(ImportArchiveTooLargeError);
+  });
+
+  it('handles prepended prefix bytes with invalid test signature', () => {
+    const bytes = makeFakeZipCentralDirectory([
+      { name: 'xl/workbook.xml', compressedSize: 10, uncompressedSize: 26 * 1024 * 1024 }
+    ]);
+    const padded = new Uint8Array(10 + bytes.length);
+    padded.set(bytes, 10);
+    padded[0] = 0x50;
+    padded[1] = 0x4b;
+    const eocdOffset = padded.length - 22;
+    padded[eocdOffset + 16] = 0;
+    padded[eocdOffset + 17] = 0;
+    padded[eocdOffset + 18] = 0;
+    padded[eocdOffset + 19] = 0;
+    padded[12] = 0;
+    expect(() => enforceImportArchiveLimit(padded)).not.toThrow();
   });
 
   it('throws ImportArchiveTooLargeError for each relevant XML entry shape', () => {

@@ -95,6 +95,7 @@ export function enforceImportArchiveLimit(bytes: Uint8Array): void {
       if (expectedEocdOffset < eocdOffset) {
         const prefixLength = eocdOffset - expectedEocdOffset;
         const testOffset = cdOffset + prefixLength;
+        /* istanbul ignore next -- expectedEocdOffset sits ~22B before buffer end, so testOffset + 4 <= b.length is always true. Defensive guard. */
         if (testOffset + 4 <= b.length) {
           const testSig = ((b[testOffset] | (b[testOffset + 1] << 8) | (b[testOffset + 2] << 16) | (b[testOffset + 3] << 24)) >>> 0);
           if (testSig === 0x02014b50) {
