@@ -1,6 +1,6 @@
 {
   "name": "ethercalc",
-  "version": "0.20260612.4",
+  "version": "0.20260619.0",
   "description": "Multi-User Spreadsheet Server — TypeScript rewrite (Cloudflare fullstack)",
   "homepage": "http://ethercalc.net/",
   "author": "Audrey Tang <audreyt@audreyt.org>",
@@ -66,13 +66,15 @@
     "build:clients": "bun run --cwd packages/client build && bun run --cwd packages/client-multi build",
     "build:assets": "bun run build:clients && bash scripts/build-assets.sh",
     "typecheck": "bun run --filter '*' typecheck",
-    "lint": "bun run --filter '*' lint",
+    "lint": "biome lint",
+    "lint:fix": "biome lint --write",
     "mutation": "bun run --filter '*' mutation"
   },
   "engines": {
     "bun": ">=1.1.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.1.2",
     "@stryker-mutator/core": "^9.6.1",
     "@stryker-mutator/vitest-runner": "^9.6.1",
     "@typescript/native-preview": "^7.0.0-dev.20260421.2"

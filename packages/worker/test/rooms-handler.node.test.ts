@@ -88,12 +88,11 @@ describe('classifyRequestBody', () => {
     expect(out).toEqual({ kind: 'empty' });
   });
 
-  it('garbage XLSX body falls back to empty on parse failure', () => {
-    // Random bytes — SheetJS throws; classifier catches and returns empty.
+  it('garbage XLSX body returns xlsx-deferred', () => {
     const out = classifyRequestBody(
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       enc('not a real xlsx'),
     );
-    expect(out).toEqual({ kind: 'empty' });
+    expect(out).toEqual({ kind: 'xlsx-deferred' });
   });
 });

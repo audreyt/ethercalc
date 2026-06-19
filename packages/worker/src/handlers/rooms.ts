@@ -19,7 +19,6 @@
  *                                                   in Phase 8`)
  */
 import { csvToSocialCalc, decodeDoubleEncoded } from '../lib/csv.ts';
-import { xlsxToSave } from '../lib/xlsx-import.ts';
 
 /** The two types of payload this layer understands. */
 export type DecodedBody =
@@ -48,11 +47,7 @@ export function classifyRequestBody(
   const ct = contentType.split(';')[0]!.trim().toLowerCase();
   if (XLSX_MIMES.includes(ct)) {
     if (bytes.byteLength === 0) return { kind: 'empty' };
-    try {
-      return { kind: 'save', snapshot: xlsxToSave(bytes) };
-    } catch {
-      return { kind: 'empty' };
-    }
+    return { kind: 'xlsx-deferred' };
   }
   if (ct === 'application/json') {
     try {

@@ -66,7 +66,7 @@ function makeFakeDb(): { db: D1Database; calls: Recorded[]; batchCalls: Recorded
       __rec: Recorded;
     };
     stmt.__rec = { sql, params };
-    const origBind = stmt.bind;
+    const _origBind = stmt.bind;
     stmt.bind = function (...more: unknown[]) {
       return wrappedMake(sql, [...params, ...more]);
     };

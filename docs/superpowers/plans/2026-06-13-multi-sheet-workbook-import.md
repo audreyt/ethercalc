@@ -1,5 +1,7 @@
 # Multi-sheet workbook import — Implementation Plan
 
+> Status: implemented 2026-06-19 (see commits)
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Wire `PUT /=:room.{xlsx,ods,fods}` and `PUT /_/=:room/{xlsx,ods,fods}` so an uploaded workbook is imported into a TOC sheet + one sub-room per worksheet, preserving per-sheet formulas/merges/formats and round-tripping with the existing multi-sheet export.

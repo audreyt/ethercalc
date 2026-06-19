@@ -10,6 +10,17 @@ EtherCalc bundles SocialCalc from the audreyt/socialcalc fork; see
 
 
 ==============================================================================
+0.20260619.0 — 2026-06-19
+==============================================================================
+
+Audit verification and closure of residual import gaps:
+- Implemented single-sheet workbook import on PUT /_/:room + POST /_ (Gap A).
+- Implemented multi-sheet workbook import on PUT /=:room.xlsx and PUT /_/=:room/xlsx fanned out to sub-rooms (Gap B).
+- Added multi-import integration tests, pure transform unit tests, and oracle scenarios.
+- Integrated Biome linter with high-value rules and added a PR-CI gate step.
+
+
+==============================================================================
 Unreleased (candidate 0.20260612.5) — 2026-06-12
 ==============================================================================
 

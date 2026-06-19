@@ -15,7 +15,6 @@ import type {
   BroadcastFn,
   SocialCalcGlobal,
   SheetObject,
-  EditorObject,
   ECellInfo,
   CellElement,
 } from './types.ts';

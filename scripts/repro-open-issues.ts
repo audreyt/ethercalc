@@ -168,7 +168,7 @@ function test19(): void {
   record(19, 'Huge SUM freeze', ms > 500 ? 'unchanged' : 'fixed', `SUM(B2:B100000) took ${ms.toFixed(0)}ms`);
 }
 
-function test514(): void {
+function _test514(): void {
   record(514, 'Wiki syntax export', 'skip', 'Feature request — no /md route tested here');
 }
 

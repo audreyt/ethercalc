@@ -36,7 +36,7 @@ describe('installCallbacks', () => {
 
   it('DoPositionCalculations broadcasts ask.ecell and preserves return', () => {
     const sc = makeSocialCalc();
-    let broadcasts: string[] = [];
+    const broadcasts: string[] = [];
     installBroadcast(sc, (t) => broadcasts.push(t));
     installCallbacks(sc, { broadcast: () => {} });
     const ret = sc.DoPositionCalculations!.call(sc, 'arg');
@@ -49,7 +49,7 @@ describe('installCallbacks', () => {
     // false branch in installCallbacks.
     const sc = makeSocialCalc();
     delete sc.DoPositionCalculations;
-    let broadcasts: string[] = [];
+    const broadcasts: string[] = [];
     installBroadcast(sc, (t) => broadcasts.push(t));
     installCallbacks(sc, { broadcast: () => {} });
     expect(sc.OrigDoPositionCalculations).toBeUndefined();

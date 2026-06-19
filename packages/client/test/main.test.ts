@@ -86,9 +86,9 @@ describe('runMain', () => {
     expect(host.SocialCalc._app).toBe(true);
     expect(host.SocialCalc._view).toBeUndefined();
     expect(sockets).toHaveLength(1);
-    expect(sockets[0]!.url).toContain('/_ws/my-room');
-    expect(sockets[0]!.url).toContain('auth=abc');
-    handle!.stop();
+    expect(sockets[0]?.url).toContain('/_ws/my-room');
+    expect(sockets[0]?.url).toContain('auth=abc');
+    handle?.stop();
   });
 
   it('falls back through EtherCalc._room and location.hash', () => {
@@ -98,14 +98,14 @@ describe('runMain', () => {
     });
     delete hostA.SocialCalc._room;
     const { factory: factoryA, sockets: socketsA } = createMockFactory();
-    runMain({ host: hostA, wsFactory: factoryA })!.stop();
-    expect(socketsA[0]!.url).toContain('from-ec');
+    runMain({ host: hostA, wsFactory: factoryA })?.stop();
+    expect(socketsA[0]?.url).toContain('from-ec');
 
     const hostB = makeHost({ location: { search: '', hash: '#_viahash', pathname: '/' } });
     delete hostB.SocialCalc._room;
     const { factory: factoryB, sockets: socketsB } = createMockFactory();
-    runMain({ host: hostB, wsFactory: factoryB })!.stop();
-    expect(socketsB[0]!.url).toContain('viahash'); // leading underscore is stripped
+    runMain({ host: hostB, wsFactory: factoryB })?.stop();
+    expect(socketsB[0]?.url).toContain('viahash'); // leading underscore is stripped
   });
 
   it('returns null when no room is resolvable', () => {
@@ -126,7 +126,7 @@ describe('runMain', () => {
     const { factory } = createMockFactory();
     const handle = runMain({ host, wsFactory: factory });
     expect(pushes).toEqual(['./room/view']);
-    handle!.stop();
+    handle?.stop();
   });
 
   it('no flags yields empty suffix', () => {
@@ -139,7 +139,7 @@ describe('runMain', () => {
     const { factory } = createMockFactory();
     const handle = runMain({ host, wsFactory: factory });
     expect(pushes).toEqual(['./room']);
-    handle!.stop();
+    handle?.stop();
   });
 
   it('uses custom baseUrl when provided', () => {
@@ -151,8 +151,8 @@ describe('runMain', () => {
       baseUrl: 'wss://explicit.example',
       wsFactory: factory,
     });
-    expect(sockets[0]!.url.startsWith('wss://explicit.example')).toBe(true);
-    handle!.stop();
+    expect(sockets[0]?.url.startsWith('wss://explicit.example')).toBe(true);
+    handle?.stop();
   });
 
   it('forwards all adapter option overrides', () => {
@@ -170,7 +170,7 @@ describe('runMain', () => {
       clearTimeoutFn: timers.clearTimeoutFn,
       onStatus: (s) => statuses.push(s),
     });
-    handle!.stop();
+    handle?.stop();
   });
 
   it('default randomUsername yields a Math.random toString', () => {
@@ -179,7 +179,7 @@ describe('runMain', () => {
     const { factory } = createMockFactory();
     const handle = runMain({ host, wsFactory: factory });
     expect(host.SocialCalc._username).toMatch(/^[0-9.]+(?:e.*)?$/);
-    handle!.stop();
+    handle?.stop();
   });
 
   it('installs a broadcast that forwards to the adapter', () => {
@@ -187,10 +187,10 @@ describe('runMain', () => {
     host.SocialCalc._room = 'r';
     const { factory, sockets } = createMockFactory();
     const handle = runMain({ host, wsFactory: factory });
-    sockets[0]!.acceptOpen();
-    host.SocialCalc.Callbacks.broadcast!('chat', { msg: 'hi' });
-    expect(sockets[0]!.sent[0]).toContain('"msg":"hi"');
-    handle!.stop();
+    sockets[0]?.acceptOpen();
+    host.SocialCalc.Callbacks.broadcast?.('chat', { msg: 'hi' });
+    expect(sockets[0]?.sent[0]).toContain('"msg":"hi"');
+    handle?.stop();
   });
 });
 
@@ -330,7 +330,7 @@ describe('createDispatcher', () => {
   });
 
   it('ecells: adds peerClass for non-self users, no-op in app mode', () => {
-    const { dispatch, sc, ss } = setup();
+    const { dispatch, sc } = setup();
     const fakeCell = { element: { className: '' } };
     sc.GetEditorCellElement = () => fakeCell;
     dispatch({
@@ -462,7 +462,7 @@ describe('createDispatcher', () => {
     });
     expect(sc.hadSnapshot).toBe(true);
     expect(cmds[0]).toContain('set A1 value n 1');
-    expect(cmds[0]!.trim().endsWith('recalc')).toBe(true);
+    expect(cmds[0]?.trim().endsWith('recalc')).toBe(true);
     expect(msgs).toEqual(['hi']);
   });
 
@@ -689,12 +689,12 @@ describe('createDispatcher', () => {
     ss.context.sheetobj.ScheduleSheetCommands = (c) => cmds.push(c);
     dispatch({ type: 'recalc', room: 'other', log: [], snapshot: '12345678abc' });
     expect(loaded).toHaveLength(1);
-    expect(sc.RecalcInfo.LoadSheetCache!['other']).toBeDefined();
+    expect(sc.RecalcInfo.LoadSheetCache?.other).toBeDefined();
     expect(cmds).toContain('recalc\n');
     // Force path: clears sheet cache.
     sc.Formula = { SheetCache: { sheets: { other: {} } } };
     dispatch({ type: 'recalc', room: 'other', log: [], snapshot: '12345678abc', force: true });
-    expect(sc.Formula.SheetCache!.sheets!['other']).toBeUndefined();
+    expect(sc.Formula.SheetCache?.sheets?.other).toBeUndefined();
   });
 
   it('recalc: force without Formula.SheetCache', () => {
@@ -830,7 +830,7 @@ describe('createDispatcher', () => {
       // Legacy server's catch-all preserves `user` from the frame; still,
       // defensively don't stamp `to: undefined`.
       dispatch({ type: 'ask.ecell', room: 'room1' } as unknown as Parameters<typeof dispatch>[0]);
-      expect(broadcasts[0]!.payload).toEqual({ ecell: 'C4' });
+      expect(broadcasts[0]?.payload).toEqual({ ecell: 'C4' });
     });
   });
 });

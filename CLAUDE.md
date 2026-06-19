@@ -1,6 +1,6 @@
 # EtherCalc — Agent context
 
-> **Status:** rewrite complete · **Owner:** Audrey Tang · doc updated 2026-06-13
+> **Status:** rewrite complete · **Owner:** Audrey Tang · doc updated 2026-06-19
 >
 > Slim agent doc. Rewrite ultraplan + per-session history archived in
 > [`docs/historic/REWRITE_ULTRAPLAN.md`](./docs/historic/REWRITE_ULTRAPLAN.md) (§14).
@@ -61,7 +61,7 @@ Typecheck → node tests (100% coverage) → workers-pool → Playwright e2e →
 `wrangler deploy --dry-run` → self-host smoke → conditional `mutation-gate`.
 Nightly: full Stryker matrix + oracle replay against legacy docker + staging
 dry-run (`.github/workflows/nightly.yml`). (Oracle replay is nightly-only,
-not a PR gate; code lint is not yet wired into PR CI.)
+not a PR gate; Biome lint is gated on every PR.)
 
 ## Package map
 

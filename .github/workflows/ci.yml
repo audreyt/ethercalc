@@ -39,6 +39,9 @@ jobs:
           bun run --cwd packages/migrate typecheck
           bun run --cwd packages/e2e typecheck
 
+      - name: Lint (biome)
+        run: bun run lint
+
       - name: shared — tests + 100% coverage gate
         run: bun run --cwd packages/shared test:coverage
 

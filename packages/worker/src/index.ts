@@ -25,6 +25,7 @@ import {
 import { sandstormBlocksMutation } from './lib/sandstorm-access.ts';
 import { registerAssets, registerRoomCatchAll } from './routes/assets.ts';
 import { registerExports } from './routes/exports.ts';
+import { registerMultiSheetImport } from './routes/multi-import.ts';
 import { registerLegacySocketIo } from './routes/legacy-socketio.ts';
 import { registerMigrate } from './routes/migrate.ts';
 import { registerRoomRoutes } from './routes/rooms.ts';
@@ -152,6 +153,7 @@ export function buildApp(): Hono<{ Bindings: Env }> {
   // `/:room` catch-all (so `/foo.csv` routes to the csv exporter rather
   // than being treated as a room-entry request).
   registerExports(app);
+  registerMultiSheetImport(app);
   registerStateless(app);
   registerAssets(app);
   registerRoomCatchAll(app);

@@ -225,33 +225,6 @@ function makeEnvWithDb(calls: D1Call[]): Env {
   };
 }
 
-/**
- * Replace the internal HeadlessSpreadsheet factory hook before we call any
- * method that would otherwise instantiate one. We do this by monkey-patching
- * the private `#getSpreadsheet` via a subclass in individual tests.
- */
-class StubbedRoomDO extends RoomDO {
-  stub: {
-    executeCommand(cmd: string): void;
-    createSpreadsheetSave(): string;
-    exportCells(): Record<string, unknown>;
-    exportCell(coord: string): unknown;
-  };
-  constructor(state: DurableObjectState, env: Env) {
-    super(state, env);
-    this.stub = {
-      executeCommand: () => {},
-      createSpreadsheetSave: () => 'snapshot:v1',
-      exportCells: () => ({ A1: { v: 1 } }),
-      exportCell: (coord: string) => (coord === 'A1' ? { v: 1 } : null),
-    };
-    // @ts-expect-error private override for tests
-    this['#getSpreadsheet'] = async () => this.stub;
-    // Private fields are ES private; they actually can't be monkey-patched
-    // by external code. Instead we redirect via a subclass method override
-    // below.
-  }
-}
 
 /**
  * Because `#getSpreadsheet` is a truly private field, subclass overrides
@@ -881,9 +854,9 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
       }),
     );
     expect(d1Calls).toHaveLength(1);
-    expect(d1Calls[0]!.sql).toContain('INSERT INTO rooms');
-    expect(d1Calls[0]!.params[0]).toBe('alpha');
-    expect(typeof d1Calls[0]!.params[1]).toBe('number');
+    expect(d1Calls[0]?.sql).toContain('INSERT INTO rooms');
+    expect(d1Calls[0]?.params[0]).toBe('alpha');
+    expect(typeof d1Calls[0]?.params[1]).toBe('number');
   });
 
   it('POST /_do/commands upserts the room into D1 after applying a command', async () => {
@@ -895,13 +868,13 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
     );
     const roomsCall = d1Calls.find((c) => c.sql.includes('INSERT INTO rooms'));
     expect(roomsCall).toBeDefined();
-    expect(roomsCall!.params[0]).toBe('beta');
+    expect(roomsCall?.params[0]).toBe('beta');
     // The command's audit entry is mirrored to the durable D1 audit_log.
     // Pin (room, …, body) so the SeqRow literal can't be blanked to {}.
     const auditCall = d1Calls.find((c) => c.sql.includes('INSERT INTO audit_log'));
     expect(auditCall).toBeDefined();
-    expect(auditCall!.params[0]).toBe('beta');
-    expect(auditCall!.params[3]).toBe('set A1 value n 1');
+    expect(auditCall?.params[0]).toBe('beta');
+    expect(auditCall?.params[3]).toBe('set A1 value n 1');
   });
 
   it('does NOT mirror audit when a command arrives without ?name (DB bound)', async () => {
@@ -947,7 +920,7 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
       ...makeEnvWithDb(d1Calls),
       ROOM: {
         idFromName: (n: string) => ({ name: n } as unknown as DurableObjectId),
-        get: (id: DurableObjectId) => ({
+        get: (_id: DurableObjectId) => ({
           fetch: (url: string) => {
             siblingDeletes.push(url);
             return Promise.resolve(new Response('OK', { status: 201 }));
@@ -1042,8 +1015,8 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
     );
     const roomsCall = d1Calls2.find((c) => c.sql.includes('INSERT INTO rooms'));
     expect(roomsCall).toBeDefined();
-    expect(roomsCall!.params[0]).toBe('gamma');
-    expect(typeof roomsCall!.params[1]).toBe('number');
+    expect(roomsCall?.params[0]).toBe('gamma');
+    expect(typeof roomsCall?.params[1]).toBe('number');
   });
 
   /**
@@ -1072,9 +1045,9 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
     );
     // Both the rooms index AND the audit mirror follow the handshake room.
     const roomsCall = d1Calls3.find((c) => c.sql.includes('INSERT INTO rooms'));
-    expect(roomsCall!.params[0]).toBe('alpha');
+    expect(roomsCall?.params[0]).toBe('alpha');
     const auditCall = d1Calls3.find((c) => c.sql.includes('INSERT INTO audit_log'));
-    expect(auditCall!.params[0]).toBe('alpha');
+    expect(auditCall?.params[0]).toBe('alpha');
   });
 
   /**
@@ -1102,7 +1075,7 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
       }),
     );
     const roomsCall = d1Calls4.find((c) => c.sql.includes('INSERT INTO rooms'));
-    expect(roomsCall!.params[0]).toBe('fallback');
+    expect(roomsCall?.params[0]).toBe('fallback');
   });
 
   /**
@@ -1221,8 +1194,8 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
     );
     const chatCall = calls.find((c) => c.sql.includes('INSERT INTO chat_log'));
     expect(chatCall).toBeDefined();
-    expect(chatCall!.params[0]).toBe('epsilon');
-    expect(chatCall!.params[3]).toBe('hello-d1');
+    expect(chatCall?.params[0]).toBe('epsilon');
+    expect(chatCall?.params[3]).toBe('hello-d1');
   });
 });
 
@@ -1319,8 +1292,8 @@ describe('RoomDO — cross-DO rename primitives (Phase 6)', () => {
     );
     expect(res.status).toBe(201);
     expect(siblingCalls).toHaveLength(1);
-    expect(siblingCalls[0]!.idFromName).toBe('alpha');
-    const parsed = JSON.parse(siblingCalls[0]!.init!.body as string) as {
+    expect(siblingCalls[0]?.idFromName).toBe('alpha');
+    const parsed = JSON.parse(siblingCalls[0]?.init?.body as string) as {
       snapshot: string;
       log: string[];
       audit: string[];
@@ -1357,7 +1330,7 @@ describe('RoomDO — cross-DO rename primitives (Phase 6)', () => {
     );
     expect(res.status).toBe(201);
     expect(siblingCalls).toHaveLength(1);
-    expect(String(siblingCalls[0]!.init?.body)).toBe('');
+    expect(String(siblingCalls[0]?.init?.body)).toBe('');
   });
 
   it('POST /_do/clone PUTs snapshot to target and preserves source', async () => {
@@ -1374,8 +1347,8 @@ describe('RoomDO — cross-DO rename primitives (Phase 6)', () => {
     );
     expect(res.status).toBe(201);
     expect(siblingCalls).toHaveLength(1);
-    expect(siblingCalls[0]!.init?.method).toBe('PUT');
-    expect(String(siblingCalls[0]!.init?.body)).toBe('TPL-SNAP');
+    expect(siblingCalls[0]?.init?.method).toBe('PUT');
+    expect(String(siblingCalls[0]?.init?.body)).toBe('TPL-SNAP');
     expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('TPL-SNAP');
     expect(record.map.get(logKey(0))).toBe('set A1 value n 1');
   });
@@ -1558,9 +1531,9 @@ describe('RoomDO — POST /_do/seed (Phase 11b migration)', () => {
     // mapped row contents so the `(body, i) => ({seq, ts, body})` literals
     // can't be blanked to {}.
     const auditCall = calls.find((c) => c.sql.includes('INSERT INTO audit_log'));
-    expect(auditCall!.params.slice(0, 4)).toEqual(['gamma', 0, 1700, 'cmd-1']);
+    expect(auditCall?.params.slice(0, 4)).toEqual(['gamma', 0, 1700, 'cmd-1']);
     const chatCall = calls.find((c) => c.sql.includes('INSERT INTO chat_log'));
-    expect(chatCall!.params.slice(0, 4)).toEqual(['gamma', 0, 1700, 'hello']);
+    expect(chatCall?.params.slice(0, 4)).toEqual(['gamma', 0, 1700, 'hello']);
   });
 
   it('skipIndex:true suppresses the D1 mirror entirely', async () => {
@@ -2484,8 +2457,8 @@ describe('RoomDO — WebSocket acceptance (Phase 7)', () => {
       }),
     );
     expect(siblingFetches).toHaveLength(1);
-    expect(siblingFetches[0]!.name).toBe('mysheet_formdata');
-    expect(siblingFetches[0]!.body).toBe('set B1 value n 7');
+    expect(siblingFetches[0]?.name).toBe('mysheet_formdata');
+    expect(siblingFetches[0]?.body).toBe('set B1 value n 7');
     // Broadcast to all (include_self=true) — peer receives AND sender receives.
     expect(peerLog.sent).toHaveLength(1);
     expect(senderLog.sent).toHaveLength(1);

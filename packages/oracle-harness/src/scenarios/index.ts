@@ -1,4 +1,4 @@
-import type { HttpScenario, Scenario, WsScenario } from '@ethercalc/shared/oracle-scenarios';
+import type { HttpScenario, Scenario, } from '@ethercalc/shared/oracle-scenarios';
 
 import { CRON_SCENARIOS } from './cron.ts';
 import { EXPORT_SCENARIOS } from './exports.ts';
@@ -12,6 +12,7 @@ import { ROOMS_INDEX_SCENARIOS } from './rooms-index.ts';
 import { STATIC_SCENARIOS } from './static.ts';
 import { TEMPLATING_SCENARIOS } from './templating.ts';
 import { WS_SCENARIOS } from './ws.ts';
+import { MULTI_IMPORT_SCENARIOS } from './multi-import.ts';
 
 export { STATIC_SCENARIOS } from './static.ts';
 export { MISC_SCENARIOS } from './misc.ts';
@@ -22,6 +23,7 @@ export { EXPORT_SCENARIOS } from './exports.ts';
 export { FORM_SCENARIOS } from './form.ts';
 export { TEMPLATING_SCENARIOS } from './templating.ts';
 export { WS_SCENARIOS } from './ws.ts';
+export { MULTI_IMPORT_SCENARIOS } from './multi-import.ts';
 
 /**
  * Full Phase 3 HTTP batch. Order matters:
@@ -43,6 +45,7 @@ export const ALL_HTTP_SCENARIOS: readonly HttpScenario[] = [
   ...EXPORT_SCENARIOS,
   ...FORM_SCENARIOS,
   ...TEMPLATING_SCENARIOS,
+  ...MULTI_IMPORT_SCENARIOS,
   ...ROOM_CRUD_TEARDOWN_SCENARIOS,
 ];
 
@@ -57,5 +60,6 @@ export const ALL_SCENARIOS: readonly Scenario[] = [
   ...WS_SCENARIOS,
   ...FORM_SCENARIOS,
   ...TEMPLATING_SCENARIOS,
+  ...MULTI_IMPORT_SCENARIOS,
   ...ROOM_CRUD_TEARDOWN_SCENARIOS,
 ];

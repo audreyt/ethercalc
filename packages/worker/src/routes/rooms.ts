@@ -28,6 +28,7 @@ import {
   ImportArchiveTooLargeError,
   ImportTooLargeError,
   xlsxToLoadClipboardCommands,
+  xlsxToSave,
 } from '../lib/xlsx-import.ts';
 import { verifyAuth } from '../lib/auth.ts';
 import { parseSettimetrigger } from '../lib/cron.ts';
@@ -74,17 +75,6 @@ function sizedResponse(
   });
 }
 
-function xlsxDeferredResponse(): Response {
-  const body = 'xlsx import lands in Phase 8';
-  const bytes = new TextEncoder().encode(body);
-  return new Response(body, {
-    status: 501,
-    headers: {
-      'Content-Type': TEXT_CT,
-      'Content-Length': String(bytes.byteLength),
-    },
-  });
-}
 
 async function readBodyBytes(request: Request): Promise<Uint8Array> {
   return new Uint8Array(await request.arrayBuffer());
@@ -201,8 +191,19 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
       }
     }
     const decoded = classifyRequestBody(ct, bytes);
-    if (decoded.kind === 'xlsx-deferred') return xlsxDeferredResponse();
-    const snapshot = decoded.kind === 'save' ? decoded.snapshot : '';
+    let snapshot: string;
+    if (decoded.kind === 'xlsx-deferred') {
+      try {
+        snapshot = xlsxToSave(bytes);
+      } catch (err) {
+        if (err instanceof ImportTooLargeError || err instanceof ImportArchiveTooLargeError) {
+          return sizedResponse(err.message, 413, TEXT_CT);
+        }
+        snapshot = '';
+      }
+    } else {
+      snapshot = decoded.kind === 'save' ? decoded.snapshot : '';
+    }
     const room = userRoom ?? generateRoomId();
     await doFetch(c.env, room, '/_do/snapshot', {
       method: 'PUT',
@@ -217,8 +218,19 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
     const bytes = await readBodyBytes(c.req.raw);
     const ct = c.req.header('content-type') ?? '';
     const decoded = classifyRequestBody(ct, bytes);
-    if (decoded.kind === 'xlsx-deferred') return xlsxDeferredResponse();
-    const snapshot = decoded.kind === 'save' ? decoded.snapshot : '';
+    let snapshot: string;
+    if (decoded.kind === 'xlsx-deferred') {
+      try {
+        snapshot = xlsxToSave(bytes);
+      } catch (err) {
+        if (err instanceof ImportTooLargeError || err instanceof ImportArchiveTooLargeError) {
+          return sizedResponse(err.message, 413, TEXT_CT);
+        }
+        snapshot = '';
+      }
+    } else {
+      snapshot = decoded.kind === 'save' ? decoded.snapshot : '';
+    }
     await doFetch(c.env, room, '/_do/snapshot', {
       method: 'PUT',
       body: snapshot,

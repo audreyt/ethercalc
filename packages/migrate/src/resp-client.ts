@@ -20,7 +20,7 @@
  * returning `null` when the current message is still in flight.
  */
 
-import { createConnection, type Socket } from 'node:net';
+import { createConnection, } from 'node:net';
 
 /** Value shape returned from Redis — strings decoded as UTF-8. */
 export type RespValue = string | number | null | RespValue[];

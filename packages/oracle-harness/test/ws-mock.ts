@@ -1,6 +1,5 @@
 import type {
   IoClientFactory,
-  IoClientLike,
   WsEvent,
   WsFactory,
   WsLike,
