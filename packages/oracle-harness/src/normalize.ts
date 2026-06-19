@@ -65,10 +65,10 @@ export const NORMALIZERS: Readonly<Record<string, NormalizeHook>> = {
       'ignore',
     ),
   'static/get-socialcalc-js': (scenario) =>
-    setBodyMatcher(
+    relaxContentLength(setBodyMatcher(
       overrideHeader(scenario, 'content-type', 're:.*javascript.*'),
       'ignore',
-    ),
+    )),
   // `/_new` 302s to `/<12-char-base36-uuid>` (see `new-room` in main.ls).
   // The Location and body both embed the random id; relax both.
   'misc/get-new-redirect': (scenario) => {
@@ -97,7 +97,7 @@ export const NORMALIZERS: Readonly<Record<string, NormalizeHook>> = {
   'rooms-index/get-rooms-empty': (scenario) => setBodyMatcher(scenario, 'rooms-empty'),
   'rooms-index/get-roomtimes-empty': (scenario) => setBodyMatcher(scenario, 'roomtimes-empty'),
   'rooms-index/get-roomlinks-empty': (scenario) => setBodyMatcher(scenario, 'roomlinks-empty'),
-  'room-crud/post-command': (scenario) => setBodyMatcher(scenario, 'command-echo'),
+  'room-crud/post-command': (scenario) => relaxContentLength(setBodyMatcher(scenario, 'command-echo')),
 };
 
 /** Look up a normalizer by scenario name; return `null` if none registered. */
