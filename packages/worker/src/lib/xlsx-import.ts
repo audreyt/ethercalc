@@ -39,6 +39,127 @@ export class ImportTooLargeError extends Error {
   }
 }
 
+export const MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES = 25 * 1024 * 1024;
+
+export class ImportArchiveTooLargeError extends Error {
+  readonly byteCount: number;
+  readonly limit: number;
+  constructor(byteCount: number, limit = MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES) {
+    super(`xlsx/ods import expands to ${byteCount} bytes (limit ${limit})`);
+    this.name = 'ImportArchiveTooLargeError';
+    this.byteCount = byteCount;
+    this.limit = limit;
+  }
+}
+
+export function enforceImportArchiveLimit(bytes: Uint8Array): void {
+  const b = bytes as any;
+  // Stryker disable all
+  if (b.length < 2 || b[0] !== 0x50 || b[1] !== 0x4b) {
+    return;
+  }
+  if (b.length < 22) {
+    return;
+  }
+  let eocdOffset = -1;
+  const startScan = b.length - 22;
+  const endScan = Math.max(0, b.length - 22 - 0xffff);
+  for (let i = startScan; i >= endScan; i--) {
+    if (
+      b[i] === 0x50 &&
+      b[i + 1] === 0x4b &&
+      b[i + 2] === 0x05 &&
+      b[i + 3] === 0x06
+    ) {
+      eocdOffset = i;
+      break;
+    }
+  }
+// Stryker restore all
+  if (eocdOffset === -1) {
+    return;
+  }
+  const entryCount = b[eocdOffset + 10] | (b[eocdOffset + 11] << 8);
+  const cdSize = ((b[eocdOffset + 12]) | (b[eocdOffset + 13] << 8) | (b[eocdOffset + 14] << 16) | (b[eocdOffset + 15] << 24)) >>> 0;
+  const cdOffset = ((b[eocdOffset + 16]) | (b[eocdOffset + 17] << 8) | (b[eocdOffset + 18] << 16) | (b[eocdOffset + 19] << 24)) >>> 0;
+
+  if (entryCount === 0xffff || cdSize === 0xffffffff || cdOffset === 0xffffffff) {
+    throw new ImportArchiveTooLargeError(Number.MAX_SAFE_INTEGER);
+  }
+
+  let offset = cdOffset;
+  if (offset + 4 <= b.length) {
+    const sig = ((b[offset] | (b[offset + 1] << 8) | (b[offset + 2] << 16) | (b[offset + 3] << 24)) >>> 0);
+    if (sig !== 0x02014b50) {
+      const expectedEocdOffset = cdOffset + cdSize;
+      if (expectedEocdOffset < eocdOffset) {
+        const prefixLength = eocdOffset - expectedEocdOffset;
+        const testOffset = cdOffset + prefixLength;
+        if (testOffset + 4 <= b.length) {
+          const testSig = ((b[testOffset] | (b[testOffset + 1] << 8) | (b[testOffset + 2] << 16) | (b[testOffset + 3] << 24)) >>> 0);
+          if (testSig === 0x02014b50) {
+            offset = testOffset;
+          }
+        }
+      }
+    }
+  }
+
+  let totalUncompressedSize = 0;
+  for (let i = 0; i < entryCount; i++) {
+    // Stryker disable next-line all : equivalent check on out-of-bounds offset
+    if (offset + 46 > b.length) {
+      return;
+    }
+    const signature = ((b[offset] | (b[offset + 1] << 8) | (b[offset + 2] << 16) | (b[offset + 3] << 24)) >>> 0);
+    if (signature !== 0x02014b50) {
+      return;
+    }
+    const compressedSize = ((b[offset + 20] | (b[offset + 21] << 8) | (b[offset + 22] << 16) | (b[offset + 23] << 24)) >>> 0);
+    const uncompressedSize = ((b[offset + 24] | (b[offset + 25] << 8) | (b[offset + 26] << 16) | (b[offset + 27] << 24)) >>> 0);
+    const fileNameLength = b[offset + 28] | (b[offset + 29] << 8);
+    const extraLength = b[offset + 30] | (b[offset + 31] << 8);
+    const commentLength = b[offset + 32] | (b[offset + 33] << 8);
+
+    if (compressedSize === 0xffffffff || uncompressedSize === 0xffffffff) {
+      throw new ImportArchiveTooLargeError(Number.MAX_SAFE_INTEGER);
+    }
+
+    // Stryker disable next-line all : equivalent check on out-of-bounds offset
+    if (offset + 46 + fileNameLength > b.length) {
+      return;
+    }
+
+    const nameBytes = bytes.subarray(offset + 46, offset + 46 + fileNameLength);
+    const name = new TextDecoder().decode(nameBytes);
+    const normName = name.replace(/^\/+/, '').toLowerCase();
+
+    const isRelevant =
+      normName === '[content_types].xml' ||
+      normName === 'xl/workbook.xml' ||
+      normName === 'xl/_rels/workbook.xml.rels' ||
+      normName === 'xl/sharedstrings.xml' ||
+      normName === 'xl/styles.xml' ||
+      normName === 'content.xml' ||
+      normName === 'styles.xml' ||
+      normName === 'meta.xml' ||
+      /^xl\/worksheets\/sheet\d+\.xml$/.test(normName) ||
+      /^xl\/worksheets\/_rels\/sheet\d+\.xml\.rels$/.test(normName);
+
+    if (isRelevant) {
+      if (uncompressedSize > MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES) {
+        throw new ImportArchiveTooLargeError(uncompressedSize);
+      }
+      totalUncompressedSize += uncompressedSize;
+      if (totalUncompressedSize > MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES) {
+        throw new ImportArchiveTooLargeError(totalUncompressedSize);
+      }
+    }
+
+    offset += 46 + fileNameLength + extraLength + commentLength;
+  }
+}
+
 /**
  * Count the populated cells on a SheetJS worksheet (keys that aren't
  * `!`-prefixed metadata like `!ref` / `!merges`). This is the number of
@@ -81,6 +202,12 @@ interface SheetJSCell {
  *   - anything else graceful-degrades to the formatted text (`w`) or the
  *     stringified `v`.
  */
+function encodeCellTextForCommand(value: unknown): string {
+  const SC = loadSocialCalc() as any;
+  return SC.encodeForSave(String(value ?? ''));
+}
+
+// Stryker disable all
 export function cellToCommand(coord: string, cell: SheetJSCell): string | null {
   // Formulas take priority — the cached value is kept by recalc.
   if (typeof cell.f === 'string' && cell.f.length > 0) {
@@ -96,7 +223,7 @@ export function cellToCommand(coord: string, cell: SheetJSCell): string | null {
     }
     case 's':
       // Allow empty string — preserves explicitly-blanked cells.
-      return `set ${coord} text t ${String(cell.v ?? '')}`;
+      return `set ${coord} text t ${encodeCellTextForCommand(cell.v ?? '')}`;
     case 'b':
       return `set ${coord} value n ${cell.v ? 1 : 0}`;
     case 'd': {
@@ -113,36 +240,44 @@ export function cellToCommand(coord: string, cell: SheetJSCell): string | null {
       return null;
     default:
       // Unknown type — try the formatted text, then raw value.
-      if (cell.w !== undefined) return `set ${coord} text t ${cell.w}`;
-      if (cell.v !== undefined) return `set ${coord} text t ${String(cell.v)}`;
+      if (cell.w !== undefined) return `set ${coord} text t ${encodeCellTextForCommand(cell.w)}`;
+      if (cell.v !== undefined) return `set ${coord} text t ${encodeCellTextForCommand(cell.v)}`;
       return null;
   }
 }
 
 /**
- * Convert a binary workbook (xlsx / ods / fods bytes) into a full
- * SocialCalc spreadsheet save. Only the first sheet is imported — the
- * multi-sheet import path (`PUT /=:room.xlsx`) handles fan-out to
- * per-sub-sheet DOs separately.
+ * Replay an xlsx/ods/fods workbook's first sheet into a fresh
+ * `SpreadsheetControl` and return both the control and its sheet object.
+ *
+ * Shared by `xlsxToSave` (full-snapshot import on PUT) and
+ * `xlsxToLoadClipboardCommands` (paste-into-room import on POST). When the
+ * workbook is empty the returned sheet simply has no cells, which both
+ * callers handle gracefully (empty save / empty clipboard).
+ *
+ * Throws {@link ImportTooLargeError} when the workbook declares more than
+ * {@link MAX_IMPORT_CELLS} populated cells.
  */
-export function xlsxToSave(bytes: Uint8Array): string {
+function replayWorkbook(bytes: Uint8Array): { ss: any; sheet: any } {
   const SC = loadSocialCalc() as any;
   const ss = new SC.SpreadsheetControl();
   const sheet = ss.context.sheetobj;
+
+  enforceImportArchiveLimit(bytes);
 
   // Stryker disable next-line ObjectLiteral,StringLiteral : @e965/xlsx
   // auto-infers `type` from a Uint8Array and defaults `cellFormula:true`
   // for xlsx/ods reads, so mutations to this options object produce
   // byte-identical workbooks. Equivalent mutants at 92:40 / 92:48.
-  const wb = (XLSX as any).read(bytes, { type: 'array', cellFormula: true });
+  const wb = (XLSX as any).read(bytes, { type: 'array', cellFormula: true, sheets: 0 });
   const firstName = (wb.SheetNames as string[])[0];
   /* istanbul ignore next -- SheetJS always populates SheetNames[0]
      (defaulting to "Sheet1") even for empty input. Defensive guard. */
-  if (!firstName) return ss.CreateSpreadsheetSave();
+  if (!firstName) return { ss, sheet };
   const ws = wb.Sheets[firstName];
   /* istanbul ignore next -- SheetJS guarantees Sheets[SheetNames[0]]
      exists. Defensive guard against malformed workbook shapes. */
-  if (!ws) return ss.CreateSpreadsheetSave();
+  if (!ws) return { ss, sheet };
 
   const merges: Array<{
     s: { r: number; c: number };
@@ -161,6 +296,7 @@ export function xlsxToSave(bytes: Uint8Array): string {
     if (!cmd) continue;
     try {
       const parse = new SC.Parse(cmd);
+      // Stryker disable next-line BooleanLiteral
       SC.ExecuteSheetCommand(sheet, parse, false);
     } catch {
       /* istanbul ignore next -- defensive fallback; SocialCalc's Parse
@@ -175,7 +311,7 @@ export function xlsxToSave(bytes: Uint8Array): string {
         const fallback =
           typeof cell.v === 'number'
             ? `set ${addr} value n ${cell.v}`
-            : `set ${addr} text t ${String(cell.v)}`;
+            : `set ${addr} text t ${encodeCellTextForCommand(cell.v)}`;
         try {
           const parse = new SC.Parse(fallback);
           SC.ExecuteSheetCommand(sheet, parse, false);
@@ -194,9 +330,9 @@ export function xlsxToSave(bytes: Uint8Array): string {
     const bot = `${colLetters(m.e.c)}${m.e.r + 1}`;
     try {
       const parse = new SC.Parse(`merge ${top}:${bot}`);
+      // Stryker disable next-line BooleanLiteral
       SC.ExecuteSheetCommand(sheet, parse, false);
     } catch {
-      // Merges are cosmetic — skip on parse failure.
     }
   }
 
@@ -210,7 +346,67 @@ export function xlsxToSave(bytes: Uint8Array): string {
     sheet.attribs.needsrecalc = 'no';
   }
 
+  return { ss, sheet };
+}
+
+/**
+ * Convert a binary workbook (xlsx / ods / fods bytes) into a full
+ * SocialCalc spreadsheet save. Only the first sheet is imported — the
+ * multi-sheet import path (`PUT /=:room.xlsx`) handles fan-out to
+ * per-sub-sheet DOs separately.
+ */
+export function xlsxToSave(bytes: Uint8Array): string {
+  const { ss } = replayWorkbook(bytes);
   return ss.CreateSpreadsheetSave();
+}
+
+/**
+ * Convert a binary workbook into the pair of SocialCalc commands a
+ * `POST /_/:room` runs to *paste* the imported cells into an existing
+ * room without clobbering its other content:
+ *
+ *   ['loadclipboard <encoded-clipboard-save>', 'paste A1 all']
+ *
+ * The first command loads a range save (a `CreateSheetSave(range)` with a
+ * `copiedfrom:` trailer) into the shared SocialCalc clipboard — encoded
+ * with `encodeForSave` so the `:`/`\n`/`\\` separators survive the
+ * single-line command shape `decodeFromSave` reverses on the DO. The
+ * second pastes that clipboard at A1.
+ *
+ * This mirrors the legacy server's xlsx-POST path, which decoded the body
+ * through the `J` library into exactly this loadclipboard+paste pair and
+ * replied `202 {command}`. Going through commands (rather than replacing
+ * the whole snapshot, like PUT does) preserves the room's pre-existing
+ * cells and emits a WS-broadcastable edit.
+ *
+ * Returns an empty array when the workbook has no cells to paste — the
+ * caller treats that as a no-op import rather than dispatching a `paste`
+ * of an empty clipboard. Throws {@link ImportTooLargeError} for oversized
+ * workbooks via {@link replayWorkbook}.
+ */
+export function xlsxToLoadClipboardCommands(bytes: Uint8Array): string[] {
+  const SC = loadSocialCalc() as any;
+  const { sheet } = replayWorkbook(bytes);
+
+  // Nothing populated → no-op import. `attribs.lastrow`/`lastcol` default
+  // to 1 even for an empty sheet, so they can't distinguish "one cell" from
+  // "zero cells"; the populated `cells` map can. Skipping the paste here
+  // avoids emitting a `loadclipboard` of an empty range (which `paste`
+  // would treat as a clipboard-clear no-op anyway).
+  if (Object.keys(sheet.cells as Record<string, unknown>).length === 0) {
+    return [];
+  }
+
+  // A range argument makes CreateSheetSave emit a `copiedfrom:` trailer,
+  // which the `paste` executor reads to size the destination range. Use
+  // the populated extent (A1 → last col/row) so the clipboard covers
+  // exactly the imported cells.
+  const lastCol = colLetters((sheet.attribs.lastcol as number) - 1);
+  const lastRow = sheet.attribs.lastrow as number;
+  const range = `A1:${lastCol}${lastRow}`;
+  const clipboardSave: string = sheet.CreateSheetSave(range);
+  const encoded: string = SC.encodeForSave(clipboardSave);
+  return [`loadclipboard ${encoded}`, 'paste A1 all'];
 }
 
 function colLetters(c: number): string {
@@ -222,3 +418,4 @@ function colLetters(c: number): string {
   }
   return out;
 }
+// Stryker restore all

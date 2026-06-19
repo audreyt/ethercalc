@@ -59,9 +59,9 @@ export function defaultMatcherForResponse(
   if (status >= 300 && status < 400) return 'ignore';
   if (status === 204 || status === 304) return 'ignore';
   const ct = (headers['content-type'] ?? '').toLowerCase();
-  if (ct.includes('application/json')) return 'json';
   // Empty bodies (404 blocks, etc.) — header carries the semantic weight.
   if (headers['content-length'] === '0') return 'ignore';
+  if (ct.includes('application/json')) return 'json';
   if (ct.includes('text/x-socialcalc')) return 'scsave';
   if (ct.includes('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')) {
     return 'xlsx';

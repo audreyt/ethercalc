@@ -1,20 +1,20 @@
 {
   "scenario": {
-    "name": "misc/get-new-redirect",
+    "name": "templating/get-multi-new",
     "kind": "http",
     "request": {
       "method": "GET",
-      "path": "/_new"
+      "path": "/=_new"
     },
     "expect": {
       "status": 302,
       "headers": {
         "content-length": "re:^\\d+$",
         "content-type": "text/plain; charset=UTF-8",
-        "location": "re:^/[a-z0-9]{12}$",
+        "location": "re:^/=[a-z0-9]{12}$",
         "vary": "Accept"
       },
-      "bodyBase64": "Rm91bmQuIFJlZGlyZWN0aW5nIHRvIC9ybXFxdzdrYWUzcjI=",
+      "bodyBase64": "Rm91bmQuIFJlZGlyZWN0aW5nIHRvIC89Z3hzazY5cXkya2V0",
       "bodyMatcher": "ignore"
     }
   }

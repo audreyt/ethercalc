@@ -1,10 +1,10 @@
 {
   "scenario": {
-    "name": "misc/get-new-redirect",
+    "name": "templating/get-from-template",
     "kind": "http",
     "request": {
       "method": "GET",
-      "path": "/_new"
+      "path": "/_from/oracle-phase3-template"
     },
     "expect": {
       "status": 302,
@@ -14,7 +14,7 @@
         "location": "re:^/[a-z0-9]{12}$",
         "vary": "Accept"
       },
-      "bodyBase64": "Rm91bmQuIFJlZGlyZWN0aW5nIHRvIC9ybXFxdzdrYWUzcjI=",
+      "bodyBase64": "Rm91bmQuIFJlZGlyZWN0aW5nIHRvIC9yeGZlbmV6MGdmeno=",
       "bodyMatcher": "ignore"
     }
   }

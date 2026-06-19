@@ -245,9 +245,21 @@ describe('dispatchMatcher', () => {
       }),
     ).toBeNull();
     expect(
+      dispatchMatcher('rooms-empty', {
+        expectedBase64: b64('[]'),
+        actualBytes: bytes('["abc123def456"]'),
+      }),
+    ).toBeNull();
+    expect(
       dispatchMatcher('roomtimes-empty', {
         expectedBase64: b64('{}'),
         actualBytes: bytes('{"oracle-phase3-template_abc123def456":123}'),
+      }),
+    ).toBeNull();
+    expect(
+      dispatchMatcher('roomtimes-empty', {
+        expectedBase64: b64('{}'),
+        actualBytes: bytes('{"abc123def456":123}'),
       }),
     ).toBeNull();
     expect(
@@ -260,6 +272,12 @@ describe('dispatchMatcher', () => {
       dispatchMatcher('roomlinks-empty', {
         expectedBase64: b64('[]'),
         actualBytes: bytes('[{"link":"/oracle-phase3-template_abc123def456/app"}]'),
+      }),
+    ).toBeNull();
+    expect(
+      dispatchMatcher('roomlinks-empty', {
+        expectedBase64: b64('[]'),
+        actualBytes: bytes('[{"link":"/abc123def456/app"}]'),
       }),
     ).toBeNull();
     expect(

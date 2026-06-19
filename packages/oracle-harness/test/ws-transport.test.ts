@@ -6,6 +6,7 @@ vi.mock('socket.io-client', () => ({
     on(event: string, fn: (...args: unknown[]) => void) {
       if (event === 'connect') queueMicrotask(() => fn());
     },
+    off() {},
     emit() {},
     disconnect() {},
     removeAllListeners() {},
@@ -192,12 +193,50 @@ describe('openWsSession — socket.io 1.x', () => {
     session.close();
   });
 
+  it('covers socket.io edge cases during join (noise messages)', async () => {
+    const factory = () => {
+      let dataCallback: ((msg: unknown) => void) | null = null;
+      return {
+        connected: true,
+        on(event: string, fn: (...args: unknown[]) => void) {
+          if (event === 'connect') queueMicrotask(() => fn());
+          if (event === 'data') dataCallback = fn;
+        },
+        off() {},
+        emit(event: string, msg: unknown) {
+          if (event === 'data') {
+            const payload = msg as { type?: string };
+            if (payload && payload.type === 'ask.log') {
+              queueMicrotask(() => {
+                if (dataCallback) {
+                  dataCallback(null);
+                  dataCallback({ type: 'chat' });
+                  dataCallback({ type: 'log' });
+                }
+              });
+            }
+          }
+        },
+        disconnect() {},
+        removeAllListeners() {},
+      };
+    };
+    const session = await openWsSession({
+      targetUrl: 'http://oracle.test:8000',
+      connectUrl: '/_ws/r',
+      transport: 'socketio',
+      ioClientFactory: factory as any,
+    });
+    session.close();
+  });
+
   it('rejects connect_error from the io client', async () => {
     const factory = () => ({
       connected: false,
       on(event: string, fn: (...args: unknown[]) => void) {
         if (event === 'connect_error') queueMicrotask(() => fn(new Error('nope')));
       },
+      off() {},
       emit() {},
       disconnect() {},
       removeAllListeners() {},
@@ -218,6 +257,7 @@ describe('openWsSession — socket.io 1.x', () => {
       on(event: string, fn: (...args: unknown[]) => void) {
         if (event === 'connect_error') queueMicrotask(() => fn('bad'));
       },
+      off() {},
       emit() {},
       disconnect() {},
       removeAllListeners() {},
@@ -237,6 +277,7 @@ describe('openWsSession — socket.io 1.x', () => {
     const factory = () => ({
       connected: false,
       on() {},
+      off() {},
       emit() {},
       disconnect() {},
       removeAllListeners() {},
@@ -335,6 +376,42 @@ describe('openWsSession edge cases', () => {
         fetcher: async () => new Response(''),
       }),
     ).rejects.toThrow(/malformed/);
+  });
+
+  it('rejects native WebSocket connection errors and close', async () => {
+    await expect(
+      openWsSession({
+        targetUrl: 'http://oracle.test',
+        connectUrl: '/_ws/r',
+        transport: 'native',
+        wsFactory: (url) => {
+          const ws = new MockWebSocket();
+          (ws as any).readyState = 0;
+          queueMicrotask(() => {
+            const bucket = (ws as any).listeners.get('error') ?? [];
+            for (const fn of bucket) fn(new Error('conn error'));
+          });
+          return ws;
+        },
+      }),
+    ).rejects.toThrow('WebSocket connection failed');
+
+    await expect(
+      openWsSession({
+        targetUrl: 'http://oracle.test',
+        connectUrl: '/_ws/r',
+        transport: 'native',
+        wsFactory: (url) => {
+          const ws = new MockWebSocket();
+          (ws as any).readyState = 0;
+          queueMicrotask(() => {
+            const bucket = (ws as any).listeners.get('close') ?? [];
+            for (const fn of bucket) fn();
+          });
+          return ws;
+        },
+      }),
+    ).rejects.toThrow('WebSocket closed before open');
   });
 
   it('ignores non-event socket.io frames and non-JSON native frames', async () => {

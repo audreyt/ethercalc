@@ -9,10 +9,12 @@ export type WsTransport = 'socketio' | 'socketio-v09' | 'native';
 export interface IoClientLike {
   readonly connected: boolean;
   on(event: string, listener: (...args: unknown[]) => void): void;
+  off(event: string, listener: (...args: unknown[]) => void): void;
   emit(event: string, ...args: unknown[]): void;
   disconnect(): void;
   removeAllListeners(): void;
 }
+
 
 export type IoClientFactory = (origin: string) => IoClientLike;
 
@@ -82,7 +84,7 @@ export async function openWsSession(opts: WsSessionOptions): Promise<WsSession> 
   if (opts.transport === 'socketio-v09') {
     return openSocketIoV09Session(opts.targetUrl, fetcher, wsFactory);
   }
-  return openSocketIo1Session(opts.targetUrl, opts.ioClientFactory ?? defaultIoClientFactory);
+  return openSocketIo1Session(opts.targetUrl, opts.connectUrl, opts.ioClientFactory ?? defaultIoClientFactory);
 }
 
 async function openNativeSession(url: string, wsFactory: WsFactory): Promise<WsSession> {
@@ -124,6 +126,7 @@ export const defaultIoClientFactory: IoClientFactory = (origin) =>
 /** socket.io 1.x session via the official client (oracle ground truth). */
 async function openSocketIo1Session(
   targetUrl: string,
+  connectUrl: string,
   ioClientFactory: IoClientFactory,
 ): Promise<WsSession> {
   const origin = new URL(targetUrl).origin;
@@ -144,6 +147,28 @@ async function openSocketIo1Session(
       reject(err instanceof Error ? err : new Error('socket.io connect failed'));
     });
   });
+
+  const match = connectUrl.match(/\/_(?:ws|do\/ws)\/([^?#\s]+)/);
+  const room = match ? decodeURIComponent(match[1]!) : '';
+  const searchParams = new URL(connectUrl, 'http://localhost').searchParams;
+  const user = searchParams.get('user') ?? '';
+
+  if (room) {
+    socket.emit('data', { type: 'ask.log', room, user });
+    await new Promise<void>((resolve, reject) => {
+      /* istanbul ignore next -- defensive timeout that doesn't fire under tests */
+      const timer = setTimeout(() => reject(new Error('socket.io join ask.log timeout')), 5000);
+      const onData = (msg: unknown) => {
+        const payload = msg as { type?: string };
+        if (payload && payload.type === 'log') {
+          socket.off('data', onData);
+          clearTimeout(timer);
+          resolve();
+        }
+      };
+      socket.on('data', onData);
+    });
+  }
 
   socket.on('data', (msg: unknown) => inbox.push(msg));
 

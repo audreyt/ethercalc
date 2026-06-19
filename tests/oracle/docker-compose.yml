@@ -32,6 +32,7 @@ services:
     environment:
       REDIS_HOST: redis
       REDIS_PORT: "6379"
+      OPENSHIFT_DATA_DIR: "."
     ports:
       - "8000:8000"
 

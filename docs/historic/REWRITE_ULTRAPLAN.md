@@ -279,7 +279,7 @@ Phases 0–11 complete (see §14 for merge history). Remaining:
 - [x] Cross-sheet formulas (`'other'!A1`) via `findCrossSheetRefs` + `/_do/snapshot` DO-to-DO fetch (`ecb18d3`).
 
 ### Phase 11 — Loose ends
-- [x] Playwright skeleton at `packages/e2e/` with 10 passing specs.
+- [x] Playwright skeleton at `packages/e2e/` with 14 passing specs (single-sheet + multi-sheet smoke; no skips).
 - [x] `/:template/form` DO-to-DO clone (`POST /_do/clone` + 302 `/<template>_<id>/app`, `c52061f`).
 
 ### Phase 12 — CI hardening

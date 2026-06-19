@@ -81,10 +81,19 @@ describe('POST /_/:room — command execution', () => {
     expect(calls).toHaveLength(0);
   });
 
-  it('returns 501 for xlsx body without touching DO', async () => {
-    const { env, calls } = makeFakeRoomNamespace(() => {
-      throw new Error('should not reach DO');
-    });
+  it('decodes an xlsx body into a loadclipboard+paste dispatch (202)', async () => {
+    const { env, calls } = makeFakeRoomNamespace(
+      () => new Response(null, { status: 202 }),
+    );
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const XLSX = await import('@e965/xlsx');
+    const ws = { '!ref': 'A1:A1', A1: { t: 's', v: 'hi' } };
+    const book = (XLSX as any).utils.book_new();
+    (XLSX as any).utils.book_append_sheet(book, ws, 'Sheet1');
+    const bytes = new Uint8Array(
+      (XLSX as any).write(book, { bookType: 'xlsx', type: 'array' }) as ArrayBufferLike,
+    );
+    /* eslint-enable @typescript-eslint/no-explicit-any */
     const app = buildApp();
     const res = await app.fetch(
       new Request('https://t.test/_/r', {
@@ -93,12 +102,52 @@ describe('POST /_/:room — command execution', () => {
           'content-type':
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         },
-        body: 'PKZIP',
+        body: bytes as unknown as BodyInit,
       }),
       env as never,
     );
-    expect(res.status).toBe(501);
-    expect(calls).toHaveLength(0);
+    expect(res.status).toBe(202);
+    expect(res.headers.get('content-type')).toBe('application/json; charset=utf-8');
+    const body = (await res.json()) as { command: string[] };
+    expect(body.command[0]).toMatch(/^loadclipboard /);
+    expect(body.command[body.command.length - 1]).toBe('paste A1 all');
+    // The decoded command pair is dispatched to the DO as a newline batch.
+    const dispatch = calls.find((c) => c.url.includes('/_do/commands'));
+    expect(dispatch).toBeDefined();
+    expect(dispatch!.method).toBe('POST');
+    expect(dispatch!.bodyText).toBe(body.command.join('\n'));
+  });
+
+  it('an empty/cell-less xlsx body is a no-op 202 that skips the DO', async () => {
+    const { env, calls } = makeFakeRoomNamespace(() => {
+      throw new Error('should not reach DO');
+    });
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const XLSX = await import('@e965/xlsx');
+    const ws = { '!ref': 'A1:A1' };
+    const book = (XLSX as any).utils.book_new();
+    (XLSX as any).utils.book_append_sheet(book, ws, 'Sheet1');
+    const bytes = new Uint8Array(
+      (XLSX as any).write(book, { bookType: 'xlsx', type: 'array' }) as ArrayBufferLike,
+    );
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+    const app = buildApp();
+    const res = await app.fetch(
+      new Request('https://t.test/_/r', {
+        method: 'POST',
+        headers: {
+          'content-type':
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        },
+        body: bytes as unknown as BodyInit,
+      }),
+      env as never,
+    );
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as { command: string[] };
+    expect(body.command).toEqual([]);
+    // No commands → no DO dispatch.
+    expect(calls.find((c) => c.url.includes('/_do/commands'))).toBeUndefined();
   });
 
   it('filters the banned text-wiki format command (echoed but not executed)', async () => {
@@ -427,4 +476,83 @@ describe('POST /_/:room — command execution', () => {
     const body = (await res.json()) as { command: string[] };
     expect(body.command).toEqual(['loadclipboard foo', 'paste A2 all']);
   });
+
+  it('returns 413 when the xlsx zip contains oversized XML files', async () => {
+    const { env, calls } = makeFakeRoomNamespace(() => {
+      throw new Error('should not reach DO');
+    });
+    // Construct a fake zip that will trigger ImportArchiveTooLargeError
+    const bytes = makeFakeZipCentralDirectory([
+      { name: 'xl/worksheets/sheet2.xml', compressedSize: 10, uncompressedSize: 26 * 1024 * 1024 },
+    ]);
+    const app = buildApp();
+    const res = await app.fetch(
+      new Request('https://t.test/_/r', {
+        method: 'POST',
+        headers: {
+          'content-type':
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        },
+        body: bytes as unknown as BodyInit,
+      }),
+      env as never,
+    );
+    expect(res.status).toBe(413);
+    const body = await res.text();
+    expect(body).toContain('xlsx/ods import expands to');
+    expect(calls.find((c) => c.url.includes('/_do/commands'))).toBeUndefined();
+  });
 });
+
+function makeFakeZipCentralDirectory(
+  entries: Array<{ name: string; compressedSize: number; uncompressedSize: number }>
+): Uint8Array {
+  const cdHeaders: Uint8Array[] = [];
+  let cdOffset = 0;
+  for (const entry of entries) {
+    const nameBytes = new TextEncoder().encode(entry.name);
+    const header = new Uint8Array(46 + nameBytes.length);
+    header[0] = 0x50;
+    header[1] = 0x4b;
+    header[2] = 0x01;
+    header[3] = 0x02;
+    header[20] = entry.compressedSize & 0xff;
+    header[21] = (entry.compressedSize >> 8) & 0xff;
+    header[22] = (entry.compressedSize >> 16) & 0xff;
+    header[23] = (entry.compressedSize >> 24) & 0xff;
+    header[24] = entry.uncompressedSize & 0xff;
+    header[25] = (entry.uncompressedSize >> 8) & 0xff;
+    header[26] = (entry.uncompressedSize >> 16) & 0xff;
+    header[27] = (entry.uncompressedSize >> 24) & 0xff;
+    header[28] = nameBytes.length & 0xff;
+    header[29] = (nameBytes.length >> 8) & 0xff;
+    header.set(nameBytes, 46);
+    cdHeaders.push(header);
+    cdOffset += header.length;
+  }
+  const eocd = new Uint8Array(22);
+  eocd[0] = 0x50;
+  eocd[1] = 0x4b;
+  eocd[2] = 0x05;
+  eocd[3] = 0x06;
+  eocd[8] = entries.length & 0xff;
+  eocd[9] = (entries.length >> 8) & 0xff;
+  eocd[10] = entries.length & 0xff;
+  eocd[11] = (entries.length >> 8) & 0xff;
+  eocd[12] = cdOffset & 0xff;
+  eocd[13] = (cdOffset >> 8) & 0xff;
+  eocd[14] = (cdOffset >> 16) & 0xff;
+  eocd[15] = (cdOffset >> 24) & 0xff;
+  eocd[16] = 0;
+  eocd[17] = 0;
+  eocd[18] = 0;
+  eocd[19] = 0;
+  const result = new Uint8Array(cdOffset + eocd.length);
+  let pos = 0;
+  for (const header of cdHeaders) {
+    result.set(header, pos);
+    pos += header.length;
+  }
+  result.set(eocd, pos);
+  return result;
+}

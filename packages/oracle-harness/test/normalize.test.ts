@@ -184,6 +184,89 @@ describe('NORMALIZERS registry', () => {
     ).toBe('roomlinks-empty');
   });
 
+  it('has json/ignore hooks for the alt-export and cron scenarios', () => {
+    // csv.json / cells / cells/:cell — deterministic JSON bodies.
+    for (const name of [
+      'exports/get-csv-json',
+      'exports/get-cells',
+      'exports/get-cell-a1',
+    ]) {
+      const hook = getNormalizer(name);
+      expect(hook).not.toBeNull();
+      expect(hook!(mkScenario({ name })).expect?.bodyMatcher).toBe('json');
+    }
+    // fods / md / cron — no structural matcher / documented divergence → ignore.
+    for (const name of ['exports/get-fods', 'exports/get-md', 'cron/get-timetrigger']) {
+      const hook = getNormalizer(name);
+      expect(hook).not.toBeNull();
+      expect(hook!(mkScenario({ name })).expect?.bodyMatcher).toBe('ignore');
+    }
+  });
+
+  it('relaxes content-length for the ignore-body alt exports', () => {
+    const out = getNormalizer('exports/get-fods')!(
+      mkScenario({
+        name: 'exports/get-fods',
+        expect: {
+          status: 200,
+          headers: {
+            'content-type': 'application/vnd.oasis.opendocument.spreadsheet',
+            'content-length': '512',
+          },
+          bodyBase64: encodeBase64(new Uint8Array()),
+          bodyMatcher: 'exact',
+        },
+      }),
+    );
+    expect(out.expect?.headers['content-length']).toBe('re:^\\d+$');
+    expect(out.expect?.bodyMatcher).toBe('ignore');
+  });
+
+  it('has redirect/body hooks for the templating scenarios', () => {
+    const fromTemplate = getNormalizer('templating/get-from-template')!(
+      mkScenario({
+        name: 'templating/get-from-template',
+        expect: {
+          status: 302,
+          headers: { location: '/abcdef012345', 'content-length': '30' },
+          bodyBase64: encodeBase64(new Uint8Array()),
+          bodyMatcher: 'ignore',
+        },
+      }),
+    );
+    expect(fromTemplate.expect?.headers.location).toBe('re:^/[a-z0-9]{12}$');
+    expect(fromTemplate.expect?.headers['content-length']).toBe('re:^\\d+$');
+
+    const multiNew = getNormalizer('templating/get-multi-new')!(
+      mkScenario({
+        name: 'templating/get-multi-new',
+        expect: {
+          status: 302,
+          headers: { location: '/=abcdef012345', 'content-length': '30' },
+          bodyBase64: encodeBase64(new Uint8Array()),
+          bodyMatcher: 'ignore',
+        },
+      }),
+    );
+    expect(multiNew.expect?.headers.location).toBe('re:^/=[a-z0-9]{12}$');
+    expect(multiNew.expect?.headers['content-length']).toBe('re:^\\d+$');
+
+    const autogen = getNormalizer('templating/post-autogen-room')!(
+      mkScenario({
+        name: 'templating/post-autogen-room',
+        expect: {
+          status: 201,
+          headers: { location: '/_/abcdef012345', 'content-length': '13' },
+          bodyBase64: encodeBase64(new TextEncoder().encode('/abcdef012345')),
+          bodyMatcher: 'exact',
+        },
+      }),
+    );
+    expect(autogen.expect?.headers.location).toBe('re:^/_/[a-z0-9]{12}$');
+    expect(autogen.expect?.headers['content-length']).toBe('re:^\\d+$');
+    expect(autogen.expect?.bodyMatcher).toBe('ignore');
+  });
+
   it('exposes the registry object', () => {
     expect(Object.keys(NORMALIZERS)).toEqual([
       'static/get-root-index',
@@ -191,11 +274,20 @@ describe('NORMALIZERS registry', () => {
       'static/get-favicon',
       'static/get-socialcalc-js',
       'misc/get-new-redirect',
+      'cron/get-timetrigger',
       'exports/get-snapshot',
       'exports/get-html',
+      'exports/get-csv-json',
+      'exports/get-fods',
+      'exports/get-md',
+      'exports/get-cells',
+      'exports/get-cell-a1',
       'form/get-template-form-redirect',
       'exports/get-xlsx',
       'exports/get-ods',
+      'templating/get-from-template',
+      'templating/get-multi-new',
+      'templating/post-autogen-room',
       'rooms-index/get-rooms-empty',
       'rooms-index/get-roomtimes-empty',
       'rooms-index/get-roomlinks-empty',
