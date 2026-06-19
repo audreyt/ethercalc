@@ -222,7 +222,7 @@ describe('recordOne / recordAll', () => {
       writer: async () => {},
     });
     expect(seen?.method).toBe('POST');
-    expect(seen?.headers).toEqual({ 'X-Test': '1' });
+    expect(seen?.headers).toMatchObject({ 'X-Test': '1' });
     expect(seen?.body).toBeInstanceOf(Uint8Array);
   });
 

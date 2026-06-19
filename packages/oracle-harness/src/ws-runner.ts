@@ -122,7 +122,13 @@ async function runStep(step: WsStep, ctx: StepContext): Promise<WsRunResult> {
         ...(step.expect !== undefined ? { expect: step.expect } : {}),
       };
       const url = new URL(step.request.path, ctx.opts.targetUrl).toString();
-      const response = await ctx.fetcher(url, buildScenarioRequestInit(httpScenario));
+      let response: Response;
+      try {
+        response = await ctx.fetcher(url, buildScenarioRequestInit(httpScenario));
+      } catch (err) {
+        // Mirror replayOne — fetch errors must not crash the run.
+        return { ok: false, error: `fetch failed: ${(err as Error).message}` };
+      }
       if (ctx.opts.mode === 'record') {
         const headers = normalizeHeaders(headersToRecord(response.headers));
         const bodyBase64 = await encodeResponseBody(response);
@@ -154,7 +160,12 @@ async function runStep(step: WsStep, ctx: StepContext): Promise<WsRunResult> {
         ctx.recordedSteps.push(step);
         return { ok: true };
       }
-      const bodyBuffer = new Uint8Array(await response.arrayBuffer());
+      let bodyBuffer: Uint8Array;
+      try {
+        bodyBuffer = new Uint8Array(await response.arrayBuffer());
+      } catch (err) {
+        return { ok: false, error: `body read failed: ${(err as Error).message}` };
+      }
       const bodyErr = dispatchMatcher(matcher, {
         expectedBase64: step.expect.bodyBase64,
         actualBytes: bodyBuffer,
