@@ -26,7 +26,7 @@ On a machine with Sandstorm + `spk` installed:
     bun install
 
     # 3. Build the client bundles + curated assets/ dir.
-    bun run build:assets
+    bash .sandstorm/build.sh
 
     # 4. Generate sandstorm-files.list by tracing a dev-mode run.
     spk dev

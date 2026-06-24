@@ -1,0 +1,41 @@
+# 2026.04.22.0
+
+- **Full rewrite** — EtherCalc now runs on the Cloudflare Workers
+  fullstack (Hono + Durable Objects + D1 + KV + R2), backed by
+  Miniflare locally. The legacy Node + Redis + socket.io 0.9 stack is
+  retired.
+- **Automatic legacy migration** — existing grains carry their full
+  spreadsheet history forward. On first boot, `run_grain.sh` detects
+  `/var/dump/` (per-key text files) or `/var/dump.json` (single-blob)
+  and streams it into the new Durable Object layer. A `/var/.migrated`
+  sentinel prevents re-runs.
+- **All prior features preserved** — multi-sheet routing at `/=:room`,
+  REST API, XLSX/ODS/CSV export, real-time collaboration.
+
+# 20191008.0
+
+- Bump Sandstorm version.
+
+# 20190418.0
+
+- Regen with livescript 1.6.0.
+- Fix tab-loss in multi-sheet routing (#635, #640).
+
+# 20160501.1
+
+- Fixed charting in Graph tab.
+- Add F2 for input mode toggle.
+- Add Russian translation; updated other translations.
+
+# 20160122.5
+
+- Fixed Excel multi-spreadsheet export.
+- Allow selecting entire rows and columns.
+
+# 20150901.1
+
+- Updated "Description" metadata as per Kenton.
+
+# 20150822.1
+
+- Initial release to Sandstorm App Market.

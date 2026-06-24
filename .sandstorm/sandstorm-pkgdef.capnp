@@ -17,9 +17,9 @@ const pkgdef :Spk.PackageDefinition = (
     # This manifest is included in your app package to tell Sandstorm
     # about your app.
 
-    appVersion = 202606124,  # Increment this for every release.
+    appVersion = 202604220,  # Increment this for every release.
     appTitle = (defaultText = "EtherCalc"),
-    appMarketingVersion = (defaultText = "2026.06.12.4"),
+    appMarketingVersion = (defaultText = "2026.04.22.0"),
 
     actions = [
       # Define your "new document" handlers here.
@@ -62,7 +62,7 @@ const pkgdef :Spk.PackageDefinition = (
       shortDescription = (defaultText = "Multi-user Spreadsheet"),
 
       screenshots = [
-        (width = 478, height = 298, png = embed "static/img/davy/gfx/screenshot.png")
+        (width = 478, height = 298, png = embed "images/screenshot.png")
       ],
 
       changeLog = (defaultText = embed "CHANGELOG.mkdn"),
@@ -77,7 +77,9 @@ const pkgdef :Spk.PackageDefinition = (
     searchPath = [
       ( sourcePath = "." ),  # Search this directory first.
       ( sourcePath = "/",    # Then search the system root directory.
-        hidePaths = [ "home", "proc", "sys" ]
+        hidePaths = [ "home", "proc", "sys", "run",
+                      "etc/passwd", "etc/hosts", "etc/host.conf",
+                      "etc/nsswitch.conf", "etc/resolv.conf" ]
         # You probably don't want the app pulling files from these places,
         # so we hide them. Note that /dev, /var, and /tmp are implicitly
         # hidden because Sandstorm itself provides them.
@@ -89,7 +91,11 @@ const pkgdef :Spk.PackageDefinition = (
   # `spk dev` will write a list of all the files your app uses to this file.
   # You should review it later, before shipping your app.
 
-  alwaysInclude = [],
+  alwaysInclude = [
+    "opt/app/.sandstorm",
+    "opt/app/assets",
+    "opt/app/packages/worker/workerd",
+  ],
   # Fill this list with more names of files or directories that should be
   # included in your package, even if not listed in sandstorm-files.list.
   # Use this to force-include stuff that you know you need but which may
@@ -113,7 +119,7 @@ const pkgdef :Spk.PackageDefinition = (
 
 const myContinueCommand :Spk.Manifest.Command = (
   # Here we define the command used to start up your server.
-  argv = ["/sandstorm-http-bridge", "33411", "--", "./run_grain.sh"],
+  argv = ["/sandstorm-http-bridge", "33411", "--", "/opt/app/.sandstorm/run_grain.sh"],
   environ = [
     # Note that this defines the *entire* environment seen by your app.
     (key = "PATH", value = "/usr/local/bin:/usr/bin:/bin"),

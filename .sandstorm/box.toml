@@ -1,0 +1,16 @@
+stack = "diy"
+
+[network.sandstorm]
+host = "local.sandstorm.io"
+guest_port = 6090
+external_port = 6090
+localhost_only = true
+
+[providers.vagrant]
+box = "debian/trixie64"
+
+[providers.lima]
+vm_type = "qemu"
+arch = "x86_64"
+image = "https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-amd64.qcow2"
+image_arch = "x86_64"

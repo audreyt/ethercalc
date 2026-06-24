@@ -1,0 +1,8 @@
+
+# This file stores a list of sub-paths of .sandstorm/ that should be ignored by git.
+.vagrant
+box.local.toml
+.generated/
+
+# Vagrant sometimes generates log files:
+*.log
