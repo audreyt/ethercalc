@@ -51,8 +51,11 @@ is no separate market-publishing credential in this repo.
 GitHub Actions can build signed test `.spk` artifacts when the signing
 keyring is configured as a repository secret:
 
-- `SANDSTORM_TEST_KEYRING_B64` for branch, manual, and approved PR test
-  packages.
+- `SANDSTORM_TEST_KEYRING_B64` for `main` and approved PR test packages.
+
+The workflow updates one prerelease for `main` and one prerelease per PR,
+with the latest test `.spk` attached. For PRs, the workflow also updates
+the PR description with links to the prerelease, test app loader, and `.spk`.
 
 What is **not** automated today:
 

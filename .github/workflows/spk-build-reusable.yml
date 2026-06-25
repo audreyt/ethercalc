@@ -92,9 +92,11 @@ jobs:
         id: build-spk
         run: |
           set -euo pipefail
+          build_sha="${{ github.event.pull_request.head.sha || github.sha }}"
+          echo "build_sha=$build_sha" >> "$GITHUB_OUTPUT"
           mkdir -p "$(dirname "${{ inputs.spk_output_path }}")"
           if [ "${{ inputs.pack_mode }}" = "test" ]; then
-            pack_output="$(lima-spk pack --dev --set-version "${GITHUB_SHA}" "${{ inputs.spk_output_path }}")"
+            pack_output="$(lima-spk pack --dev --set-version "$build_sha" "${{ inputs.spk_output_path }}")"
             printf '%s\n' "$pack_output"
             package_id="$(
               printf '%s\n' "$pack_output" \
@@ -110,22 +112,45 @@ jobs:
             lima-spk pack "${{ inputs.spk_output_path }}"
           fi
 
-      - name: Publish test SPK to preview release
+      - name: Publish test SPK prerelease
         id: publish-test-spk
-        if: inputs.pack_mode == 'test' && github.event_name == 'pull_request_target'
+        if: inputs.pack_mode == 'test' && (github.event_name == 'push' || github.event_name == 'pull_request_target')
         uses: actions/github-script@v9
         env:
           SPK_PATH: ${{ inputs.spk_output_path }}
           PACKAGE_ID: ${{ steps.build-spk.outputs.package_id }}
+          BUILD_SHA: ${{ steps.build-spk.outputs.build_sha }}
         with:
           script: |
             const fs = require("fs");
             const path = require("path");
             const owner = context.repo.owner;
             const repo = context.repo.repo;
-            const tag = "pr-test-apps";
-            const releaseName = "PR Test Apps";
-            const releaseBody = "Preview SPK assets for pull request testing. These assets are ephemeral and should not be used as stable release artifacts.";
+            const isPr = context.eventName === "pull_request_target";
+            const prNumber = isPr ? context.payload.pull_request.number : null;
+            const tag = isPr ? `pr-${prNumber}-test-spk` : "main-test-spk";
+            const releaseName = isPr ? `PR #${prNumber} Test SPK` : "Main Test SPK";
+            const packageId = process.env.PACKAGE_ID || "";
+            const buildSha = process.env.BUILD_SHA || context.sha;
+            const spkPath = process.env.SPK_PATH;
+            const assetName = path.basename(spkPath);
+            const spkHttpUrl = `https://github.com/${owner}/${repo}/releases/download/${tag}/${encodeURIComponent(assetName)}`;
+
+            function releaseBody(releaseUrl) {
+              const lines = [
+                isPr
+                  ? `Latest test SPK for pull request #${prNumber}.`
+                  : "Latest test SPK for the main branch.",
+                "",
+                `- Commit: \`${buildSha}\``,
+                `- Package ID: \`${packageId || "(not detected)"}\``,
+                `- Download SPK: ${spkHttpUrl}`,
+              ];
+              if (releaseUrl) {
+                lines.push(`- Release: ${releaseUrl}`);
+              }
+              return lines.join("\n");
+            }
 
             async function getOrCreateRelease() {
               const releases = await github.paginate(github.rest.repos.listReleases, {
@@ -141,21 +166,31 @@ jobs:
                     repo,
                     release_id: existing.id,
                     name: releaseName,
-                    body: releaseBody,
+                    body: releaseBody(existing.html_url),
                     draft: false,
                     prerelease: true,
                   });
                   return updated.data;
                 }
-                return existing;
+                const updated = await github.rest.repos.updateRelease({
+                  owner,
+                  repo,
+                  release_id: existing.id,
+                  name: releaseName,
+                  body: releaseBody(existing.html_url),
+                  draft: false,
+                  prerelease: true,
+                });
+                return updated.data;
               }
 
               const created = await github.rest.repos.createRelease({
                 owner,
                 repo,
                 tag_name: tag,
+                target_commitish: buildSha,
                 name: releaseName,
-                body: releaseBody,
+                body: releaseBody(""),
                 draft: false,
                 prerelease: true,
               });
@@ -172,17 +207,14 @@ jobs:
             }
 
             const release = await getOrCreateRelease();
-            const spkPath = process.env.SPK_PATH;
-            const assetName = path.basename(spkPath);
             const data = fs.readFileSync(spkPath);
 
             const currentAssets = await listAssets(release.id);
-            const sameName = currentAssets.find((asset) => asset.name === assetName);
-            if (sameName) {
+            for (const asset of currentAssets) {
               await github.rest.repos.deleteReleaseAsset({
                 owner,
                 repo,
-                asset_id: sameName.id,
+                asset_id: asset.id,
               });
             }
 
@@ -198,83 +230,72 @@ jobs:
               },
             });
 
-            let assets = await listAssets(release.id);
-            const now = Date.now();
-            const maxAgeMs = 30 * 24 * 60 * 60 * 1000;
-            const staleAssets = assets.filter((asset) => now - new Date(asset.created_at).getTime() > maxAgeMs);
-
-            for (const asset of staleAssets) {
-              await github.rest.repos.deleteReleaseAsset({
+            const updated = await github.rest.repos.updateRelease({
                 owner,
                 repo,
-                asset_id: asset.id,
-              });
-            }
+                release_id: release.id,
+                name: releaseName,
+                body: releaseBody(release.html_url),
+                draft: false,
+                prerelease: true,
+            });
 
-            assets = await listAssets(release.id);
-            const sortedOldestFirst = assets.slice().sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-            const overflowCount = Math.max(0, sortedOldestFirst.length - 200);
-            for (const asset of sortedOldestFirst.slice(0, overflowCount)) {
-              await github.rest.repos.deleteReleaseAsset({
-                owner,
-                repo,
-                asset_id: asset.id,
-              });
-            }
-
-            const spkHttpUrl = `https://github.com/${owner}/${repo}/releases/download/${tag}/${encodeURIComponent(assetName)}`;
             core.setOutput("spk_http_url", spkHttpUrl);
-            core.setOutput("package_id", process.env.PACKAGE_ID || "");
+            core.setOutput("release_html_url", updated.data.html_url);
+            core.setOutput("package_id", packageId);
 
-      - name: Comment test app loader URL on PR
+      - name: Update PR description with test SPK prerelease
         if: inputs.pack_mode == 'test' && github.event_name == 'pull_request_target'
         uses: actions/github-script@v9
         env:
           SPK_HTTP_URL: ${{ steps.publish-test-spk.outputs.spk_http_url }}
+          RELEASE_HTML_URL: ${{ steps.publish-test-spk.outputs.release_html_url }}
           PACKAGE_ID: ${{ steps.publish-test-spk.outputs.package_id }}
         with:
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
-            const issue_number = context.issue.number;
-            const marker = "<!-- sandstorm-pr-test-loader -->";
+            const pull_number = context.payload.pull_request.number;
+            const markerStart = "<!-- sandstorm-test-spk:start -->";
+            const markerEnd = "<!-- sandstorm-test-spk:end -->";
             const spkUrl = process.env.SPK_HTTP_URL;
+            const releaseUrl = process.env.RELEASE_HTML_URL;
             const packageId = process.env.PACKAGE_ID || "";
             const loaderUrl = `https://mnutt.github.io/sandstorm-test-app-loader/?spk_url=${encodeURIComponent(spkUrl)}&package_id=${encodeURIComponent(packageId)}`;
-            const body = [
-              marker,
+            const block = [
+              markerStart,
               "## Sandstorm Test Build",
               "",
-              "Preview app install links for this PR:",
-              "",
+              `- [Prerelease](${releaseUrl})`,
               `- [Open Test App Loader](${loaderUrl})`,
               `- [Download SPK](${spkUrl})`,
               `- Package ID: \`${packageId || "(not detected)"}\``,
+              markerEnd,
             ].join("\n");
 
-            const comments = await github.paginate(github.rest.issues.listComments, {
+            const { data: pull } = await github.rest.pulls.get({
               owner,
               repo,
-              issue_number,
-              per_page: 100,
+              pull_number,
             });
-            const existing = comments.find((comment) => comment.body.includes(marker));
 
-            if (existing) {
-              await github.rest.issues.updateComment({
-                owner,
-                repo,
-                comment_id: existing.id,
-                body,
-              });
+            const currentBody = pull.body || "";
+            const start = currentBody.indexOf(markerStart);
+            const end = currentBody.indexOf(markerEnd);
+            let body;
+            if (start !== -1 && end !== -1 && end > start) {
+              body = `${currentBody.slice(0, start)}${block}${currentBody.slice(end + markerEnd.length)}`;
             } else {
-              await github.rest.issues.createComment({
-                owner,
-                repo,
-                issue_number,
-                body,
-              });
+              body = currentBody.trimEnd();
+              body = body ? `${body}\n\n${block}` : block;
             }
+
+            await github.rest.pulls.update({
+              owner,
+              repo,
+              pull_number,
+              body,
+            });
 
       - name: Upload SPK artifact
         uses: actions/upload-artifact@v7
