@@ -44,12 +44,20 @@ app market listing.
 Sandstorm app ID (`a0n6hwm32zjsrzes8gnjg734dh6jwt7x83xdgytspe761pe2asw0`)
 is its public key; the matching **private signing key lives in your local
 `spk` keyring** from when the app was first created. Every `spk pack` and
-market upload must be signed with that same key — there is no separate
-Sandstorm CI credential in this repo.
+market upload must be signed with that same key. For GitHub Actions,
+base64-encode the relevant Sandstorm keyring into repository secrets; there
+is no separate market-publishing credential in this repo.
+
+GitHub Actions can build signed test `.spk` artifacts when the signing
+keyring is configured as a repository secret:
+
+- `SANDSTORM_TEST_KEYRING_B64` for branch, manual, and approved PR test
+  packages.
 
 What is **not** automated today:
 
-- No GitHub Actions job builds or uploads `.spk` files.
+- GitHub Actions does not build release `.spk` artifacts or publish to the
+  Sandstorm app market.
 - `pgp-signature` / `pgp-keyring` are referenced by `sandstorm-pkgdef.capnp`
   but intentionally absent from git (author PGP for market metadata only).
 

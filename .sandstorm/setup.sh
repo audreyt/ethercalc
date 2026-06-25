@@ -1,4 +1,4 @@
-apt-get install unzip
+apt-get install -y unzip capnproto
 
 curl -fsSL https://bun.sh/install | BUN_INSTALL=/tmp/.bun bash
 sudo mv /tmp/.bun/bin/bun /usr/local/bin/

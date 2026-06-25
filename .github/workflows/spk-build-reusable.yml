@@ -1,0 +1,283 @@
+name: SPK Build Reusable
+
+on:
+  workflow_call:
+    inputs:
+      environment_name:
+        required: true
+        type: string
+      pack_mode:
+        required: true
+        type: string
+      spk_output_path:
+        required: true
+        type: string
+      artifact_name:
+        required: true
+        type: string
+    secrets:
+      sandstorm_keyring_b64:
+        required: true
+
+jobs:
+  build-spk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    environment: ${{ inputs.environment_name }}
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: Check out PR head
+        if: github.event_name == 'pull_request_target'
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Check out a copy of the repo
+        if: github.event_name != 'pull_request_target'
+        uses: actions/checkout@v6
+
+      - name: Set up Lima
+        uses: lima-vm/lima-actions/setup@v1
+        id: lima-actions-setup
+
+      - name: Cache ~/.cache/lima
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/lima
+          key: lima-${{ steps.lima-actions-setup.outputs.version }}
+
+      - name: Restore Sandstorm signing keyring
+        env:
+          SANDSTORM_KEYRING_B64: ${{ secrets.sandstorm_keyring_b64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SANDSTORM_KEYRING_B64:-}" ]; then
+            echo "::error::Missing required secret sandstorm_keyring_b64"
+            exit 1
+          fi
+          mkdir -p "$HOME/.sandstorm/caches"
+          printf '%s' "$SANDSTORM_KEYRING_B64" | base64 --decode > "$HOME/.sandstorm/sandstorm-keyring"
+          chmod 600 "$HOME/.sandstorm/sandstorm-keyring"
+
+      - name: Download lima-spk
+        run: git clone --branch spk-pack-dev https://github.com/mnutt/vagrant-spk /tmp/vagrant-spk
+
+      - name: Add lima-spk to PATH
+        run: echo "/tmp/vagrant-spk" >> "$GITHUB_PATH"
+
+      - name: Write generated Sandstorm runtime config
+        run: |
+          set -euo pipefail
+          mkdir -p .sandstorm/.generated
+          {
+            printf '%s\n' 'SANDSTORM_HOST=local.sandstorm.io'
+            printf '%s\n' 'SANDSTORM_EXTERNAL_PORT=6090'
+            printf '%s\n' 'SANDSTORM_GUEST_PORT=6090'
+            printf '%s\n' 'SANDSTORM_BASE_URL=http://local.sandstorm.io:6090'
+            printf '%s\n' 'SANDSTORM_WILDCARD_HOST=*.local.sandstorm.io:6090'
+          } > .sandstorm/.generated/runtime.env
+
+      - name: Initialize Lima VM
+        run: /tmp/vagrant-spk/lima-spk vm up
+
+      - name: Build app in Lima VM
+        run: printf "cd /opt/app\nsg sandstorm -c '/opt/app/.sandstorm/build.sh'\nexit\n" | lima-spk vm ssh
+
+      - name: Build SPK
+        id: build-spk
+        run: |
+          set -euo pipefail
+          mkdir -p "$(dirname "${{ inputs.spk_output_path }}")"
+          if [ "${{ inputs.pack_mode }}" = "test" ]; then
+            pack_output="$(lima-spk pack --dev --set-version "${GITHUB_SHA}" "${{ inputs.spk_output_path }}")"
+            printf '%s\n' "$pack_output"
+            package_id="$(
+              printf '%s\n' "$pack_output" \
+                | sed -nE 's/.*"packageId"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' \
+                | head -n1
+            )"
+            if [ -n "$package_id" ]; then
+              echo "package_id=$package_id" >> "$GITHUB_OUTPUT"
+            else
+              echo "::warning::Could not detect packageId in lima-spk pack output"
+            fi
+          else
+            lima-spk pack "${{ inputs.spk_output_path }}"
+          fi
+
+      - name: Publish test SPK to preview release
+        id: publish-test-spk
+        if: inputs.pack_mode == 'test' && github.event_name == 'pull_request_target'
+        uses: actions/github-script@v9
+        env:
+          SPK_PATH: ${{ inputs.spk_output_path }}
+          PACKAGE_ID: ${{ steps.build-spk.outputs.package_id }}
+        with:
+          script: |
+            const fs = require("fs");
+            const path = require("path");
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const tag = "pr-test-apps";
+            const releaseName = "PR Test Apps";
+            const releaseBody = "Preview SPK assets for pull request testing. These assets are ephemeral and should not be used as stable release artifacts.";
+
+            async function getOrCreateRelease() {
+              const releases = await github.paginate(github.rest.repos.listReleases, {
+                owner,
+                repo,
+                per_page: 100,
+              });
+              const existing = releases.find((release) => release.tag_name === tag);
+              if (existing) {
+                if (existing.draft) {
+                  const updated = await github.rest.repos.updateRelease({
+                    owner,
+                    repo,
+                    release_id: existing.id,
+                    name: releaseName,
+                    body: releaseBody,
+                    draft: false,
+                    prerelease: true,
+                  });
+                  return updated.data;
+                }
+                return existing;
+              }
+
+              const created = await github.rest.repos.createRelease({
+                owner,
+                repo,
+                tag_name: tag,
+                name: releaseName,
+                body: releaseBody,
+                draft: false,
+                prerelease: true,
+              });
+              return created.data;
+            }
+
+            async function listAssets(releaseId) {
+              return await github.paginate(github.rest.repos.listReleaseAssets, {
+                owner,
+                repo,
+                release_id: releaseId,
+                per_page: 100,
+              });
+            }
+
+            const release = await getOrCreateRelease();
+            const spkPath = process.env.SPK_PATH;
+            const assetName = path.basename(spkPath);
+            const data = fs.readFileSync(spkPath);
+
+            const currentAssets = await listAssets(release.id);
+            const sameName = currentAssets.find((asset) => asset.name === assetName);
+            if (sameName) {
+              await github.rest.repos.deleteReleaseAsset({
+                owner,
+                repo,
+                asset_id: sameName.id,
+              });
+            }
+
+            await github.rest.repos.uploadReleaseAsset({
+              owner,
+              repo,
+              release_id: release.id,
+              name: assetName,
+              data,
+              headers: {
+                "content-type": "application/octet-stream",
+                "content-length": data.length,
+              },
+            });
+
+            let assets = await listAssets(release.id);
+            const now = Date.now();
+            const maxAgeMs = 30 * 24 * 60 * 60 * 1000;
+            const staleAssets = assets.filter((asset) => now - new Date(asset.created_at).getTime() > maxAgeMs);
+
+            for (const asset of staleAssets) {
+              await github.rest.repos.deleteReleaseAsset({
+                owner,
+                repo,
+                asset_id: asset.id,
+              });
+            }
+
+            assets = await listAssets(release.id);
+            const sortedOldestFirst = assets.slice().sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+            const overflowCount = Math.max(0, sortedOldestFirst.length - 200);
+            for (const asset of sortedOldestFirst.slice(0, overflowCount)) {
+              await github.rest.repos.deleteReleaseAsset({
+                owner,
+                repo,
+                asset_id: asset.id,
+              });
+            }
+
+            const spkHttpUrl = `https://github.com/${owner}/${repo}/releases/download/${tag}/${encodeURIComponent(assetName)}`;
+            core.setOutput("spk_http_url", spkHttpUrl);
+            core.setOutput("package_id", process.env.PACKAGE_ID || "");
+
+      - name: Comment test app loader URL on PR
+        if: inputs.pack_mode == 'test' && github.event_name == 'pull_request_target'
+        uses: actions/github-script@v9
+        env:
+          SPK_HTTP_URL: ${{ steps.publish-test-spk.outputs.spk_http_url }}
+          PACKAGE_ID: ${{ steps.publish-test-spk.outputs.package_id }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issue_number = context.issue.number;
+            const marker = "<!-- sandstorm-pr-test-loader -->";
+            const spkUrl = process.env.SPK_HTTP_URL;
+            const packageId = process.env.PACKAGE_ID || "";
+            const loaderUrl = `https://mnutt.github.io/sandstorm-test-app-loader/?spk_url=${encodeURIComponent(spkUrl)}&package_id=${encodeURIComponent(packageId)}`;
+            const body = [
+              marker,
+              "## Sandstorm Test Build",
+              "",
+              "Preview app install links for this PR:",
+              "",
+              `- [Open Test App Loader](${loaderUrl})`,
+              `- [Download SPK](${spkUrl})`,
+              `- Package ID: \`${packageId || "(not detected)"}\``,
+            ].join("\n");
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+            const existing = comments.find((comment) => comment.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body,
+              });
+            }
+
+      - name: Upload SPK artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: ${{ inputs.spk_output_path }}
