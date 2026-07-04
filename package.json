@@ -62,7 +62,7 @@
   ],
   "scripts": {
     "pretest": "bun run build:assets",
-    "test": "npm run --workspaces --if-present test",
+    "test": "bun test scripts/build-assets.test.ts && npm run --workspaces --if-present test",
     "build:clients": "bun run --cwd packages/client build && bun run --cwd packages/client-multi build",
     "build:assets": "bun run build:clients && bash scripts/build-assets.sh",
     "typecheck": "bun run --filter '*' typecheck",
@@ -80,6 +80,6 @@
     "@typescript/native-preview": "^7.0.0-dev.20260421.2"
   },
   "dependencies": {
-    "wrangler": "^4.84.0"
+    "wrangler": "^4.107.0"
   }
 }

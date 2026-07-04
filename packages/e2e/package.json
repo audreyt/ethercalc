@@ -16,7 +16,7 @@
     "report": "playwright show-report"
   },
   "devDependencies": {
-    "@playwright/test": "^1.48.2",
+    "@playwright/test": "^1.61.1",
     "@types/node": "^22.9.0",
     "wait-port": "^1.1.0"
   }

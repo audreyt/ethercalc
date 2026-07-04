@@ -2,7 +2,7 @@
   "name": "@ethercalc/client-multi",
   "version": "0.0.0",
   "private": true,
-  "description": "Multi-sheet workbook UI \u2014 React 18 + TypeScript + Vite port of legacy multi/",
+  "description": "Multi-sheet workbook UI — React 19 + TypeScript + Vite port of legacy multi/",
   "license": "CC0-1.0",
   "type": "module",
   "main": "./src/main.tsx",
@@ -17,20 +17,20 @@
   },
   "dependencies": {
     "@ethercalc/shared": "workspace:*",
-    "@radix-ui/react-tabs": "^1.1.1",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "@radix-ui/react-tabs": "^1.1.16",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
   },
   "devDependencies": {
-    "@testing-library/jest-dom": "^6.6.3",
-    "@testing-library/react": "^16.1.0",
-    "@testing-library/user-event": "^14.5.2",
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.1",
-    "@vitejs/plugin-react": "^4.3.4",
-    "@vitest/coverage-istanbul": "^4.1.4",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "@vitest/coverage-istanbul": "^4.1.9",
     "jsdom": "^25.0.1",
-    "vite": "^5.4.11",
-    "vitest": "^4.1.4"
+    "vite": "^8.1.3",
+    "vitest": "^4.1.9"
   }
 }

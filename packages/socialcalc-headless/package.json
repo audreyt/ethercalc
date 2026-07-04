@@ -2,7 +2,7 @@
   "name": "@ethercalc/socialcalc-headless",
   "version": "0.0.0",
   "private": true,
-  "description": "Headless SocialCalc wrapper \u2014 runs in Workers/DO with DOM stubs",
+  "description": "Headless SocialCalc wrapper — runs in Workers/DO with DOM stubs",
   "license": "CC0-1.0",
   "type": "module",
   "main": "./src/index.ts",
@@ -19,9 +19,9 @@
     "socialcalc": "^3.0.4"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "^0.14.8",
-    "@cloudflare/workers-types": "^4.20241112.0",
-    "vitest": "^4.1.4",
-    "wrangler": "^4.84.0"
+    "@cloudflare/vitest-pool-workers": "^0.18.0",
+    "@cloudflare/workers-types": "^4.20260702.1",
+    "vitest": "^4.1.9",
+    "wrangler": "^4.107.0"
   }
 }
