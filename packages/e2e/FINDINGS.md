@@ -2,9 +2,9 @@
 
 ## Client asset strategy (option chosen)
 
-**Update (2026-06-13):** the Worker's `wrangler.toml` now ships a live
-`[assets]` block (`directory = "../../assets"`, populated by
-`scripts/build-assets.sh` into a curated dir that avoids the legacy
+**Update (2026-06-13; builder renamed 2026-07-04):** the Worker's
+`wrangler.toml` now ships a live `[assets]` block (`directory = "../../assets"`,
+populated by `scripts/build-assets.ts` into a curated dir that avoids the legacy
 repo's >25 MiB files). So the **single-sheet** smoke takes only the
 `workerBase` fixture and navigates to `${workerBase}/<room>` — the
 Worker serves `index.html` + `player.js` + `socialcalc.js` directly.
@@ -63,7 +63,7 @@ picked fixtures only and documented it at the top of
 
 - **Single-sheet SocialCalc boot & edit** — UNBLOCKED and landed. The Worker's
   `[assets]` binding (`directory = "../../assets"`, populated by
-  `scripts/build-assets.sh`) now serves `index.html` + `player.js` +
+  `scripts/build-assets.ts`) now serves `index.html` + `player.js` +
   `socialcalc.js` from one origin, so `client-single-smoke.spec.ts`
   drives a real Chromium page against `workerBase`, boots the editor,
   types a cell value, verifies server persistence, and asserts reload

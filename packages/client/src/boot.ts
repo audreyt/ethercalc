@@ -339,7 +339,7 @@ async function autoBoot(): Promise<void> {
   // Close the stored-XSS hole in the live editor: the served SocialCalc
   // runtime renders `text-html` cell values straight into the cell div's
   // innerHTML. Install the DOMPurify-backed hook the rewritten render sink
-  // calls (see scripts/build-assets.sh) before any sheet data is parsed.
+  // calls (see scripts/build-assets.ts) before any sheet data is parsed.
   installSanitizeHtml(w.SocialCalc, DOMPurify);
   installGraph({
     SocialCalc: w.SocialCalc,

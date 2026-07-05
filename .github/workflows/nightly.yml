@@ -231,7 +231,7 @@ jobs:
         run: |
           bun run --cwd packages/client build
           bun run --cwd packages/client-multi build
-          ./scripts/build-assets.sh
+          bun run scripts/build-assets.ts
 
       - name: Replay against worker (wrangler dev)
         run: |
@@ -269,7 +269,7 @@ jobs:
         run: |
           bun run --cwd packages/client build
           bun run --cwd packages/client-multi build
-          ./scripts/build-assets.sh
+          bun run scripts/build-assets.ts
 
       - name: wrangler deploy --dry-run --env staging
         run: bun x wrangler deploy --dry-run --env staging

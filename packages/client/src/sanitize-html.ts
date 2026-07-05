@@ -11,7 +11,7 @@
  * URLs, `<iframe>`/`<object>`/`<embed>`) while keeping the safe formatting
  * tags intact.
  *
- * The hook is wired by `scripts/build-assets.sh`, which rewrites the
+ * The hook is wired by `scripts/build-assets.ts`, which rewrites the
  * served runtime's text-html branch to
  *
  *   displayvalue = (SocialCalc.sanitizeHTML ? SocialCalc.sanitizeHTML(displayvalue) : displayvalue);

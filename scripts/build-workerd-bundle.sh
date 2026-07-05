@@ -29,10 +29,10 @@ OUT_DIR="$WORKER_DIR/workerd"
 echo "==> Building worker bundle to $OUT_DIR/worker/"
 mkdir -p "$OUT_DIR/worker" "$OUT_DIR/do-storage"
 
-# Ensure assets/ has been built. build-assets.sh is idempotent; running
-# again just re-copies. If the user forgot, this catches it.
+# Ensure assets/ has been built. The TypeScript builder is idempotent; this
+# compatibility wrapper path keeps older self-host workflows working.
 if [ ! -d "$REPO_ROOT/assets" ] || [ -z "$(ls -A "$REPO_ROOT/assets" 2>/dev/null)" ]; then
-  echo "==> assets/ empty; running scripts/build-assets.sh first"
+  echo "==> assets/ empty; running scripts/build-assets.sh compatibility wrapper first"
   bash "$REPO_ROOT/scripts/build-assets.sh"
 fi
 

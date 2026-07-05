@@ -183,7 +183,7 @@ async function replayAgainstWorker(scenario: HttpScenario): Promise<{
  * corrects it to `image/vnd.microsoft.icon`.
  *
  * `static/get-socialcalc-js` is now ALSO intentionally divergent (per
- * §13 Q1, design "h5"): `scripts/build-assets.sh` injects an XSS
+ * §13 Q1, design "h5"): `scripts/build-assets.ts` injects an XSS
  * sanitisation hook into the served runtime's `valueformat===text-html`
  * render sink (the live-editor stored-XSS fix) — one extra line:
  *   `displayvalue = (SocialCalc.sanitizeHTML ? SocialCalc.sanitizeHTML(displayvalue) : displayvalue);`
@@ -232,8 +232,8 @@ describe('oracle replay — Phase 4 + 5 + 5.1 + 5.2 subset (10/13 green)', () =>
   }
 
   // The served `static/socialcalc.js` no longer byte-matches the legacy
-  // oracle fixture (design "h5": `build-assets.sh` injects the text-html
-  // XSS sanitisation hook). Assert instead that the asset is still served
+  // oracle fixture (design "h5": `scripts/build-assets.ts` injects the
+  // text-html XSS sanitisation hook). Assert instead that the asset is still served
   // AND carries the injected hook — that's the security-relevant invariant.
   it('serves static/socialcalc.js with the text-html sanitisation hook injected', async () => {
     const req = new Request('https://example.test/static/socialcalc.js');

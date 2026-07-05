@@ -2,7 +2,7 @@
  * Smoke test for the single-sheet client (`packages/client/`).
  *
  * The single-sheet client's built bundle (`packages/client/dist/player.js`,
- * copied to `assets/static/player.js` by `scripts/build-assets.sh`) is
+ * copied to `assets/static/player.js` by `scripts/build-assets.ts`) is
  * loaded by the legacy `assets/index.html` page. The Worker now has the
  * Workers Assets binding wired (`[assets] directory = "../../assets"` in
  * `packages/worker/wrangler.toml`), so `wrangler dev` serves the full

@@ -40,7 +40,7 @@ jobs:
         run: |
           bun run --cwd packages/client build
           bun run --cwd packages/client-multi build
-          ./scripts/build-assets.sh
+          bun run scripts/build-assets.ts
 
       - name: Cloudflare API token
         run: ./scripts/ci-cloudflare-token.sh

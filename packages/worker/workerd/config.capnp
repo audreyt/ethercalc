@@ -23,7 +23,7 @@ const config :Workerd.Config = (
     # Main worker. Exports RoomDO + default fetch handler.
     (name = "main", worker = .mainWorker),
 
-    # Curated static-asset tree — the output of scripts/build-assets.sh.
+    # Curated static-asset tree — the output of scripts/build-assets.ts.
     # Default points at the sibling `assets/` dir; override with
     # `workerd serve config.capnp -dassets=/path/to/assets` at runtime.
     (name = "assets", disk = (path = "assets", writable = false)),

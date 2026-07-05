@@ -138,7 +138,7 @@ export interface SocialCalcGlobal {
    * Sanitiser hook for `valueformat===text-html` cells. Installed at boot by
    * `installSanitizeHtml`; the served `/static/socialcalc.js` render sink
    * calls it (when present) before injecting the value as `innerHTML`. See
-   * `src/sanitize-html.ts` and `scripts/build-assets.sh`.
+   * `src/sanitize-html.ts` and `scripts/build-assets.ts`.
    */
   sanitizeHTML?: (raw: string) => string;
 

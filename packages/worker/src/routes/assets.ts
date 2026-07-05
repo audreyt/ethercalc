@@ -2,7 +2,7 @@
  * Workers Assets integration (Phase 4.1 / 11-assets).
  *
  * Wires the curated `assets/` directory (produced by
- * `scripts/build-assets.sh`) onto the Hono router. The directory is
+ * `scripts/build-assets.ts`) onto the Hono router. The directory is
  * declared in `wrangler.toml` under `[assets] directory = "../../assets"`,
  * which produces an `env.ASSETS: Fetcher` binding at runtime.
  *

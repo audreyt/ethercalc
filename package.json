@@ -64,7 +64,7 @@
     "pretest": "bun run build:assets",
     "test": "bun test scripts/build-assets.test.ts && npm run --workspaces --if-present test",
     "build:clients": "bun run --cwd packages/client build && bun run --cwd packages/client-multi build",
-    "build:assets": "bun run build:clients && bash scripts/build-assets.sh",
+    "build:assets": "bun run build:clients && bun run scripts/build-assets.ts",
     "typecheck": "bun run --filter '*' typecheck",
     "lint": "biome lint",
     "lint:fix": "biome lint --write",

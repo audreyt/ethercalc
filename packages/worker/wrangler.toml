@@ -74,7 +74,7 @@ binding = "ASSETS"
 
 # Workers Assets binding (Phase 4.1/11). `directory` is resolved relative
 # to this wrangler.toml, so it points up two levels to the repo-root
-# `assets/` produced by `scripts/build-assets.sh`. That script copies the
+# `assets/` produced by `scripts/build-assets.ts`. That builder copies the
 # curated set of static files (index.html, start.html, panels.html,
 # icons, manifest.appcache, manifest.json, l10n/*.json, the built
 # single-sheet client at static/player.js, the SocialCalc runtime at

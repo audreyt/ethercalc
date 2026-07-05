@@ -54,13 +54,13 @@ jobs:
       - name: client-multi — Vite build (needed for assets/multi/)
         run: bun run --cwd packages/client-multi build
 
-      - name: Build curated assets/ dir (scripts/build-assets.sh)
+      - name: Build curated assets/ dir (scripts/build-assets.ts)
         # Phase 4.1/11: regenerates `assets/` at repo root from the
         # client/client-multi dist output plus the legacy static files.
         # Must run BEFORE worker integration tests (miniflare reads
         # wrangler.toml `[assets]` at startup) and `wrangler deploy
         # --dry-run` (validates the directory exists).
-        run: ./scripts/build-assets.sh
+        run: bun run scripts/build-assets.ts
 
       - name: Validate worker D1 migrations
         # Phase 5.1: smoke-check each SQL file in packages/worker/migrations/
@@ -211,7 +211,7 @@ jobs:
         run: bun run --cwd packages/client-multi build
 
       - name: Build curated assets/ dir
-        run: ./scripts/build-assets.sh
+        run: bun run scripts/build-assets.ts
 
       - name: Run Playwright suite
         run: bun run --cwd packages/e2e test

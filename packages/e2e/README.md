@@ -35,7 +35,7 @@ bun run --cwd packages/e2e report
 
 The Worker now has the Workers Assets binding wired
 (`[assets] directory = "../../assets"` in `packages/worker/wrangler.toml`,
-populated by `scripts/build-assets.sh`), so the **single-sheet** smoke
+populated by `scripts/build-assets.ts`), so the **single-sheet** smoke
 points at `workerBase` directly: `GET /:room` serves `index.html`, which
 pulls in `static/socialcalc.js` + `static/player.js` and mounts the
 editor — no extra fixture needed.
