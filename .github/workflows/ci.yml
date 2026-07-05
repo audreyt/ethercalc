@@ -126,7 +126,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: test
-    # Mirrors CLAUDE.md §11.1 item 10. Uses the Dockerfile + docker-compose
+    # Mirrors AGENTS.md §11.1 item 10. Uses the Dockerfile + docker-compose
     # at the repo root and hits /_health via scripts/smoke-selfhost.sh.
     steps:
       - uses: actions/checkout@v6
@@ -180,7 +180,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: test
-    # Mirrors CLAUDE.md §11.1 item 8. Boots wrangler + the client-multi
+    # Mirrors AGENTS.md §11.1 item 8. Boots wrangler + the client-multi
     # Vite dev server via per-worker fixtures in packages/e2e and exercises
     # the HTTP surface + SPA mount. Uploads the HTML report on failure so
     # traces/screenshots are recoverable.
@@ -244,7 +244,7 @@ jobs:
     # Fast PR-gate mutation check. Runs Stryker only on packages whose
     # `src/` changed in the PR, so docs/test/config-only PRs skip it and
     # single-package PRs stay under ~2 minutes. The full matrix lives in
-    # nightly.yml; see CLAUDE.md §5.3 + docs/MUTATION_REPORT.md for the
+    # nightly.yml; see AGENTS.md §5.3 + docs/MUTATION_REPORT.md for the
     # ratchet workflow.
     steps:
       - uses: actions/checkout@v6

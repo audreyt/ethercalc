@@ -7,7 +7,7 @@
  * branch without requiring workerd.
  *
  * The seed payload shape mirrors one legacy Redis room's worth of data
- * (per CLAUDE.md §6.3):
+ * (per AGENTS.md §6.3):
  *   - `snapshot`       string       — SocialCalc save. `''` means "don't
  *                                     store a snapshot" (log-only rooms).
  *   - `log`/`audit`/`chat`  string[]  — ordered entries under their

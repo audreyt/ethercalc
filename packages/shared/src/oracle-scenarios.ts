@@ -1,5 +1,5 @@
 /**
- * Oracle scenario schema — see CLAUDE.md §4.
+ * Oracle scenario schema — see AGENTS.md §4.
  *
  * A scenario is a deterministic recipe that can be replayed against the
  * oracle (current `main` branch of EtherCalc) and against the new worker.

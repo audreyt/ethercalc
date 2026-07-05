@@ -9,7 +9,7 @@
  * bundled invocation path. Test coverage comes from integration (workers
  * pool) tests in `test/ws.test.ts`.
  *
- * Reference: CLAUDE.md sec 10.1 (native WS transport) and sec 7 item 11
+ * Reference: AGENTS.md sec 10.1 (native WS transport) and sec 7 item 11
  * (hibernation invariants).
  */
 /* istanbul ignore file */

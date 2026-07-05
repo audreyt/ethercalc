@@ -59,7 +59,7 @@ export function registerMigrate(app: Hono<{ Bindings: Env }>): void {
   // Batched sibling of the seed endpoint. Callers (the migrator, today)
   // send `PUT /_migrate/bulk-index` with `{rooms: [{room, updatedAt}, …]}`
   // after the seed pass; we fold all rows into ONE D1 INSERT to dodge
-  // D1's per-statement primary-region latency. See CLAUDE.md §14
+  // D1's per-statement primary-region latency. See AGENTS.md §14
   // 2026-04-21 for the why. Same auth gate as /_migrate/seed.
   app.put('/_migrate/bulk-index', async (c) => {
     const verdict = verifyMigrateToken(

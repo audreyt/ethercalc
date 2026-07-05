@@ -2,7 +2,7 @@
 
 > **Generated:** 2026-04-19 · **Runner:** StrykerJS 9.6.1 + `@stryker-mutator/vitest-runner` · **CI:** `.github/workflows/nightly.yml` (full matrix) + `.github/workflows/ci.yml#mutation-gate` (PR fast-gate on changed packages)
 
-This report captures the first mutation-testing baseline across the seven Node-env packages that already have 100% line/branch/function/statement coverage enforced in CI (see `CLAUDE.md` §5.2). Its purpose is to surface the gap between "every line hit" and "every behavior asserted": a test that calls code without asserting on the outcome will satisfy istanbul but not survive mutation. Mutation testing flips arithmetic operators, swaps string literals, negates conditionals, removes block statements, and rechecks the test suite — any mutation that survives is a test gap.
+This report captures the first mutation-testing baseline across the seven Node-env packages that already have 100% line/branch/function/statement coverage enforced in CI (see `AGENTS.md` §5.2). Its purpose is to surface the gap between "every line hit" and "every behavior asserted": a test that calls code without asserting on the outcome will satisfy istanbul but not survive mutation. Mutation testing flips arithmetic operators, swaps string literals, negates conditionals, removes block statements, and rechecks the test suite — any mutation that survives is a test gap.
 
 The 100% line-coverage gate already filters the obvious dead-code gaps. Everything below is about **assertion richness** on code that is already fully exercised.
 

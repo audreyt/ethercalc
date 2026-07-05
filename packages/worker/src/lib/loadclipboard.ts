@@ -1,6 +1,6 @@
 /**
  * Pure helpers for the Phase 6 POST command-execution layer. See
- * CLAUDE.md sections 6.1, 7 items 12-14, and 8 Phase 6. Each function
+ * AGENTS.md sections 6.1, 7 items 12-14, and 8 Phase 6. Each function
  * below is a tight, side-effect-free port of one branch of the legacy
  * main.ls 406-446 POST handler.
  *

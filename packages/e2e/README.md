@@ -26,7 +26,7 @@ bun run --cwd packages/e2e report
 | Spec                          | Proves                                                                    |
 | ----------------------------- | ------------------------------------------------------------------------- |
 | `health.spec.ts`              | Worker boots; `/_health` returns `{status:'ok', version, now}` JSON.      |
-| `redirects.spec.ts`           | `/_new`, `/=_new`, `/:room/{edit,view,app}` redirect as per CLAUDE.md §6. |
+| `redirects.spec.ts`           | `/_new`, `/=_new`, `/:room/{edit,view,app}` redirect as per AGENTS.md §6. |
 | `blocked.spec.ts`             | `/etc/*` and `/var/*` stay 404 with `text/html` empty body.               |
 | `client-multi-smoke.spec.ts`  | React 18 SPA mounts on `/=<room>`, Radix tablist renders.                 |
 | `client-single-smoke.spec.ts` | SocialCalc single-sheet UI boots, edits cell, asserts persistence and reload. |

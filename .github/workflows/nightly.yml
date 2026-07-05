@@ -1,6 +1,6 @@
 name: Nightly
 
-# Phase 12 — see CLAUDE.md §5.3 + §11.2 + docs/MUTATION_REPORT.md.
+# Phase 12 — see AGENTS.md §5.3 + §11.2 + docs/MUTATION_REPORT.md.
 #
 # Runs StrykerJS mutation testing across the six Node-env packages where
 # istanbul coverage already works. Kept OUT of the PR-gate workflow

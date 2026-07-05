@@ -5,7 +5,7 @@ on zappajs, Redis-backed) running in Docker. The TypeScript rewrite is
 proven equivalent by recording oracle responses to a scenario set, then
 replaying those same scenarios against the new worker and diffing.
 
-See `CLAUDE.md` §4 for the why and §6.1/§6.2/§6.3 for what we're recording.
+See `AGENTS.md` §4 for the why and §6.1/§6.2/§6.3 for what we're recording.
 
 ## Layout
 

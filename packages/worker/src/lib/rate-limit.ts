@@ -4,7 +4,7 @@
  * Gated by `ETHERCALC_RATELIMIT` (default off). When enabled, applies a
  * token bucket keyed on `CF-Connecting-IP` / the first `X-Forwarded-For`
  * hop. Hosted Cloudflare deploys leave the flag unset and rely on the
- * platform edge instead (CLAUDE.md §13 Q7).
+ * platform edge instead (AGENTS.md §13 Q7).
  */
 
 export interface RateLimitEnv {

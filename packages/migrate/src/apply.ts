@@ -24,7 +24,7 @@ export interface Room {
 /**
  * Sink for migrated room data.
  *
- * Mapping (per CLAUDE.md §10.2):
+ * Mapping (per AGENTS.md §10.2):
  *   putSnapshot   → DO storage `snapshot`
  *   putLog        → DO storage `log:<padSeq(seq)>`
  *   putAudit      → DO storage `audit:<padSeq(seq)>`

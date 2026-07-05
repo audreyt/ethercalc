@@ -18,7 +18,7 @@ export interface Env {
    * cross-room query surface used by `/_rooms`, `/_roomlinks`,
    * `/_roomtimes`. Every snapshot mutation in `src/room.ts` upserts
    * here via `mirrorRoomToD1`; `DELETE /_do/all` removes the row via
-   * `deleteRoomFromD1`. See CLAUDE.md §3.3 and §10.2.
+   * `deleteRoomFromD1`. See AGENTS.md §3.3 and §10.2.
    *
    * Optional because Node unit tests construct `RoomDO` and the Hono
    * app without a Miniflare-bound D1; the mirror helpers (and the
@@ -43,7 +43,7 @@ export interface Env {
    * HMAC secret used to gate `edit`/`view`/`app` routes and WS `execute`
    * commands. When unset, the server falls back to identity HMAC and
    * anonymous operation (matches legacy `--key` absent behavior; see
-   * CLAUDE.md §6.4).
+   * AGENTS.md §6.4).
    */
   readonly ETHERCALC_KEY?: string;
 

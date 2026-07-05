@@ -4,7 +4,7 @@
  * in isolation and documented next to its rationale.
  *
  * The Worker reads all `ETHERCALC_*` env vars at boot time (see
- * CLAUDE.md §3.1 row "Secrets"). The wrangler CLI itself reads `--port`
+ * AGENTS.md §3.1 row "Secrets"). The wrangler CLI itself reads `--port`
  * and `--ip` for the local Miniflare listening socket.
  */
 import type { ParsedFlags } from './parse.ts';
@@ -101,7 +101,7 @@ export function buildLaunchPlan(
   if (flags.keyfile !== undefined || flags.certfile !== undefined) {
     warnings.push(
       'warning: --keyfile/--certfile are not supported by wrangler dev; ' +
-        'terminate TLS at a reverse proxy. See CLAUDE.md §8 Phase 11 FINDINGS.',
+        'terminate TLS at a reverse proxy. See AGENTS.md §8 Phase 11 FINDINGS.',
     );
   }
 

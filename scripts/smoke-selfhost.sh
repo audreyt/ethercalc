@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Self-host smoke test (§13 Q5, CLAUDE.md §11.1 item 10).
+# Self-host smoke test (§13 Q5, AGENTS.md §11.1 item 10).
 #
 # Builds the standalone workerd image, boots it via docker compose, hits
 # /_health, and tears down. Fails fast on any step. Used both locally

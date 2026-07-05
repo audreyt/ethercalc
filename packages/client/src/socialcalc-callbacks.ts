@@ -4,7 +4,7 @@
  * Behavior preservation is load-bearing here — the SocialCalc runtime we
  * bundle on-page expects every hook below to be installed exactly once and
  * to forward to the captured "Orig" versions, or the toolbar + cell grid
- * stop updating (CLAUDE.md §7 item 10).
+ * stop updating (AGENTS.md §7 item 10).
  *
  * Call `installCallbacks(SocialCalc)` once, at startup, after
  * `SocialCalc.js` is on the page.  Calling it twice is a no-op — we guard
@@ -225,7 +225,7 @@ export function installCallbacks(
  * Install the `broadcast` entry-point onto `SocialCalc.Callbacks`.
  *
  * Two-arg signature matches the legacy `SocialCalc.Callbacks.broadcast` that
- * the whole stack dereferences — see `CLAUDE.md` §7 item 10.
+ * the whole stack dereferences — see `AGENTS.md` §7 item 10.
  */
 export function installBroadcast(
   SocialCalc: SocialCalcGlobal,

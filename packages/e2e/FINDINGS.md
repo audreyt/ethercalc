@@ -72,7 +72,7 @@ picked fixtures only and documented it at the top of
   concurrent wrangler dev instances on a CI runner hammer each other.
   When spec count grows past ~20, revisit to allow `workers: 2`.
 
-## CLAUDE.md amendments requested (not applied here)
+## AGENTS.md amendments requested (not applied here)
 
 - §5.3: add "Playwright coverage is about feature coverage not line
   coverage" (task brief says it, doc doesn't).

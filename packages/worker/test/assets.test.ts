@@ -12,7 +12,7 @@ import worker from '../src/index.ts';
  * during CI-test ordering) and lets us assert the exact pathname the
  * route handler forwarded for each endpoint.
  *
- * Route inventory covered (see CLAUDE.md §6.1 + §7 items 24/26/29):
+ * Route inventory covered (see AGENTS.md §6.1 + §7 items 24/26/29):
  *   - `/`, `/_start`, `/favicon.ico` (+ 9 icon siblings)
  *   - `/manifest.appcache` — DevMode dynamic stub AND prod pass-through
  *   - `/manifest.json`, `/browserconfig.xml`
@@ -25,7 +25,7 @@ import worker from '../src/index.ts';
  *   - `/:room` with `=` prefix → multi/index.html
  *
  * Tests run inside workerd via `@cloudflare/vitest-pool-workers`; no
- * coverage gate (see CLAUDE.md §5.2). Every branch is independently
+ * coverage gate (see AGENTS.md §5.2). Every branch is independently
  * covered by the pure-logic tests under `test/*.node.test.ts`.
  */
 

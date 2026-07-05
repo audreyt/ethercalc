@@ -2,7 +2,7 @@
  * Client entry point — port of `src/player.ls`.
  *
  * Wired as a side-effect module: importing this file connects the WS and
- * installs the SocialCalc callbacks.  We keep no exports here (CLAUDE.md
+ * installs the SocialCalc callbacks.  We keep no exports here (AGENTS.md
  * §8 Phase 10 "drop-in compat"), but tests exercise the helpers via
  * `runMain`.
  *
@@ -49,7 +49,7 @@ export interface MainHost {
   setTimeout: (fn: () => void, ms: number) => number;
   /**
    * Only present when the embedding site wanted the Drupal-sheetnode
-   * mapping (CLAUDE.md §7 item 10).  Plain websites leave it unset.
+   * mapping (AGENTS.md §7 item 10).  Plain websites leave it unset.
    */
   Drupal?: { sheetnode?: { sheetviews?: unknown[] } };
 }

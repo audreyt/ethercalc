@@ -7,7 +7,7 @@ import { defineConfig } from 'vitest/config';
  * Coverage is intentionally NOT enforced here because neither `istanbul` nor
  * `v8` providers reliably track hits through the workerd bundle —
  * vitest-pool-workers runs tests in a separate runtime that neither
- * provider can instrument end-to-end. See CLAUDE.md §5.2 for the split
+ * provider can instrument end-to-end. See AGENTS.md §5.2 for the split
  * strategy: pure logic lives in `src/handlers/**` and `src/lib/**` and is
  * covered by `vitest.node.config.ts` (vanilla Node environment, full
  * istanbul coverage). The 100% CI gate applies to that config.

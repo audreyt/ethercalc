@@ -5,7 +5,7 @@ import worker from '../src/index.ts';
 
 /**
  * Integration tests for Phase 4 stateless routes. Runs inside workerd
- * via `@cloudflare/vitest-pool-workers`; no coverage gate (CLAUDE.md §5.2).
+ * via `@cloudflare/vitest-pool-workers`; no coverage gate (AGENTS.md §5.2).
  * Every branch asserted here is independently covered by the sibling
  * `*.node.test.ts` files against the pure-logic builders.
  */

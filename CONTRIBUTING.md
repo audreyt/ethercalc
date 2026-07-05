@@ -9,7 +9,7 @@ bun install
 bun run --cwd packages/worker dev    # http://127.0.0.1:8787
 ```
 
-See [CLAUDE.md](./CLAUDE.md) for agent context, [packages/docs/](packages/docs/) for the Starlight docs site (`bun run --cwd packages/docs dev`), and [docs/historic/REWRITE_ULTRAPLAN.md](./docs/historic/REWRITE_ULTRAPLAN.md) for the archived rewrite plan.
+See [AGENTS.md](./AGENTS.md) for agent context, [packages/docs/](packages/docs/) for the Starlight docs site (`bun run --cwd packages/docs dev`), and [docs/historic/REWRITE_ULTRAPLAN.md](./docs/historic/REWRITE_ULTRAPLAN.md) for the archived rewrite plan.
 
 ## Tests and coverage
 
@@ -81,4 +81,4 @@ Sandstorm packaging lives on `main`: `SANDSTORM.md`, `run_grain.sh`, `sandstorm-
 1. One logical change per PR when possible.
 2. Add or update tests; keep coverage at 100% on gated paths.
 3. Run `bun run typecheck` and affected package tests locally.
-4. Update [CLAUDE.md](./CLAUDE.md) session log if the change is architectural.
+4. Update [AGENTS.md](./AGENTS.md) session log if the change is architectural.

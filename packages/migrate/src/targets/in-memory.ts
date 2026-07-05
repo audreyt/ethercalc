@@ -3,7 +3,7 @@
  * public readonly maps so tests can assert the exact migration product
  * without any wrangler or network plumbing.
  *
- * Key layout mirrors CLAUDE.md §10.2 + `@ethercalc/shared/storage-keys`:
+ * Key layout mirrors AGENTS.md §10.2 + `@ethercalc/shared/storage-keys`:
  *   doStorage[<room>][<STORAGE_KEYS.snapshot | logKey | auditKey | chatKey | ecellKey>]
  *   d1Rooms[<room>]                               → { updated_at }
  *   kvRoomsExists[<room>]                         → "1"

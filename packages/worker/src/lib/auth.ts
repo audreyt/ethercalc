@@ -56,7 +56,7 @@ export async function computeAuth(key: string | undefined, room: string): Promis
  *     `/:room` redirects to when KEY is set, which must never grant
  *     write access.
  *   - When `key` is unset, accept any other value (including empty
- *     string). This is the anonymous mode documented in CLAUDE.md §6.4
+ *     string). This is the anonymous mode documented in AGENTS.md §6.4
  *     and oracle F-03: identity HMAC means the legacy check reduces to
  *     "auth !== '0'".
  *   - When `key` is set, require a timing-safe match against the HMAC.

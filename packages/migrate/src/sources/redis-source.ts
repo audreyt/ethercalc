@@ -8,7 +8,7 @@
  * discovered via `SCAN`, and (b) one room's worth of data at a time
  * during iteration.
  *
- * Semantics follow the legacy key layout (CLAUDE.md §6.3):
+ * Semantics follow the legacy key layout (AGENTS.md §6.3):
  *   - `snapshot-<room>` + `log-<room>` + `audit-<room>` + `chat-<room>`
  *     + `ecell-<room>` are the per-room keys.
  *   - `timestamps` is a shared hash whose fields (either

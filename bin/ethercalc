@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Legacy-compatible CLI shim (§13 Q6, CLAUDE.md §8 Phase 11).
+ * Legacy-compatible CLI shim (§13 Q6, AGENTS.md §8 Phase 11).
  *
  * Accepts the old EtherCalc flag surface (--key, --cors, --port, --host,
  * --expire, --basepath, --keyfile, --certfile) and translates them into

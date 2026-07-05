@@ -18,9 +18,9 @@
  * trivially, which unlocks 100% branch coverage in the Node suite.
  *
  * Cross-references:
- *   - CLAUDE.md §5.2 — coverage gate layout
- *   - CLAUDE.md §6.2 — WS wire protocol
- *   - CLAUDE.md §6.4 — auth gate (rejected writes silently drop)
+ *   - AGENTS.md §5.2 — coverage gate layout
+ *   - AGENTS.md §6.2 — WS wire protocol
+ *   - AGENTS.md §6.4 — auth gate (rejected writes silently drop)
  *   - `src/lib/ws-dispatch.ts` — the pure builder helpers reused here
  */
 import type {
@@ -91,7 +91,7 @@ export interface WsContext {
   /**
    * Broadcast a message to every other peer in the room. If
    * `includeSelf` is true, the sender also receives the frame — this is
-   * the `submitform` invariant (CLAUDE.md §7 item 22).
+   * the `submitform` invariant (AGENTS.md §7 item 22).
    */
   readonly broadcast: (msg: ServerMessage, includeSelf: boolean) => Promise<void>;
   /** Send a message only to the originating socket. */
@@ -128,7 +128,7 @@ export async function handleChat(
 
 /**
  * `ask.ecells` — reply only to the requester with the full ecell map.
- * Other peers do not observe this query (CLAUDE.md §6.2).
+ * Other peers do not observe this query (AGENTS.md §6.2).
  */
 export async function handleAskEcells(
   ctx: WsContext,

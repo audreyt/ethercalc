@@ -9,9 +9,9 @@
  * without needing a workerd runtime.
  *
  * References:
- *   - CLAUDE.md sec 6.2 (execute / submitform / ask.log flows)
- *   - CLAUDE.md sec 7 item 12 (text-wiki filter drop)
- *   - CLAUDE.md sec 7 item 22 (submitform include_self=true invariant)
+ *   - AGENTS.md sec 6.2 (execute / submitform / ask.log flows)
+ *   - AGENTS.md sec 7 item 12 (text-wiki filter drop)
+ *   - AGENTS.md sec 7 item 22 (submitform include_self=true invariant)
  */
 import type {
   AskEcellClientMessage,

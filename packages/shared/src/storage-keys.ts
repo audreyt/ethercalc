@@ -5,7 +5,7 @@
  * keys live under the DO's own storage — key collisions across rooms are
  * impossible because each DO has its own isolated storage (the legacy
  * `snapshot-<room>` / `log-<room>` Redis namespacing is replaced by the DO
- * namespacing itself, see CLAUDE.md §3.3 and §10.2).
+ * namespacing itself, see AGENTS.md §3.3 and §10.2).
  *
  * List-like data (log / audit / chat) is stored as individual keys with a
  * zero-padded sequence number suffix so `storage.list({ prefix })` returns

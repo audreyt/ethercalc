@@ -1,7 +1,7 @@
 /**
  * HTTP header normalization for the oracle recorder/replayer.
  *
- * Per CLAUDE.md §4.4 we drop a fixed set of non-deterministic response
+ * Per AGENTS.md §4.4 we drop a fixed set of non-deterministic response
  * headers before persisting to a recording, so day-over-day replays
  * don't diff on `Date:` or `Server:` alone.
  *

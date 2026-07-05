@@ -1,6 +1,6 @@
 /**
  * Room-level HTTP routes that dispatch through the `ROOM` Durable Object
- * namespace. Covers the Phase 5 surface from §8 (CLAUDE.md):
+ * namespace. Covers the Phase 5 surface from §8 (AGENTS.md):
  *
  *   POST   /_                 create room
  *   PUT    /_/:room           replace snapshot

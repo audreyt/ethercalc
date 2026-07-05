@@ -21,7 +21,7 @@ import { defineConfig, devices } from '@playwright/test';
  *   `workers: 1` (the default in CI) that's a single cold start.
  *
  * Browsers:
- *   Chromium only per CLAUDE.md §11.2 — Firefox/WebKit land in nightly.
+ *   Chromium only per AGENTS.md §11.2 — Firefox/WebKit land in nightly.
  */
 export default defineConfig({
   testDir: './tests',

@@ -334,10 +334,10 @@ async function runHttpTests(base: string): Promise<void> {
   // #809 domain restrict — nginx recipe exists
   add(809, 'Restrict domain', 'close_fixed', 'Self-host hardening: docker-compose.proxy.yml + docs/SELFHOST_HARDENING.md');
 
-  // #42 env vars — check README/CLAUDE
+  // #42 env vars — check README/AGENTS
   {
-    const claude = readFileSync('/Users/au/w/ethercalc/CLAUDE.md', 'utf8');
-    add(42, 'Document CLI/env vars', claude.includes('ETHERCALC_') ? 'close_fixed' : 'keep_question', 'CLAUDE.md + docker/helm document env vars');
+    const claude = readFileSync('/Users/au/w/ethercalc/AGENTS.md', 'utf8');
+    add(42, 'Document CLI/env vars', claude.includes('ETHERCALC_') ? 'close_fixed' : 'keep_question', 'AGENTS.md + docker/helm document env vars');
   }
 
   // #604/#545 offline install

@@ -68,7 +68,7 @@ export interface RoomsFromFilesystemOptions {
    * Max bytes for a whole room's snapshot — rooms whose snapshot exceeds
    * this are skipped entirely (otherwise the DO would exist with logs
    * but no save, a confusing half-state). Default Infinity — the worker
-   * chunks snapshots internally since 2026-04-22 (CLAUDE.md §14).
+   * chunks snapshots internally since 2026-04-22 (AGENTS.md §14).
    */
   maxSnapshotBytes?: number;
   /** Called when a whole room is skipped for an oversized snapshot. */

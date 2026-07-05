@@ -3,7 +3,7 @@
  * `../handlers/**` and `../lib/**`, this module is the glue that
  * adapts those pure builders to Hono's Context API.
  *
- * Excluded from the coverage gate per CLAUDE.md §5.2: workerd's bundler
+ * Excluded from the coverage gate per AGENTS.md §5.2: workerd's bundler
  * doesn't trace Hono-invoked paths through istanbul. Every branch here
  * is exercised via integration tests in `test/stateless.test.ts` + the
  * oracle replay.

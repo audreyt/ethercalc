@@ -45,7 +45,7 @@
     "manifest.json",
     "manifest.appcache",
     "README.md",
-    "CLAUDE.md",
+    "AGENTS.md",
     "API.md",
     "Changes.txt",
     "!**/node_modules",

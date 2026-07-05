@@ -80,7 +80,7 @@ All other files hit 100% across lines / branches / functions / statements.
 
 ## What's not here (out of scope for this phase)
 
-- **Playwright e2e smoke.** Deferred to Phase 11 per `CLAUDE.md` §8. The
+- **Playwright e2e smoke.** Deferred to Phase 11 per `AGENTS.md` §8. The
   build verifies Vite works; functional integration (open `/=room`, add sub-
   sheet, rename, delete, export) is the Phase-11 target because it needs a
   running Worker for the `/_/<room>` API.

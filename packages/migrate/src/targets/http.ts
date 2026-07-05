@@ -69,7 +69,7 @@ export interface HttpTargetConfig {
    * so anything over 50 rows fails with a generic `500 Internal Server
    * Error` (the limit is not surfaced via an error message we'd see).
    * The earlier value of 200 silently broke every production run on
-   * 2026-04-21 — see CLAUDE.md §14. Tests can lower further to drive
+   * 2026-04-21 — see AGENTS.md §14. Tests can lower further to drive
    * flush-on-threshold deterministically.
    */
   bulkIndexBatchSize?: number;
@@ -81,7 +81,7 @@ export interface HttpTargetConfig {
    *
    * Use this when D1 is being populated out-of-band, e.g. via a
    * `wrangler d1 execute --remote --file=rooms.sql` dump import that
-   * runs minutes before this pass. See CLAUDE.md §14 2026-04-21 for
+   * runs minutes before this pass. See AGENTS.md §14 2026-04-21 for
    * the production recipe.
    */
   skipBulkIndex?: boolean;
@@ -274,7 +274,7 @@ async function safeText(res: Response): Promise<string> {
  * alive until the body is fully read or explicitly cancelled. On a
  * long-running migration (hundreds of thousands of calls) this adds
  * up to tens of GB of retained memory and eventually crashes the
- * process — see CLAUDE.md §14 2026-04-21 entry.
+ * process — see AGENTS.md §14 2026-04-21 entry.
  *
  * Try `body.cancel()` first (cheapest — tells the runtime to stop
  * buffering); fall back to `.arrayBuffer()` on engines where cancel

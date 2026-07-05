@@ -7,7 +7,7 @@
  * save is 150 KiB–2 MB — large enough that the naive
  * `storage.put("snapshot", <str>)` path would fail with the opaque
  * `500 Internal Server Error` we hit during the 2026-04-21 production
- * migration (see CLAUDE.md §14).
+ * migration (see AGENTS.md §14).
  *
  * Two layouts on disk:
  *

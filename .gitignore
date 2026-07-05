@@ -9,7 +9,7 @@ coverage/
 *.log
 .claude/
 .clawpatch/
-# Local-only secrets for `wrangler dev` / Miniflare. See CLAUDE.md §3.1.
+# Local-only secrets for `wrangler dev` / Miniflare. See AGENTS.md §3.1.
 .dev.vars
 # Playwright e2e outputs
 playwright-report/
@@ -18,7 +18,7 @@ node_modules/.playwright/
 # Curated assets dir — rebuilt from sources by scripts/build-assets.sh.
 # Commit-ignored because it contains built JS (client/dist/player.js,
 # client-multi/dist/**) that goes stale. CI regenerates it before
-# `wrangler deploy --dry-run`. See CLAUDE.md §8 Phase 4.1/11.
+# `wrangler deploy --dry-run`. See AGENTS.md §8 Phase 4.1/11.
 /assets/
 # Phase 12 mutation-testing outputs (nightly StrykerJS). Reports are
 # uploaded as CI artifacts, not committed. See docs/MUTATION_REPORT.md.

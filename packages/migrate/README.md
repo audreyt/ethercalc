@@ -2,7 +2,7 @@
 
 Phase 11b migrator — streams a legacy EtherCalc Redis out of a live
 RESP server and seeds each room into the new Cloudflare stack via the
-worker's `PUT /_migrate/seed/:room` endpoint. See `CLAUDE.md` §12 for
+worker's `PUT /_migrate/seed/:room` endpoint. See `AGENTS.md` §12 for
 the full design.
 
 ## Exporting the legacy data

@@ -7,7 +7,7 @@
 --   GET /_roomlinks   → HTML `<a>` list of the above
 --   GET /_roomtimes   → {room: updated_at} hash, sorted desc by value
 --
--- See CLAUDE.md §3.3 (data model) and §10.2 (Redis → DO/D1/KV mapping).
+-- See AGENTS.md §3.3 (data model) and §10.2 (Redis → DO/D1/KV mapping).
 -- Every RoomDO snapshot write (POST/PUT /_/:room, POST /_do/commands)
 -- upserts this row via `mirrorRoomToD1`; DELETE /_do/all removes it via
 -- `deleteRoomFromD1`.

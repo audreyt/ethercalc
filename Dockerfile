@@ -1,4 +1,4 @@
-# EtherCalc self-host image (§13 Q5, CLAUDE.md §8 Phase 11).
+# EtherCalc self-host image (§13 Q5, AGENTS.md §8 Phase 11).
 #
 # Launches `workerd serve` directly against a pre-bundled worker module,
 # persisting Durable Object state to /data (a bind-mount volume). We

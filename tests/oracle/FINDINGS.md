@@ -2,7 +2,7 @@
 
 Oracle quirks and divergences discovered during Phase 3 recording.
 Append as they come up; the phase-integration pass folds the
-load-bearing items into `CLAUDE.md` §6/§7.
+load-bearing items into `AGENTS.md` §6/§7.
 
 ## Phase 3
 
@@ -33,7 +33,7 @@ matcher selector picks automatically for 3xx).
 When the server has no HMAC secret configured, `hmac(x) = x` (identity
 — see `main.ls:23`'s ternary). So `/some-room/edit` 302s to
 `/some-room?auth=some-room`, not `?auth=0`. This is stable and worth a
-CLAUDE.md note — the §6.1 table currently says `?auth=<hmac>` without
+AGENTS.md note — the §6.1 table currently says `?auth=<hmac>` without
 the no-KEY case spelled out.
 
 Files: `src/main.ls:23,296-305`.
@@ -42,7 +42,7 @@ Files: `src/main.ls:23,296-305`.
 
 Confirmed. `Content-Type: text/html; charset=utf-8`, body `[]` for an
 empty oracle. This is the "bug-for-bug preservation" item already
-enumerated in CLAUDE.md §6.1 / Q1, recording exercises it.
+enumerated in AGENTS.md §6.1 / Q1, recording exercises it.
 
 ### F-05 — `GET /_exists/:room` returns `true` / `false` (not `{"exists":0}`)
 

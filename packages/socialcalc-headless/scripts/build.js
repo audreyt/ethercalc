@@ -9,7 +9,7 @@ const output = path.join(__dirname, '../src/socialcalc.bundled.ts'); // Save as 
 let src = fs.readFileSync(input, 'utf8');
 
 // SocialCalc 2.3.0 from github:audreyt/socialcalc is strict-mode clean and
-// already has `factory.call(root, root)` (transform #3 from CLAUDE.md §16.A).
+// already has `factory.call(root, root)` (transform #3 from AGENTS.md §16.A).
 // The remaining transforms are the two DOM shim redirects:
 //   (1) route document.createElement through our ShimNode namespace
 //   (2) silence alert() on error paths

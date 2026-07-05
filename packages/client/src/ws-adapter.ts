@@ -1,7 +1,7 @@
 /**
  * WebSocket adapter — replaces the legacy socket.io client.
  *
- * This is the transport half of CLAUDE.md §8 Phase 10: every `broadcast()`
+ * This is the transport half of AGENTS.md §8 Phase 10: every `broadcast()`
  * call becomes one JSON frame over a native WS.  `onMessage` delivers the
  * decoded `ServerMessage`s (frames that fail `parseServerMessage` are
  * dropped — matches the legacy behavior of ignoring unknown events).
@@ -146,7 +146,7 @@ export function buildWsEndpoint(opts: {
   params.set('user', opts.user);
   if (opts.auth !== undefined) params.set('auth', opts.auth);
   // `:room` is URL-encoded — matches the server-side `encodeURI` rule
-  // (CLAUDE.md §7 item 15).
+  // (AGENTS.md §7 item 15).
   return `${base}/_ws/${encodeURIComponent(opts.room)}?${params.toString()}`;
 }
 

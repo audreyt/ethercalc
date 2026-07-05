@@ -27,7 +27,7 @@ zone_name = "ethercalc.net"
 custom_domain = true
 # Durable Object: one instance per spreadsheet room.
 # Holds live SocialCalc state, WebSocket clients, and the snapshot/log/audit
-# storage. See CLAUDE.md §3.2 and §3.3.
+# storage. See AGENTS.md §3.2 and §3.3.
 [[durable_objects.bindings]]
 name = "ROOM"
 class_name = "RoomDO"

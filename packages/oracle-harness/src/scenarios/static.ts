@@ -1,7 +1,7 @@
 import type { HttpScenario } from '@ethercalc/shared/oracle-scenarios';
 
 /**
- * Static-asset scenarios — CLAUDE.md §6.1 rows for `/`, `/_start`,
+ * Static-asset scenarios — AGENTS.md §6.1 rows for `/`, `/_start`,
  * `/static/socialcalc.js`, and the icon family. These don't touch
  * Redis, never mutate state, and don't embed timestamps, so they're
  * safe candidates for the first recording batch.

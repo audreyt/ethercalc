@@ -5,7 +5,7 @@
  *
  * Legacy used `uuid-pure`'s `newId(12, 36)` which drew 12 random characters
  * from the 36-char alphabet `[0-9a-z]`. The compatibility risk §7 item 6
- * in CLAUDE.md commits us to replicating the *shape* via
+ * in AGENTS.md commits us to replicating the *shape* via
  * `crypto.randomUUID().replace(/-/g,'').slice(0,12)` — that gives us 12
  * lowercase hex chars, a strict subset of `[0-9a-z]`. The oracle
  * recording `misc/get-new-redirect` regexes `^/[a-z0-9]{12}$`, so the

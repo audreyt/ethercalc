@@ -10,7 +10,7 @@
  * .ts`).
  *
  * This is one of the narrow island of truly-untestable-in-Node glue per
- * Phase 7.1's `istanbul-ignore` budget (CLAUDE.md §5.2).
+ * Phase 7.1's `istanbul-ignore` budget (AGENTS.md §5.2).
  */
 
 /** Attachment payload stored on each accepted WebSocket. */

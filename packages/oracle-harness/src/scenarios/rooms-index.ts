@@ -7,7 +7,7 @@ import type { HttpScenario } from '@ethercalc/shared/oracle-scenarios';
  * return empty JSON containers (array / object) and `_roomlinks`
  * returns an empty array serialized as HTML (preserving the legacy
  * bug where the handler sets `Content-Type: text/html` but writes
- * JSON — see CLAUDE.md §6.1 "Behaviors requiring bug-for-bug
+ * JSON — see AGENTS.md §6.1 "Behaviors requiring bug-for-bug
  * preservation"). These only hold while Redis is empty; record.ts's
  * orchestrator is responsible for not creating rooms before hitting
  * these paths.

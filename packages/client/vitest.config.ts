@@ -2,7 +2,7 @@ import { defineConfig } from 'vitest/config';
 
 /**
  * Client package tests. Run under the Node environment using mock WebSocket
- * and mock SocialCalc so we don't need jsdom. See CLAUDE.md §8 Phase 10.
+ * and mock SocialCalc so we don't need jsdom. See AGENTS.md §8 Phase 10.
  *
  * Coverage gate (100%) applies to ws-adapter, socialcalc-callbacks, main,
  * graph and sanitize-html.

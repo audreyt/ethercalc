@@ -31,5 +31,5 @@ export const HELP_TEXT: string = [
   '                       Default: .wrangler/state (wrangler default).',
   '  -h, --help           Print this help and exit.',
   '',
-  'See CLAUDE.md §8 Phase 11 and §13 Q6 for the design rationale.',
+  'See AGENTS.md §8 Phase 11 and §13 Q6 for the design rationale.',
 ].join('\n');

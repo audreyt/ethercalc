@@ -3,7 +3,7 @@
  * handling logic lives in `./handlers/`. This file is intentionally tiny
  * glue — it's excluded from the 100% coverage gate (see `vitest.config.ts`)
  * because istanbul inside `@cloudflare/vitest-pool-workers` doesn't track
- * hits through Hono's bundled invocation path (see CLAUDE.md §5.2).
+ * hits through Hono's bundled invocation path (see AGENTS.md §5.2).
  */
 /* istanbul ignore file */
 import { Hono } from 'hono';

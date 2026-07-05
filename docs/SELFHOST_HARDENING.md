@@ -40,7 +40,7 @@ So almost nothing here is "fix the worker code". It is "ship safe-by-default con
 | **B. Docker / workerd** | `docker compose up` / bare `workerd serve` → `bin/workerd-entrypoint.sh` → `packages/worker/workerd/config.capnp` | `fromEnvironment` (process env) | **`ETHERCALC_DISABLE_ROOM_INDEX=1` (gated)** ✅ | no |
 | **C. Sandstorm grain** | `sandstorm-http-bridge` → `run_grain.sh` → `workerd serve` | `run_grain.sh` exports | **empty (OPEN)** but mostly moot | **yes** (Sandstorm ACL/TLS) |
 
-- **Path B is the flagship self-host story** (CLAUDE.md §13 Q5, README docker quickstart). `main` now
+- **Path B is the flagship self-host story** (AGENTS.md §13 Q5, README docker quickstart). `main` now
   ships it gated by default via `ETHERCALC_DISABLE_ROOM_INDEX=1`. `wrangler.toml [vars]` is still a
   `wrangler deploy`/`wrangler dev` concept and is
   **never** read by `workerd serve`. `scripts/build-workerd-bundle.sh` only bundles `index.js`; runtime
@@ -55,7 +55,7 @@ So almost nothing here is "fix the worker code". It is "ship safe-by-default con
 ### 0.3 Threat model for self-host
 
 Bare Path B binds `0.0.0.0:8000` plaintext with **no** Cloudflare edge: no WAF, no rate limiting,
-no DDoS scrubbing, no TLS. Anonymous read/write is the **product core** (CLAUDE.md §6.4, oracle F-03) —
+no DDoS scrubbing, no TLS. Anonymous read/write is the **product core** (AGENTS.md §6.4, oracle F-03) —
 knowing a room URL = ability to read+edit it. That is intentional and must not be broken. The exposure
 *beyond* that core is: (a) room discovery (`/_exists/:room` everywhere the gate is off, and full-corpus
 room **enumeration** anywhere a D1 room-index binding is present); (b) unbounded **abuse rate** (no
@@ -133,7 +133,7 @@ without changing the hosted Cloudflare deployment contract or breaking anonymous
 - **CI/smoke coverage:** `scripts/smoke-selfhost.sh` now proves the default Docker image gates the room
   index while preserving anonymous create/read/delete. `scripts/check-helm-hardening.sh` asserts the
   Helm env var and the ingress/key warning; CI runs it in the Helm job.
-- **Packaging/docs:** README, CLAUDE.md, Helm chart metadata, and `package.json` now describe standalone
+- **Packaging/docs:** README, AGENTS.md, Helm chart metadata, and `package.json` now describe standalone
   workerd self-hosting and include the proxy recipe in packaged files.
 
 ### Verification run
@@ -188,7 +188,7 @@ should-fixes, all addressed before commit:
   via `flagEnabled` (boolean-string), so `'0'`/`'false'`/`'no'`/`'off'` read as gate-OFF, where the
   pre-2026-06 worker treated any non-empty string as gate-ON. Deliberate (closer to the legacy
   optimist boolean `--cors` flag); cannot affect any shipped config (hosted pins `'1'`; self-host
-  layers set the explicit flag). Recorded in `env.ts` and CLAUDE.md §13 Q11.
+  layers set the explicit flag). Recorded in `env.ts` and AGENTS.md §13 Q11.
 - **Proxy recipe corrections.** Added `proxy_read_timeout`/`proxy_send_timeout 1h` to the WS
   locations (nginx's 60s default severed idle spreadsheet sockets — no heartbeat on either end);
   split the single `limit_conn` zone into WS (100) vs HTTP (20) budgets so long-lived tabs behind
@@ -201,7 +201,7 @@ should-fixes, all addressed before commit:
   (README env table holds on the CLI path); README notes that `--var` forwarding makes values
   ps-visible locally — use `.dev.vars` for secrets on shared machines.
 - **Packaging/docs.** Helm chart version bumped to 0.2.0 (behaviour-changing defaults);
-  CLAUDE.md synced (Miniflare→workerd sweep completed in §1.1/§9/§13 Q5, new §13 Q11 decision row,
+  AGENTS.md synced (Miniflare→workerd sweep completed in §1.1/§9/§13 Q5, new §13 Q11 decision row,
   §14 session entry).
 
 ~~Deferred as optional follow-ups~~ All three landed later the same day alongside SH-8:
@@ -301,7 +301,7 @@ answer inside the Worker for hosted deploys. The 2026-06-11 pass shipped the ope
   is documented as LAN/dev only.
 - **(Optional, opt-in) In-Worker token bucket** — `src/lib/rate-limit.ts` + middleware in
   `src/index.ts`. Per-IP limiter keyed on `CF-Connecting-IP` / `X-Forwarded-For`, gated by
-  `ETHERCALC_RATELIMIT` (default off). Recorded in CLAUDE.md §13 Q7/Q11.
+  `ETHERCALC_RATELIMIT` (default off). Recorded in AGENTS.md §13 Q7/Q11.
 
 **Constraints.** §2.1 (don't gate anonymous writes themselves — limit *rate*, not *access*),
 §2.3 (if code, gates apply).
@@ -478,7 +478,7 @@ forwards it, but the worker reads `BASEPATH` (not `ETHERCALC_BASEPATH`). `config
   create→read→delete round-trip still works.
 - **Helm**: a `helm template` assertion (or `helm unittest`) that the default render sets
   `ETHERCALC_DISABLE_ROOM_INDEX` and (when added) the `securityContext`.
-- **CI nightly** (CLAUDE.md §11.2): consider a job that boots the self-host image and curls the
+- **CI nightly** (AGENTS.md §11.2): consider a job that boots the self-host image and curls the
   enumeration endpoints to keep the safe default from silently regressing.
 - Any **worker-code** task (SH-2 limiter, SH-6 header enforcement) → keep
   `bun run --cwd packages/worker test:coverage` at 100% and `bun run --cwd packages/worker mutation`

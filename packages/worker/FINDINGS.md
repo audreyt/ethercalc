@@ -2,7 +2,7 @@
 
 Append-only log. Each item is an observed legacy or runtime quirk worth
 documenting so a later phase agent doesn't re-discover it. Load-bearing
-items will be folded into `CLAUDE.md` §6/§7 during the next phase-
+items will be folded into `AGENTS.md` §6/§7 during the next phase-
 integration pass.
 
 ## Phase 4
@@ -107,7 +107,7 @@ view-only sentinel leaks into write operations.
 
 Single Durable Objects cannot enumerate their siblings. The legacy
 Redis server read `KEYS snapshot-*` and the `timestamps` hash directly;
-our target (per CLAUDE.md §10.2) uses a D1 `rooms(room, updated_at,
+our target (per AGENTS.md §10.2) uses a D1 `rooms(room, updated_at,
 cors_public)` mirror populated by the DO in `scheduled()`.
 
 Phase 5 ships the routes but returns empty state:

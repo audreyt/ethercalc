@@ -11,7 +11,7 @@ This branch is the TypeScript rewrite on the Cloudflare fullstack
 (Hono + Workers + Durable Objects + D1 + KV + R2). It deploys to
 Cloudflare via `wrangler deploy`, and **self-hosts anywhere via
 `docker compose up`** with no Cloudflare account required. See
-[CLAUDE.md](./CLAUDE.md) for agent context and
+[AGENTS.md](./AGENTS.md) for agent context and
 [docs.ethercalc.net](https://docs.ethercalc.net) for architecture.
 The full rewrite plan lives in
 [docs/historic/REWRITE_ULTRAPLAN.md](./docs/historic/REWRITE_ULTRAPLAN.md).
@@ -249,7 +249,7 @@ on-disk legacy dumps (the Sandstorm grain fallback format).
     bun run --cwd packages/worker dev          # wrangler dev --local
     bun run --cwd packages/worker test         # workers-pool + node tests
 
-See [CLAUDE.md](./CLAUDE.md) for the directory map, testing strategy
+See [AGENTS.md](./AGENTS.md) for the directory map, testing strategy
 (100% line/branch/function/statement coverage plus Stryker mutation
 gates on gated packages), and the remaining phase plan.
 
@@ -257,7 +257,7 @@ gates on gated packages), and the remaining phase plan.
 
 See [API.md](./API.md). The public HTTP surface is preserved
 byte-for-byte where deterministic, minus a small allow-list of
-sensible fixes documented in CLAUDE.md §6.1.
+sensible fixes documented in AGENTS.md §6.1.
 
 # Licensing
 

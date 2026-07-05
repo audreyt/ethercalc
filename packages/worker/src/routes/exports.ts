@@ -1,5 +1,5 @@
 /**
- * Export HTTP routes (Phase 8 — CLAUDE.md §6.1 and §8).
+ * Export HTTP routes (Phase 8 — AGENTS.md §6.1 and §8).
  *
  * Covers the read-only export surface from the inventory:
  *
@@ -283,7 +283,7 @@ async function dispatchExport(
  * still wins over `/_/:room` despite being registered after it.
  */
 export function registerExports(app: Hono<{ Bindings: Env }>): void {
-  // Multi-sheet export routes — CLAUDE.md §6.1. These MUST come before the
+  // Multi-sheet export routes — AGENTS.md §6.1. These MUST come before the
   // single-sheet routes so Hono's literal prefix matcher routes `/=:room`
   // before `/:room`. Each walks the TOC via DO-to-DO fetches and assembles
   // one workbook with formula-fidelity per sub-sheet.
@@ -300,7 +300,7 @@ export function registerExports(app: Hono<{ Bindings: Env }>): void {
 
   // Single-sheet routes. Registered under both `/_/:room/<fmt>` and
   // `/:room.<fmt>` aliases — legacy API surface preserved byte-for-byte
-  // (CLAUDE.md §6.1 table entries).
+  // (AGENTS.md §6.1 table entries).
   for (const [key, format] of Object.entries(FORMATS)) {
     // `/_/:room/<key>` form — explicit, no suffix-matching needed.
     //

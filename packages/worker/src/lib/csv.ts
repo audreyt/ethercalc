@@ -10,7 +10,7 @@
  *   first-iteration behavior).
  *
  * - `decodeDoubleEncoded` reproduces the `text/x-ethercalc-csv-double-encoded`
- *   round-trip (§7 item 4 in CLAUDE.md): UTF-8 decode → Latin-1 encode →
+ *   round-trip (§7 item 4 in AGENTS.md): UTF-8 decode → Latin-1 encode →
  *   UTF-8 decode. Legacy did this via `iconv-lite` (Node-only); we use the
  *   platform `TextDecoder('latin1')` / `TextEncoder` which is available in
  *   both workerd and Node 20+.

@@ -120,7 +120,7 @@ const ECELL_CAP = 256;
 /**
  * Maximum concurrent WebSocket connections accepted per room. Past this we
  * reject the upgrade — a coarse DoS backstop complementing the CF platform
- * layer (CLAUDE.md §13 Q7 keeps real rate limiting at the edge).
+ * layer (AGENTS.md §13 Q7 keeps real rate limiting at the edge).
  */
 const MAX_CONN = 128;
 
@@ -758,7 +758,7 @@ export class RoomDO implements DurableObject {
     //     write drains on the DO's background execution context.
     // At 1.8M rooms the second option alone cuts ~50 ms off the critical
     // path of each PUT, and the batched path cuts the D1 chokepoint by
-    // 100× (see CLAUDE.md §14 2026-04-21).
+    // 100× (see AGENTS.md §14 2026-04-21).
     if (!payload.skipIndex) {
       this.#state.waitUntil(this.#mirrorIndex(roomName, payload.updatedAt));
     }
@@ -1539,7 +1539,7 @@ export class RoomDO implements DurableObject {
   }
 
   /**
-   * Housekeeping alarm (CLAUDE.md §13 Q10). Fires roughly hourly while a
+   * Housekeeping alarm (AGENTS.md §13 Q10). Fires roughly hourly while a
    * room stays active. Two jobs:
    *   (a) Trim `chat:*` down to the most recent `CHAT_KEEP` entries — chat
    *       is mirrored to D1 beyond the DO lifetime, so the DO copy only

@@ -28,7 +28,7 @@
  *
  * This file is excluded from coverage for the same reason as
  * `src/index.ts` — exercised via the workerd integration pool which
- * istanbul can't instrument (CLAUDE.md §5.2). The pure-logic builders
+ * istanbul can't instrument (AGENTS.md §5.2). The pure-logic builders
  * (`manifest-appcache.ts`, `static-form.ts`, `room-entry.ts`) live in
  * `../handlers/` and carry 100% coverage.
  */

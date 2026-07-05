@@ -1,5 +1,5 @@
 # Legacy LiveScript/webpack build removed in Phase 12 sweep.
-# See CLAUDE.md §15 runbook and bin/ethercalc for local dev.
+# See AGENTS.md §15 runbook and bin/ethercalc for local dev.
 
 .PHONY: help dev test
 help:

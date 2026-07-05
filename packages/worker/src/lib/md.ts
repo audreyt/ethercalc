@@ -4,7 +4,7 @@
  * Decision (see FINDINGS in agent report): we produce a simple GFM table
  * rather than porting the legacy `j` library's `to_md`. Reasons:
  *
- *  1. `j` relies on Node `Buffer` + sync fs IO (§7 item 3 in CLAUDE.md) —
+ *  1. `j` relies on Node `Buffer` + sync fs IO (§7 item 3 in AGENTS.md) —
  *     bringing it into the Worker bundle would pull several deprecated
  *     dependencies and the nodejs_compat shims are subtly lossy for its
  *     ODS import path.

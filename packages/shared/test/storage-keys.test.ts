@@ -12,7 +12,7 @@ import {
 } from '../src/storage-keys.ts';
 
 describe('STORAGE_KEYS', () => {
-  it('exposes every key pattern from CLAUDE.md §3.3', () => {
+  it('exposes every key pattern from AGENTS.md §3.3', () => {
     expect(STORAGE_KEYS).toEqual({
       snapshot: 'snapshot',
       snapshotMeta: 'snapshot:meta',

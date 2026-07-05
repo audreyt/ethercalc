@@ -11,7 +11,7 @@ import {
 /**
  * Unit tests for src/lib/loadclipboard.ts. Every branch of every
  * helper is exercised. Istanbul 100% coverage gate applies via
- * vitest.node.config.ts (see CLAUDE.md section 5.1).
+ * vitest.node.config.ts (see AGENTS.md section 5.1).
  */
 
 describe('isLoadClipboard', () => {

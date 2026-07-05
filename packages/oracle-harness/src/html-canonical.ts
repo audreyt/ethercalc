@@ -6,7 +6,7 @@
  * insignificant whitespace) differ. This module parses via `linkedom`,
  * walks the DOM, drops noise, sorts attributes, and re-serializes.
  *
- * HTML rules (documented in CLAUDE.md §4.4):
+ * HTML rules (documented in AGENTS.md §4.4):
  *   • Whitespace-only text nodes are dropped. Text nodes with content
  *     are preserved with leading/trailing whitespace trimmed.
  *   • Comments are dropped entirely — both oracle and target may

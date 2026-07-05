@@ -6,7 +6,7 @@
  *   - room id differs between invocations (RNG is actually random)
  *
  * Identity-HMAC mode (no ETHERCALC_KEY set in dev) is in effect here, so
- * there is no `/edit` suffix on the Location URL — see CLAUDE.md §6.4.
+ * there is no `/edit` suffix on the Location URL — see AGENTS.md §6.4.
  */
 import { test, expect } from '../src/fixtures.ts';
 

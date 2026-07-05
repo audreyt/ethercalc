@@ -17,7 +17,7 @@ import {
  *
  * Phase 3 implements `exact`, `json`, `ignore`, and `scsave`. Phase 8a
  * adds `html` via linkedom plus `xlsx`/`ods` via fflate unzip + the
- * same linkedom XML canonicalizer. See §4.4 of CLAUDE.md and the drop
+ * same linkedom XML canonicalizer. See §4.4 of AGENTS.md and the drop
  * lists documented in `html-canonical.ts` and `zip-canonical.ts`.
  */
 export type MatcherResult = string | null;

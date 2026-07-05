@@ -9,7 +9,7 @@
  *
  * NOTE: the legacy `<script src="/static/socialcalc.js">` tag loads SocialCalc
  * onto `window` before our bundle runs. External integrations (Drupal
- * sheetnode, etc., see CLAUDE.md §7 item 10) reach into the same globals,
+ * sheetnode, etc., see AGENTS.md §7 item 10) reach into the same globals,
  * so widening a field here can be a breaking change.
  */
 
