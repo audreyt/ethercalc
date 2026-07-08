@@ -13,7 +13,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "typecheck": "tsgo --noEmit"
+    "typecheck": "tsc --noEmit",
   },
   "dependencies": {
     "@ethercalc/shared": "workspace:*",
