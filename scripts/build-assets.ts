@@ -88,18 +88,19 @@ export function patchSocialCalcRuntime(input: string): string {
     .replace('(function (root, factory) {\n    "use strict";', '(function (root, factory) {')
     .replace('function (window) {\n"use strict";', 'function (window) {');
 
+  const htmlSink =
+    "      displayvalue = (SocialCalc.sanitizeHTML ? SocialCalc.sanitizeHTML(displayvalue) : displayvalue);\n";
   const patched = withoutStrict.replace(
-    /(if \(valueformat=="text-html"\) \{ \/\/ HTML - output as it as is\n)\s*;\n/,
-    '$1      displayvalue = (SocialCalc.sanitizeHTML ? SocialCalc.sanitizeHTML(displayvalue) : displayvalue);\n',
+    /(if\s*\(\s*valueformat\s*==\s*["']text-html["']\s*\)\s*)\{[\s\S]*?\}/,
+    `$1{${"\n"}${htmlSink}    }`,
   );
 
-  if (!patched.includes('SocialCalc.sanitizeHTML(displayvalue)')) {
-    throw new Error('text-html sanitize hook not injected into socialcalc.js (upstream render sink changed?)');
+  if (!patched.includes("SocialCalc.sanitizeHTML(displayvalue)")) {
+    throw new Error("text-html sanitize hook not injected into socialcalc.js (upstream render sink changed?)");
   }
 
   return patched;
 }
-
 function destinationPath(plan: AssetBuildPlan, relativePath: string): string {
   return join(plan.destination, relativePath);
 }
