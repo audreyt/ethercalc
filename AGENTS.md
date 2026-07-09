@@ -1,6 +1,6 @@
 # EtherCalc — Agent context
 
-> **Status:** rewrite complete · **Owner:** Audrey Tang · doc updated 2026-06-19
+> **Status:** rewrite complete · **Owner:** Audrey Tang · doc updated 2026-07-10
 >
 > Slim agent doc. Rewrite ultraplan + per-session history archived in
 > [`docs/historic/REWRITE_ULTRAPLAN.md`](./docs/historic/REWRITE_ULTRAPLAN.md) (§14).
@@ -71,7 +71,7 @@ packages/socialcalc-headless/   SocialCalc in workerd
 packages/shared/          WS messages, storage keys
 packages/socketio-shim/   legacy /socket.io/* compat shim
 packages/client/          single-sheet UI
-packages/client-multi/    multi-sheet UI (React 18)
+packages/client-multi/    multi-sheet UI (React 19)
 packages/oracle-harness/  record/replay + canonicalizers
 packages/migrate/         Redis/filesystem → worker seed
 packages/cli/             ethercalc CLI (bin/ethercalc)
@@ -96,5 +96,5 @@ packages/e2e/             Playwright
 ## Session log
 
 Per-session history is in `docs/historic/REWRITE_ULTRAPLAN.md` §14 (append-only,
-newest last). Latest: candidate `0.20260612.5` — oracle-harness zip-canonical
-drift + mutation floor 83→80 (unreleased; no `packages/worker/src/` changes).
+newest last). Latest: candidate `0.20260710.0` — SocialCalc 3.0.8, consolidated
+release notes, Sandstorm version, staging validation, and npm install smoke.

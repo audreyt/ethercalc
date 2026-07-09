@@ -48,11 +48,13 @@ new_sqlite_classes = ["RoomDO"]
 BASEPATH = ""
 ETHERCALC_CORS = "1"
 
-# Staging overlay — nightly `wrangler deploy --dry-run --env staging` only.
-# No custom-domain routes; workers_dev stays off so the dry-run validates
-# the bundle without publishing a public hostname.
+# Staging overlay — isolated from production routes and cron triggers. It uses
+# its own D1 database and a temporary workers.dev hostname for release checks.
 [env.staging]
 name = "ethercalc-staging"
+workers_dev = true
+preview_urls = true
+routes = []
 
 [env.staging.vars]
 BASEPATH = ""
@@ -65,12 +67,15 @@ class_name = "RoomDO"
 [[env.staging.d1_databases]]
 binding = "DB"
 database_name = "ethercalc_rooms_staging"
-database_id = "00000000-0000-0000-0000-000000000001"
+database_id = "273b1db3-17bc-44dd-bbc2-62ce1727abde"
 migrations_dir = "./migrations"
 
 [env.staging.assets]
 directory = "../../assets"
 binding = "ASSETS"
+
+[env.staging.triggers]
+crons = []
 
 # Workers Assets binding (Phase 4.1/11). `directory` is resolved relative
 # to this wrangler.toml, so it points up two levels to the repo-root

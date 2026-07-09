@@ -10,55 +10,72 @@ EtherCalc bundles SocialCalc from the audreyt/socialcalc fork; see
 
 
 ==============================================================================
-0.20260619.0 — 2026-06-19
+0.20260710.0 — 2026-07-10
 ==============================================================================
 
-Audit verification and closure of residual import gaps:
-- Implemented single-sheet workbook import on PUT /_/:room + POST /_ (Gap A).
-- Implemented multi-sheet workbook import on PUT /=:room.xlsx and PUT /_/=:room/xlsx fanned out to sub-rooms (Gap B).
-- Added multi-import integration tests, pure transform unit tests, and oracle scenarios.
-- Integrated Biome linter with high-value rules and added a PR-CI gate step.
+First public EtherCalc release since 0.20260612.4; folds in the previously
+unpublished 0.20260612.5 and 0.20260619.0 candidates.
 
+SocialCalc 3.0.8
+- Bumped the browser and headless engine from socialcalc ^3.0.4 to ^3.0.8.
+- Formula-reference rewrites now preserve quoted, absolute, sheet-qualified,
+  and named references across copy/fill/insert/delete/replace operations;
+  overflow beyond column ZZ becomes #REF!, and N:T-style range endpoints parse
+  correctly.
+- Filldown/fillright preserve rectangular numeric series and interactive or
+  replayed ranges; structural-edit undo restores affected formulas and names.
+- Formula evaluation now preserves error types through arithmetic, concat, IF,
+  and lookup operations; fixes comparison precedence, multi-character criteria,
+  NPV/IRR period handling, currency defaults, and merged-cell format copying.
+- Upstream core sources moved to typechecked TypeScript while the distributed
+  runtime remains plain UMD JavaScript. EtherCalc's text-html sanitizer patch
+  now tolerates the 3.0.8 render-sink shape.
 
-==============================================================================
-Unreleased (candidate 0.20260612.5) — 2026-06-12
-==============================================================================
+Workbook import
+- Implemented single-sheet workbook import on PUT /_/:room and POST /_.
+- Implemented multi-sheet workbook import on PUT /=:room.xlsx and
+  PUT /_/=:room/xlsx, fanned out to sub-rooms.
+- Added multi-import integration tests, pure transform unit tests, and oracle
+  scenarios.
 
-Oracle-harness / CI hygiene since 0.20260612.4. No packages/worker/src/
-changes — self-host runtime and hosted worker behaviour unchanged; safe to
-skip a release unless you want a tagged oracle-replay milestone or Docker
-:latest refresh.
+Client and build tooling
+- Replaced the shell asset copier with a tested TypeScript builder while
+  preserving the curated assets/ contract and SocialCalc patches.
+- Upgraded the client stack to Vite 8 and React 19, docs to Astro 7, and the
+  Worker stack to Wrangler 4.107 / Hono 4.12.
+- Standardised Vitest/coverage on 4.1.9, upgraded Playwright to 1.61, moved the
+  repository to TypeScript 7.0.2, and added Biome as the PR lint gate.
 
-Oracle replay (nightly worker 27/27)
-- Relax xlsx/ods ZIP comparison for SheetJS vs legacy export layout drift:
-  [Content_Types].xml, ODS META-INF/manifest.xml, manifest.rdf,
-  xl/_rels/workbook.xml.rels, xl/workbook.xml, content.xml, and
-  xl/worksheets/sheet1.xml (shared-string vs inline str, ignoredErrors,
-  sheetPr, dimension refs).
-- Optional zip entries: xl/sharedStrings.xml, xl/metadata.xml, ODS meta.xml
-  and styles.xml may exist on only one side.
-- HTTP replay: bodyMatcher ignore skips reading response bodies (fixes misc
-  404 scenarios that returned zlib errors on empty bodies).
-- WS replay: command-echo matcher; inline bodyMatcher ignore on ws steps.
-- Nightly worker replay: wrangler --var ETHERCALC_DISABLE_ROOM_INDEX:0 for
-  room-index scenarios.
+Oracle replay / CI
+- Relaxed XLSX/ODS ZIP comparison for equivalent SheetJS-vs-legacy layouts,
+  optional metadata entries, shared versus inline strings, and worksheet
+  metadata drift.
+- Fixed ignored HTTP bodies, command-echo WebSocket matching, and room-index
+  replay configuration; retained 100% unit coverage on gated oracle sources.
+- Ratcheted the oracle-harness mutation break threshold from 83 to 80 after
+  recomputing the survivor profile.
 
-oracle-harness quality gates
-- Unit coverage 100% on gated sources (zip-canonical branch tests).
-- Mutation break ratcheted 83 → 80; Stryker excludes src/scenarios/** and
-  src/normalize.ts (declarative maps). low/high recomputed to 83 / 88.
-- docs/MUTATION_REPORT.md updated for the new floor and zip-canonical survivor
-  profile.
+Packaging
+- Made package.json's files allowlist authoritative for exclusions: npm packs
+  no longer include package tests, oracle/e2e suites, local .wrangler state,
+  mutation/coverage reports, caches, or generated dist source maps.
+- Published packages rebuild the curated client assets before packing, ship
+  those assets plus the Bun lockfile, and install production workspace
+  dependencies for the packaged CLI without retaining dev/test trees.
 
-Docs / agent context
-- CLAUDE.md slimmed; rewrite ultraplan archived to
-  docs/historic/REWRITE_ULTRAPLAN.md.
-- SANDSTORM.md: app-owner spk pack publish flow (not CI).
+Release verification
+- `bun run lint` completed with only the known broken server.js symlink
+  warning; `bun run typecheck` and the full `bun run test` suite passed,
+  including 14 Playwright end-to-end scenarios.
+- An isolated Cloudflare staging deployment used its own D1 database; 19 safe
+  HTTP routes matched production in status and content type, with only the
+  expected SocialCalc runtime body changing. A browser edit persisted through
+  the Worker and rehydrated after reload.
+- Worker deploy dry-runs and a fresh npm pack/install smoke completed; the
+  installed CLI served the landing page and static assets with all required
+  Worker/SocialCalc workspace dependencies present and forbidden local/test
+  paths absent.
 
-Verified
-- CI green on fb83e6b.
-- Nightly green on 621647a (run 27430497183): oracle replay, full mutation
-  matrix, staging dry-run.
 
 
 ==============================================================================

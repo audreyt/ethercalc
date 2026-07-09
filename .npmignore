@@ -1,9 +1,10 @@
-# npm publish excludes — the `files` allowlist in package.json already
-# narrows what ships; these patterns remove test / bench / internal-
-# tooling junk from the surviving tree so the tarball stays lean.
+# Compatibility mirror of the authoritative negative `files` entries in
+# package.json. npm 11 does not let a root .npmignore override directories
+# explicitly allowed by `files`, so release safety comes from package.json and
+# is verified with `npm pack --dry-run`.
 
-# Test suites and fixtures (every package keeps sources under src/ and
-# tests under test/ — we only want src/ in the npm tarball).
+# Test suites and fixtures (packages keep sources under src/ and tests under
+# test/ or tests/ — only runtime sources belong in the npm tarball).
 packages/*/test/
 packages/*/tests/
 packages/*/coverage/
@@ -19,8 +20,8 @@ packages/*/playwright.config.ts
 packages/oracle-harness/
 packages/e2e/
 
-# Build intermediates. `packages/client/dist` and `client-multi/dist`
-# are the exception — explicit allowlist entries above keep them.
+# Build intermediates. The runtime client dist bundles remain intentionally
+# published; package.json excludes only cache directories and dist source maps.
 packages/*/node_modules/
 packages/*/.wrangler/
 packages/*/dist/cache/
