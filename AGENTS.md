@@ -96,5 +96,5 @@ packages/e2e/             Playwright
 ## Session log
 
 Per-session history is in `docs/historic/REWRITE_ULTRAPLAN.md` §14 (append-only,
-newest last). Latest: candidate `0.20260710.0` — SocialCalc 3.0.8, consolidated
-release notes, Sandstorm version, staging validation, and npm install smoke.
+newest last). Latest: `0.20260710.0` released — npm/GitHub, multi-arch Docker,
+and Cloudflare production; production version `55505397-d579-4194-aa89-992243847310`.
