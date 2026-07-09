@@ -16,7 +16,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "socialcalc": "^3.0.4"
+    "socialcalc": "^3.0.8"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.18.0",
