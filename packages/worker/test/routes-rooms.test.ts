@@ -447,4 +447,57 @@ describe('Phase 5 routes — full round-trip', () => {
     expect(text).toContain('cell:A1');
     expect(text).toContain('cell:B1');
   });
+
+  it('POST /_/:room text/csv on a cold room persists TOC at row 2 (csv.json)', async () => {
+    const csv = '"#url","#title"\n"/toc-cold.1","Sheet1"\n';
+    const res = await request('POST', '/_/toc-cold-room', {
+      headers: { 'content-type': 'text/csv' },
+      body: csv,
+    });
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as { command: string[] };
+    expect(body.command).toHaveLength(2);
+    expect(body.command[0]).toMatch(/^loadclipboard /);
+    expect(body.command[1]).toBe('paste A2 all');
+
+    const cells = await request('GET', '/_/toc-cold-room/csv.json');
+    expect(cells.status).toBe(200);
+    const grid = (await cells.json()) as string[][];
+    // Row 1 is blank (cold-room paste A2), TOC starts at row 2.
+    expect(grid).toEqual([['', ''], ['#url', '#title'], ['/toc-cold.1', 'Sheet1']]);
+  });
+
+  it('POST /_/:room text/csv on a seeded room appends TOC below existing rows', async () => {
+    // Seed A1/B1 with existing content in a single batch POST.
+    const seed = await request('POST', '/_/toc-seeded-room', {
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        command: ['set A1 text t existing', 'set B1 text t row'],
+      }),
+    });
+    expect(seed.status).toBe(202);
+    // Guard: the seed is visible in csv.json before the CSV POST fires.
+    const seedGrid = (await (
+      await request('GET', '/_/toc-seeded-room/csv.json')
+    ).json()) as string[][];
+    expect(seedGrid).toEqual([['existing', 'row']]);
+
+    const csv = '"#url","#title"\n"/toc-seeded.1","Sheet1"\n';
+    const res = await request('POST', '/_/toc-seeded-room', {
+      headers: { 'content-type': 'text/csv' },
+      body: csv,
+    });
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as { command: string[] };
+    expect(body.command[1]).toBe('paste A2 all');
+
+    const cells = await request('GET', '/_/toc-seeded-room/csv.json');
+    expect(cells.status).toBe(200);
+    const grid = (await cells.json()) as string[][];
+    expect(grid).toEqual([
+      ['existing', 'row'],
+      ['#url', '#title'],
+      ['/toc-seeded.1', 'Sheet1'],
+    ]);
+  });
 });

@@ -7,6 +7,7 @@ import { encodeBase64 } from '../matchers.ts';
 export const ORACLE_PHASE3_TEMPLATE_ROOM = 'oracle-phase3-template';
 export const ORACLE_PHASE3_EXPORT_ROOM = 'oracle-phase3-export';
 export const ORACLE_PHASE3_WS_ROOM = 'oracle-phase3-ws';
+export const ORACLE_PHASE3_CSV_COLD_ROOM = 'oracle-phase3-csv-cold';
 
 /**
  * Minimal SocialCalc save with a single text cell — enough to exercise

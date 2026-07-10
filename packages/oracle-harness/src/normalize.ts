@@ -138,6 +138,14 @@ export const NORMALIZERS: Readonly<Record<string, NormalizeHook>> = {
   'rooms-index/get-roomtimes-empty': (scenario) => setBodyMatcher(scenario, 'roomtimes-empty'),
   'rooms-index/get-roomlinks-empty': (scenario) => setBodyMatcher(scenario, 'roomlinks-empty'),
   'room-crud/post-command': (scenario) => relaxContentLength(setBodyMatcher(scenario, 'command-echo')),
+  'room-crud/post-csv-toc-cold': (scenario) =>
+    relaxContentLength(setBodyMatcher(scenario, 'ignore')),
+  'room-crud/post-csv-toc': (scenario) =>
+    relaxContentLength(setBodyMatcher(scenario, 'ignore')),
+  'room-crud/get-csv-json-after-post': (scenario) =>
+    relaxContentLength(setBodyMatcher(scenario, 'json')),
+  'room-crud/delete-csv-toc-cold': (scenario) =>
+    relaxContentLength(setBodyMatcher(scenario, 'ignore')),
 };
 
 /** Look up a normalizer by scenario name; return `null` if none registered. */

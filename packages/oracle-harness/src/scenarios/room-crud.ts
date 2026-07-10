@@ -2,6 +2,7 @@ import type { HttpScenario } from '@ethercalc/shared/oracle-scenarios';
 
 import {
   MINIMAL_SCSAVE,
+  ORACLE_PHASE3_CSV_COLD_ROOM,
   ORACLE_PHASE3_EXPORT_ROOM,
   ORACLE_PHASE3_TEMPLATE_ROOM,
   requestBodyBase64,
@@ -54,6 +55,51 @@ export const POST_COMMAND: HttpScenario = {
   },
 };
 
+export const POST_CSV_TOC_COLD: HttpScenario = {
+  name: 'room-crud/post-csv-toc-cold',
+  kind: 'http',
+  request: {
+    method: 'POST',
+    path: `/_/${ORACLE_PHASE3_CSV_COLD_ROOM}`,
+    headers: { 'Content-Type': 'text/csv' },
+    bodyBase64: requestBodyBase64(
+      '"#url","#title"\n"/oracle-phase3-csv-cold.1","Sheet1"\n',
+    ),
+  },
+};
+
+
+export const POST_CSV_TOC: HttpScenario = {
+  name: 'room-crud/post-csv-toc',
+  kind: 'http',
+  request: {
+    method: 'POST',
+    path: `/_/${ORACLE_PHASE3_EXPORT_ROOM}`,
+    headers: { 'Content-Type': 'text/csv' },
+    bodyBase64: requestBodyBase64(
+      '"#url","#title"\n"/oracle-phase3-export.1","Sheet1"\n',
+    ),
+  },
+};
+
+export const GET_CSV_JSON_AFTER_POST: HttpScenario = {
+  name: 'room-crud/get-csv-json-after-post',
+  kind: 'http',
+  request: {
+    method: 'GET',
+    path: `/_/${ORACLE_PHASE3_EXPORT_ROOM}/csv.json`,
+  },
+};
+
+export const DELETE_CSV_TOC_COLD: HttpScenario = {
+  name: 'room-crud/delete-csv-toc-cold',
+  kind: 'http',
+  request: {
+    method: 'DELETE',
+    path: `/_/${ORACLE_PHASE3_CSV_COLD_ROOM}`,
+  },
+};
+
 export const DELETE_EXPORT_ROOM: HttpScenario = {
   name: 'room-crud/delete-export-room',
   kind: 'http',
@@ -78,9 +124,13 @@ export const ROOM_CRUD_SETUP_SCENARIOS: readonly HttpScenario[] = [
   PUT_EXPORT_ROOM,
 ];
 
-/** POST + DELETE — run after exports and form redirect. */
+/** POST CSV + GET + DELETE — run after exports and form redirect. */
 export const ROOM_CRUD_TEARDOWN_SCENARIOS: readonly HttpScenario[] = [
   POST_COMMAND,
+  POST_CSV_TOC_COLD,
+  POST_CSV_TOC,
+  GET_CSV_JSON_AFTER_POST,
+  DELETE_CSV_TOC_COLD,
   DELETE_EXPORT_ROOM,
   DELETE_TEMPLATE_ROOM,
 ];

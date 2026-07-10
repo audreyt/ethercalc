@@ -12,9 +12,24 @@ import {
   countWorksheetCells,
   enforceImportArchiveLimit,
   enforceImportLimit,
+  workbookToLoadClipboardCommand,
   xlsxToLoadClipboardCommands,
   xlsxToSave,
 } from '../src/lib/xlsx-import.ts';
+import { createSpreadsheet } from '@ethercalc/socialcalc-headless';
+import type { WorkBook } from '@e965/xlsx';
+
+function makeXlsx(
+  cells: Record<string, { t: string; v: unknown; f?: string }>,
+  ref: string,
+): Uint8Array {
+  const ws: Record<string, unknown> = { '!ref': ref, ...cells };
+  const book = XLSX.utils.book_new() as WorkBook;
+  XLSX.utils.book_append_sheet(book, ws, 'Sheet1');
+  return new Uint8Array(
+    XLSX.write(book, { bookType: 'xlsx', type: 'array' }) as ArrayBufferLike,
+  );
+}
 
 describe('cellToCommand', () => {
   it('formula cells emit `set <coord> formula <f>`', () => {
@@ -258,17 +273,6 @@ describe('xlsxToSave — roundtrip', () => {
 });
 
 describe('xlsxToLoadClipboardCommands', () => {
-  function makeXlsx(
-    cells: Record<string, { t: string; v: unknown; f?: string }>,
-    ref: string,
-  ): Uint8Array {
-    const ws: Record<string, unknown> = { '!ref': ref, ...cells };
-    const book = (XLSX as any).utils.book_new();
-    (XLSX as any).utils.book_append_sheet(book, ws, 'Sheet1');
-    return new Uint8Array(
-      (XLSX as any).write(book, { bookType: 'xlsx', type: 'array' }) as ArrayBufferLike,
-    );
-  }
 
   it('emits a loadclipboard + paste A1 all pair', () => {
     const bytes = makeXlsx(
@@ -341,6 +345,44 @@ describe('xlsxToLoadClipboardCommands', () => {
     expect(() => enforceImportLimit(MAX_IMPORT_CELLS + 1)).toThrow(
       ImportTooLargeError,
     );
+  });
+});
+
+describe('workbookToLoadClipboardCommand', () => {
+  it('emits a loadclipboard command from CSV bytes', () => {
+    const bytes = new TextEncoder().encode('"#url","#title"\n"/toc.1","Sheet1"\n');
+    const cmd = workbookToLoadClipboardCommand(bytes);
+    expect(cmd).not.toBeNull();
+    expect(cmd!).toMatch(/^loadclipboard /);
+  });
+
+  it('replaying loadclipboard + paste A2 all yields TOC cells at A2:B3', () => {
+    const bytes = new TextEncoder().encode('"#url","#title"\n"/toc.1","Sheet1"\n');
+    const cmd = workbookToLoadClipboardCommand(bytes);
+    expect(cmd).not.toBeNull();
+    const ss = createSpreadsheet();
+    ss.executeCommand(cmd!);
+    ss.executeCommand('paste A2 all');
+    const cells = ss.exportCells() as Record<string, { datavalue?: string }>;
+    expect(cells.A2?.datavalue).toBe('#url');
+    expect(cells.B2?.datavalue).toBe('#title');
+    expect(cells.A3?.datavalue).toBe('/toc.1');
+    expect(cells.B3?.datavalue).toBe('Sheet1');
+  });
+
+  it('returns null for zero-byte input (empty workbook)', () => {
+    expect(workbookToLoadClipboardCommand(new Uint8Array(0))).toBeNull();
+  });
+
+  it('xlsxToLoadClipboardCommands still retains [loadclipboard, paste A1 all]', () => {
+    const bytes = makeXlsx(
+      { A1: { t: 'n', v: 1 }, B1: { t: 's', v: 'hi' } },
+      'A1:B1',
+    );
+    const cmds = xlsxToLoadClipboardCommands(bytes);
+    expect(cmds).toHaveLength(2);
+    expect(cmds[0]).toMatch(/^loadclipboard /);
+    expect(cmds[1]).toBe('paste A1 all');
   });
 });
 
