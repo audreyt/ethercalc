@@ -9,6 +9,7 @@ coverage/
 *.log
 .claude/
 .clawpatch/
+.worktrees/
 # Local-only secrets for `wrangler dev` / Miniflare. See AGENTS.md §3.1.
 .dev.vars
 # Playwright e2e outputs
