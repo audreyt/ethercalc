@@ -138,7 +138,13 @@ export function installCallbacks(
   SocialCalc.ScheduleSheetCommands = (sheet, cmdstr, saveundo, isRemote) => {
     let cmd = cmdstr.replace(/\n\n+/g, '\n');
     if (!/\S/.test(cmd)) return;
-    if (!isRemote && cmd !== 'redisplay' && cmd !== 'recalc') {
+    const isLocalMutation =
+      !isRemote && cmd !== 'redisplay' && cmd !== 'recalc';
+    // A viewer may still receive remote snapshot/log commands, but it must
+    // never apply a local command optimistically: the server would reject
+    // it and leave the browser's SocialCalc model divergent from storage.
+    if (isLocalMutation && SocialCalc._view) return;
+    if (isLocalMutation) {
       // Multi-sheet rewrite of `$Title.A1` → `"index.1"!A1`.  Matches
       // `player-broadcast.ls:58`.
       const multi = (opts.win as { __MULTI__?: { rows?: Array<{ link: string; title: string }> } } | undefined)

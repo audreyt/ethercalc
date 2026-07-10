@@ -280,6 +280,63 @@ export function registerRoomCatchAll(app: Hono<EtherCalcHonoEnv>): void {
   app.get('/:room', async (c) => {
     const roomParam = c.req.param('room') ?? '';
     const authQuery = c.req.query('auth');
+    // `view=1` is terminal: it initializes SpreadsheetViewer, so
+    // re-probing a private room here would redirect `/:room/view` back to
+    // itself forever. App mode remains capability-checked because its
+    // form-data surface is intentionally interactive.
+    const viewerMode = c.req.query('view') !== undefined;
+    if (!viewerMode) {
+      const principal = await getSessionPrincipal(c);
+      const accessRes = await doFetch(c.env, roomParam, '/_do/access', {}, principal);
+      const access: unknown = accessRes.ok
+        ? await accessRes.json().catch(() => null)
+        : null;
+      let redirectMode: 'edit' | 'view' | null = null;
+      if (
+        access !== null &&
+        typeof access === 'object' &&
+        'isPrivate' in access &&
+        'canRead' in access &&
+        'canWrite' in access
+      ) {
+        if (
+          access.isPrivate === true &&
+          c.req.query('app') !== undefined
+        ) {
+          // `submitform` writes through a `<room>_formdata` sibling. Phase A
+          // creates ACL metadata only for the main room, so private app mode
+          // would declassify submissions into its public sibling.
+          redirectMode = 'view';
+        } else if (
+          access.isPrivate === true &&
+          access.canRead === true &&
+          access.canWrite === true &&
+          (authQuery === undefined || authQuery === '' || authQuery === '0')
+        ) {
+          // A private owner must get a fresh non-zero legacy token. `auth=0`
+          // is an absolute WS write veto even when the passkey ACL permits
+          // writes, so serving the old bare entry would create another
+          // divergent editor.
+          redirectMode = 'edit';
+        } else if (access.canRead !== true || access.canWrite !== true) {
+          redirectMode = 'view';
+        }
+      }
+      if (redirectMode !== null) {
+        const location =
+          `${c.env.BASEPATH ?? ''}/${encodeRoom(roomParam)}/${redirectMode}`;
+        const body = `Found. Redirecting to ${location}`;
+        return new Response(body, {
+          status: 302,
+          headers: {
+            Location: location,
+            'Content-Type': 'text/plain; charset=UTF-8',
+            'Content-Length': String(body.length),
+            Vary: 'Accept',
+          },
+        });
+      }
+    }
     const key = c.env.ETHERCALC_KEY;
     const opts = {
       basepath: c.env.BASEPATH ?? '',

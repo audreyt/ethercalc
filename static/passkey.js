@@ -145,14 +145,17 @@ export async function logout() {
   await postJson('/_auth/logout', {});
 }
 
+function roomEditLocation(room) {
+  return `/${encodeURIComponent(room)}/edit`;
+}
+
 export async function newPrivateSheet() {
   const res = await postJson('/_/private', {});
   if (res.status === 401) throw new Error('sign in first');
   if (!res.ok) throw new Error('could not create a private sheet');
   const { room } = await res.json();
-  window.location.assign(`/${encodeURIComponent(room)}/edit`);
+  window.location.assign(roomEditLocation(room));
 }
-
 export async function copyToPrivate(room) {
   const res = await fetch(`/_from/${encodeURIComponent(room)}/private`, {
     method: 'POST',
@@ -230,6 +233,10 @@ async function mount() {
     bar.appendChild(
       button('Sign in with Passkey', async () => {
         await signIn();
+        if (room) {
+          window.location.assign(roomEditLocation(room));
+          return;
+        }
         window.location.reload();
       }),
     );
@@ -258,7 +265,7 @@ async function mount() {
           note.appendChild(
             button('Sign in with Passkey', async () => {
               await signIn();
-              window.location.reload();
+              window.location.assign(roomEditLocation(room));
             }),
           );
         }

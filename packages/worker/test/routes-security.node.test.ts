@@ -274,6 +274,66 @@ describe('/:template/form clone — verdict propagation', () => {
   });
 });
 
+describe('private owner entry with ETHERCALC_KEY', () => {
+  it('routes a verified owner without a usable legacy auth token through /edit', async () => {
+    const { env, calls } = makeFakeRoomNamespace((call) => {
+      if (call.url.includes('/_do/access')) {
+        return Response.json({ isPrivate: true, canRead: true, canWrite: true });
+      }
+      return new Response('unexpected', { status: 500 });
+    });
+    const app = buildApp();
+
+    const res = await app.fetch(
+      new Request('https://t.test/private-owner', {
+        headers: { Cookie: AUTH_COOKIE },
+        redirect: 'manual',
+      }),
+      {
+        ...withAuth(env),
+        ETHERCALC_KEY: 'test-key',
+      } as never,
+    );
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/private-owner/edit');
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toBe('https://do.local/_do/access?name=private-owner');
+    expect(calls[0]!.uid).toBe(AUTH_UID);
+
+    const edit = await app.fetch(
+      new Request('https://t.test/private-owner/edit', {
+        headers: { Cookie: AUTH_COOKIE },
+        redirect: 'manual',
+      }),
+      {
+        ...withAuth(env),
+        ETHERCALC_KEY: 'test-key',
+      } as never,
+    );
+    expect(edit.status).toBe(302);
+    expect(edit.headers.get('location')).toMatch(
+      /^\/private-owner\?auth=(?!0$).+/,
+    );
+    expect(calls).toHaveLength(2);
+    expect(calls[1]!.url).toBe('https://do.local/_do/access?name=private-owner');
+    expect(calls[1]!.uid).toBe(AUTH_UID);
+
+    const appMode = await app.fetch(
+      new Request('https://t.test/private-owner?auth=nonzero&app=1', {
+        headers: { Cookie: AUTH_COOKIE },
+        redirect: 'manual',
+      }),
+      {
+        ...withAuth(env),
+        ETHERCALC_KEY: 'test-key',
+      } as never,
+    );
+    expect(appMode.status).toBe(302);
+    expect(appMode.headers.get('location')).toBe('/private-owner/view');
+  });
+});
+
 describe('/_ws/:room upgrade — verified identity only', () => {
   it('never copies an inbound X-EC-Uid onto the DO upgrade request', async () => {
     const { env, calls } = makeFakeRoomNamespace(() => new Response('ws-ok'));

@@ -721,6 +721,49 @@ describe('RoomDO (unit, direct construction)', () => {
     expect(record.map.get(STORAGE_KEYS.metaGroup)).toBe('group-private');
   });
 
+  it('reports the exact read and write capabilities for private room entry', async () => {
+    markPrivate(record);
+
+    const access = async (uid?: string): Promise<Response> =>
+      room.fetch(
+        new Request('https://do/_do/access', {
+          ...(uid === undefined ? {} : { headers: { 'X-EC-Uid': uid } }),
+        }),
+      );
+
+    await expect(access()).resolves.toMatchObject({ status: 200 });
+    await expect(access('uid-owner')).resolves.toMatchObject({ status: 200 });
+    await expect(access('uid-reader')).resolves.toMatchObject({ status: 200 });
+    await expect(access('uid-writer')).resolves.toMatchObject({ status: 200 });
+    await expect(access('uid-outsider')).resolves.toMatchObject({ status: 200 });
+
+    await expect((await access()).json()).resolves.toEqual({
+      isPrivate: true,
+      canRead: false,
+      canWrite: false,
+    });
+    await expect((await access('uid-owner')).json()).resolves.toEqual({
+      isPrivate: true,
+      canRead: true,
+      canWrite: true,
+    });
+    await expect((await access('uid-reader')).json()).resolves.toEqual({
+      isPrivate: true,
+      canRead: true,
+      canWrite: false,
+    });
+    await expect((await access('uid-writer')).json()).resolves.toEqual({
+      isPrivate: true,
+      canRead: false,
+      canWrite: true,
+    });
+    await expect((await access('uid-outsider')).json()).resolves.toEqual({
+      isPrivate: true,
+      canRead: false,
+      canWrite: false,
+    });
+  });
+
   it('DELETE /_do/all by the owner leaves a private tombstone', async () => {
     markPrivate(record);
     record.map.set(STORAGE_KEYS.snapshot, 'private-save');

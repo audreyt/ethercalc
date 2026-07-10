@@ -297,11 +297,25 @@ export class RoomDO implements DurableObject {
     // its opaque id. `/_do/ping` already used the same param.
     const roomName = url.searchParams.get('name');
     if (roomName) this.#ownName = roomName;
-    const purpose = request.method === 'GET' ? 'read' : 'write';
-    if (!(await this.#isAuthorized(request, purpose))) {
-      return plainResponse('Forbidden', 403);
+    // Worker-internal capability and operator paths bypass the generic ACL
+    // gate. None serve sheet content: `/_do/access` returns only a
+    // DO-owned read/write verdict so the Worker can select the safe viewer
+    // surface; the PITR paths remain deployment-operator controlled.
+    const isGateExemptPath =
+      path === '/_do/access' ||
+      path === '/_do/ping' ||
+      path === '/_do/pitr-restore' ||
+      path === '/_do/pitr-touch';
+    if (!isGateExemptPath) {
+      const purpose = request.method === 'GET' ? 'read' : 'write';
+      if (!(await this.#isAuthorized(request, purpose))) {
+        return plainResponse('Forbidden', 403);
+      }
     }
 
+    if (path === '/_do/access' && request.method === 'GET') {
+      return this.#getAccessVerdict(request);
+    }
     if (path === '/_do/ping') {
       return jsonResponse({
         id: this.#state.id.toString(),
@@ -433,6 +447,57 @@ export class RoomDO implements DurableObject {
 
   // ─── Handlers ──────────────────────────────────────────────────────────
 
+  async #isAuthorized(
+    request: Request,
+    purpose: 'read' | 'write',
+  ): Promise<boolean> {
+    const { access, acl } = await this.#getAccessMeta();
+    const uid = request.headers.get('X-EC-Uid');
+    return authorizeRoom(purpose, uid === null ? null : { uid }, access, acl);
+  }
+
+  async #getAccessVerdict(request: Request): Promise<Response> {
+    const { access, acl } = await this.#getAccessMeta();
+    const uid = request.headers.get('X-EC-Uid');
+    const principal = uid === null ? null : { uid };
+    return jsonResponse({
+      isPrivate: access === 'private',
+      canRead: authorizeRoom('read', principal, access, acl),
+      canWrite: authorizeRoom('write', principal, access, acl),
+    });
+  }
+
+  /**
+   * Memoized access-plane read. Both keys land in one batched get; the
+   * memo lives until `#resetVolatile` (wipes, seeds, init-private).
+   */
+  async #getAccessMeta(): Promise<{ access: unknown; acl: unknown }> {
+    if (this.#accessMeta) return this.#accessMeta;
+    const stored = await this.#state.storage.get<unknown>([
+      STORAGE_KEYS.metaAccess,
+      STORAGE_KEYS.metaAcl,
+    ]);
+    const meta = {
+      access: stored.get(STORAGE_KEYS.metaAccess),
+      acl: stored.get(STORAGE_KEYS.metaAcl),
+    };
+    this.#accessMeta = meta;
+    return meta;
+  }
+
+  async #readAccessEntries(): Promise<Record<string, unknown>> {
+    const keys = [
+      STORAGE_KEYS.metaAccess,
+      STORAGE_KEYS.metaAcl,
+      STORAGE_KEYS.metaGroup,
+    ];
+    const stored = await this.#state.storage.get<unknown>(keys);
+    const entries: Record<string, unknown> = {};
+    for (const key of keys) {
+      if (stored.has(key)) entries[key] = stored.get(key);
+    }
+    return entries;
+  }
   /**
    * Resolve or schedule a SQLite DO PITR bookmark. A successful restore is
    * applied only after this instance restarts, so return the target + undo
@@ -511,46 +576,6 @@ export class RoomDO implements DurableObject {
     await this.#mirrorIndex(roomName, updatedAt);
     await this.#armAlarm();
     return jsonResponse({ exists: true, updatedAt });
-  async #isAuthorized(
-    request: Request,
-    purpose: 'read' | 'write',
-  ): Promise<boolean> {
-    const { access, acl } = await this.#getAccessMeta();
-    const uid = request.headers.get('X-EC-Uid');
-    return authorizeRoom(purpose, uid === null ? null : { uid }, access, acl);
-  }
-
-  /**
-   * Memoized access-plane read. Both keys land in one batched get; the
-   * memo lives until `#resetVolatile` (wipes, seeds, init-private).
-   */
-  async #getAccessMeta(): Promise<{ access: unknown; acl: unknown }> {
-    if (this.#accessMeta) return this.#accessMeta;
-    const stored = await this.#state.storage.get<unknown>([
-      STORAGE_KEYS.metaAccess,
-      STORAGE_KEYS.metaAcl,
-    ]);
-    const meta = {
-      access: stored.get(STORAGE_KEYS.metaAccess),
-      acl: stored.get(STORAGE_KEYS.metaAcl),
-    };
-    this.#accessMeta = meta;
-    return meta;
-  }
-
-  async #readAccessEntries(): Promise<Record<string, unknown>> {
-    const keys = [
-      STORAGE_KEYS.metaAccess,
-      STORAGE_KEYS.metaAcl,
-      STORAGE_KEYS.metaGroup,
-    ];
-    const stored = await this.#state.storage.get<unknown>(keys);
-    const entries: Record<string, unknown> = {};
-    for (const key of keys) {
-      if (stored.has(key)) entries[key] = stored.get(key);
-    }
-    return entries;
-  }
   }
 
   async #getSnapshot(): Promise<Response> {

@@ -14,6 +14,9 @@ import type { Context, Hono } from 'hono';
 import { buildBlockedPathResponse } from '../handlers/blocked-paths.ts';
 import { buildNewRoomRedirect } from '../handlers/new-room.ts';
 import { buildRoomRedirect, type RoomMode } from '../handlers/room-redirects.ts';
+import { doFetch } from '../lib/do-dispatch.ts';
+import { encodeRoom } from '../lib/room-name.ts';
+import { getSessionPrincipal } from '../lib/session-middleware.ts';
 import type { EtherCalcHonoEnv } from '../env.ts';
 
 type AppContext = Context<EtherCalcHonoEnv>;
@@ -74,6 +77,24 @@ export function registerStateless(app: Hono<EtherCalcHonoEnv>): void {
   // URL-decoded by Hono; our `buildRoomRedirect` re-encodes via encodeURI.
   const handleRoomRedirect = (mode: RoomMode) => async (c: AppContext): Promise<Response> => {
     const room = c.req.param('room') ?? '';
+    if (mode === 'edit') {
+      const principal = await getSessionPrincipal(c);
+      const accessRes = await doFetch(c.env, room, '/_do/access', {}, principal);
+      const access: unknown = accessRes.ok
+        ? await accessRes.json().catch(() => null)
+        : null;
+      if (
+        access !== null &&
+        typeof access === 'object' &&
+        'canRead' in access &&
+        'canWrite' in access &&
+        (access.canRead !== true || access.canWrite !== true)
+      ) {
+        return expressRedirect(
+          `${c.env.BASEPATH ?? ''}/${encodeRoom(room)}/view`,
+        );
+      }
+    }
     // `exactOptionalPropertyTypes` forces us to omit `key` when it's
     // undefined (empty string is fine — computeAuth treats it as unset).
     const key = c.env.ETHERCALC_KEY;
