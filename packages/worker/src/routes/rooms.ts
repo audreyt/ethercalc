@@ -371,6 +371,24 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
     ) {
       return sizedResponse('Invalid PITR response', 502, TEXT_CT);
     }
+    const acceptedBookmark = restoreRecord.bookmark;
+    const undoBookmark = restoreRecord.undoBookmark;
+    const acceptingNonce = restoreRecord.nonce;
+    // From here the DO has already scheduled the rewind and armed its
+    // restart, so a failure response must never strand the operator
+    // without the reverse handle: every post-acceptance error carries
+    // `accepted: true` plus both bookmarks as JSON.
+    const acceptedFailure = (error: string, status: 500 | 502): Response =>
+      sizedResponse(
+        JSON.stringify({
+          accepted: true,
+          bookmark: acceptedBookmark,
+          undoBookmark,
+          error,
+        }),
+        status,
+        JSON_CT,
+      );
 
     let restarted = false;
     for (let attempt = 0; attempt < PITR_POLL_ATTEMPTS; attempt += 1) {
@@ -385,7 +403,7 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
         const pingBody = (await pingResponse.json()) as { nonce?: unknown };
         if (
           typeof pingBody.nonce === 'string' &&
-          pingBody.nonce !== restoreRecord.nonce
+          pingBody.nonce !== acceptingNonce
         ) {
           restarted = true;
           break;
@@ -395,11 +413,7 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
       }
     }
     if (!restarted) {
-      return sizedResponse(
-        'PITR restore did not restart the room',
-        500,
-        TEXT_CT,
-      );
+      return acceptedFailure('PITR restore did not restart the room', 500);
     }
 
     let touchResponse: Response;
@@ -408,28 +422,28 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
         method: 'POST',
       });
     } catch {
-      return sizedResponse('PITR restore finalization failed', 502, TEXT_CT);
+      return acceptedFailure('PITR restore finalization failed', 502);
     }
     if (!touchResponse.ok) {
-      return sizedResponse('PITR restore finalization failed', 502, TEXT_CT);
+      return acceptedFailure('PITR restore finalization failed', 502);
     }
 
     let touchBody: unknown;
     try {
       touchBody = await touchResponse.json();
     } catch {
-      return sizedResponse('PITR restore finalization failed', 502, TEXT_CT);
+      return acceptedFailure('PITR restore finalization failed', 502);
     }
     if (touchBody === null || typeof touchBody !== 'object') {
-      return sizedResponse('PITR restore finalization failed', 502, TEXT_CT);
+      return acceptedFailure('PITR restore finalization failed', 502);
     }
     const touchRecord = touchBody as Record<string, unknown>;
     if (touchRecord.exists === false) {
       return sizedResponse(
         JSON.stringify({
           restored: true,
-          bookmark: restoreRecord.bookmark,
-          undoBookmark: restoreRecord.undoBookmark,
+          bookmark: acceptedBookmark,
+          undoBookmark,
           exists: false,
         }),
         200,
@@ -441,13 +455,13 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
       typeof touchRecord.updatedAt !== 'number' ||
       !Number.isFinite(touchRecord.updatedAt)
     ) {
-      return sizedResponse('PITR restore finalization failed', 502, TEXT_CT);
+      return acceptedFailure('PITR restore finalization failed', 502);
     }
     return sizedResponse(
       JSON.stringify({
         restored: true,
-        bookmark: restoreRecord.bookmark,
-        undoBookmark: restoreRecord.undoBookmark,
+        bookmark: acceptedBookmark,
+        undoBookmark,
         exists: true,
         updatedAt: touchRecord.updatedAt,
       }),

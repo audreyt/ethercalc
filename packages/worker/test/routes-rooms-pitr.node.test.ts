@@ -260,7 +260,7 @@ describe('POST /_/:room/pitr-restore', () => {
     });
   });
 
-  it('returns 502 for malformed acceptance or failed finalization responses', async () => {
+  it('keeps the undo bookmark on failed finalization after acceptance', async () => {
     const malformed = makeFakeRoomNamespace(() => jsonResponse({ bookmark: 'target' }));
     const app = buildApp();
     const malformedRes = await app.fetch(
@@ -282,7 +282,15 @@ describe('POST /_/:room/pitr-restore', () => {
       failedTouch.env as never,
     );
     expect(failedTouchRes.status).toBe(502);
-    expect(await failedTouchRes.text()).toBe('PITR restore finalization failed');
+    expect(failedTouchRes.headers.get('content-type')).toBe(
+      'application/json; charset=utf-8',
+    );
+    expect(await failedTouchRes.json()).toEqual({
+      accepted: true,
+      bookmark: 'target',
+      undoBookmark: 'undo',
+      error: 'PITR restore finalization failed',
+    });
   });
 
   it('returns 500 without finalizing when the instance nonce never changes', async () => {
@@ -308,7 +316,15 @@ describe('POST /_/:room/pitr-restore', () => {
     await vi.runAllTimersAsync();
     const res = await responsePromise;
     expect(res.status).toBe(500);
-    expect(await res.text()).toBe('PITR restore did not restart the room');
+    expect(res.headers.get('content-type')).toBe(
+      'application/json; charset=utf-8',
+    );
+    expect(await res.json()).toEqual({
+      accepted: true,
+      bookmark: 'target',
+      undoBookmark: 'undo',
+      error: 'PITR restore did not restart the room',
+    });
     expect(calls.some((call) => call.url.includes('/_do/pitr-touch'))).toBe(false);
   });
 });
