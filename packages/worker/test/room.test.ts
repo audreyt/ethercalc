@@ -1,10 +1,8 @@
 import { env, runInDurableObject } from 'cloudflare:test';
-import { describe, it, expect } from 'vitest';
-
 import { logKey } from '@ethercalc/shared/storage-keys';
-
-import { RoomDO } from '../src/room.ts';
+import { describe, expect, it } from 'vitest';
 import type { Env } from '../src/env.ts';
+import { RoomDO } from '../src/room.ts';
 
 /**
  * RoomDO integration tests — exercise the code through the real DO namespace
@@ -26,6 +24,22 @@ describe('RoomDO (integration via DO namespace)', () => {
     expect(res.status).toBe(200);
     expect(body.name).toBe('alpha');
     expect(body.id).toBe(id.toString());
+  });
+
+  it('reports timestamp and bookmark PITR dry-runs unavailable in local workerd', async () => {
+    expect(typeof Promise.withResolvers).toBe('function');
+    const { stub } = getStub('pitr-local-unavailable');
+    for (const body of [
+      { at: 1, dryRun: true },
+      { bookmark: 'target', dryRun: true },
+    ]) {
+      const res = await stub.fetch('https://do/_do/pitr-restore', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+      expect(res.status).toBe(501);
+      expect(await res.text()).toBe('PITR is unavailable on this deployment');
+    }
   });
 
   it('returns 501 for unknown DO paths via runInDurableObject', async () => {

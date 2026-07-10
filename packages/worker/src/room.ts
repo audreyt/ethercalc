@@ -25,37 +25,42 @@
 import type { ServerMessage } from '@ethercalc/shared/messages';
 import { encodeMessage, parseClientMessage } from '@ethercalc/shared/messages';
 import {
-  STORAGE_KEYS,
   auditKey,
   chatKey,
   ecellKey,
   logKey,
+  STORAGE_KEYS,
   snapshotChunkKey,
 } from '@ethercalc/shared/storage-keys';
 import {
-  HeadlessSpreadsheet,
   createSpreadsheet,
+  HeadlessSpreadsheet,
 } from '@ethercalc/socialcalc-headless';
-
+import type { Env } from './env.ts';
 import { buildEmailSender } from './handlers/cron.ts';
 import { parseSeedPayload } from './handlers/migrate.ts';
 import { verifyAuth } from './lib/auth.ts';
+import { hydrateCrossSheetRefs } from './lib/cross-sheet.ts';
+import { neutralizeCSVDocument } from './lib/csv-encode.ts';
+import { parseCSV } from './lib/csv-parse.ts';
+import { parseSendemail } from './lib/email.ts';
+import { formdataSiblingRoom } from './lib/formdata-sibling.ts';
+import { csvToMarkdown } from './lib/md.ts';
+import {
+  bookmarkStorage,
+  isPitrUnavailableError,
+  parsePitrRequest,
+} from './lib/pitr.ts';
+import { encodeRoom } from './lib/room-name.ts';
+import {
+  deleteRoomFromD1,
+  mirrorRoomToD1,
+} from './lib/rooms-index.ts';
 import {
   isSandstormEnforced,
   sandstormAllowsWsWrite,
   sandstormCanModify,
 } from './lib/sandstorm-access.ts';
-import { neutralizeCSVDocument } from './lib/csv-encode.ts';
-import { parseCSV } from './lib/csv-parse.ts';
-import { parseSendemail } from './lib/email.ts';
-import { csvToMarkdown } from './lib/md.ts';
-import { formdataSiblingRoom } from './lib/formdata-sibling.ts';
-import { encodeRoom } from './lib/room-name.ts';
-import { hydrateCrossSheetRefs } from './lib/cross-sheet.ts';
-import {
-  deleteRoomFromD1,
-  mirrorRoomToD1,
-} from './lib/rooms-index.ts';
 import {
   appendAuditRows,
   appendChatRows,
@@ -67,8 +72,8 @@ import {
   hasSnapshot,
   readSnapshot,
   readSnapshotMeta,
-  snapshotEntries,
   type SnapshotMeta,
+  snapshotEntries,
 } from './lib/snapshot-storage.ts';
 import {
   dispatchWsMessage,
@@ -82,7 +87,6 @@ import {
   type BinaryFormat,
   sheetViewToBinaryWorkbook,
 } from './lib/xlsx-build.ts';
-import type { Env } from './env.ts';
 
 /** Shape returned from `GET /_do/log`. */
 export interface RoomLogSnapshot {
@@ -156,6 +160,13 @@ const AUDIT_KEEP = 1024;
  */
 const ALARM_INTERVAL_MS = 60 * 60 * 1000;
 
+/**
+ * Give the accepted restore response time to cross the DO boundary before
+ * aborting the instance that produced it. The exact delay is not semantic.
+ */
+// Stryker disable next-line all : any short positive delay has the same contract
+const PITR_ABORT_DELAY_MS = 100;
+
 function plainResponse(body: string, status = 200): Response {
   return new Response(body, {
     status,
@@ -221,6 +232,7 @@ function parseExpireMs(raw: string | undefined): number | null {
 export class RoomDO implements DurableObject {
   readonly #state: DurableObjectState;
   readonly #env: Env;
+  readonly #instanceNonce = crypto.randomUUID();
 
   #ss: HeadlessSpreadsheet | null = null;
   #nextLogSeq: number | null = null;
@@ -262,7 +274,14 @@ export class RoomDO implements DurableObject {
       return jsonResponse({
         id: this.#state.id.toString(),
         name: roomName,
+        nonce: this.#instanceNonce,
       });
+    }
+    if (path === '/_do/pitr-restore' && request.method === 'POST') {
+      return this.#postPitrRestore(request);
+    }
+    if (path === '/_do/pitr-touch' && request.method === 'POST') {
+      return this.#postPitrTouch(roomName);
     }
     if (path === '/_do/snapshot') {
       if (request.method === 'GET') return this.#getSnapshot();
@@ -371,6 +390,86 @@ export class RoomDO implements DurableObject {
   }
 
   // ─── Handlers ──────────────────────────────────────────────────────────
+
+  /**
+   * Resolve or schedule a SQLite DO PITR bookmark. A successful restore is
+   * applied only after this instance restarts, so return the target + undo
+   * bookmark first and abort on a short timer.
+   */
+  async #postPitrRestore(request: Request): Promise<Response> {
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return plainResponse('body must be valid JSON', 400);
+    }
+    const parsed = parsePitrRequest(body);
+    if (!parsed.ok) return plainResponse(parsed.error, 400);
+
+    const storage = bookmarkStorage(this.#state.storage);
+    if (!storage) {
+      return plainResponse('PITR is unavailable on this deployment', 501);
+    }
+
+    let bookmark: string;
+    try {
+      if ('at' in parsed.value) {
+        bookmark = await storage.getBookmarkForTime(parsed.value.at);
+      } else {
+        bookmark = parsed.value.bookmark;
+        if (parsed.value.dryRun) await storage.getBookmarkForTime(Date.now());
+      }
+    } catch (error) {
+      if (isPitrUnavailableError(error)) {
+        return plainResponse('PITR is unavailable on this deployment', 501);
+      }
+      return plainResponse('PITR target is unavailable', 400);
+    }
+
+    if (parsed.value.dryRun) {
+      return jsonResponse({ dryRun: true, bookmark });
+    }
+
+    let undoBookmark: string;
+    try {
+      undoBookmark = await storage.onNextSessionRestoreBookmark(bookmark);
+    } catch (error) {
+      if (isPitrUnavailableError(error)) {
+        return plainResponse('PITR is unavailable on this deployment', 501);
+      }
+      return plainResponse('PITR target is unavailable', 400);
+    }
+
+    const { promise, resolve } = Promise.withResolvers<void>();
+    this.#state.waitUntil(promise);
+    setTimeout(() => {
+      resolve();
+      this.#state.abort('PITR restore scheduled');
+    }, PITR_ABORT_DELAY_MS);
+    return jsonResponse({
+      bookmark,
+      undoBookmark,
+      nonce: this.#instanceNonce,
+    });
+  }
+
+  /**
+   * Rebuild metadata that lives outside the restored timeline. This endpoint
+   * is called only after the public route observes a replacement instance.
+   */
+  async #postPitrTouch(roomName: string | null): Promise<Response> {
+    if (!(await hasSnapshot(this.#state.storage))) {
+      await this.#state.storage.deleteAlarm();
+      this.#alarmArmed = false;
+      await this.#deleteIndex(roomName);
+      return jsonResponse({ exists: false });
+    }
+    const updatedAt = Date.now();
+    await this.#state.storage.put(STORAGE_KEYS.metaUpdatedAt, updatedAt);
+    await this.#mirrorIndex(roomName, updatedAt);
+    await this.#armAlarm();
+    return jsonResponse({ exists: true, updatedAt });
+  }
 
   async #getSnapshot(): Promise<Response> {
     // Fast path: single-key. Small snapshots stay materialized (they

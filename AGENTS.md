@@ -96,6 +96,7 @@ packages/e2e/             Playwright
 ## Session log
 
 Per-session history is in `docs/historic/REWRITE_ULTRAPLAN.md` §14 (append-only,
-newest last). Latest: `0.20260710.1` released (multi-sheet TOC `text/csv` POST
-fix) — npm/GitHub, multi-arch Docker, and Cloudflare production; production
-version `bcb7b5fb-c05d-476d-ad74-455c6884b065`.
+newest last). Latest: hosted per-room PITR restore landed — operator API
+`POST /_/:room/pitr-restore` (Bearer `ETHERCALC_MIGRATE_TOKEN`, 404 when
+unset) with dry-run, undo bookmarks, D1/alarm finalization, and JSON
+partial-failure contract; staging smoke proved restore + undo end to end.

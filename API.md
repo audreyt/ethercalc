@@ -122,6 +122,73 @@ Deletes a room from the database
 
 + Response 201 OK
 
+# Point-in-Time Restore [/_/{id}/pitr-restore]
+
+## Restore a hosted room [POST]
+
+Restores the complete SQLite-backed Durable Object for one room to a Cloudflare PITR bookmark from approximately the previous 30 days. This recovers the snapshot, commands, audit/chat state, cell metadata, and alarms together. Local Miniflare and standalone workerd do not retain PITR history and return `501`.
+
+The route requires the deployment operator token:
+
+```text
+Authorization: Bearer <ETHERCALC_MIGRATE_TOKEN>
+```
+
+If `ETHERCALC_MIGRATE_TOKEN` is unset, the route is hidden with `404`. A missing or incorrect bearer returns `401`.
+
+Supply exactly one target. `at` accepts a positive millisecond epoch or an ISO-8601 timestamp. `dryRun` resolves and returns the target bookmark without scheduling a restore:
+
++ Request (application/json)
+
+    ```json
+    { "at": "2026-07-10T00:00:00.000Z", "dryRun": true }
+    ```
+
++ Response 200 (application/json)
+
+    ```json
+    { "dryRun": true, "bookmark": "0000007b-..." }
+    ```
+
+Apply either the resolved bookmark or a previously returned undo bookmark:
+
++ Request (application/json)
+
+    ```json
+    { "bookmark": "0000007b-..." }
+    ```
+
++ Response 200 (application/json)
+
+    ```json
+    {
+      "restored": true,
+      "bookmark": "0000007b-...",
+      "undoBookmark": "0000009d-...",
+      "exists": true,
+      "updatedAt": 1783641600000
+    }
+    ```
+
+`exists` is `false` when the restored point predates room creation; `updatedAt` is then omitted. To undo a restore, submit the returned `undoBookmark` as `bookmark`.
+
+A freshly created room has no PITR history until Cloudflare's change log catches up (about a minute in practice). Until then, timestamp dry-runs return `400 PITR target is unavailable`; poll the dry-run before scheduling a real restore.
+
+Invalid requests or unavailable/expired targets return `400`. An unsupported deployment returns `501`. A dispatch failure before the restore is accepted returns `502` as plain text — nothing was scheduled. Once the restore is accepted, the rewind is already armed, so later failures return JSON that keeps the reverse handle:
+
++ Response 500 (application/json)
+
+    ```json
+    {
+      "accepted": true,
+      "bookmark": "0000007b-...",
+      "undoBookmark": "0000009d-...",
+      "error": "PITR restore did not restart the room"
+    }
+    ```
+
+Finalization failures after a confirmed restart use the same shape with status `502` and `"error": "PITR restore finalization failed"`. In both cases retain `undoBookmark`: the restore may have applied (or still apply), and submitting `undoBookmark` reverses it.
+
 # Page Cells [/_/{id}/cells]
 
 ## GET

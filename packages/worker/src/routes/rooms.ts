@@ -20,17 +20,10 @@
  */
 /* istanbul ignore file */
 import type { Hono } from 'hono';
-
+import type { Env } from '../env.ts';
 import { upsertCronTriggers } from '../handlers/cron.ts';
 import { classifyCommandBody, joinCommands } from '../handlers/post-command.ts';
 import { classifyRequestBody } from '../handlers/rooms.ts';
-import {
-  ImportArchiveTooLargeError,
-  ImportTooLargeError,
-  workbookToLoadClipboardCommand,
-  xlsxToLoadClipboardCommands,
-  xlsxToSave,
-} from '../lib/xlsx-import.ts';
 import { verifyAuth } from '../lib/auth.ts';
 import { parseSettimetrigger } from '../lib/cron.ts';
 import { doFetch } from '../lib/do-dispatch.ts';
@@ -40,18 +33,28 @@ import {
   isLoadClipboard,
   isMultiCascade,
 } from '../lib/loadclipboard.ts';
+import { verifyMigrateToken } from '../lib/migrate-auth.ts';
+import { parsePitrRequest } from '../lib/pitr.ts';
+import { shouldDisableRoomIndex } from '../lib/room-index-access.ts';
 import { generateRoomId } from '../lib/room-name.ts';
 import {
   listRooms,
   listRoomTimes,
   renderRoomLinks,
 } from '../lib/rooms-index.ts';
-import { shouldDisableRoomIndex } from '../lib/room-index-access.ts';
-import type { Env } from '../env.ts';
+import {
+  ImportArchiveTooLargeError,
+  ImportTooLargeError,
+  workbookToLoadClipboardCommand,
+  xlsxToLoadClipboardCommands,
+  xlsxToSave,
+} from '../lib/xlsx-import.ts';
 
 const TEXT_CT = 'text/plain; charset=utf-8';
 const HTML_CT = 'text/html; charset=utf-8';
 const JSON_CT = 'application/json; charset=utf-8';
+const PITR_POLL_ATTEMPTS = 20;
+const PITR_POLL_INTERVAL_MS = 100;
 
 /**
  * Response with `Content-Length` set from the body. Workers auto-emits it
@@ -286,6 +289,185 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
       status: res.status,
       headers: { 'Content-Type': 'application/json; charset=utf-8' },
     });
+  });
+
+  // ─── POST /_/:room/pitr-restore (hosted SQLite DO recovery) ────────
+  app.post('/_/:room/pitr-restore', async (c) => {
+    const room = c.req.param('room') ?? '';
+    // PITR can resurrect deleted data, so it uses the deployment's operator
+    // bearer token rather than the legacy room gate (which is permissive
+    // when ETHERCALC_KEY is unset). Authenticate before parsing.
+    const auth = verifyMigrateToken(
+      c.env.ETHERCALC_MIGRATE_TOKEN,
+      c.req.header('Authorization') ?? null,
+    );
+    if (auth.kind === 'disabled') {
+      return sizedResponse('Not Found', 404, TEXT_CT);
+    }
+    if (auth.kind !== 'ok') {
+      return sizedResponse('Unauthorized', 401, TEXT_CT);
+    }
+
+    let requestBody: unknown;
+    try {
+      requestBody = await c.req.raw.json();
+    } catch {
+      return sizedResponse('body must be valid JSON', 400, TEXT_CT);
+    }
+    const parsed = parsePitrRequest(requestBody);
+    if (!parsed.ok) return sizedResponse(parsed.error, 400, TEXT_CT);
+
+    let restoreResponse: Response;
+    try {
+      restoreResponse = await doFetch(c.env, room, '/_do/pitr-restore', {
+        method: 'POST',
+        headers: { 'Content-Type': JSON_CT },
+        body: JSON.stringify(parsed.value),
+      });
+    } catch {
+      return sizedResponse('PITR restore dispatch failed', 502, TEXT_CT);
+    }
+    if (!restoreResponse.ok) {
+      return new Response(restoreResponse.body, {
+        status: restoreResponse.status,
+        headers: {
+          'Content-Type': restoreResponse.headers.get('content-type') ?? TEXT_CT,
+        },
+      });
+    }
+
+    let restoreBody: unknown;
+    try {
+      restoreBody = await restoreResponse.json();
+    } catch {
+      return sizedResponse('Invalid PITR response', 502, TEXT_CT);
+    }
+    if (restoreBody === null || typeof restoreBody !== 'object') {
+      return sizedResponse('Invalid PITR response', 502, TEXT_CT);
+    }
+    const restoreRecord = restoreBody as Record<string, unknown>;
+
+    if (parsed.value.dryRun) {
+      if (
+        restoreRecord.dryRun !== true ||
+        typeof restoreRecord.bookmark !== 'string'
+      ) {
+        return sizedResponse('Invalid PITR response', 502, TEXT_CT);
+      }
+      return sizedResponse(
+        JSON.stringify({
+          dryRun: true,
+          bookmark: restoreRecord.bookmark,
+        }),
+        200,
+        JSON_CT,
+      );
+    }
+
+    if (
+      typeof restoreRecord.bookmark !== 'string' ||
+      typeof restoreRecord.undoBookmark !== 'string' ||
+      typeof restoreRecord.nonce !== 'string'
+    ) {
+      return sizedResponse('Invalid PITR response', 502, TEXT_CT);
+    }
+    const acceptedBookmark = restoreRecord.bookmark;
+    const undoBookmark = restoreRecord.undoBookmark;
+    const acceptingNonce = restoreRecord.nonce;
+    // From here the DO has already scheduled the rewind and armed its
+    // restart, so a failure response must never strand the operator
+    // without the reverse handle: every post-acceptance error carries
+    // `accepted: true` plus both bookmarks as JSON.
+    const acceptedFailure = (error: string, status: 500 | 502): Response =>
+      sizedResponse(
+        JSON.stringify({
+          accepted: true,
+          bookmark: acceptedBookmark,
+          undoBookmark,
+          error,
+        }),
+        status,
+        JSON_CT,
+      );
+
+    let restarted = false;
+    for (let attempt = 0; attempt < PITR_POLL_ATTEMPTS; attempt += 1) {
+      if (attempt > 0) {
+        const { promise, resolve } = Promise.withResolvers<void>();
+        setTimeout(resolve, PITR_POLL_INTERVAL_MS);
+        await promise;
+      }
+      try {
+        const pingResponse = await doFetch(c.env, room, '/_do/ping');
+        if (!pingResponse.ok) continue;
+        const pingBody = (await pingResponse.json()) as { nonce?: unknown };
+        if (
+          typeof pingBody.nonce === 'string' &&
+          pingBody.nonce !== acceptingNonce
+        ) {
+          restarted = true;
+          break;
+        }
+      } catch {
+        // Expected while state.abort() replaces the accepting instance.
+      }
+    }
+    if (!restarted) {
+      return acceptedFailure('PITR restore did not restart the room', 500);
+    }
+
+    let touchResponse: Response;
+    try {
+      touchResponse = await doFetch(c.env, room, '/_do/pitr-touch', {
+        method: 'POST',
+      });
+    } catch {
+      return acceptedFailure('PITR restore finalization failed', 502);
+    }
+    if (!touchResponse.ok) {
+      return acceptedFailure('PITR restore finalization failed', 502);
+    }
+
+    let touchBody: unknown;
+    try {
+      touchBody = await touchResponse.json();
+    } catch {
+      return acceptedFailure('PITR restore finalization failed', 502);
+    }
+    if (touchBody === null || typeof touchBody !== 'object') {
+      return acceptedFailure('PITR restore finalization failed', 502);
+    }
+    const touchRecord = touchBody as Record<string, unknown>;
+    if (touchRecord.exists === false) {
+      return sizedResponse(
+        JSON.stringify({
+          restored: true,
+          bookmark: acceptedBookmark,
+          undoBookmark,
+          exists: false,
+        }),
+        200,
+        JSON_CT,
+      );
+    }
+    if (
+      touchRecord.exists !== true ||
+      typeof touchRecord.updatedAt !== 'number' ||
+      !Number.isFinite(touchRecord.updatedAt)
+    ) {
+      return acceptedFailure('PITR restore finalization failed', 502);
+    }
+    return sizedResponse(
+      JSON.stringify({
+        restored: true,
+        bookmark: acceptedBookmark,
+        undoBookmark,
+        exists: true,
+        updatedAt: touchRecord.updatedAt,
+      }),
+      200,
+      JSON_CT,
+    );
   });
 
   // ─── DELETE /_/:room ───────────────────────────────────────────────
