@@ -27,6 +27,7 @@ import { classifyRequestBody } from '../handlers/rooms.ts';
 import {
   ImportArchiveTooLargeError,
   ImportTooLargeError,
+  workbookToLoadClipboardCommand,
   xlsxToLoadClipboardCommands,
   xlsxToSave,
 } from '../lib/xlsx-import.ts';
@@ -376,16 +377,50 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
       return sizedResponse('Please send command', 400, TEXT_CT);
     }
 
+    // CSV body: convert to a loadclipboard command via SheetJS (which
+    // auto-detects CSV format), then feed it through the existing
+    // text-command enrichment path — the loadclipboard enricher adds
+    // `paste A<N> all` (A2 for cold rooms, A<lastrow+1> for existing
+    // sheets). This mirrors the legacy J-library decode path.
+    let commandKind: 'json-command' | 'text-command';
+    let command: string | readonly string[];
+
+    if (classified.kind === 'csv-deferred') {
+      let csvCommand: string | null;
+      try {
+        csvCommand = workbookToLoadClipboardCommand(bytes);
+      } catch (err) {
+        if (
+          err instanceof ImportTooLargeError ||
+          err instanceof ImportArchiveTooLargeError
+        ) {
+          return sizedResponse(err.message, 413, TEXT_CT);
+        }
+        return sizedResponse('Could not import CSV', 400, TEXT_CT);
+      }
+      if (csvCommand === null) {
+        return new Response(JSON.stringify({ command: [] }), {
+          status: 202,
+          headers: { 'Content-Type': JSON_CT },
+        });
+      }
+      commandKind = 'text-command';
+      command = csvCommand;
+    } else {
+      commandKind = classified.kind;
+      command = classified.command;
+    }
+
     // Apply text-wiki filter first (at the top per legacy sec 7 item 12).
     // Single-string only -- the banned command is never an array member
     // in practice; if a client ever nests it, the DO's own executor
     // would still process it (we match legacy's surface-only filter).
     if (
-      typeof classified.command === 'string' &&
-      isBannedWikiFormat(classified.command)
+      typeof command === 'string' &&
+      isBannedWikiFormat(command)
     ) {
       return new Response(
-        JSON.stringify({ command: classified.command }),
+        JSON.stringify({ command }),
         { status: 202, headers: { 'Content-Type': JSON_CT } },
       );
     }
@@ -394,10 +429,10 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
     // handles multi-cascade renames. Those branches don't apply when
     // the command arrived as JSON -- the client has already composed
     // the array shape it wants.
-    let commandOut: string | readonly string[] = classified.command;
+    let commandOut: string | readonly string[] = command;
 
-    if (classified.kind === 'text-command') {
-      const textCmd = classified.command;
+    if (commandKind === 'text-command') {
+      const textCmd = command as string;
 
       // Multi-cascade rename (src/main.ls:425-436). Reads the current
       // snapshot out of this room's DO, matches the

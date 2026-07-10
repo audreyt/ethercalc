@@ -101,14 +101,6 @@ describe('cellToCommand', () => {
 });
 
 describe('xlsxToSave — roundtrip', () => {
-  function makeXlsx(cells: Record<string, { t: string; v: unknown; f?: string }>, ref: string): Uint8Array {
-    const ws: Record<string, unknown> = { '!ref': ref, ...cells };
-    const book = (XLSX as any).utils.book_new();
-    (XLSX as any).utils.book_append_sheet(book, ws, 'Sheet1');
-    return new Uint8Array(
-      (XLSX as any).write(book, { bookType: 'xlsx', type: 'array' }) as ArrayBufferLike,
-    );
-  }
 
   it('numbers and text roundtrip to a SocialCalc save', () => {
     const bytes = makeXlsx(
