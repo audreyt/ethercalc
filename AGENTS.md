@@ -128,4 +128,11 @@ WebAuthn `AuthDO` relying party with HttpOnly `ec_sess` sessions,
 RoomDO-enforced `meta:access`/`meta:acl` private rooms (atomic
 `init-private`, tombstoned deletes, index exclusion, deny-overrides WS),
 principal-threaded routes, and a dependency-free passkey UI; PITR main
-merged with `/_do/ping`+pitr routes gate-exempt as operator paths.
+merged with `/_do/ping`+pitr routes gate-exempt as operator paths. Post-review
+hardening closed a private-room admission gap (anon/under-privileged visitors
+got a full editable UI, not just a blocked write), a private `submitform`
+sibling leak, a `DELETE`-route ACL bypass when `ETHERCALC_KEY` is unset, and
+added WS session-expiry enforcement (`SessionPrincipal.exp`, fail-closed
+`#closeExpiredSessionSocket`); also fixed a pre-existing (non-regression)
+toolbar-icon 404 from a relative `defaultImagePrefix`. Mutation break
+threshold documented down 90→84 pending Phase B `auth-do.ts` test hardening.
