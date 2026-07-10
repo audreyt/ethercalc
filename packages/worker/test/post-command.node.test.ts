@@ -131,6 +131,27 @@ describe('classifyCommandBody', () => {
       ),
     ).toEqual({ kind: 'xlsx-deferred' });
   });
+
+  it('classifies text/csv with a body as csv-deferred', () => {
+    expect(
+      classifyCommandBody('text/csv', enc('"#url","#title"\n"/r.1","Sheet1"\n')),
+    ).toEqual({ kind: 'csv-deferred' });
+  });
+
+  it('classifies text/csv with charset parameter as csv-deferred', () => {
+    expect(
+      classifyCommandBody(
+        'text/csv; charset=utf-8',
+        enc('"#url","#title"\n"/r.1","Sheet1"\n'),
+      ),
+    ).toEqual({ kind: 'csv-deferred' });
+  });
+
+  it('classifies zero-byte text/csv as empty', () => {
+    expect(classifyCommandBody('text/csv', new Uint8Array())).toEqual({
+      kind: 'empty',
+    });
+  });
 });
 
 describe('joinCommands', () => {

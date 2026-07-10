@@ -40,6 +40,7 @@ export type ClassifiedCommand =
       /** Raw body text (treated as-is; subject to loadclipboard enrichment). */
       readonly command: string;
     }
+  | { readonly kind: 'csv-deferred' }
   | { readonly kind: 'xlsx-deferred' };
 
 const XLSX_MIMES: readonly string[] = [
@@ -53,6 +54,9 @@ const XLSX_MIMES: readonly string[] = [
  *   - json-command  (JSON with a non-empty .command; forward as-is)
  *   - text-command  (plain text / text/x-socialcalc; subject to
  *                    isLoadClipboard / isMultiCascade checks in the glue)
+ *   - csv-deferred  (text/csv body; the glue decodes it via SheetJS into a
+ *                    loadclipboard command and feeds it through the
+ *                    text-command enrichment path)
  *   - xlsx-deferred (binary workbook; the glue decodes it into a
  *                    loadclipboard+paste command pair and replies 202)
  *
@@ -87,6 +91,17 @@ export function classifyCommandBody(
       /* fall through to empty */
     }
     return { kind: 'empty' };
+  }
+
+  // CSV body: SheetJS auto-detects CSV format via XLSX.read(bytes, {type:'array'}),
+  // producing a single-sheet workbook. Defer to the glue layer which converts
+  // it to a loadclipboard command and feeds it through the existing
+  // text-command enrichment path (paste A2 all for cold rooms, paste A<N+1>
+  // all for existing sheets). Legacy routed text/csv through its J-library
+  // decoder the same way.
+  if (ct === 'text/csv') {
+    if (bodyText.length === 0) return { kind: 'empty' };
+    return { kind: 'csv-deferred' };
   }
 
   // text/x-socialcalc, text/plain, or anything else treated literally.

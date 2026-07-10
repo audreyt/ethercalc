@@ -32,7 +32,6 @@
 - Create: `tests/oracle/recorded/room-crud/post-csv-toc.json`
 - Create: `tests/oracle/recorded/room-crud/get-csv-json-after-post.json`
 - Create: `tests/oracle/recorded/room-crud/post-csv-toc-cold.json`
-- Create: `tests/oracle/recorded/room-crud/get-csv-json-after-post-cold.json`
 - Create: `tests/oracle/recorded/room-crud/delete-csv-toc-cold.json`
 
 **Interfaces:**
@@ -69,7 +68,7 @@ Require `202 application/json`, a two-element command array, final command `past
 Use `packages/worker/test/routes-rooms.test.ts` and its existing real Worker/DO `request()` helper:
 
 ```text
-cold room CSV POST -> command[1] is "paste A2 all" -> csv.json has blank row 1 and TOC rows beginning row 2
+cold room CSV POST -> command[1] is "paste A2 all" -> csv.json has TOC rows beginning row 2 (worker DO materializes; legacy returns 404 — sensible-fix divergence)
 seeded room with A1/B1 -> CSV POST -> original row remains -> TOC rows begin row 2
 ```
 
@@ -90,9 +89,6 @@ POST /_/oracle-phase3-csv-cold
 Content-Type: text/csv
 body: "#url","#title"\n"/oracle-phase3-csv-cold.1","Sheet1"
 
-room-crud/get-csv-json-after-post-cold
-GET /_/oracle-phase3-csv-cold/csv.json
-
 room-crud/post-csv-toc
 POST /_/oracle-phase3-export
 Content-Type: text/csv
@@ -106,9 +102,15 @@ DELETE /_/oracle-phase3-csv-cold
 ```
 
 Normalize both POST bodies with `ignore` plus relaxed content length; normalize
-both follow-up GETs with `json` plus relaxed content length. Record against the
-pinned legacy Docker container. The cold follow-up must retain a blank first
-row before the TOC, empirically pinning the legacy `paste A2 all` fallback.
+the seeded follow-up GET with `json` plus relaxed content length. Record
+against the pinned legacy Docker container.
+
+**No cold-room GET fixture is recorded.** Legacy Redis returns 404 for a
+never-touched room's `csv.json` (the paste never persists). The worker's DO
+materializes the snapshot and returns 200 — a sensible-fix divergence
+(decision #1). Recording the cold GET would make worker replay fail forever
+(strict status match, no skip mechanism). The workers-pool test is the sole
+pin for the cold-room persisted grid.
 
 - [ ] **Step 5: Run the focused tests and verify RED**
 
@@ -238,7 +240,6 @@ Run the same node and workers-pool commands from Task 1. Expected: all selected 
 - Verify: `tests/oracle/recorded/room-crud/post-csv-toc.json`
 - Verify: `tests/oracle/recorded/room-crud/get-csv-json-after-post.json`
 - Verify: `tests/oracle/recorded/room-crud/post-csv-toc-cold.json`
-- Verify: `tests/oracle/recorded/room-crud/get-csv-json-after-post-cold.json`
 - Verify: `tests/oracle/recorded/room-crud/delete-csv-toc-cold.json`
 
 **Interfaces:**
@@ -255,10 +256,10 @@ bun run --cwd packages/oracle-harness record \
   --out tests/oracle/recorded
 ```
 
-Inspect all five new fixtures: both POSTs must return `202`; the cold follow-up
-must retain a blank first row before the TOC; the seeded follow-up must preserve
-the original row and append the two TOC rows; the cold-room DELETE must return
-`201`.
+Inspect all four new fixtures: both POSTs must return `202`; the seeded
+follow-up must preserve the original row and append the two TOC rows; the
+cold-room DELETE must return `201`. No cold-room GET fixture exists (sensible-fix
+divergence — see Step 4 notes).
 
 - [ ] **Step 2: Replay against the oracle itself**
 

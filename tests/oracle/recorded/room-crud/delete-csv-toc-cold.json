@@ -1,0 +1,19 @@
+{
+  "scenario": {
+    "name": "room-crud/delete-csv-toc-cold",
+    "kind": "http",
+    "request": {
+      "method": "DELETE",
+      "path": "/_/oracle-phase3-csv-cold"
+    },
+    "expect": {
+      "status": 201,
+      "headers": {
+        "content-length": "re:^\\d+$",
+        "content-type": "text/plain; charset=utf-8"
+      },
+      "bodyBase64": "T0s=",
+      "bodyMatcher": "ignore"
+    }
+  }
+}

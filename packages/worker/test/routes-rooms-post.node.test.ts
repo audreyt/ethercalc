@@ -502,6 +502,38 @@ describe('POST /_/:room — command execution', () => {
     expect(body).toContain('xlsx/ods import expands to');
     expect(calls.find((c) => c.url.includes('/_do/commands'))).toBeUndefined();
   });
+
+  it('POST text/csv converts to loadclipboard+paste and dispatches enriched array (202)', async () => {
+    // Snapshot ends at row 5 → paste at A6.
+    const { env, calls } = makeFakeRoomNamespace((call) => {
+      if (call.url.includes('/_do/snapshot')) {
+        return new Response('version:1.5\nsheet:c:3:r:5:tvf:g\n');
+      }
+      return new Response(null, { status: 202 });
+    });
+    const app = buildApp();
+    const csv = '"#url","#title"\n"/r.1","Sheet1"\n';
+    const res = await app.fetch(
+      new Request('https://t.test/_/r', {
+        method: 'POST',
+        headers: { 'content-type': 'text/csv' },
+        body: csv,
+      }),
+      env as never,
+    );
+    expect(res.status).toBe(202);
+    expect(res.headers.get('content-type')).toBe('application/json; charset=utf-8');
+    const body = (await res.json()) as { command: string[] };
+    expect(body.command).toHaveLength(2);
+    expect(body.command[0]).toMatch(/^loadclipboard /);
+    expect(body.command[1]).toBe('paste A6 all');
+    // Exactly one DO commands dispatch, body is the array joined by \n.
+    const dispatches = calls.filter((c) => c.url.includes('/_do/commands'));
+    expect(dispatches).toHaveLength(1);
+    expect(dispatches[0]!.bodyText).toBe(body.command.join('\n'));
+    // Raw CSV must NOT be sent to the DO.
+    expect(dispatches[0]!.bodyText).not.toContain('"#url"');
+  });
 });
 
 function makeFakeZipCentralDirectory(

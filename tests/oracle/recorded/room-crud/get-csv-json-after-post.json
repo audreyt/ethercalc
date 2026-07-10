@@ -1,0 +1,19 @@
+{
+  "scenario": {
+    "name": "room-crud/get-csv-json-after-post",
+    "kind": "http",
+    "request": {
+      "method": "GET",
+      "path": "/_/oracle-phase3-export/csv.json"
+    },
+    "expect": {
+      "status": 200,
+      "headers": {
+        "content-length": "re:^\\d+$",
+        "content-type": "application/json; charset=utf-8"
+      },
+      "bodyBase64": "WwogIFsKICAgICJvcmFjbGUiLAogICAgInBoYXNlMyIKICBdLAogIFsKICAgICIjdXJsIiwKICAgICIjdGl0bGUiCiAgXSwKICBbCiAgICAiL29yYWNsZS1waGFzZTMtZXhwb3J0LjEiLAogICAgIlNoZWV0MSIKICBdCl0=",
+      "bodyMatcher": "json"
+    }
+  }
+}

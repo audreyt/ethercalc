@@ -203,6 +203,44 @@ describe('NORMALIZERS registry', () => {
     }
   });
 
+  it('normalizes the CSV room-crud fixtures', () => {
+    for (const name of [
+      'room-crud/post-csv-toc-cold',
+      'room-crud/post-csv-toc',
+      'room-crud/delete-csv-toc-cold',
+    ]) {
+      const hook = getNormalizer(name);
+      expect(hook).not.toBeNull();
+      const out = hook!(
+        mkScenario({
+          name,
+          expect: {
+            status: 202,
+            headers: { 'content-length': '123' },
+            bodyBase64: encodeBase64(new Uint8Array()),
+            bodyMatcher: 'exact',
+          },
+        }),
+      );
+      expect(out.expect?.headers['content-length']).toBe('re:^\\d+$');
+      expect(out.expect?.bodyMatcher).toBe('ignore');
+    }
+
+    const getCsv = getNormalizer('room-crud/get-csv-json-after-post')!(
+      mkScenario({
+        name: 'room-crud/get-csv-json-after-post',
+        expect: {
+          status: 200,
+          headers: { 'content-length': '123' },
+          bodyBase64: encodeBase64(new TextEncoder().encode('[]')),
+          bodyMatcher: 'exact',
+        },
+      }),
+    );
+    expect(getCsv.expect?.headers['content-length']).toBe('re:^\\d+$');
+    expect(getCsv.expect?.bodyMatcher).toBe('json');
+  });
+
   it('relaxes content-length for the ignore-body alt exports', () => {
     const out = getNormalizer('exports/get-fods')!(
       mkScenario({
@@ -292,6 +330,10 @@ describe('NORMALIZERS registry', () => {
       'rooms-index/get-roomtimes-empty',
       'rooms-index/get-roomlinks-empty',
       'room-crud/post-command',
+      'room-crud/post-csv-toc-cold',
+      'room-crud/post-csv-toc',
+      'room-crud/get-csv-json-after-post',
+      'room-crud/delete-csv-toc-cold',
     ]);
   });
 });

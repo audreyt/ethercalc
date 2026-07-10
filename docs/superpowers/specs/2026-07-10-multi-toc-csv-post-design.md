@@ -73,15 +73,24 @@ flowchart LR
 
 Add ordered oracle scenarios against the pinned legacy container:
 
-1. POST deterministic TOC CSV to a never-touched room, then GET its
-   `csv.json` representation to pin the cold-room `A2` fallback.
+1. POST deterministic TOC CSV to a never-touched room — pins the cold-room
+   `paste A2 all` fallback (status 202, body ignored).
 2. POST deterministic TOC CSV to the existing phase-3 export room, then GET
    its `csv.json` representation to pin `lastrow + 1` append behavior.
 3. Delete the cold oracle room during teardown.
 
 The POST fixtures assert status and content type while ignoring encoded
-command-body differences between SocialCalc versions. The follow-up structural
-JSON fixtures prove both row placement and persisted legacy-equivalent state.
+command-body differences between SocialCalc versions. The seeded-room
+follow-up structural JSON fixture proves both row placement and persisted
+legacy-equivalent state.
+
+**Cold-room divergence (decision #1):** Legacy Redis never persists a
+truly cold room's paste — `GET /_/:room/csv.json` returns 404. The worker's
+Durable Object materializes a snapshot from the paste command, so it
+returns 200 with the TOC grid. This is a sensible-fix divergence: the
+cold-room POST fixture pins the 202 + `paste A2 all` command, but no
+cold-room GET fixture is recorded (it would fail worker replay forever).
+The workers-pool test is the sole pin for the cold-room persisted grid.
 
 ### Browser smoke
 

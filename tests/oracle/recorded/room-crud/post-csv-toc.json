@@ -1,0 +1,23 @@
+{
+  "scenario": {
+    "name": "room-crud/post-csv-toc",
+    "kind": "http",
+    "request": {
+      "method": "POST",
+      "path": "/_/oracle-phase3-export",
+      "headers": {
+        "Content-Type": "text/csv"
+      },
+      "bodyBase64": "IiN1cmwiLCIjdGl0bGUiCiIvb3JhY2xlLXBoYXNlMy1leHBvcnQuMSIsIlNoZWV0MSIK"
+    },
+    "expect": {
+      "status": 202,
+      "headers": {
+        "content-length": "re:^\\d+$",
+        "content-type": "application/json; charset=utf-8"
+      },
+      "bodyBase64": "ewogICJjb21tYW5kIjogWwogICAgImxvYWRjbGlwYm9hcmQgY2VsbFxcY0ExXFxjdFxcYyN1cmxcXG5jZWxsXFxjQjFcXGN0XFxjI3RpdGxlXFxuY2VsbFxcY0EyXFxjdFxcYy9vcmFjbGUtcGhhc2UzLWV4cG9ydC4xXFxuY2VsbFxcY0IyXFxjdFxcY1NoZWV0MVxcbnNoZWV0XFxjY1xcYzJcXGNyXFxjMlxcY3R2ZlxcYzFcXG52YWx1ZWZvcm1hdFxcYzFcXGN0ZXh0LXdpa2lcXG5jb3BpZWRmcm9tXFxjQTFcXGNCMlxcbmNvcGllZGZyb206QTE6QjJcXG4iLAogICAgInBhc3RlIEEyIGFsbCIKICBdCn0=",
+      "bodyMatcher": "ignore"
+    }
+  }
+}
