@@ -4074,6 +4074,43 @@ describe('RoomDO — private WS gating (Phase A)', () => {
     );
     expect(siblingInits).toHaveLength(0);
   });
+
+  it('drops submitform frames when access metadata is malformed', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    markPrivate(record);
+    record.map.set(STORAGE_KEYS.metaAccess, 'reserved');
+    const siblingInits: RequestInit[] = [];
+    const env: Env = {
+      ROOM: {
+        idFromName: (name: string) =>
+          ({ toString: () => name }) as DurableObjectId,
+        get: () =>
+          ({
+            async fetch(_url: string, init?: RequestInit) {
+              if (init) siblingInits.push(init);
+              return new Response('', { status: 202 });
+            },
+          }) as unknown as DurableObjectStub,
+      } as unknown as DurableObjectNamespace,
+    };
+    const { state } = makeWsAwareState('ws-malformed-access', record, []);
+    const room = new RoomDO(state, env);
+    const writer = makeFakeWs(
+      { sent: [] },
+      { user: 'w', room: 'mysheet', auth: 'mysheet' },
+    );
+    await room.webSocketMessage(
+      writer,
+      JSON.stringify({
+        type: 'execute',
+        room: 'mysheet',
+        user: 'w',
+        auth: 'mysheet',
+        cmdstr: 'submitform\rset B1 value n 7',
+      }),
+    );
+    expect(siblingInits).toHaveLength(0);
+  });
 });
 
 describe('RoomDO — POST /_do/init-private (Phase A)', () => {

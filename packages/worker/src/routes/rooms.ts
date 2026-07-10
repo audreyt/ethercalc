@@ -589,17 +589,30 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
   // ─── DELETE /_/:room ───────────────────────────────────────────────
   app.delete('/_/:room', async (c) => {
     const room = c.req.param('room') ?? '';
-    // H-2: permanently wiping a room (incl. the never-truncated audit) is
-    // a destructive verb, so gate it on the per-room capability HMAC the
-    // same way the WS `stopHuddle` path does. When no `ETHERCALC_KEY` is
-    // set (anonymous mode), `verifyAuth` returns true for any non-'0'
-    // auth, so this is a no-op and DELETE stays open — matching the
-    // documented anonymous contract (§6.4). When a KEY *is* configured it
-    // closes the HTTP-vs-WS asymmetry where DELETE ignored the key.
-    if (!(await verifyAuth(c.env.ETHERCALC_KEY, room, c.req.query('auth') ?? ''))) {
-      return sizedResponse('Forbidden', 403, TEXT_CT);
-    }
+    // H-2: permanently wiping a public room (incl. the never-truncated
+    // audit) needs its per-room HMAC. Private rooms instead use the
+    // RoomDO-owned ACL verdict; their legacy HMAC is intentionally demoted.
+    const authQuery = c.req.query('auth') ?? '';
     const principal = await getSessionPrincipal(c);
+    if (!(await verifyAuth(c.env.ETHERCALC_KEY, room, authQuery))) {
+      // `auth=0` remains an explicit destructive-write veto even for a
+      // private owner. Bare or stale legacy tokens defer to the RoomDO ACL.
+      if (authQuery === '0') return sizedResponse('Forbidden', 403, TEXT_CT);
+      const accessRes = await doFetch(c.env, room, '/_do/access', {}, principal);
+      const access: unknown = accessRes.ok
+        ? await accessRes.json().catch(() => null)
+        : null;
+      if (
+        access === null ||
+        typeof access !== 'object' ||
+        !('isPrivate' in access) ||
+        !('canWrite' in access) ||
+        access.isPrivate !== true ||
+        access.canWrite !== true
+      ) {
+        return sizedResponse('Forbidden', 403, TEXT_CT);
+      }
+    }
     const res = await doFetch(
       c.env,
       room,

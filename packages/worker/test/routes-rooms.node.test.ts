@@ -239,6 +239,57 @@ describe('route glue — env.ROOM dispatch shapes', () => {
     expect(res.status).toBe(201);
   });
 
+  it('DELETE /_/:room lets a verified private owner bypass legacy HMAC', async () => {
+    const { env, calls } = makeFakeRoomNamespace((call) => {
+      if (call.url.includes('/_do/access')) {
+        return Response.json({ isPrivate: true, canRead: true, canWrite: true });
+      }
+      return new Response('OK', { status: 201 });
+    });
+    const app = buildApp();
+    const res = await app.fetch(
+      new Request('https://t.test/_/private-owner', {
+        method: 'DELETE',
+        headers: { Cookie: AUTH_COOKIE },
+      }),
+      {
+        ...withAuth(env),
+        ETHERCALC_KEY: 'test-key',
+      } as never,
+    );
+    expect(res.status).toBe(201);
+    expect(calls).toHaveLength(2);
+    expect(calls[0]!).toMatchObject({
+      method: 'GET',
+      url: 'https://do.local/_do/access?name=private-owner',
+      uid: AUTH_UID,
+    });
+    expect(calls[1]!).toMatchObject({
+      method: 'DELETE',
+      url: 'https://do.local/_do/all?name=private-owner',
+      uid: AUTH_UID,
+    });
+  });
+
+  it('DELETE /_/:room rejects auth=0 even for a verified private owner', async () => {
+    const { env, calls } = makeFakeRoomNamespace(
+      () => new Response('unexpected', { status: 500 }),
+    );
+    const app = buildApp();
+    const res = await app.fetch(
+      new Request('https://t.test/_/private-owner?auth=0', {
+        method: 'DELETE',
+        headers: { Cookie: AUTH_COOKIE },
+      }),
+      {
+        ...withAuth(env),
+        ETHERCALC_KEY: 'test-key',
+      } as never,
+    );
+    expect(res.status).toBe(403);
+    expect(calls).toHaveLength(0);
+  });
+
   it('POST /_ with text/x-socialcalc generates a room and returns Location', async () => {
     const { env, calls } = makeFakeRoomNamespace(
       () => new Response('OK', { status: 201 }),
