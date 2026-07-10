@@ -93,6 +93,16 @@ function withAuth(env: Env, uid: string = AUTH_UID): Env {
 }
 
 describe('route glue — env.ROOM dispatch shapes', () => {
+  it('GET on www.* domain redirects to naked domain with 301', async () => {
+    const app = buildApp();
+    const res = await app.fetch(
+      new Request('https://www.ethercalc.net/_exists/foo'),
+      {} as never,
+    );
+    expect(res.status).toBe(301);
+    expect(res.headers.get('Location')).toBe('https://ethercalc.net/_exists/foo');
+  });
+
   it('GET /_exists/:room calls /_do/exists and returns bare boolean', async () => {
     const { env, calls } = makeFakeRoomNamespace(() =>
       new Response(JSON.stringify({ exists: 0 }), {

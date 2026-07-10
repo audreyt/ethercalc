@@ -62,6 +62,15 @@ export function buildApp(): Hono<EtherCalcHonoEnv> {
   const app = new Hono<EtherCalcHonoEnv>();
   // All API endpoints are CORS-friendly — external embeds (hackfoldr,
   // third-party dashboards) fetch /_/:room/csv etc cross-origin.
+  // Redirect www.* to the naked domain to canonicalize the origin for WebAuthn.
+  app.use('*', async (c, next) => {
+    const url = new URL(c.req.url);
+    if (url.hostname.startsWith('www.')) {
+      url.hostname = url.hostname.slice(4);
+      return c.redirect(url.toString(), 301);
+    }
+    await next();
+  });
   app.use('*', cors());
   // Optional self-host abuse belt-and-suspenders (§13 Q7). Default off;
   // when `ETHERCALC_RATELIMIT` is set, apply a per-IP token bucket before
