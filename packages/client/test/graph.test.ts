@@ -100,6 +100,7 @@ describe('installGraph — registration', () => {
     const env = makeGraphEnv();
     installGraph(env.host);
     expect(env.host.SocialCalc.Constants['s_loc_vertical_bar']).toBe('Vertical Bar');
+    expect(env.host.SocialCalc.Constants['defaultImagePrefix']).toBe('/images/sc_');
     expect(env.host.SocialCalc.Constants['SCToolbarbackground']).toContain('404040');
     // App mode flips the cursor bg/fg.
     const envApp = makeGraphEnv();
