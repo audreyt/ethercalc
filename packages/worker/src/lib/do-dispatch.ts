@@ -4,6 +4,7 @@
  * boilerplate and makes it trivial to stub `ROOM` in route tests.
  */
 import { encodeRoom } from './room-name.ts';
+import type { SessionPrincipal } from './session.ts';
 import type { Env } from '../env.ts';
 
 /** Return the DO stub for `room`, keyed by its legacy-encoded form. */
@@ -23,15 +24,24 @@ export function roomStub(env: Env, room: string): DurableObjectStub {
  * no other way to learn its own room name. We append rather than
  * replace any existing query because `path` may already carry one
  * (e.g. `/_do/ping?name=foo` used by unit tests).
+ *
+ * Identity hardening (Phase A): the trusted `X-EC-Uid` header reaches
+ * the DO ONLY from the verified session `principal` — any value already
+ * present on `init.headers` (a forged ingress header accidentally
+ * threaded through) is stripped before dispatch.
  */
 export async function doFetch(
   env: Env,
   room: string,
   path: string,
   init: RequestInit = {},
+  principal: SessionPrincipal | null = null,
 ): Promise<Response> {
   const stub = roomStub(env, room);
   const sep = path.includes('?') ? '&' : '?';
   const url = `https://do.local${path}${sep}name=${encodeURIComponent(room)}`;
-  return stub.fetch(url, init);
+  const headers = new Headers(init.headers);
+  headers.delete('X-EC-Uid');
+  if (principal) headers.set('X-EC-Uid', principal.uid);
+  return stub.fetch(url, { ...init, headers });
 }

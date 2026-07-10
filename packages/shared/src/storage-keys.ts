@@ -28,6 +28,27 @@ export const STORAGE_KEYS = {
   snapshotChunkPrefix: 'snapshot:chunk:',
   /** Number — ms since epoch. Updated on every snapshot write. */
   metaUpdatedAt: 'meta:updated_at',
+  /**
+   * String — room access mode. Absent on legacy/public rooms (the
+   * default). Set to `'private'` by `POST /_do/init-private`.
+   * `'public'` is the implicit default when this key is absent, so
+   * existing rooms and oracle replays are unaffected.
+   */
+  metaAccess: 'meta:access',
+  /**
+   * Object — room ACL. Present iff `metaAccess` is set. Shape:
+   * `{ owner: string, writers: string[], readers: string[] }` where
+   * each entry is a uid (from the AuthDO session). The owner is
+   * always implicitly a reader and writer; the arrays are explicit
+   * for clarity and mutation safety.
+   */
+  metaAcl: 'meta:acl',
+  /**
+   * String — optional group identifier for multi-sheet workbook
+   * pairing. Present on rooms that belong to a workbook group.
+   * Immutable after creation.
+   */
+  metaGroup: 'meta:group',
   /** Prefix for command log entries (folded into snapshot periodically). */
   logPrefix: 'log:',
   /** Prefix for audit log entries (never truncated). */
@@ -37,6 +58,28 @@ export const STORAGE_KEYS = {
   /** Prefix for per-user ecell tracking. Key: `ecell:<user>` → cell coord. */
   ecellPrefix: 'ecell:',
 } as const;
+
+/**
+ * Room access mode. `'public'` is the default (world-read/write, the
+ * legacy behavior). `'private'` gates both read and write on the ACL.
+ * The value stored under `STORAGE_KEYS.metaAccess`; absent = public.
+ */
+export type AccessMode = 'public' | 'private';
+
+/**
+ * Room ACL — who can read and write a non-public room. Stored under
+ * `STORAGE_KEYS.metaAcl`. The owner is always implicitly a reader and
+ * writer; the explicit arrays allow delegated access without
+ * special-casing the owner field in every check.
+ */
+export interface RoomAcl {
+  /** The uid that created the room. Has all permissions implicitly. */
+  readonly owner: string;
+ /** Uids that can write (in addition to the owner). */
+  readonly writers: readonly string[];
+ /** Uids that can read (in addition to the owner + writers). */
+  readonly readers: readonly string[];
+}
 
 /** Width chosen so every reasonable sequence sorts lexicographically. */
 export const SEQ_PAD_WIDTH = 16;

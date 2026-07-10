@@ -27,7 +27,7 @@ import { LEGACY_IO_JS } from '@ethercalc/socketio-shim/client/legacy-io';
 import { validateSid } from '@ethercalc/socketio-shim/sid';
 import type { Hono } from 'hono';
 
-import type { Env } from '../env.ts';
+import type { Env, EtherCalcHonoEnv } from '../env.ts';
 
 const JS_CT = 'application/javascript; charset=utf-8';
 
@@ -58,7 +58,7 @@ function legacySidStub(env: Env, sid: string): DurableObjectStub {
   return env.ROOM.get(id);
 }
 
-export function registerLegacySocketIo(app: Hono<{ Bindings: Env }>): void {
+export function registerLegacySocketIo(app: Hono<EtherCalcHonoEnv>): void {
   app.get('/socket.io/socket.io.js', () => {
     return new Response(LEGACY_IO_JS, {
       status: 200,

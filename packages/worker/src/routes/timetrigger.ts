@@ -16,7 +16,7 @@ import type { Hono } from 'hono';
 
 import { buildTimetriggerBody, toEpochMinutes } from '../lib/cron.ts';
 import { runScheduled } from '../scheduled.ts';
-import type { Env } from '../env.ts';
+import type { EtherCalcHonoEnv } from '../env.ts';
 
 const JSON_CT = 'application/json; charset=utf-8';
 
@@ -26,7 +26,7 @@ const JSON_CT = 'application/json; charset=utf-8';
  * values (in epoch minutes) — i.e. the state AFTER due rows have been
  * pruned and fired.
  */
-export function registerTimetrigger(app: Hono<{ Bindings: Env }>): void {
+export function registerTimetrigger(app: Hono<EtherCalcHonoEnv>): void {
   app.get('/_timetrigger', async (c) => {
     const nowMinutes = toEpochMinutes(Date.now());
     const { keep } = await runScheduled({ env: c.env, nowMinutes });

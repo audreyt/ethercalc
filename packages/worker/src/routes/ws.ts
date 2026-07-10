@@ -16,8 +16,9 @@
 import type { Hono } from 'hono';
 
 import { roomStub } from '../lib/do-dispatch.ts';
+import { getSessionPrincipal } from '../lib/session-middleware.ts';
 import { encodeRoom } from '../lib/room-name.ts';
-import type { Env } from '../env.ts';
+import type { EtherCalcHonoEnv } from '../env.ts';
 
 /**
  * Build the DO-internal URL that corresponds to the inbound WS request.
@@ -35,7 +36,7 @@ function buildDoUrl(room: string, url: URL): string {
   return `https://do.local/_do/ws?${params.toString()}`;
 }
 
-export function registerWs(app: Hono<{ Bindings: Env }>): void {
+export function registerWs(app: Hono<EtherCalcHonoEnv>): void {
   app.get('/_ws/:room', async (c) => {
     const upgrade = c.req.header('upgrade') ?? c.req.header('Upgrade') ?? '';
     if (upgrade.toLowerCase() !== 'websocket') {
@@ -44,10 +45,18 @@ export function registerWs(app: Hono<{ Bindings: Env }>): void {
     const room = c.req.param('room') ?? '';
     const stub = roomStub(c.env, room);
     const doUrl = buildDoUrl(room, new URL(c.req.url));
+    // The forwarded header set is built from scratch — inbound
+    // `X-EC-*` headers are NEVER copied. The DO trusts `X-EC-Uid`
+    // (P9 WS identity), so it is stamped exclusively from the verified
+    // session principal.
     const fwd = new Headers({ Upgrade: 'websocket' });
     const sandstormPerms = c.req.header('X-Sandstorm-Permissions');
     if (sandstormPerms) {
       fwd.set('X-Sandstorm-Permissions', sandstormPerms);
+    }
+    const principal = await getSessionPrincipal(c);
+    if (principal) {
+      fwd.set('X-EC-Uid', principal.uid);
     }
     const req = new Request(doUrl, {
       method: 'GET',

@@ -14,9 +14,9 @@ import type { Context, Hono } from 'hono';
 import { buildBlockedPathResponse } from '../handlers/blocked-paths.ts';
 import { buildNewRoomRedirect } from '../handlers/new-room.ts';
 import { buildRoomRedirect, type RoomMode } from '../handlers/room-redirects.ts';
-import type { Env } from '../env.ts';
+import type { EtherCalcHonoEnv } from '../env.ts';
 
-type AppContext = Context<{ Bindings: Env }>;
+type AppContext = Context<EtherCalcHonoEnv>;
 
 /**
  * Express's `res.redirect()` emits a plaintext body of the form
@@ -46,7 +46,7 @@ function expressRedirect(location: string): Response {
  * matters: the specific `/:room/edit` etc come before any catch-all
  * registration in the caller, so Hono's trie routes them correctly.
  */
-export function registerStateless(app: Hono<{ Bindings: Env }>): void {
+export function registerStateless(app: Hono<EtherCalcHonoEnv>): void {
   // Blocked paths — legacy reserves `/etc/*` and `/var/*` explicitly so
   // a stray probe from `/etc/passwd` doesn't fall through to `/:room`.
   app.get('/etc/*', (c: AppContext) => sendBlocked(c));

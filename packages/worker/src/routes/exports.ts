@@ -34,6 +34,8 @@
 import type { Hono } from 'hono';
 
 import { doFetch } from '../lib/do-dispatch.ts';
+import { getSessionPrincipal } from '../lib/session-middleware.ts';
+import type { SessionPrincipal } from '../lib/session.ts';
 import {
   BINARY_CONTENT_TYPES,
   type BinaryFormat,
@@ -43,9 +45,23 @@ import {
   DANGEROUS_ELEMENTS,
   attributeAction,
 } from '../lib/html-sanitize.ts';
-import type { Env } from '../env.ts';
+import type { Env, EtherCalcHonoEnv } from '../env.ts';
 
 const TEXT_CT = 'text/plain; charset=utf-8';
+
+/**
+ * Mirror a DO 401/403 auth verdict to the client verbatim (status +
+ * text/plain body). Returns null for any other status so callers fall
+ * through to their normal handling — export headers (attachment,
+ * CSP, content type) never dress up a denial.
+ */
+async function authVerdict(res: Response): Promise<Response | null> {
+  if (res.status !== 401 && res.status !== 403) return null;
+  return new Response(await res.text(), {
+    status: res.status,
+    headers: { 'Content-Type': TEXT_CT },
+  });
+}
 
 /**
  * Fetch the TOC sheet (at `:room`, sans `=` prefix) and its sub-rooms, then
@@ -55,12 +71,17 @@ const TEXT_CT = 'text/plain; charset=utf-8';
  * user-chosen sheet tab name.
  *
  * Returns `null` when the TOC is missing or empty — caller emits 404.
+ * Returns a `Response` when the DO denied a read (401/403) — caller
+ * propagates the verdict instead of masking it as a 404.
  */
 async function fetchMultiSheetBundle(
   env: Env,
   room: string,
-): Promise<Array<{ name: string; view: unknown }> | null> {
-  const tocRes = await doFetch(env, room, '/_do/csv.json');
+  principal: SessionPrincipal | null,
+): Promise<Array<{ name: string; view: unknown }> | Response | null> {
+  const tocRes = await doFetch(env, room, '/_do/csv.json', {}, principal);
+  const tocDenied = await authVerdict(tocRes);
+  if (tocDenied) return tocDenied;
   if (tocRes.status !== 200) return null;
   const rows = (await tocRes.json()) as unknown;
   if (!Array.isArray(rows) || rows.length < 2) return null;
@@ -76,7 +97,9 @@ async function fetchMultiSheetBundle(
     if (!link || link.startsWith('#')) continue;
     const subroom = link.replace(/^\//, '');
     if (!subroom) continue;
-    const sheetRes = await doFetch(env, subroom, '/_do/sheet-data');
+    const sheetRes = await doFetch(env, subroom, '/_do/sheet-data', {}, principal);
+    const sheetDenied = await authVerdict(sheetRes);
+    if (sheetDenied) return sheetDenied;
     if (sheetRes.status !== 200) continue;
     const view = (await sheetRes.json()) as unknown;
     bundle.push({ name: title, view });
@@ -88,8 +111,10 @@ async function dispatchMultiSheetExport(
   env: Env,
   room: string,
   format: BinaryFormat,
+  principal: SessionPrincipal | null,
 ): Promise<Response> {
-  const bundle = await fetchMultiSheetBundle(env, room);
+  const bundle = await fetchMultiSheetBundle(env, room, principal);
+  if (bundle instanceof Response) return bundle;
   if (!bundle) {
     return new Response('', { status: 404, headers: { 'Content-Type': TEXT_CT } });
   }
@@ -247,8 +272,11 @@ async function dispatchExport(
   env: Env,
   room: string,
   format: ExportFormat,
+  principal: SessionPrincipal | null,
 ): Promise<Response> {
-  const res = await doFetch(env, room, format.doPath);
+  const res = await doFetch(env, room, format.doPath, {}, principal);
+  const denied = await authVerdict(res);
+  if (denied) return denied;
   if (res.status === 404) {
     return new Response('', { status: 404, headers: { 'Content-Type': TEXT_CT } });
   }
@@ -282,19 +310,24 @@ async function dispatchExport(
  * `/:room`). Hono's trie matches longer literals first, so `/_/:room/csv`
  * still wins over `/_/:room` despite being registered after it.
  */
-export function registerExports(app: Hono<{ Bindings: Env }>): void {
+export function registerExports(app: Hono<EtherCalcHonoEnv>): void {
   // Multi-sheet export routes — AGENTS.md §6.1. These MUST come before the
   // single-sheet routes so Hono's literal prefix matcher routes `/=:room`
   // before `/:room`. Each walks the TOC via DO-to-DO fetches and assembles
   // one workbook with formula-fidelity per sub-sheet.
   for (const fmt of ['xlsx', 'ods', 'fods'] as const) {
     app.get(`/_/=:room/${fmt}`, async (c) =>
-      dispatchMultiSheetExport(c.env, c.req.param('room') ?? '', fmt),
+      dispatchMultiSheetExport(
+        c.env,
+        c.req.param('room') ?? '',
+        fmt,
+        await getSessionPrincipal(c),
+      ),
     );
     app.get(`/=:room.${fmt}`, async (c) => {
       const raw = c.req.param('room') ?? '';
       const room = raw.slice(0, raw.length - fmt.length - 1);
-      return dispatchMultiSheetExport(c.env, room, fmt);
+      return dispatchMultiSheetExport(c.env, room, fmt, await getSessionPrincipal(c));
     });
   }
 
@@ -310,17 +343,18 @@ export function registerExports(app: Hono<{ Bindings: Env }>): void {
     // explicit multi-sheet route above would have emitted.
     app.get(`/_/:room/${key}`, async (c) => {
       const room = c.req.param('room') ?? '';
+      const principal = await getSessionPrincipal(c);
       if (room.startsWith('=')) {
         // Multi-sheet only supports binary formats.
         if (format.binary && format.attachmentExt) {
-          return dispatchMultiSheetExport(c.env, room.slice(1), format.attachmentExt as BinaryFormat);
+          return dispatchMultiSheetExport(c.env, room.slice(1), format.attachmentExt as BinaryFormat, principal);
         }
         return new Response(
           `multi-sheet ${key} export: only xlsx/ods/fods supported`,
           { status: 501, headers: { 'Content-Type': TEXT_CT } },
         );
       }
-      return dispatchExport(c.env, room, format);
+      return dispatchExport(c.env, room, format, principal);
     });
     // `/:room.<key>` form — the room name may NOT contain a dot-extension
     // matching another registered format (legacy rule; rooms with dots are
@@ -332,16 +366,17 @@ export function registerExports(app: Hono<{ Bindings: Env }>): void {
     app.get(`/:room{.+\\.${key.replace('.', '\\.')}}`, async (c) => {
       const raw = c.req.param('room') ?? '';
       const room = raw.slice(0, raw.length - key.length - 1);
+      const principal = await getSessionPrincipal(c);
       if (room.startsWith('=')) {
         if (format.binary && format.attachmentExt) {
-          return dispatchMultiSheetExport(c.env, room.slice(1), format.attachmentExt as BinaryFormat);
+          return dispatchMultiSheetExport(c.env, room.slice(1), format.attachmentExt as BinaryFormat, principal);
         }
         return new Response(
           `multi-sheet ${key} export: only xlsx/ods/fods supported`,
           { status: 501, headers: { 'Content-Type': TEXT_CT } },
         );
       }
-      return dispatchExport(c.env, room, format);
+      return dispatchExport(c.env, room, format, principal);
     });
   }
 }

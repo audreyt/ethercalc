@@ -37,6 +37,13 @@ services:
       ETHERCALC_CORS: "${ETHERCALC_CORS:-}"
       ETHERCALC_BASEPATH: "${ETHERCALC_BASEPATH:-}"
       ETHERCALC_EXPIRE: "${ETHERCALC_EXPIRE:-}"
+      # Phase A — passkey auth (all four required to enable; see
+      # docs/SELFHOST_HARDENING.md). RP ID / origin must match the URL
+      # users visit, e.g. sheets.example.com / https://sheets.example.com.
+      ETHERCALC_AUTH: "${ETHERCALC_AUTH:-}"
+      ETHERCALC_RP_ID: "${ETHERCALC_RP_ID:-}"
+      ETHERCALC_RP_NAME: "${ETHERCALC_RP_NAME:-}"
+      ETHERCALC_ORIGIN: "${ETHERCALC_ORIGIN:-}"
       # Always forwarded; the migrate endpoint returns 404 when unset
       # so leaving it blank keeps the route invisible in normal runs.
       ETHERCALC_MIGRATE_TOKEN: "${ETHERCALC_MIGRATE_TOKEN:-}"

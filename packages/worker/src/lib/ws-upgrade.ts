@@ -29,6 +29,8 @@ export interface WsAttachment {
    * hibernatable `setWebSocketAutoResponse` pair — not a JS timer.
    */
   readonly legacy?: boolean;
+  /** Verified session uid minted by the Worker (X-EC-Uid), if any. */
+  readonly uid?: string;
 }
 
 /**
@@ -39,7 +41,7 @@ export interface WsAttachment {
 export function upgradeWebSocket(
   state: DurableObjectState,
   request: Request,
-  opts?: { readonly sandstormModify?: boolean },
+  opts?: { readonly sandstormModify?: boolean; readonly uid?: string },
 ): Response {
   const url = new URL(request.url);
   const user = url.searchParams.get('user') ?? '';
@@ -56,6 +58,7 @@ export function upgradeWebSocket(
     ...(opts?.sandstormModify !== undefined
       ? { sandstormModify: opts.sandstormModify }
       : {}),
+    ...(opts?.uid !== undefined ? { uid: opts.uid } : {}),
   };
   server.serializeAttachment(attachment);
   return new Response(null, { status: 101, webSocket: client });

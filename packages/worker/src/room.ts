@@ -46,6 +46,7 @@ import type { Env } from './env.ts';
 import { buildEmailSender } from './handlers/cron.ts';
 import { parseSeedPayload } from './handlers/migrate.ts';
 import { verifyAuth } from './lib/auth.ts';
+import { authorize as authorizeRoom } from './lib/authorize.ts';
 import { hydrateCrossSheetRefs } from './lib/cross-sheet.ts';
 import { neutralizeCSVDocument } from './lib/csv-encode.ts';
 import { parseCSV } from './lib/csv-parse.ts';
@@ -266,6 +267,13 @@ export class RoomDO implements DurableObject {
    * through `#getSpreadsheet`).
    */
   #ownName: string | undefined;
+  /**
+   * Memoized `{meta:access, meta:acl}` pair backing the request gate.
+   * Invalidated by `#resetVolatile` (every wipe/replace site) so a
+   * warm room costs one batched storage read per isolate, not one per
+   * request.
+   */
+  #accessMeta: { access: unknown; acl: unknown } | null = null;
 
   constructor(state: DurableObjectState, env: Env) {
     this.#state = state;
@@ -289,6 +297,10 @@ export class RoomDO implements DurableObject {
     // its opaque id. `/_do/ping` already used the same param.
     const roomName = url.searchParams.get('name');
     if (roomName) this.#ownName = roomName;
+    const purpose = request.method === 'GET' ? 'read' : 'write';
+    if (!(await this.#isAuthorized(request, purpose))) {
+      return plainResponse('Forbidden', 403);
+    }
 
     if (path === '/_do/ping') {
       return jsonResponse({
@@ -314,7 +326,7 @@ export class RoomDO implements DurableObject {
       return this.#postCommands(request, roomName);
     }
     if (path === '/_do/all' && request.method === 'DELETE') {
-      return this.#deleteAll(roomName);
+      return this.#deleteAll(roomName, request.headers.get('X-EC-Uid'));
     }
     if (path === '/_do/exists' && request.method === 'GET') {
       return this.#getExists();
@@ -390,6 +402,10 @@ export class RoomDO implements DurableObject {
     // mix. See the `#postSnapshotChunk` doc for the full contract.
     if (path === '/_do/snapshot-chunk' && request.method === 'POST') {
       return this.#postSnapshotChunk(request, roomName, url.searchParams);
+    }
+    // ─── Phase A: atomic private-room initialization ─────────────────
+    if (path === '/_do/init-private' && request.method === 'POST') {
+      return this.#postInitPrivate(request);
     }
     // ─── Phase 7: native WebSocket upgrade ───────────────────────────
     if (path === '/_do/ws' && request.method === 'GET') {
@@ -495,6 +511,46 @@ export class RoomDO implements DurableObject {
     await this.#mirrorIndex(roomName, updatedAt);
     await this.#armAlarm();
     return jsonResponse({ exists: true, updatedAt });
+  async #isAuthorized(
+    request: Request,
+    purpose: 'read' | 'write',
+  ): Promise<boolean> {
+    const { access, acl } = await this.#getAccessMeta();
+    const uid = request.headers.get('X-EC-Uid');
+    return authorizeRoom(purpose, uid === null ? null : { uid }, access, acl);
+  }
+
+  /**
+   * Memoized access-plane read. Both keys land in one batched get; the
+   * memo lives until `#resetVolatile` (wipes, seeds, init-private).
+   */
+  async #getAccessMeta(): Promise<{ access: unknown; acl: unknown }> {
+    if (this.#accessMeta) return this.#accessMeta;
+    const stored = await this.#state.storage.get<unknown>([
+      STORAGE_KEYS.metaAccess,
+      STORAGE_KEYS.metaAcl,
+    ]);
+    const meta = {
+      access: stored.get(STORAGE_KEYS.metaAccess),
+      acl: stored.get(STORAGE_KEYS.metaAcl),
+    };
+    this.#accessMeta = meta;
+    return meta;
+  }
+
+  async #readAccessEntries(): Promise<Record<string, unknown>> {
+    const keys = [
+      STORAGE_KEYS.metaAccess,
+      STORAGE_KEYS.metaAcl,
+      STORAGE_KEYS.metaGroup,
+    ];
+    const stored = await this.#state.storage.get<unknown>(keys);
+    const entries: Record<string, unknown> = {};
+    for (const key of keys) {
+      if (stored.has(key)) entries[key] = stored.get(key);
+    }
+    return entries;
+  }
   }
 
   async #getSnapshot(): Promise<Response> {
@@ -540,10 +596,12 @@ export class RoomDO implements DurableObject {
     const body = await request.text();
     let updatedAt = 0;
     await this.#state.blockConcurrencyWhile(async () => {
+      const accessEntries = await this.#readAccessEntries();
       await this.#state.storage.deleteAll();
       updatedAt = Date.now();
       // One batched put — chunked or single, always lands atomically.
       await this.#state.storage.put({
+        ...accessEntries,
         ...snapshotEntries(body),
         [STORAGE_KEYS.metaUpdatedAt]: updatedAt,
       });
@@ -598,8 +656,11 @@ export class RoomDO implements DurableObject {
     await this.#mirrorAudit(roomName, [{ seq: auditSeq, ts: updatedAt, body: cmdstr }]);
   }
 
-  async #deleteAll(roomName: string | null): Promise<Response> {
-    await this.#deleteAllAndUnindex(roomName);
+  async #deleteAll(
+    roomName: string | null,
+    uid: string | null,
+  ): Promise<Response> {
+    await this.#deleteAllAndUnindex(roomName, true, uid);
     return plainResponse('OK', 201);
   }
 
@@ -609,10 +670,25 @@ export class RoomDO implements DurableObject {
    * Centralizing this ensures both paths drop the D1 row; without it,
    * `/_rooms` kept listing rooms that had been stopHuddle'd through the
    * WS (discovered during 2026-04-20 browser smoke).
+   *
+   * `preserveAccess` keeps the private access trio as a tombstone so a
+   * deleted private room's name cannot be squatted; the TTL alarm
+   * passes false to reclaim the name entirely. `uid` is forwarded to
+   * the formdata sibling so a private sibling accepts the cascade.
    */
-  async #deleteAllAndUnindex(roomName: string | null): Promise<void> {
+  async #deleteAllAndUnindex(
+    roomName: string | null,
+    preserveAccess: boolean,
+    uid: string | null,
+  ): Promise<void> {
     await this.#state.blockConcurrencyWhile(async () => {
+      const accessEntries = preserveAccess
+        ? await this.#readAccessEntries()
+        : {};
       await this.#state.storage.deleteAll();
+      if (Object.keys(accessEntries).length > 0) {
+        await this.#state.storage.put(accessEntries);
+      }
       this.#ss = null;
       this.#nextLogSeq = 0;
       this.#nextAuditSeq = 0;
@@ -621,7 +697,7 @@ export class RoomDO implements DurableObject {
     });
     await this.#deleteIndex(roomName);
     await this.#deleteAuditChatFromD1(roomName);
-    await this.#deleteFormdataSibling(roomName);
+    await this.#deleteFormdataSibling(roomName, uid);
   }
 
   /**
@@ -629,7 +705,10 @@ export class RoomDO implements DurableObject {
    * the main room is deleted. Skips when `roomName` is already a form-data
    * sibling or missing (issue #442).
    */
-  async #deleteFormdataSibling(roomName: string | null): Promise<void> {
+  async #deleteFormdataSibling(
+    roomName: string | null,
+    uid: string | null,
+  ): Promise<void> {
     if (!roomName) return;
     const sibling = formdataSiblingRoom(roomName);
     if (!sibling) return;
@@ -638,7 +717,10 @@ export class RoomDO implements DurableObject {
       const stub = this.#env.ROOM.get(id);
       await stub.fetch(
         `https://do.local/_do/all?name=${encodeURIComponent(sibling)}`,
-        { method: 'DELETE' },
+        {
+          method: 'DELETE',
+          ...(uid === null ? {} : { headers: { 'X-EC-Uid': uid } }),
+        },
       );
     } catch {
       // Sibling may not exist; legacy delete was silent on orphans too.
@@ -732,6 +814,14 @@ export class RoomDO implements DurableObject {
     if (typeof to !== 'string' || to.length === 0) {
       return new Response('rename body must be {to: string}', { status: 400 });
     }
+    if (
+      (await this.#state.storage.get<unknown>(STORAGE_KEYS.metaAccess)) ===
+      'private'
+    ) {
+      return new Response('Private room rename is not supported', {
+        status: 409,
+      });
+    }
     const [snapshot, log, audit] = await Promise.all([
       readSnapshot(this.#state.storage),
       this.#listPrefix(STORAGE_KEYS.logPrefix),
@@ -770,6 +860,18 @@ export class RoomDO implements DurableObject {
     const to = parsed.to;
     if (typeof to !== 'string' || to.length === 0) {
       return new Response('clone body must be {to: string}', { status: 400 });
+    }
+    // A clone copies this room's snapshot into a PUBLIC target — on a
+    // private source that would declassify content (a writer-only
+    // member could exfiltrate a sheet they cannot read). Same Phase A
+    // stopgap as rename: refuse outright.
+    if (
+      (await this.#state.storage.get<unknown>(STORAGE_KEYS.metaAccess)) ===
+      'private'
+    ) {
+      return new Response('Private room clone is not supported', {
+        status: 409,
+      });
     }
     const snapshot = await readSnapshot(this.#state.storage);
     const targetId = this.#env.ROOM.idFromName(encodeRoom(to));
@@ -831,6 +933,7 @@ export class RoomDO implements DurableObject {
       : '';
     const logTail = (payload.log as string[]).slice(-LOG_RING);
     await this.#state.blockConcurrencyWhile(async () => {
+      const accessEntries = await this.#readAccessEntries();
       await this.#state.storage.deleteAll();
       // One batched `storage.put(entries)` call instead of N
       // sequential awaits. Each individual `put` is a subrequest
@@ -842,6 +945,7 @@ export class RoomDO implements DurableObject {
       // ceiling. DO storage supports up to 128 keys per call — well
       // above what a real dump row ever carries.
       const entries: Record<string, unknown> = {
+        ...accessEntries,
         [STORAGE_KEYS.metaUpdatedAt]: payload.updatedAt,
       };
       // Chunk the snapshot when it exceeds the DO-storage 128 KiB
@@ -1029,8 +1133,10 @@ export class RoomDO implements DurableObject {
     const foldedSnapshot = foldSnapshot(parsed.snapshot as string, log as string[]);
     const logTail = (log as string[]).slice(-LOG_RING);
     await this.#state.blockConcurrencyWhile(async () => {
+      const accessEntries = await this.#readAccessEntries();
       await this.#state.storage.deleteAll();
       const entries: Record<string, unknown> = {
+        ...accessEntries,
         ...snapshotEntries(foldedSnapshot),
         [STORAGE_KEYS.metaUpdatedAt]: Date.now(),
       };
@@ -1047,6 +1153,91 @@ export class RoomDO implements DurableObject {
       this.#nextChatSeq = 0;
       this.#resetVolatile();
     });
+    await this.#armAlarm();
+    return plainResponse('OK', 201);
+  }
+
+  /**
+   * Phase A — atomic private-room initialization. The one route that
+   * creates `meta:access`/`meta:acl`/`meta:group`, and only on a DO
+   * with ZERO storage keys — a tombstoned or occupied room 409s, so
+   * emptiness (not authorization) is the claim guard. The caller's
+   * trusted uid (`X-EC-Uid`, minted by the Worker from a verified
+   * session) must own the supplied ACL so nobody can mint rooms owned
+   * by someone else.
+   */
+  async #postInitPrivate(request: Request): Promise<Response> {
+    const uid = request.headers.get('X-EC-Uid');
+    if (uid === null || uid.length === 0) {
+      return plainResponse('Forbidden', 403);
+    }
+    let raw: unknown;
+    try {
+      raw = await request.json();
+    } catch {
+      return plainResponse('init-private body must be valid JSON', 400);
+    }
+    if (raw === null || typeof raw !== 'object') {
+      return plainResponse('init-private body must be an object', 400);
+    }
+    const snapshot =
+      'snapshot' in raw && typeof raw.snapshot === 'string'
+        ? raw.snapshot
+        : null;
+    if (snapshot === null) {
+      return plainResponse('init-private body.snapshot must be string', 400);
+    }
+    const acl = 'acl' in raw ? raw.acl : null;
+    if (
+      acl === null ||
+      typeof acl !== 'object' ||
+      !('owner' in acl) ||
+      typeof acl.owner !== 'string' ||
+      acl.owner.length === 0 ||
+      !('readers' in acl) ||
+      !Array.isArray(acl.readers) ||
+      !acl.readers.every((r) => typeof r === 'string' && r.length > 0) ||
+      !('writers' in acl) ||
+      !Array.isArray(acl.writers) ||
+      !acl.writers.every((w) => typeof w === 'string' && w.length > 0)
+    ) {
+      return plainResponse('init-private body.acl is malformed', 400);
+    }
+    const group = 'group' in raw ? raw.group : undefined;
+    if (group !== undefined && typeof group !== 'string') {
+      return plainResponse('init-private body.group must be string', 400);
+    }
+    if (acl.owner !== uid) {
+      return plainResponse('Forbidden', 403);
+    }
+    const created = await this.#state.blockConcurrencyWhile(() =>
+      this.#state.storage.transaction(async (txn) => {
+        const existing = await txn.list({ limit: 1 });
+        if (existing.size > 0) return false;
+        await txn.put({
+          ...snapshotEntries(snapshot),
+          [STORAGE_KEYS.metaAccess]: 'private',
+          [STORAGE_KEYS.metaAcl]: {
+            owner: acl.owner,
+            readers: acl.readers,
+            writers: acl.writers,
+          },
+          ...(group === undefined
+            ? {}
+            : { [STORAGE_KEYS.metaGroup]: group }),
+          [STORAGE_KEYS.metaUpdatedAt]: Date.now(),
+        });
+        return true;
+      }),
+    );
+    if (!created) {
+      return plainResponse('Room already exists', 409);
+    }
+    this.#ss = null;
+    this.#nextLogSeq = 0;
+    this.#nextAuditSeq = 0;
+    this.#nextChatSeq = 0;
+    this.#resetVolatile();
     await this.#armAlarm();
     return plainResponse('OK', 201);
   }
@@ -1128,9 +1319,13 @@ export class RoomDO implements DurableObject {
      *   workers-pool integration tests (`test/ws.test.ts`,
      *   `test/legacy-socketio.test.ts`, `test/room.test.ts`).
      */
-    const wsOpts = isSandstormEnforced(this.#env)
-      ? { sandstormModify: sandstormCanModify(request.headers) }
-      : undefined;
+    const uid = request.headers.get('X-EC-Uid');
+    const wsOpts = {
+      ...(isSandstormEnforced(this.#env)
+        ? { sandstormModify: sandstormCanModify(request.headers) }
+        : {}),
+      ...(uid === null ? {} : { uid }),
+    };
     return upgradeWebSocket(this.#state, request, wsOpts);
   }
 
@@ -1299,7 +1494,11 @@ export class RoomDO implements DurableObject {
         // for the rationale). The handler enforces auth before calling
         // this, so we don't need to re-verify here.
         const nameToUnindex = attachment.room || messageRoom;
-        await this.#deleteAllAndUnindex(nameToUnindex);
+        await this.#deleteAllAndUnindex(
+          nameToUnindex,
+          true,
+          attachment.uid ?? null,
+        );
       },
     };
     const env = this.#env;
@@ -1330,6 +1529,23 @@ export class RoomDO implements DurableObject {
         ) {
           return false;
         }
+        // Legacy explicit view-only sentinel (`auth === '0'`) stays an
+        // absolute veto on both public and private paths.
+        if (messageAuth === '0') return false;
+        const { access, acl } = await this.#getAccessMeta();
+        if (access === 'private') {
+          // Deny-overrides on private rooms: ACL membership REPLACES
+          // the legacy HMAC — an old ?auth= token must not bypass the
+          // ACL, and members must not need one. The uid comes from the
+          // handshake attachment, minted from the verified session.
+          const uid = attachment.uid;
+          return authorizeRoom(
+            'write',
+            uid === undefined ? null : { uid },
+            access,
+            acl,
+          );
+        }
         // Execute/ecell/stopHuddle carry their own per-message `auth`
         // string; legacy verified against that field (src/main.ls:516).
         // Messages without an auth field pass empty string → rejected by
@@ -1339,9 +1555,15 @@ export class RoomDO implements DurableObject {
       siblingDo: (room: string): WsSiblingDO => {
         const id = env.ROOM.idFromName(room);
         const stub = env.ROOM.get(id);
+        const uid = attachment.uid;
         return {
           async fetch(path, init) {
-            return await stub.fetch(path, init);
+            // Thread the sender's verified identity so a private
+            // formdata sibling accepts the write.
+            const headers = new Headers(init?.headers);
+            headers.delete('X-EC-Uid');
+            if (uid !== undefined) headers.set('X-EC-Uid', uid);
+            return await stub.fetch(path, { ...init, headers });
           },
         };
       },
@@ -1608,6 +1830,10 @@ export class RoomDO implements DurableObject {
    */
   async #mirrorIndex(roomName: string | null, updatedAt: number): Promise<void> {
     if (!this.#env.DB || !roomName) return;
+    // Private rooms never enter the cross-room index (Phase A / P8) —
+    // the D1 `rooms` table backs the public `/_rooms*` listings.
+    const { access } = await this.#getAccessMeta();
+    if (access === 'private') return;
     await mirrorRoomToD1(this.#env.DB, roomName, updatedAt);
   }
 
@@ -1736,6 +1962,7 @@ export class RoomDO implements DurableObject {
   #resetVolatile(): void {
     this.#ecellOrder = null;
     this.#alarmArmed = false;
+    this.#accessMeta = null;
   }
 
   /**
@@ -1789,7 +2016,7 @@ export class RoomDO implements DurableObject {
         STORAGE_KEYS.metaUpdatedAt,
       );
       if (typeof updatedAt === 'number' && Date.now() - updatedAt >= ttlMs) {
-        await this.#deleteAllAndUnindex(this.#ownName ?? null);
+        await this.#deleteAllAndUnindex(this.#ownName ?? null, false, null);
         return;
       }
     }

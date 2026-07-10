@@ -516,6 +516,40 @@ forwards it, but the worker reads `BASEPATH` (not `ETHERCALC_BASEPATH`). `config
 **Remaining suggested order:** Sandstorm branch SH-6/SH-7 → optional in-Worker limiter /
 room-creation quota if the proxy baseline proves insufficient.
 
+## 7. Passkey auth on self-host (Phase A, 2026-07-10)
+
+Passkey (WebAuthn) login and private rooms ship dark on self-host —
+anonymous read/write on public rooms is untouched either way. To light
+the feature up, set **all four** env vars (Docker compose forwards them;
+`config.capnp` maps them via `fromEnvironment`):
+
+```sh
+ETHERCALC_AUTH=1 \
+ETHERCALC_RP_ID=sheets.example.com \
+ETHERCALC_RP_NAME="My EtherCalc" \
+ETHERCALC_ORIGIN=https://sheets.example.com \
+docker compose up -d
+```
+
+Requirements and behavior:
+
+- **TLS is mandatory** — WebAuthn refuses non-secure origins, so this
+  only works behind the SH-5 nginx proxy (or another TLS terminator).
+  `ETHERCALC_ORIGIN` must exactly match the URL users visit, including
+  scheme and port; `ETHERCALC_RP_ID` is its registrable domain.
+- Credentials, challenges, and the session-signing secret live in the
+  singleton `AuthDO` (uniqueKey `ethercalc-authdo-v1`) under the same
+  `do-storage/` tree as rooms — back it up together.
+- `ETHERCALC_KEY` and passkey sessions are separate trust domains: the
+  legacy HMAC key never signs sessions, and on private rooms ACL
+  membership replaces legacy `?auth=` tokens outright (deny-overrides).
+- Private rooms are excluded from `/_rooms*` mirrors and answer 403 on
+  every read/write/export/WS path for non-members; deleting one leaves
+  an access tombstone so the name cannot be squatted (a TTL from
+  `ETHERCALC_EXPIRE` still reclaims it fully).
+- Partial configuration fails closed: missing anchors ⇒ `/_auth/*`
+  responds 404 at the Worker and the AuthDO itself answers 503.
+
 ---
 
 *Generated from a verified self-host audit on 2026-06-11. Line numbers are audit hints; confirm before
