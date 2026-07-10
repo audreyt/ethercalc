@@ -172,7 +172,22 @@ Apply either the resolved bookmark or a previously returned undo bookmark:
 
 `exists` is `false` when the restored point predates room creation; `updatedAt` is then omitted. To undo a restore, submit the returned `undoBookmark` as `bookmark`.
 
-Invalid requests or unavailable/expired targets return `400`. An unsupported deployment returns `501`. Dispatch, restart, or finalization failures return `500` or `502` without claiming success.
+A freshly created room has no PITR history until Cloudflare's change log catches up (about a minute in practice). Until then, timestamp dry-runs return `400 PITR target is unavailable`; poll the dry-run before scheduling a real restore.
+
+Invalid requests or unavailable/expired targets return `400`. An unsupported deployment returns `501`. A dispatch failure before the restore is accepted returns `502` as plain text — nothing was scheduled. Once the restore is accepted, the rewind is already armed, so later failures return JSON that keeps the reverse handle:
+
++ Response 500 (application/json)
+
+    ```json
+    {
+      "accepted": true,
+      "bookmark": "0000007b-...",
+      "undoBookmark": "0000009d-...",
+      "error": "PITR restore did not restart the room"
+    }
+    ```
+
+Finalization failures after a confirmed restart use the same shape with status `502` and `"error": "PITR restore finalization failed"`. In both cases retain `undoBookmark`: the restore may have applied (or still apply), and submitting `undoBookmark` reverses it.
 
 # Page Cells [/_/{id}/cells]
 

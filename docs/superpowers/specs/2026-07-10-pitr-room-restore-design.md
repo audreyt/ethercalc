@@ -69,7 +69,9 @@ A completed restore returns only after a new Durable Object instance is observed
 
 The `undoBookmark` is Cloudflare’s pre-recovery bookmark. Supplying it in a later restore reverses the recovery while it remains inside the platform retention window. If the selected bookmark predates room creation, `exists` is `false` and `updatedAt` is omitted.
 
-Platform rejection of an unavailable time or invalid/expired bookmark returns `400` without scheduling a restore. A missing PITR capability returns `501`. An internal DO dispatch failure returns `502`. If the instance does not restart within the bounded polling window, return `500` rather than claiming the restore completed.
+Platform rejection of an unavailable time or invalid/expired bookmark returns `400` without scheduling a restore. A freshly created room reports `400` for timestamp targets until the hosted change log first materializes (observed ≈1 minute on staging); recovery tooling polls the dry-run until it returns `200`. A missing PITR capability returns `501`. An internal DO dispatch failure before acceptance returns `502` as plain text.
+
+Once the DO has accepted the restore, the rewind is scheduled and the instance abort is armed, so the route must never strand the operator without the reverse handle. Every post-acceptance failure returns JSON `{"accepted": true, "bookmark": ..., "undoBookmark": ..., "error": ...}` — status `500` when the instance is not observed restarting within the bounded polling window, and `502` when finalization fails after a confirmed restart.
 
 ## Architecture
 
