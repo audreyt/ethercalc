@@ -1,8 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-
-import { buildApp } from '../src/index.ts';
-import { computeAuth } from '../src/lib/auth.ts';
 import type { Env } from '../src/env.ts';
+import { buildApp } from '../src/index.ts';
 
 interface Call {
   readonly url: string;
@@ -16,9 +14,11 @@ interface FakeStub {
 
 type Responder = (call: Call) => Response | Promise<Response>;
 
+const OPERATOR_TOKEN = 'operator-token';
+
 function makeFakeRoomNamespace(
   responder: Responder,
-  key?: string,
+  operatorToken: string | null = OPERATOR_TOKEN,
 ): { env: Env; calls: Call[] } {
   const calls: Call[] = [];
   const stub: FakeStub = {
@@ -48,7 +48,9 @@ function makeFakeRoomNamespace(
       idFromName: (name: string) => ({ name }) as unknown as DurableObjectId,
       get: () => stub as unknown as DurableObjectStub,
     } as unknown as DurableObjectNamespace,
-    ...(key === undefined ? {} : { ETHERCALC_KEY: key }),
+    ...(operatorToken === null
+      ? {}
+      : { ETHERCALC_MIGRATE_TOKEN: operatorToken }),
   };
   return { env, calls };
 }
@@ -60,45 +62,48 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+function pitrRequest(
+  body: unknown,
+  authorization: string | null = `Bearer ${OPERATOR_TOKEN}`,
+): Request {
+  const headers = new Headers({ 'Content-Type': 'application/json' });
+  if (authorization !== null) headers.set('Authorization', authorization);
+  return new Request('https://t.test/_/room/pitr-restore', {
+    method: 'POST',
+    headers,
+    body: typeof body === 'string' ? body : JSON.stringify(body),
+  });
+}
+
 afterEach(() => {
   vi.useRealTimers();
 });
 
 describe('POST /_/:room/pitr-restore', () => {
-  it('authenticates before parsing or dispatching', async () => {
-    const { env, calls } = makeFakeRoomNamespace(
-      () => {
-        throw new Error('must not dispatch');
-      },
-      'server-key',
-    );
+  it('hides the endpoint before parsing when the operator token is unset', async () => {
+    const { env, calls } = makeFakeRoomNamespace(() => {
+      throw new Error('must not dispatch');
+    }, null);
     const app = buildApp();
-    const res = await app.fetch(
-      new Request('https://t.test/_/room/pitr-restore?auth=wrong', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: '{',
-      }),
-      env as never,
-    );
-    expect(res.status).toBe(403);
-    expect(await res.text()).toBe('Forbidden');
+    const res = await app.fetch(pitrRequest('{'), env as never);
+    expect(res.status).toBe(404);
+    expect(await res.text()).toBe('Not Found');
     expect(calls).toHaveLength(0);
   });
 
-  it('rejects the view-only auth=0 sentinel even without a configured key', async () => {
+  it('rejects missing and incorrect operator bearer tokens before parsing', async () => {
     const { env, calls } = makeFakeRoomNamespace(() => {
       throw new Error('must not dispatch');
     });
     const app = buildApp();
-    const res = await app.fetch(
-      new Request('https://t.test/_/room/pitr-restore?auth=0', {
-        method: 'POST',
-        body: JSON.stringify({ bookmark: 'target' }),
-      }),
-      env as never,
-    );
-    expect(res.status).toBe(403);
+    for (const authorization of [null, 'Bearer wrong']) {
+      const res = await app.fetch(
+        pitrRequest({ bookmark: 'target' }, authorization),
+        env as never,
+      );
+      expect(res.status).toBe(401);
+      expect(await res.text()).toBe('Unauthorized');
+    }
     expect(calls).toHaveLength(0);
   });
 
@@ -108,10 +113,7 @@ describe('POST /_/:room/pitr-restore', () => {
     });
     const app = buildApp();
     const res = await app.fetch(
-      new Request('https://t.test/_/room/pitr-restore', {
-        method: 'POST',
-        body: '{',
-      }),
+      pitrRequest('{'),
       env as never,
     );
     expect(res.status).toBe(400);
@@ -125,10 +127,7 @@ describe('POST /_/:room/pitr-restore', () => {
     });
     const app = buildApp();
     const res = await app.fetch(
-      new Request('https://t.test/_/room/pitr-restore', {
-        method: 'POST',
-        body: JSON.stringify({ bookmark: 'target', at: 1 }),
-      }),
+      pitrRequest({ bookmark: 'target', at: 1 }),
       env as never,
     );
     expect(res.status).toBe(400);
@@ -136,19 +135,13 @@ describe('POST /_/:room/pitr-restore', () => {
     expect(calls).toHaveLength(0);
   });
 
-  it('normalizes and dispatches a timestamp dry run under valid HMAC auth', async () => {
-    const { env, calls } = makeFakeRoomNamespace(
-      () => jsonResponse({ dryRun: true, bookmark: 'resolved' }),
-      'server-key',
+  it('normalizes and dispatches a timestamp dry run under operator auth', async () => {
+    const { env, calls } = makeFakeRoomNamespace(() =>
+      jsonResponse({ dryRun: true, bookmark: 'resolved' }),
     );
-    const auth = await computeAuth('server-key', 'room');
     const app = buildApp();
     const res = await app.fetch(
-      new Request(`https://t.test/_/room/pitr-restore?auth=${auth}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ at: '2026-07-10T00:00:00.000Z', dryRun: true }),
-      }),
+      pitrRequest({ at: '2026-07-10T00:00:00.000Z', dryRun: true }),
       env as never,
     );
     expect(res.status).toBe(200);
@@ -175,10 +168,7 @@ describe('POST /_/:room/pitr-restore', () => {
     );
     const app = buildApp();
     const res = await app.fetch(
-      new Request('https://t.test/_/room/pitr-restore', {
-        method: 'POST',
-        body: JSON.stringify({ bookmark: 'target', dryRun: true }),
-      }),
+      pitrRequest({ bookmark: 'target', dryRun: true }),
       env as never,
     );
     expect(res.status).toBe(status);
@@ -192,10 +182,7 @@ describe('POST /_/:room/pitr-restore', () => {
     });
     const app = buildApp();
     const res = await app.fetch(
-      new Request('https://t.test/_/room/pitr-restore', {
-        method: 'POST',
-        body: JSON.stringify({ bookmark: 'target' }),
-      }),
+      pitrRequest({ bookmark: 'target' }),
       env as never,
     );
     expect(res.status).toBe(502);
@@ -225,10 +212,7 @@ describe('POST /_/:room/pitr-restore', () => {
     });
     const app = buildApp();
     const res = await app.fetch(
-      new Request('https://t.test/_/room/pitr-restore', {
-        method: 'POST',
-        body: JSON.stringify({ bookmark: 'target' }),
-      }),
+      pitrRequest({ bookmark: 'target' }),
       env as never,
     );
     expect(res.status).toBe(200);
@@ -264,10 +248,7 @@ describe('POST /_/:room/pitr-restore', () => {
     });
     const app = buildApp();
     const res = await app.fetch(
-      new Request('https://t.test/_/room/pitr-restore', {
-        method: 'POST',
-        body: JSON.stringify({ bookmark: 'before-creation' }),
-      }),
+      pitrRequest({ bookmark: 'before-creation' }),
       env as never,
     );
     expect(res.status).toBe(200);
@@ -283,10 +264,7 @@ describe('POST /_/:room/pitr-restore', () => {
     const malformed = makeFakeRoomNamespace(() => jsonResponse({ bookmark: 'target' }));
     const app = buildApp();
     const malformedRes = await app.fetch(
-      new Request('https://t.test/_/room/pitr-restore', {
-        method: 'POST',
-        body: JSON.stringify({ bookmark: 'target' }),
-      }),
+      pitrRequest({ bookmark: 'target' }),
       malformed.env as never,
     );
     expect(malformedRes.status).toBe(502);
@@ -300,10 +278,7 @@ describe('POST /_/:room/pitr-restore', () => {
       return new Response('touch failed', { status: 500 });
     });
     const failedTouchRes = await app.fetch(
-      new Request('https://t.test/_/room/pitr-restore', {
-        method: 'POST',
-        body: JSON.stringify({ bookmark: 'target' }),
-      }),
+      pitrRequest({ bookmark: 'target' }),
       failedTouch.env as never,
     );
     expect(failedTouchRes.status).toBe(502);
@@ -327,10 +302,7 @@ describe('POST /_/:room/pitr-restore', () => {
     });
     const app = buildApp();
     const responsePromise = app.fetch(
-      new Request('https://t.test/_/room/pitr-restore', {
-        method: 'POST',
-        body: JSON.stringify({ bookmark: 'target' }),
-      }),
+      pitrRequest({ bookmark: 'target' }),
       env as never,
     );
     await vi.runAllTimersAsync();

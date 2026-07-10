@@ -27,8 +27,8 @@ export function isPitrUnavailableError(error: unknown): boolean {
 
 /**
  * Return the platform PITR surface only when both required methods exist.
- * Local workerd/Miniflare does not retain the change log PITR needs, so
- * feature detection keeps the public endpoint deterministic there.
+ * Local workerd/Miniflare exposes these methods but time lookup/restore
+ * throws because it does not retain the change log PITR needs.
  */
 export function bookmarkStorage(storage: unknown): PitrStorage | null {
   if (storage === null || typeof storage !== 'object') return null;

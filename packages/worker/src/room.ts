@@ -25,42 +25,42 @@
 import type { ServerMessage } from '@ethercalc/shared/messages';
 import { encodeMessage, parseClientMessage } from '@ethercalc/shared/messages';
 import {
-  STORAGE_KEYS,
   auditKey,
   chatKey,
   ecellKey,
   logKey,
+  STORAGE_KEYS,
   snapshotChunkKey,
 } from '@ethercalc/shared/storage-keys';
 import {
-  HeadlessSpreadsheet,
   createSpreadsheet,
+  HeadlessSpreadsheet,
 } from '@ethercalc/socialcalc-headless';
-
+import type { Env } from './env.ts';
 import { buildEmailSender } from './handlers/cron.ts';
 import { parseSeedPayload } from './handlers/migrate.ts';
 import { verifyAuth } from './lib/auth.ts';
-import {
-  isSandstormEnforced,
-  sandstormAllowsWsWrite,
-  sandstormCanModify,
-} from './lib/sandstorm-access.ts';
+import { hydrateCrossSheetRefs } from './lib/cross-sheet.ts';
 import { neutralizeCSVDocument } from './lib/csv-encode.ts';
 import { parseCSV } from './lib/csv-parse.ts';
 import { parseSendemail } from './lib/email.ts';
+import { formdataSiblingRoom } from './lib/formdata-sibling.ts';
 import { csvToMarkdown } from './lib/md.ts';
 import {
   bookmarkStorage,
   isPitrUnavailableError,
   parsePitrRequest,
 } from './lib/pitr.ts';
-import { formdataSiblingRoom } from './lib/formdata-sibling.ts';
 import { encodeRoom } from './lib/room-name.ts';
-import { hydrateCrossSheetRefs } from './lib/cross-sheet.ts';
 import {
   deleteRoomFromD1,
   mirrorRoomToD1,
 } from './lib/rooms-index.ts';
+import {
+  isSandstormEnforced,
+  sandstormAllowsWsWrite,
+  sandstormCanModify,
+} from './lib/sandstorm-access.ts';
 import {
   appendAuditRows,
   appendChatRows,
@@ -72,8 +72,8 @@ import {
   hasSnapshot,
   readSnapshot,
   readSnapshotMeta,
-  snapshotEntries,
   type SnapshotMeta,
+  snapshotEntries,
 } from './lib/snapshot-storage.ts';
 import {
   dispatchWsMessage,
@@ -87,7 +87,6 @@ import {
   type BinaryFormat,
   sheetViewToBinaryWorkbook,
 } from './lib/xlsx-build.ts';
-import type { Env } from './env.ts';
 
 /** Shape returned from `GET /_do/log`. */
 export interface RoomLogSnapshot {
@@ -414,10 +413,12 @@ export class RoomDO implements DurableObject {
 
     let bookmark: string;
     try {
-      bookmark =
-        'at' in parsed.value
-          ? await storage.getBookmarkForTime(parsed.value.at)
-          : parsed.value.bookmark;
+      if ('at' in parsed.value) {
+        bookmark = await storage.getBookmarkForTime(parsed.value.at);
+      } else {
+        bookmark = parsed.value.bookmark;
+        if (parsed.value.dryRun) await storage.getBookmarkForTime(Date.now());
+      }
     } catch (error) {
       if (isPitrUnavailableError(error)) {
         return plainResponse('PITR is unavailable on this deployment', 501);
@@ -439,7 +440,10 @@ export class RoomDO implements DurableObject {
       return plainResponse('PITR target is unavailable', 400);
     }
 
+    const { promise, resolve } = Promise.withResolvers<void>();
+    this.#state.waitUntil(promise);
     setTimeout(() => {
+      resolve();
       this.#state.abort('PITR restore scheduled');
     }, PITR_ABORT_DELAY_MS);
     return jsonResponse({
@@ -455,6 +459,9 @@ export class RoomDO implements DurableObject {
    */
   async #postPitrTouch(roomName: string | null): Promise<Response> {
     if (!(await hasSnapshot(this.#state.storage))) {
+      await this.#state.storage.deleteAlarm();
+      this.#alarmArmed = false;
+      await this.#deleteIndex(roomName);
       return jsonResponse({ exists: false });
     }
     const updatedAt = Date.now();

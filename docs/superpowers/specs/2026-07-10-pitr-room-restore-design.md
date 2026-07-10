@@ -4,7 +4,7 @@
 
 EtherCalc’s Cloudflare-hosted `RoomDO` class is SQLite-backed, so Cloudflare already retains a continuous point-in-time recovery (PITR) history for the complete Durable Object database. That history includes the SocialCalc snapshot plus the KV-backed command, audit, chat, ecell, metadata, and alarm state. The current application has no route that resolves or applies PITR bookmarks, so deletion through `DELETE /_/:room`, TTL expiry, accidental overwrite, and vandalism cannot be recovered through EtherCalc even while Cloudflare still holds the history.
 
-The legacy `https://ethercalc.net/log/<room>` application was a separate hosted service rather than code in this repository. Recreating hourly dumps and its viewer is outside this first tier. The smallest high-value feature is a capability-authenticated restore API for operators and recovery tooling.
+The legacy `https://ethercalc.net/log/<room>` application was a separate hosted service rather than code in this repository. Recreating hourly dumps and its viewer is outside this first tier. The smallest high-value feature is an operator-authenticated restore API for recovery tooling.
 
 Cloudflare documents that SQLite-backed Durable Objects can restore their entire embedded database to a bookmark from approximately the previous 30 days. `getBookmarkForTime()` resolves a time, `onNextSessionRestoreBookmark()` schedules the restore and returns an undo bookmark, and `DurableObjectState.abort()` restarts the instance to apply it. PITR is explicitly unavailable in local development and standalone workerd.
 
@@ -13,17 +13,18 @@ Cloudflare documents that SQLite-backed Durable Objects can restore their entire
 Add this public route:
 
 ```text
-POST /_/:room/pitr-restore?auth=<room capability>
+POST /_/:room/pitr-restore
+Authorization: Bearer <ETHERCALC_MIGRATE_TOKEN>
 Content-Type: application/json
 ```
 
-It uses the exact authentication rule already applied to `DELETE /_/:room`:
+PITR can resurrect deleted data, so the public route uses EtherCalc’s existing deployment-operator bearer token instead of the legacy per-room capability. The room gate is intentionally permissive when `ETHERCALC_KEY` is unset and is therefore not sufficient for recovery administration.
 
-- with `ETHERCALC_KEY`, `auth` must be the room-name HMAC;
-- `auth=0` is always rejected;
-- without `ETHERCALC_KEY`, EtherCalc’s documented anonymous mode remains open.
+- unset or empty `ETHERCALC_MIGRATE_TOKEN` hides the route with `404 Not Found`;
+- a missing, malformed, or incorrect bearer token returns `401 Unauthorized`;
+- the exact configured bearer token authorizes the request.
 
-Authentication runs before body parsing or any Durable Object request. A failed check returns `403 Forbidden` and reveals no bookmark or room state.
+Authentication runs before body parsing or any Durable Object request and reveals no bookmark or room state.
 
 The JSON body must contain exactly one target:
 

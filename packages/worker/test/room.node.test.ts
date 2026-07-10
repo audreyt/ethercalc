@@ -1,16 +1,14 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
 import {
-  STORAGE_KEYS,
   auditKey,
   chatKey,
   ecellKey,
   logKey,
+  STORAGE_KEYS,
   snapshotChunkKey,
 } from '@ethercalc/shared/storage-keys';
-
-import { RoomDO } from '../src/room.ts';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Env } from '../src/env.ts';
+import { RoomDO } from '../src/room.ts';
 
 /**
  * RoomDO unit tests — direct construction with a Map-backed fake storage.
@@ -421,8 +419,8 @@ describe('RoomDO (unit, direct construction)', () => {
     expect(abort).not.toHaveBeenCalled();
   });
 
-  it('dry-run accepts a supplied bookmark without resolving a timestamp', async () => {
-    const getBookmarkForTime = vi.fn(async (_timestamp: number | Date) => 'wrong');
+  it('dry-run probes time lookup before echoing a supplied bookmark', async () => {
+    const getBookmarkForTime = vi.fn(async (_timestamp: number | Date) => 'probe');
     const onNextSessionRestoreBookmark = vi.fn(async (_bookmark: string) => 'undo');
     const state = makePitrState('pitr-dry-bookmark', record, {
       getBookmarkForTime,
@@ -437,7 +435,8 @@ describe('RoomDO (unit, direct construction)', () => {
     );
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ dryRun: true, bookmark: 'direct' });
-    expect(getBookmarkForTime).not.toHaveBeenCalled();
+    expect(getBookmarkForTime).toHaveBeenCalledOnce();
+    expect(getBookmarkForTime).toHaveBeenCalledWith(expect.any(Number));
     expect(onNextSessionRestoreBookmark).not.toHaveBeenCalled();
   });
 
@@ -554,13 +553,16 @@ describe('RoomDO (unit, direct construction)', () => {
     });
     expect(onNextSessionRestoreBookmark).toHaveBeenCalledWith('target');
     expect(abort).not.toHaveBeenCalled();
+    expect(state.__waitUntilPromises).toHaveLength(1);
     await vi.runAllTimersAsync();
+    await drainWaitUntil(state);
     expect(abort).toHaveBeenCalledOnce();
     expect(abort).toHaveBeenCalledWith('PITR restore scheduled');
   });
 
   it('POST /_do/pitr-touch leaves an empty restore empty', async () => {
     const d1Calls: D1Call[] = [];
+    record.alarm = 1234;
     const state = makeState('pitr-touch-empty', record);
     const pitrRoom = new RoomDO(state, makeEnvWithDb(d1Calls));
     const res = await pitrRoom.fetch(
@@ -572,7 +574,9 @@ describe('RoomDO (unit, direct construction)', () => {
     expect(await res.json()).toEqual({ exists: false });
     expect(record.map.has(STORAGE_KEYS.metaUpdatedAt)).toBe(false);
     expect(record.alarm).toBeNull();
-    expect(d1Calls).toHaveLength(0);
+    expect(
+      d1Calls.find((call) => call.sql.includes('DELETE FROM rooms'))?.params,
+    ).toEqual(['empty-room']);
   });
 
   it.each([

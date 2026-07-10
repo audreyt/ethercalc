@@ -20,17 +20,10 @@
  */
 /* istanbul ignore file */
 import type { Hono } from 'hono';
-
+import type { Env } from '../env.ts';
 import { upsertCronTriggers } from '../handlers/cron.ts';
 import { classifyCommandBody, joinCommands } from '../handlers/post-command.ts';
 import { classifyRequestBody } from '../handlers/rooms.ts';
-import {
-  ImportArchiveTooLargeError,
-  ImportTooLargeError,
-  workbookToLoadClipboardCommand,
-  xlsxToLoadClipboardCommands,
-  xlsxToSave,
-} from '../lib/xlsx-import.ts';
 import { verifyAuth } from '../lib/auth.ts';
 import { parseSettimetrigger } from '../lib/cron.ts';
 import { doFetch } from '../lib/do-dispatch.ts';
@@ -40,15 +33,22 @@ import {
   isLoadClipboard,
   isMultiCascade,
 } from '../lib/loadclipboard.ts';
+import { verifyMigrateToken } from '../lib/migrate-auth.ts';
 import { parsePitrRequest } from '../lib/pitr.ts';
+import { shouldDisableRoomIndex } from '../lib/room-index-access.ts';
 import { generateRoomId } from '../lib/room-name.ts';
 import {
   listRooms,
   listRoomTimes,
   renderRoomLinks,
 } from '../lib/rooms-index.ts';
-import { shouldDisableRoomIndex } from '../lib/room-index-access.ts';
-import type { Env } from '../env.ts';
+import {
+  ImportArchiveTooLargeError,
+  ImportTooLargeError,
+  workbookToLoadClipboardCommand,
+  xlsxToLoadClipboardCommands,
+  xlsxToSave,
+} from '../lib/xlsx-import.ts';
 
 const TEXT_CT = 'text/plain; charset=utf-8';
 const HTML_CT = 'text/html; charset=utf-8';
@@ -294,11 +294,18 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
   // ─── POST /_/:room/pitr-restore (hosted SQLite DO recovery) ────────
   app.post('/_/:room/pitr-restore', async (c) => {
     const room = c.req.param('room') ?? '';
-    // Same per-room capability gate as DELETE. Authenticate before parsing
-    // so unauthorised callers cannot use validation differences as an
-    // oracle for room or bookmark state.
-    if (!(await verifyAuth(c.env.ETHERCALC_KEY, room, c.req.query('auth') ?? ''))) {
-      return sizedResponse('Forbidden', 403, TEXT_CT);
+    // PITR can resurrect deleted data, so it uses the deployment's operator
+    // bearer token rather than the legacy room gate (which is permissive
+    // when ETHERCALC_KEY is unset). Authenticate before parsing.
+    const auth = verifyMigrateToken(
+      c.env.ETHERCALC_MIGRATE_TOKEN,
+      c.req.header('Authorization') ?? null,
+    );
+    if (auth.kind === 'disabled') {
+      return sizedResponse('Not Found', 404, TEXT_CT);
+    }
+    if (auth.kind !== 'ok') {
+      return sizedResponse('Unauthorized', 401, TEXT_CT);
     }
 
     let requestBody: unknown;

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Expose Cloudflare’s existing 30-day SQLite Durable Object point-in-time history through a capability-authenticated per-room restore API with a reversible undo bookmark.
+**Goal:** Expose Cloudflare’s existing 30-day SQLite Durable Object point-in-time history through an operator-authenticated per-room restore API with a reversible undo bookmark.
 
 **Architecture:** Put request parsing and runtime PITR feature detection in a Node-covered library. Add an internal RoomDO restore protocol that resolves/schedules bookmarks, returns before a delayed instance abort, exposes a per-instance nonce for restart detection, and finalizes restored metadata in the replacement instance. The public Hono route authenticates, validates, dispatches, observes the nonce change, finalizes D1/alarm state, and only then reports success.
 
@@ -13,9 +13,9 @@
 - Follow `docs/superpowers/specs/2026-07-10-pitr-room-restore-design.md` exactly.
 - Use TDD: every production behavior must have a focused test that was observed failing first.
 - Preserve static imports; use `import type` for type-only dependencies.
-- Reuse `verifyAuth`, `doFetch`, `hasSnapshot`, `STORAGE_KEYS`, `#mirrorIndex()`, and `#armAlarm()`; do not add a parallel auth, snapshot, D1, or alarm convention.
-- `POST /_/:room/pitr-restore` uses the same auth contract as `DELETE /_/:room`.
-- No Wrangler binding or migration change: `RoomDO` is already SQLite-backed.
+- Reuse `verifyMigrateToken`, `doFetch`, `hasSnapshot`, `STORAGE_KEYS`, `#mirrorIndex()`, and `#armAlarm()`; do not add a parallel auth, snapshot, D1, or alarm convention.
+- `POST /_/:room/pitr-restore` requires the existing `ETHERCALC_MIGRATE_TOKEN` operator bearer; when unset, the route is hidden.
+- No Wrangler binding or migration change: the operator secret and SQLite-backed `RoomDO` already exist.
 - No local PITR emulation. Unsupported runtimes return `501`.
 - No user-facing `/log` UI, R2 backup tier, workbook-wide restore, or release-version bump.
 - Keep implementation allocations bounded: tiny JSON bodies only, bounded polling, no snapshot materialization during restore finalization.
@@ -231,20 +231,20 @@ git commit -m "feat(worker): add RoomDO PITR protocol"
 - Create: `packages/worker/test/routes-rooms-pitr.node.test.ts`
 
 **Interfaces:**
-- Consumes: `verifyAuth()`, `parsePitrRequest()`, `doFetch()`, Task 2 DO response shapes.
-- Produces: `POST /_/:room/pitr-restore?auth=...` public API from the design spec.
+- Consumes: `verifyMigrateToken()`, `parsePitrRequest()`, `doFetch()`, Task 2 DO response shapes.
+- Produces: operator-authenticated `POST /_/:room/pitr-restore` public API from the design spec.
 
 - [ ] **Step 1: Build a fake namespace recorder**
 
-Follow `routes-rooms-post.node.test.ts`: capture URL, method, and body; let each test respond by internal path and call count. Do not mock `verifyAuth`, `doFetch`, or Hono.
+Follow `routes-rooms-post.node.test.ts`: capture URL, method, and body; let each test respond by internal path and call count. Do not mock `verifyMigrateToken`, `doFetch`, or Hono.
 
 - [ ] **Step 2: Add failing authentication and validation cases**
 
 Require:
 
 ```text
-configured KEY + missing/wrong auth -> 403 and zero DO calls
-auth=0 without KEY -> 403 and zero DO calls
+unset operator token -> 404 and zero DO calls
+configured token + missing/wrong bearer -> 401 and zero DO calls
 malformed JSON -> 400 and zero DO calls
 invalid request shape -> 400 and zero DO calls
 ```

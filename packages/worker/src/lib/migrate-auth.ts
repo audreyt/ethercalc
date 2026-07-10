@@ -1,20 +1,17 @@
 /**
- * Phase 11b — migration endpoint authorization.
+ * Deployment-operator bearer authorization.
  *
- * The seed endpoint (`PUT /_migrate/seed/:room`) is gated by an optional
- * bearer token sourced from `env.ETHERCALC_MIGRATE_TOKEN`. Rules:
+ * Migration writes and hosted PITR restore are gated by the token sourced
+ * from `env.ETHERCALC_MIGRATE_TOKEN`. Rules:
  *
  *   - Token unset (or empty) → endpoint is DISABLED: the route returns
- *     `404 Not Found` exactly like an unknown path. Hiding the endpoint
- *     on production deploys is the default posture.
+ *     `404 Not Found` exactly like an unknown path.
  *   - Token set, no `Authorization` header → `401 Unauthorized`.
  *   - Token set, wrong value → `401 Unauthorized`.
  *   - Token set, matching `Bearer <token>` → OK.
  *
- * Constant-time comparison via `constantTimeEqual` below — not
- * cryptographically necessary for a short-lived migration token, but
- * avoids the bad pattern of propagating `===` into security-adjacent
- * code.
+ * Constant-time comparison via `constantTimeEqual` avoids propagating
+ * direct string equality into security-adjacent code.
  */
 
 /** Verdict returned by {@link verifyMigrateToken}. */
