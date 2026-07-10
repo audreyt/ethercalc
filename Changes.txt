@@ -10,6 +10,26 @@ EtherCalc bundles SocialCalc from the audreyt/socialcalc fork; see
 
 
 ==============================================================================
+0.20260710.1 — 2026-07-10
+==============================================================================
+
+Bug-fix release.
+
+- Fixed multi-sheet TOC persistence: `POST /_/:room` with `text/csv` was
+  executed as a raw command batch (a silent no-op), so the worker-served
+  multi-sheet UI (`/=:room`) never persisted its table of contents — sheets
+  vanished from the tab bar on reload. CSV bodies now convert through the
+  shared SheetJS import path into a `loadclipboard` command and reuse the
+  legacy paste enrichment: `paste A2 all` on an empty room, appending after
+  the last row otherwise, with `?row=N` still inserting a row first. The
+  202 response echoes the enriched command array so multi-sheet clients
+  (and HackFoldr) recover the persisted row number. Oversized CSV imports
+  return 413; a cell-less CSV is a 202 no-op. XLSX/ODS POST behavior is
+  unchanged. Covered by unit, Durable Object round-trip, pinned legacy
+  oracle, and Playwright lifecycle tests.
+
+
+==============================================================================
 0.20260710.0 — 2026-07-10
 ==============================================================================
 
