@@ -27,9 +27,13 @@
 - Modify: `packages/worker/test/routes-rooms-post.node.test.ts`
 - Modify: `packages/worker/test/routes-rooms.test.ts`
 - Modify: `packages/oracle-harness/src/scenarios/room-crud.ts`
+- Modify: `packages/oracle-harness/src/scenarios/fixtures.ts`
 - Modify: `packages/oracle-harness/src/normalize.ts`
 - Create: `tests/oracle/recorded/room-crud/post-csv-toc.json`
 - Create: `tests/oracle/recorded/room-crud/get-csv-json-after-post.json`
+- Create: `tests/oracle/recorded/room-crud/post-csv-toc-cold.json`
+- Create: `tests/oracle/recorded/room-crud/get-csv-json-after-post-cold.json`
+- Create: `tests/oracle/recorded/room-crud/delete-csv-toc-cold.json`
 
 **Interfaces:**
 - Consumes: existing `classifyCommandBody`, `xlsxToLoadClipboardCommands`, real Worker `request()` helper, oracle `HttpScenario` format.
@@ -77,9 +81,18 @@ The seeded-room expected grid is:
 
 - [ ] **Step 4: Add and record pinned oracle scenarios**
 
+In `fixtures.ts`, add a stable never-touched room name for the cold-room case.
 In `room-crud.ts`, after `POST_COMMAND` and before delete, add:
 
 ```text
+room-crud/post-csv-toc-cold
+POST /_/oracle-phase3-csv-cold
+Content-Type: text/csv
+body: "#url","#title"\n"/oracle-phase3-csv-cold.1","Sheet1"
+
+room-crud/get-csv-json-after-post-cold
+GET /_/oracle-phase3-csv-cold/csv.json
+
 room-crud/post-csv-toc
 POST /_/oracle-phase3-export
 Content-Type: text/csv
@@ -87,9 +100,15 @@ body: "#url","#title"\n"/oracle-phase3-export.1","Sheet1"
 
 room-crud/get-csv-json-after-post
 GET /_/oracle-phase3-export/csv.json
+
+room-crud/delete-csv-toc-cold
+DELETE /_/oracle-phase3-csv-cold
 ```
 
-Normalize the POST body with `ignore` plus relaxed content length; normalize the follow-up GET with `json` plus relaxed content length. Record against the pinned legacy Docker container.
+Normalize both POST bodies with `ignore` plus relaxed content length; normalize
+both follow-up GETs with `json` plus relaxed content length. Record against the
+pinned legacy Docker container. The cold follow-up must retain a blank first
+row before the TOC, empirically pinning the legacy `paste A2 all` fallback.
 
 - [ ] **Step 5: Run the focused tests and verify RED**
 
@@ -214,9 +233,13 @@ Run the same node and workers-pool commands from Task 1. Expected: all selected 
 
 **Files:**
 - Verify: `packages/oracle-harness/src/scenarios/room-crud.ts`
+- Verify: `packages/oracle-harness/src/scenarios/fixtures.ts`
 - Verify: `packages/oracle-harness/src/normalize.ts`
 - Verify: `tests/oracle/recorded/room-crud/post-csv-toc.json`
 - Verify: `tests/oracle/recorded/room-crud/get-csv-json-after-post.json`
+- Verify: `tests/oracle/recorded/room-crud/post-csv-toc-cold.json`
+- Verify: `tests/oracle/recorded/room-crud/get-csv-json-after-post-cold.json`
+- Verify: `tests/oracle/recorded/room-crud/delete-csv-toc-cold.json`
 
 **Interfaces:**
 - Consumes: pinned legacy Docker oracle on `127.0.0.1:8000`, candidate Worker on `127.0.0.1:8787`.
@@ -232,7 +255,10 @@ bun run --cwd packages/oracle-harness record \
   --out tests/oracle/recorded
 ```
 
-Inspect the two new fixtures: POST status must be `202`; follow-up JSON must preserve the original row and append the two TOC rows.
+Inspect all five new fixtures: both POSTs must return `202`; the cold follow-up
+must retain a blank first row before the TOC; the seeded follow-up must preserve
+the original row and append the two TOC rows; the cold-room DELETE must return
+`201`.
 
 - [ ] **Step 2: Replay against the oracle itself**
 

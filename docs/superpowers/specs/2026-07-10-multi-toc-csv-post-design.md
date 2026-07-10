@@ -73,10 +73,15 @@ flowchart LR
 
 Add ordered oracle scenarios against the pinned legacy container:
 
-1. POST deterministic TOC CSV to the existing phase-3 export room.
-2. GET its `csv.json` representation before teardown.
+1. POST deterministic TOC CSV to a never-touched room, then GET its
+   `csv.json` representation to pin the cold-room `A2` fallback.
+2. POST deterministic TOC CSV to the existing phase-3 export room, then GET
+   its `csv.json` representation to pin `lastrow + 1` append behavior.
+3. Delete the cold oracle room during teardown.
 
-The POST fixture asserts status and content type while ignoring encoded command-body differences between SocialCalc versions; the follow-up structural JSON fixture proves persisted legacy-equivalent state.
+The POST fixtures assert status and content type while ignoring encoded
+command-body differences between SocialCalc versions. The follow-up structural
+JSON fixtures prove both row placement and persisted legacy-equivalent state.
 
 ### Browser smoke
 
