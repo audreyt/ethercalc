@@ -28,6 +28,17 @@ describe('RoomDO (integration via DO namespace)', () => {
     expect(body.id).toBe(id.toString());
   });
 
+  it('reports PITR as unavailable in local workerd', async () => {
+    expect(typeof Promise.withResolvers).toBe('function');
+    const { stub } = getStub('pitr-local-unavailable');
+    const res = await stub.fetch('https://do/_do/pitr-restore', {
+      method: 'POST',
+      body: JSON.stringify({ at: 1, dryRun: true }),
+    });
+    expect(res.status).toBe(501);
+    expect(await res.text()).toBe('PITR is unavailable on this deployment');
+  });
+
   it('returns 501 for unknown DO paths via runInDurableObject', async () => {
     const { e, id } = getStub('beta');
     await runInDurableObject(e.ROOM.get(id), async (instance: RoomDO) => {

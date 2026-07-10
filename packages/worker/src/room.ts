@@ -49,6 +49,11 @@ import { neutralizeCSVDocument } from './lib/csv-encode.ts';
 import { parseCSV } from './lib/csv-parse.ts';
 import { parseSendemail } from './lib/email.ts';
 import { csvToMarkdown } from './lib/md.ts';
+import {
+  bookmarkStorage,
+  isPitrUnavailableError,
+  parsePitrRequest,
+} from './lib/pitr.ts';
 import { formdataSiblingRoom } from './lib/formdata-sibling.ts';
 import { encodeRoom } from './lib/room-name.ts';
 import { hydrateCrossSheetRefs } from './lib/cross-sheet.ts';
@@ -156,6 +161,13 @@ const AUDIT_KEEP = 1024;
  */
 const ALARM_INTERVAL_MS = 60 * 60 * 1000;
 
+/**
+ * Give the accepted restore response time to cross the DO boundary before
+ * aborting the instance that produced it. The exact delay is not semantic.
+ */
+// Stryker disable next-line all : any short positive delay has the same contract
+const PITR_ABORT_DELAY_MS = 100;
+
 function plainResponse(body: string, status = 200): Response {
   return new Response(body, {
     status,
@@ -221,6 +233,7 @@ function parseExpireMs(raw: string | undefined): number | null {
 export class RoomDO implements DurableObject {
   readonly #state: DurableObjectState;
   readonly #env: Env;
+  readonly #instanceNonce = crypto.randomUUID();
 
   #ss: HeadlessSpreadsheet | null = null;
   #nextLogSeq: number | null = null;
@@ -262,7 +275,14 @@ export class RoomDO implements DurableObject {
       return jsonResponse({
         id: this.#state.id.toString(),
         name: roomName,
+        nonce: this.#instanceNonce,
       });
+    }
+    if (path === '/_do/pitr-restore' && request.method === 'POST') {
+      return this.#postPitrRestore(request);
+    }
+    if (path === '/_do/pitr-touch' && request.method === 'POST') {
+      return this.#postPitrTouch(roomName);
     }
     if (path === '/_do/snapshot') {
       if (request.method === 'GET') return this.#getSnapshot();
@@ -371,6 +391,78 @@ export class RoomDO implements DurableObject {
   }
 
   // ─── Handlers ──────────────────────────────────────────────────────────
+
+  /**
+   * Resolve or schedule a SQLite DO PITR bookmark. A successful restore is
+   * applied only after this instance restarts, so return the target + undo
+   * bookmark first and abort on a short timer.
+   */
+  async #postPitrRestore(request: Request): Promise<Response> {
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return plainResponse('body must be valid JSON', 400);
+    }
+    const parsed = parsePitrRequest(body);
+    if (!parsed.ok) return plainResponse(parsed.error, 400);
+
+    const storage = bookmarkStorage(this.#state.storage);
+    if (!storage) {
+      return plainResponse('PITR is unavailable on this deployment', 501);
+    }
+
+    let bookmark: string;
+    try {
+      bookmark =
+        'at' in parsed.value
+          ? await storage.getBookmarkForTime(parsed.value.at)
+          : parsed.value.bookmark;
+    } catch (error) {
+      if (isPitrUnavailableError(error)) {
+        return plainResponse('PITR is unavailable on this deployment', 501);
+      }
+      return plainResponse('PITR target is unavailable', 400);
+    }
+
+    if (parsed.value.dryRun) {
+      return jsonResponse({ dryRun: true, bookmark });
+    }
+
+    let undoBookmark: string;
+    try {
+      undoBookmark = await storage.onNextSessionRestoreBookmark(bookmark);
+    } catch (error) {
+      if (isPitrUnavailableError(error)) {
+        return plainResponse('PITR is unavailable on this deployment', 501);
+      }
+      return plainResponse('PITR target is unavailable', 400);
+    }
+
+    setTimeout(() => {
+      this.#state.abort('PITR restore scheduled');
+    }, PITR_ABORT_DELAY_MS);
+    return jsonResponse({
+      bookmark,
+      undoBookmark,
+      nonce: this.#instanceNonce,
+    });
+  }
+
+  /**
+   * Rebuild metadata that lives outside the restored timeline. This endpoint
+   * is called only after the public route observes a replacement instance.
+   */
+  async #postPitrTouch(roomName: string | null): Promise<Response> {
+    if (!(await hasSnapshot(this.#state.storage))) {
+      return jsonResponse({ exists: false });
+    }
+    const updatedAt = Date.now();
+    await this.#state.storage.put(STORAGE_KEYS.metaUpdatedAt, updatedAt);
+    await this.#mirrorIndex(roomName, updatedAt);
+    await this.#armAlarm();
+    return jsonResponse({ exists: true, updatedAt });
+  }
 
   async #getSnapshot(): Promise<Response> {
     // Fast path: single-key. Small snapshots stay materialized (they

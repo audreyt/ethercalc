@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   STORAGE_KEYS,
@@ -130,6 +130,33 @@ function makeState(
   } as unknown as DurableObjectState & WaitUntilTrack;
 }
 
+interface PitrStateOptions {
+  readonly getBookmarkForTime?: (timestamp: number | Date) => Promise<string>;
+  readonly onNextSessionRestoreBookmark?: (bookmark: string) => Promise<string>;
+  readonly abort?: (reason?: string) => void;
+}
+
+/** Add only the platform PITR methods a test needs to the normal fake state. */
+function makePitrState(
+  idString: string,
+  record: FakeStorageRecord,
+  options: PitrStateOptions,
+): DurableObjectState & WaitUntilTrack {
+  const state = makeState(idString, record);
+  if (options.getBookmarkForTime) {
+    Object.assign(state.storage, {
+      getBookmarkForTime: options.getBookmarkForTime,
+    });
+  }
+  if (options.onNextSessionRestoreBookmark) {
+    Object.assign(state.storage, {
+      onNextSessionRestoreBookmark: options.onNextSessionRestoreBookmark,
+    });
+  }
+  if (options.abort) Object.assign(state, { abort: options.abort });
+  return state;
+}
+
 /** Await every promise passed to `state.waitUntil`. */
 async function drainWaitUntil(
   state: DurableObjectState & WaitUntilTrack,
@@ -233,7 +260,6 @@ function makeEnvWithDb(calls: D1Call[]): Env {
  * instantiate real SocialCalc. See the two vi.mock blocks below.
  */
 
-import { vi } from 'vitest';
 
 const mockExec = vi.fn<(cmd: string) => void>();
 const mockSave = vi.fn<() => string>(() => 'SNAP');
@@ -286,19 +312,300 @@ describe('RoomDO (unit, direct construction)', () => {
     mockCreateSheetHTML.mockClear();
   });
 
-  it('ping echoes id and name', async () => {
-    const res = await room.fetch(new Request('https://do/_do/ping?name=gamma'));
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { id: string; name: string };
-    expect(body).toEqual({ id: 'abc123', name: 'gamma' });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('ping echoes id and name plus a stable per-instance nonce', async () => {
+    const first = await room.fetch(new Request('https://do/_do/ping?name=gamma'));
+    const second = await room.fetch(new Request('https://do/_do/ping?name=gamma'));
+    expect(first.status).toBe(200);
+    const firstBody = (await first.json()) as {
+      id: string;
+      name: string;
+      nonce: string;
+    };
+    const secondBody = (await second.json()) as {
+      id: string;
+      name: string;
+      nonce: string;
+    };
+    expect(firstBody).toEqual({
+      id: 'abc123',
+      name: 'gamma',
+      nonce: expect.any(String),
+    });
+    expect(secondBody.nonce).toBe(firstBody.nonce);
+  });
+
+  it('ping nonce changes when a new RoomDO instance is constructed', async () => {
+    const first = await room.fetch(new Request('https://do/_do/ping'));
+    const replacement = new RoomDO(
+      makeState('abc123', { map: new Map() }),
+      makeEnv(),
+    );
+    const second = await replacement.fetch(new Request('https://do/_do/ping'));
+    const firstBody = (await first.json()) as { nonce: string };
+    const secondBody = (await second.json()) as { nonce: string };
+    expect(secondBody.nonce).not.toBe(firstBody.nonce);
   });
 
   it('ping with no name yields a null name field', async () => {
     const res = await room.fetch(new Request('https://do/_do/ping'));
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { id: string; name: string | null };
+    const body = (await res.json()) as {
+      id: string;
+      name: string | null;
+      nonce: string;
+    };
     expect(body.name).toBeNull();
+    expect(body.nonce).toEqual(expect.any(String));
   });
+
+  it('POST /_do/pitr-restore returns 501 without platform bookmark APIs', async () => {
+    const res = await room.fetch(
+      new Request('https://do/_do/pitr-restore', {
+        method: 'POST',
+        body: JSON.stringify({ bookmark: 'target' }),
+      }),
+    );
+    expect(res.status).toBe(501);
+    expect(await res.text()).toBe('PITR is unavailable on this deployment');
+  });
+
+  it('POST /_do/pitr-restore rejects malformed and invalid JSON bodies', async () => {
+    const state = makePitrState('pitr-invalid', record, {
+      getBookmarkForTime: async () => 'resolved',
+      onNextSessionRestoreBookmark: async () => 'undo',
+    });
+    const pitrRoom = new RoomDO(state, makeEnv());
+    const malformed = await pitrRoom.fetch(
+      new Request('https://do/_do/pitr-restore', {
+        method: 'POST',
+        body: '{',
+      }),
+    );
+    expect(malformed.status).toBe(400);
+    expect(await malformed.text()).toBe('body must be valid JSON');
+
+    const invalid = await pitrRoom.fetch(
+      new Request('https://do/_do/pitr-restore', {
+        method: 'POST',
+        body: '{}',
+      }),
+    );
+    expect(invalid.status).toBe(400);
+    expect(await invalid.text()).toBe('send exactly one of {bookmark} or {at}');
+  });
+
+  it('dry-run resolves an at timestamp without scheduling recovery or abort', async () => {
+    const getBookmarkForTime = vi.fn(async (_timestamp: number | Date) => 'resolved');
+    const onNextSessionRestoreBookmark = vi.fn(async (_bookmark: string) => 'undo');
+    const abort = vi.fn();
+    const state = makePitrState('pitr-dry-at', record, {
+      getBookmarkForTime,
+      onNextSessionRestoreBookmark,
+      abort,
+    });
+    const pitrRoom = new RoomDO(state, makeEnv());
+    const res = await pitrRoom.fetch(
+      new Request('https://do/_do/pitr-restore', {
+        method: 'POST',
+        body: JSON.stringify({ at: 1234, dryRun: true }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ dryRun: true, bookmark: 'resolved' });
+    expect(getBookmarkForTime).toHaveBeenCalledWith(1234);
+    expect(onNextSessionRestoreBookmark).not.toHaveBeenCalled();
+    expect(abort).not.toHaveBeenCalled();
+  });
+
+  it('dry-run accepts a supplied bookmark without resolving a timestamp', async () => {
+    const getBookmarkForTime = vi.fn(async (_timestamp: number | Date) => 'wrong');
+    const onNextSessionRestoreBookmark = vi.fn(async (_bookmark: string) => 'undo');
+    const state = makePitrState('pitr-dry-bookmark', record, {
+      getBookmarkForTime,
+      onNextSessionRestoreBookmark,
+    });
+    const pitrRoom = new RoomDO(state, makeEnv());
+    const res = await pitrRoom.fetch(
+      new Request('https://do/_do/pitr-restore', {
+        method: 'POST',
+        body: JSON.stringify({ bookmark: 'direct', dryRun: true }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ dryRun: true, bookmark: 'direct' });
+    expect(getBookmarkForTime).not.toHaveBeenCalled();
+    expect(onNextSessionRestoreBookmark).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 when timestamp resolution or restore scheduling rejects', async () => {
+    const resolverRoom = new RoomDO(
+      makePitrState('pitr-resolve-error', record, {
+        getBookmarkForTime: async () => {
+          throw new Error('outside retention');
+        },
+        onNextSessionRestoreBookmark: async () => 'undo',
+      }),
+      makeEnv(),
+    );
+    const resolverRes = await resolverRoom.fetch(
+      new Request('https://do/_do/pitr-restore', {
+        method: 'POST',
+        body: JSON.stringify({ at: 1234 }),
+      }),
+    );
+    expect(resolverRes.status).toBe(400);
+    expect(await resolverRes.text()).toBe('PITR target is unavailable');
+
+    const schedulerRoom = new RoomDO(
+      makePitrState('pitr-schedule-error', record, {
+        getBookmarkForTime: async () => 'resolved',
+        onNextSessionRestoreBookmark: async () => {
+          throw new Error('expired bookmark');
+        },
+      }),
+      makeEnv(),
+    );
+    const schedulerRes = await schedulerRoom.fetch(
+      new Request('https://do/_do/pitr-restore', {
+        method: 'POST',
+        body: JSON.stringify({ bookmark: 'expired' }),
+      }),
+    );
+    expect(schedulerRes.status).toBe(400);
+    expect(await schedulerRes.text()).toBe('PITR target is unavailable');
+  });
+
+  it('maps the exact local-workerd PITR error to 501 at either platform call', async () => {
+    const unsupported = (): Error =>
+      new Error(
+        "This Durable Object's storage back-end does not implement point-in-time recovery.",
+      );
+    const resolverRoom = new RoomDO(
+      makePitrState('pitr-local-resolve', record, {
+        getBookmarkForTime: async () => {
+          throw unsupported();
+        },
+        onNextSessionRestoreBookmark: async () => 'undo',
+      }),
+      makeEnv(),
+    );
+    const resolverRes = await resolverRoom.fetch(
+      new Request('https://do/_do/pitr-restore', {
+        method: 'POST',
+        body: JSON.stringify({ at: 1234, dryRun: true }),
+      }),
+    );
+    expect(resolverRes.status).toBe(501);
+    expect(await resolverRes.text()).toBe(
+      'PITR is unavailable on this deployment',
+    );
+
+    const schedulerRoom = new RoomDO(
+      makePitrState('pitr-local-schedule', record, {
+        getBookmarkForTime: async () => 'resolved',
+        onNextSessionRestoreBookmark: async () => {
+          throw unsupported();
+        },
+      }),
+      makeEnv(),
+    );
+    const schedulerRes = await schedulerRoom.fetch(
+      new Request('https://do/_do/pitr-restore', {
+        method: 'POST',
+        body: JSON.stringify({ bookmark: 'target' }),
+      }),
+    );
+    expect(schedulerRes.status).toBe(501);
+    expect(await schedulerRes.text()).toBe(
+      'PITR is unavailable on this deployment',
+    );
+  });
+
+  it('returns target and undo bookmarks before scheduling one instance abort', async () => {
+    vi.useFakeTimers();
+    const onNextSessionRestoreBookmark = vi.fn(async (_bookmark: string) => 'undo');
+    const abort = vi.fn();
+    const state = makePitrState('pitr-apply', record, {
+      getBookmarkForTime: async () => 'resolved',
+      onNextSessionRestoreBookmark,
+      abort,
+    });
+    const pitrRoom = new RoomDO(state, makeEnv());
+    const res = await pitrRoom.fetch(
+      new Request('https://do/_do/pitr-restore', {
+        method: 'POST',
+        body: JSON.stringify({ bookmark: 'target' }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      bookmark: string;
+      undoBookmark: string;
+      nonce: string;
+    };
+    expect(body).toEqual({
+      bookmark: 'target',
+      undoBookmark: 'undo',
+      nonce: expect.any(String),
+    });
+    expect(onNextSessionRestoreBookmark).toHaveBeenCalledWith('target');
+    expect(abort).not.toHaveBeenCalled();
+    await vi.runAllTimersAsync();
+    expect(abort).toHaveBeenCalledOnce();
+    expect(abort).toHaveBeenCalledWith('PITR restore scheduled');
+  });
+
+  it('POST /_do/pitr-touch leaves an empty restore empty', async () => {
+    const d1Calls: D1Call[] = [];
+    const state = makeState('pitr-touch-empty', record);
+    const pitrRoom = new RoomDO(state, makeEnvWithDb(d1Calls));
+    const res = await pitrRoom.fetch(
+      new Request('https://do/_do/pitr-touch?name=empty-room', {
+        method: 'POST',
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ exists: false });
+    expect(record.map.has(STORAGE_KEYS.metaUpdatedAt)).toBe(false);
+    expect(record.alarm).toBeNull();
+    expect(d1Calls).toHaveLength(0);
+  });
+
+  it.each([
+    ['single-key', STORAGE_KEYS.snapshot, 'save'],
+    ['chunked', STORAGE_KEYS.snapshotMeta, { chunks: 1 }],
+  ] as const)(
+    'POST /_do/pitr-touch finalizes an existing %s snapshot',
+    async (_label, key, value) => {
+      const d1Calls: D1Call[] = [];
+      record.map.set(key, value);
+      const state = makeState('pitr-touch-existing', record);
+      const pitrRoom = new RoomDO(state, makeEnvWithDb(d1Calls));
+      const before = Date.now();
+      const res = await pitrRoom.fetch(
+        new Request('https://do/_do/pitr-touch?name=restored-room', {
+          method: 'POST',
+        }),
+      );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        exists: boolean;
+        updatedAt: number;
+      };
+      expect(body.exists).toBe(true);
+      expect(body.updatedAt).toBeGreaterThanOrEqual(before);
+      expect(record.map.get(STORAGE_KEYS.metaUpdatedAt)).toBe(body.updatedAt);
+      const roomsCall = d1Calls.find((call) =>
+        call.sql.includes('INSERT INTO rooms'),
+      );
+      expect(roomsCall?.params).toEqual(['restored-room', body.updatedAt]);
+      expect(record.alarm).not.toBeNull();
+    },
+  );
 
   it('unknown path returns 501', async () => {
     const res = await room.fetch(new Request('https://do/anything'));
