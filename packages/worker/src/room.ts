@@ -1577,6 +1577,8 @@ export class RoomDO implements DurableObject {
         // `verifyAuth` as view-only unless KEY is unset (identity path).
         return await verifyAuth(env.ETHERCALC_KEY, messageRoom, messageAuth);
       },
+      allowSubmitForm: async () =>
+        (await this.#getAccessMeta()).access !== 'private',
       siblingDo: (room: string): WsSiblingDO => {
         const id = env.ROOM.idFromName(room);
         const stub = env.ROOM.get(id);

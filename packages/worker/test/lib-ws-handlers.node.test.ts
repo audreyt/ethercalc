@@ -135,6 +135,9 @@ function makeCtx(opts: MakeCtxOpts = {}): { ctx: WsContext; calls: CallLog; stat
     async verifyAuth() {
       return opts.authOk !== false;
     },
+    async allowSubmitForm() {
+      return true;
+    },
     siblingDo(room: string): WsSiblingDO {
       return {
         async fetch(path: string, init?: RequestInit): Promise<Response> {

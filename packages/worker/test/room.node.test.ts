@@ -4001,9 +4001,8 @@ describe('RoomDO — private WS gating (Phase A)', () => {
     expect(record.map.get(STORAGE_KEYS.metaAcl)).toEqual(PRIVATE_ACL);
   });
 
-  it('forwards the sender uid to the submitform formdata sibling', async () => {
+  it('forwards the sender uid to a public submitform formdata sibling', async () => {
     const record: FakeStorageRecord = { map: new Map() };
-    markPrivate(record);
     const siblingInits: RequestInit[] = [];
     const env: Env = {
       ROOM: {
@@ -4039,9 +4038,46 @@ describe('RoomDO — private WS gating (Phase A)', () => {
       'uid-writer',
     );
   });
+
+  it('drops submitform frames from private rooms before sibling write', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    markPrivate(record);
+    const siblingInits: RequestInit[] = [];
+    const env: Env = {
+      ROOM: {
+        idFromName: (name: string) =>
+          ({ toString: () => name }) as DurableObjectId,
+        get: () =>
+          ({
+            async fetch(_url: string, init?: RequestInit) {
+              if (init) siblingInits.push(init);
+              return new Response('', { status: 202 });
+            },
+          }) as unknown as DurableObjectStub,
+      } as unknown as DurableObjectNamespace,
+    };
+    const { state } = makeWsAwareState('ws-priv-5', record, []);
+    const room = new RoomDO(state, env);
+    const writer = makeFakeWs(
+      { sent: [] },
+      { user: 'w', room: 'mysheet', auth: 'mysheet', uid: 'uid-writer' },
+    );
+    await room.webSocketMessage(
+      writer,
+      JSON.stringify({
+        type: 'execute',
+        room: 'mysheet',
+        user: 'w',
+        auth: 'mysheet',
+        cmdstr: 'submitform\rset B1 value n 7',
+      }),
+    );
+    expect(siblingInits).toHaveLength(0);
+  });
 });
 
 describe('RoomDO — POST /_do/init-private (Phase A)', () => {
+
   it('initializes an empty DO atomically with the private access trio', async () => {
     const record: FakeStorageRecord = { map: new Map() };
     const room = new RoomDO(makeState('init-1', record), makeEnv());
