@@ -21,6 +21,10 @@
     "src/room.ts",
     "src/auth-do.ts"
   ],
+  "exclusions_comment": "webauthn-ops.ts is istanbul-ignored (thin @simplewebauthn/server wrapper); exclude from mutation to mirror coverage exclusion and avoid no-coverage surviving mutants.",
+  "exclusions": [
+    "src/lib/webauthn-ops.ts"
+  ],
   "inPlace_comment": "Skip the tsconfig-preprocessor (and its `import('typescript')`) — we only run Stryker in CI and git worktrees, both of which are disposable, so a mid-run crash cannot damage real sources.",
   "inPlace": true,
   "coverageAnalysis": "perTest",

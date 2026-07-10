@@ -35,7 +35,7 @@ async function postJson(path, body) {
 
 export async function whoami() {
   try {
-    const res = await fetch('./_auth/whoami');
+    const res = await fetch('/_auth/whoami');
     if (!res.ok) return { uid: null, enabled: false };
     return await res.json();
   } catch {
@@ -45,7 +45,7 @@ export async function whoami() {
 
 /** Usernameless login via a discoverable credential. */
 export async function login() {
-  const initRes = await postJson('./_auth/login-init', {});
+  const initRes = await postJson('/_auth/login-init', {});
   if (!initRes.ok) throw new Error('login unavailable');
   const { options } = await initRes.json();
   const assertion = await navigator.credentials.get({
@@ -70,7 +70,7 @@ export async function login() {
         : undefined,
     },
   };
-  const completeRes = await postJson('./_auth/login-complete', {
+  const completeRes = await postJson('/_auth/login-complete', {
     response,
     challenge: options.challenge,
   });
@@ -80,7 +80,7 @@ export async function login() {
 
 /** Create a brand-new passkey identity on this device. */
 export async function register() {
-  const initRes = await postJson('./_auth/register-init', {});
+  const initRes = await postJson('/_auth/register-init', {});
   if (!initRes.ok) throw new Error('registration unavailable');
   const { options, uid } = await initRes.json();
   const credential = await navigator.credentials.create({
@@ -116,7 +116,7 @@ export async function register() {
         : undefined,
     },
   };
-  const completeRes = await postJson('./_auth/register-complete', {
+  const completeRes = await postJson('/_auth/register-complete', {
     response,
     uid,
     challenge: options.challenge,
@@ -142,19 +142,19 @@ export async function signIn() {
 }
 
 export async function logout() {
-  await postJson('./_auth/logout', {});
+  await postJson('/_auth/logout', {});
 }
 
 export async function newPrivateSheet() {
-  const res = await postJson('./_/private', {});
+  const res = await postJson('/_/private', {});
   if (res.status === 401) throw new Error('sign in first');
   if (!res.ok) throw new Error('could not create a private sheet');
   const { room } = await res.json();
-  window.location.assign(`./${encodeURIComponent(room)}/edit`);
+  window.location.assign(`/${encodeURIComponent(room)}/edit`);
 }
 
 export async function copyToPrivate(room) {
-  const res = await fetch(`./_from/${encodeURIComponent(room)}/private`, {
+  const res = await fetch(`/_from/${encodeURIComponent(room)}/private`, {
     method: 'POST',
   });
   if (res.status === 401) throw new Error('sign in first');
@@ -240,7 +240,7 @@ async function mount() {
   // visitor why the grid stays empty instead of silently spinning.
   if (room) {
     try {
-      const probe = await fetch(`./_/${encodeURIComponent(room)}`);
+      const probe = await fetch(`/_/${encodeURIComponent(room)}`);
       if (probe.status === 403) {
         const note = document.createElement('div');
         note.setAttribute(

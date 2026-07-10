@@ -79,8 +79,12 @@ routes = []
 [env.staging.vars]
 BASEPATH = ""
 ETHERCALC_CORS = "1"
-# Auth stays dark on staging until its workers.dev hostname is pinned as
-# the WebAuthn origin (set ETHERCALC_AUTH/RP_ID/ORIGIN to light it up).
+# Phase A — passkey auth is live on staging for the WebAuthn acceptance test.
+# RP ID / origin MUST match the workers.dev hostname exactly.
+ETHERCALC_AUTH = "1"
+ETHERCALC_RP_ID = "ethercalc-staging.audreyt.workers.dev"
+ETHERCALC_RP_NAME = "EtherCalc Staging"
+ETHERCALC_ORIGIN = "https://ethercalc-staging.audreyt.workers.dev"
 
 [[env.staging.durable_objects.bindings]]
 name = "ROOM"
