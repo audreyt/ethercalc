@@ -43,13 +43,15 @@ function makeEnv(
 }
 
 describe('verifyAuthSession', () => {
-  it('verifies against the singleton AuthDO and returns its uid', async () => {
+  it('verifies against the singleton AuthDO and returns uid plus expiry', async () => {
+    const exp = Date.now() + 60_000;
     const { env, calls } = makeEnv(
-      () => Response.json({ uid: 'uid-owner' }),
+      () => Response.json({ uid: 'uid-owner', exp }),
     );
 
     await expect(verifyAuthSession(env, 'signed.token')).resolves.toEqual({
       uid: 'uid-owner',
+      exp,
     });
     expect(calls).toEqual([
       {

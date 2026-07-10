@@ -573,7 +573,9 @@ export class RoomDO implements DurableObject {
     }
     const updatedAt = Date.now();
     await this.#state.storage.put(STORAGE_KEYS.metaUpdatedAt, updatedAt);
-    await this.#mirrorIndex(roomName, updatedAt);
+    const { access } = await this.#getAccessMeta();
+    if (access === 'private') await this.#deleteIndex(roomName);
+    else await this.#mirrorIndex(roomName, updatedAt);
     await this.#armAlarm();
     return jsonResponse({ exists: true, updatedAt });
   }
@@ -706,12 +708,16 @@ export class RoomDO implements DurableObject {
     preserveAccess: boolean,
     uid: string | null,
   ): Promise<void> {
+    let keptPrivateTombstone = false;
     await this.#state.blockConcurrencyWhile(async () => {
       const accessEntries = preserveAccess
         ? await this.#readAccessEntries()
         : {};
+      keptPrivateTombstone =
+        accessEntries[STORAGE_KEYS.metaAccess] === 'private';
       await this.#state.storage.deleteAll();
-      if (Object.keys(accessEntries).length > 0) {
+      if (keptPrivateTombstone) {
+        accessEntries[STORAGE_KEYS.metaUpdatedAt] = Date.now();
         await this.#state.storage.put(accessEntries);
       }
       this.#ss = null;
@@ -720,6 +726,10 @@ export class RoomDO implements DurableObject {
       this.#nextChatSeq = 0;
       this.#resetVolatile();
     });
+    // `deleteAll()` may clear a pre-existing alarm under newer workerd
+    // compatibility dates; tombstones need their own TTL wake-up to release
+    // the reservation after expiry.
+    if (keptPrivateTombstone) await this.#armAlarm();
     await this.#deleteIndex(roomName);
     await this.#deleteAuditChatFromD1(roomName);
     await this.#deleteFormdataSibling(roomName, uid);
@@ -1345,11 +1355,19 @@ export class RoomDO implements DurableObject {
      *   `test/legacy-socketio.test.ts`, `test/room.test.ts`).
      */
     const uid = request.headers.get('X-EC-Uid');
+    const sessionExpHeader = request.headers.get('X-EC-Session-Exp');
+    /* istanbul ignore next -- workerd-only WebSocket attachment wiring */
+    const sessionExp =
+      sessionExpHeader === null ? null : Number(sessionExpHeader);
+    /* istanbul ignore next -- workerd-only WebSocket attachment wiring */
     const wsOpts = {
       ...(isSandstormEnforced(this.#env)
         ? { sandstormModify: sandstormCanModify(request.headers) }
         : {}),
       ...(uid === null ? {} : { uid }),
+      ...(sessionExp === null || !Number.isFinite(sessionExp)
+        ? {}
+        : { sessionExp }),
     };
     return upgradeWebSocket(this.#state, request, wsOpts);
   }
@@ -1386,19 +1404,18 @@ export class RoomDO implements DurableObject {
    * Worker-shim baseline — so spreadsheet state stays on the real room DO.
    */
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
+    const attachment =
+      (ws.deserializeAttachment() as WsAttachment | null) ??
+      { user: '', room: '', auth: '' };
+    if (this.#closeExpiredSessionSocket(ws, attachment)) return;
     if (typeof message !== 'string') return;
     // Per-frame byte cap — drop oversized frames before parsing so a
     // single client can't force a multi-MB JSON.parse + storage write.
     if (message.length > MAX_FRAME) return;
-    const attachment =
-      (ws.deserializeAttachment() as WsAttachment | null) ??
-      { user: '', room: '', auth: '' };
-
     if (attachment.legacy) {
       await this.#handleLegacyFrame(ws, attachment, message);
       return;
     }
-
     const parsed = parseClientMessage(message);
     if (!parsed) return;
     // Auth-bearing message variants (`execute`, `ecell`, `stopHuddle`)
@@ -1601,7 +1618,42 @@ export class RoomDO implements DurableObject {
 
   // ─── WS broadcast primitives ───────────────────────────────────────────
 
+  #closeExpiredSessionSocket(
+    ws: WebSocket,
+    attachment?: WsAttachment | null,
+  ): boolean {
+    let stored = attachment;
+    if (stored === undefined) {
+      try {
+        stored = ws.deserializeAttachment() as WsAttachment | null;
+      } catch {
+        try {
+          ws.close(1008, 'Session expired');
+        } catch {
+          // The socket may already be closed; it must still receive no data.
+        }
+        return true;
+      }
+    }
+    if (!stored || stored.uid === undefined) return false;
+    const { sessionExp } = stored;
+    if (
+      typeof sessionExp === 'number' &&
+      Number.isFinite(sessionExp) &&
+      Date.now() < sessionExp
+    ) {
+      return false;
+    }
+    try {
+      ws.close(1008, 'Session expired');
+    } catch {
+      // The socket may already be closed; it must still receive no data.
+    }
+    return true;
+  }
+
   #sendTo(ws: WebSocket, msg: ServerMessage): void {
+    if (this.#closeExpiredSessionSocket(ws)) return;
     try {
       ws.send(this.#frameFor(ws, msg));
     } catch {
@@ -1618,7 +1670,7 @@ export class RoomDO implements DurableObject {
   /** Send to every peer except `skip`. */
   #broadcast(skip: WebSocket, msg: ServerMessage): void {
     for (const peer of this.#state.getWebSockets()) {
-      if (peer === skip) continue;
+      if (peer === skip || this.#closeExpiredSessionSocket(peer)) continue;
       try {
         peer.send(this.#frameFor(peer, msg));
       } catch {
@@ -1630,6 +1682,7 @@ export class RoomDO implements DurableObject {
   /** Send to every peer (including the sender). Used by submitform. */
   #broadcastAll(msg: ServerMessage): void {
     for (const peer of this.#state.getWebSockets()) {
+      if (this.#closeExpiredSessionSocket(peer)) continue;
       try {
         peer.send(this.#frameFor(peer, msg));
       } catch {

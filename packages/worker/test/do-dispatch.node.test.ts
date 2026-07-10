@@ -88,7 +88,7 @@ describe('do-dispatch', () => {
       'r',
       '/_do/snapshot',
       { headers: { 'X-EC-Uid': 'uid-forged' } },
-      { uid: 'uid-verified' },
+      { uid: 'uid-verified', exp: Number.MAX_SAFE_INTEGER },
     );
     const headers = new Headers(calls[0]?.init?.headers);
     expect(headers.get('X-EC-Uid')).toBe('uid-verified');

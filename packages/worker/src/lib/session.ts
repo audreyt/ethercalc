@@ -4,9 +4,10 @@ export const SESSION_COOKIE_NAME = 'ec_sess';
 /** Thirty-day lifetime, matching the AuthDO token expiry. */
 export const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 
-/** Authenticated identity returned by AuthDO session verification. */
+/** Authenticated identity and verified session expiry returned by AuthDO. */
 export interface SessionPrincipal {
   readonly uid: string;
+  readonly exp: number;
 }
 
 /** Injected verifier used to keep cookie parsing independent of AuthDO I/O. */

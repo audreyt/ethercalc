@@ -176,6 +176,7 @@ async function drainWaitUntil(
  */
 interface FakeWsLog {
   sent: string[];
+  closed?: boolean;
   serializedAttachment?: unknown;
 }
 function makeFakeWs(log: FakeWsLog, attachment?: unknown): WebSocket {
@@ -189,7 +190,9 @@ function makeFakeWs(log: FakeWsLog, attachment?: unknown): WebSocket {
     deserializeAttachment(): unknown {
       return attachment ?? null;
     },
-    close() {},
+    close() {
+      log.closed = true;
+    },
   } as unknown as WebSocket;
 }
 interface WsAwareState {
@@ -228,6 +231,8 @@ const PRIVATE_ACL = {
   readers: ['uid-reader'],
   writers: ['uid-writer'],
 };
+
+const FUTURE_SESSION_EXP = Number.MAX_SAFE_INTEGER;
 
 function markPrivate(record: FakeStorageRecord): void {
   record.map.set(STORAGE_KEYS.metaAccess, 'private');
@@ -676,6 +681,61 @@ describe('RoomDO (unit, direct construction)', () => {
     expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('private-save');
   });
 
+  it('exempts worker-internal operator paths from the private gate', async () => {
+    markPrivate(record);
+    record.map.set(STORAGE_KEYS.snapshot, 'private-save');
+
+    // /_do/ping carries no sheet content and is polled anonymously by
+    // the PITR restore route to observe the instance-nonce swap — a 403
+    // here would turn every private-room restore into a false failure.
+    const ping = await room.fetch(new Request('https://do/_do/ping?name=r'));
+    expect(ping.status).toBe(200);
+    const pingBody = (await ping.json()) as { nonce: string };
+    expect(pingBody.nonce).not.toBe('');
+
+    // The pitr routes are reachable only through the deployment-operator
+    // bearer at the worker (operator authority ≥ owner). On the fake
+    // storage PITR is unavailable — the point is the gate does not 403.
+    const restore = await room.fetch(
+      new Request('https://do/_do/pitr-restore', {
+        method: 'POST',
+        body: JSON.stringify({ at: Date.now() }),
+      }),
+    );
+    expect(restore.status).toBe(501);
+
+    const touch = await room.fetch(
+      new Request('https://do/_do/pitr-touch?name=r', { method: 'POST' }),
+    );
+    expect(touch.status).toBe(200);
+    expect(await touch.json()).toEqual({
+      exists: true,
+      updatedAt: expect.any(Number),
+    });
+  });
+
+  it('keeps a restored private room out of the rooms index on pitr-touch', async () => {
+    markPrivate(record);
+    record.map.set(STORAGE_KEYS.snapshot, 'private-save');
+    const d1Calls: D1Call[] = [];
+    const privRoom = new RoomDO(
+      makeState('pitr-touch-private', record),
+      makeEnvWithDb(d1Calls),
+    );
+
+    const res = await privRoom.fetch(
+      new Request('https://do/_do/pitr-touch?name=priv', { method: 'POST' }),
+    );
+
+    expect(res.status).toBe(200);
+    const roomsInsert = d1Calls.find((c) =>
+      c.sql.startsWith('INSERT INTO rooms'),
+    );
+    expect(roomsInsert).toBeUndefined();
+    expect(
+      d1Calls.find((call) => call.sql.includes('DELETE FROM rooms'))?.params,
+    ).toEqual(['priv']);
+  });
   it('enforces private owner, reader, and writer roles', async () => {
     markPrivate(record);
     record.map.set(STORAGE_KEYS.snapshot, 'private-save');
@@ -780,6 +840,8 @@ describe('RoomDO (unit, direct construction)', () => {
     expect(record.map.get(STORAGE_KEYS.metaAccess)).toBe('private');
     expect(record.map.get(STORAGE_KEYS.metaAcl)).toEqual(PRIVATE_ACL);
     expect(record.map.get(STORAGE_KEYS.metaGroup)).toBe('group-private');
+    expect(record.map.get(STORAGE_KEYS.metaUpdatedAt)).toEqual(expect.any(Number));
+    expect(record.alarm).toEqual(expect.any(Number));
   });
 
   it('POST /_do/seed by a writer preserves the private access trio', async () => {
@@ -3903,6 +3965,28 @@ describe('RoomDO — /_do/fire-trigger (Phase 9)', () => {
 });
 
 describe('RoomDO — private WS gating (Phase A)', () => {
+
+  it('closes an expired private session before it can read a snapshot', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    markPrivate(record);
+    record.map.set(STORAGE_KEYS.snapshot, 'private-save');
+    const { state } = makeWsAwareState('ws-expired-session', record, []);
+    const room = new RoomDO(state, makeEnv());
+    const log: FakeWsLog = { sent: [] };
+    const expiredWriter = makeFakeWs(log, {
+      user: 'w',
+      room: 'r',
+      auth: 'r',
+      uid: 'uid-writer',
+      sessionExp: Date.now() - 1,
+    });
+    await room.webSocketMessage(
+      expiredWriter,
+      JSON.stringify({ type: 'ask.log', room: 'r' }),
+    );
+    expect(log.closed).toBe(true);
+    expect(log.sent).toEqual([]);
+  });
   it('applies execute frames from ACL writers', async () => {
     const record: FakeStorageRecord = { map: new Map() };
     markPrivate(record);
@@ -3910,7 +3994,13 @@ describe('RoomDO — private WS gating (Phase A)', () => {
     const room = new RoomDO(state, makeEnv());
     const writer = makeFakeWs(
       { sent: [] },
-      { user: 'w', room: 'r', auth: 'r', uid: 'uid-writer' },
+      {
+        user: 'w',
+        room: 'r',
+        auth: 'r',
+        uid: 'uid-writer',
+        sessionExp: FUTURE_SESSION_EXP,
+      },
     );
     await room.webSocketMessage(
       writer,
@@ -3952,7 +4042,13 @@ describe('RoomDO — private WS gating (Phase A)', () => {
     const { state } = makeWsAwareState('ws-priv-2', record, []);
     const room = new RoomDO(state, makeEnv());
     const attachments = [
-      { user: 'reader', room: 'r', auth: 'r', uid: 'uid-reader' },
+      {
+        user: 'reader',
+        room: 'r',
+        auth: 'r',
+        uid: 'uid-reader',
+        sessionExp: FUTURE_SESSION_EXP,
+      },
       { user: 'legacy', room: 'r', auth: 'r' },
     ];
     for (const attachment of attachments) {
@@ -3980,7 +4076,13 @@ describe('RoomDO — private WS gating (Phase A)', () => {
 
     const reader = makeFakeWs(
       { sent: [] },
-      { user: 'r', room: 'r', auth: 'r', uid: 'uid-reader' },
+      {
+        user: 'r',
+        room: 'r',
+        auth: 'r',
+        uid: 'uid-reader',
+        sessionExp: FUTURE_SESSION_EXP,
+      },
     );
     await room.webSocketMessage(
       reader,
@@ -3990,7 +4092,13 @@ describe('RoomDO — private WS gating (Phase A)', () => {
 
     const writer = makeFakeWs(
       { sent: [] },
-      { user: 'w', room: 'r', auth: 'r', uid: 'uid-writer' },
+      {
+        user: 'w',
+        room: 'r',
+        auth: 'r',
+        uid: 'uid-writer',
+        sessionExp: FUTURE_SESSION_EXP,
+      },
     );
     await room.webSocketMessage(
       writer,
@@ -4021,7 +4129,13 @@ describe('RoomDO — private WS gating (Phase A)', () => {
     const room = new RoomDO(state, env);
     const writer = makeFakeWs(
       { sent: [] },
-      { user: 'w', room: 'mysheet', auth: 'mysheet', uid: 'uid-writer' },
+      {
+        user: 'w',
+        room: 'mysheet',
+        auth: 'mysheet',
+        uid: 'uid-writer',
+        sessionExp: FUTURE_SESSION_EXP,
+      },
     );
     await room.webSocketMessage(
       writer,
@@ -4060,7 +4174,13 @@ describe('RoomDO — private WS gating (Phase A)', () => {
     const room = new RoomDO(state, env);
     const writer = makeFakeWs(
       { sent: [] },
-      { user: 'w', room: 'mysheet', auth: 'mysheet', uid: 'uid-writer' },
+      {
+        user: 'w',
+        room: 'mysheet',
+        auth: 'mysheet',
+        uid: 'uid-writer',
+        sessionExp: FUTURE_SESSION_EXP,
+      },
     );
     await room.webSocketMessage(
       writer,
@@ -4110,6 +4230,140 @@ describe('RoomDO — private WS gating (Phase A)', () => {
       }),
     );
     expect(siblingInits).toHaveLength(0);
+  });
+
+  it('closes an expired peer instead of broadcasting private data', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    markPrivate(record);
+    const expiredLog: FakeWsLog = { sent: [] };
+    const expiredPeer = makeFakeWs(expiredLog, {
+      user: 'w',
+      room: 'r',
+      auth: 'r',
+      uid: 'uid-writer',
+      sessionExp: Date.now() - 1,
+    });
+    const { state } = makeWsAwareState('ws-expired-peer', record, [expiredPeer]);
+    const room = new RoomDO(state, makeEnv());
+    const sender = makeFakeWs(
+      { sent: [] },
+      {
+        user: 'owner',
+        room: 'r',
+        auth: 'r',
+        uid: 'uid-owner',
+        sessionExp: FUTURE_SESSION_EXP,
+      },
+    );
+    await room.webSocketMessage(
+      sender,
+      JSON.stringify({
+        type: 'execute',
+        room: 'r',
+        user: 'owner',
+        auth: 'r',
+        cmdstr: 'set A1 value n 1',
+      }),
+    );
+    expect(expiredLog.closed).toBe(true);
+    expect(expiredLog.sent).toEqual([]);
+  });
+
+  it('fails closed when a private peer attachment cannot deserialize', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    markPrivate(record);
+    const peerLog: FakeWsLog = { sent: [] };
+    const opaquePeer = {
+      send(data: string) {
+        peerLog.sent.push(data);
+      },
+      close() {
+        peerLog.closed = true;
+      },
+      deserializeAttachment() {
+        throw new Error('attachment corrupt');
+      },
+    } as unknown as WebSocket;
+    const { state } = makeWsAwareState('ws-corrupt-peer', record, [opaquePeer]);
+    const room = new RoomDO(state, makeEnv());
+    const sender = makeFakeWs(
+      { sent: [] },
+      {
+        user: 'owner',
+        room: 'r',
+        auth: 'r',
+        uid: 'uid-owner',
+        sessionExp: FUTURE_SESSION_EXP,
+      },
+    );
+    await room.webSocketMessage(
+      sender,
+      JSON.stringify({
+        type: 'execute',
+        room: 'r',
+        user: 'owner',
+        auth: 'r',
+        cmdstr: 'set A1 value n 1',
+      }),
+    );
+    expect(peerLog.closed).toBe(true);
+    expect(peerLog.sent).toEqual([]);
+  });
+
+  it('closes a session that expires between dispatch and direct reply', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    markPrivate(record);
+    record.map.set(STORAGE_KEYS.snapshot, 'private-save');
+    const { state } = makeWsAwareState('ws-expire-mid-frame', record, []);
+    const room = new RoomDO(state, makeEnv());
+    const log: FakeWsLog = { sent: [] };
+    const ws = makeFakeWs(log, {
+      user: 'w',
+      room: 'r',
+      auth: 'r',
+      uid: 'uid-writer',
+      sessionExp: 1,
+    });
+    const now = vi.spyOn(Date, 'now').mockReturnValueOnce(0).mockReturnValue(1);
+    try {
+      await room.webSocketMessage(ws, JSON.stringify({ type: 'ask.log', room: 'r' }));
+    } finally {
+      now.mockRestore();
+    }
+    expect(log.closed).toBe(true);
+    expect(log.sent).toEqual([]);
+  });
+
+  it('closes an expired peer instead of include-self broadcasting public submitform', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const peerLog: FakeWsLog = { sent: [] };
+    const expiredPeer = makeFakeWs(peerLog, {
+      user: 'w',
+      room: 'r',
+      auth: 'r',
+      uid: 'uid-writer',
+      sessionExp: Date.now() - 1,
+    });
+    const { state } = makeWsAwareState('ws-expired-submitform-peer', record, [
+      expiredPeer,
+    ]);
+    const room = new RoomDO(state, makeEnv());
+    const sender = makeFakeWs(
+      { sent: [] },
+      {
+        user: 'owner',
+        room: 'r',
+        auth: 'r',
+        uid: 'uid-owner',
+        sessionExp: FUTURE_SESSION_EXP,
+      },
+    );
+    await room.webSocketMessage(
+      sender,
+      JSON.stringify({ type: 'execute', room: 'r', user: 'owner', auth: 'r', cmdstr: 'submitform' }),
+    );
+    expect(peerLog.closed).toBe(true);
+    expect(peerLog.sent).toEqual([]);
   });
 });
 

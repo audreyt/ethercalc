@@ -1270,8 +1270,9 @@ describe('AuthDO', () => {
         ),
       );
       expect(verifyRes.status).toBe(200);
-      const verifyBody = (await verifyRes.json()) as { uid: string };
+      const verifyBody = (await verifyRes.json()) as { uid: string; exp: number };
       expect(verifyBody.uid).toBe(uid);
+      expect(verifyBody.exp).toBeGreaterThan(Date.now());
     });
 
     it('returns 401 for an invalid session token', async () => {
@@ -1325,7 +1326,7 @@ describe('AuthDO', () => {
       );
 
       expect(response.status).toBe(200);
-      expect(await response.json()).toEqual({ uid });
+      expect(await response.json()).toEqual({ uid, exp: expect.any(Number) });
     });
 
     it('rejects malformed, expired, and truncated session tokens', async () => {

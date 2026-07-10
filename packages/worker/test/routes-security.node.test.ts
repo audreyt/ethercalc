@@ -25,6 +25,8 @@ interface Call {
   uid: string | null;
   /** Upgrade header on the forwarded request (WS proxy assertions). */
   upgrade: string | null;
+  /** Verified session expiry attached only by the WS proxy (null = absent). */
+  sessionExp: string | null;
 }
 
 interface FakeStub {
@@ -58,6 +60,7 @@ function makeFakeRoomNamespace(responder: (call: Call) => Response): {
         method,
         uid: headers.get('X-EC-Uid'),
         upgrade: headers.get('Upgrade'),
+        sessionExp: headers.get('X-EC-Session-Exp'),
         ...(bodyText !== undefined ? { bodyText } : {}),
       };
       calls.push(call);
@@ -74,12 +77,12 @@ function makeFakeRoomNamespace(responder: (call: Call) => Response): {
 }
 
 const AUTH_UID = 'uid-passkey-1';
+const AUTH_EXP = Number.MAX_SAFE_INTEGER;
 const AUTH_COOKIE = 'ec_sess=tok-valid';
 
 /**
- * Layer a fake AUTH namespace over `env` so `getSessionPrincipal`
- * resolves `AUTH_UID` for any `ec_sess` cookie — the AuthDO
- * verify-session contract ({uid} JSON on POST) without real crypto.
+ * Layer a fake AUTH namespace over `env` so `getSessionPrincipal` resolves
+ * `AUTH_UID` plus its future expiration for any `ec_sess` cookie.
  */
 function withAuth(env: Env, uid: string = AUTH_UID): Env {
   return {
@@ -89,7 +92,7 @@ function withAuth(env: Env, uid: string = AUTH_UID): Env {
       idFromName: () => ({}) as DurableObjectId,
       get: () =>
         ({
-          fetch: async () => Response.json({ uid }),
+          fetch: async () => Response.json({ uid, exp: AUTH_EXP }),
         }) as unknown as DurableObjectStub,
     } as unknown as DurableObjectNamespace,
   };
@@ -371,5 +374,6 @@ describe('/_ws/:room upgrade — verified identity only', () => {
     expect(calls[0]!.upgrade).toBe('websocket');
     // Exactly the verified uid — never the forged inbound value.
     expect(calls[0]!.uid).toBe(AUTH_UID);
+    expect(calls[0]!.sessionExp).toBe(String(AUTH_EXP));
   });
 });

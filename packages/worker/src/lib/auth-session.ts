@@ -27,11 +27,15 @@ export async function verifyAuthSession(
       body === null ||
       typeof body !== 'object' ||
       !('uid' in body) ||
-      typeof body.uid !== 'string'
+      typeof body.uid !== 'string' ||
+      !('exp' in body) ||
+      typeof body.exp !== 'number' ||
+      !Number.isFinite(body.exp) ||
+      Date.now() >= body.exp
     ) {
       return null;
     }
-    return { uid: body.uid };
+    return { uid: body.uid, exp: body.exp };
   } catch {
     return null;
   }

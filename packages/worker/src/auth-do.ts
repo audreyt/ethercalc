@@ -485,6 +485,6 @@ export class AuthDO implements DurableObject {
     if (payload === null) {
       return plainResponse('Invalid session', 401);
     }
-    return jsonResponse({ uid: payload.uid });
+    return jsonResponse({ uid: payload.uid, exp: payload.exp });
   }
 }

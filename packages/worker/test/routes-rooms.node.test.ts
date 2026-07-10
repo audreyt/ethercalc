@@ -71,12 +71,12 @@ function makeFakeRoomNamespace(responder: (call: Call) => Response): {
 }
 
 const AUTH_UID = 'uid-passkey-1';
+const AUTH_EXP = Number.MAX_SAFE_INTEGER;
 const AUTH_COOKIE = 'ec_sess=tok-valid';
 
 /**
- * Layer a fake AUTH namespace over `env` so `getSessionPrincipal`
- * resolves `AUTH_UID` for any `ec_sess` cookie — the AuthDO
- * verify-session contract ({uid} JSON on POST) without real crypto.
+ * Layer a fake AUTH namespace over `env` so `getSessionPrincipal` resolves
+ * `AUTH_UID` plus its future expiration for any `ec_sess` cookie.
  */
 function withAuth(env: Env, uid: string = AUTH_UID): Env {
   return {
@@ -86,7 +86,7 @@ function withAuth(env: Env, uid: string = AUTH_UID): Env {
       idFromName: () => ({}) as DurableObjectId,
       get: () =>
         ({
-          fetch: async () => Response.json({ uid }),
+          fetch: async () => Response.json({ uid, exp: AUTH_EXP }),
         }) as unknown as DurableObjectStub,
     } as unknown as DurableObjectNamespace,
   };

@@ -178,7 +178,9 @@ describe('auth routes', () => {
   });
 
   it('whoami reports the verified principal, anonymity, and availability', async () => {
-    const { env } = makeAuthEnv(() => Response.json({ uid: 'uid-owner' }));
+    const { env } = makeAuthEnv(() =>
+      Response.json({ uid: 'uid-owner', exp: Number.MAX_SAFE_INTEGER }),
+    );
     const app = buildApp();
 
     const authed = await app.fetch(

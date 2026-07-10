@@ -57,6 +57,7 @@ export function registerWs(app: Hono<EtherCalcHonoEnv>): void {
     const principal = await getSessionPrincipal(c);
     if (principal) {
       fwd.set('X-EC-Uid', principal.uid);
+      fwd.set('X-EC-Session-Exp', String(principal.exp));
     }
     const req = new Request(doUrl, {
       method: 'GET',

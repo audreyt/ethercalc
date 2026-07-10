@@ -9,7 +9,10 @@ import { buildApp } from '../src/index.ts';
 import type { Env } from '../src/env.ts';
 
 function makeApp(
-  verifier: (env: Env, session: string) => Promise<{ uid: string } | null>,
+  verifier: (
+    env: Env,
+    session: string,
+  ) => Promise<{ uid: string; exp: number } | null>,
 ): Hono<EtherCalcHonoEnv> {
   const app = new Hono<EtherCalcHonoEnv>();
   app.get('/who', async (context) => {
@@ -23,7 +26,10 @@ const env = { ROOM: {} as DurableObjectNamespace } as Env;
 
 describe('session middleware', () => {
   it('derives principal only from a verified cookie and ignores forged headers', async () => {
-    const verifier = vi.fn().mockResolvedValue({ uid: 'uid-verified' });
+    const verifier = vi.fn().mockResolvedValue({
+      uid: 'uid-verified',
+      exp: Number.MAX_SAFE_INTEGER,
+    });
     const app = makeApp(verifier);
 
     const response = await app.fetch(
@@ -86,7 +92,10 @@ describe('session middleware', () => {
   });
  
   it('memoizes principal resolution within one request', async () => {
-    const verifier = vi.fn().mockResolvedValue({ uid: 'uid-cached' });
+    const verifier = vi.fn().mockResolvedValue({
+      uid: 'uid-cached',
+      exp: Number.MAX_SAFE_INTEGER,
+    });
     const app = new Hono<EtherCalcHonoEnv>();
     app.get('/who', async (context) => {
       const first = await getSessionPrincipal(context, verifier);
@@ -110,7 +119,10 @@ describe('session middleware', () => {
 
   it('does not contact AuthDO for health or static asset requests', async () => {
     const authFetch = vi.fn().mockResolvedValue(
-      Response.json({ uid: 'uid-asset-browser' }),
+      Response.json({
+        uid: 'uid-asset-browser',
+        exp: Number.MAX_SAFE_INTEGER,
+      }),
     );
     const app = buildApp();
     const requestEnv = {
