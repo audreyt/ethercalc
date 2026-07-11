@@ -466,4 +466,42 @@ test.describe('passkey room-access chrome', () => {
     expect(mobile.overflowDisplay).not.toBe('none');
     expect(mobile.baseRight - mobile.overflowRight).toBeLessThan(40);
   });
+
+  test('disables the account menu open animation under prefers-reduced-motion', async ({
+    workerBase,
+    page,
+  }) => {
+    // `m3e-menu`'s own `@media (prefers-reduced-motion)` rule only
+    // zeroes its `transition` - the separate `animation: bounce-open …`
+    // it applies on `:popover-open` (see @m3e/web/dist/menu.js) is
+    // untouched, so the menu still visibly bounces open at full duration
+    // under reduced motion unless something else neutralizes it. ui.css
+    // zeroes the underlying `--md-sys-motion-duration-*`/`-spring-*`
+    // tokens `!important` at the `html` level specifically to close this
+    // (and any other component's) gap without touching shadow-DOM-
+    // private selectors directly.
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const room = `access-reduced-motion-${Date.now().toString(36)}`;
+    await routeWhoami(page, signedInAuth);
+    await page.route('**/_/*/access', (route) =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify(publicAccess) }),
+    );
+    await page.goto(`${workerBase}/${room}`);
+
+    const row = page.locator('#ec-room-access');
+    await row.getByRole('button', { name: 'Passkey' }).click();
+    await expect(page.locator('#ec-account-menu')).toBeVisible();
+
+    const animation = await page.evaluate(() => {
+      const menu = document.getElementById('ec-account-menu');
+      if (!menu) return null;
+      const style = getComputedStyle(menu);
+      return { animationName: style.animationName, animationDuration: style.animationDuration };
+    });
+    expect(animation, 'account menu not found').not.toBeNull();
+    // A zero (or effectively zero) duration means the animation completes
+    // instantly regardless of animation-name - assert on duration, which
+    // is what actually determines visible motion.
+    expect(animation?.animationDuration).toMatch(/^0s$|^0ms$/);
+  });
 });

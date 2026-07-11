@@ -86,3 +86,53 @@ m3e-card {
     display: inline-flex;
   }
 }
+
+
+@media (prefers-reduced-motion: reduce) {
+  /* M3E's per-component `@media (prefers-reduced-motion)` rules are
+     incomplete: e.g. `m3e-menu` only zeroes its `transition`, not the
+     `animation: bounce-open …` it separately applies on open (verified
+     against @m3e/web/dist/menu.js source and empirically - the account
+     menu's open animation still ran at full 250ms under emulated
+     reduced motion). `m3e-theme` doesn't zero these either - it just
+     materializes their *default* values as explicit `html` custom
+     properties (see @m3e/web/dist/theme.js's module-level
+     `registerStyleSheet` call), so every component that reads
+     `var(--md-sys-motion-duration-*, …)` / `var(--md-sys-motion-spring-*, …)`
+     - including through shadow DOM, since custom properties inherit
+     across shadow boundaries - still animates at full speed regardless
+     of the user's preference.
+
+     Zeroing the tokens here instead of chasing every component's
+     internal `animation`/`transition` selector (most of which are
+     shadow-DOM-private and unreachable from this light-DOM stylesheet
+     anyway) covers all of them at once. `!important` is required: the
+     theme's token-materialization stylesheet targets the same `html`
+     selector with the same specificity, and network timing makes
+     source order between the two unpredictable (this stylesheet loads
+     via a parsed `<link>`, the theme's via a deferred module script). */
+  html {
+    --md-sys-motion-duration-short-1: 0ms !important;
+    --md-sys-motion-duration-short-2: 0ms !important;
+    --md-sys-motion-duration-short-3: 0ms !important;
+    --md-sys-motion-duration-short-4: 0ms !important;
+    --md-sys-motion-duration-medium-1: 0ms !important;
+    --md-sys-motion-duration-medium-2: 0ms !important;
+    --md-sys-motion-duration-medium-3: 0ms !important;
+    --md-sys-motion-duration-medium-4: 0ms !important;
+    --md-sys-motion-duration-long-1: 0ms !important;
+    --md-sys-motion-duration-long-2: 0ms !important;
+    --md-sys-motion-duration-long-3: 0ms !important;
+    --md-sys-motion-duration-long-4: 0ms !important;
+    --md-sys-motion-duration-extra-long-1: 0ms !important;
+    --md-sys-motion-duration-extra-long-2: 0ms !important;
+    --md-sys-motion-duration-extra-long-3: 0ms !important;
+    --md-sys-motion-duration-extra-long-4: 0ms !important;
+    --md-sys-motion-spring-fast-spatial: 0ms linear !important;
+    --md-sys-motion-spring-default-spatial: 0ms linear !important;
+    --md-sys-motion-spring-slow-spatial: 0ms linear !important;
+    --md-sys-motion-spring-fast-effects: 0ms linear !important;
+    --md-sys-motion-spring-default-effects: 0ms linear !important;
+    --md-sys-motion-spring-slow-effects: 0ms linear !important;
+  }
+}
