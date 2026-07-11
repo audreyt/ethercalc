@@ -123,7 +123,11 @@ into multiple chunks — not yet verified either way.)
   registered globally by `passkey/ui.ts`'s separately loaded script.
   Safe without an explicit load-order dependency: `index.html` always
   loads both scripts, and the export dialog only opens on a later user
-  gesture (clicking Export), never at module-evaluation time.
+  gesture (clicking Export), never at module-evaluation time. (This
+  tolerates either script-tag order — but see Theming's "Cold-load
+  upgrade race": the passkey entry's `<script>` tag still moves *before*
+  `player.js`'s in `index.html`, for SocialCalc's own boot-time layout
+  math, not for this dialog.)
 - New test coverage (extending the existing `scripts/build-assets.test.ts`
   pattern that already asserts `plan.directoryCopies` contains the
   `multi` entry) asserts the new passkey directory-copy entry exists and
@@ -180,6 +184,41 @@ the user's choice.
 empirically in a real browser (not assumed either way) and add an
 app-level `@media (prefers-reduced-motion: reduce)` override if M3E
 doesn't handle it.
+
+**Cold-load upgrade race.** `m3e-theme` only gets `display: contents`
+from its own shadow styles (`static override styles = css\`:host {
+display: contents; }\`` in `ThemeElement.ts`) — applied once Lit
+registers the element and its shadow root attaches. Before that (module
+not yet loaded/parsed/executed), an unrecognized custom element wraps
+its children as a plain inline box per the UA default stylesheet. Since
+the design wraps `<body>`'s *entire* content — including SocialCalc's
+block-level `#tableeditor` — in `<m3e-theme>`, there is a real window,
+between first paint and the passkey Vite entry's module finishing
+execution, where SocialCalc's own boot-time layout math
+(`SizeSSDiv`/`GetViewportInfo`/`GetElementPosition`, run from `boot.ts`,
+which itself never imports `@m3e/web`) can measure against a
+corrupted inline layout, then visibly shift once the element upgrades.
+Two mitigations, both required, not either/or:
+
+1. A synchronous, always-present CSS rule — in `<head>`, before any
+   module script, so it's active from first paint — pins the
+   pre-upgrade state to match the post-upgrade one:
+   `m3e-theme:not(:defined) { display: contents; }`.
+2. `index.html`'s script tag order changes: the passkey Vite entry
+   (which registers `m3e-theme` and every other M3E element used) loads
+   **before** `player.js`, not after as in the current
+   `socialcalc.js` → `player.js` → `passkey.js` order. This shrinks —
+   it cannot fully eliminate — the race window. `waitForSpreadsheet()`'s
+   existing polling loop already tolerates `window.spreadsheet` not
+   being ready yet regardless of script order, so this reorder is safe
+   for the passkey UI's own mounting logic; it exists purely to reduce
+   SocialCalc's own boot-time exposure to an undefined `m3e-theme`.
+
+Testing must include a cold-load (cache-disabled) browser check
+asserting `spreadsheet.viewheight` and the rendered grid height stay
+positive immediately after the custom elements upgrade — not only
+after the page has fully settled, which the existing contracts already
+cover.
 
 ## Component mapping
 
@@ -290,6 +329,14 @@ DOM-shape assertions.
   region against the new body background) confirming no visual
   regression — this is a materially new risk this phase introduces
   that the prior test suite never had to cover.
+- **New: cold-load custom-element upgrade race.** Cache disabled, assert
+  `spreadsheet.viewheight` and the rendered grid height are positive
+  immediately once `m3e-theme`/`m3e-toolbar` finish upgrading — not
+  only after the page has fully settled (see "Cold-load upgrade race"
+  under Theming). Covers both the pre-upgrade `:not(:defined)` CSS
+  safeguard and the `updateComplete`-gated height measurement together,
+  since the height-measurement fix alone does not address SocialCalc's
+  own boot-time layout math running before the theme element upgrades.
 - **Build:** extend `scripts/build-assets.test.ts` to assert the new
   `directoryCopies` entry and that `index.html`/`start.html` reference
   exactly the emitted file names.
