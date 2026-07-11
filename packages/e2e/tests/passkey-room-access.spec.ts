@@ -62,9 +62,12 @@ function contrastRatio(a: [number, number, number], b: [number, number, number])
  * display: contents }` CSS must already be holding it inert so
  * SocialCalc's boot-time layout math never measures against a corrupted
  * inline-box wrapper. Once the module is allowed to load and the page
- * settles, the room-access row must be an upgraded `m3e-toolbar` and the
- * spreadsheet's own height bookkeeping must already reflect the space it
- * occupies - both immediately, not just eventually.
+ * settles, the room-access cluster must be visible and SocialCalc's own
+ * height bookkeeping must already be positive - both immediately, not
+ * just eventually. (The cluster no longer RESERVES any of that height
+ * itself - it's `position: fixed` and overlays the grid's own top-right
+ * corner - so this is a smoke check that the page still boots cleanly,
+ * not a height-accounting check the way it was before that redesign.)
  */
 async function assertColdLoadUpgradeRaceIsSafe(page: Page, gotoPath: string): Promise<void> {
   let releaseUiJs: (() => void) | undefined;
@@ -127,7 +130,7 @@ async function assertColdLoadUpgradeRaceIsSafe(page: Page, gotoPath: string): Pr
 }
 
 test.describe('passkey room-access chrome', () => {
-  test('inserts a public access row inside the real SocialCalc menu wrapper without cropping the editor', async ({
+  test('floats a fixed top-right cluster without reserving grid height', async ({
     workerBase,
     page,
   }) => {
@@ -138,43 +141,43 @@ test.describe('passkey room-access chrome', () => {
 
     const access = page.locator('#ec-room-access');
     await expect(access).toBeVisible();
-    await expect(access).toContainText('Public');
-    await expect(access).toContainText('Anyone with the link can edit');
     await expect(access.getByRole('button', { name: 'Use a passkey' })).toBeVisible();
-    await expect(page.locator('#ec-passkey-bar')).toHaveCount(0);
+    // Project links moved to the landing page only (see the dedicated
+    // landing-page test asserting they're actually there) - the sheet
+    // cluster carries passkey/account status alone.
+    await expect(access.getByRole('link', { name: 'Docs' })).toHaveCount(0);
+    await expect(access.getByRole('link', { name: 'API' })).toHaveCount(0);
+    await expect(access.getByRole('link', { name: 'GitHub' })).toHaveCount(0);
     await expect(page.locator('#tableeditor table').first()).toBeVisible();
 
     const layout = await page.evaluate(() => {
-      const host = window as EtherCalcWindow;
-      const spreadsheet = host.spreadsheet;
-      const accessRow = document.getElementById('ec-room-access');
-      const menuWrapper = spreadsheet?.spreadsheetDiv?.firstElementChild;
-      const tabBar = accessRow?.nextElementSibling;
-      const toolbar = tabBar?.nextElementSibling;
+      const cluster = document.getElementById('ec-room-access');
+      const tableeditor = document.getElementById('tableeditor');
       return {
-        accessIsFirstChildOfMenu: menuWrapper?.firstElementChild === accessRow,
-        tabBarFollowsAccess: Boolean(tabBar?.querySelector('[id$="tab"]')),
-        tabBarCssHeight: tabBar ? getComputedStyle(tabBar).height : '',
-        toolbarCssHeight: toolbar ? getComputedStyle(toolbar).height : '',
-        toolbarBorderTop: toolbar ? getComputedStyle(toolbar).borderTopWidth : '',
-        editorHeight: spreadsheet?.editorDiv?.getBoundingClientRect().height ?? 0,
-        height: spreadsheet?.height ?? 0,
-        nonviewheight: spreadsheet?.nonviewheight ?? 0,
-        viewheight: spreadsheet?.viewheight ?? 0,
+        clusterPosition: cluster ? getComputedStyle(cluster).position : null,
+        // Inserted immediately before `#tableeditor` (see `mountRoomAccessCluster()`
+        // in ui.ts) so the sub-840px in-flow fallback renders above the
+        // grid instead of after it - `position: fixed` makes DOM position
+        // irrelevant to where it PAINTS at this (default, >840px) test
+        // viewport, but it must still be a real preceding sibling of
+        // `#tableeditor`, not appended elsewhere.
+        precedesTableeditor:
+          !!tableeditor &&
+          !!cluster &&
+          !!(cluster.compareDocumentPosition(tableeditor) & Node.DOCUMENT_POSITION_FOLLOWING),
+        // Nothing pushes SocialCalc's own chrome down anymore - the
+        // container should start right at the top of the viewport, not
+        // ~42px lower the way the old in-flow reserved row left it.
+        tableeditorTop: tableeditor?.getBoundingClientRect().top ?? -1,
       };
     });
 
-    expect(layout.accessIsFirstChildOfMenu).toBe(true);
-    expect(layout.tabBarFollowsAccess).toBe(true);
-    expect(layout.tabBarCssHeight).toBe('24px');
-    expect(layout.toolbarCssHeight).toBe('40px');
-    expect(layout.toolbarBorderTop).toBe('1px');
-    expect(layout.editorHeight).toBeGreaterThan(0);
-    expect(layout.viewheight).toBeGreaterThan(0);
-    expect(layout.nonviewheight).toBeLessThan(layout.height);
+    expect(layout.clusterPosition).toBe('fixed');
+    expect(layout.precedesTableeditor).toBe(true);
+    expect(layout.tableeditorTop).toBeLessThan(20);
   });
 
-  test('places readable private viewer access beside, never inside, the read-only grid', async ({
+  test('shows a private badge and a read-only viewer without covering the grid', async ({
     workerBase,
     page,
   }) => {
@@ -190,30 +193,34 @@ test.describe('passkey room-access chrome', () => {
     const access = page.locator('#ec-room-access');
     await expect(access).toBeVisible();
     await expect(access).toContainText('Private');
-    await expect(access).toContainText('Your account can view this sheet');
+    // Viewer, not owner: neither "Make a private copy" nor "Sheet access"
+    // makes sense for someone who can read but not write.
+    await expect(access.getByRole('button', { name: 'Make a private copy' })).toHaveCount(0);
+    await expect(access.getByRole('button', { name: 'Sheet access' })).toHaveCount(0);
 
     const layout = await page.evaluate(() => {
-      const host = window as EtherCalcWindow;
-      const spreadsheet = host.spreadsheet;
-      const accessRow = document.getElementById('ec-room-access');
-      const editor = spreadsheet?.editorDiv;
+      const cluster = document.getElementById('ec-room-access');
+      const editor = (window as unknown as EtherCalcWindow).spreadsheet?.editorDiv;
+      if (!cluster || !editor) return null;
       return {
-        rowIsTopLevel: accessRow?.parentElement === spreadsheet?.spreadsheetDiv,
-        rowPrecedesEditor: accessRow?.nextElementSibling === editor,
-        rowIsOutsideGrid: !editor?.contains(accessRow),
-        editorHeight: editor?.getBoundingClientRect().height ?? 0,
-        viewheight: spreadsheet?.viewheight ?? 0,
+        collidesGrid: (() => {
+          const a = cluster.getBoundingClientRect();
+          const b = editor.getBoundingClientRect();
+          return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+        })(),
+        editorHeight: editor.getBoundingClientRect().height,
       };
     });
 
-    expect(layout.rowIsTopLevel).toBe(true);
-    expect(layout.rowPrecedesEditor).toBe(true);
-    expect(layout.rowIsOutsideGrid).toBe(true);
-    expect(layout.editorHeight).toBeGreaterThan(0);
-    expect(layout.viewheight).toBeGreaterThan(0);
+    expect(layout, 'cluster or editor missing').not.toBeNull();
+    // The cluster floats OVER the grid's corner by design (same trade-off
+    // as the landing/sheet-page floating nav elsewhere in this app) - the
+    // real contract is that the grid itself still renders at full size,
+    // not that the two never visually overlap.
+    expect(layout?.editorHeight).toBeGreaterThan(0);
   });
 
-  test('replaces an unreadable private room with an account-safe gate', async ({
+  test('replaces an unreadable private room with an account-safe gate, keeping sign-in reachable', async ({
     workerBase,
     page,
   }) => {
@@ -230,6 +237,33 @@ test.describe('passkey room-access chrome', () => {
     await expect(gate).toContainText('A shared link alone does not grant access.');
     await expect(gate.getByRole('button', { name: 'Use a passkey' })).toBeVisible();
     await expect(page.locator('#tableeditor')).toBeHidden();
+
+    // Access itself was refused, but the visitor who most needs to sign in
+    // is exactly who's looking at this gate - the top-right cluster must
+    // still be there, with a sign-in affordance, not silently blanked out
+    // because `verdict` came back null.
+    const access = page.locator('#ec-room-access');
+    await expect(access).toBeVisible();
+    await expect(access.getByRole('button', { name: 'Use a passkey' })).toBeVisible();
+  });
+
+  test('renders no room-access cluster when passkey auth is disabled', async ({ workerBase, page }) => {
+    // Unlike the old design, the cluster now carries ONLY passkey/account
+    // status - no project links live here anymore (see start.html's own
+    // `.ec-floatnav` for those). With auth disabled there's nothing that
+    // status could say, so `mount()` returns before ever building the
+    // cluster at all, rather than rendering an empty or partial one.
+    const room = `access-authdisabled-${Date.now().toString(36)}`;
+    await page.route('**/_auth/whoami', (route) =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify({ enabled: false, uid: null }) }),
+    );
+
+    await page.goto(`${workerBase}/${room}`);
+    await expect(page.locator('#tableeditor table').first()).toBeVisible();
+
+    await expect(page.locator('#ec-room-access')).toHaveCount(0);
+    await expect(page.locator('#ec-account-trigger')).toHaveCount(0);
+    await expect(page.locator('#ec-passkey-trigger')).toHaveCount(0);
   });
 
   test('treats an interrupted discoverable sign-in as retryable, never implicit registration', async ({
@@ -294,12 +328,34 @@ test.describe('passkey room-access chrome', () => {
     const landingActions = page.locator('#ec-landing-actions');
     await expect(landingActions).toBeVisible();
     await expect(landingActions.getByRole('button', { name: 'Create private sheet' })).toBeVisible();
+
+    // Project links live HERE now, and only here (see the sheet-page
+    // cluster tests asserting a `count(0)` for these same locators) -
+    // static markup in start.html, unrelated to the JS-built cluster.
+    const projectLinks = page.locator('nav[aria-label="Project links"]');
+    await expect(projectLinks).toBeVisible();
+    const docsLink = projectLinks.getByRole('link', { name: 'Docs' });
+    const apiLink = projectLinks.getByRole('link', { name: 'API' });
+    const githubLink = projectLinks.getByRole('link', { name: 'GitHub' });
+    await expect(docsLink).toBeVisible();
+    await expect(apiLink).toBeVisible();
+    await expect(githubLink).toBeVisible();
+    await expect(docsLink).toHaveAttribute('href', 'https://docs.ethercalc.net');
+    await expect(apiLink).toHaveAttribute('href', 'https://github.com/audreyt/ethercalc/blob/main/API.md');
+    await expect(githubLink).toHaveAttribute('href', 'https://github.com/audreyt/ethercalc');
   });
 
-  test('keeps signed-in and narrow-screen actions reachable from the compact row', async ({
+  test('keeps signed-in actions reachable at any width, no mobile fold-away needed', async ({
     workerBase,
     page,
   }) => {
+    // The old design folded the wordy context action into a mobile
+    // overflow sheet below 640px, because the FULL cluster (with project
+    // links) was too wide to fit narrow viewports. That's gone: the
+    // widest remaining content is ~256px, comfortably inside even a
+    // 320px viewport (see `mountRoomAccessCluster()`'s doc comment in ui.ts), so
+    // "Make a private copy"/"Sheet access" now stay directly inline at
+    // every width, narrow included.
     const publicRoom = `access-owner-public-${Date.now().toString(36)}`;
     const privateRoom = `access-owner-private-${Date.now().toString(36)}`;
     await routeWhoami(page, signedInAuth);
@@ -314,7 +370,7 @@ test.describe('passkey room-access chrome', () => {
     await expect(publicRow.getByRole('button', { name: 'Make a private copy' })).toBeVisible();
     const accountMenu = page.locator('#ec-account-menu');
     await expect(accountMenu).toBeHidden();
-    await publicRow.getByRole('button', { name: 'Passkey' }).click();
+    await page.locator('#ec-account-trigger').click();
     await expect(accountMenu).toBeVisible();
     await expect(accountMenu.getByRole('menuitem', { name: 'New private sheet' })).toBeVisible();
     await expect(accountMenu.getByRole('menuitem', { name: 'Sign out' })).toBeVisible();
@@ -327,12 +383,11 @@ test.describe('passkey room-access chrome', () => {
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`${workerBase}/${publicRoom}`);
-    await page.locator('#ec-room-overflow').click();
-    const actions = page.locator('#ec-room-actions');
-    await expect(actions).toBeVisible();
-    await expect(actions.getByRole('button', { name: 'Make a private copy' })).toBeVisible();
-    await expect(actions.getByRole('button', { name: 'New private sheet' })).toBeVisible();
-    await expect(actions.getByRole('button', { name: 'Sign out' })).toBeVisible();
+    const narrowRow = page.locator('#ec-room-access');
+    await expect(narrowRow.getByRole('button', { name: 'Make a private copy' })).toBeVisible();
+    await expect(page.locator('#ec-room-overflow')).toHaveCount(0);
+    await page.locator('#ec-account-trigger').click();
+    await expect(page.locator('#ec-account-menu')).toBeVisible();
   });
 
   test('survives the cold-load custom-element upgrade race on the editable path', async ({
@@ -415,56 +470,113 @@ test.describe('passkey room-access chrome', () => {
     );
   });
 
-  test('stretches the shadow toolbar row across the full width on desktop and mobile', async ({
+  test('stays compact and fixed on desktop, falls back in-flow below 840px', async ({
     workerBase,
     page,
   }) => {
-    // `m3e-toolbar`'s shadow root lays out slotted children inside an
-    // internal `.base` div (`display: flex`, no explicit width) - the
-    // HOST must stay block-level/full-width (not itself `display: flex`)
-    // for `.base` to stretch across it via ordinary block sizing; a flex
-    // or inline-block host instead makes `.base` a shrink-to-fit flex
-    // item, leaving the row's trailing space dead and unreachable by the
-    // `margin-right: auto` trick `.ec-room-access__summary` relies on to
-    // push actions to the right edge (see passkey/ui.css).
-    const room = `access-geometry-${Date.now().toString(36)}`;
-    await routeWhoami(page, anonymousAuth);
+    // The OLD design was a full-width `m3e-toolbar` row spanning the whole
+    // viewport, reserving its own height out of the grid on EVERY
+    // viewport. The redesign only pays that cost where it's actually
+    // required: `position: fixed`, shrink-wrapped, floating free in the
+    // corner above 840px (confirmed clear of SocialCalc's own menu bar);
+    // a normal in-flow block, pushing `#tableeditor` down, below it (see
+    // `mountRoomAccessCluster()`'s doc comment in ui.ts for the measured
+    // collision math that sets that cutoff).
+    const room = `access-compact-${Date.now().toString(36)}`;
+    await routeWhoami(page, signedInAuth);
+    await page.route('**/_/*/access', (route) =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify(publicAccess) }),
+    );
+
     await page.goto(`${workerBase}/${room}`);
     await expect(page.locator('#ec-room-access')).toBeVisible();
 
     const desktop = await page.evaluate(() => {
-      const host = document.getElementById('ec-room-access');
-      const base = host?.shadowRoot?.querySelector('.base');
-      const inlineActions = host?.querySelector('.ec-room-access__inline-actions');
+      const cluster = document.getElementById('ec-room-access');
+      const rect = cluster?.getBoundingClientRect();
       return {
-        hostWidth: host?.getBoundingClientRect().width ?? 0,
-        baseWidth: base?.getBoundingClientRect().width ?? 0,
-        baseRight: base?.getBoundingClientRect().right ?? 0,
-        actionsRight: inlineActions?.getBoundingClientRect().right ?? 0,
+        clientWidth: document.documentElement.clientWidth,
+        width: rect?.width ?? 0,
+        right: rect?.right ?? 0,
+        top: rect?.top ?? -1,
+        position: cluster ? getComputedStyle(cluster).position : null,
       };
     });
-    // `.base` should span nearly the whole host (only the light-DOM
-    // padding should be missing), not shrink to its slotted content.
-    expect(desktop.baseWidth).toBeGreaterThan(desktop.hostWidth - 30);
-    // Trailing inline actions must land near .base's right edge, not
-    // stranded far short of it (the pre-fix bug: ~430px of a 1250px row).
-    expect(desktop.baseRight - desktop.actionsRight).toBeLessThan(40);
+    // Compact, not full-width: comfortably under half the viewport for
+    // "Make a private copy" + avatar at any reasonable desktop width, and
+    // pinned near the top-right corner.
+    expect(desktop.position).toBe('fixed');
+    expect(desktop.width).toBeLessThan(desktop.clientWidth / 2);
+    expect(desktop.right).toBeLessThanOrEqual(desktop.clientWidth);
+    expect(desktop.top).toBeLessThan(30);
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`${workerBase}/${room}`);
     await expect(page.locator('#ec-room-access')).toBeVisible();
     const mobile = await page.evaluate(() => {
-      const host = document.getElementById('ec-room-access');
-      const base = host?.shadowRoot?.querySelector('.base');
-      const overflow = document.getElementById('ec-room-overflow');
+      const cluster = document.getElementById('ec-room-access');
+      const rect = cluster?.getBoundingClientRect();
       return {
-        overflowDisplay: overflow ? getComputedStyle(overflow).display : null,
-        overflowRight: overflow?.getBoundingClientRect().right ?? 0,
-        baseRight: base?.getBoundingClientRect().right ?? 0,
+        clientWidth: document.documentElement.clientWidth,
+        left: rect?.left ?? -1,
+        right: rect?.right ?? 0,
+        position: cluster ? getComputedStyle(cluster).position : null,
       };
     });
-    expect(mobile.overflowDisplay).not.toBe('none');
-    expect(mobile.baseRight - mobile.overflowRight).toBeLessThan(40);
+    expect(mobile.position).toBe('static');
+    expect(mobile.left).toBeGreaterThanOrEqual(0);
+    expect(mobile.right).toBeLessThanOrEqual(mobile.clientWidth);
+  });
+
+  test('never overlaps SocialCalc\'s own menu bar across the fixed/in-flow breakpoint', async ({
+    workerBase,
+    page,
+  }) => {
+    // Regression test for a real bug caught in review: SocialCalc's own
+    // "Edit Format Sort Audit Comment Names Clipboard" menu row is a
+    // fixed-width (~482px), non-reflowing table that doesn't shrink with
+    // the viewport. A `position: fixed` cluster anchored to the viewport's
+    // right edge WILL cross into it below a measured ~757px viewport
+    // width — this asserts zero bounding-rect intersection with that real
+    // SocialCalc element, on both sides of the 840px breakpoint, for the
+    // widest realistic cluster content (private badge + "Sheet access" +
+    // avatar).
+    const room = `access-nocollide-${Date.now().toString(36)}`;
+    await routeWhoami(page, signedInAuth);
+    await page.route('**/_/*/access', (route) =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify(privateOwnerAccess) }),
+    );
+
+    for (const width of [700, 800, 840, 841]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(`${workerBase}/${room}`);
+      await expect(page.locator('#ec-room-access')).toBeVisible();
+
+      const geometry = await page.evaluate(() => {
+        const cluster = document.getElementById('ec-room-access');
+        const clusterRect = cluster?.getBoundingClientRect();
+        const menuCell = [...document.querySelectorAll('td, th, div, span')].find(
+          (el) => el.textContent?.trim() === 'Format' && el.children.length === 0,
+        );
+        const menuRow = menuCell?.closest('table');
+        const menuRect = menuRow?.getBoundingClientRect();
+        return {
+          cluster: clusterRect
+            ? { left: clusterRect.left, right: clusterRect.right, top: clusterRect.top, bottom: clusterRect.bottom }
+            : null,
+          menu: menuRect
+            ? { left: menuRect.left, right: menuRect.right, top: menuRect.top, bottom: menuRect.bottom }
+            : null,
+        };
+      });
+
+      expect(geometry.cluster, `no cluster rect at ${width}px`).not.toBeNull();
+      expect(geometry.menu, `no SocialCalc menu row found at ${width}px`).not.toBeNull();
+      const c = geometry.cluster!;
+      const m = geometry.menu!;
+      const intersects = c.left < m.right && m.left < c.right && c.top < m.bottom && m.top < c.bottom;
+      expect(intersects, `cluster overlaps SocialCalc's menu row at ${width}px`).toBe(false);
+    }
   });
 
   test('disables the account menu open animation under prefers-reduced-motion', async ({
@@ -488,8 +600,7 @@ test.describe('passkey room-access chrome', () => {
     );
     await page.goto(`${workerBase}/${room}`);
 
-    const row = page.locator('#ec-room-access');
-    await row.getByRole('button', { name: 'Passkey' }).click();
+    await page.locator('#ec-account-trigger').click();
     await expect(page.locator('#ec-account-menu')).toBeVisible();
 
     const animation = await page.evaluate(() => {
@@ -505,79 +616,180 @@ test.describe('passkey room-access chrome', () => {
     expect(animation?.animationDuration).toMatch(/^0s$|^0ms$/);
   });
 
-  test('floats project links bottom-right on the sheet page without covering sign-in or SocialCalc grid controls', async ({
+  test('keeps the context action and account trigger co-located inside one bounded cluster', async ({
     workerBase,
     page,
   }) => {
-    // The landing page's floating nav sits top-right. The sheet page
-    // CANNOT reuse that corner: #ec-room-access's account/passkey button
-    // already occupies it, right up to the viewport edge (confirmed via
-    // live geometry inspection - see ui.css). Placing the nav there would
-    // cover the only way to sign in. Anchored bottom-right instead,
-    // cleared of SocialCalc's own scroll/logo cluster in that corner.
-    const room = `access-floatnav-${Date.now().toString(36)}`;
-    await routeWhoami(page, anonymousAuth);
+    // Landing on this specific shape - not just "a control exists
+    // somewhere" - because the original bug report that started this
+    // redesign was exactly this: a bottom-right-only pill was easy to
+    // miss entirely, and later a full-width toolbar row wasted grid
+    // height. Both remaining controls must sit together inside the
+    // cluster's own compact bounding box.
+    const room = `access-unified-${Date.now().toString(36)}`;
+    await routeWhoami(page, signedInAuth);
+    await page.route('**/_/*/access', (route) =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify(publicAccess) }),
+    );
+    await page.goto(`${workerBase}/${room}`);
+
+    const cluster = page.locator('#ec-room-access');
+    await expect(cluster).toBeVisible();
+    await expect(cluster.getByRole('button', { name: 'Make a private copy' })).toBeVisible();
+    await expect(page.locator('#ec-account-trigger')).toBeVisible();
+
+    // Both required controls must sit inside the cluster's own bounding
+    // box. `#ec-account-menu` isn't a toolbar descendant at all -
+    // `buildAccountMenu()` appends it straight to `document.body`, a
+    // sibling of `#ec-account-trigger` rather than its child (see that
+    // function's doc comment in ui.ts for why), so it's correctly
+    // excluded from this check rather than needing special filtering.
+    const outerBox = await cluster.boundingBox();
+    expect(outerBox, 'cluster has no box').not.toBeNull();
+    const controlBoxes = await Promise.all(
+      [cluster.getByRole('button', { name: 'Make a private copy' }), page.locator('#ec-account-trigger')].map(
+        (locator) => locator.boundingBox(),
+      ),
+    );
+    for (const box of controlBoxes) {
+      expect(box, 'required control has no box').not.toBeNull();
+    }
+    const outer = outerBox!;
+    const tolerance = 1;
+    for (const box of controlBoxes) {
+      const b = box!;
+      expect(b.x).toBeGreaterThanOrEqual(outer.x - tolerance);
+      expect(b.y).toBeGreaterThanOrEqual(outer.y - tolerance);
+      expect(b.x + b.width).toBeLessThanOrEqual(outer.x + outer.width + tolerance);
+      expect(b.y + b.height).toBeLessThanOrEqual(outer.y + outer.height + tolerance);
+    }
+  });
+
+  test('Arrow-key navigation reaches every visible control exactly once with a single roving tabindex', async ({
+    workerBase,
+    page,
+  }) => {
+    // Regression test: `m3e-button`/`m3e-icon-button` only get their own
+    // default `tabindex="0"` in Lit's async `firstUpdated` (see
+    // `buildAccountTrigger()`'s doc comment in ui.ts). A freshly created,
+    // not-yet-first-updated control has NO `tabindex` attribute yet, so
+    // `m3e-toolbar`'s synchronous `slotchange` scan (which requires
+    // `[tabindex]` to match) can miss it - it never enters the toolbar's
+    // roving-tabindex group, and later gets its OWN independent default
+    // `tabindex="0"` once Lit catches up, with no further `slotchange` to
+    // alert the toolbar. Symptom: MULTIPLE simultaneous `tabindex="0"`
+    // elements, and Arrow-key navigation stops advancing partway through.
+    const room = `access-kbd-desktop-${Date.now().toString(36)}`;
+    await routeWhoami(page, signedInAuth);
+    await page.route('**/_/*/access', (route) =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify(privateOwnerAccess) }),
+    );
     await page.goto(`${workerBase}/${room}`);
     await expect(page.locator('#ec-room-access')).toBeVisible();
 
-    const nav = page.locator('.ec-floatnav');
-    await expect(nav).toBeVisible();
-    await expect(nav).toHaveClass(/ec-floatnav--bottom/);
-    await expect(nav.getByRole('link', { name: 'Docs' })).toHaveAttribute(
-      'href',
-      'https://docs.ethercalc.net',
-    );
-    await expect(nav.getByRole('link', { name: 'GitHub' })).toHaveAttribute(
-      'href',
-      'https://github.com/audreyt/ethercalc',
+    await page.evaluate(() => {
+      const first = document.querySelector('#ec-room-access m3e-button, #ec-room-access m3e-icon-button');
+      (first as HTMLElement | null)?.focus();
+    });
+
+    const seen: Array<string | null> = [];
+    for (let i = 0; i < 4; i++) {
+      const id = await page.evaluate(() => {
+        const el = document.activeElement as HTMLElement | null;
+        return el ? el.id || el.textContent?.trim() || el.tagName : null;
+      });
+      seen.push(id);
+      const zeroCount = await page.evaluate(
+        () => document.querySelectorAll('#ec-room-access [tabindex="0"]').length,
+      );
+      expect(zeroCount, `expected exactly one active item at step ${i}`).toBe(1);
+      await page.keyboard.press('ArrowRight');
+    }
+
+    // "Sheet access", account trigger, then no `.withWrap()` configured -
+    // stays on the last item rather than cycling back.
+    expect(seen).toEqual(['Sheet access', 'ec-account-trigger', 'ec-account-trigger', 'ec-account-trigger']);
+  });
+
+  test('remains reachable via the account trigger alone when there is no context action to show', async ({
+    workerBase,
+    page,
+  }) => {
+    // Signed-in, read-only private room: neither "Make a private copy" nor
+    // "Sheet access" applies, so nothing but the avatar trigger renders.
+    // There's no mobile overflow mechanism to fall back on at all anymore -
+    // account actions
+    // ("New private sheet"/"Sign out") must remain reachable purely
+    // through that avatar's own click-to-open menu, at any width.
+    const room = `access-kbd-noinline-${Date.now().toString(36)}`;
+    const privateReadOnlyAccess = { isPrivate: true, canRead: true, canWrite: false };
+    await routeWhoami(page, signedInAuth);
+    await page.route(`**/_/${room}/access`, (route) =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify(privateReadOnlyAccess) }),
     );
 
-    const desktop = await page.evaluate(() => {
-      const intersects = (a: DOMRect, b: DOMRect) =>
-        a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
-      const navEl = document.querySelector('.ec-floatnav');
-      const access = document.getElementById('ec-room-access');
-      const more = document.getElementById('te_morebuttonv');
-      const logo = document.getElementById('te_logo');
-      if (!navEl || !access) throw new Error('nav or room-access row missing');
-      const navRect = navEl.getBoundingClientRect();
-      return {
-        clientWidth: document.documentElement.clientWidth,
-        navRight: navRect.right,
-        collidesAccess: intersects(navRect, access.getBoundingClientRect()),
-        collidesMore: more ? intersects(navRect, more.getBoundingClientRect()) : false,
-        collidesLogo: logo ? intersects(navRect, logo.getBoundingClientRect()) : false,
-      };
-    });
-    // Not asserting document.scrollWidth === clientWidth here: SocialCalc's
-    // own grid is wider than most viewports by design (many columns, no
-    // wrap) and legitimately scrolls horizontally regardless of this nav -
-    // confirmed pre-existing on the currently-deployed page with no
-    // .ec-floatnav present at all. The nav's own contract is narrower: its
-    // right edge must stay on-screen, and it must not sit on top of real
-    // controls.
-    expect(desktop.navRight).toBeLessThanOrEqual(desktop.clientWidth);
-    expect(desktop.collidesAccess).toBe(false);
-    expect(desktop.collidesMore).toBe(false);
-    expect(desktop.collidesLogo).toBe(false);
+    for (const width of [390, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`${workerBase}/${room}/view`);
+      await expect(page.locator('#ec-account-trigger')).toBeVisible();
+      await expect(page.locator('#ec-room-overflow')).toHaveCount(0);
+      const zeroCount = await page.evaluate(
+        () => document.querySelectorAll('#ec-room-access [tabindex="0"]').length,
+      );
+      expect(zeroCount, `expected exactly one active item at ${width}px`).toBe(1);
+    }
 
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto(`${workerBase}/${room}`);
-    await expect(page.locator('#ec-room-access')).toBeVisible();
-    const mobile = await page.evaluate(() => {
-      const intersects = (a: DOMRect, b: DOMRect) =>
-        a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
-      const navEl = document.querySelector('.ec-floatnav');
-      const access = document.getElementById('ec-room-access');
-      if (!navEl || !access) throw new Error('nav or room-access row missing');
-      const navRect = navEl.getBoundingClientRect();
+    await page.locator('#ec-account-trigger').click();
+    const menu = page.locator('#ec-account-menu');
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole('menuitem', { name: 'New private sheet' })).toBeVisible();
+    await expect(menu.getByRole('menuitem', { name: 'Sign out' })).toBeVisible();
+  });
+});
+
+test.describe('passkey room-access chrome — multi-sheet editor', () => {
+  test('the active room iframe is the sole visible owner of the top-right cluster', async ({
+    workerBase,
+    page,
+  }) => {
+    // packages/client-multi has no passkey/auth logic of its own - each
+    // sheet tab is an iframe embedding the classic single-sheet room,
+    // which already carries the redesigned cluster. Adding a SECOND,
+    // independent cluster to the outer multi-sheet document would render
+    // at the exact same on-screen top-right coordinates (the iframe fills
+    // the outer viewport from `top:0`), producing a visible duplicate.
+    // This asserts single ownership: the outer document has none, exactly
+    // one iframe's cluster is actually visible.
+    const room = `access-multi-${Date.now().toString(36)}`;
+    await page.goto(`${workerBase}/=${room}`);
+    await page.waitForSelector('iframe');
+    await page.waitForTimeout(1000);
+
+    const state = await page.evaluate(() => {
+      const outerNav = document.querySelector('nav[aria-label="Project links"], .ec-floatnav');
+      const iframes = [...document.querySelectorAll('iframe')];
+      const visibleClusters = iframes.filter((frame) => {
+        try {
+          const doc = (frame as HTMLIFrameElement).contentDocument;
+          const cluster = doc?.getElementById('ec-room-access');
+          if (!cluster) return false;
+          return (
+            frame.getBoundingClientRect().width > 0 &&
+            getComputedStyle(frame).visibility !== 'hidden' &&
+            getComputedStyle(frame).display !== 'none'
+          );
+        } catch {
+          return false;
+        }
+      });
       return {
-        clientWidth: document.documentElement.clientWidth,
-        navRight: navRect.right,
-        collidesAccess: intersects(navRect, access.getBoundingClientRect()),
+        outerHasOwnNav: !!outerNav,
+        iframeCount: iframes.length,
+        visibleClusterCount: visibleClusters.length,
       };
     });
-    expect(mobile.navRight).toBeLessThanOrEqual(mobile.clientWidth);
-    expect(mobile.collidesAccess).toBe(false);
+
+    expect(state.outerHasOwnNav).toBe(false);
+    expect(state.visibleClusterCount).toBe(1);
   });
 });

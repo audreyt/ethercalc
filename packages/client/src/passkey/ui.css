@@ -3,59 +3,78 @@
  * chrome (color/shape/motion come from the `<m3e-theme>` wrap in
  * index.html/start.html + each component's shadow styles). This file
  * exists because M3E's shadow styles set sensible per-component
- * defaults (e.g. `m3e-toolbar`'s `:host { display: inline-block }`,
- * sized by `--m3e-toolbar-size` defaulting to 4rem) that say nothing
- * about how OUR specific composition of those components should lay
- * out relative to each other or respond to viewport width — that's
- * this stylesheet's job.
+ * defaults that say nothing about how OUR specific composition of those
+ * components should lay out relative to each other or respond to
+ * viewport width — that's this stylesheet's job.
  */
 
+/* `#ec-room-access` is a real `m3e-toolbar` (not a hand-rolled div): its
+   shadow DOM already provides the correct `toolbar` role AND real
+   keyboard navigation (arrow/Home/End via `RovingTabIndexManager`) — a
+   plain div with `role="toolbar"` would claim that contract without
+   delivering it. `variant="standard" elevated shape="rounded"` gives it
+   the surface background, elevation shadow, and pill radius itself, so
+   this rule is positioning + sizing only — never hand-roll chrome the
+   component already owns.
+
+   `:host { display: inline-block }` is the component's own default, so
+   as a `position: fixed` element it already shrink-wraps to content;
+   only `--m3e-toolbar-size` (default 4rem — far taller than this
+   compact pill wants) and spacing/padding need overriding. */
 #ec-room-access {
-  /* `m3e-toolbar`'s shadow root lays out slotted children inside an
-     internal `.base` div (`display: flex`, no explicit width) - it is
-     NOT the host itself that needs `display: flex`. A flex/inline-block
-     host would make `.base` just another shrink-to-fit flex item
-     (verified empirically: .base stayed ~430px wide inside a 1250px
-     host, wasting the remaining ~800px as unusable trailing space
-     `margin-right: auto` below could never reach). A block-level,
-     full-width host lets `.base` - an ordinary block box internally -
-     stretch across it the normal CSS way, so its OWN flex row actually
-     spans the toolbar. */
-  display: block;
-  width: 100%;
-  box-sizing: border-box;
-  padding: 0 10px;
-  --m3e-toolbar-size: 42px;
-  /* `.base`'s own column-gap between our slotted summary/inline-actions/
-     account/overflow children - the host-level `gap` this replaces only
-     ever affected the host's own (now unused) flex layout, never .base. */
-  --m3e-toolbar-spacing: 10px;
+  position: fixed;
+  top: 14px;
+  right: 18px;
+  z-index: 20;
+  --m3e-toolbar-size: 2.5rem;
+  --m3e-toolbar-spacing: 6px;
+  --m3e-toolbar-rounded-padding: 4px 10px;
 }
 
-.ec-room-access__summary {
-  display: flex;
-  align-items: baseline;
-  gap: 7px;
-  min-width: 0;
-  margin-right: auto;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+/* Below 840px, `position: fixed` in the viewport's top-right corner is no
+   longer safe (see `mountRoomAccessCluster()`'s doc comment in ui.ts for
+   the measured collision threshold against SocialCalc's own
+   non-reflowing menu bar) — fall back to a normal in-flow block instead,
+   which `mountRoomAccessCluster()` places immediately before
+   `#tableeditor` for exactly
+   this case. `width: fit-content` + `margin-left: auto` keeps the pill
+   itself shrink-wrapped and right-aligned rather than stretching the
+   whole row full-width. SocialCalc re-measures `#tableeditor`'s new
+   `offsetTop` on its own (see ui.ts) - the grid simply starts lower,
+   the same trade-off the pre-redesign toolbar always made, just no
+   longer paid on desktop where there was room to avoid it entirely.
+
+   840px, not the ~1024px this needed before removing Docs/API/GitHub
+   from the sheet-page cluster: the widest remaining content (private
+   badge + "Sheet access"/"Make a private copy" + avatar, ~256px)
+   measures collision-free only above ~757px; 840px keeps a similar
+   safety margin past that measured minimum instead of tracking it
+   exactly. */
+@media (max-width: 840px) {
+  #ec-room-access {
+    position: static;
+    display: block;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    margin: 8px 12px 8px auto;
+  }
 }
 
-.ec-room-access__inline-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.ec-room-access__account {
-  display: inline-flex;
+/* `position: relative` needed for the same reason as `.ec-floatnav__link`
+   below — see that rule's comment: a plain, non-custom-element leaf
+   (this badge `<span>`) slotted directly into `m3e-toolbar` needs the
+   explicit opt-in to paint above the toolbar's own `<m3e-state-layer>`
+   hover overlay. Every OTHER child here is a real `m3e-button`/
+   `m3e-icon-button`, which - like every M3E component - already sets
+   `:host { position: relative }` on itself, so none of them need this
+   repeated. */
+.ec-room-access__badge {
   position: relative;
-}
-
-#ec-room-overflow {
-  display: none;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--md-sys-color-error, #ba1a1a);
+  padding: 0 6px 0 2px;
+  white-space: nowrap;
 }
 
 #ec-private-gate {
@@ -77,24 +96,15 @@ m3e-card {
   margin-top: 10px;
 }
 
-@media (max-width: 640px) {
-  .ec-room-access__inline-actions {
-    display: none;
-  }
-
-  #ec-room-overflow {
-    display: inline-flex;
-  }
-}
-
-/* ---- Floating project-links cluster ------------------------------------
- * Shared by start.html (landing) and index.html (the sheet editor) —
- * both already load this stylesheet, so one definition covers both
- * pages instead of duplicating it. Gsheet-inspired: Sheets never
- * reserves a full-width bar just for its icon row, it floats a tight
- * rounded cluster elevated over the document. `position: fixed` mirrors
- * that: the cluster persists through scroll instead of pushing content
- * down inside a dedicated band.
+/* ---- Floating project-links pill (landing page only) -------------------
+ * start.html's plain `<nav class="ec-floatnav ec-floatnav--top">` — Gsheet-
+ * inspired, `position: fixed` so it persists through scroll instead of
+ * reserving a dedicated top-bar band. Landing-page-only: once a user is
+ * actually inside a sheet, `#ec-room-access` (above) carries just the
+ * account/passkey status - project links aren't useful enough there to
+ * earn permanent top-right real estate (they briefly WERE duplicated
+ * into that cluster too; see `.ec-floatnav__link`'s comment below for
+ * why that was reverted).
  *
  * Unlike this file's other rules, the pill needs real chrome (surface,
  * border, shadow) — there's no M3E component being composed here, just
@@ -102,18 +112,7 @@ m3e-card {
  * materializes on `html` (see the reduced-motion block below for why
  * that's safe to depend on cross-page) rather than start.html's
  * landing-only `--ec-*` aliases, keeping this file's own dependencies
- * to `m3e-theme` alone, per the file-header note.
- *
- * `--top` (start.html) sits beside the brand title. `--bottom`
- * (index.html) CANNOT reuse `--top`: `#ec-room-access`'s account/
- * passkey button already occupies that exact corner, right up to the
- * viewport edge, on every tested width including the mobile "More
- * actions" overflow trigger — landing there would cover sign-in.
- * SocialCalc's own grid has a small fixed-position scroll/logo cluster
- * in the bottom-right corner instead (`#te_morebuttonv`/`#te_logo`,
- * confirmed empirically constant at ~69px up / ~10px in from that
- * corner across 600-900px viewport heights); `bottom: 84px` clears it
- * with margin. */
+ * to `m3e-theme` alone, per the file-header note. */
 
 .ec-floatnav {
   position: fixed;
@@ -133,11 +132,19 @@ m3e-card {
   top: 14px;
 }
 
-.ec-floatnav--bottom {
-  bottom: 84px;
-}
-
-.ec-floatnav a {
+/* The landing page's own project links (Docs/API/GitHub) - the ONLY
+   place they render now. They used to be duplicated inside the
+   sheet-page cluster (`#ec-room-access`) too, as `m3e-button`s rather
+   than plain `<a>`s specifically because a plain link slotted into
+   `m3e-toolbar` renders invisible underneath its `<m3e-state-layer>`
+   hover overlay (a CSS stacking-order bug, confirmed empirically - see
+   `.ec-room-access__badge`'s comment above for the mechanism) - but
+   once a user is actually inside a sheet, project links aren't useful
+   enough to earn permanent top-right real estate, so that duplication
+   was removed. This plain `<nav>` isn't inside an `m3e-toolbar` at all,
+   so none of that applies here: plain `<a>` tags render fine, no
+   `position: relative` opt-in needed. */
+.ec-floatnav__link {
   font-size: 0.8125rem;
   font-weight: 500;
   color: var(--md-sys-color-on-surface-variant, #43474e);
@@ -147,12 +154,12 @@ m3e-card {
   white-space: nowrap;
 }
 
-.ec-floatnav a:hover {
+.ec-floatnav__link:hover {
   background: color-mix(in srgb, var(--md-sys-color-on-surface, #1a1c1e) 8%, transparent);
   color: var(--md-sys-color-on-surface, #1a1c1e);
 }
 
-.ec-floatnav a:focus-visible {
+.ec-floatnav__link:focus-visible {
   outline: 2px solid var(--md-sys-color-primary, #1e5fa6);
   outline-offset: 1px;
 }
