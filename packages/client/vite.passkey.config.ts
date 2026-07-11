@@ -28,22 +28,32 @@ import { resolve } from 'node:path';
  * to extract a shared chunk from in the first place.
  */
 /**
- * Prepends a license-notice pointer comment to the emitted JS entry.
- * `rollupOptions.output.banner` is explicitly typed out for Vite's
- * Rolldown-backed build (`Omit<OutputOptions, ... | "banner">`) - a
- * `generateBundle` hook operates directly on the final chunk instead,
- * unaffected by that restriction.
+ * Prepends a license-notice pointer comment to the emitted entry chunk
+ * only. `rollupOptions.output.banner` is explicitly typed out for
+ * Vite's Rolldown-backed build (`Omit<OutputOptions, ... | "banner">`)
+ * - a `generateBundle` hook operates directly on the final chunks
+ * instead, unaffected by that restriction.
+ *
+ * Scoped to `isEntry` (not every chunk `generateBundle` sees): this
+ * build's chunk-splitting is deliberately left unpinned (see the
+ * top-of-file doc comment), so a future extra chunk would land under
+ * `assets/[name]-[hash].js`, not next to `ui.js` - a `./NOTICE`-style
+ * *relative* reference banner-ed onto every chunk would resolve
+ * correctly from `ui.js` but wrongly (`assets/NOTICE`, which doesn't
+ * exist) from such a chunk. One banner on the one stable, pinned entry
+ * file avoids that, and the wording itself names the repo-relative
+ * path outright rather than relying on "same directory as this file".
  */
 function licenseNoticeBanner() {
   const banner =
     '/*! Bundles third-party code under separate licenses. ' +
-    'See ./NOTICE (same directory as this file once deployed; source: ' +
-    'third-party/m3e/NOTICE, copied by scripts/build-assets.ts) for full attribution and license text. */\n';
+    'Full attribution and license text: /static/passkey/NOTICE once deployed ' +
+    '(source: third-party/m3e/NOTICE, copied by scripts/build-assets.ts). */\n';
   return {
     name: 'license-notice-banner',
-    generateBundle(_options: unknown, bundle: Record<string, { type: string; code?: string }>) {
+    generateBundle(_options: unknown, bundle: Record<string, { type: string; isEntry?: boolean; code?: string }>) {
       for (const file of Object.values(bundle)) {
-        if (file.type === 'chunk' && typeof file.code === 'string') {
+        if (file.type === 'chunk' && file.isEntry && typeof file.code === 'string') {
           file.code = banner + file.code;
         }
       }
