@@ -1,72 +1,142 @@
 <!DOCTYPE html>
-<html manifest="manifest.appcache">
+<html lang="en">
 <head>
-  <title>EtherCalc</title>
+  <title>EtherCalc — the web spreadsheet</title>
   <meta charset="utf-8" />
-  <meta content="IE=edge" http-equiv="X-UA-Compatible"/>
   <script>try { window.history.pushState({}, '', './') } catch (e) {}</script>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="EtherCalc is a web spreadsheet. No sign-up — create a sheet, share its URL, and edit together in real time. Import and export CSV, ODS, and XLSX." />
+  <meta name="referrer" content="no-referrer" />
+  <meta name="theme-color" content="#0c3159" />
+  <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
+  <link rel="icon" type="image/png" href="./favicon-32x32.png" sizes="32x32">
+  <link rel="icon" type="image/png" href="./favicon-16x16.png" sizes="16x16">
+  <link rel="mask-icon" href="./safari-pinned-tab.svg" color="#0c3159">
   <link href="./static/start.css" rel="stylesheet" type="text/css">
   <link href="./static/passkey/ui.css" rel="stylesheet" type="text/css">
+  <!-- Custom-element upgrade race (see docs/superpowers/specs/2026-07-11-passkey-ui-m3e-design.md):
+       m3e-theme only gets display:contents from its own shadow styles once
+       Lit registers it. Pin the pre-upgrade state to match. -->
   <style>m3e-theme:not(:defined) { display: contents; }</style>
 </head>
 
 <body id="framedpagebody" class="home">
 <m3e-theme color="#0c3159" scheme="light" variant="expressive" motion="expressive">
-  <div id="top">
-    <div id="topnav_wrap">
-      <div id="navigation"></div>
-    </div>
 
-    <div id="intro-left">
-      <h1>EtherCalc</h1>
+  <header class="ec-top">
+    <h1 class="ec-brand">
+      <svg class="ec-brand__glyph" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+        <rect x="1.5" y="1.5" width="17" height="17" rx="3" fill="none" stroke="currentColor" stroke-width="1.6"/>
+        <line x1="10" y1="1.5" x2="10" y2="18.5" stroke="currentColor" stroke-width="1.2"/>
+        <line x1="1.5" y1="10" x2="18.5" y2="10" stroke="currentColor" stroke-width="1.2"/>
+        <rect x="2.6" y="2.6" width="6.3" height="6.3" rx="1.4" fill="currentColor" stroke="none"/>
+      </svg>
+      EtherCalc
+    </h1>
+    <nav class="ec-topnav" aria-label="Project links">
+      <a href="https://docs.ethercalc.net" target="_blank" rel="noopener">Docs</a>
+      <a href="https://github.com/audreyt/ethercalc/blob/main/API.md" target="_blank" rel="noopener">API</a>
+      <a href="https://github.com/audreyt/ethercalc" target="_blank" rel="noopener">GitHub</a>
+    </nav>
+  </header>
 
-      <h2><a target="_blank" style="border: none" title="Read the story of this project" href="https://ethercalc.net/">EtherCalc is a web spreadsheet.</a></h2>
+  <main class="ec-main">
 
-      <p>Your data is saved on the web, and people can edit the same document at the same time. Everybody's changes are instantly reflected on all screens.</p>
-
-      <p>Work together on inventories, survey forms, list management, brainstorming sessions and more!</p>
-
-      <div id="intro-links">
-        <a id="newpadbutton" href="./_new" alt="Create Spreadsheet"><span>Create Spreadsheet</span><br>
-        <small>No sign-up, start editing instantly</small></a>
+    <!-- The hero is a sheet: EtherCalc's own material. The headline is
+         typed into cell A1 — selection marquee, fill handle, highlighted
+         headers and the formula bar mirroring the active cell, exactly as
+         a spreadsheet renders it. -->
+    <section class="ec-sheet" aria-label="EtherCalc">
+      <div class="ec-formulabar" aria-hidden="true">
+        <span class="ec-formulabar__ref">A1</span>
+        <span class="ec-formulabar__fx">fx</span>
+        <span class="ec-formulabar__value" id="ec-fx-value">Share the URL. Edit together.</span>
       </div>
-      <a id="restore" target="_blank" href="https://ethercalc.net/log/"
-      title="View &amp; Restore Backups" class="btn btn-primary btn-fab
-      btn-raised mdi-action-restore" style="visibility: hidden; width: 28px; height: 28px; margin-left: 270px; margin-top: 10px"></a>
+      <div class="ec-grid">
+        <div class="ec-grid__corner" aria-hidden="true"></div>
+        <div class="ec-grid__col ec-grid__col--active" aria-hidden="true">A</div>
+        <div class="ec-grid__col" aria-hidden="true">B</div>
+        <div class="ec-grid__col ec-grid__hide-sm" aria-hidden="true">C</div>
+        <div class="ec-grid__col ec-grid__hide-sm" aria-hidden="true">D</div>
+
+        <div class="ec-grid__row ec-grid__row--active" aria-hidden="true">1</div>
+        <div class="ec-grid__cell ec-grid__cell--a1">
+          <h2 class="ec-headline">Share the URL. Edit together.</h2>
+          <span class="ec-fillhandle" aria-hidden="true"></span>
+        </div>
+        <div class="ec-grid__cell" aria-hidden="true"></div>
+        <div class="ec-grid__cell ec-grid__hide-sm" aria-hidden="true"></div>
+        <div class="ec-grid__cell ec-grid__hide-sm" aria-hidden="true"></div>
+
+        <div class="ec-grid__row" aria-hidden="true">2</div>
+        <div class="ec-grid__cell ec-grid__cell--a2">
+          <p class="ec-subline">A web spreadsheet — no sign-up, no install. Every change appears on all screens as you type.</p>
+        </div>
+        <div class="ec-grid__cell" aria-hidden="true"></div>
+        <div class="ec-grid__cell ec-grid__hide-sm" aria-hidden="true"></div>
+        <div class="ec-grid__cell ec-grid__hide-sm" aria-hidden="true"></div>
+
+        <div class="ec-grid__row" aria-hidden="true">3</div>
+        <div class="ec-grid__cell" aria-hidden="true"></div>
+        <div class="ec-grid__cell" aria-hidden="true"></div>
+        <div class="ec-grid__cell ec-grid__hide-sm" aria-hidden="true"></div>
+        <div class="ec-grid__cell ec-grid__hide-sm" aria-hidden="true"></div>
+      </div>
+    </section>
+
+    <!-- #intro-links is an async enhancement slot: static public CTA in
+         normal flow; the passkey bundle appends #ec-landing-actions after
+         whoami() succeeds (never when auth is disabled). min-height in CSS
+         reserves the row so late injection causes no layout shift. -->
+    <div id="intro-links">
+      <a id="newpadbutton" class="ec-cta" href="./_new"><span>Create spreadsheet</span></a>
     </div>
-  </div>
-  <a href="https://github.com/audreyt/ethercalc"><img style="z-order: 9999;
-      position: absolute; top: 0; right: 0; border: 0"
-      src="./static/img/right-graphite@2x.png" alt="Fork me on GitHub"
-      width="120" height="120"></a>
+
+    <section id="drop" class="ec-drop" aria-label="Import a spreadsheet">
+      <svg class="ec-drop__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path fill="currentColor" d="M11 15.6 8.7 13.3l-1.4 1.4L12 19.4l4.7-4.7-1.4-1.4L13 15.6V9h-2v6.6ZM5 3h14a2 2 0 0 1 2 2v4h-2V5H5v4H3V5a2 2 0 0 1 2-2Z"/>
+      </svg>
+      <p class="ec-drop__text" id="ec-drop-status" role="status" aria-live="polite">Drop a .csv, .ods, or .xlsx file here to import it</p>
+      <p class="ec-drop__browse-row">
+        <label class="ec-drop__browse" for="ec-file-input">or browse for a file</label>
+        <input type="file" id="ec-file-input" accept=".csv,.ods,.xlsx,.xls,text/csv">
+      </p>
+      <label class="ec-drop__rename"><input type="checkbox" id="rename_sheet" name="rename_sheet"> Rename sheet(s) after upload</label>
+    </section>
+
+    <p class="ec-facts">no account&ensp;·&ensp;realtime&ensp;·&ensp;csv / ods / xlsx&ensp;·&ensp;self-hostable&ensp;·&ensp;open source</p>
+
+  </main>
+
   <script src="./static/jszip.js"></script>
   <script src="./static/xlsx.core.min.js"></script>
   <script src="./static/shim.js"></script>
-  <script src="./static/jquery.js"></script>
   <script type="module" src="./static/passkey/ui.js"></script>
-  <div id="drop">Drop a .csv, .ods, or a .xlsx file here to import it<div
-  style="display:block;font-size:60%;padding-top:0.5ex"><label style="cursor:pointer"><input type='checkbox' id='rename_sheet' name='rename_sheet'>Rename sheet(s) after upload</label></div></div>
-  <style>
-      #drop {
-          display: block;
-          clear: both;
-          margin-top: 40px;
-background: #eee;
-        border:2px dashed #bbb;
-        -moz-border-radius:5px;
-        -webkit-border-radius:5px;
-        border-radius:5px;
-        padding:20px;
-        text-align:center;
-        font:20pt bold,"Vollkorn";color:#bbb
-      }
-  </style>
-<script>
-if (/^(?:www\.)?ethercalc\.net$/.test(location.host)) {
-  $("head").append("<link rel='stylesheet' type='text/css' href='https://ethercalc.net/log/css/material.min.css' />");
-  $("#restore").css('visibility', 'visible');
-}
 
+<script>
+/* Formula-bar typing flourish. The real headline (h2) stays static for
+   assistive tech / no-JS / SEO; only the aria-hidden formula-bar mirror
+   animates, and only when the user allows motion. */
+(function () {
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  var fx = document.getElementById('ec-fx-value');
+  if (!fx) return;
+  var text = fx.textContent;
+  fx.textContent = '';
+  fx.classList.add('ec-formulabar__value--typing');
+  var i = 0;
+  var tick = function () {
+    fx.textContent = text.slice(0, ++i);
+    if (i < text.length) setTimeout(tick, 34);
+    else fx.classList.remove('ec-formulabar__value--typing');
+  };
+  setTimeout(tick, 350);
+})();
+
+/* Spreadsheet import: drop or browse a .csv/.ods/.xlsx, PUT it to ./_/:id,
+   then open the new sheet. Multi-sheet workbooks become id.1..id.N plus a
+   TOC room at ./=id. (xlsx2socialcalc.js portion (C) 2014 SheetJS,
+   Apache 2.0.) */
 var rABS = typeof FileReader !== "undefined" && typeof FileReader.prototype !== "undefined" && typeof FileReader.prototype.readAsBinaryString !== "undefined";
 function fixdata(data) {
 	var o = "", l = 0, w = 10240;
@@ -76,41 +146,25 @@ function fixdata(data) {
 	return o;
 }
 
+function utf8TextFromPayload(data) {
+	if (data instanceof ArrayBuffer) return new TextDecoder('utf-8').decode(data);
+	var bytes = new Uint8Array(data.length);
+	for (var i = 0; i < data.length; i++) bytes[i] = data.charCodeAt(i) & 0xff;
+	return new TextDecoder('utf-8').decode(bytes);
+}
+
 // cb is typically process_wb
 function xlsxworker(data, cb, id) {
 	var worker = new Worker('./static/xlsxworker.js');
 	worker.onmessage = function(e) {
 		switch(e.data.t) {
 			case 'ready': break;
-			case 'e': console.error(e.data.d); break;
+			case 'e': console.error(e.data.d); importFailed(); break;
 			case 'xlsx': cb(JSON.parse(e.data.d), id); break;
 		}
 	};
 	var arr = rABS ? data : btoa(fixdata(data));
 	worker.postMessage({d:arr,b:rABS});
-}
-
-function get_radio_value( radioName ) {
-	var radios = document.getElementsByName( radioName );
-	for( var i = 0; i < radios.length; i++ ) {
-		if( radios[i].checked ) {
-			return radios[i].value;
-		}
-	}
-}
-
-function to_csv(workbook) {
-	var result = [];
-	workbook.SheetNames.forEach(function(sheetName) {
-		var csv = XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName]);
-		if(csv.length > 0){
-			result.push("SHEET: " + sheetName);
-			result.push("");
-                        result = [];
-			result.push(csv);
-		}
-	});
-	return result.join("\n").replace(/,+\n/g, '\n').replace(/[\s]+$/, '\n');
 }
 
 /* xlsx2socialcalc.js (C) 2014 SheetJS -- http://sheetjs.com */
@@ -173,84 +227,82 @@ var sheet_to_socialcalc = (function() {
 
         return function socialcalcify(ws, opts) {
                 return [header, sep, meta, sep, scsave(ws), end].join("\n");
-                //return ["version:1.5", scsave(ws)].join("\n");
         };
 })();
 
+var dropStatus = document.getElementById('ec-drop-status');
+var dropRegion = document.getElementById('drop');
+var DROP_IDLE_TEXT = dropStatus.textContent;
+
+function setBusy(busy) {
+	dropRegion.classList.toggle('ec-drop--busy', busy);
+	if (busy) dropRegion.setAttribute('aria-busy', 'true');
+	else dropRegion.removeAttribute('aria-busy');
+	dropStatus.textContent = busy ? 'Working\u2026' : DROP_IDLE_TEXT;
+}
+
+function importFailed() {
+	dropRegion.classList.remove('ec-drop--busy');
+	dropRegion.removeAttribute('aria-busy');
+	dropRegion.classList.add('ec-drop--error');
+	dropStatus.textContent = 'Import failed \u2014 check the file and try again.';
+}
+
+function putSheet(id, contentType, body) {
+	return fetch('./_/' + id, {
+		method: 'PUT',
+		headers: { 'content-type': contentType },
+		body: body
+	}).then(function (res) {
+		if (!res.ok) throw new Error('PUT ' + id + ' \u2192 ' + res.status);
+		return res;
+	});
+}
+
 function process_wb(wb, id) {
 	var output = "";
-        if (wb.SheetNames.length > 1) {
-            var toc = '"#url","#title"\n';
-            var names = [].concat(wb.SheetNames);
-            var idx = 0;
-            var res = [];
-            var sheetsToIdx = {}
-            for (var i = 0; i < names.length; i++) {
-                sheetsToIdx[names[i]] = i+1;
-                res.push(names[i].replace(/'/g, "''").replace(/(\W)/g, '\\$1'));
-            }
-            var step = function(){
-                if (names.length) {
-                    idx++;
-                    var k = names.shift();
-                    output = sheet_to_socialcalc(wb.Sheets[k]);
-                    toc += '"/' + id + '.' + idx + '",';
-                    toc += '"' + k.replace(/"/g, '""') + '"\n';
-                    output = output.replace(
-                        RegExp('(\'?)\\b(' + res.join('|') + ')\\1!', 'g'),
-                        function(_0, _1, ref){ return "'" + id + "." + sheetsToIdx[ref.replace(/''/g, "'")] + "'!"; }
-                    );
-                    $.ajax({
-                        url: './_/' + id + '.' + idx,
-                        method: 'PUT',
-                        contentType: 'text/x-socialcalc; charset=utf-8',
-                        processData: false,
-                        data: output,
-                        success: function(data, msg, xhr) {
-                            step();
-                        }
-                    });
-                }
-                else {
-                    $.ajax({
-                        url: './_/' + id,
-                        method: 'PUT',
-                        contentType: 'text/csv; charset=utf-8',
-                        processData: false,
-                        data: toc,
-                        success: function(data, msg, xhr) {
-                            location.href = './=' + id
-                        }
-                    });
-                }
-            };
-            step();
-            return;
-        }
-        output = sheet_to_socialcalc(wb.Sheets[wb.SheetNames[0]]);
-$.ajax({
-    url: './_/' + id,
-    method: 'PUT',
-    contentType: 'text/x-socialcalc; charset=utf-8',
-    processData: false,
-    data: output,
-    success: function(data, msg, xhr) {
-        location.href = './' + id
-    }
-});
+	if (wb.SheetNames.length > 1) {
+		var toc = '"#url","#title"\n';
+		var names = [].concat(wb.SheetNames);
+		var idx = 0;
+		var res = [];
+		var sheetsToIdx = {}
+		for (var i = 0; i < names.length; i++) {
+			sheetsToIdx[names[i]] = i+1;
+			res.push(names[i].replace(/'/g, "''").replace(/(\W)/g, '\\$1'));
+		}
+		var step = function(){
+			if (names.length) {
+				idx++;
+				var k = names.shift();
+				output = sheet_to_socialcalc(wb.Sheets[k]);
+				toc += '"/' + id + '.' + idx + '",';
+				toc += '"' + k.replace(/"/g, '""') + '"\n';
+				output = output.replace(
+					RegExp('(\'?)\\b(' + res.join('|') + ')\\1!', 'g'),
+					function(_0, _1, ref){ return "'" + id + "." + sheetsToIdx[ref.replace(/''/g, "'")] + "'!"; }
+				);
+				putSheet(id + '.' + idx, 'text/x-socialcalc; charset=utf-8', output).then(step, importFailed);
+			}
+			else {
+				putSheet(id, 'text/csv; charset=utf-8', toc).then(function () {
+					location.href = './=' + id;
+				}, importFailed);
+			}
+		};
+		step();
+		return;
+	}
+	output = sheet_to_socialcalc(wb.Sheets[wb.SheetNames[0]]);
+	putSheet(id, 'text/x-socialcalc; charset=utf-8', output).then(function () {
+		location.href = './' + id;
+	}, importFailed);
 }
 
 function post_csv (csv, id) {
-$.ajax({
-    url: './_/' + id,
-    method: 'PUT',
-    contentType: 'text/csv',
-    processData: false,
-    data: csv,
-    success: function(data, msg, xhr) {
-        location.href = './' + id
-    }
-});
+	putSheet(id, 'text/csv', csv).then(function () {
+		location.href = './' + id;
+	}, importFailed);
 }
 
 var BASE64URICHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_'.split('');
@@ -265,54 +317,53 @@ function newId (len, radix) {
 };
 
 function get_id(file, checked) {
-	var id = null;
 	if (checked) {
-		id = prompt("Enter a spreadsheet name for " + file + " (alphanumeric only)", "");
-		id = id.trim().toLowerCase().replace(/\s/g, "_");
+		var id = prompt("Enter a spreadsheet name for " + file + " (alphanumeric only)", "");
+		// Cancel returns null; an empty or whitespace-only name would PUT
+		// to ./_/ (no id). Both fall back to a random name.
+		if (id !== null) {
+			id = id.trim().toLowerCase().replace(/\s/g, "_");
+			if (id) return id;
+		}
 	}
-	if (id === null) {
-		id = newId(10, 36).toLowerCase();
-	}
-	return id;
+	return newId(10, 36).toLowerCase();
 }
 
-var drop = document.getElementById('drop');
 var renameSheetCheckbox = document.getElementById('rename_sheet');
-function handleDrop(e) {
-	e.stopPropagation();
-	e.preventDefault();
-	var toggle = function(){
-		$(drop).fadeOut('fast', function(){ $(drop).fadeIn('fast', toggle) });
-	}
-	var files = e.dataTransfer.files;
-	var i,f;
-	$(drop).text('Working...');
-	for (i = 0; i != files.length; ++i) {
-		f = files[i];
-		var reader = new FileReader();
-		var name = f.name;
-		var id = get_id(name, $(renameSheetCheckbox).is(":checked"));
+
+function importFiles(files) {
+	if (!files || !files.length) return;
+	dropRegion.classList.remove('ec-drop--error');
+	setBusy(true);
+	for (let i = 0; i != files.length; ++i) {
+		const f = files[i];
+		const reader = new FileReader();
+		const name = f.name;
+		const id = get_id(name, renameSheetCheckbox.checked);
 		reader.onload = function(e) {
-			var data = e.target.result;
-			if (data instanceof ArrayBuffer) {
-				data = new TextDecoder('utf-8').decode(data);
-			}
-			if (!/^PK\u0003\u0004/.test(data) && /^[^\n]+,(?:[^\n]+)*\n/.test(data)) {
-				return post_csv(data, id);
+			// rABS path yields a binary string; the fallback yields an
+			// ArrayBuffer. The CSV sniff needs text, but the workbook
+			// path (xlsxworker/fixdata) needs the RAW payload — decoding
+			// the buffer first would hand fixdata a string it can't slice
+			// into bytes (an inherited latent bug, now split explicitly).
+			var raw = e.target.result;
+			var text = utf8TextFromPayload(raw);
+			if (!/^PK\u0003\u0004/.test(text) && /^[^\n]+,(?:[^\n]+)*\n/.test(text)) {
+				return post_csv(text, id);
 			}
 			if(typeof Worker !== 'undefined') {
-				xlsxworker(data, process_wb, id);
+				xlsxworker(raw, process_wb, id);
 			} else {
 				var wb;
 				if(rABS) {
-					wb = XLSX.read(data, {type: 'binary'});
+					wb = XLSX.read(raw, {type: 'binary'});
 				} else {
-					var arr = fixdata(data);
-					wb = XLSX.read(btoa(arr), {type: 'base64'});
+					wb = XLSX.read(btoa(fixdata(raw)), {type: 'base64'});
 				}
 				process_wb(wb, id);
 			}
 		};
+		reader.onerror = importFailed;
 		if(rABS) {
 			reader.readAsBinaryString(f);
 		} else {
@@ -321,17 +372,33 @@ function handleDrop(e) {
 	}
 }
 
+function handleDrop(e) {
+	e.stopPropagation();
+	e.preventDefault();
+	dropRegion.classList.remove('ec-drop--over');
+	importFiles(e.dataTransfer.files);
+}
+
 function handleDragover(e) {
 	e.stopPropagation();
 	e.preventDefault();
 	e.dataTransfer.dropEffect = 'copy';
+	dropRegion.classList.add('ec-drop--over');
 }
 
-if(drop.addEventListener) {
-	drop.addEventListener('dragenter', handleDragover, false);
-	drop.addEventListener('dragover', handleDragover, false);
-	drop.addEventListener('drop', handleDrop, false);
+if(dropRegion.addEventListener) {
+	dropRegion.addEventListener('dragenter', handleDragover, false);
+	dropRegion.addEventListener('dragover', handleDragover, false);
+	dropRegion.addEventListener('dragleave', function () {
+		dropRegion.classList.remove('ec-drop--over');
+	}, false);
+	dropRegion.addEventListener('drop', handleDrop, false);
 }
+
+document.getElementById('ec-file-input').addEventListener('change', function () {
+	importFiles(this.files);
+	this.value = '';
+});
 </script>
 </m3e-theme>
 </body>

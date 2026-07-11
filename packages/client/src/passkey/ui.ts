@@ -495,7 +495,7 @@ function mountLandingActions(host: PasskeyLogicHost, state: WhoamiState): void {
     state.uid
       ? newPrivateSheet(host)
       : showPasskeyDialog(host, { onAuthenticated: () => newPrivateSheet(host) });
-  actions.appendChild(actionButton('Create private sheet', createPrivate, 'filled'));
+  actions.appendChild(actionButton('Create private sheet', createPrivate, 'tonal'));
 
   if (state.uid) {
     actions.appendChild(buildAccountMenu(host, []));
