@@ -66,9 +66,7 @@ test('credits maintainer Audrey Tang on the landing page', async ({
   await page.goto(`${workerBase}/_start`);
 
   const credit = page.locator('.ec-facts');
-  await expect(credit).toHaveText(
-    'Maintained by Audrey Tang · Open source, built for everyone.',
-  );
+  await expect(credit).toHaveText('By Audrey Tang since 2011');
   await expect(credit.getByRole('link', { name: 'Audrey Tang' })).toHaveAttribute(
     'href',
     'https://audreyt.org/',

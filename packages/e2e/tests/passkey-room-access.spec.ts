@@ -504,4 +504,80 @@ test.describe('passkey room-access chrome', () => {
     // is what actually determines visible motion.
     expect(animation?.animationDuration).toMatch(/^0s$|^0ms$/);
   });
+
+  test('floats project links bottom-right on the sheet page without covering sign-in or SocialCalc grid controls', async ({
+    workerBase,
+    page,
+  }) => {
+    // The landing page's floating nav sits top-right. The sheet page
+    // CANNOT reuse that corner: #ec-room-access's account/passkey button
+    // already occupies it, right up to the viewport edge (confirmed via
+    // live geometry inspection - see ui.css). Placing the nav there would
+    // cover the only way to sign in. Anchored bottom-right instead,
+    // cleared of SocialCalc's own scroll/logo cluster in that corner.
+    const room = `access-floatnav-${Date.now().toString(36)}`;
+    await routeWhoami(page, anonymousAuth);
+    await page.goto(`${workerBase}/${room}`);
+    await expect(page.locator('#ec-room-access')).toBeVisible();
+
+    const nav = page.locator('.ec-floatnav');
+    await expect(nav).toBeVisible();
+    await expect(nav).toHaveClass(/ec-floatnav--bottom/);
+    await expect(nav.getByRole('link', { name: 'Docs' })).toHaveAttribute(
+      'href',
+      'https://docs.ethercalc.net',
+    );
+    await expect(nav.getByRole('link', { name: 'GitHub' })).toHaveAttribute(
+      'href',
+      'https://github.com/audreyt/ethercalc',
+    );
+
+    const desktop = await page.evaluate(() => {
+      const intersects = (a: DOMRect, b: DOMRect) =>
+        a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+      const navEl = document.querySelector('.ec-floatnav');
+      const access = document.getElementById('ec-room-access');
+      const more = document.getElementById('te_morebuttonv');
+      const logo = document.getElementById('te_logo');
+      if (!navEl || !access) throw new Error('nav or room-access row missing');
+      const navRect = navEl.getBoundingClientRect();
+      return {
+        clientWidth: document.documentElement.clientWidth,
+        navRight: navRect.right,
+        collidesAccess: intersects(navRect, access.getBoundingClientRect()),
+        collidesMore: more ? intersects(navRect, more.getBoundingClientRect()) : false,
+        collidesLogo: logo ? intersects(navRect, logo.getBoundingClientRect()) : false,
+      };
+    });
+    // Not asserting document.scrollWidth === clientWidth here: SocialCalc's
+    // own grid is wider than most viewports by design (many columns, no
+    // wrap) and legitimately scrolls horizontally regardless of this nav -
+    // confirmed pre-existing on the currently-deployed page with no
+    // .ec-floatnav present at all. The nav's own contract is narrower: its
+    // right edge must stay on-screen, and it must not sit on top of real
+    // controls.
+    expect(desktop.navRight).toBeLessThanOrEqual(desktop.clientWidth);
+    expect(desktop.collidesAccess).toBe(false);
+    expect(desktop.collidesMore).toBe(false);
+    expect(desktop.collidesLogo).toBe(false);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`${workerBase}/${room}`);
+    await expect(page.locator('#ec-room-access')).toBeVisible();
+    const mobile = await page.evaluate(() => {
+      const intersects = (a: DOMRect, b: DOMRect) =>
+        a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+      const navEl = document.querySelector('.ec-floatnav');
+      const access = document.getElementById('ec-room-access');
+      if (!navEl || !access) throw new Error('nav or room-access row missing');
+      const navRect = navEl.getBoundingClientRect();
+      return {
+        clientWidth: document.documentElement.clientWidth,
+        navRight: navRect.right,
+        collidesAccess: intersects(navRect, access.getBoundingClientRect()),
+      };
+    });
+    expect(mobile.navRight).toBeLessThanOrEqual(mobile.clientWidth);
+    expect(mobile.collidesAccess).toBe(false);
+  });
 });

@@ -76,47 +76,12 @@ body {
   color: var(--ec-primary);
 }
 
-/* ---- Floating project-links cluster -----------------------------------
- * Gsheet-inspired: Sheets never reserves a full-width bar just for its
- * icon row — it floats a tight rounded cluster at the window's top-right
- * corner, elevated over the document. `position: fixed` mirrors that:
- * the cluster persists in the corner through scroll instead of pushing
- * hero content down inside a dedicated band. */
-
-.ec-floatnav {
-  position: fixed;
-  top: 14px;
-  right: 18px;
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 4px;
-  border-radius: 999px;
-  background: var(--ec-surface);
-  border: 1px solid var(--ec-outline-variant);
-  box-shadow: 0 1px 2px rgba(12, 49, 89, 0.08), 0 2px 8px rgba(12, 49, 89, 0.06);
-}
-
-.ec-floatnav a {
-  font-size: 0.8125rem;
-  font-weight: 500;
-  color: var(--ec-on-surface-variant);
-  text-decoration: none;
-  padding: 6px 12px;
-  border-radius: 999px;
-  white-space: nowrap;
-}
-
-.ec-floatnav a:hover {
-  background: color-mix(in srgb, var(--ec-on-surface) 8%, transparent);
-  color: var(--ec-on-surface);
-}
-
-.ec-floatnav a:focus-visible {
-  outline: 2px solid var(--ec-primary);
-  outline-offset: 1px;
-}
+/* Floating project-links cluster now lives in the SHARED
+ * packages/client/src/passkey/ui.css (both start.html and index.html
+ * already load it) — the sheet page needs the same nav, just anchored
+ * to a different corner (see that file for the full rationale). Only
+ * the landing-page-specific narrow-width override (drop below the
+ * brand) stays here, scoped to `.ec-floatnav--top`. */
 
 /* ---- Layout column -------------------------------------------------- */
 
@@ -468,7 +433,7 @@ body #intro-links > #ec-landing-actions {
   /* Below ~351px, "EtherCalc" and the floating pill collide side by side
      (brand right edge ≈160px vs. pill left edge ≈ vw-195px). Drop the
      pill below the title row instead of shrinking either element. */
-  .ec-floatnav {
+  .ec-floatnav--top {
     top: 52px;
     right: 14px;
   }

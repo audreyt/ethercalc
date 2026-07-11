@@ -87,6 +87,76 @@ m3e-card {
   }
 }
 
+/* ---- Floating project-links cluster ------------------------------------
+ * Shared by start.html (landing) and index.html (the sheet editor) —
+ * both already load this stylesheet, so one definition covers both
+ * pages instead of duplicating it. Gsheet-inspired: Sheets never
+ * reserves a full-width bar just for its icon row, it floats a tight
+ * rounded cluster elevated over the document. `position: fixed` mirrors
+ * that: the cluster persists through scroll instead of pushing content
+ * down inside a dedicated band.
+ *
+ * Unlike this file's other rules, the pill needs real chrome (surface,
+ * border, shadow) — there's no M3E component being composed here, just
+ * plain links. Reads the raw `--md-sys-color-*` tokens `m3e-theme`
+ * materializes on `html` (see the reduced-motion block below for why
+ * that's safe to depend on cross-page) rather than start.html's
+ * landing-only `--ec-*` aliases, keeping this file's own dependencies
+ * to `m3e-theme` alone, per the file-header note.
+ *
+ * `--top` (start.html) sits beside the brand title. `--bottom`
+ * (index.html) CANNOT reuse `--top`: `#ec-room-access`'s account/
+ * passkey button already occupies that exact corner, right up to the
+ * viewport edge, on every tested width including the mobile "More
+ * actions" overflow trigger — landing there would cover sign-in.
+ * SocialCalc's own grid has a small fixed-position scroll/logo cluster
+ * in the bottom-right corner instead (`#te_morebuttonv`/`#te_logo`,
+ * confirmed empirically constant at ~69px up / ~10px in from that
+ * corner across 600-900px viewport heights); `bottom: 84px` clears it
+ * with margin. */
+
+.ec-floatnav {
+  position: fixed;
+  right: 18px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--md-sys-color-surface, #faf9fd);
+  border: 1px solid var(--md-sys-color-outline-variant, #c3c6cf);
+  box-shadow: 0 1px 2px rgba(12, 49, 89, 0.08), 0 2px 8px rgba(12, 49, 89, 0.06);
+}
+
+.ec-floatnav--top {
+  top: 14px;
+}
+
+.ec-floatnav--bottom {
+  bottom: 84px;
+}
+
+.ec-floatnav a {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--md-sys-color-on-surface-variant, #43474e);
+  text-decoration: none;
+  padding: 6px 12px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.ec-floatnav a:hover {
+  background: color-mix(in srgb, var(--md-sys-color-on-surface, #1a1c1e) 8%, transparent);
+  color: var(--md-sys-color-on-surface, #1a1c1e);
+}
+
+.ec-floatnav a:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary, #1e5fa6);
+  outline-offset: 1px;
+}
+
 
 @media (prefers-reduced-motion: reduce) {
   /* M3E's per-component `@media (prefers-reduced-motion)` rules are
