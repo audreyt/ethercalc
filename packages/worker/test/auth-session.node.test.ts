@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 
 import { verifyAuthSession } from '../src/lib/auth-session.ts';
 import type { Env } from '../src/env.ts';

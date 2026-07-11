@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'vite-plus/test';
 import * as XLSX from '@e965/xlsx';
 
 import { buildApp } from '../src/index.ts';

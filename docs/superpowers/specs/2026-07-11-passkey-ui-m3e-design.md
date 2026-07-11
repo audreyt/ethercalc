@@ -118,8 +118,17 @@ into multiple chunks — not yet verified either way.)
   `directoryCopies` entry, mirroring the existing `client-multi` →
   `multi/` treatment) into `assets/static/passkey/`, and
   `index.html`/`start.html` reference `./static/passkey/ui.js`
-  directly. `static/passkey.css` is deleted, not replaced 1:1 with a
-  new root-level file.
+  directly. `static/passkey.css` is deleted, but **is** replaced by a
+  small new `src/passkey/ui.css` (imported from `ui.ts`, emitted as
+  `dist-passkey/ui.css`, linked from both HTML files) — light-DOM
+  layout only, never component chrome: M3E's shadow styles set
+  sensible per-component defaults (`m3e-toolbar`'s `:host` is
+  `display: inline-block`, sized by `--m3e-toolbar-size` defaulting to
+  4rem — confirmed from source) but say nothing about how this specific
+  composition of components lays out relative to each other, or the
+  mobile inline-actions-vs-overflow-trigger toggle the old
+  `static/passkey.css` handled via a `@media (max-width: 640px)` rule.
+  That responsive behavior must be preserved here, not dropped.
 - `boot.ts` stays on the existing `vite.config.ts` → `player.js` build
   and **does not import any `@m3e/web/*` module** — this isn't merely a
   style preference, it's what keeps `player.js` a single, independent

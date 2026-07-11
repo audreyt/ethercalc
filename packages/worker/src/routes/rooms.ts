@@ -27,7 +27,6 @@ import { classifyRequestBody } from '../handlers/rooms.ts';
 import { verifyAuth } from '../lib/auth.ts';
 import { parseSettimetrigger } from '../lib/cron.ts';
 import { doFetch } from '../lib/do-dispatch.ts';
-import { getSessionPrincipal } from '../lib/session-middleware.ts';
 import {
   enrichLoadClipboard,
   isBannedWikiFormat,
@@ -43,6 +42,7 @@ import {
   listRoomTimes,
   renderRoomLinks,
 } from '../lib/rooms-index.ts';
+import { getSessionPrincipal } from '../lib/session-middleware.ts';
 import {
   ImportArchiveTooLargeError,
   ImportColumnOutOfRangeError,
@@ -342,6 +342,18 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
     if (denied) return denied;
     // Legacy responds with exactly `201 OK` text/plain (src/main.ls:404).
     return sizedResponse('OK', 201, TEXT_CT);
+  });
+
+  // ─── GET /_/:room/access (browser display capability) ──────────────
+  //
+  // The client uses this same-origin relay to render its public/private
+  // chrome. The RoomDO remains the sole authorization boundary: it owns
+  // the metadata and resolves this verdict against the verified session
+  // principal threaded by doFetch.
+  app.get('/_/:room/access', async (c) => {
+    const room = c.req.param('room') ?? '';
+    const principal = await getSessionPrincipal(c);
+    return doFetch(c.env, room, '/_do/access', {}, principal);
   });
 
   // ─── GET /_/:room (raw save) ───────────────────────────────────────

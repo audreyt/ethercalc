@@ -12,8 +12,8 @@ import { describe, it, expect } from 'vite-plus/test';
  * assert the shape of the forwarded request.
  */
 
-import { buildApp } from '../src/index.ts';
 import type { Env } from '../src/env.ts';
+import { buildApp } from '../src/index.ts';
 
 interface Call {
   url: string;
@@ -203,6 +203,48 @@ describe('route glue — env.ROOM dispatch shapes', () => {
     );
     expect(res.status).toBe(404);
     expect(res.headers.get('content-type')).toBe('text/plain; charset=utf-8');
+  });
+
+  it('GET /_/:room/access relays the anonymous capability verdict from RoomDO', async () => {
+    const verdict = { isPrivate: false, canRead: true, canWrite: true };
+    const { env, calls } = makeFakeRoomNamespace(() => Response.json(verdict));
+    const app = buildApp();
+
+    const res = await app.fetch(
+      new Request('https://t.test/_/public-room/access'),
+      env as never,
+    );
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      method: 'GET',
+      url: 'https://do.local/_do/access?name=public-room',
+      uid: null,
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(verdict);
+  });
+
+  it('GET /_/:room/access forwards only the verified session principal to RoomDO', async () => {
+    const verdict = { isPrivate: true, canRead: true, canWrite: false };
+    const { env, calls } = makeFakeRoomNamespace(() => Response.json(verdict));
+    const app = buildApp();
+
+    const res = await app.fetch(
+      new Request('https://t.test/_/private-reader/access', {
+        headers: { Cookie: AUTH_COOKIE, 'X-EC-Uid': 'forged-uid' },
+      }),
+      withAuth(env) as never,
+    );
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      method: 'GET',
+      url: 'https://do.local/_do/access?name=private-reader',
+      uid: AUTH_UID,
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(verdict);
   });
 
   it('PUT /_/:room with text/x-socialcalc PUTs /_do/snapshot', async () => {

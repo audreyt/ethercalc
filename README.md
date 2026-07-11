@@ -301,11 +301,15 @@ sensible fixes documented in AGENTS.md §6.1.
 
 * static/jquery.js
 
-### MIT License (HubSpot, Inc.)
+### Third-party notices (npm-bundled, TypeScript rewrite)
 
-* static/vex-theme-flat-attack.css
-* static/vex.combined.min.js
-* static/vex.css
+Dependencies statically bundled into a shipped build artifact (where the
+published package's own license file wouldn't otherwise travel with the
+built output) are documented separately -
+[third-party/m3e/NOTICE](./third-party/m3e/NOTICE) covers the Material 3
+Expressive component bundle (`packages/client/dist-passkey/ui.js`):
+`@m3e/web`, `@m3e/icons`, Google's Material Symbols, and their own
+runtime dependencies.
 
 ### MIT License (Stuart Knightley, David Duponchel, Franz Buchinger, Ant'onio Afonso)
 

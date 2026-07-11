@@ -3,6 +3,7 @@ node_modules/
 dump.rdb
 *.swp
 dist/
+dist-passkey/
 coverage/
 .wrangler/
 .vitest-cache/

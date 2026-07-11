@@ -1,0 +1,76 @@
+/*
+ * Light-DOM layout only — never re-implements M3E's own component
+ * chrome (color/shape/motion come from the `<m3e-theme>` wrap in
+ * index.html/start.html + each component's shadow styles). This file
+ * exists because M3E's shadow styles set sensible per-component
+ * defaults (e.g. `m3e-toolbar`'s `:host { display: inline-block }`,
+ * sized by `--m3e-toolbar-size` defaulting to 4rem) that say nothing
+ * about how OUR specific composition of those components should lay
+ * out relative to each other or respond to viewport width — that's
+ * this stylesheet's job.
+ */
+
+#ec-room-access {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0 10px;
+  --m3e-toolbar-size: 42px;
+}
+
+.ec-room-access__summary {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+  margin-right: auto;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ec-room-access__inline-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ec-room-access__account {
+  display: inline-flex;
+  position: relative;
+}
+
+#ec-room-overflow {
+  display: none;
+}
+
+#ec-private-gate {
+  display: grid;
+  min-height: 60vh;
+  place-items: center;
+  padding: 24px 16px;
+}
+
+m3e-card {
+  width: min(440px, 100%);
+}
+
+#ec-landing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+@media (max-width: 640px) {
+  .ec-room-access__inline-actions {
+    display: none;
+  }
+
+  #ec-room-overflow {
+    display: inline-flex;
+  }
+}

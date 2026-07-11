@@ -36,6 +36,7 @@ export interface AssetBuildPlan {
   readonly destination: string;
   readonly socialCalcCandidates: readonly string[];
   readonly playerBundle: string;
+  readonly passkeyDist: string;
   readonly multiDist: string;
   readonly requiredFiles: readonly string[];
   readonly requiredDirectories: readonly string[];
@@ -47,6 +48,7 @@ export function buildAssetPlan(rootInput: string): AssetBuildPlan {
   const root = resolve(rootInput);
   const destination = join(root, 'assets');
   const playerBundle = join(root, 'packages/client/dist/player.js');
+  const passkeyDist = join(root, 'packages/client/dist-passkey');
   const multiDist = join(root, 'packages/client-multi/dist');
   const socialCalcCandidates = [
     join(root, 'packages/socialcalc-headless/node_modules/socialcalc/dist/SocialCalc.js'),
@@ -62,11 +64,17 @@ export function buildAssetPlan(rootInput: string): AssetBuildPlan {
       to: join('l10n', `${locale}.json`),
     })),
     { from: playerBundle, to: join('static', 'player.js') },
+    // Served alongside the passkey bundle so the license-notice banner
+    // baked into `dist-passkey/ui.js` (see vite.passkey.config.ts) points
+    // somewhere the deployed site itself can serve, not just a repo-root
+    // path only resolvable by someone with git access.
+    { from: join(root, 'third-party', 'm3e', 'NOTICE'), to: join('static', 'passkey', 'NOTICE') },
   ];
 
   const directoryCopies: CopyDirectoryStep[] = [
     { from: join(root, 'images'), to: 'images' },
     { from: join(root, 'static'), to: 'static' },
+    { from: passkeyDist, to: join('static', 'passkey') },
     { from: multiDist, to: 'multi' },
   ];
 
@@ -75,6 +83,7 @@ export function buildAssetPlan(rootInput: string): AssetBuildPlan {
     destination,
     socialCalcCandidates,
     playerBundle,
+    passkeyDist,
     multiDist,
     requiredFiles: [...staticCopies.map((step) => step.from), playerBundle],
     requiredDirectories: directoryCopies.map((step) => step.from),
@@ -170,12 +179,14 @@ export async function buildAssets(rootInput = resolve(dirname(fileURLToPath(impo
 
   await assertFile(plan.playerBundle, `missing ${plan.playerBundle} (run \`vp run @ethercalc/client#build\`)`);
   await assertDirectory(plan.multiDist, `missing ${plan.multiDist} (run \`vp run @ethercalc/client-multi#build\`)`);
+  await assertDirectory(plan.passkeyDist, `missing ${plan.passkeyDist} (run \`vp run @ethercalc/client#build:passkey\`)`);
 
   console.log(`[build-assets] rebuilding ${plan.destination}`);
   await rm(plan.destination, { recursive: true, force: true });
   await mkdir(join(plan.destination, 'l10n'), { recursive: true });
   await mkdir(join(plan.destination, 'static'), { recursive: true });
   await mkdir(join(plan.destination, 'multi'), { recursive: true });
+  await mkdir(join(plan.destination, 'static', 'passkey'), { recursive: true });
   await mkdir(join(plan.destination, 'images'), { recursive: true });
 
   for (const step of plan.staticCopies) await copyFileStep(plan, step);

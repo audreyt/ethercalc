@@ -6,9 +6,12 @@
   <meta content="IE=edge" http-equiv="X-UA-Compatible"/>
   <script>try { window.history.pushState({}, '', './') } catch (e) {}</script>
   <link href="./static/start.css" rel="stylesheet" type="text/css">
+  <link href="./static/passkey/ui.css" rel="stylesheet" type="text/css">
+  <style>m3e-theme:not(:defined) { display: contents; }</style>
 </head>
 
 <body id="framedpagebody" class="home">
+<m3e-theme color="#0c3159" scheme="light" variant="expressive" motion="expressive">
   <div id="top">
     <div id="topnav_wrap">
       <div id="navigation"></div>
@@ -40,7 +43,7 @@
   <script src="./static/xlsx.core.min.js"></script>
   <script src="./static/shim.js"></script>
   <script src="./static/jquery.js"></script>
-  <script type="module" src="./static/passkey.js"></script>
+  <script type="module" src="./static/passkey/ui.js"></script>
   <div id="drop">Drop a .csv, .ods, or a .xlsx file here to import it<div
   style="display:block;font-size:60%;padding-top:0.5ex"><label style="cursor:pointer"><input type='checkbox' id='rename_sheet' name='rename_sheet'>Rename sheet(s) after upload</label></div></div>
   <style>
@@ -330,5 +333,6 @@ if(drop.addEventListener) {
 	drop.addEventListener('drop', handleDrop, false);
 }
 </script>
+</m3e-theme>
 </body>
 </html>

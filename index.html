@@ -4,6 +4,12 @@
 <meta charset="utf-8" />
 <meta content="IE=edge" http-equiv="X-UA-Compatible"/>
 <meta name="referrer" content="no-referrer"/>
+<!-- Custom-element upgrade race (see docs/superpowers/specs/2026-07-11-passkey-ui-m3e-design.md
+     "Cold-load upgrade race"): m3e-theme only gets display:contents from
+     its own shadow styles once Lit registers it. Pin the pre-upgrade
+     state to match, so SocialCalc's boot-time layout math never measures
+     against a corrupted inline-box layout. -->
+<style>m3e-theme:not(:defined) { display: contents; }</style>
 <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
 <link rel="icon" type="image/png" href="./favicon-32x32.png" sizes="32x32">
 <link rel="icon" type="image/png" href="./favicon-16x16.png" sizes="16x16">
@@ -31,10 +37,9 @@ window.addEventListener("message", function(it){
 }, false);
 </script>
 <script src="./static/jquery.js"></script>
-<script src="./static/vex.combined.min.js"></script>
 <script src="./static/socialcalc.js"></script>
+<script type="module" src="./static/passkey/ui.js"></script>
 <script type="module" src="./static/player.js"></script>
-<script type="module" src="./static/passkey.js"></script>
 <script>
 var readl10nfile = function(data) {
   for (var k in data) {
@@ -56,8 +61,7 @@ $.ajax({url: ("./l10n/" + navigator.language + ".json").replace(/de-\w+/, 'de').
 
 <link rel="stylesheet" type="text/css" href="./static/socialcalc.css">
 <link rel="stylesheet" type="text/css" href="./static/index.css">
-<link rel="stylesheet" type="text/css" href="./static/vex.css">
-<link rel="stylesheet" type="text/css" href="./static/vex-theme-flat-attack.css">
+<link rel="stylesheet" type="text/css" href="./static/passkey/ui.css">
 <link rel="stylesheet" type="text/css" href="./static/jquery-ui.min.css">
 <style>
 body
@@ -71,6 +75,7 @@ body
 <script src="./static/makeup.js"></script>
 </head>
 <body onresize="if (typeof doresize != 'undefined') doresize();">
+<m3e-theme color="#0c3159" scheme="light" variant="expressive" motion="expressive">
 <div id="msg" style="position:absolute;right:15px;top: 8px; bottom: 80px; display: none">
 <textarea id="msgtext" style="margin-top:10px;width:110px;height:100%;"></textarea><br>
 <form id="msgform">
@@ -80,5 +85,6 @@ body
 </form>
 </div>
 <div id="tableeditor">&nbsp;<div class="loader"></div></div>
+</m3e-theme>
 </body>
 </html>

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'vite-plus/test';
 import type { AccessMode, RoomAcl } from '@ethercalc/shared/storage-keys';
 import { authorize } from '../src/lib/authorize.ts';
 
