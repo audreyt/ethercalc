@@ -414,4 +414,56 @@ test.describe('passkey room-access chrome', () => {
       minContrast,
     );
   });
+
+  test('stretches the shadow toolbar row across the full width on desktop and mobile', async ({
+    workerBase,
+    page,
+  }) => {
+    // `m3e-toolbar`'s shadow root lays out slotted children inside an
+    // internal `.base` div (`display: flex`, no explicit width) - the
+    // HOST must stay block-level/full-width (not itself `display: flex`)
+    // for `.base` to stretch across it via ordinary block sizing; a flex
+    // or inline-block host instead makes `.base` a shrink-to-fit flex
+    // item, leaving the row's trailing space dead and unreachable by the
+    // `margin-right: auto` trick `.ec-room-access__summary` relies on to
+    // push actions to the right edge (see passkey/ui.css).
+    const room = `access-geometry-${Date.now().toString(36)}`;
+    await routeWhoami(page, anonymousAuth);
+    await page.goto(`${workerBase}/${room}`);
+    await expect(page.locator('#ec-room-access')).toBeVisible();
+
+    const desktop = await page.evaluate(() => {
+      const host = document.getElementById('ec-room-access');
+      const base = host?.shadowRoot?.querySelector('.base');
+      const inlineActions = host?.querySelector('.ec-room-access__inline-actions');
+      return {
+        hostWidth: host?.getBoundingClientRect().width ?? 0,
+        baseWidth: base?.getBoundingClientRect().width ?? 0,
+        baseRight: base?.getBoundingClientRect().right ?? 0,
+        actionsRight: inlineActions?.getBoundingClientRect().right ?? 0,
+      };
+    });
+    // `.base` should span nearly the whole host (only the light-DOM
+    // padding should be missing), not shrink to its slotted content.
+    expect(desktop.baseWidth).toBeGreaterThan(desktop.hostWidth - 30);
+    // Trailing inline actions must land near .base's right edge, not
+    // stranded far short of it (the pre-fix bug: ~430px of a 1250px row).
+    expect(desktop.baseRight - desktop.actionsRight).toBeLessThan(40);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`${workerBase}/${room}`);
+    await expect(page.locator('#ec-room-access')).toBeVisible();
+    const mobile = await page.evaluate(() => {
+      const host = document.getElementById('ec-room-access');
+      const base = host?.shadowRoot?.querySelector('.base');
+      const overflow = document.getElementById('ec-room-overflow');
+      return {
+        overflowDisplay: overflow ? getComputedStyle(overflow).display : null,
+        overflowRight: overflow?.getBoundingClientRect().right ?? 0,
+        baseRight: base?.getBoundingClientRect().right ?? 0,
+      };
+    });
+    expect(mobile.overflowDisplay).not.toBe('none');
+    expect(mobile.baseRight - mobile.overflowRight).toBeLessThan(40);
+  });
 });

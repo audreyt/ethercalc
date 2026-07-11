@@ -11,13 +11,25 @@
  */
 
 #ec-room-access {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  /* `m3e-toolbar`'s shadow root lays out slotted children inside an
+     internal `.base` div (`display: flex`, no explicit width) - it is
+     NOT the host itself that needs `display: flex`. A flex/inline-block
+     host would make `.base` just another shrink-to-fit flex item
+     (verified empirically: .base stayed ~430px wide inside a 1250px
+     host, wasting the remaining ~800px as unusable trailing space
+     `margin-right: auto` below could never reach). A block-level,
+     full-width host lets `.base` - an ordinary block box internally -
+     stretch across it the normal CSS way, so its OWN flex row actually
+     spans the toolbar. */
+  display: block;
   width: 100%;
   box-sizing: border-box;
   padding: 0 10px;
   --m3e-toolbar-size: 42px;
+  /* `.base`'s own column-gap between our slotted summary/inline-actions/
+     account/overflow children - the host-level `gap` this replaces only
+     ever affected the host's own (now unused) flex layout, never .base. */
+  --m3e-toolbar-spacing: 10px;
 }
 
 .ec-room-access__summary {
