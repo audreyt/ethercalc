@@ -23,6 +23,11 @@
 <body id="framedpagebody" class="home">
 <m3e-theme color="#0c3159" scheme="light" variant="expressive" motion="expressive">
 
+  <!-- Gsheet-inspired: no full-width chrome bar. The brand stays a slim
+       in-flow page title (like a doc's filename); project links become
+       a floating pill cluster fixed to the viewport's top-right corner
+       (persists on scroll), the way Sheets floats its own icon row over
+       the sheet rather than reserving a dedicated top-bar band. -->
   <header class="ec-top">
     <h1 class="ec-brand">
       <svg class="ec-brand__glyph" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
@@ -33,12 +38,13 @@
       </svg>
       EtherCalc
     </h1>
-    <nav class="ec-topnav" aria-label="Project links">
-      <a href="https://docs.ethercalc.net" target="_blank" rel="noopener">Docs</a>
-      <a href="https://github.com/audreyt/ethercalc/blob/main/API.md" target="_blank" rel="noopener">API</a>
-      <a href="https://github.com/audreyt/ethercalc" target="_blank" rel="noopener">GitHub</a>
-    </nav>
   </header>
+
+  <nav class="ec-floatnav" aria-label="Project links">
+    <a href="https://docs.ethercalc.net" target="_blank" rel="noopener">Docs</a>
+    <a href="https://github.com/audreyt/ethercalc/blob/main/API.md" target="_blank" rel="noopener">API</a>
+    <a href="https://github.com/audreyt/ethercalc" target="_blank" rel="noopener">GitHub</a>
+  </nav>
 
   <main class="ec-main">
 

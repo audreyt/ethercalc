@@ -45,16 +45,12 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* ---- Top bar ------------------------------------------------------- */
+/* ---- Page title (in-flow, no chrome band) ---------------------------- */
 
 .ec-top {
   max-width: 880px;
   margin: 0 auto;
   padding: 22px 24px 6px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
 }
 
 .ec-brand {
@@ -73,26 +69,44 @@ body {
   color: var(--ec-primary);
 }
 
-.ec-topnav {
+/* ---- Floating project-links cluster -----------------------------------
+ * Gsheet-inspired: Sheets never reserves a full-width bar just for its
+ * icon row — it floats a tight rounded cluster at the window's top-right
+ * corner, elevated over the document. `position: fixed` mirrors that:
+ * the cluster persists in the corner through scroll instead of pushing
+ * hero content down inside a dedicated band. */
+
+.ec-floatnav {
+  position: fixed;
+  top: 14px;
+  right: 18px;
+  z-index: 20;
   display: flex;
-  gap: 4px;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--ec-surface);
+  border: 1px solid var(--ec-outline-variant);
+  box-shadow: 0 1px 2px rgba(12, 49, 89, 0.08), 0 2px 8px rgba(12, 49, 89, 0.06);
 }
 
-.ec-topnav a {
-  font-size: 0.875rem;
+.ec-floatnav a {
+  font-size: 0.8125rem;
   font-weight: 500;
   color: var(--ec-on-surface-variant);
   text-decoration: none;
-  padding: 7px 13px;
+  padding: 6px 12px;
   border-radius: 999px;
+  white-space: nowrap;
 }
 
-.ec-topnav a:hover {
+.ec-floatnav a:hover {
   background: color-mix(in srgb, var(--ec-on-surface) 8%, transparent);
   color: var(--ec-on-surface);
 }
 
-.ec-topnav a:focus-visible {
+.ec-floatnav a:focus-visible {
   outline: 2px solid var(--ec-primary);
   outline-offset: 1px;
 }
@@ -443,20 +457,13 @@ body #intro-links > #ec-landing-actions {
   .ec-cta { width: 100%; justify-content: center; }
 }
 
-@media (max-width: 360px) {
-  .ec-top {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 4px;
-  }
-
-  .ec-topnav {
-    width: 100%;
-    justify-content: space-between;
-  }
-
-  .ec-topnav a {
-    padding-inline: 10px;
+@media (max-width: 400px) {
+  /* Below ~351px, "EtherCalc" and the floating pill collide side by side
+     (brand right edge ≈160px vs. pill left edge ≈ vw-195px). Drop the
+     pill below the title row instead of shrinking either element. */
+  .ec-floatnav {
+    top: 52px;
+    right: 14px;
   }
 }
 
