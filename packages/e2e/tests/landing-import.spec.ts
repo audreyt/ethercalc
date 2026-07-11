@@ -55,7 +55,7 @@ async function expectGrid(args: {
 }
 
 test.describe('landing page import', () => {
-  test('imports UTF-8 CSV through the default binary-string FileReader path', async ({
+  test('imports one-column UTF-8 CSV without a final newline', async ({
     workerBase,
     page,
     request,
@@ -68,14 +68,14 @@ test.describe('landing page import', () => {
       file: {
         name: 'utf8.csv',
         mimeType: 'text/csv',
-        buffer: Buffer.from('café,東京\n', 'utf8'),
+        buffer: Buffer.from('café\n東京', 'utf8'),
       },
     });
     await expectGrid({
       workerBase,
       request,
       room,
-      expected: [['café', '東京']],
+      expected: [['café'], ['東京']],
     });
   });
 

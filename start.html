@@ -366,10 +366,7 @@ function importFiles(files) {
 			// are UTF-8 decoded; the workbook path keeps the raw payload.
 			var raw = e.target.result;
 			if (isCsvCandidate(f, raw)) {
-				var text = utf8TextFromPayload(raw);
-				if (/^[^\n]+,(?:[^\n]+)*\n/.test(text)) {
-					return post_csv(text, id);
-				}
+				return post_csv(utf8TextFromPayload(raw), id);
 			}
 			if(typeof Worker !== 'undefined') {
 				xlsxworker(raw, process_wb, id);
