@@ -28,6 +28,16 @@ Bug-fix release.
   unchanged. Covered by unit, Durable Object round-trip, pinned legacy
   oracle, and Playwright lifecycle tests.
 
+Test tooling
+- Added a root `vite.config.ts` `test.projects` allowlist so `vp test`
+  (Vite+'s Vitest wrapper) aggregates each package's existing
+  `vitest.config.ts` / `vitest.node.config.ts` with its own environment,
+  pool, and coverage settings intact, instead of falling back to Vitest's
+  default whole-repo discovery (which mis-ran jsdom/workers-pool suites
+  under a bare `node` environment and tripped over the Playwright and
+  `bun:test` files that live outside Vitest). `bun test` / per-package
+  `bun run test` are unaffected.
+
 
 ==============================================================================
 0.20260710.0 — 2026-07-10
