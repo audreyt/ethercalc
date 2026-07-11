@@ -10,6 +10,23 @@ EtherCalc bundles SocialCalc from the audreyt/socialcalc fork; see
 
 
 ==============================================================================
+Unreleased
+==============================================================================
+
+Cleanup
+- Removed obsolete pre-rewrite deployment artifacts: `.dotcloud/`, `.openshift/`,
+  `apache/`, root `nginx/` (legacy config dir — the active self-host proxy
+  recipe lives in `deploy/nginx/`), `misc/`, `dotcloud.js`, `dotcloud.yml`, and
+  `requirements.txt`.
+- Removed dangling legacy Express/CoffeeScript entrypoints: `server.js`
+  (broken symlink), `main.js`, `sc.js`, `exports.js`, root `player.js`,
+  `player-broadcast.js`, and the empty root `_start` stub (unrelated to the
+  active `/_start` route, which the Worker still serves via `start.html`).
+  None were referenced by the current TypeScript/Cloudflare Worker build,
+  self-host image, docs, or tests.
+
+
+==============================================================================
 0.20260710.1 — 2026-07-10
 ==============================================================================
 
