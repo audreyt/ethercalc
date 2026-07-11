@@ -22,6 +22,7 @@ import '@m3e/web/button';
 import '@m3e/web/icon-button';
 import '@m3e/web/toolbar';
 import '@m3e/web/menu';
+import '@m3e/web/divider';
 import '@m3e/web/dialog';
 import '@m3e/web/snackbar';
 import '@m3e/web/card';
@@ -156,7 +157,11 @@ function buildAccountTrigger(kind: 'button' | 'avatar'): HTMLElement {
  * shared `HtmlFor` mixin), not DOM-nesting-based, so the trigger/menu
  * association is unaffected by where the menu itself actually lives.
  */
-function buildAccountMenu(host: PasskeyLogicHost, triggerKind: 'button' | 'avatar' = 'button'): HTMLElement {
+function buildAccountMenu(
+  host: PasskeyLogicHost,
+  triggerKind: 'button' | 'avatar' = 'button',
+  contextActions: ReadonlyArray<{ readonly label: string; readonly run: () => unknown }> = [],
+): HTMLElement {
   const trigger = buildAccountTrigger(triggerKind);
 
   removeById('ec-account-menu');
@@ -171,6 +176,15 @@ function buildAccountMenu(host: PasskeyLogicHost, triggerKind: 'button' | 'avata
     });
     menu.appendChild(item);
   };
+
+  // Room-specific action ("Make a private copy" / "Sheet access") first,
+  // separated from the account-global pair below it - one round trigger,
+  // no second button-shaped layer competing with the avatar for
+  // top-right space (see `mountRoomAccess`).
+  if (contextActions.length > 0) {
+    for (const { label, run } of contextActions) addMenuItem(label, run);
+    menu.appendChild(document.createElement('m3e-divider'));
+  }
 
   addMenuItem('New private sheet', () => newPrivateSheet(host));
   addMenuItem('Sign out', async () => {
@@ -293,7 +307,7 @@ function showSheetAccessDialog(): void {
  * once a user is actually inside a sheet, the account/passkey status is
  * the only thing this corner needs to carry.
  *
- * `position: fixed` above 840px viewport width: no knowledge of
+ * `position: fixed` above 700px viewport width: no knowledge of
  * SocialCalc's own menu/toolbar DOM, no insertion into it, so it never
  * touches `spreadsheet.viewheight`/`nonviewheight` — SocialCalc keeps its
  * full natural height and the cluster floats over the top-right corner of
@@ -301,13 +315,14 @@ function showSheetAccessDialog(): void {
  * the "Edit Format Sort Audit Comment Names Clipboard" row's own content
  * ends around x=482 of a 1410px-wide row).
  *
- * Below 840px that clearance is gone (SocialCalc's menu row is a fixed
+ * Below 700px that clearance is gone (SocialCalc's menu row is a fixed
  * ~482px wide, non-reflowing table — a `position: fixed` cluster
  * anchored to the viewport's right edge WILL cross into it on any
  * narrower viewport; confirmed live via bounding-rect intersection down
- * to the ~757px mark - the widest realistic content, badge + "Sheet
- * access"/"Make a private copy" + avatar, measures ~256px wide).
- * `ui.css`'s `@media (max-width: 840px)` switches the cluster to
+ * to the ~626px mark - the widest realistic content, private badge +
+ * avatar alone (no context-action button beside it - see
+ * `mountRoomAccess`), measures ~126px wide).
+ * `ui.css`'s `@media (max-width: 700px)` switches the cluster to
  * `position: static`, so it
  * needs to sit in normal DOM flow immediately before `#tableeditor` — not
  * appended to the end of `body` the way a `position: fixed` element could
@@ -370,9 +385,9 @@ function buildPasskeyIconTrigger(host: PasskeyLogicHost, room: string): HTMLElem
 /**
  * Adds the passkey/account-specific portion into the cluster
  * `mountRoomAccessCluster` already built. `verdict` is `null` on the
- * private-denied path — access
- * itself was refused, so no room-specific permission is known, only the
- * global sign-in state applies (still enough to offer "Use a passkey").
+ * private-denied path — access itself was refused, so no room-specific
+ * permission is known, only the global sign-in state applies (still
+ * enough to offer "Use a passkey").
  */
 function mountRoomAccess(
   host: PasskeyLogicHost,
@@ -391,30 +406,22 @@ function mountRoomAccess(
     cluster.insertBefore(badge, cluster.firstChild);
   }
 
-  // Signed out: just the passkey trigger, no context action - there's
-  // nothing else a signed-out visitor can do from here. Signed in: an
-  // optional context action ("Make a private copy" for a public room,
-  // "Sheet access" for one this account owns) alongside the avatar. The
-  // cluster's widest realistic content (badge + "Sheet access" + avatar)
-  // measures ~256px - comfortably within even a 320px viewport with
-  // ui.css's own margins, so unlike the project links this replaced,
-  // nothing here needs a narrow-width fold-into-overflow treatment.
+  // Exactly one round, clickable control in the cluster - never a
+  // context-action button sitting beside the avatar as a second
+  // interactive layer. Signed in: the avatar's own menu folds in the
+  // room-specific action ("Make a private copy" for a public room,
+  // "Sheet access" for one this account owns) ahead of the account-global
+  // pair (see `buildAccountMenu`). Signed out: just the passkey trigger -
+  // there's nothing else a signed-out visitor can do from here.
   let trigger: HTMLElement;
   if (state.uid) {
+    const contextActions: Array<{ label: string; run: () => unknown }> = [];
     if (verdict && !verdict.isPrivate) {
-      const button = actionButton('Make a private copy', () => copyToPrivate(host, room), 'filled');
-      // See `buildAccountTrigger`'s doc comment: pre-set before this
-      // button is appended to the toolbar, ahead of Lit's own async
-      // `firstUpdated` default, or `m3e-toolbar`'s slotchange scan can
-      // miss it entirely.
-      button.setAttribute('tabindex', '-1');
-      cluster.appendChild(button);
+      contextActions.push({ label: 'Make a private copy', run: () => copyToPrivate(host, room) });
     } else if (verdict?.canWrite) {
-      const button = actionButton('Sheet access', () => showSheetAccessDialog());
-      button.setAttribute('tabindex', '-1');
-      cluster.appendChild(button);
+      contextActions.push({ label: 'Sheet access', run: () => showSheetAccessDialog() });
     }
-    trigger = buildAccountMenu(host, 'avatar');
+    trigger = buildAccountMenu(host, 'avatar', contextActions);
   } else {
     trigger = buildPasskeyIconTrigger(host, room);
   }

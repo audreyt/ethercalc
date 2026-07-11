@@ -31,26 +31,26 @@
   --m3e-toolbar-rounded-padding: 4px 10px;
 }
 
-/* Below 840px, `position: fixed` in the viewport's top-right corner is no
+/* Below 700px, `position: fixed` in the viewport's top-right corner is no
    longer safe (see `mountRoomAccessCluster()`'s doc comment in ui.ts for
    the measured collision threshold against SocialCalc's own
    non-reflowing menu bar) — fall back to a normal in-flow block instead,
    which `mountRoomAccessCluster()` places immediately before
-   `#tableeditor` for exactly
-   this case. `width: fit-content` + `margin-left: auto` keeps the pill
-   itself shrink-wrapped and right-aligned rather than stretching the
-   whole row full-width. SocialCalc re-measures `#tableeditor`'s new
-   `offsetTop` on its own (see ui.ts) - the grid simply starts lower,
-   the same trade-off the pre-redesign toolbar always made, just no
-   longer paid on desktop where there was room to avoid it entirely.
+   `#tableeditor` for exactly this case. `width: fit-content` +
+   `margin-left: auto` keeps the pill itself shrink-wrapped and
+   right-aligned rather than stretching the whole row full-width.
+   SocialCalc re-measures `#tableeditor`'s new `offsetTop` on its own
+   (see ui.ts) - the grid simply starts lower, the same trade-off the
+   pre-redesign toolbar always made, just no longer paid on desktop
+   where there was room to avoid it entirely.
 
-   840px, not the ~1024px this needed before removing Docs/API/GitHub
-   from the sheet-page cluster: the widest remaining content (private
-   badge + "Sheet access"/"Make a private copy" + avatar, ~256px)
-   measures collision-free only above ~757px; 840px keeps a similar
-   safety margin past that measured minimum instead of tracking it
-   exactly. */
-@media (max-width: 840px) {
+   700px, not the 840px this needed before folding "Make a private
+   copy"/"Sheet access" into the account menu: the widest remaining
+   content (private badge + avatar alone, ~126px - no second button
+   beside it anymore) measures collision-free only above ~626px; 700px
+   keeps a similar safety margin past that measured minimum instead of
+   tracking it exactly. */
+@media (max-width: 700px) {
   #ec-room-access {
     position: static;
     display: block;

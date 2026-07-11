@@ -156,9 +156,9 @@ test.describe('passkey room-access chrome', () => {
       return {
         clusterPosition: cluster ? getComputedStyle(cluster).position : null,
         // Inserted immediately before `#tableeditor` (see `mountRoomAccessCluster()`
-        // in ui.ts) so the sub-840px in-flow fallback renders above the
+        // in ui.ts) so the sub-700px in-flow fallback renders above the
         // grid instead of after it - `position: fixed` makes DOM position
-        // irrelevant to where it PAINTS at this (default, >840px) test
+        // irrelevant to where it PAINTS at this (default, >700px) test
         // viewport, but it must still be a real preceding sibling of
         // `#tableeditor`, not appended elsewhere.
         precedesTableeditor:
@@ -194,9 +194,16 @@ test.describe('passkey room-access chrome', () => {
     await expect(access).toBeVisible();
     await expect(access).toContainText('Private');
     // Viewer, not owner: neither "Make a private copy" nor "Sheet access"
-    // makes sense for someone who can read but not write.
-    await expect(access.getByRole('button', { name: 'Make a private copy' })).toHaveCount(0);
-    await expect(access.getByRole('button', { name: 'Sheet access' })).toHaveCount(0);
+    // makes sense for someone who can read but not write - the account
+    // menu must fall back to just the two account-global actions.
+    await page.locator('#ec-account-trigger').click();
+    const menu = page.locator('#ec-account-menu');
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole('menuitem', { name: 'Make a private copy' })).toHaveCount(0);
+    await expect(menu.getByRole('menuitem', { name: 'Sheet access' })).toHaveCount(0);
+    await expect(menu.getByRole('menuitem', { name: 'New private sheet' })).toBeVisible();
+    await expect(menu.getByRole('menuitem', { name: 'Sign out' })).toBeVisible();
+    await page.keyboard.press('Escape');
 
     const layout = await page.evaluate(() => {
       const cluster = document.getElementById('ec-room-access');
@@ -351,11 +358,12 @@ test.describe('passkey room-access chrome', () => {
   }) => {
     // The old design folded the wordy context action into a mobile
     // overflow sheet below 640px, because the FULL cluster (with project
-    // links) was too wide to fit narrow viewports. That's gone: the
-    // widest remaining content is ~256px, comfortably inside even a
-    // 320px viewport (see `mountRoomAccessCluster()`'s doc comment in ui.ts), so
-    // "Make a private copy"/"Sheet access" now stay directly inline at
-    // every width, narrow included.
+    // links, then later a direct button beside the avatar) was too wide
+    // or too crowded for narrow viewports. That's now structurally
+    // impossible to need: "Make a private copy"/"Sheet access" live
+    // inside the account menu (see `buildAccountMenu`), not as a second
+    // cluster-level control, so there's nothing width-dependent left to
+    // fold away at any viewport, narrow included.
     const publicRoom = `access-owner-public-${Date.now().toString(36)}`;
     const privateRoom = `access-owner-private-${Date.now().toString(36)}`;
     await routeWhoami(page, signedInAuth);
@@ -366,28 +374,80 @@ test.describe('passkey room-access chrome', () => {
     });
 
     await page.goto(`${workerBase}/${publicRoom}`);
-    const publicRow = page.locator('#ec-room-access');
-    await expect(publicRow.getByRole('button', { name: 'Make a private copy' })).toBeVisible();
     const accountMenu = page.locator('#ec-account-menu');
     await expect(accountMenu).toBeHidden();
     await page.locator('#ec-account-trigger').click();
     await expect(accountMenu).toBeVisible();
+    await expect(accountMenu.getByRole('menuitem', { name: 'Make a private copy' })).toBeVisible();
     await expect(accountMenu.getByRole('menuitem', { name: 'New private sheet' })).toBeVisible();
     await expect(accountMenu.getByRole('menuitem', { name: 'Sign out' })).toBeVisible();
+    await page.keyboard.press('Escape');
 
     await page.goto(`${workerBase}/${privateRoom}`);
     const privateRow = page.locator('#ec-room-access');
     await expect(privateRow).toContainText('Private');
-    await expect(privateRow.getByRole('button', { name: 'Sheet access' })).toBeVisible();
-    await expect(privateRow.getByRole('button', { name: 'Make a private copy' })).toHaveCount(0);
+    await page.locator('#ec-account-trigger').click();
+    await expect(accountMenu).toBeVisible();
+    await expect(accountMenu.getByRole('menuitem', { name: 'Sheet access' })).toBeVisible();
+    await expect(accountMenu.getByRole('menuitem', { name: 'Make a private copy' })).toHaveCount(0);
+    await page.keyboard.press('Escape');
 
-    await page.setViewportSize({ width: 390, height: 844 });
+    await page.setViewportSize({ width: 320, height: 844 });
     await page.goto(`${workerBase}/${publicRoom}`);
-    const narrowRow = page.locator('#ec-room-access');
-    await expect(narrowRow.getByRole('button', { name: 'Make a private copy' })).toBeVisible();
     await expect(page.locator('#ec-room-overflow')).toHaveCount(0);
     await page.locator('#ec-account-trigger').click();
-    await expect(page.locator('#ec-account-menu')).toBeVisible();
+    await expect(accountMenu).toBeVisible();
+    await expect(accountMenu.getByRole('menuitem', { name: 'Make a private copy' })).toBeVisible();
+  });
+
+  test('clicking "Make a private copy" in the account menu copies the sheet and navigates there', async ({
+    workerBase,
+    page,
+  }) => {
+    const room = `access-copyaction-${Date.now().toString(36)}`;
+    const copiedRoom = `access-copyaction-result-${Date.now().toString(36)}`;
+    await routeWhoami(page, signedInAuth);
+    await page.route('**/_/*/access', (route) =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify(publicAccess) }),
+    );
+    let copyRequestSeen = false;
+    await page.route(`**/_from/${room}/private`, (route) => {
+      copyRequestSeen = true;
+      expect(route.request().method()).toBe('POST');
+      return route.fulfill({ status: 303, headers: { location: `/${copiedRoom}` } });
+    });
+
+    await page.goto(`${workerBase}/${room}`);
+    await page.locator('#ec-account-trigger').click();
+    const menu = page.locator('#ec-account-menu');
+    await expect(menu).toBeVisible();
+    await menu.getByRole('menuitem', { name: 'Make a private copy' }).click();
+
+    await page.waitForURL(`**/${copiedRoom}`);
+    expect(copyRequestSeen).toBe(true);
+    await expect(menu).toBeHidden();
+  });
+
+  test('clicking "Sheet access" in the account menu opens the access-info dialog', async ({
+    workerBase,
+    page,
+  }) => {
+    const room = `access-sheetaction-${Date.now().toString(36)}`;
+    await routeWhoami(page, signedInAuth);
+    await page.route('**/_/*/access', (route) =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify(privateOwnerAccess) }),
+    );
+
+    await page.goto(`${workerBase}/${room}`);
+    await page.locator('#ec-account-trigger').click();
+    const menu = page.locator('#ec-account-menu');
+    await expect(menu).toBeVisible();
+    await menu.getByRole('menuitem', { name: 'Sheet access' }).click();
+
+    const dialog = page.locator('#ec-sheet-access-dialog');
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText('This sheet is private. Only accounts that have access can open it.');
+    await expect(menu).toBeHidden();
   });
 
   test('survives the cold-load custom-element upgrade race on the editable path', async ({
@@ -470,7 +530,7 @@ test.describe('passkey room-access chrome', () => {
     );
   });
 
-  test('stays compact and fixed on desktop, falls back in-flow below 840px', async ({
+  test('stays compact and fixed on desktop, falls back in-flow below 700px', async ({
     workerBase,
     page,
   }) => {
@@ -478,7 +538,7 @@ test.describe('passkey room-access chrome', () => {
     // viewport, reserving its own height out of the grid on EVERY
     // viewport. The redesign only pays that cost where it's actually
     // required: `position: fixed`, shrink-wrapped, floating free in the
-    // corner above 840px (confirmed clear of SocialCalc's own menu bar);
+    // corner above 700px (confirmed clear of SocialCalc's own menu bar);
     // a normal in-flow block, pushing `#tableeditor` down, below it (see
     // `mountRoomAccessCluster()`'s doc comment in ui.ts for the measured
     // collision math that sets that cutoff).
@@ -503,8 +563,8 @@ test.describe('passkey room-access chrome', () => {
       };
     });
     // Compact, not full-width: comfortably under half the viewport for
-    // "Make a private copy" + avatar at any reasonable desktop width, and
-    // pinned near the top-right corner.
+    // the avatar trigger alone (public room, no badge) at any reasonable
+    // desktop width, and pinned near the top-right corner.
     expect(desktop.position).toBe('fixed');
     expect(desktop.width).toBeLessThan(desktop.clientWidth / 2);
     expect(desktop.right).toBeLessThanOrEqual(desktop.clientWidth);
@@ -536,18 +596,22 @@ test.describe('passkey room-access chrome', () => {
     // "Edit Format Sort Audit Comment Names Clipboard" menu row is a
     // fixed-width (~482px), non-reflowing table that doesn't shrink with
     // the viewport. A `position: fixed` cluster anchored to the viewport's
-    // right edge WILL cross into it below a measured ~757px viewport
+    // right edge WILL cross into it below a measured ~626px viewport
     // width — this asserts zero bounding-rect intersection with that real
-    // SocialCalc element, on both sides of the 840px breakpoint, for the
-    // widest realistic cluster content (private badge + "Sheet access" +
-    // avatar).
+    // SocialCalc element, on both sides of the 700px breakpoint, for the
+    // widest realistic cluster content (private badge + avatar, no
+    // context-action button beside it anymore - see `mountRoomAccess`).
+    // It also pins the breakpoint itself, not just collision absence: a
+    // media query that left the cluster in-flow well above 700px would
+    // still pass a collision-only check, so 700/701 assert `position`
+    // directly across the exact cutover.
     const room = `access-nocollide-${Date.now().toString(36)}`;
     await routeWhoami(page, signedInAuth);
     await page.route('**/_/*/access', (route) =>
       route.fulfill({ contentType: 'application/json', body: JSON.stringify(privateOwnerAccess) }),
     );
 
-    for (const width of [700, 800, 840, 841]) {
+    for (const width of [600, 700, 701, 800]) {
       await page.setViewportSize({ width, height: 800 });
       await page.goto(`${workerBase}/${room}`);
       await expect(page.locator('#ec-room-access')).toBeVisible();
@@ -561,6 +625,7 @@ test.describe('passkey room-access chrome', () => {
         const menuRow = menuCell?.closest('table');
         const menuRect = menuRow?.getBoundingClientRect();
         return {
+          position: cluster ? getComputedStyle(cluster).position : null,
           cluster: clusterRect
             ? { left: clusterRect.left, right: clusterRect.right, top: clusterRect.top, bottom: clusterRect.bottom }
             : null,
@@ -570,6 +635,7 @@ test.describe('passkey room-access chrome', () => {
         };
       });
 
+      expect(geometry.position, `unexpected position at ${width}px`).toBe(width <= 700 ? 'static' : 'fixed');
       expect(geometry.cluster, `no cluster rect at ${width}px`).not.toBeNull();
       expect(geometry.menu, `no SocialCalc menu row found at ${width}px`).not.toBeNull();
       const c = geometry.cluster!;
@@ -616,7 +682,7 @@ test.describe('passkey room-access chrome', () => {
     expect(animation?.animationDuration).toMatch(/^0s$|^0ms$/);
   });
 
-  test('keeps the context action and account trigger co-located inside one bounded cluster', async ({
+  test('keeps the private badge and account trigger co-located inside one bounded cluster', async ({
     workerBase,
     page,
   }) => {
@@ -624,22 +690,23 @@ test.describe('passkey room-access chrome', () => {
     // somewhere" - because the original bug report that started this
     // redesign was exactly this: a bottom-right-only pill was easy to
     // miss entirely, and later a full-width toolbar row wasted grid
-    // height. Both remaining controls must sit together inside the
-    // cluster's own compact bounding box.
+    // height. The badge and trigger must sit together inside the
+    // cluster's own compact bounding box, not drift apart.
     const room = `access-unified-${Date.now().toString(36)}`;
     await routeWhoami(page, signedInAuth);
     await page.route('**/_/*/access', (route) =>
-      route.fulfill({ contentType: 'application/json', body: JSON.stringify(publicAccess) }),
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify(privateOwnerAccess) }),
     );
     await page.goto(`${workerBase}/${room}`);
 
     const cluster = page.locator('#ec-room-access');
     await expect(cluster).toBeVisible();
-    await expect(cluster.getByRole('button', { name: 'Make a private copy' })).toBeVisible();
+    const badge = cluster.locator('.ec-room-access__badge');
+    await expect(badge).toBeVisible();
     await expect(page.locator('#ec-account-trigger')).toBeVisible();
 
-    // Both required controls must sit inside the cluster's own bounding
-    // box. `#ec-account-menu` isn't a toolbar descendant at all -
+    // Both elements must sit inside the cluster's own bounding box.
+    // `#ec-account-menu` isn't a toolbar descendant at all -
     // `buildAccountMenu()` appends it straight to `document.body`, a
     // sibling of `#ec-account-trigger` rather than its child (see that
     // function's doc comment in ui.ts for why), so it's correctly
@@ -647,12 +714,10 @@ test.describe('passkey room-access chrome', () => {
     const outerBox = await cluster.boundingBox();
     expect(outerBox, 'cluster has no box').not.toBeNull();
     const controlBoxes = await Promise.all(
-      [cluster.getByRole('button', { name: 'Make a private copy' }), page.locator('#ec-account-trigger')].map(
-        (locator) => locator.boundingBox(),
-      ),
+      [badge, page.locator('#ec-account-trigger')].map((locator) => locator.boundingBox()),
     );
     for (const box of controlBoxes) {
-      expect(box, 'required control has no box').not.toBeNull();
+      expect(box, 'required element has no box').not.toBeNull();
     }
     const outer = outerBox!;
     const tolerance = 1;
@@ -665,7 +730,7 @@ test.describe('passkey room-access chrome', () => {
     }
   });
 
-  test('Arrow-key navigation reaches every visible control exactly once with a single roving tabindex', async ({
+  test('keeps exactly one active control after a cold mount, across every trigger shape', async ({
     workerBase,
     page,
   }) => {
@@ -677,38 +742,39 @@ test.describe('passkey room-access chrome', () => {
     // `[tabindex]` to match) can miss it - it never enters the toolbar's
     // roving-tabindex group, and later gets its OWN independent default
     // `tabindex="0"` once Lit catches up, with no further `slotchange` to
-    // alert the toolbar. Symptom: MULTIPLE simultaneous `tabindex="0"`
-    // elements, and Arrow-key navigation stops advancing partway through.
-    const room = `access-kbd-desktop-${Date.now().toString(36)}`;
-    await routeWhoami(page, signedInAuth);
-    await page.route('**/_/*/access', (route) =>
-      route.fulfill({ contentType: 'application/json', body: JSON.stringify(privateOwnerAccess) }),
-    );
-    await page.goto(`${workerBase}/${room}`);
-    await expect(page.locator('#ec-room-access')).toBeVisible();
+    // alert the toolbar. That specific race needed TWO toolbar children
+    // to produce a visible symptom (multiple simultaneous `tabindex="0"`
+    // elements); folding the context action into the account menu (see
+    // `mountRoomAccess`) means the cluster's `m3e-toolbar` now ever holds
+    // a SINGLE focusable child (the private badge, when present, is a
+    // plain non-interactive `<span>`) - so this asserts that invariant
+    // holds immediately after mount across all three trigger shapes,
+    // as cheap insurance against a future change reintroducing a second
+    // toolbar-managed child.
+    const signedOutRoom = `access-kbd-signedout-${Date.now().toString(36)}`;
+    const publicRoom = `access-kbd-public-${Date.now().toString(36)}`;
+    const privateRoom = `access-kbd-private-${Date.now().toString(36)}`;
 
-    await page.evaluate(() => {
-      const first = document.querySelector('#ec-room-access m3e-button, #ec-room-access m3e-icon-button');
-      (first as HTMLElement | null)?.focus();
+    const scenarios: Array<{ room: string; auth: typeof anonymousAuth | typeof signedInAuth }> = [
+      { room: signedOutRoom, auth: anonymousAuth },
+      { room: publicRoom, auth: signedInAuth },
+      { room: privateRoom, auth: signedInAuth },
+    ];
+    await page.route('**/_/*/access', (route) => {
+      const path = new URL(route.request().url()).pathname;
+      const verdict = path.includes(privateRoom) ? privateOwnerAccess : publicAccess;
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify(verdict) });
     });
 
-    const seen: Array<string | null> = [];
-    for (let i = 0; i < 4; i++) {
-      const id = await page.evaluate(() => {
-        const el = document.activeElement as HTMLElement | null;
-        return el ? el.id || el.textContent?.trim() || el.tagName : null;
-      });
-      seen.push(id);
+    for (const { room, auth } of scenarios) {
+      await routeWhoami(page, auth);
+      await page.goto(`${workerBase}/${room}`);
+      await expect(page.locator('#ec-room-access')).toBeVisible();
       const zeroCount = await page.evaluate(
         () => document.querySelectorAll('#ec-room-access [tabindex="0"]').length,
       );
-      expect(zeroCount, `expected exactly one active item at step ${i}`).toBe(1);
-      await page.keyboard.press('ArrowRight');
+      expect(zeroCount, `expected exactly one active item for ${room}`).toBe(1);
     }
-
-    // "Sheet access", account trigger, then no `.withWrap()` configured -
-    // stays on the last item rather than cycling back.
-    expect(seen).toEqual(['Sheet access', 'ec-account-trigger', 'ec-account-trigger', 'ec-account-trigger']);
   });
 
   test('remains reachable via the account trigger alone when there is no context action to show', async ({
