@@ -98,21 +98,28 @@ open question for `@m3e/web` is whether *its own* modules contain
 internal dynamic imports that would still split a single-entry build
 into multiple chunks — not yet verified either way.)
 
-- `passkey/ui.ts` is the sole input for `vite.passkey.config.ts`, built
-  to `packages/client/dist-passkey/`. Because whether `@m3e/web`
-  internally triggers chunk-splitting is unverified, `build-assets.ts`
-  copies that **whole directory** (a new `directoryCopies` entry,
-  mirroring the existing `client-multi` → `multi/` treatment exactly,
-  which exists for the identical reason: that build can emit more than
-  one file) into `assets/static/passkey/`, rather than assuming a
-  single named output file. `index.html`/`start.html`'s
-  `<script type="module" src="./static/passkey/...">` reference is
-  confirmed against the real emitted entry filename from a build run —
-  never hardcoded from a guess. Any CSS Vite extracts from this entry
-  (our own light-DOM layout/token-override CSS — M3E's shadow-DOM
-  component styles never emit as a separate asset) lands in that same
-  copied directory; `static/passkey.css` is deleted, not replaced
-  1:1 with a new root-level file.
+- **Correction to the original draft of this bullet**: the directory-copy
+  alone does not solve how static HTML locates the entry at all —
+  `index.html`/`start.html` are plain static files whose `<script src>`
+  is baked in at design time, not discovered at build time, so an
+  unpinned content-hashed entry filename (confirmed from a real build:
+  `dist-passkey/assets/ui-DT5s7B6u.js`) can never be referenced by them.
+  These are two separate problems: `entryFileNames` must be pinned
+  (`ui.js`, same fixed-name reasoning `vite.config.ts` already uses for
+  `player.js`) so the static HTML has a stable path to reference at
+  all; the directory-copy remains for anything *else* Rollup might
+  emit (extra chunks, if `@m3e/web`'s internal chunk-splitting
+  behavior — still unverified — ever produces one), since those are
+  referenced only via the entry's own rewritten import statements, not
+  by name from static HTML. `passkey/ui.ts` is the sole input for
+  `vite.passkey.config.ts`, built to `packages/client/dist-passkey/`
+  (`ui.js`, plus `ui.css` only if light-DOM CSS is ever added — none
+  today). `build-assets.ts` copies that **whole directory** (a new
+  `directoryCopies` entry, mirroring the existing `client-multi` →
+  `multi/` treatment) into `assets/static/passkey/`, and
+  `index.html`/`start.html` reference `./static/passkey/ui.js`
+  directly. `static/passkey.css` is deleted, not replaced 1:1 with a
+  new root-level file.
 - `boot.ts` stays on the existing `vite.config.ts` → `player.js` build
   and **does not import any `@m3e/web/*` module** — this isn't merely a
   style preference, it's what keeps `player.js` a single, independent
