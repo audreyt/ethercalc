@@ -54,8 +54,15 @@ body {
 }
 
 .ec-brand {
+  /* `inline-flex`, not `flex`: since `.ec-top` is no longer itself a flex
+     container (the nav moved out to float independently), a block-level
+     flex h1 would stretch to `.ec-top`'s full content width — its
+     bounding box would extend far past the visible "EtherCalc" text,
+     which is exactly the kind of invisible hit-region a real layout
+     collision check should never measure against. inline-flex keeps the
+     internal icon+text flex layout but shrink-wraps the box itself. */
   margin: 0;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 9px;
   font-size: 1.125rem;
