@@ -404,6 +404,19 @@ body #intro-links > #ec-landing-actions {
   color: var(--ec-on-surface-variant);
 }
 
+.ec-facts a {
+  color: var(--ec-primary);
+  font-weight: 600;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.ec-facts a:focus-visible {
+  outline: 2px solid var(--ec-primary);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
 /* ---- Responsive ------------------------------------------------------- */
 
 @media (max-width: 680px) {
