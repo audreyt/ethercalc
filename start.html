@@ -153,6 +153,24 @@ function utf8TextFromPayload(data) {
 	return new TextDecoder('utf-8').decode(bytes);
 }
 
+function isZipPayload(data) {
+	if (data instanceof ArrayBuffer) {
+		if (data.byteLength < 4) return false;
+		var bytes = new Uint8Array(data, 0, 4);
+		return bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04;
+	}
+	return data.length >= 4 &&
+		data.charCodeAt(0) === 0x50 &&
+		data.charCodeAt(1) === 0x4b &&
+		data.charCodeAt(2) === 0x03 &&
+		data.charCodeAt(3) === 0x04;
+}
+
+function isCsvCandidate(file, data) {
+	if (isZipPayload(data)) return false;
+	return file.type === 'text/csv' || /\.csv$/i.test(file.name);
+}
+
 // cb is typically process_wb
 function xlsxworker(data, cb, id) {
 	var worker = new Worker('./static/xlsxworker.js');
@@ -342,14 +360,16 @@ function importFiles(files) {
 		const id = get_id(name, renameSheetCheckbox.checked);
 		reader.onload = function(e) {
 			// rABS path yields a binary string; the fallback yields an
-			// ArrayBuffer. The CSV sniff needs text, but the workbook
-			// path (xlsxworker/fixdata) needs the RAW payload — decoding
-			// the buffer first would hand fixdata a string it can't slice
-			// into bytes (an inherited latent bug, now split explicitly).
+			// ArrayBuffer. ZIP workbooks go directly to SheetJS: decoding a
+			// large XLSX/ODS on the main thread just to identify it would add
+			// a size-proportional allocation and block. CSV candidates alone
+			// are UTF-8 decoded; the workbook path keeps the raw payload.
 			var raw = e.target.result;
-			var text = utf8TextFromPayload(raw);
-			if (!/^PK\u0003\u0004/.test(text) && /^[^\n]+,(?:[^\n]+)*\n/.test(text)) {
-				return post_csv(text, id);
+			if (isCsvCandidate(f, raw)) {
+				var text = utf8TextFromPayload(raw);
+				if (/^[^\n]+,(?:[^\n]+)*\n/.test(text)) {
+					return post_csv(text, id);
+				}
 			}
 			if(typeof Worker !== 'undefined') {
 				xlsxworker(raw, process_wb, id);

@@ -1,10 +1,10 @@
 /**
  * Landing-page import smoke tests.
  *
- * These exercise the production `start.html` upload script through the Worker's
- * static asset route and then assert the imported room through the HTTP export
- * API. The workbook cases force the non-`readAsBinaryString` FileReader branch
- * so the ArrayBuffer payload reaches `xlsxworker`/`fixdata` unchanged.
+ * These exercise the production `start.html` upload script through the
+ * Worker's static asset route, then assert the imported room through the HTTP
+ * export API. The fallback cases remove `readAsBinaryString` so the ArrayBuffer
+ * payload reaches `xlsxworker`/`fixdata` unchanged.
  */
 import { fileURLToPath } from 'node:url';
 
@@ -20,7 +20,9 @@ const ODS_BASIC = fileURLToPath(
 
 async function openLanding(workerBase: string, page: Page) {
   await page.goto(`${workerBase}/_start`);
-  await expect(page.getByRole('heading', { name: 'Share the URL. Edit together.' })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Share the URL. Edit together.' }),
+  ).toBeVisible();
 }
 
 async function importNamedFile(args: {
@@ -44,7 +46,9 @@ async function expectGrid(args: {
   room: string;
   expected: string[][];
 }) {
-  const res = await args.request.get(`${args.workerBase}/_/${args.room}/csv.json`);
+  const res = await args.request.get(
+    `${args.workerBase}/_/${args.room}/csv.json`,
+  );
   expect(res.status()).toBe(200);
   await expect(res).toBeOK();
   expect(await res.json()).toEqual(args.expected);
@@ -67,7 +71,41 @@ test.describe('landing page import', () => {
         buffer: Buffer.from('café,東京\n', 'utf8'),
       },
     });
-    await expectGrid({ workerBase, request, room, expected: [['café', '東京']] });
+    await expectGrid({
+      workerBase,
+      request,
+      room,
+      expected: [['café', '東京']],
+    });
+  });
+
+  test('does not UTF-8 decode a zipped workbook on the main thread', async ({
+    workerBase,
+    page,
+    request,
+  }) => {
+    await openLanding(workerBase, page);
+    await page.evaluate(() => {
+      Object.defineProperty(window, 'TextDecoder', {
+        configurable: true,
+        value: class {
+          decode(): never {
+            throw new Error('workbook payload reached TextDecoder');
+          }
+        },
+      });
+    });
+    await importNamedFile({
+      page,
+      room: 'e2e-import-xlsx-no-main-thread-decode',
+      file: XLSX_BASIC,
+    });
+    await expectGrid({
+      workerBase,
+      request,
+      room: 'e2e-import-xlsx-no-main-thread-decode',
+      expected: [['hello'], ['42']],
+    });
   });
 
   test('imports xlsx via the ArrayBuffer FileReader fallback', async ({
@@ -87,7 +125,12 @@ test.describe('landing page import', () => {
       room: 'e2e-import-xlsx-arraybuffer',
       file: XLSX_BASIC,
     });
-    await expectGrid({ workerBase, request, room: 'e2e-import-xlsx-arraybuffer', expected: [['hello'], ['42']] });
+    await expectGrid({
+      workerBase,
+      request,
+      room: 'e2e-import-xlsx-arraybuffer',
+      expected: [['hello'], ['42']],
+    });
   });
 
   test('imports ods via the ArrayBuffer FileReader fallback', async ({
@@ -107,6 +150,11 @@ test.describe('landing page import', () => {
       room: 'e2e-import-ods-arraybuffer',
       file: ODS_BASIC,
     });
-    await expectGrid({ workerBase, request, room: 'e2e-import-ods-arraybuffer', expected: [['hello'], ['42']] });
+    await expectGrid({
+      workerBase,
+      request,
+      room: 'e2e-import-ods-arraybuffer',
+      expected: [['hello'], ['42']],
+    });
   });
 });
