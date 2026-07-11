@@ -465,6 +465,14 @@ body #intro-links > #ec-landing-actions {
     top: 52px;
     right: 14px;
   }
+
+  /* The dropped pill's own box now occupies ~52-93px in the viewport.
+     `.ec-main`'s 12px top padding (from the 680px rule) is nowhere near
+     enough clearance — the sheet card would render underneath it.
+     Reserve space so the card starts below the pill. */
+  .ec-main {
+    padding-top: 58px;
+  }
 }
 
 /* ---- Reduced motion --------------------------------------------------- */

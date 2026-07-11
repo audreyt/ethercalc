@@ -10,23 +10,26 @@ test('landing nav floats top-right without colliding or overflowing at 320px', a
   const layout = await page.evaluate(() => {
     const brand = document.querySelector<HTMLElement>('.ec-brand')?.getBoundingClientRect();
     const nav = document.querySelector<HTMLElement>('.ec-floatnav')?.getBoundingClientRect();
-    if (!brand || !nav) throw new Error('landing header is missing');
+    const sheet = document.querySelector<HTMLElement>('.ec-sheet')?.getBoundingClientRect();
+    if (!brand || !nav || !sheet) throw new Error('landing header is missing');
     // Two axis-aligned rects intersect only if they overlap on BOTH axes.
-    const overlapsX = nav.left < brand.right && brand.left < nav.right;
-    const overlapsY = nav.top < brand.bottom && brand.top < nav.bottom;
+    const intersects = (a: DOMRect, b: DOMRect) =>
+      a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
     return {
       clientWidth: document.documentElement.clientWidth,
       scrollWidth: document.documentElement.scrollWidth,
       navLeft: nav.left,
       navRight: nav.right,
-      collides: overlapsX && overlapsY,
+      collidesBrand: intersects(nav, brand),
+      collidesSheet: intersects(nav, sheet),
     };
   });
 
   expect(layout.scrollWidth).toBe(layout.clientWidth);
   expect(layout.navLeft).toBeGreaterThanOrEqual(0);
   expect(layout.navRight).toBeLessThanOrEqual(layout.clientWidth);
-  expect(layout.collides).toBe(false);
+  expect(layout.collidesBrand).toBe(false);
+  expect(layout.collidesSheet).toBe(false);
 });
 
 test('landing nav stays fixed in the viewport corner while the page scrolls', async ({
