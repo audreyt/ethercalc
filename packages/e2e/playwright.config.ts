@@ -6,22 +6,19 @@ import { defineConfig, devices } from '@playwright/test';
  * Boot strategy (see also `packages/e2e/README.md`):
  *
  *   Each spec file declares which backend it needs via fixtures imported
- *   from `src/fixtures.ts` (wrangler Worker) and/or `src/fixtures-client.ts`
- *   (client-multi Vite preview). Fixtures use `scope: 'worker'`, so each
- *   Playwright worker boots at most one wrangler and one Vite preview
- *   instance, allocated on random ports. This keeps tests isolated when
- *   Playwright parallelizes, without the race conditions a shared
- *   `webServer` config would introduce against `wrangler dev`'s slow
- *   Miniflare warmup.
+ *   from `src/fixtures.ts`. The standard fixture boots the Worker and its
+ *   production Workers Assets bundle; the additive `authTest` fixture boots
+ *   a second Worker with localhost WebAuthn trust anchors. Fixtures use
+ *   `scope: 'worker'`, so each Playwright worker owns its process lifetime
+ *   and random port without a shared `webServer`.
  *
  *   We intentionally do NOT declare a top-level `webServer` block — letting
  *   fixtures own process lifetime keeps tear-down deterministic and avoids
- *   double-booting wrangler on CI. The trade-off is that each worker pays
- *   the ~6-second wrangler cold start once; for a 5-spec suite with
- *   `workers: 1` (the default in CI) that's a single cold start.
+ *   double-booting wrangler on CI. The suite runs one Playwright worker to
+ *   keep Miniflare startup contention down.
  *
  * Browsers:
- *   Chromium only per AGENTS.md §11.2 — Firefox/WebKit land in nightly.
+ *   Chromium only. Firefox/WebKit coverage is not configured yet (P2).
  */
 export default defineConfig({
   testDir: './tests',

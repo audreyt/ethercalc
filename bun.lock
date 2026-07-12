@@ -86,6 +86,7 @@
       "devDependencies": {
         "@playwright/test": "^1.61.1",
         "@types/node": "^22.9.0",
+        "fflate": "^0.8.2",
         "wait-port": "^1.1.0",
       },
     },

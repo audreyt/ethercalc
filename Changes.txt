@@ -135,6 +135,15 @@ Passkey (WebAuthn) accounts and private sheets — Phase A.
   Private Sheet / Copy to Private / sign-out affordances plus a
   private-sheet notice on both the landing and sheet pages.
 
+Test tooling
+
+- Added release-gated Playwright coverage for two-context native WebSocket
+  collaboration and reconnect; real CDP WebAuthn registration/login with
+  private RoomDO HTTP and WebSocket authorization; production Worker-served
+  multi-sheet assets; and a representative room CRUD/export lifecycle.
+  Viewer ACL coverage is not implied: no HTTP sharing route currently creates
+  a genuine read-only viewer state.
+
 Cleanup
 
 - Removed obsolete pre-rewrite deployment artifacts: `.dotcloud/`, `.openshift/`,
