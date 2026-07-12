@@ -19,6 +19,23 @@ import { defineConfig } from 'vite-plus';
 // the shared `@ethercalc/worker` package.json name, so each sets an
 // explicit `test.name` (`worker:pool` / `worker:node`) to avoid Vitest's
 // unique-project-name collision.
+//
+// Vitest's `coverage` block is orchestrator-level only: when tests run as
+// aggregated `test.projects`, each project's own `coverage.provider` /
+// `include` / `exclude` / `thresholds` are silently ignored, and Vitest
+// falls back to its default `v8` provider over every executed file. That
+// default `v8` provider crashes inside the workers-pool project (`No such
+// module "node:inspector/promises"` — v8 coverage needs the Node inspector
+// API, which workerd doesn't implement) and dilutes the report with
+// non-gated sources (workers-pool glue, socialcalc-headless smoke-only
+// code, test helpers). So this root config restates `provider: 'istanbul'`
+// plus the exact union of every package's own CI-gated
+// `test:coverage` include/exclude (see each `packages/*/vitest.config.ts` /
+// `packages/worker/vitest.node.config.ts`) — same scope, same 100%
+// thresholds, just path-prefixed for the root run. Packages without a
+// `test:coverage` gate (socialcalc-headless, and the worker:pool project)
+// are intentionally absent from `include`, matching the per-package CI
+// contract in `.github/workflows/ci.yml`.
 export default defineConfig({
   check: {
     // This repository has never had a formatter gate. Keep that contract while
@@ -91,5 +108,43 @@ export default defineConfig({
   },
   test: {
     projects: ['packages/*/vitest.config.ts', 'packages/worker/vitest.node.config.ts'],
+    coverage: {
+      provider: 'istanbul',
+      include: [
+        'packages/shared/src/**/*.ts',
+        'packages/socketio-shim/src/**/*.ts',
+        'packages/migrate/src/**/*.ts',
+        'packages/cli/src/**/*.ts',
+        'packages/client-multi/src/**/*.{ts,tsx}',
+        'packages/client/src/ws-adapter.ts',
+        'packages/client/src/socialcalc-callbacks.ts',
+        'packages/client/src/main.ts',
+        'packages/client/src/graph.ts',
+        'packages/client/src/sanitize-html.ts',
+        'packages/client/src/passkey/logic.ts',
+        'packages/oracle-harness/src/**/*.ts',
+        'packages/worker/src/handlers/**/*.ts',
+        'packages/worker/src/lib/**/*.ts',
+        'packages/worker/src/room.ts',
+        'packages/worker/src/auth-do.ts',
+      ],
+      exclude: [
+        'packages/shared/src/index.ts',
+        'packages/socketio-shim/src/index.ts',
+        'packages/cli/src/index.ts',
+        'packages/client-multi/src/App.tsx',
+        'packages/client-multi/src/main.tsx',
+        'packages/client-multi/src/index.ts',
+        'packages/oracle-harness/src/bin.ts',
+        'packages/worker/src/lib/ws-upgrade.ts',
+      ],
+      reporter: ['text', 'json-summary', 'lcov'],
+      thresholds: {
+        lines: 100,
+        functions: 100,
+        branches: 100,
+        statements: 100,
+      },
+    },
   },
 });
