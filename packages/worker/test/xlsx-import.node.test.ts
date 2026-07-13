@@ -331,6 +331,70 @@ describe('SocialCalc ZZ column ceiling on import', () => {
     );
   });
 
+  it('enforceSocialCalcColumnLimit rejects unparseable cell addresses', () => {
+    // Non-metadata keys that parseCoord cannot parse must fail closed —
+    // silent continue would let replay drop them without a signal.
+    const ws: Record<string, unknown> = {
+      '!ref': 'A1:A1',
+      A1: { t: 'n', v: 1 },
+      'not-a-coord': { t: 's', v: 'x' },
+    };
+    expect(() => enforceSocialCalcColumnLimit(ws)).toThrow(
+      ImportColumnOutOfRangeError,
+    );
+    try {
+      enforceSocialCalcColumnLimit(ws);
+    } catch (err) {
+      expect(err).toBeInstanceOf(ImportColumnOutOfRangeError);
+      const e = err as ImportColumnOutOfRangeError;
+      expect(e.coord).toBe('unparseable:not-a-coord');
+      expect(Number.isNaN(e.column)).toBe(true);
+      expect(e.message).toMatch(/column/i);
+    }
+  });
+
+  it('enforceSocialCalcColumnLimit rejects merge with missing end column', () => {
+    // typeof endC !== 'number' must fail closed (not continue).
+    const ws: Record<string, unknown> = {
+      '!ref': 'A1:A1',
+      A1: { t: 'n', v: 1 },
+      '!merges': [{ s: { r: 0, c: 0 }, e: { r: 0 } }],
+    };
+    expect(() => enforceSocialCalcColumnLimit(ws)).toThrow(
+      ImportColumnOutOfRangeError,
+    );
+    try {
+      enforceSocialCalcColumnLimit(ws);
+    } catch (err) {
+      expect(err).toBeInstanceOf(ImportColumnOutOfRangeError);
+      const e = err as ImportColumnOutOfRangeError;
+      expect(e.coord).toBe('merge:e.c=undefined');
+      expect(Number.isNaN(e.column)).toBe(true);
+      expect(e.message).toMatch(/column/i);
+    }
+  });
+
+  it('enforceSocialCalcColumnLimit defaults missing merge end-row to 1 in coord', () => {
+    // Safe integer past ZZ with missing e.r → endR=0 → encodeColumn(702)+"1".
+    const ws: Record<string, unknown> = {
+      '!ref': 'A1:A1',
+      A1: { t: 'n', v: 1 },
+      '!merges': [{ s: { r: 0, c: 0 }, e: { c: 702 } }],
+    };
+    expect(() => enforceSocialCalcColumnLimit(ws)).toThrow(
+      ImportColumnOutOfRangeError,
+    );
+    try {
+      enforceSocialCalcColumnLimit(ws);
+    } catch (err) {
+      expect(err).toBeInstanceOf(ImportColumnOutOfRangeError);
+      const e = err as ImportColumnOutOfRangeError;
+      expect(e.coord).toBe('AAA1');
+      expect(e.column).toBe(703);
+      expect(e.message).toMatch(/ZZ/);
+    }
+  });
+
   it('enforceSocialCalcColumnLimit rejects Infinity merge end without hanging', () => {
     // Regression: endC > 701 alone let Infinity through to encodeColumn's
     // while (n >= 0) loop, which never terminates. Fail closed immediately.

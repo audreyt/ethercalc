@@ -211,10 +211,15 @@ export function enforceImportLimit(cellCount: number): void {
  * SocialCalc's `coordToCr` parses as `{col:0}` and silently drops.
  * Called before per-cell replay so the import fails closed.
  *
- * Malformed merge end columns (non-safe-integer, negative, or >701) also
- * fail closed. `encodeColumn` is only invoked for safe non-negative
- * integer indices — never for `Infinity` / NaN / fractions (which would
- * hang or mislabel the error coord).
+ * Fail-closed also for:
+ * - non-metadata keys that `parseCoord` cannot parse (would otherwise be
+ *   silently ignored during replay)
+ * - merge end columns that are missing, non-number, non-safe-integer,
+ *   negative, or >701
+ *
+ * `encodeColumn` is only invoked for safe non-negative integer indices —
+ * never for `Infinity` / NaN / fractions (which would hang or mislabel
+ * the error coord).
  */
 export function enforceSocialCalcColumnLimit(
   ws: Record<string, unknown>,
@@ -222,7 +227,12 @@ export function enforceSocialCalcColumnLimit(
   for (const addr of Object.keys(ws)) {
     if (addr.startsWith('!')) continue;
     const rc = parseCoord(addr);
-    if (rc === null) continue;
+    if (rc === null) {
+      throw new ImportColumnOutOfRangeError(
+        `unparseable:${addr}`,
+        Number.NaN,
+      );
+    }
     if (rc.c > MAX_SOCIALCALC_COL - 1) {
       throw new ImportColumnOutOfRangeError(addr, rc.c + 1);
     }
@@ -238,7 +248,13 @@ export function enforceSocialCalcColumnLimit(
     : [];
   for (const m of merges) {
     const endC = m?.e?.c;
-    if (typeof endC !== 'number') continue;
+    if (typeof endC !== 'number') {
+      // Missing / non-number merge endpoint — fail closed without encodeColumn.
+      throw new ImportColumnOutOfRangeError(
+        `merge:e.c=${String(endC)}`,
+        Number.NaN,
+      );
+    }
     // Fail closed on anything outside the safe 0..701 band. Safe integer
     // gate excludes Infinity/NaN/fractions before encodeColumn is called.
     if (
@@ -246,6 +262,7 @@ export function enforceSocialCalcColumnLimit(
       endC < 0 ||
       endC > MAX_SOCIALCALC_COL - 1
     ) {
+      // Missing/non-number end row defaults to 0 → label uses row 1.
       const endR = typeof m?.e?.r === 'number' ? m.e.r : 0;
       if (Number.isSafeInteger(endC) && endC >= 0) {
         // Finite integer past ZZ — label with encodeColumn (e.g. 702 → AAA).
