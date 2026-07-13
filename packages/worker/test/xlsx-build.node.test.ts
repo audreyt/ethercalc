@@ -1,7 +1,6 @@
-import { describe, it, expect } from 'vitest';
-
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as XLSX from '@e965/xlsx';
+import { describe, expect, it } from 'vitest';
 
 import {
   BINARY_CONTENT_TYPES,
@@ -393,6 +392,21 @@ describe('parseCoord / encodeColumn', () => {
     expect(encodeColumn(26)).toBe('AA');
     expect(encodeColumn(701)).toBe('ZZ');
     expect(encodeColumn(702)).toBe('AAA');
+  });
+
+  it('round-trips encodeColumn → parseCoord for every column 0..701 (A..ZZ)', () => {
+    // Complete inverse-law sweep over SocialCalc's supported 0-based column
+    // domain. Point samples (0/25/26/701/702) cannot catch an off-by-one in
+    // the encode while-loop or parse accumulator mid-range.
+    for (let c = 0; c <= 701; c++) {
+      const letters = encodeColumn(c);
+      const parsed = parseCoord(`${letters}1`);
+      if (parsed === null || parsed.c !== c || parsed.r !== 0) {
+        throw new Error(
+          `round-trip failed at c=${c}: encode=${letters} parse=${JSON.stringify(parsed)}`,
+        );
+      }
+    }
   });
 });
 

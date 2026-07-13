@@ -249,6 +249,22 @@ on-disk legacy dumps (the Sandstorm grain fallback format).
     bun run --cwd packages/worker dev          # wrangler dev --local
     bun run --cwd packages/worker test         # workers-pool + node tests
 
+Formal verification / Leanstral pump (optional; not required for app builds):
+
+    bun run verify:dafny      # LemmaScript → Dafny VCs (needs dafny on PATH)
+    bun run verify:lean       # LemmaScript → Lean gen + non-empty + fresh smoke
+    bun run verify:context    # needs sibling https://github.com/audreyt/socialcalc
+    bun run verify:request    # concatenate prompt+context+Lean for Leanstral
+    omp --print --no-tools --no-session --mode text \
+      --model mistral/labs-leanstral-1-5-1 @lemma/request.md
+
+Shipping TypeScript is the oracle. Dafny checks a reduced integer facade;
+Lean generation feeds Leanstral; only Bun tests decide production behavior.
+See [lemma/README.md](./lemma/README.md). Full SocialCalc A1 algebra stays
+upstream in [audreyt/socialcalc](https://github.com/audreyt/socialcalc)
+(`lemma/`). `verify:context` needs that repo checked out as `../socialcalc`;
+tracked `lemma/context.md` / `lemma/request.md` remain usable without regen.
+
 See [AGENTS.md](./AGENTS.md) for the directory map, testing strategy
 (100% line/branch/function/statement coverage plus Stryker mutation
 gates on gated packages), and the remaining phase plan.

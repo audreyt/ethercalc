@@ -1,9 +1,8 @@
 import { env } from 'cloudflare:test';
-import { describe, it, expect } from 'vitest';
 import * as XLSX from '@e965/xlsx';
-
-import worker from '../src/index.ts';
+import { describe, expect, it } from 'vitest';
 import type { Env } from '../src/env.ts';
+import worker from '../src/index.ts';
 
 async function request(method: string, path: string, body?: BodyInit | Uint8Array | null): Promise<Response> {
   const req = new Request(`https://example.test${path}`, { method, body: body as unknown as BodyInit | null });
@@ -54,5 +53,35 @@ describe('PUT multi-sheet import', () => {
     const room = `mimport-ods-${Math.random().toString(36).slice(2, 8)}`;
     const res = await request('PUT', `/_/=${room}/ods`, twoSheetXlsx());
     expect(res.status).toBe(201);
+  });
+
+  it('PUT /=:room.xlsx returns 400 when a sheet exceeds SocialCalc ZZ column', async () => {
+    // Pins routes/multi-import.ts ImportColumnOutOfRangeError → 400 mapping.
+    // Removing that catch (or mapping to 413/500) fails this test.
+    const room = `mimport-aaa-${Math.random().toString(36).slice(2, 8)}`;
+    const ws = {
+      '!ref': 'A1:AAA1',
+      A1: { t: 'n', v: 1 },
+      AAA1: { t: 'n', v: 703 },
+    };
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Wide');
+    const bytes = new Uint8Array(
+      XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer,
+    );
+
+    const put = await request('PUT', `/=${room}.xlsx`, bytes);
+    expect(put.status).toBe(400);
+    expect(put.headers.get('content-type')).toBe('text/plain; charset=utf-8');
+    const body = await put.text();
+    expect(body).toMatch(/ZZ/);
+    expect(body).toContain('AAA1');
+    expect(body).toMatch(/column/i);
+
+    // Fail closed: no TOC or sub-room snapshot was written.
+    const toc = await request('GET', `/_/${room}`);
+    expect(toc.status).toBe(404);
+    const sub1 = await request('GET', `/_/${room}.1`);
+    expect(sub1.status).toBe(404);
   });
 });

@@ -1,7 +1,6 @@
-import { describe, it, expect } from 'vitest';
-
-import { buildApp } from '../src/index.ts';
+import { describe, expect, it } from 'vitest';
 import type { Env } from '../src/env.ts';
+import { buildApp } from '../src/index.ts';
 
 /**
  * Node-env tests for POST /_/:room (command execution). The Hono
@@ -501,6 +500,69 @@ describe('POST /_/:room — command execution', () => {
     const body = await res.text();
     expect(body).toContain('xlsx/ods import expands to');
     expect(calls.find((c) => c.url.includes('/_do/commands'))).toBeUndefined();
+  });
+
+  it('returns 400 when xlsx cells exceed SocialCalc ZZ column', async () => {
+    const { env, calls } = makeFakeRoomNamespace(() => {
+      throw new Error('should not reach DO');
+    });
+    const XLSX = await import('@e965/xlsx');
+    const ws = {
+      '!ref': 'A1:AAA1',
+      A1: { t: 'n', v: 1 },
+      AAA1: { t: 'n', v: 703 },
+    };
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book, ws, 'Sheet1');
+    const bytes = new Uint8Array(
+      XLSX.write(book, { bookType: 'xlsx', type: 'array' }) as ArrayBufferLike,
+    );
+    const app = buildApp();
+    const res = await app.fetch(
+      new Request('https://t.test/_/r', {
+        method: 'POST',
+        headers: {
+          'content-type':
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        },
+        body: bytes as unknown as BodyInit,
+      }),
+      env as never,
+    );
+    expect(res.status).toBe(400);
+    const body = await res.text();
+    expect(body).toMatch(/ZZ/);
+    expect(body).toContain('AAA1');
+    expect(calls.find((c) => c.url.includes('/_do/commands'))).toBeUndefined();
+  });
+
+  it('returns 400 when text/csv cells exceed SocialCalc ZZ column', async () => {
+    // Pins rooms.ts csv-deferred ImportColumnOutOfRangeError → 400 mapping.
+    // SheetJS reads a 703-column CSV as A1:AAA1; enforceSocialCalcColumnLimit
+    // rejects before loadclipboard dispatch.
+    const { env, calls } = makeFakeRoomNamespace(() => {
+      throw new Error('should not reach DO');
+    });
+    const cells = Array(703).fill('');
+    cells[0] = '1';
+    cells[702] = '703';
+    const csv = `${cells.join(',')}\n`;
+    const app = buildApp();
+    const res = await app.fetch(
+      new Request('https://t.test/_/r', {
+        method: 'POST',
+        headers: { 'content-type': 'text/csv' },
+        body: csv,
+      }),
+      env as never,
+    );
+    expect(res.status).toBe(400);
+    const body = await res.text();
+    expect(body).toMatch(/ZZ/);
+    expect(body).toMatch(/column/i);
+    expect(body).toContain('AAA1');
+    expect(calls.find((c) => c.url.includes('/_do/commands'))).toBeUndefined();
+    expect(calls.find((c) => c.url.includes('/_do/snapshot'))).toBeUndefined();
   });
 
   it('POST text/csv converts to loadclipboard+paste and dispatches enriched array (202)', async () => {

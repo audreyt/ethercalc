@@ -13,6 +13,26 @@ EtherCalc bundles SocialCalc from the audreyt/socialcalc fork; see
 Unreleased
 ==============================================================================
 
+Bug fixes
+- XLSX imports now reject cells/merges beyond SocialCalc column `ZZ` with
+  explicit `400`/`ImportColumnOutOfRangeError`, instead of silently dropping
+  AAA+ payload during replay. Malformed merge end columns (`Infinity`,
+  negative, non-integer) fail closed without calling `encodeColumn`.
+
+Verification
+- Promoted the Leanstral/LemmaScript pump into root `lemma/` (maintained
+  surface; spike kept as immutable Attempt 2 provenance):
+  - `lemmascript@0.5.13` root devDependency; `LemmaScript-files.txt` batch list
+  - scripts: `verify:dafny`, `verify:lean`, `verify:both`, `verify:context`,
+    `verify:request` (Bun-first; Dafny 16 VCs / 0 errors on `lemma/xlsx-a1.ts`)
+  - CI: `.github/workflows/lemmascript.yml` (Dafny check + Lean gen smoke;
+    no full `lake build`)
+  - Promoted clipboard-boundary Bun tests lock the SocialCalc 1-based
+    `lastcol` adapter challenged by Leanstral Attempt 2
+  - Historical Attempt 2 request/raw:
+    `spikes/leanstral-xlsx-coords/attempt-2-request.md`,
+    `spikes/leanstral-xlsx-coords/leanstral-raw.md`
+
 Cleanup
 - Removed obsolete pre-rewrite deployment artifacts: `.dotcloud/`, `.openshift/`,
   `apache/`, root `nginx/` (legacy config dir — the active self-host proxy

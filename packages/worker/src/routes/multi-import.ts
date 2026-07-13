@@ -15,6 +15,7 @@ import { doFetch } from '../lib/do-dispatch.ts';
 import { buildMultiSheetImport } from '../lib/multi-sheet-import.ts';
 import {
   ImportArchiveTooLargeError,
+  ImportColumnOutOfRangeError,
   ImportTooLargeError,
 } from '../lib/xlsx-import.ts';
 
@@ -32,6 +33,12 @@ async function importWorkbook(env: Env, base: string, bytes: Uint8Array): Promis
     if (err instanceof ImportTooLargeError || err instanceof ImportArchiveTooLargeError) {
       return new Response(err.message, {
         status: 413,
+        headers: { 'Content-Type': TEXT_CT },
+      });
+    }
+    if (err instanceof ImportColumnOutOfRangeError) {
+      return new Response(err.message, {
+        status: 400,
         headers: { 'Content-Type': TEXT_CT },
       });
     }

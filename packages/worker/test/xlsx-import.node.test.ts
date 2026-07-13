@@ -1,23 +1,25 @@
-import { describe, it, expect } from 'vitest';
+import type { WorkBook } from '@e965/xlsx';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as XLSX from '@e965/xlsx';
-
+import { createSpreadsheet } from '@ethercalc/socialcalc-headless';
+import { describe, expect, it } from 'vitest';
 import {
-  ImportArchiveTooLargeError,
-  ImportTooLargeError,
-  MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES,
-  MAX_IMPORT_CELLS,
   cellToCommand,
   countWorksheetCells,
   enforceImportArchiveLimit,
   enforceImportLimit,
+  enforceSocialCalcColumnLimit,
+  ImportArchiveTooLargeError,
+  ImportColumnOutOfRangeError,
+  ImportTooLargeError,
+  MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES,
+  MAX_IMPORT_CELLS,
+  MAX_SOCIALCALC_COL,
   workbookToLoadClipboardCommand,
   xlsxToLoadClipboardCommands,
   xlsxToSave,
 } from '../src/lib/xlsx-import.ts';
-import { createSpreadsheet } from '@ethercalc/socialcalc-headless';
-import type { WorkBook } from '@e965/xlsx';
 
 function makeXlsx(
   cells: Record<string, { t: string; v: unknown; f?: string }>,
@@ -261,6 +263,168 @@ describe('xlsxToSave — roundtrip', () => {
     expect(save).toContain('cell:A1:v:1');
     // A2 should not appear as a cell entry.
     expect(save).not.toContain('cell:A2');
+  });
+});
+
+describe('SocialCalc ZZ column ceiling on import', () => {
+  it('rejects a workbook with AAA1 (column 703) via xlsxToSave', () => {
+    // Empirical: SocialCalc.coordToCr("AAA1") → {col:0} and ExecuteSheetCommand
+    // silently drops the cell. Import must fail closed before replay rather
+    // than return a save missing AAA1.
+    const bytes = makeXlsx(
+      {
+        A1: { t: 'n', v: 1 },
+        ZZ1: { t: 'n', v: 702 },
+        AAA1: { t: 'n', v: 703 },
+      },
+      'A1:AAA1',
+    );
+    expect(() => xlsxToSave(bytes)).toThrow(ImportColumnOutOfRangeError);
+    try {
+      xlsxToSave(bytes);
+    } catch (err) {
+      expect(err).toBeInstanceOf(ImportColumnOutOfRangeError);
+      const e = err as ImportColumnOutOfRangeError;
+      expect(e.coord).toBe('AAA1');
+      expect(e.column).toBe(MAX_SOCIALCALC_COL + 1);
+      expect(e.message).toMatch(/ZZ/);
+    }
+  });
+
+  it('rejects the same wide workbook on the loadclipboard path', () => {
+    const bytes = makeXlsx(
+      {
+        A1: { t: 'n', v: 1 },
+        AAA1: { t: 'n', v: 703 },
+      },
+      'A1:AAA1',
+    );
+    expect(() => xlsxToLoadClipboardCommands(bytes)).toThrow(
+      ImportColumnOutOfRangeError,
+    );
+    expect(() => workbookToLoadClipboardCommand(bytes)).toThrow(
+      ImportColumnOutOfRangeError,
+    );
+  });
+
+  it('accepts a full-width ZZ workbook (lastcol=702)', () => {
+    const bytes = makeXlsx(
+      {
+        A1: { t: 'n', v: 1 },
+        ZZ1: { t: 'n', v: 702 },
+      },
+      'A1:ZZ1',
+    );
+    const save = xlsxToSave(bytes);
+    expect(save).toContain('cell:A1');
+    expect(save).toContain('cell:ZZ1');
+  });
+
+  it('enforceSocialCalcColumnLimit rejects merge ends beyond ZZ', () => {
+    const ws: Record<string, unknown> = {
+      '!ref': 'A1:AAA1',
+      A1: { t: 'n', v: 1 },
+      '!merges': [{ s: { r: 0, c: 0 }, e: { r: 0, c: 702 } }],
+    };
+    expect(() => enforceSocialCalcColumnLimit(ws)).toThrow(
+      ImportColumnOutOfRangeError,
+    );
+  });
+
+  it('enforceSocialCalcColumnLimit rejects Infinity merge end without hanging', () => {
+    // Regression: endC > 701 alone let Infinity through to encodeColumn's
+    // while (n >= 0) loop, which never terminates. Fail closed immediately.
+    const ws: Record<string, unknown> = {
+      '!ref': 'A1:A1',
+      A1: { t: 'n', v: 1 },
+      '!merges': [{ s: { r: 0, c: 0 }, e: { r: 0, c: Number.POSITIVE_INFINITY } }],
+    };
+    expect(() => enforceSocialCalcColumnLimit(ws)).toThrow(
+      ImportColumnOutOfRangeError,
+    );
+    try {
+      enforceSocialCalcColumnLimit(ws);
+    } catch (err) {
+      expect(err).toBeInstanceOf(ImportColumnOutOfRangeError);
+      const e = err as ImportColumnOutOfRangeError;
+      expect(e.coord).toContain('Infinity');
+      expect(Number.isNaN(e.column)).toBe(true);
+    }
+  });
+
+  it('enforceSocialCalcColumnLimit rejects negative and non-integer merge ends', () => {
+    expect(() =>
+      enforceSocialCalcColumnLimit({
+        '!ref': 'A1:A1',
+        A1: { t: 'n', v: 1 },
+        '!merges': [{ s: { r: 0, c: 0 }, e: { r: 0, c: -1 } }],
+      }),
+    ).toThrow(ImportColumnOutOfRangeError);
+
+    expect(() =>
+      enforceSocialCalcColumnLimit({
+        '!ref': 'A1:A1',
+        A1: { t: 'n', v: 1 },
+        '!merges': [{ s: { r: 0, c: 0 }, e: { r: 0, c: 1.5 } }],
+      }),
+    ).toThrow(ImportColumnOutOfRangeError);
+  });
+
+  it('enforceSocialCalcColumnLimit accepts a merge ending at ZZ (c=701)', () => {
+    expect(() =>
+      enforceSocialCalcColumnLimit({
+        '!ref': 'A1:ZZ1',
+        A1: { t: 'n', v: 1 },
+        ZZ1: { t: 'n', v: 2 },
+        '!merges': [{ s: { r: 0, c: 0 }, e: { r: 0, c: 701 } }],
+      }),
+    ).not.toThrow();
+  });
+
+  it('enforceSocialCalcColumnLimit accepts ZZ-only worksheets', () => {
+    expect(() =>
+      enforceSocialCalcColumnLimit({
+        '!ref': 'A1:ZZ1',
+        A1: { t: 'n', v: 1 },
+        ZZ1: { t: 'n', v: 2 },
+      }),
+    ).not.toThrow();
+  });
+
+  /**
+   * Leanstral Attempt 2 finding #1 challenged `colLetters(lastcol - 1)` as an
+   * off-by-one, under the false premise that `sheet.attribs.lastcol` is SheetJS
+   * 0-based. The callsite reads the **replayed SocialCalc sheet**, where
+   * lastcol is 1-based (A=1 … ZZ=702), so `lastcol - 1` is the correct 0↔1
+   * adapter. These regressions execute the public clipboard API and pin the
+   * encoded `copiedfrom` range — a passing defense of a model-authored
+   * plausible bug is a valid promotion.
+   */
+  it('A1:ZZ1 clipboard encodes copiedfrom\\cA1\\cZZ1 (lastcol 1-based adapter)', () => {
+    const bytes = makeXlsx(
+      {
+        A1: { t: 'n', v: 1 },
+        ZZ1: { t: 'n', v: 702 },
+      },
+      'A1:ZZ1',
+    );
+    const cmd = workbookToLoadClipboardCommand(bytes);
+    expect(cmd).not.toBeNull();
+    // encodeForSave turns ':' into '\c'. Leanstral's ZY prediction would
+    // yield copiedfrom\cA1\cZY1 — this pins the correct ZZ endpoint.
+    expect(cmd!).toContain('copiedfrom\\cA1\\cZZ1');
+    expect(cmd!).not.toContain('copiedfrom\\cA1\\cZY1');
+    expect(cmd!).not.toMatch(/copiedfrom\\cA1\\c1(?:\\n|$)/);
+  });
+
+  it('A1-only clipboard encodes copiedfrom\\cA1\\cA1 (no empty-column underflow)', () => {
+    const bytes = makeXlsx({ A1: { t: 'n', v: 1 } }, 'A1:A1');
+    const cmd = workbookToLoadClipboardCommand(bytes);
+    expect(cmd).not.toBeNull();
+    // If lastcol were 0-based 0 and we still did -1, colLetters(-1) === ""
+    // → "A1:1". SocialCalc lastcol for A1 is 1 → colLetters(0) === "A".
+    expect(cmd!).toContain('copiedfrom\\cA1\\cA1');
+    expect(cmd!).not.toMatch(/copiedfrom\\cA1\\c1(?:\\n|$)/);
   });
 });
 

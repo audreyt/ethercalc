@@ -17,6 +17,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as XLSX from '@e965/xlsx';
 import { loadSocialCalc } from '@ethercalc/socialcalc-headless';
+import { encodeColumn, parseCoord } from './xlsx-build.ts';
 
 /**
  * Upper bound on the number of populated cells we will replay from an
@@ -29,6 +30,9 @@ import { loadSocialCalc } from '@ethercalc/socialcalc-headless';
  */
 export const MAX_IMPORT_CELLS = 200_000;
 
+/** SocialCalc max column (1-based ZZ). SheetJS 0-based max is 701. */
+export const MAX_SOCIALCALC_COL = 702;
+
 /** Thrown by `xlsxToSave` when an import exceeds {@link MAX_IMPORT_CELLS}. */
 export class ImportTooLargeError extends Error {
   readonly cellCount: number;
@@ -36,6 +40,26 @@ export class ImportTooLargeError extends Error {
     super(`xlsx/ods import exceeds ${MAX_IMPORT_CELLS} cells (${cellCount})`);
     this.name = 'ImportTooLargeError';
     this.cellCount = cellCount;
+  }
+}
+
+/**
+ * Thrown when a workbook cell or merge ends beyond SocialCalc's ZZ column.
+ * SocialCalc's `coordToCr("AAA1")` returns `{col:0}` and silently drops the
+ * cell during `ExecuteSheetCommand` — that is unintentional data loss, so
+ * imports reject the whole workbook before replay rather than clipping.
+ */
+export class ImportColumnOutOfRangeError extends Error {
+  readonly coord: string;
+  /** 1-based column index that exceeded {@link MAX_SOCIALCALC_COL}. */
+  readonly column: number;
+  constructor(coord: string, column: number) {
+    super(
+      `xlsx/ods import column ${coord} exceeds SocialCalc max ZZ (${MAX_SOCIALCALC_COL}); column index ${column}`,
+    );
+    this.name = 'ImportColumnOutOfRangeError';
+    this.coord = coord;
+    this.column = column;
   }
 }
 
@@ -181,6 +205,63 @@ export function enforceImportLimit(cellCount: number): void {
   }
 }
 
+/**
+ * Reject worksheets that touch any column beyond SocialCalc's ZZ (702).
+ * SheetJS 0-based column indices > 701 map to AAA+ addresses that
+ * SocialCalc's `coordToCr` parses as `{col:0}` and silently drops.
+ * Called before per-cell replay so the import fails closed.
+ *
+ * Malformed merge end columns (non-safe-integer, negative, or >701) also
+ * fail closed. `encodeColumn` is only invoked for safe non-negative
+ * integer indices — never for `Infinity` / NaN / fractions (which would
+ * hang or mislabel the error coord).
+ */
+export function enforceSocialCalcColumnLimit(
+  ws: Record<string, unknown>,
+): void {
+  for (const addr of Object.keys(ws)) {
+    if (addr.startsWith('!')) continue;
+    const rc = parseCoord(addr);
+    if (rc === null) continue;
+    if (rc.c > MAX_SOCIALCALC_COL - 1) {
+      throw new ImportColumnOutOfRangeError(addr, rc.c + 1);
+    }
+  }
+  const merges: Array<{
+    s?: { r?: number; c?: number };
+    e?: { r?: number; c?: number };
+  }> = Array.isArray(ws['!merges'])
+    ? (ws['!merges'] as Array<{
+        s?: { r?: number; c?: number };
+        e?: { r?: number; c?: number };
+      }>)
+    : [];
+  for (const m of merges) {
+    const endC = m?.e?.c;
+    if (typeof endC !== 'number') continue;
+    // Fail closed on anything outside the safe 0..701 band. Safe integer
+    // gate excludes Infinity/NaN/fractions before encodeColumn is called.
+    if (
+      !Number.isSafeInteger(endC) ||
+      endC < 0 ||
+      endC > MAX_SOCIALCALC_COL - 1
+    ) {
+      const endR = typeof m?.e?.r === 'number' ? m.e.r : 0;
+      if (Number.isSafeInteger(endC) && endC >= 0) {
+        // Finite integer past ZZ — label with encodeColumn (e.g. 702 → AAA).
+        throw new ImportColumnOutOfRangeError(
+          `${encodeColumn(endC)}${endR + 1}`,
+          endC + 1,
+        );
+      }
+      throw new ImportColumnOutOfRangeError(
+        `merge:e.c=${String(endC)}`,
+        Number.isFinite(endC) ? Math.trunc(endC) : Number.NaN,
+      );
+    }
+  }
+}
+
 interface SheetJSCell {
   readonly v?: unknown;
   readonly t?: string;
@@ -257,7 +338,8 @@ export function cellToCommand(coord: string, cell: SheetJSCell): string | null {
  * callers handle gracefully (empty save / empty clipboard).
  *
  * Throws {@link ImportTooLargeError} when the workbook declares more than
- * {@link MAX_IMPORT_CELLS} populated cells.
+ * {@link MAX_IMPORT_CELLS} populated cells, and
+ * {@link ImportColumnOutOfRangeError} when any cell/merge is beyond ZZ.
  */
 function replayWorksheetCells(SC: any, sheet: any, ws: Record<string, unknown>): void {
   const merges: Array<{
@@ -348,6 +430,7 @@ function replayWorkbook(bytes: Uint8Array): { ss: any; sheet: any } {
   // declares an unreasonable number of cells (zip-bomb / oversized used
   // range). Counting keys is O(cells) but cheap relative to the replay.
   enforceImportLimit(countWorksheetCells(ws));
+  enforceSocialCalcColumnLimit(ws);
 
   replayWorksheetCells(SC, sheet, ws);
 
@@ -367,9 +450,11 @@ export function xlsxToSave(bytes: Uint8Array): string {
 
 /**
  * Convert a single SheetJS worksheet object into a SocialCalc spreadsheet save
- * string. Does NOT enforce any cell count limits (callers must check).
+ * string. Does NOT enforce cell-count limits (callers must check), but does
+ * reject columns beyond SocialCalc's ZZ via {@link enforceSocialCalcColumnLimit}.
  */
 export function worksheetToSave(ws: Record<string, unknown>): string {
+  enforceSocialCalcColumnLimit(ws);
   const SC = loadSocialCalc() as any;
   const ss = new SC.SpreadsheetControl();
   replayWorksheetCells(SC, ss.context.sheetobj, ws);
@@ -384,7 +469,8 @@ export function worksheetToSave(ws: Record<string, unknown>): string {
  *
  * Returns `null` when the workbook has no cells to paste — the caller
  * treats that as a no-op import. Throws {@link ImportTooLargeError} for
- * oversized workbooks via {@link replayWorkbook}.
+ * oversized workbooks and {@link ImportColumnOutOfRangeError} when any
+ * cell/merge is beyond SocialCalc ZZ, via {@link replayWorkbook}.
  */
 export function workbookToLoadClipboardCommand(bytes: Uint8Array): string | null {
   const SC = loadSocialCalc() as any;
@@ -425,7 +511,8 @@ export function workbookToLoadClipboardCommand(bytes: Uint8Array): string | null
  * Returns an empty array when the workbook has no cells to paste — the
  * caller treats that as a no-op import rather than dispatching a `paste`
  * of an empty clipboard. Throws {@link ImportTooLargeError} for oversized
- * workbooks via {@link replayWorkbook}.
+ * workbooks and {@link ImportColumnOutOfRangeError} when any cell/merge is
+ * beyond SocialCalc ZZ, via {@link replayWorkbook}.
  */
 export function xlsxToLoadClipboardCommands(bytes: Uint8Array): string[] {
   const command = workbookToLoadClipboardCommand(bytes);

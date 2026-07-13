@@ -44,6 +44,7 @@ import {
 } from '../lib/rooms-index.ts';
 import {
   ImportArchiveTooLargeError,
+  ImportColumnOutOfRangeError,
   ImportTooLargeError,
   workbookToLoadClipboardCommand,
   xlsxToLoadClipboardCommands,
@@ -203,6 +204,9 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
         if (err instanceof ImportTooLargeError || err instanceof ImportArchiveTooLargeError) {
           return sizedResponse(err.message, 413, TEXT_CT);
         }
+        if (err instanceof ImportColumnOutOfRangeError) {
+          return sizedResponse(err.message, 400, TEXT_CT);
+        }
         snapshot = '';
       }
     } else {
@@ -229,6 +233,9 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
       } catch (err) {
         if (err instanceof ImportTooLargeError || err instanceof ImportArchiveTooLargeError) {
           return sizedResponse(err.message, 413, TEXT_CT);
+        }
+        if (err instanceof ImportColumnOutOfRangeError) {
+          return sizedResponse(err.message, 400, TEXT_CT);
         }
         snapshot = '';
       }
@@ -539,9 +546,13 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
         if (err instanceof ImportTooLargeError || err instanceof ImportArchiveTooLargeError) {
           return sizedResponse(err.message, 413, TEXT_CT);
         }
+        if (err instanceof ImportColumnOutOfRangeError) {
+          return sizedResponse(err.message, 400, TEXT_CT);
+        }
         /* istanbul ignore next -- xlsxToLoadClipboardCommands only throws
-           ImportTooLargeError in practice; any other failure (malformed
-           workbook) is swallowed by SheetJS into an empty sheet. */
+           ImportTooLargeError / ImportColumnOutOfRangeError in practice;
+           any other failure (malformed workbook) is swallowed by SheetJS
+           into an empty sheet. */
         return sizedResponse('Could not import workbook', 400, TEXT_CT);
       }
       if (commands.length > 0) {
@@ -577,6 +588,9 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
           err instanceof ImportArchiveTooLargeError
         ) {
           return sizedResponse(err.message, 413, TEXT_CT);
+        }
+        if (err instanceof ImportColumnOutOfRangeError) {
+          return sizedResponse(err.message, 400, TEXT_CT);
         }
         return sizedResponse('Could not import CSV', 400, TEXT_CT);
       }

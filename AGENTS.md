@@ -1,6 +1,6 @@
 # EtherCalc — Agent context
 
-> **Status:** rewrite complete · **Owner:** Audrey Tang · doc updated 2026-07-10
+> **Status:** rewrite complete · **Owner:** Audrey Tang · doc updated 2026-07-13
 >
 > Slim agent doc. Rewrite ultraplan + per-session history archived in
 > [`docs/historic/REWRITE_ULTRAPLAN.md`](./docs/historic/REWRITE_ULTRAPLAN.md) (§14).
@@ -22,6 +22,7 @@ line/branch/function/statement coverage on gated packages in CI.
 | Oracle replay | `tests/oracle/README.md` · `packages/oracle-harness/` |
 | Mutation baselines | `docs/MUTATION_REPORT.md` |
 | Sandstorm `.spk` | `SANDSTORM.md` (manual `spk pack` — app owner signs) |
+| Formal verification / Leanstral pump | `lemma/README.md` |
 | Rewrite history | `docs/historic/REWRITE_ULTRAPLAN.md` |
 
 ## Resolved decisions (do not re-ask)
@@ -39,6 +40,7 @@ line/branch/function/statement coverage on gated packages in CI.
 | 9 | Mirror `chat-<room>` to D1 beyond DO lifetime |
 | 10 | Snapshot TTL via DO `setAlarm` |
 | 11 | `ETHERCALC_DISABLE_ROOM_INDEX` gates `/_rooms*` + `/_exists` (default ON in Docker/Helm); legacy `ETHERCALC_CORS` fallback; CORS headers unconditional |
+| 12 | Formal stack: root `lemma/` is a **pump surface** (Dafny CI + Lean gen for Leanstral). Shipping TS is the oracle; findings promote only via Bun tests. Full SocialCalc algebra stays upstream in `../socialcalc/lemma/`. No `lake build` gate. |
 
 ## Runbook
 
@@ -53,15 +55,20 @@ bun run --cwd packages/oracle-harness record   # record fixtures
 bun run --cwd packages/oracle-harness replay --target http://127.0.0.1:8787
 
 bun run --cwd packages/worker test         # workers-pool + node unit tests
+
+bun run verify:dafny                       # LemmaScript Dafny VCs (needs dafny)
+bun run verify:lean                        # Lean gen + non-empty + fresh smoke
+bun run verify:context && bun run verify:request   # Leanstral pack (sibling ../socialcalc)
 ```
 
 ## CI gates (PR)
 
 Typecheck → node tests (100% coverage) → workers-pool → Playwright e2e →
 `wrangler deploy --dry-run` → self-host smoke → conditional `mutation-gate`.
-Nightly: full Stryker matrix + oracle replay against legacy docker + staging
-dry-run (`.github/workflows/nightly.yml`). (Oracle replay is nightly-only,
-not a PR gate; Biome lint is gated on every PR.)
+Parallel: LemmaScript Dafny check + Lean gen smoke
+(`.github/workflows/lemmascript.yml`). Nightly: full Stryker matrix + oracle
+replay against legacy docker + staging dry-run (`.github/workflows/nightly.yml`).
+(Oracle replay is nightly-only, not a PR gate; Biome lint is gated on every PR.)
 
 ## Package map
 
@@ -77,6 +84,8 @@ packages/migrate/         Redis/filesystem → worker seed
 packages/cli/             ethercalc CLI (bin/ethercalc)
 packages/docs/            Starlight site
 packages/e2e/             Playwright
+lemma/                    LemmaScript facades + Leanstral pump (see lemma/README.md)
+spikes/                   Immutable research provenance (not the maintained workflow)
 ```
 
 ## Live risks
@@ -92,11 +101,20 @@ packages/e2e/             Playwright
 3. **workerd null bindings** — unset env vars arrive as `null`, not `''`.
 4. **`ScheduleSheetCommands`** — headless uses sync `ExecuteSheetCommand`;
    no known gap yet.
+5. **LemmaScript pump is not a product proof** — Dafny VCs cover the reduced
+   integer facade only; string codecs, HTTP, and SocialCalc `coordToCr` are
+   Bun-tested. Leanstral findings require execution checks before promotion.
+   Do not co-prove EtherCalc 0-based facades against SocialCalc 1-based
+   `lemma/a1` without an explicit 0↔1 shim. IEEE-754 `NaN`/`Infinity`/fractions
+   are outside the Int model — Bun-test them. `verify:context` reads
+   `../socialcalc/lemma/a1.{ts,dfy}` (clone
+   [audreyt/socialcalc](https://github.com/audreyt/socialcalc) as sibling);
+   EtherCalc-only clones still run Dafny/Lean and may use tracked context/request.
 
 ## Session log
 
 Per-session history is in `docs/historic/REWRITE_ULTRAPLAN.md` §14 (append-only,
-newest last). Latest: hosted per-room PITR restore landed — operator API
-`POST /_/:room/pitr-restore` (Bearer `ETHERCALC_MIGRATE_TOKEN`, 404 when
-unset) with dry-run, undo bookmarks, D1/alarm finalization, and JSON
-partial-failure contract; staging smoke proved restore + undo end to end.
+newest last). Latest: XLSX AAA+ fail-closed import + root `lemma/` Leanstral
+pump surface (Dafny 16 VCs, Lean gen CI smoke, deterministic context/request);
+spike retained as Attempt 2 provenance; clipboard `lastcol` 1-based adapter
+locked by promoted Bun tests.

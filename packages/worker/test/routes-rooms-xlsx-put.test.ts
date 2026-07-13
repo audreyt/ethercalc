@@ -3,8 +3,8 @@ import {
   env,
   waitOnExecutionContext,
 } from 'cloudflare:test';
-import { describe, it, expect } from 'vitest';
 import * as XLSX from '@e965/xlsx';
+import { describe, expect, it } from 'vitest';
 
 import worker from '../src/index.ts';
 
@@ -160,5 +160,53 @@ describe('Single-sheet XLSX PUT and POST room routes', () => {
     expect(postRes.status).toBe(413);
     const text = await postRes.text();
     expect(text).toContain('xlsx/ods import expands to');
+  });
+
+  it('PUT /_/:room returns 400 when xlsx exceeds SocialCalc ZZ column', async () => {
+    const ws = {
+      '!ref': 'A1:AAA1',
+      A1: { t: 'n', v: 1 },
+      AAA1: { t: 'n', v: 703 },
+    };
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book, ws, 'Sheet1');
+    const bytes = new Uint8Array(
+      XLSX.write(book, { bookType: 'xlsx', type: 'array' }) as ArrayBufferLike,
+    );
+    const putRes = await request('PUT', '/_/xlsx-put-aaa', {
+      headers: {
+        'content-type':
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      },
+      body: bytes as unknown as BodyInit,
+    });
+    expect(putRes.status).toBe(400);
+    const text = await putRes.text();
+    expect(text).toMatch(/ZZ/);
+    expect(text).toContain('AAA1');
+  });
+
+  it('POST /_ returns 400 when xlsx exceeds SocialCalc ZZ column', async () => {
+    const ws = {
+      '!ref': 'A1:AAA1',
+      A1: { t: 'n', v: 1 },
+      AAA1: { t: 'n', v: 703 },
+    };
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book, ws, 'Sheet1');
+    const bytes = new Uint8Array(
+      XLSX.write(book, { bookType: 'xlsx', type: 'array' }) as ArrayBufferLike,
+    );
+    const postRes = await request('POST', '/_', {
+      headers: {
+        'content-type':
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      },
+      body: bytes as unknown as BodyInit,
+    });
+    expect(postRes.status).toBe(400);
+    const text = await postRes.text();
+    expect(text).toMatch(/ZZ/);
+    expect(text).toContain('AAA1');
   });
 });

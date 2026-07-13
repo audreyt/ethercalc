@@ -87,7 +87,16 @@
     "typecheck": "bun run --filter '*' typecheck",
     "lint": "biome lint",
     "lint:fix": "biome lint --write",
-    "mutation": "bun run --filter '*' mutation"
+    "mutation": "bun run --filter '*' mutation",
+    "verify": "bun run verify:dafny",
+    "verify:dafny": "lsc check --backend=dafny && bun lemma/assert-fresh.mjs dafny",
+    "verify:dafny:gen": "lsc gen --backend=dafny",
+    "verify:dafny:regen": "lsc regen --backend=dafny lemma/xlsx-a1.ts",
+    "verify:lean:gen": "lsc gen --backend=lean lemma/xlsx-a1.ts",
+    "verify:lean": "bun run verify:lean:gen && test -s lemma/xlsx-a1.types.lean && test -s lemma/xlsx-a1.def.lean && bun lemma/assert-fresh.mjs lean",
+    "verify:both": "bun run verify:dafny && bun run verify:lean",
+    "verify:context": "bun lemma/build-context.mjs",
+    "verify:request": "bun lemma/build-request.mjs"
   },
   "engines": {
     "bun": ">=1.1.0"
@@ -96,6 +105,7 @@
     "@biomejs/biome": "^2.1.2",
     "@stryker-mutator/core": "^9.6.1",
     "@stryker-mutator/vitest-runner": "^9.6.1",
+    "lemmascript": "0.5.13",
     "typescript": "^7.0.2",
     "vite-plus": "0.2.4"
   },

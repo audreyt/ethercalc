@@ -1,7 +1,11 @@
-import { describe, it, expect, } from 'vitest';
 import * as XLSX from '@e965/xlsx';
+import { describe, expect, it, } from 'vitest';
 import { buildMultiSheetImport } from '../src/lib/multi-sheet-import.ts';
-import { MAX_IMPORT_CELLS, worksheetToSave } from '../src/lib/xlsx-import.ts';
+import {
+  ImportColumnOutOfRangeError,
+  MAX_IMPORT_CELLS,
+  worksheetToSave,
+} from '../src/lib/xlsx-import.ts';
 
 function workbookBytes(sheets: Array<{ name: string; aoa: (string | number | boolean)[][] }>): Uint8Array {
   const wb = XLSX.utils.book_new();
@@ -73,6 +77,22 @@ describe('buildMultiSheetImport', () => {
       { name: 'B', aoa },
     ]);
     expect(() => buildMultiSheetImport(bytes, 'big')).toThrow(/exceeds/);
+  });
+
+  it('rejects a worksheet with AAA column (beyond SocialCalc ZZ)', () => {
+    const ws = {
+      '!ref': 'A1:AAA1',
+      A1: { t: 'n', v: 1 },
+      AAA1: { t: 'n', v: 703 },
+    };
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Wide');
+    const bytes = new Uint8Array(
+      XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer,
+    );
+    expect(() => buildMultiSheetImport(bytes, 'wide')).toThrow(
+      ImportColumnOutOfRangeError,
+    );
   });
   it('handles missing SheetNames (defensive)', () => {
     const mockRead = () => ({
