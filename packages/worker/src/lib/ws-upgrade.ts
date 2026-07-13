@@ -21,6 +21,14 @@ export interface WsAttachment {
   readonly auth: string;
   /** Sandstorm SH-6: whether `modify` was granted at handshake. */
   readonly sandstormModify?: boolean;
+  /**
+   * True for sockets accepted via the legacy socket.io v0.9 path. Message
+   * frames are colon-delimited socket.io packets (`5:::{…}`) rather than
+   * raw JSON, and outbound replies must be re-wrapped with
+   * `nativeToSocketIoEvent`. Heartbeats (`2::`) are handled by the DO's
+   * hibernatable `setWebSocketAutoResponse` pair — not a JS timer.
+   */
+  readonly legacy?: boolean;
 }
 
 /**
@@ -50,6 +58,35 @@ export function upgradeWebSocket(
       : {}),
   };
   server.serializeAttachment(attachment);
+  return new Response(null, { status: 101, webSocket: client });
+}
+
+/**
+ * Accept a legacy socket.io v0.9 WebSocket onto the DO via the hibernation
+ * API. Tags the socket `legacy` and marks the attachment so
+ * `webSocketMessage` / send paths use socket.io framing. Emits the v0.9
+ * connect ack (`1::`) immediately; subsequent heartbeats (`2::` ↔ `2::`)
+ * are handled by `state.setWebSocketAutoResponse` configured on the DO.
+ */
+export function upgradeLegacySocketIo(state: DurableObjectState): Response {
+  const pair = new WebSocketPair();
+  const client = pair[0];
+  const server = pair[1];
+  state.acceptWebSocket(server, ['legacy']);
+  const attachment: WsAttachment = {
+    user: '',
+    room: '',
+    auth: '',
+    legacy: true,
+  };
+  server.serializeAttachment(attachment);
+  // v0.9 clients wait for the connect packet before emitting. Safe to send
+  // while still inside the upgrade request — the socket is accepted.
+  try {
+    server.send('1::');
+  } catch {
+    // Peer already gone; hibernation will surface the close.
+  }
   return new Response(null, { status: 101, webSocket: client });
 }
 

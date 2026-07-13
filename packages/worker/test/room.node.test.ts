@@ -2230,6 +2230,74 @@ describe('RoomDO — fold: housekeeping alarm', () => {
     await room.alarm();
     expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('SAVE');
   });
+
+  it('alarm() does not re-arm when idle: no sockets, no TTL, nothing trimmed', async () => {
+    // Idle-empty room: no live WS, ETHERCALC_EXPIRE unset, chat/audit under
+    // caps → gate must leave the alarm disarmed so the DO stays dormant.
+    const record: FakeStorageRecord = { map: new Map(), alarm: null };
+    record.map.set(STORAGE_KEYS.snapshot, 'SAVE');
+    for (let i = 0; i < 10; i++) record.map.set(chatKey(i), `m${i}`);
+    const room = new RoomDO(makeState('x', record), makeEnv());
+    await room.alarm();
+    expect(record.alarm).toBeNull();
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('SAVE');
+  });
+
+  it('alarm() re-arms when a WebSocket is still connected', async () => {
+    // No TTL, nothing to trim — only the live socket keeps the cadence.
+    const record: FakeStorageRecord = { map: new Map(), alarm: null };
+    record.map.set(STORAGE_KEYS.snapshot, 'SAVE');
+    const peer = makeFakeWs({ sent: [] });
+    const { state } = makeWsAwareState('x', record, [peer]);
+    const room = new RoomDO(state, makeEnv());
+    await room.alarm();
+    expect(typeof record.alarm).toBe('number');
+  });
+
+  it('alarm() re-arms when a TTL is configured (and still deletes stale rooms)', async () => {
+    // Fresh room + TTL configured → re-arm so expiry can fire later.
+    {
+      const record: FakeStorageRecord = { map: new Map(), alarm: null };
+      record.map.set(STORAGE_KEYS.snapshot, 'SAVE');
+      record.map.set(STORAGE_KEYS.metaUpdatedAt, Date.now());
+      const env: Env = {
+        ROOM: {} as DurableObjectNamespace,
+        ETHERCALC_EXPIRE: '3600',
+      };
+      const room = new RoomDO(makeState('x', record), env);
+      await room.alarm();
+      expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('SAVE');
+      expect(typeof record.alarm).toBe('number');
+    }
+    // Stale room + TTL exceeded → wipe and do NOT re-arm (room is gone).
+    {
+      const record: FakeStorageRecord = { map: new Map(), alarm: null };
+      record.map.set(STORAGE_KEYS.snapshot, 'SAVE');
+      record.map.set(STORAGE_KEYS.metaUpdatedAt, Date.now() - 120_000);
+      const env: Env = {
+        ROOM: {} as DurableObjectNamespace,
+        ETHERCALC_EXPIRE: '60',
+      };
+      const room = new RoomDO(makeState('x', record), env);
+      await room.alarm();
+      expect(record.map.size).toBe(0);
+      expect(record.alarm).toBeNull();
+    }
+  });
+
+  it('alarm() re-arms when the trim actually removed rows', async () => {
+    // No sockets, no TTL — only the fact that we dropped chat keys keeps
+    // the hourly cadence (tails may still exceed caps next hour).
+    const record: FakeStorageRecord = { map: new Map(), alarm: null };
+    for (let i = 0; i < 600; i++) record.map.set(chatKey(i), `m${i}`);
+    const room = new RoomDO(makeState('x', record), makeEnv());
+    await room.alarm();
+    const chatKeys = Array.from(record.map.keys()).filter((k) =>
+      k.startsWith(STORAGE_KEYS.chatPrefix),
+    );
+    expect(chatKeys.length).toBe(500);
+    expect(typeof record.alarm).toBe('number');
+  });
 });
 
 describe('RoomDO — fold: seq counters survive a trim + isolate restart', () => {
@@ -2341,6 +2409,317 @@ describe('RoomDO — fold: inline WS caps', () => {
     );
     expect(record.map.has(chatKey(0))).toBe(false); // nothing persisted
     expect(log.sent).toHaveLength(0); // nothing broadcast
+  });
+
+  it('rejects a legacy-ws upgrade with 426 without Upgrade header', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('x', record), makeEnv());
+    const res = await room.fetch(new Request('https://do/_do/legacy-ws'));
+    expect(res.status).toBe(426);
+  });
+
+  it('rejects a legacy-ws upgrade with 503 once the connection cap is reached', async () => {
+    const peers = Array.from({ length: 128 }, () => makeFakeWs({ sent: [] }));
+    const record: FakeStorageRecord = { map: new Map() };
+    const { state } = makeWsAwareState('x', record, peers);
+    const room = new RoomDO(state, makeEnv());
+    const res = await room.fetch(
+      new Request('https://do/_do/legacy-ws', {
+        headers: { Upgrade: 'websocket' },
+      }),
+    );
+    expect(res.status).toBe(503);
+  });
+
+  it('legacy frame with empty attachment.room forwards execute to the room DO', async () => {
+    const fetches: Array<{ url: string; body: string }> = [];
+    const env: Env = {
+      ROOM: {
+        idFromName: (name: string) => ({ toString: () => name }) as DurableObjectId,
+        get: () =>
+          ({
+            fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+              const url =
+                typeof input === 'string'
+                  ? input
+                  : input instanceof URL
+                    ? input.href
+                    : input.url;
+              fetches.push({
+                url,
+                body: typeof init?.body === 'string' ? init.body : '',
+              });
+              return new Response('', { status: 202 });
+            },
+          }) as unknown as DurableObjectStub,
+      } as unknown as DurableObjectNamespace,
+    };
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('x', record), env);
+    const log: FakeWsLog = { sent: [] };
+    // Session-host shape: legacy:true, empty room (sid-keyed DO).
+    const ws = makeFakeWs(log, { user: '', room: '', auth: '', legacy: true });
+    const payload = {
+      type: 'execute',
+      room: 'sheet1',
+      user: 'u',
+      auth: 'a',
+      cmdstr: 'set A1 text t hi',
+    };
+    const frame = `5:::${JSON.stringify({ name: 'data', args: [payload] })}`;
+    await room.webSocketMessage(ws, frame);
+    expect(fetches).toHaveLength(1);
+    expect(fetches[0]!.url).toContain('/_do/commands');
+    expect(fetches[0]!.url).toContain('name=sheet1');
+    expect(fetches[0]!.body).toBe('set A1 text t hi');
+  });
+
+  it('legacy frame ignores heartbeat and non-event packets', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('x', record), makeEnv());
+    const log: FakeWsLog = { sent: [] };
+    const ws = makeFakeWs(log, { user: '', room: '', auth: '', legacy: true });
+    await room.webSocketMessage(ws, '2::');
+    await room.webSocketMessage(ws, '1::');
+    await room.webSocketMessage(ws, 'not-a-frame');
+    expect(log.sent).toHaveLength(0);
+  });
+
+  it('legacy frame with room attachment dispatches chat via socket.io framing', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const senderLog: FakeWsLog = { sent: [] };
+    const peerLog: FakeWsLog = { sent: [] };
+    const attachment = {
+      user: 'alice',
+      room: 'r',
+      auth: 'h',
+      legacy: true as const,
+    };
+    const sender = makeFakeWs(senderLog, attachment);
+    const peer = makeFakeWs(peerLog, attachment);
+    const { state } = makeWsAwareState('x', record, [sender, peer]);
+    const room = new RoomDO(state, makeEnv());
+    const payload = {
+      type: 'chat',
+      room: 'r',
+      user: 'alice',
+      msg: 'hello-legacy',
+    };
+    const frame = `5:::${JSON.stringify({ name: 'data', args: [payload] })}`;
+    await room.webSocketMessage(sender, frame);
+    expect(record.map.get(chatKey(0))).toBe('hello-legacy');
+    // Broadcast excludes sender; peer receives a socket.io event frame.
+    expect(peerLog.sent.length).toBe(1);
+    expect(peerLog.sent[0]!).toMatch(/^5:::/);
+    expect(peerLog.sent[0]!).toContain('hello-legacy');
+    expect(senderLog.sent).toHaveLength(0);
+  });
+
+  it('legacy room-scoped execute uses per-message auth on the wire frame', async () => {
+    // Covers the `'auth' in parsed` true branch of #handleLegacyFrame's
+    // room-scoped path (chat frames have no auth field).
+    const record: FakeStorageRecord = { map: new Map() };
+    record.map.set(STORAGE_KEYS.snapshot, 'socialcalc:1.0\n');
+    const log: FakeWsLog = { sent: [] };
+    const attachment = {
+      user: 'alice',
+      room: 'r',
+      auth: 'h',
+      legacy: true as const,
+    };
+    const ws = makeFakeWs(log, attachment);
+    const { state } = makeWsAwareState('x', record, [ws]);
+    const room = new RoomDO(state, makeEnv());
+    const payload = {
+      type: 'execute',
+      room: 'r',
+      user: 'alice',
+      auth: 'token',
+      cmdstr: 'set A1 text t via-legacy',
+    };
+    await room.webSocketMessage(
+      ws,
+      `5:::${JSON.stringify({ name: 'data', args: [payload] })}`,
+    );
+    // With KEY unset, verifyAuth accepts any non-'0' auth → command lands.
+    expect(record.map.get(logKey(0))).toBe('set A1 text t via-legacy');
+  });
+
+  it('legacy disconnect packet closes the socket', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('x', record), makeEnv());
+    let closed: { code: number | undefined; reason: string | undefined } | null = null;
+    const log: FakeWsLog = { sent: [] };
+    const ws = {
+      ...makeFakeWs(log, { user: '', room: '', auth: '', legacy: true }),
+      close(code?: number, reason?: string) {
+        closed = { code, reason };
+      },
+    } as unknown as WebSocket;
+    await room.webSocketMessage(ws, '0::');
+    expect(closed).toEqual({ code: 1000, reason: 'client disconnected' });
+  });
+
+  it('legacy event with malformed payload is dropped', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('x', record), makeEnv());
+    const log: FakeWsLog = { sent: [] };
+    const ws = makeFakeWs(log, { user: '', room: '', auth: '', legacy: true });
+    // Type 5 event but body is not a valid data event → socketIoEventToNative null.
+    await room.webSocketMessage(ws, '5:::{"name":"other","args":[]}');
+    expect(log.sent).toHaveLength(0);
+  });
+
+  it('legacy session host drops non-execute client messages', async () => {
+    const fetches: string[] = [];
+    const env: Env = {
+      ROOM: {
+        idFromName: (name: string) => ({ toString: () => name }) as DurableObjectId,
+        get: () =>
+          ({
+            fetch: async (input: RequestInfo | URL) => {
+              fetches.push(String(input));
+              return new Response('', { status: 202 });
+            },
+          }) as unknown as DurableObjectStub,
+      } as unknown as DurableObjectNamespace,
+    };
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('x', record), env);
+    const log: FakeWsLog = { sent: [] };
+    const ws = makeFakeWs(log, { user: '', room: '', auth: '', legacy: true });
+    const chat = {
+      type: 'chat',
+      room: 'sheet1',
+      user: 'u',
+      msg: 'nope',
+    };
+    await room.webSocketMessage(
+      ws,
+      `5:::${JSON.stringify({ name: 'data', args: [chat] })}`,
+    );
+    expect(fetches).toHaveLength(0);
+  });
+
+  it('legacy session host drops the filtered text-wiki execute command', async () => {
+    const fetches: string[] = [];
+    const env: Env = {
+      ROOM: {
+        idFromName: (name: string) => ({ toString: () => name }) as DurableObjectId,
+        get: () =>
+          ({
+            fetch: async (input: RequestInfo | URL) => {
+              fetches.push(String(input));
+              return new Response('', { status: 202 });
+            },
+          }) as unknown as DurableObjectStub,
+      } as unknown as DurableObjectNamespace,
+    };
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('x', record), env);
+    const log: FakeWsLog = { sent: [] };
+    const ws = makeFakeWs(log, { user: '', room: '', auth: '', legacy: true });
+    const payload = {
+      type: 'execute',
+      room: 'sheet1',
+      user: 'u',
+      auth: 'a',
+      cmdstr: 'set sheet defaulttextvalueformat text-wiki',
+    };
+    await room.webSocketMessage(
+      ws,
+      `5:::${JSON.stringify({ name: 'data', args: [payload] })}`,
+    );
+    expect(fetches).toHaveLength(0);
+  });
+
+  it('legacy session host drops execute with empty room', async () => {
+    const fetches: string[] = [];
+    const env: Env = {
+      ROOM: {
+        idFromName: (name: string) => ({ toString: () => name }) as DurableObjectId,
+        get: () =>
+          ({
+            fetch: async (input: RequestInfo | URL) => {
+              fetches.push(String(input));
+              return new Response('', { status: 202 });
+            },
+          }) as unknown as DurableObjectStub,
+      } as unknown as DurableObjectNamespace,
+    };
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('x', record), env);
+    const log: FakeWsLog = { sent: [] };
+    const ws = makeFakeWs(log, { user: '', room: '', auth: '', legacy: true });
+    const payload = {
+      type: 'execute',
+      room: '',
+      user: 'u',
+      auth: 'a',
+      cmdstr: 'set A1 text t x',
+    };
+    await room.webSocketMessage(
+      ws,
+      `5:::${JSON.stringify({ name: 'data', args: [payload] })}`,
+    );
+    expect(fetches).toHaveLength(0);
+  });
+
+  it('legacy session host swallows room-DO fetch failures', async () => {
+    const env: Env = {
+      ROOM: {
+        idFromName: (name: string) => ({ toString: () => name }) as DurableObjectId,
+        get: () =>
+          ({
+            fetch: async () => {
+              throw new Error('do gone');
+            },
+          }) as unknown as DurableObjectStub,
+      } as unknown as DurableObjectNamespace,
+    };
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('x', record), env);
+    const log: FakeWsLog = { sent: [] };
+    const ws = makeFakeWs(log, { user: '', room: '', auth: '', legacy: true });
+    const payload = {
+      type: 'execute',
+      room: 'sheet1',
+      user: 'u',
+      auth: 'a',
+      cmdstr: 'set A1 text t x',
+    };
+    await expect(
+      room.webSocketMessage(
+        ws,
+        `5:::${JSON.stringify({ name: 'data', args: [payload] })}`,
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  it('legacy disconnect tolerates a close() that throws', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('x', record), makeEnv());
+    const log: FakeWsLog = { sent: [] };
+    const ws = {
+      ...makeFakeWs(log, { user: '', room: '', auth: '', legacy: true }),
+      close() {
+        throw new Error('already closed');
+      },
+    } as unknown as WebSocket;
+    await expect(room.webSocketMessage(ws, '0::')).resolves.toBeUndefined();
+  });
+
+  it('legacy-ws under the connection cap reaches the workerd-only upgrade', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const { state } = makeWsAwareState('x', record, []);
+    const room = new RoomDO(state, makeEnv());
+    await expect(
+      room.fetch(
+        new Request('https://do/_do/legacy-ws', {
+          headers: { Upgrade: 'websocket' },
+        }),
+      ),
+    ).rejects.toThrow();
   });
 });
 

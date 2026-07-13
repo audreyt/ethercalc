@@ -25,6 +25,12 @@
 import type { ServerMessage } from '@ethercalc/shared/messages';
 import { encodeMessage, parseClientMessage } from '@ethercalc/shared/messages';
 import {
+  decodeFrame,
+  nativeToSocketIoEvent,
+  PacketType,
+  socketIoEventToNative,
+} from '@ethercalc/socketio-shim';
+import {
   auditKey,
   chatKey,
   ecellKey,
@@ -75,13 +81,18 @@ import {
   type SnapshotMeta,
   snapshotEntries,
 } from './lib/snapshot-storage.ts';
+import { isFilteredExecuteCommand } from './lib/ws-dispatch.ts';
 import {
   dispatchWsMessage,
   type WsContext,
   type WsSiblingDO,
   type WsStorage,
 } from './lib/ws-handlers.ts';
-import { upgradeWebSocket, type WsAttachment } from './lib/ws-upgrade.ts';
+import {
+  upgradeLegacySocketIo,
+  upgradeWebSocket,
+  type WsAttachment,
+} from './lib/ws-upgrade.ts';
 import {
   BINARY_CONTENT_TYPES,
   type BinaryFormat,
@@ -259,6 +270,15 @@ export class RoomDO implements DurableObject {
   constructor(state: DurableObjectState, env: Env) {
     this.#state = state;
     this.#env = env;
+    // socket.io v0.9 heartbeat is a pure echo of `2::`. Auto-response lets
+    // hibernated legacy sockets answer pings without waking the isolate
+    // (and without a JS timer that would pin the DO awake).
+    /* istanbul ignore next -- @preserve: WebSocketRequestResponsePair is a workerd global */
+    if (typeof WebSocketRequestResponsePair === 'function') {
+      this.#state.setWebSocketAutoResponse(
+        new WebSocketRequestResponsePair('2::', '2::'),
+      );
+    }
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -374,6 +394,12 @@ export class RoomDO implements DurableObject {
     // ─── Phase 7: native WebSocket upgrade ───────────────────────────
     if (path === '/_do/ws' && request.method === 'GET') {
       return this.#acceptWebSocket(request);
+    }
+    // Legacy socket.io v0.9 WS — hibernation API with `legacy: true`
+    // attachment so webSocketMessage/send use socket.io framing. Worker
+    // routes `/socket.io/1/websocket/:sid` here on a sid-keyed RoomDO.
+    if (path === '/_do/legacy-ws' && request.method === 'GET') {
+      return this.#acceptLegacyWebSocket(request);
     }
     // ─── Phase 9: cron fire-trigger hook ───────────────────────────────
     // `POST /_do/fire-trigger?cell=<coord>` — called from the
@@ -1109,23 +1135,112 @@ export class RoomDO implements DurableObject {
   }
 
   /**
+   * `GET /_do/legacy-ws` — hibernatable socket.io v0.9 upgrade. Same
+   * connection cap as the native path; framing differs (see attachment
+   * `legacy: true` + `#sendTo` / `webSocketMessage`).
+   */
+  #acceptLegacyWebSocket(request: Request): Response {
+    if (request.headers.get('Upgrade') !== 'websocket') {
+      return plainResponse('Expected Upgrade: websocket', 426);
+    }
+    if (this.#state.getWebSockets().length >= MAX_CONN) {
+      return plainResponse('Too many connections', 503);
+    }
+    /* istanbul ignore next -- @preserve
+     *   Same workerd-only surface as `#acceptWebSocket` (WebSocketPair +
+     *   acceptWebSocket + 101 Response). Covered by workers-pool tests.
+     */
+    return upgradeLegacySocketIo(this.#state);
+  }
+
+  /**
    * Hibernation-api entrypoint. Parses the incoming frame, assembles a
    * `WsContext` bound to this socket, and delegates to the pure dispatch
    * layer in `src/lib/ws-handlers.ts` (Phase 7.1 extract).
+   *
+   * Legacy (`attachment.legacy`) sockets speak socket.io v0.9 framing:
+   * heartbeats are auto-answered by `setWebSocketAutoResponse`; event
+   * packets are unwrapped to native ClientMessage before dispatch.
+   * Session-host DOs (sid-keyed, empty attachment.room) only forward
+   * `execute` to the room named in the frame — matching the pre-hibernate
+   * Worker-shim baseline — so spreadsheet state stays on the real room DO.
    */
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
     if (typeof message !== 'string') return;
     // Per-frame byte cap — drop oversized frames before parsing so a
     // single client can't force a multi-MB JSON.parse + storage write.
     if (message.length > MAX_FRAME) return;
-    const parsed = parseClientMessage(message);
-    if (!parsed) return;
     const attachment =
       (ws.deserializeAttachment() as WsAttachment | null) ??
       { user: '', room: '', auth: '' };
+
+    if (attachment.legacy) {
+      await this.#handleLegacyFrame(ws, attachment, message);
+      return;
+    }
+
+    const parsed = parseClientMessage(message);
+    if (!parsed) return;
     // Auth-bearing message variants (`execute`, `ecell`, `stopHuddle`)
     // carry their own `auth` string; others never do. Default to empty so
     // the downstream `verifyAuth` treats it as view-only.
+    const perMessageAuth =
+      'auth' in parsed && typeof parsed.auth === 'string' ? parsed.auth : '';
+    const ctx = this.#buildWsContext(ws, attachment, parsed.room, perMessageAuth);
+    await dispatchWsMessage(ctx, parsed);
+  }
+
+  /**
+   * Decode one socket.io v0.9 frame and either dispatch it locally (when
+   * this DO is the room the frame names) or forward `execute` to the
+   * named room DO (session-host / sid-keyed case).
+   */
+  async #handleLegacyFrame(
+    ws: WebSocket,
+    attachment: WsAttachment,
+    raw: string,
+  ): Promise<void> {
+    const packet = decodeFrame(raw);
+    if (!packet) return;
+    if (packet.type === PacketType.Disconnect) {
+      try {
+        ws.close(1000, 'client disconnected');
+      } catch {
+        /* already closed */
+      }
+      return;
+    }
+    // Heartbeats are answered by setWebSocketAutoResponse without waking
+    // us; if one does arrive (auto-response unset in tests), ignore it.
+    if (packet.type === PacketType.Heartbeat) return;
+    if (packet.type !== PacketType.Event) return;
+    const parsed = socketIoEventToNative(packet);
+    if (!parsed) return;
+
+    // Session host: attachment.room is empty because the upgrade was
+    // sid-keyed, not room-keyed. Forward executes to the real room DO
+    // (preserves spreadsheet locality); other types need two-way state
+    // and are dropped here just as the pre-hibernate baseline did.
+    if (!attachment.room) {
+      if (parsed.type !== 'execute') return;
+      if (isFilteredExecuteCommand(parsed.cmdstr)) return;
+      const room = parsed.room;
+      if (!room) return;
+      try {
+        const stub = this.#env.ROOM.get(
+          this.#env.ROOM.idFromName(encodeRoom(room)),
+        );
+        await stub.fetch(
+          `https://do.local/_do/commands?name=${encodeURIComponent(room)}`,
+          { method: 'POST', body: parsed.cmdstr },
+        );
+      } catch {
+        // Best-effort; a missing ROOM binding in unit tests no-ops.
+      }
+      return;
+    }
+
+    // Room-scoped legacy socket: full native dispatch with framing on send.
     const perMessageAuth =
       'auth' in parsed && typeof parsed.auth === 'string' ? parsed.auth : '';
     const ctx = this.#buildWsContext(ws, attachment, parsed.room, perMessageAuth);
@@ -1237,19 +1352,24 @@ export class RoomDO implements DurableObject {
 
   #sendTo(ws: WebSocket, msg: ServerMessage): void {
     try {
-      ws.send(encodeMessage(msg));
+      ws.send(this.#frameFor(ws, msg));
     } catch {
       // Socket closed underfoot; hibernation will fire webSocketClose.
     }
   }
 
+  /** Encode a ServerMessage for `ws` — socket.io event frame when legacy. */
+  #frameFor(ws: WebSocket, msg: ServerMessage): string {
+    const att = ws.deserializeAttachment() as WsAttachment | null;
+    return att?.legacy ? nativeToSocketIoEvent(msg) : encodeMessage(msg);
+  }
+
   /** Send to every peer except `skip`. */
   #broadcast(skip: WebSocket, msg: ServerMessage): void {
-    const frame = encodeMessage(msg);
     for (const peer of this.#state.getWebSockets()) {
       if (peer === skip) continue;
       try {
-        peer.send(frame);
+        peer.send(this.#frameFor(peer, msg));
       } catch {
         // Skip dead peer; the rest still receive.
       }
@@ -1258,10 +1378,9 @@ export class RoomDO implements DurableObject {
 
   /** Send to every peer (including the sender). Used by submitform. */
   #broadcastAll(msg: ServerMessage): void {
-    const frame = encodeMessage(msg);
     for (const peer of this.#state.getWebSockets()) {
       try {
-        peer.send(frame);
+        peer.send(this.#frameFor(peer, msg));
       } catch {
         // Best-effort; individual peer errors are expected.
       }
@@ -1640,14 +1759,25 @@ export class RoomDO implements DurableObject {
   /**
    * Housekeeping alarm (AGENTS.md §13 Q10). Fires roughly hourly while a
    * room stays active. Two jobs:
-   *   (a) Trim `chat:*` down to the most recent `CHAT_KEEP` entries — chat
-   *       is mirrored to D1 beyond the DO lifetime, so the DO copy only
+   *   (a) Trim `chat:*` / `audit:*` down to recent tails — both are
+   *       mirrored to D1 beyond the DO lifetime, so the DO copy only
    *       needs to cover live catch-up.
    *   (b) TTL / `--expire`: when `ETHERCALC_EXPIRE` is set and the room
    *       hasn't been touched within the TTL, wipe it (same hammer as
    *       `DELETE /_do/all`).
-   * Re-arms itself if the room is still active so the cadence continues
-   * without an external pinger.
+   *
+   * Re-arm gate (idle rooms must go fully dormant — no hourly wake):
+   *   re-arm ONLY when at least one of:
+   *     (1) any live WebSocket (`getWebSockets().length > 0`);
+   *     (2) a TTL is configured (`parseExpireMs` non-null) so expiry can
+   *         still fire;
+   *     (3) this run actually trimmed rows (tails may still exceed caps
+   *         next hour).
+   *   Otherwise do NOT re-arm. Write paths re-arm via `#armAlarm()` so the
+   *   next mutation resumes the cadence (invariant: every storage write
+   *   that should keep the room "active" calls `#armAlarm` — see
+   *   `#appendCommand`, `appendChat`, `#putEcellCapped`, `#putSnapshot`,
+   *   `#postSeed`, `#postInstall`, `#postPitrTouch`).
    */
   async alarm(): Promise<void> {
     this.#alarmArmed = false;
@@ -1666,23 +1796,36 @@ export class RoomDO implements DurableObject {
     // (a) Trim the DO copies of chat + audit to a recent tail. The full
     // record is mirrored to D1 (chat_log / audit_log) at append time, so the
     // dropped oldest entries stay durable there.
-    await this.#trimTail(STORAGE_KEYS.chatPrefix, CHAT_KEEP);
-    await this.#trimTail(STORAGE_KEYS.auditPrefix, AUDIT_KEEP);
-    // Re-arm while the room is still active (it survived the TTL check).
-    await this.#armAlarm();
+    const chatTrimmed = await this.#trimTail(STORAGE_KEYS.chatPrefix, CHAT_KEEP);
+    const auditTrimmed = await this.#trimTail(
+      STORAGE_KEYS.auditPrefix,
+      AUDIT_KEEP,
+    );
+    // Invariant: write paths call `#armAlarm()`; this gate only decides
+    // whether the idle cadence continues. See method doc above for the
+    // three re-arm conditions.
+    const hasSockets = this.#state.getWebSockets().length > 0;
+    const ttlConfigured = ttlMs !== null;
+    const trimmed = chatTrimmed || auditTrimmed;
+    if (hasSockets || ttlConfigured || trimmed) {
+      await this.#armAlarm();
+    }
   }
 
   /**
-   * Delete all but the most recent `keep` entries under `prefix`. The full
-   * record is mirrored to D1 at append time, so the dropped (oldest) entries
+   * Delete all but the most recent `keep` entries under `prefix`. Returns
+   * true when at least one key was removed (so the alarm re-arm gate can
+   * keep the cadence while a tail still needs draining). The full record
+   * is mirrored to D1 at append time, so the dropped (oldest) entries
    * remain durable there — the DO copy is only a live-catch-up tail.
    */
-  async #trimTail(prefix: string, keep: number): Promise<void> {
+  async #trimTail(prefix: string, keep: number): Promise<boolean> {
     const map = await this.#state.storage.list<string>({ prefix });
     const keys = Array.from(map.keys());
-    if (keys.length <= keep) return;
+    if (keys.length <= keep) return false;
     // list() returns ascending key order; the oldest are at the front.
     await this.#state.storage.delete(keys.slice(0, keys.length - keep));
+    return true;
   }
 
   /** Snapshot of all ecells as `{user → cell}`. */
