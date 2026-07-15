@@ -11,7 +11,7 @@ import DOMPurify from 'dompurify';
 
 import { runMain, type MainHost } from './main.ts';
 import { installGraph } from './graph.ts';
-import { installSanitizeHtml } from './sanitize-html.ts';
+import { installSecurityPolicy } from './sanitize-html.ts';
 
 export interface BootHost extends MainHost {
   SocialCalc: MainHost['SocialCalc'];
@@ -338,9 +338,10 @@ async function autoBoot(): Promise<void> {
   if (!w.SocialCalc) return;
   // Close the stored-XSS hole in the live editor: the served SocialCalc
   // runtime renders `text-html` cell values straight into the cell div's
-  // innerHTML. Install the DOMPurify-backed hook the rewritten render sink
-  // calls (see scripts/build-assets.ts) before any sheet data is parsed.
-  installSanitizeHtml(w.SocialCalc, DOMPurify);
+  // innerHTML. Enable SocialCalc 3.1.0's built-in untrustedContent security
+  // model and wire DOMPurify as the sanitiser callback before any sheet data
+  // is parsed (see packages/client/src/sanitize-html.ts).
+  installSecurityPolicy(w.SocialCalc, DOMPurify);
   installGraph({
     SocialCalc: w.SocialCalc,
     win: window as unknown as Parameters<typeof installGraph>[0]['win'],

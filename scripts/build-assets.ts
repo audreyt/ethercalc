@@ -84,19 +84,39 @@ export function buildAssetPlan(rootInput: string): AssetBuildPlan {
 }
 
 export function patchSocialCalcRuntime(input: string): string {
-  const withoutStrict = input
+  // Strip UMD-level "use strict" wrappers (present in 3.0.x with double
+  // quotes and 3.1.0 with single quotes; harmless in-browser but stripped
+  // for parity).
+  const stripped = input
     .replace('(function (root, factory) {\n    "use strict";', '(function (root, factory) {')
-    .replace('function (window) {\n"use strict";', 'function (window) {');
+    .replace('function (window) {\n"use strict";', 'function (window) {')
+    .replace("(function (root, factory) {\n  'use strict';", '(function (root, factory) {')
+    .replace("function (window) {\n  'use strict';", 'function (window) {');
 
+  // SocialCalc 3.1.0 ships its own opt-in rendering security model
+  // (`untrustedContent`, `securityPolicy.sanitizeHtml`,
+  // `EscapeUntrustedHtml`, `SafeUrlForRender`). The client enables it at
+  // boot via `installSecurityPolicy` (see packages/client/src/sanitize-html.ts),
+  // so no regex-injected sanitiser hook is needed.
+  if (stripped.includes('EscapeUntrustedHtml')) {
+    return stripped;
+  }
+
+  // Pre-3.1.0 fallback: inject the SocialCalc.sanitizeHTML hook into the
+  // text-html render sink (the live-editor stored-XSS fix). The client
+  // installs SocialCalc.sanitizeHTML at boot; if absent (old cached asset),
+  // the branch falls back to the raw value.
   const htmlSink =
     "      displayvalue = (SocialCalc.sanitizeHTML ? SocialCalc.sanitizeHTML(displayvalue) : displayvalue);\n";
-  const patched = withoutStrict.replace(
+  const patched = stripped.replace(
     /(if\s*\(\s*valueformat\s*==\s*["']text-html["']\s*\)\s*)\{[\s\S]*?\}/,
     `$1{${"\n"}${htmlSink}    }`,
   );
 
   if (!patched.includes("SocialCalc.sanitizeHTML(displayvalue)")) {
-    throw new Error("text-html sanitize hook not injected into socialcalc.js (upstream render sink changed?)");
+    throw new Error(
+      "text-html sanitize hook not injected into socialcalc.js (upstream render sink changed?)",
+    );
   }
 
   return patched;

@@ -1,6 +1,6 @@
 # EtherCalc — Agent context
 
-> **Status:** rewrite complete · **Owner:** Audrey Tang · doc updated 2026-07-13
+> **Status:** rewrite complete · **Owner:** Audrey Tang · doc updated 2026-07-15
 >
 > Slim agent doc. Rewrite ultraplan + per-session history archived in
 > [`docs/historic/REWRITE_ULTRAPLAN.md`](./docs/historic/REWRITE_ULTRAPLAN.md) (§14).
@@ -114,7 +114,9 @@ spikes/                   Immutable research provenance (not the maintained work
 ## Session log
 
 Per-session history is in `docs/historic/REWRITE_ULTRAPLAN.md` §14 (append-only,
-newest last). Latest: XLSX AAA+ fail-closed import + root `lemma/` Leanstral
-pump surface (Dafny 16 VCs, Lean gen CI smoke, deterministic context/request);
-spike retained as Attempt 2 provenance; clipboard `lastcol` 1-based adapter
-locked by promoted Bun tests.
+newest last). Latest: SocialCalc ^3.0.8→^3.1.0 upgrade — switched from
+regex-injected `SocialCalc.sanitizeHTML` hook to 3.1.0's native
+`untrustedContent`/`securityPolicy.sanitizeHtml` security model; hardened
+package manifest exclusions (directory-level e2e/oracle, stryker-setup glob);
+Bun-native root `test` script; `install-runtime-deps.js` hard-fails on
+missing Bun; behavioral pack-manifest test added.

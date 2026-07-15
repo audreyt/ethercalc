@@ -16,10 +16,10 @@ const result = spawnSync('bun', ['install', '--production', '--ignore-scripts'],
 });
 
 if (result.error?.code === 'ENOENT') {
-  console.warn(
-    "ethercalc: Bun is required to run EtherCalc; install Bun, then run 'bun install --production --ignore-scripts' in the package root.",
+  console.error(
+    "ethercalc: Bun is required but was not found on PATH. Install Bun (https://bun.sh), then run 'bun install --production --ignore-scripts' in the package root.",
   );
-  process.exit(0);
+  process.exit(1);
 }
 
 if (result.error) {

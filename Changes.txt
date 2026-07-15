@@ -6,12 +6,35 @@ with the original SocialCalc daily development log (2007–2010) preserved
 verbatim at the bottom.
 
 EtherCalc bundles SocialCalc from the audreyt/socialcalc fork; see
-../socialcalc/Changes.txt for SocialCalc library release notes (v3.0.x).
+../socialcalc/Changes.txt for SocialCalc library release notes (v3.0.x–3.1.x).
 
 
 ==============================================================================
 Unreleased
 ==============================================================================
+
+Dependencies
+- SocialCalc ^3.0.8 → ^3.1.0. SocialCalc 3.1.0 ships its own opt-in
+  rendering security model (`SocialCalc.Callbacks.untrustedContent`,
+  `securityPolicy.sanitizeHtml`, `EscapeUntrustedHtml`, `SafeUrlForRender`),
+  superseding EtherCalc's regex-injected `SocialCalc.sanitizeHTML` hook.
+  The client now enables `untrustedContent` at boot and wires DOMPurify
+  via `securityPolicy.sanitizeHtml`; the served `static/socialcalc.js` is
+  no longer regex-patched. `SocialCalc.sanitizeHTML` is still installed
+  for backward compatibility with cached pre-3.1.0 assets.
+
+Packaging
+- Root `test` script now uses `bun run --filter '*' --if-present test`
+  instead of `npm run --workspaces --if-present test` (Bun-native pattern).
+- `package.json` `files[]` exclusions hardened: `!packages/e2e/` and
+  `!packages/oracle-harness/` directory-level excludes replace file-level
+  patterns that did not prevent leaks; `!**/stryker-setup-*.js` added for
+  Stryker temp files that leaked into published 0.20260710.1.
+- Behavioral pack-manifest test (`scripts/build-assets.test.ts`) now
+  packs from the actual repo tree and asserts no e2e/oracle/stryker/test
+  artifacts leak into the published tarball.
+- `scripts/install-runtime-deps.js` now hard-fails (exit 1) when Bun is
+  absent instead of silently succeeding with a warning.
 
 Bug fixes
 - XLSX imports now reject cells/merges beyond SocialCalc column `ZZ` with
