@@ -64,8 +64,8 @@ jobs:
           mkdir -p dist-release
           
           # Pack twice and verify byte-for-byte identity (reproducibility check)
-          bun pm pack --destination dist-release --filename pack1.tgz
-          bun pm pack --destination dist-release --filename pack2.tgz
+          bun pm pack --filename dist-release/pack1.tgz
+          bun pm pack --filename dist-release/pack2.tgz
           
           SHA1="$(sha256sum dist-release/pack1.tgz | awk '{print $1}')"
           SHA2="$(sha256sum dist-release/pack2.tgz | awk '{print $1}')"
