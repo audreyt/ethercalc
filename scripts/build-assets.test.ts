@@ -68,7 +68,7 @@ describe('package manifest (npm pack)', () => {
   // This catches directory-level leaks that individual file exclusions
   // in package.json `files[]` miss.
   test('tarball excludes e2e, oracle-harness, stryker-setup, and test artifacts', async () => {
-    const proc = Bun.spawn(['npm', 'pack', '--dry-run', '--json', '--ignore-scripts'], {
+    const proc = Bun.spawn(['bun', 'pm', 'pack', '--dry-run'], {
       cwd: import.meta.dir + '/..',
       stdout: 'pipe',
       stderr: 'pipe',
@@ -80,10 +80,16 @@ describe('package manifest (npm pack)', () => {
     const exitCode = await proc.exited;
     expect(exitCode).toBe(0);
 
-    const packData = JSON.parse(stdout) as Array<{
-      files: Array<{ path: string }>;
-    }>;
-    const paths = packData[0]!.files.map((f) => f.path);
+    // Parse the output lines from `bun pm pack --dry-run` to extract packed paths.
+    // Each packed line starts with 'packed <size> <path>'
+    const paths = stdout
+      .split('\n')
+      .filter((line) => line.startsWith('packed '))
+      .map((line) => {
+        const parts = line.split(' ');
+        return parts.slice(2).join(' ').trim();
+      })
+      .filter(Boolean);
 
     // Forbidden artifacts that must never ship.
     const forbidden = [
