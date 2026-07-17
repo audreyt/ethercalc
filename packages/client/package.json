@@ -7,8 +7,8 @@
   "type": "module",
   "main": "./src/main.ts",
   "scripts": {
-    "build": "vp build && vp exec vite build --config vite.passkey.config.ts",
-    "build:passkey": "vp exec vite build --config vite.passkey.config.ts",
+    "build": "vp build && vp build --config vite.passkey.config.ts",
+    "build:passkey": "vp build --config vite.passkey.config.ts",
     "dev": "vp dev",
     "test": "vp test run",
     "test:watch": "vp test",
