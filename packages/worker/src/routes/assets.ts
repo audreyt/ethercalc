@@ -33,22 +33,16 @@
  * `../handlers/` and carry 100% coverage.
  */
 /* istanbul ignore file */
-import type { Hono } from 'hono';
+import type { Hono } from "hono";
 
-import {
-  buildDynamicAppcache,
-  APPCACHE_CONTENT_TYPE,
-} from '../handlers/manifest-appcache.ts';
-import { buildFormPartPath } from '../handlers/static-form.ts';
-import {
-  buildRoomEntry,
-  buildTemplateFormRedirect,
-} from '../handlers/room-entry.ts';
-import { doFetch } from '../lib/do-dispatch.ts';
-import { getSessionPrincipal } from '../lib/session-middleware.ts';
-import { encodeRoom, generateRoomId } from '../lib/room-name.ts';
-import { isSandstormEnforced } from '../lib/sandstorm-access.ts';
-import type { Env, EtherCalcHonoEnv } from '../env.ts';
+import { buildDynamicAppcache, APPCACHE_CONTENT_TYPE } from "../handlers/manifest-appcache.ts";
+import { buildFormPartPath } from "../handlers/static-form.ts";
+import { buildRoomEntry, buildTemplateFormRedirect } from "../handlers/room-entry.ts";
+import { doFetch } from "../lib/do-dispatch.ts";
+import { getSessionPrincipal } from "../lib/session-middleware.ts";
+import { encodeRoom, generateRoomId } from "../lib/room-name.ts";
+import { isSandstormEnforced } from "../lib/sandstorm-access.ts";
+import type { Env, EtherCalcHonoEnv } from "../env.ts";
 
 /**
  * Extension → MIME map used when the upstream Fetcher doesn't set a
@@ -58,28 +52,28 @@ import type { Env, EtherCalcHonoEnv } from '../env.ts';
  * (browsers treat that as a download). Patch it on the way through.
  */
 const MIME_BY_EXT: Readonly<Record<string, string>> = {
-  '.html': 'text/html; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.js': 'application/javascript; charset=utf-8',
-  '.mjs': 'application/javascript; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.map': 'application/json; charset=utf-8',
-  '.svg': 'image/svg+xml',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.gif': 'image/gif',
-  '.ico': 'image/vnd.microsoft.icon',
-  '.webmanifest': 'application/manifest+json',
-  '.appcache': 'text/cache-manifest',
-  '.xml': 'application/xml; charset=utf-8',
-  '.txt': 'text/plain; charset=utf-8',
-  '.woff': 'font/woff',
-  '.woff2': 'font/woff2',
+  ".html": "text/html; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".js": "application/javascript; charset=utf-8",
+  ".mjs": "application/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".map": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".ico": "image/vnd.microsoft.icon",
+  ".webmanifest": "application/manifest+json",
+  ".appcache": "text/cache-manifest",
+  ".xml": "application/xml; charset=utf-8",
+  ".txt": "text/plain; charset=utf-8",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
 };
 
 function mimeForPath(pathname: string): string | undefined {
-  const dot = pathname.lastIndexOf('.');
+  const dot = pathname.lastIndexOf(".");
   if (dot < 0) return undefined;
   const ext = pathname.slice(dot).toLowerCase();
   return MIME_BY_EXT[ext];
@@ -98,14 +92,14 @@ function mimeForPath(pathname: string): string | undefined {
  */
 export async function serveAsset(env: Env, pathname: string): Promise<Response> {
   if (!env.ASSETS) {
-    return new Response('Not Found', {
+    return new Response("Not Found", {
       status: 404,
-      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
     });
   }
-  const req = new Request(`https://assets.local${pathname}`, { method: 'GET' });
+  const req = new Request(`https://assets.local${pathname}`, { method: "GET" });
   const upstream = await env.ASSETS.fetch(req);
-  const ct = upstream.headers.get('Content-Type');
+  const ct = upstream.headers.get("Content-Type");
   // Only rewrite when the upstream is the default opaque binary type or
   // missing — leave legit responses (text/html from CF Assets, errors
   // with text/plain, etc.) untouched.
@@ -113,7 +107,7 @@ export async function serveAsset(env: Env, pathname: string): Promise<Response> 
   const sniffed = mimeForPath(pathname);
   if (sniffed === undefined) return upstream;
   const headers = new Headers(upstream.headers);
-  headers.set('Content-Type', sniffed);
+  headers.set("Content-Type", sniffed);
   return new Response(upstream.body, {
     status: upstream.status,
     statusText: upstream.statusText,
@@ -121,24 +115,20 @@ export async function serveAsset(env: Env, pathname: string): Promise<Response> 
   });
 }
 
-type WorkbookKind = 'absent' | 'multi' | 'single' | 'unknown';
+type WorkbookKind = "absent" | "multi" | "single" | "unknown";
 
 async function getWorkbookKind(env: Env, room: string): Promise<WorkbookKind> {
   try {
-    const response = await doFetch(env, room, '/_do/workbook-kind');
-    if (!response.ok) return 'unknown';
+    const response = await doFetch(env, room, "/_do/workbook-kind");
+    if (!response.ok) return "unknown";
     const body = (await response.json()) as { readonly kind?: unknown };
-    if (
-      body.kind === 'absent' ||
-      body.kind === 'multi' ||
-      body.kind === 'single'
-    ) {
+    if (body.kind === "absent" || body.kind === "multi" || body.kind === "single") {
       return body.kind;
     }
   } catch {
     // A failed classifier must not break the deployment root.
   }
-  return 'unknown';
+  return "unknown";
 }
 
 /**
@@ -154,93 +144,100 @@ export function registerAssets(app: Hono<EtherCalcHonoEnv>): void {
   // single-sheet client. Classify only this root entry; the hot `GET /:room`
   // path remains storage-free. Without the env var, ethercalc.net serves the
   // landing page.
-  app.get('/', async (c) => {
+  app.get("/", async (c) => {
     const defaultRoom = c.env.ETHERCALC_DEFAULT_ROOM;
     // Truthiness, not `!== undefined`: workerd delivers an unset
     // `fromEnvironment` binding as `null`, which would otherwise
     // redirect every `docker compose up` visitor to `/null`.
     if (defaultRoom) {
-      const basepath = c.env.BASEPATH ?? '';
-      const explicitlyMulti = defaultRoom.startsWith('=');
+      const basepath = c.env.BASEPATH ?? "";
+      const explicitlyMulti = defaultRoom.startsWith("=");
       const room = explicitlyMulti ? defaultRoom.slice(1) : defaultRoom;
       let targetRoom = room;
       let multi = explicitlyMulti;
       if (!multi) {
         const kind = await getWorkbookKind(c.env, room);
-        multi = kind === 'absent' || kind === 'multi';
+        multi = kind === "absent" || kind === "multi";
 
         // Rewrite releases before #838 stored new Sandstorm grains in
         // `sheet1`. If the restored `sheet` default is absent, keep opening
         // that existing room so an upgrade never hides user data.
-        if (kind === 'absent' && isSandstormEnforced(c.env)) {
+        if (kind === "absent" && isSandstormEnforced(c.env)) {
           const fallbackRoom = `${room}1`;
           const fallbackKind = await getWorkbookKind(c.env, fallbackRoom);
-          if (fallbackKind === 'single' || fallbackKind === 'multi') {
+          if (fallbackKind === "single" || fallbackKind === "multi") {
             targetRoom = fallbackRoom;
-            multi = fallbackKind === 'multi';
+            multi = fallbackKind === "multi";
           }
         }
       }
-      return new Response('', {
+      return new Response("", {
         status: 302,
-        headers: { Location: `${basepath}/${multi ? '=' : ''}${targetRoom}` },
+        headers: { Location: `${basepath}/${multi ? "=" : ""}${targetRoom}` },
       });
     }
-    return serveAsset(c.env, '/index.html');
+    return serveAsset(c.env, "/index.html");
   });
 
   // Secondary landing page used by the home-screen link.
-  app.get('/_start', async (c) => serveAsset(c.env, '/start.html'));
+  app.get("/_start", async (c) => serveAsset(c.env, "/start.html"));
 
   // Icon / PWA manifest family. Each path maps 1:1 to the same file in
   // `assets/`. Listed explicitly so the Hono router short-circuits before
   // `/:room` entry matching.
   for (const path of [
-    '/favicon.ico',
-    '/favicon-16x16.png',
-    '/favicon-32x32.png',
-    '/apple-touch-icon.png',
-    '/android-chrome-192x192.png',
-    '/mstile-150x150.png',
-    '/mstile-310x310.png',
-    '/safari-pinned-tab.svg',
-    '/browserconfig.xml',
-    '/manifest.json',
+    "/favicon.ico",
+    "/favicon-16x16.png",
+    "/favicon-32x32.png",
+    "/apple-touch-icon.png",
+    "/android-chrome-192x192.png",
+    "/mstile-150x150.png",
+    "/mstile-310x310.png",
+    "/safari-pinned-tab.svg",
+    "/browserconfig.xml",
+    "/manifest.json",
   ]) {
     app.get(path, async (c) => serveAsset(c.env, path));
   }
 
   // `manifest.appcache`. DevMode returns a dynamic stub with a fresh
   // timestamp (forces reload each hit); prod serves the static copy.
-  app.get('/manifest.appcache', async (c) => {
+  app.get("/manifest.appcache", async (c) => {
     const dev = isDevMode(c.env);
     if (dev) {
       const body = buildDynamicAppcache({ now: Date.now() });
       return new Response(body, {
         status: 200,
-        headers: { 'Content-Type': APPCACHE_CONTENT_TYPE },
+        headers: { "Content-Type": APPCACHE_CONTENT_TYPE },
       });
     }
-    return serveAsset(c.env, '/manifest.appcache');
+    return serveAsset(c.env, "/manifest.appcache");
   });
 
   // `/l10n/:lang.json` — curated per-locale bundles. Explicitly registered
   // so Hono doesn't treat the path segment as the `/:room` entry page.
   // Any lang file missing from `assets/l10n/` yields a 404 from ASSETS.
-  app.get('/l10n/:lang{.+\\.json}', async (c) => {
-    const lang = c.req.param('lang');
+  app.get("/l10n/:lang{.+\\.json}", async (c) => {
+    const lang = c.req.param("lang");
     return serveAsset(c.env, `/l10n/${lang}`);
   });
 
   // Legacy SocialCalc chrome artwork.
-  app.get('/images/*', async (c) => serveAsset(c.env, c.req.path));
+  app.get("/images/*", async (c) => serveAsset(c.env, c.req.path));
+
+  // Vite builds the React workbook shell under `/multi/`; its index is
+  // served at `/=:room`, but its absolute JS/CSS/font URLs retain this
+  // prefix. Cloudflare Assets handles these before the Worker in hosted
+  // deployments. Standalone workerd sends every request through Hono, so
+  // proxy the bundle explicitly for Docker and Sandstorm.
+  app.get("/multi/*", async (c) => serveAsset(c.env, c.req.path));
 
   // `/static/socialcalc.js` — vendored SocialCalc 2.3.0 UMD (§13 Q8).
-  app.get('/static/socialcalc.js', async (c) => serveAsset(c.env, '/static/socialcalc.js'));
+  app.get("/static/socialcalc.js", async (c) => serveAsset(c.env, "/static/socialcalc.js"));
 
   // `/static/player.js` — built single-sheet client bundle from
   // `packages/client/dist/player.js`.
-  app.get('/static/player.js', async (c) => serveAsset(c.env, '/static/player.js'));
+  app.get("/static/player.js", async (c) => serveAsset(c.env, "/static/player.js"));
 
   // `/static/form<part>.js` — literal-colon segment route (§7 item 26).
   // Hono's trie splits on `/`, so `form:part.js` (the legacy syntax from
@@ -248,26 +245,26 @@ export function registerAssets(app: Hono<EtherCalcHonoEnv>): void {
   // constrained segment `:file{form.+\.js}` that captures the whole
   // filename and then peel off the `form`/`.js` wrappers ourselves.
   // `buildFormPartPath` does the extraction + rebuild.
-  app.get('/static/:file{form.+\\.js}', async (c) => {
-    const file = c.req.param('file');
-    const part = file.slice('form'.length, -'.js'.length);
+  app.get("/static/:file{form.+\\.js}", async (c) => {
+    const file = c.req.param("file");
+    const part = file.slice("form".length, -".js".length);
     const target = buildFormPartPath(part);
     return serveAsset(c.env, target);
   });
 
   // Catch-all for any other static files (like start.css, jszip.js, etc.)
-  app.get('/static/*', async (c) => serveAsset(c.env, c.req.path));
+  app.get("/static/*", async (c) => serveAsset(c.env, c.req.path));
 
   // `/:template/appeditor` — Phase 4.1 panels.html route (§6.1). Ordering:
   // this has a literal `/appeditor` suffix so it can safely register
   // alongside the static family above without shadowing. Hono picks the
   // longer-literal-path match first.
-  app.get('/:template/appeditor', async (c) => serveAsset(c.env, '/panels.html'));
+  app.get("/:template/appeditor", async (c) => serveAsset(c.env, "/panels.html"));
 
   // `/:template/form` — duplicate template snapshot into `<template>_<id>`
   // and redirect to `/app` (legacy main.ls:287-293).
-  app.get('/:template/form', async (c) => {
-    const template = c.req.param('template') ?? '';
+  app.get("/:template/form", async (c) => {
+    const template = c.req.param("template") ?? "";
     const newId = generateRoomId();
     const newRoom = `${encodeRoom(template)}_${newId}`;
     const principal = await getSessionPrincipal(c);
@@ -275,11 +272,11 @@ export function registerAssets(app: Hono<EtherCalcHonoEnv>): void {
       const cloneRes = await doFetch(
         c.env,
         template,
-        '/_do/clone',
+        "/_do/clone",
         {
-          method: 'POST',
+          method: "POST",
           body: JSON.stringify({ to: newRoom }),
-          headers: { 'Content-Type': 'application/json' },
+          headers: { "Content-Type": "application/json" },
         },
         principal,
       );
@@ -288,7 +285,7 @@ export function registerAssets(app: Hono<EtherCalcHonoEnv>): void {
       if (cloneRes.status === 401 || cloneRes.status === 403) {
         return new Response(await cloneRes.text(), {
           status: cloneRes.status,
-          headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+          headers: { "Content-Type": "text/plain; charset=utf-8" },
         });
       }
     } catch {
@@ -296,7 +293,7 @@ export function registerAssets(app: Hono<EtherCalcHonoEnv>): void {
     }
     const result = buildTemplateFormRedirect({
       template,
-      basepath: c.env.BASEPATH ?? '',
+      basepath: c.env.BASEPATH ?? "",
       idGen: () => newId,
       phase5Ready: true,
     });
@@ -319,75 +316,69 @@ export function registerAssets(app: Hono<EtherCalcHonoEnv>): void {
  * etc. before `registerAssets` or run a custom re-ordering step.
  */
 export function registerRoomCatchAll(app: Hono<EtherCalcHonoEnv>): void {
-  app.get('/:room', async (c) => {
-    const roomParam = c.req.param('room') ?? '';
-    const authQuery = c.req.query('auth');
+  app.get("/:room", async (c) => {
+    const roomParam = c.req.param("room") ?? "";
+    const authQuery = c.req.query("auth");
     // `view=1` is terminal: it initializes SpreadsheetViewer, so
     // re-probing a private room here would redirect `/:room/view` back to
     // itself forever. App mode remains capability-checked because its
     // form-data surface is intentionally interactive.
-    const viewerMode = c.req.query('view') !== undefined;
+    const viewerMode = c.req.query("view") !== undefined;
     if (!viewerMode) {
       const principal = await getSessionPrincipal(c);
-      const accessRes = await doFetch(c.env, roomParam, '/_do/access', {}, principal);
-      const access: unknown = accessRes.ok
-        ? await accessRes.json().catch(() => null)
-        : null;
-      let redirectMode: 'edit' | 'view' | null = null;
+      const accessRes = await doFetch(c.env, roomParam, "/_do/access", {}, principal);
+      const access: unknown = accessRes.ok ? await accessRes.json().catch(() => null) : null;
+      let redirectMode: "edit" | "view" | null = null;
       if (
         access !== null &&
-        typeof access === 'object' &&
-        'isPrivate' in access &&
-        'canRead' in access &&
-        'canWrite' in access
+        typeof access === "object" &&
+        "isPrivate" in access &&
+        "canRead" in access &&
+        "canWrite" in access
       ) {
-        if (
-          access.isPrivate === true &&
-          c.req.query('app') !== undefined
-        ) {
+        if (access.isPrivate === true && c.req.query("app") !== undefined) {
           // `submitform` writes through a `<room>_formdata` sibling. Phase A
           // creates ACL metadata only for the main room, so private app mode
           // would declassify submissions into its public sibling.
-          redirectMode = 'view';
+          redirectMode = "view";
         } else if (
           access.isPrivate === true &&
           access.canRead === true &&
           access.canWrite === true &&
-          (authQuery === undefined || authQuery === '' || authQuery === '0')
+          (authQuery === undefined || authQuery === "" || authQuery === "0")
         ) {
           // A private owner must get a fresh non-zero legacy token. `auth=0`
           // is an absolute WS write veto even when the passkey ACL permits
           // writes, so serving the old bare entry would create another
           // divergent editor.
-          redirectMode = 'edit';
+          redirectMode = "edit";
         } else if (access.canRead !== true || access.canWrite !== true) {
-          redirectMode = 'view';
+          redirectMode = "view";
         }
       }
       if (redirectMode !== null) {
-        const location =
-          `${c.env.BASEPATH ?? ''}/${encodeRoom(roomParam)}/${redirectMode}`;
+        const location = `${c.env.BASEPATH ?? ""}/${encodeRoom(roomParam)}/${redirectMode}`;
         const body = `Found. Redirecting to ${location}`;
         return new Response(body, {
           status: 302,
           headers: {
             Location: location,
-            'Content-Type': 'text/plain; charset=UTF-8',
-            'Content-Length': String(body.length),
-            Vary: 'Accept',
+            "Content-Type": "text/plain; charset=UTF-8",
+            "Content-Length": String(body.length),
+            Vary: "Accept",
           },
         });
       }
     }
     const key = c.env.ETHERCALC_KEY;
     const opts = {
-      basepath: c.env.BASEPATH ?? '',
+      basepath: c.env.BASEPATH ?? "",
       room: roomParam,
       ...(authQuery !== undefined ? { authQuery } : {}),
       ...(key !== undefined ? { key } : {}),
     };
     const decision = buildRoomEntry(opts);
-    if (decision.kind === 'redirect') {
+    if (decision.kind === "redirect") {
       const body = decision.body;
       return new Response(body, {
         status: 302,
@@ -408,5 +399,5 @@ export function registerRoomCatchAll(app: Hono<EtherCalcHonoEnv>): void {
  * be set via `wrangler.toml`'s `[vars]` or `--var DEVMODE=1`.
  */
 function isDevMode(env: Env): boolean {
-  return env.DEVMODE === '1' || env.DEVMODE === 'true';
+  return env.DEVMODE === "1" || env.DEVMODE === "true";
 }
