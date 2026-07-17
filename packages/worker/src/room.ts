@@ -659,6 +659,18 @@ export class RoomDO implements DurableObject {
     const body = await request.text();
     if (!body) return plainResponse('', 202);
     await this.#applyCommandAndMirror(roomName, body);
+    // HTTP commands have no originating socket to exclude. Fan out only
+    // after persistence succeeds; native WS commands use handleExecute's
+    // separate broadcast path and never enter #postCommands.
+    const broadcastRoom = roomName ?? this.#ownName;
+    if (broadcastRoom) {
+      this.#broadcastAll({
+        type: 'execute',
+        room: broadcastRoom,
+        user: '',
+        cmdstr: body,
+      });
+    }
     return plainResponse('', 202);
   }
 

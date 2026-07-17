@@ -317,7 +317,9 @@ describe('handleExecute', () => {
     expect(calls.applied).toHaveLength(0);
     expect(calls.siblingFetches).toHaveLength(1);
     expect(calls.siblingFetches[0]!.room).toBe('mysheet_formdata');
-    expect(calls.siblingFetches[0]!.path).toBe('https://do.local/_do/commands');
+    expect(calls.siblingFetches[0]!.path).toBe(
+      'https://do.local/_do/commands?name=mysheet_formdata',
+    );
     expect(calls.siblingFetches[0]!.init?.method).toBe('POST');
     expect(calls.siblingFetches[0]!.init?.body).toBe(
       'set A1 value n 1\rset A2 value n 2',

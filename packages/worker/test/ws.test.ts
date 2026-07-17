@@ -41,6 +41,46 @@ describe('native WS — /_ws/:room', () => {
     expect(res.webSocket).toBeDefined();
     res.webSocket?.accept(); res.webSocket?.close();
   });
+
+  it('POST /_/:room broadcasts API commands to an open room socket', async () => {
+    const room = 'ws-api-command-broadcast';
+    const command = 'set A10 text t foo bar';
+    const upgradeCtx = createExecutionContext();
+    const upgradeRes = await worker.fetch(
+      new Request(`https://example.test/_ws/${room}?user=viewer`, {
+        headers: { Upgrade: 'websocket' },
+      }),
+      env as never,
+      upgradeCtx,
+    );
+    await waitOnExecutionContext(upgradeCtx);
+    expect(upgradeRes.status).toBe(101);
+
+    const client = upgradeRes.webSocket!;
+    client.accept();
+    const { promise: messageReceived, resolve: resolveMessage } =
+      Promise.withResolvers<string>();
+    client.addEventListener(
+      'message',
+      (event) => resolveMessage(event.data as string),
+      { once: true },
+    );
+
+    const post = await request('POST', `/_/${room}`, {
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command }),
+    });
+    expect(post.status).toBe(202);
+
+    const message = await messageReceived;
+    expect(JSON.parse(message)).toEqual({
+      type: 'execute',
+      room,
+      user: '',
+      cmdstr: command,
+    });
+    client.close();
+  });
 });
 
 describe('DO WS — /_do/ws integration (runInDurableObject)', () => {

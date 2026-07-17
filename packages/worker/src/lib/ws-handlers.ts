@@ -183,10 +183,13 @@ export async function handleExecute(
     if (siblingCommands.length > 0) {
       const stub = ctx.siblingDo(siblingRoom);
       try {
-        await stub.fetch('https://do.local/_do/commands', {
-          method: 'POST',
-          body: siblingCommands,
-        });
+        await stub.fetch(
+          `https://do.local/_do/commands?name=${encodeURIComponent(siblingRoom)}`,
+          {
+            method: 'POST',
+            body: siblingCommands,
+          },
+        );
       } catch {
         // Legacy src/main.ls:538 dropped sibling-send failures silently.
       }

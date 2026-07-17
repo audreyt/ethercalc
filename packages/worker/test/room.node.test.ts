@@ -981,6 +981,29 @@ describe('RoomDO (unit, direct construction)', () => {
     expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('NEWSNAP');
   });
 
+  it('POST /_do/commands broadcasts the applied command to connected peers', async () => {
+    const peerLog: FakeWsLog = { sent: [] };
+    const peer = makeFakeWs(peerLog, { legacy: false });
+    const { state } = makeWsAwareState('commands-broadcast', record, [peer]);
+    const broadcastRoom = new RoomDO(state, makeEnv());
+
+    const res = await broadcastRoom.fetch(
+      new Request('https://do/_do/commands?name=draft', {
+        method: 'POST',
+        body: 'set A10 text t foo bar',
+      }),
+    );
+
+    expect(res.status).toBe(202);
+    expect(peerLog.sent).toHaveLength(1);
+    expect(JSON.parse(peerLog.sent[0]!)).toEqual({
+      type: 'execute',
+      room: 'draft',
+      user: '',
+      cmdstr: 'set A10 text t foo bar',
+    });
+  });
+
   it('POST /_do/commands stores a large snapshot as chunks', async () => {
     // Force the mock save to exceed the 100 KiB SNAPSHOT_CHUNK_BYTES
     // ceiling so `#appendCommand` routes through snapshotEntries'

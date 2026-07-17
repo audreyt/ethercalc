@@ -77,6 +77,11 @@ Bug fixes
   origin before constructing a WebSocket, restoring live synchronization in
   Chrome 124 and other browsers that require absolute `ws://`/`wss://` URLs.
 
+- API commands sent through `POST /_/:room` now broadcast to connected native
+  and Socket.IO clients after durable persistence, so open sheets update
+  immediately without a reload. Submit-form sibling writes now include their
+  room name for correct fan-out and index mirroring (#835).
+
 Verification
 - Promoted the Leanstral/LemmaScript pump into root `lemma/` (maintained
   surface; spike kept as immutable Attempt 2 provenance):
