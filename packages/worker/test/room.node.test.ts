@@ -1819,10 +1819,17 @@ describe('RoomDO — POST /_do/seed (Phase 11b migration)', () => {
     expect(record.map.get(STORAGE_KEYS.metaUpdatedAt)).toBe(1700);
     expect(record.map.get(logKey(0))).toBe('cmd-1');
     expect(record.map.get(logKey(1))).toBe('cmd-2');
+    // Pins the off-by-one loop bound (`i < length` mutated to `i <= length`
+    // would write an extra `logKey(2)`/`auditKey(2)`/`chatKey(2)` entry with
+    // value `undefined`, which the fake storage's batched `put` would still
+    // persist as a Map key).
+    expect(record.map.has(logKey(2))).toBe(false);
     expect(record.map.get(auditKey(0))).toBe('cmd-1');
     expect(record.map.get(auditKey(1))).toBe('cmd-2');
+    expect(record.map.has(auditKey(2))).toBe(false);
     expect(record.map.get(chatKey(0))).toBe('hello');
     expect(record.map.get(chatKey(1))).toBe('world');
+    expect(record.map.has(chatKey(2))).toBe(false);
     expect(record.map.get(ecellKey('alice'))).toBe('A1');
     expect(record.map.get(ecellKey('bob'))).toBe('B2');
     // D1 mirror was scheduled via `state.waitUntil` — the behavior we

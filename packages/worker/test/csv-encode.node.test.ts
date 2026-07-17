@@ -87,12 +87,33 @@ describe('neutralizeCSVFormula', () => {
     expect(neutralizeCSVFormula('-1e9')).toBe('-1e9');
     expect(neutralizeCSVFormula('.5')).toBe('.5');
     expect(neutralizeCSVFormula('42')).toBe('42');
+    // Multi-digit integer part: pins the integer branch's `\d+` (a mutant
+    // narrowing it to a single `\d` would reject '-12', wrongly quoting it).
+    expect(neutralizeCSVFormula('-12')).toBe('-12');
+    // Multi-digit decimal-only form: pins the `.\d+` alternative's digit
+    // class and repetition (mutants swapping to `.\D+` or a single `.\d`
+    // would reject '+.55', wrongly quoting it).
+    expect(neutralizeCSVFormula('+.55')).toBe('+.55');
+    // Multi-digit exponent: pins the exponent's `\d+` (a mutant narrowing
+    // it to `\d?` would reject '+1e10', wrongly quoting it).
+    expect(neutralizeCSVFormula('+1e10')).toBe('+1e10');
+    // Negative exponent sign: pins the exponent sign class `[+-]?` (a
+    // mutant negating it to `[^+-]?` would reject '-1e-10').
+    expect(neutralizeCSVFormula('-1e-10')).toBe('-1e-10');
   });
 
   it('leaves ordinary text untouched', () => {
     expect(neutralizeCSVFormula('hello')).toBe('hello');
     expect(neutralizeCSVFormula('')).toBe('');
     expect(neutralizeCSVFormula('a=b')).toBe('a=b');
+  });
+
+  it('quotes trigger-led values that are near-numeric but not fully numeric', () => {
+    // A leading numeric run followed by trailing non-digit garbage is not a
+    // genuine number. Pins the `$` end anchor (a mutant dropping it would
+    // let the leading '+5' match CSV_NUMERIC as a prefix, wrongly leaving
+    // '+5xyz' unquoted even though it isn't a plain number).
+    expect(neutralizeCSVFormula('+5xyz')).toBe("'+5xyz");
   });
 });
 

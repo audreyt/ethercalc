@@ -43,6 +43,14 @@ describe('parseRateLimitConfig', () => {
     });
   });
 
+  it('rejects a plain-number rps that evaluates to exactly zero', () => {
+    // '0.0' is numerically zero but is not one of `rateLimitDisabled`'s
+    // exact string matches ('0', 'false', 'no', 'off', ''), so it reaches
+    // the bare-rps branch. Pins the `rps <= 0` boundary (a mutant
+    // loosening it to `rps < 0` would wrongly accept a zero rate).
+    expect(parseRateLimitConfig('0.0')).toBe(null);
+  });
+
   it('parses window:max form', () => {
     expect(parseRateLimitConfig('60:600')).toEqual({
       capacity: 600,
