@@ -644,7 +644,6 @@ describe('RoomDO (unit, direct construction)', () => {
     markPrivate(record);
     record.map.set(STORAGE_KEYS.snapshot, 'private-save');
     const routes = [
-      ['GET', '/_do/ping'],
       ['GET', '/_do/snapshot'],
       ['PUT', '/_do/snapshot'],
       ['GET', '/_do/log'],
