@@ -172,9 +172,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: test
-    # Mirrors AGENTS.md §11.1 item 8. Boots wrangler + the client-multi
-    # Vite dev server via per-worker fixtures in packages/e2e and exercises
-    # the HTTP surface + SPA mount. Uploads the HTML report on failure so
+    # Mirrors AGENTS.md §11.1 item 8. Boots wrangler with the Worker's
+    # production Workers Assets bundle (both the single-sheet and React 19
+    # multi-sheet clients are served by that same Worker — no separate Vite
+    # server) via per-worker fixtures in packages/e2e, and exercises the
+    # HTTP surface + SPA mounts. Uploads the HTML report on failure so
     # traces/screenshots are recoverable.
     steps:
       - uses: actions/checkout@v6

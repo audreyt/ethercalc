@@ -102,6 +102,12 @@ export interface WsContext {
    * `ctx.auth` (cached at handshake) to avoid a per-frame hash.
    */
   readonly verifyAuth: () => Promise<boolean>;
+  /**
+   * Whether this room may forward `submitform` data to its legacy public
+   * sibling. Private rooms reject it until sibling ACL initialization is
+   * atomic with the main room.
+   */
+  readonly allowSubmitForm: () => Promise<boolean>;
   /** Resolve a sibling DO stub by room name (submitform forwarding). */
   readonly siblingDo: (room: string) => WsSiblingDO;
 }
@@ -155,11 +161,11 @@ export async function handleMyEcell(
 }
 
 /**
- * `execute` — the heavy path. Three drop conditions (auth fail,
- * text-wiki filter, submitform without payload) short-circuit silently.
- * submitform forks to the sibling `<room>_formdata` DO with
- * include_self=true per legacy invariant (§7 item 22). Normal commands
- * go through `applyCommand` and broadcast with include_self=false.
+ * `execute` — the heavy path. Four drop conditions (auth fail, text-wiki
+ * filter, private submitform, submitform without payload) short-circuit
+ * silently. Public submitform forks to the sibling `<room>_formdata` DO with
+ * include_self=true per legacy invariant (§7 item 22). Normal commands go
+ * through `applyCommand` and broadcast with include_self=false.
  */
 export async function handleExecute(
   ctx: WsContext,
@@ -169,6 +175,7 @@ export async function handleExecute(
   if (isFilteredExecuteCommand(msg.cmdstr)) return;
 
   if (isSubmitForm(msg.cmdstr)) {
+    if (!(await ctx.allowSubmitForm())) return;
     const { siblingRoom, siblingCommands } = computeSubmitFormTarget(
       msg.room,
       msg.cmdstr,

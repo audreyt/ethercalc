@@ -68,6 +68,9 @@ const mainWorker :Workerd.Worker = (
     # the same storage addressing.
     (name = "ROOM", durableObjectNamespace = "RoomDO"),
 
+    # Phase A — singleton AuthDO (WebAuthn credentials + sessions).
+    (name = "AUTH", durableObjectNamespace = "AuthDO"),
+
     # Static asset proxy. The worker calls `env.ASSETS.fetch(request)`
     # with pathnames like `/index.html`; workerd's DiskDirectory
     # service responds by reading files out of the mapped directory.
@@ -98,6 +101,15 @@ const mainWorker :Workerd.Worker = (
     (name = "ETHERCALC_SANDSTORM", fromEnvironment = "ETHERCALC_SANDSTORM"),
     (name = "DEVMODE", fromEnvironment = "DEVMODE"),
 
+    # Phase A — passkey auth. All four must be set for `/_auth/*` to
+    # light up; the RP ID / origin are WebAuthn trust anchors and must
+    # match the URL users visit (e.g. ETHERCALC_RP_ID=sheets.example.com,
+    # ETHERCALC_ORIGIN=https://sheets.example.com).
+    (name = "ETHERCALC_AUTH", fromEnvironment = "ETHERCALC_AUTH"),
+    (name = "ETHERCALC_RP_ID", fromEnvironment = "ETHERCALC_RP_ID"),
+    (name = "ETHERCALC_RP_NAME", fromEnvironment = "ETHERCALC_RP_NAME"),
+    (name = "ETHERCALC_ORIGIN", fromEnvironment = "ETHERCALC_ORIGIN"),
+
     # Single-grain default room. Sandstorm grains set this to `sheet1`
     # (the room name the legacy LiveScript EtherCalc initialized
     # on-grain-creation) so `GET /` lands in the live spreadsheet
@@ -114,6 +126,12 @@ const mainWorker :Workerd.Worker = (
       # name hashed into a random-looking bytestring. We pin it so the
       # value is stable across rebuilds.
       uniqueKey = "ethercalc-roomdo-v1",
+    ),
+    (
+      className = "AuthDO",
+      # Stable storage addressing for the auth singleton (same rationale
+      # as RoomDO above).
+      uniqueKey = "ethercalc-authdo-v1",
     ),
   ],
 

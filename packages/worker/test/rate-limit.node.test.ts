@@ -59,6 +59,14 @@ describe('parseRateLimitConfig', () => {
   });
 });
 
+  it('normalizes whitespace and case', () => {
+    expect(parseRateLimitConfig(' ON ')).toEqual({ capacity: 30, refillPerSec: 10 });
+    expect(parseRateLimitConfig(' 60:600 ')).toEqual({ capacity: 600, refillPerSec: 10 });
+    expect(parseRateLimitConfig(' OFF ')).toBeNull();
+  });
+
+  it.each(['0.00', '-0', 'NaN', 'Infinity', '60:-1', '60:Infinity'])('rejects invalid numeric boundary %s', raw => { expect(parseRateLimitConfig(raw)).toBeNull(); });
+
 describe('rateLimitConfigFromEnv', () => {
   it('reads ETHERCALC_RATELIMIT from env', () => {
     expect(
@@ -107,6 +115,8 @@ describe('clientIpFromHeaders', () => {
     expect(clientIpFromHeaders(headers)).toBe('10.0.0.1');
   });
 
+  it('trims the selected forwarded hop', () => { expect(clientIpFromHeaders(new Headers({'X-Forwarded-For': ' 198.51.100.2 , 203.0.113.9' }))).toBe('198.51.100.2'); });
+
   it('falls back to unknown when X-Forwarded-For has no client hop', () => {
     const headers = new Headers({
       'X-Forwarded-For': ' , ',
@@ -138,6 +148,18 @@ describe('createRateLimitStore', () => {
     const denied = store.consume('a', tight, 0);
     expect(denied.allowed).toBe(false);
     expect(denied.retryAfterSec).toBe(1);
+  });
+
+  it('reports the full retry delay for a slow bucket', () => {
+    const cfg = { capacity: 1, refillPerSec: 0.1 };
+    store.consume('slow', cfg, 0);
+    expect(store.consume('slow', cfg, 0)).toEqual({ allowed: false, retryAfterSec: 10 });
+  });
+
+  it('reports reduced retry delay after partial refill', () => {
+    const cfg = { capacity: 1, refillPerSec: 0.1 };
+    store.consume('partial', cfg, 0);
+    expect(store.consume('partial', cfg, 5000)).toEqual({ allowed: false, retryAfterSec: 5 });
   });
 
   it('refills tokens after elapsed time', () => {

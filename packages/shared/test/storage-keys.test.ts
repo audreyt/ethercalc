@@ -9,6 +9,8 @@ import {
   chatKey,
   ecellKey,
   snapshotChunkKey,
+  type AccessMode,
+  type RoomAcl,
 } from '../src/storage-keys.ts';
 
 describe('STORAGE_KEYS', () => {
@@ -18,6 +20,9 @@ describe('STORAGE_KEYS', () => {
       snapshotMeta: 'snapshot:meta',
       snapshotChunkPrefix: 'snapshot:chunk:',
       metaUpdatedAt: 'meta:updated_at',
+      metaAccess: 'meta:access',
+      metaAcl: 'meta:acl',
+      metaGroup: 'meta:group',
       logPrefix: 'log:',
       auditPrefix: 'audit:',
       chatPrefix: 'chat:',
@@ -81,5 +86,22 @@ describe('ecellKey', () => {
     // Pin the literal so a mutation replacing the message with `""`
     // doesn't survive.
     expect(() => ecellKey('')).toThrow(/ecellKey requires a non-empty user/);
+  });
+});
+
+describe('AccessMode', () => {
+  it('is a union of public and private', () => {
+    const modes: AccessMode[] = ['public', 'private'];
+    expect(modes).toContain('public');
+    expect(modes).toContain('private');
+  });
+});
+
+describe('RoomAcl', () => {
+  it('defines owner, writers, and readers arrays', () => {
+    const acl: RoomAcl = { owner: 'uid-1', writers: ['uid-1'], readers: ['uid-1'] };
+    expect(acl.owner).toBe('uid-1');
+    expect(acl.writers).toEqual(['uid-1']);
+    expect(acl.readers).toEqual(['uid-1']);
   });
 });

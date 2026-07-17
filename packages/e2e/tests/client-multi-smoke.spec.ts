@@ -1,40 +1,38 @@
 /**
  * Smoke test for the multi-sheet SPA (`packages/client-multi/`).
  *
- * We boot the Vite dev server (via the `clientBase` fixture) and point
- * the browser at `/multi/=test-room`. The app's boot path reads the URL, calls
- * `fetch('<basePath>/_/test-room/csv.json')`, and — because the fetch
- * fails (no backend wired for the SPA's API calls at this phase) — the
- * Foldr falls through to its "empty room" branch, seeds a default row,
- * and renders the UI. Asserts:
+ * The multi-sheet React SPA is built to `packages/client-multi/dist/` and curated into
+ * the Worker's production-like asset bundle (copied to `assets/multi/` by `scripts/build-assets.ts`).
  *
+ * The Worker mounts this bundle under the Workers Assets pipeline (`[assets] directory = "../../assets"`).
+ * Requests to `GET /=:room` are routed by `buildRoomEntry()` to serve `/multi/index.html`. The browser
+ * loads the production asset bundle from `/multi/assets/...` and the app mounts.
+ *
+ * Asserts:
  *   - the page mounts (#root has children)
  *   - the Radix tablist renders with at least one tab
  *   - no uncaught page errors
+ *   - no console errors (the backend is fully wired, so the Foldr fetch succeeds and has no errors)
  *
- * Purpose: catch regressions in the React boot path, Radix component
- * wiring, and the URL parser in `src/url.ts` long before Phase 11 wires
- * real-time collab. Deliberately does NOT assert on rendered content
- * beyond "UI didn't crash" — the Foldr's seeded state depends on fetch
- * behavior which we don't control here.
+ * Purpose: catch regressions in the React boot path, Radix component wiring,
+ * and the URL parser in `src/url.ts`.
  */
-import { test, expect } from '../src/fixtures-client.ts';
+import { expect, test } from '../src/fixtures.ts';
 
 test.describe('client-multi smoke', () => {
-  test('SPA mounts at /multi/=test-room with Radix tab UI', async ({
-    clientBase,
+  test('SPA mounts at /=test-room with Radix tab UI', async ({
+    workerBase,
     page,
   }) => {
     const errors: string[] = [];
     page.on('pageerror', (err) => errors.push(err.message));
-    // Ignore the expected fetch-failure console message from the Foldr's
-    // catch branch; surface anything else.
+    // Assert no console errors.
     const consoleErrors: string[] = [];
     page.on('console', (msg) => {
       if (msg.type() === 'error') consoleErrors.push(msg.text());
     });
 
-    await page.goto(`${clientBase}/multi/=test-room`);
+    await page.goto(`${workerBase}/=test-room`);
     // Boot is async — Foldr.fetch awaits a network round-trip and the
     // empty-state seeding adds another POST. React renders after both.
     const tablist = page.getByRole('tablist');
@@ -53,6 +51,9 @@ test.describe('client-multi smoke', () => {
     await expect(iframe).toBeVisible();
     const box = await iframe.boundingBox();
     expect(box?.height ?? 0).toBeGreaterThan(400);
+
+    // No console errors.
+    expect(consoleErrors, `console errors: ${consoleErrors.join(' | ')}`).toHaveLength(0);
 
     // No uncaught exceptions in the page context.
     expect(errors, `uncaught page errors: ${errors.join(' | ')}`).toHaveLength(

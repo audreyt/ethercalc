@@ -33,6 +33,7 @@ export default defineConfig({
         'src/handlers/**/*.ts',
         'src/lib/**/*.ts',
         'src/room.ts',
+        'src/auth-do.ts',
       ],
       exclude: ['src/lib/ws-upgrade.ts'],
       reporter: ['text', 'json-summary', 'lcov'],

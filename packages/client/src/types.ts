@@ -75,6 +75,8 @@ export interface EditorObject {
   EnsureECellVisible: () => void;
   busy: boolean;
   ensureecell: boolean;
+  /** Room-access UI layout only (`passkey/ui.ts`) — resizes the grid to `width`x`height` px. */
+  ResizeTableEditor?: (width: number, height: number) => void;
 }
 
 export interface SettingsCallback {
@@ -116,6 +118,15 @@ export interface SpreadsheetLike {
   DoOnResize?: () => void;
   ParseSheetSave: (save: string) => void;
   DecodeSpreadsheetSave: (save: string) => DecodedSpreadsheet | undefined;
+  // Room-access UI layout only (`passkey/ui.ts`) — mirrors what SocialCalc's
+  // own `InitializeSpreadsheet{Control,Viewer}` set on the real instance;
+  // not used by boot.ts/main.ts's WS/command-execution concerns.
+  spreadsheetDiv?: HTMLElement;
+  editorDiv?: HTMLElement;
+  height?: number;
+  width?: number;
+  nonviewheight?: number;
+  viewheight?: number;
 }
 
 export interface DecodedSpreadsheet {

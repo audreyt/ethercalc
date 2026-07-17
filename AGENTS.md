@@ -42,6 +42,7 @@ line/branch/function/statement coverage on gated packages in CI.
 | 11 | `ETHERCALC_DISABLE_ROOM_INDEX` gates `/_rooms*` + `/_exists` (default ON in Docker/Helm); legacy `ETHERCALC_CORS` fallback; CORS headers unconditional |
 | 12 | Formal stack: root `lemma/` is a **pump surface** (Dafny CI + Lean gen for Leanstral). Shipping TS is the oracle; findings promote only via Bun tests. Full SocialCalc algebra stays upstream in `../socialcalc/lemma/`. No `lake build` gate. |
 | 13 | Vite+ is the repository interface: `vp install/add/remove/update` for packages, `vp run` for tasks, `vp exec` for local binaries. Bun 1.3.14 remains the package manager and Bun-native runtime. Bare Bun package commands are confined to Docker and packed-package bootstrap/runtime paths where Vite+ is not shipped. |
+| 14 | Passkeys (Phase A): singleton `AuthDO` is the WebAuthn RP (`ETHERCALC_AUTH` + RP_ID/RP_NAME/ORIGIN trust anchors from env only); RoomDO is the SOLE authz boundary via `meta:access`/`meta:acl` (Worker cookie→`X-EC-Uid` is UX only, `doFetch` strips inbound spoofs); private rooms use deny-overrides (legacy `?auth=` demoted); `/_do/ping` + `/_do/pitr-*` are gate-exempt operator paths; `ETHERCALC_KEY` never signs sessions |
 
 ## Runbook
 
@@ -121,4 +122,17 @@ Vite+ test aggregation, Oxlint replacing Biome with the prior rule contract,
 pinned `setup-vp` across CI/deploy/release workflows, and Vite+-spawned e2e
 fixtures. Bun 1.3.14 remains the native runtime and Docker/packed-package
 bootstrap exception. Frozen install, check, typecheck, 2,208 Vitest assertions,
-full package workflow, and 15 Playwright tests passed.
+full package workflow, and 15 Playwright tests passed. Prior: passkey
+accounts + private sheets (Phase A) on `feat/passkey-permissions` —
+WebAuthn `AuthDO` relying party with HttpOnly `ec_sess` sessions,
+RoomDO-enforced `meta:access`/`meta:acl` private rooms (atomic
+`init-private`, tombstoned deletes, index exclusion, deny-overrides WS),
+principal-threaded routes, and a dependency-free passkey UI; PITR main
+merged with `/_do/ping`+pitr routes gate-exempt as operator paths. Post-review
+hardening closed a private-room admission gap (anon/under-privileged visitors
+got a full editable UI, not just a blocked write), a private `submitform`
+sibling leak, a `DELETE`-route ACL bypass when `ETHERCALC_KEY` is unset, and
+added WS session-expiry enforcement (`SessionPrincipal.exp`, fail-closed
+`#closeExpiredSessionSocket`); also fixed a pre-existing (non-regression)
+toolbar-icon 404 from a relative `defaultImagePrefix`. Mutation break
+threshold documented down 90→84 pending Phase B `auth-do.ts` test hardening.

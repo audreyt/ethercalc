@@ -303,9 +303,24 @@ sensible fixes documented in AGENTS.md §6.1.
 
 ### MIT License (HubSpot, Inc.)
 
-* static/vex-theme-flat-attack.css
-* static/vex.combined.min.js
-* static/vex.css
+vex.js's own files were deleted (`static/vex.css`, `static/vex-theme-flat-attack.css`,
+`static/vex.combined.min.js`), but a pre-bundled copy of it still ships
+inlined inside `static/ethercalc.js` (confirmed via that bundle's own
+source map, which lists `static/vex.combined.min.js` among its sources -
+see `docs/historic/REWRITE_ULTRAPLAN.md` §7.4, a tracked, not-yet-audited
+legacy risk, not something this pass's scope covers).
+
+* static/ethercalc.js (inlined; vex.js portion only)
+
+### Third-party notices (npm-bundled, TypeScript rewrite)
+
+Dependencies statically bundled into a shipped build artifact (where the
+published package's own license file wouldn't otherwise travel with the
+built output) are documented separately -
+[third-party/m3e/NOTICE](./third-party/m3e/NOTICE) covers the Material 3
+Expressive component bundle (`packages/client/dist-passkey/ui.js`):
+`@m3e/web`, `@m3e/icons`, Google's Material Symbols, and their own
+runtime dependencies.
 
 ### MIT License (Stuart Knightley, David Duponchel, Franz Buchinger, Ant'onio Afonso)
 

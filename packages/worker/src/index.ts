@@ -23,6 +23,7 @@ import {
   roomCreateLimitFromEnv,
 } from './lib/room-create-limit.ts';
 import { sandstormBlocksMutation } from './lib/sandstorm-access.ts';
+import { registerAuth } from './routes/auth.ts';
 import { registerAssets, registerRoomCatchAll } from './routes/assets.ts';
 import { registerExports } from './routes/exports.ts';
 import { registerMultiSheetImport } from './routes/multi-import.ts';
@@ -33,9 +34,10 @@ import { registerStateless } from './routes/stateless.ts';
 import { registerTimetrigger } from './routes/timetrigger.ts';
 import { registerWs } from './routes/ws.ts';
 import { scheduled } from './scheduled.ts';
-import type { Env } from './env.ts';
+import type { EtherCalcHonoEnv } from './env.ts';
 
 export { RoomDO } from './room.ts';
+export { AuthDO } from './auth-do.ts';
 export { scheduled } from './scheduled.ts';
 
 /**
@@ -56,10 +58,19 @@ export { scheduled } from './scheduled.ts';
 const rateLimitStore = createRateLimitStore();
 const roomCreateStore = createRoomCreateStore();
 
-export function buildApp(): Hono<{ Bindings: Env }> {
-  const app = new Hono<{ Bindings: Env }>();
+export function buildApp(): Hono<EtherCalcHonoEnv> {
+  const app = new Hono<EtherCalcHonoEnv>();
   // All API endpoints are CORS-friendly — external embeds (hackfoldr,
   // third-party dashboards) fetch /_/:room/csv etc cross-origin.
+  // Redirect www.* to the naked domain to canonicalize the origin for WebAuthn.
+  app.use('*', async (c, next) => {
+    const url = new URL(c.req.url);
+    if (url.hostname.startsWith('www.')) {
+      url.hostname = url.hostname.slice(4);
+      return c.redirect(url.toString(), 301);
+    }
+    await next();
+  });
   app.use('*', cors());
   // Optional self-host abuse belt-and-suspenders (§13 Q7). Default off;
   // when `ETHERCALC_RATELIMIT` is set, apply a per-IP token bucket before
@@ -145,6 +156,10 @@ export function buildApp(): Hono<{ Bindings: Env }> {
   // wins against `/_/:room` patterns. Gated by `ETHERCALC_MIGRATE_TOKEN`
   // inside the handler; no risk of exposing it accidentally.
   registerMigrate(app);
+  // Phase A — passkey ceremonies (`POST /_auth/*`). Registered before the
+  // room routes so the `_auth` literal wins against `/:room` patterns.
+  // Every route self-gates on `ETHERCALC_AUTH` + the AUTH binding.
+  registerAuth(app);
   // Room index + CRUD — register BEFORE stateless so `/_rooms`, `/_exists/:room`,
   // `/_from/:template` etc take precedence over any `/:room`-style catch-all.
   registerRoomRoutes(app);

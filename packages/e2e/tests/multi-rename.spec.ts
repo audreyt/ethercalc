@@ -1,12 +1,11 @@
 /**
  * Multi-sheet tab rename must keep sibling tabs mounted (#635).
  */
-import { test, expect } from '../src/fixtures-client.ts';
+import { test, expect } from '../src/fixtures.ts';
 
 test.describe('client-multi rename keeps tabs', () => {
   test('renaming one tab leaves the other visible', async ({
     workerBase,
-    clientBase,
     page,
     request,
   }) => {
@@ -40,7 +39,7 @@ test.describe('client-multi rename keeps tabs', () => {
     const errors: string[] = [];
     page.on('pageerror', (err) => errors.push(err.message));
 
-    await page.goto(`${clientBase}/multi/=${room}`);
+    await page.goto(`${workerBase}/=${room}`);
     await expect(page.getByRole('tablist')).toBeVisible({ timeout: 15_000 });
     const tabs = page.getByRole('tab');
     await expect(tabs).toHaveCount(2, { timeout: 10_000 });

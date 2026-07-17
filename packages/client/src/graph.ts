@@ -397,7 +397,7 @@ function applyPaletteConstants(SocialCalc: SocialCalcGlobal): void {
   scc['ISCButtonBorderHover'] = '#999';
   scc['ISCButtonBorderDown'] = '#FFF';
   scc['ISCButtonDownBackground'] = '#888';
-  scc['defaultImagePrefix'] = 'images/sc_';
+  scc['defaultImagePrefix'] = '/images/sc_';
   scc['defaultColnameStyle'] =
     'overflow:visible;font-size:small;text-align:center;color:#' + fg + ';background-color:#' + unselectedbg;
   scc['defaultSelectedColnameStyle'] =

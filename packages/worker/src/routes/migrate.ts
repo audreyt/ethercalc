@@ -24,11 +24,11 @@ import { doFetch } from '../lib/do-dispatch.ts';
 import { parseBulkIndexPayload } from '../handlers/migrate.ts';
 import { verifyMigrateToken } from '../lib/migrate-auth.ts';
 import { bulkMirrorRoomsToD1 } from '../lib/rooms-index.ts';
-import type { Env } from '../env.ts';
+import type { EtherCalcHonoEnv } from '../env.ts';
 
 const TEXT_CT = 'text/plain; charset=utf-8';
 
-export function registerMigrate(app: Hono<{ Bindings: Env }>): void {
+export function registerMigrate(app: Hono<EtherCalcHonoEnv>): void {
   app.put('/_migrate/seed/:room', async (c) => {
     const verdict = verifyMigrateToken(
       c.env.ETHERCALC_MIGRATE_TOKEN,

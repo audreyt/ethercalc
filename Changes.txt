@@ -101,6 +101,71 @@ Cleanup
 
 
 ==============================================================================
+Unreleased
+==============================================================================
+
+Passkey (WebAuthn) accounts and private sheets — Phase A.
+
+- The Worker is now its own WebAuthn relying party: `POST /_auth/
+  register-init|register-complete|login-init|login-complete` run the
+  ceremonies against a new singleton `AuthDO` (credentials keyed by
+  credential ID, usernameless discoverable login, replay-safe signature
+  counters, HMAC-signed ~30-day sessions). The session travels only in
+  an HttpOnly `ec_sess` cookie; `GET /_auth/whoami` and `POST
+  /_auth/logout` round out the surface. Zero third-party auth
+  dependencies beyond `@simplewebauthn/server`.
+- Private sheets: `POST /_/private` creates an owner-only room and
+  `POST /_from/:template/private` copies a readable sheet into one,
+  both backed by a new atomic `POST /_do/init-private` primitive that
+  claims only truly-empty rooms (409 otherwise) and requires the
+  caller-owned ACL. RoomDO is the sole authorization boundary: every
+  `/_do/*` read/write, export, and WebSocket path enforces the
+  `meta:access`/`meta:acl` plane (deny-overrides; legacy `?auth=`
+  tokens are demoted on private rooms), the rooms index and D1 mirror
+  exclude private rooms, and full-storage replacement paths (snapshot
+  PUT, seed, install, delete) preserve the access plane — deletion
+  leaves a tombstone so private room names cannot be squatted, while
+  TTL expiry still reclaims them. Private rename/clone are refused
+  rather than declassified.
+- Anonymous collaboration on public rooms is byte-identical; passkey
+  auth ships dark on self-host until `ETHERCALC_AUTH` plus the
+  `ETHERCALC_RP_ID`/`ETHERCALC_RP_NAME`/`ETHERCALC_ORIGIN` trust
+  anchors are configured (see docs/SELFHOST_HARDENING.md §7).
+- Client: a dependency-free `static/passkey.js` adds Sign in / New
+  Private Sheet / Copy to Private / sign-out affordances plus a
+  private-sheet notice on both the landing and sheet pages.
+
+Test tooling
+
+- Added release-gated Playwright coverage for two-context native WebSocket
+  collaboration and reconnect; real CDP WebAuthn registration/login with
+  private RoomDO HTTP and WebSocket authorization; production Worker-served
+  multi-sheet assets; and a representative room CRUD/export lifecycle.
+  Viewer ACL coverage is not implied: no HTTP sharing route currently creates
+  a genuine read-only viewer state.
+- Worker mutation testing (`packages/worker/stryker.conf.json`, `break: 90`):
+  Phase A's post-rebase-onto-main hardening pass (see
+  `docs/MUTATION_REPORT.md`'s 2026-07-17 addendum) closed test-gap
+  clusters in auth-do.ts, auth-session.ts/authorize.ts/ws-upgrade.ts, and
+  rate-limit.ts/room-create-limit.ts, restoring the combined score to
+  90.20% — at or above main's own pre-feature baseline (90.16%). No
+  source/config behavior changed; test-only.
+
+Cleanup
+
+- Removed obsolete pre-rewrite deployment artifacts: `.dotcloud/`, `.openshift/`,
+  `apache/`, root `nginx/` (legacy config dir — the active self-host proxy
+  recipe lives in `deploy/nginx/`), `misc/`, `dotcloud.js`, `dotcloud.yml`, and
+  `requirements.txt`.
+- Removed dangling legacy Express/CoffeeScript entrypoints: `server.js`
+  (broken symlink), `main.js`, `sc.js`, `exports.js`, root `player.js`,
+  `player-broadcast.js`, and the empty root `_start` stub (unrelated to the
+  active `/_start` route, which the Worker still serves via `start.html`).
+  None were referenced by the current TypeScript/Cloudflare Worker build,
+  self-host image, docs, or tests.
+
+
+==============================================================================
 0.20260710.1 — 2026-07-10
 ==============================================================================
 

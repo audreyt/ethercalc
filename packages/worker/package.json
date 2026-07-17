@@ -18,9 +18,10 @@
   },
   "dependencies": {
     "@e965/xlsx": "^0.20.3",
+    "@ethercalc/shared": "workspace:*",
     "@ethercalc/socialcalc-headless": "workspace:*",
     "@ethercalc/socketio-shim": "workspace:*",
-    "@ethercalc/shared": "workspace:*",
+    "@simplewebauthn/server": "^13",
     "hono": "^4.12.27"
   },
   "devDependencies": {

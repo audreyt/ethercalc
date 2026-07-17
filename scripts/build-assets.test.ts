@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'bun:test';
 
 import {
@@ -57,8 +58,50 @@ describe('buildAssetPlan', () => {
     expect(plan.requiredFiles).toContain('/repo/index.html');
     expect(plan.requiredFiles).toContain('/repo/packages/client/dist/player.js');
     expect(plan.requiredDirectories).toContain('/repo/packages/client-multi/dist');
+    expect(plan.requiredDirectories).toContain('/repo/packages/client/dist-passkey');
     expect(plan.staticCopies).toContainEqual({ from: '/repo/start.html', to: 'start.html' });
     expect(plan.directoryCopies).toContainEqual({ from: '/repo/images', to: 'images' });
+    // Directory-copied (not a single named file, matching client-multi's
+    // treatment): `@m3e/web`'s internal chunk-splitting is unverified, so
+    // whatever Rollup emits into `dist-passkey/` ships wholesale.
+    expect(plan.directoryCopies).toContainEqual({
+      from: '/repo/packages/client/dist-passkey',
+      to: 'static/passkey',
+    });
+    // Served alongside the passkey bundle so the license-notice banner
+    // baked into `dist-passkey/ui.js` points somewhere the deployed site
+    // can actually serve (not just a repo-root path git-only readers can
+    // resolve) - see vite.passkey.config.ts's `licenseNoticeBanner`.
+    expect(plan.staticCopies).toContainEqual({
+      from: '/repo/third-party/m3e/NOTICE',
+      to: 'static/passkey/NOTICE',
+    });
+  });
+});
+
+describe('passkey UI asset references', () => {
+  test('index.html and start.html reference the pinned passkey entry path', () => {
+    // `vite.passkey.config.ts` pins `entryFileNames: 'ui.js'` specifically
+    // so these two STATIC (not Vite-built) HTML files can reference a
+    // stable path — a real build confirmed Vite's default naming is
+    // content-hashed (e.g. `assets/ui-DT5s7B6u.js`), which static HTML can
+    // never reference. Both files must point at the same pinned path.
+    for (const file of ['index.html', 'start.html']) {
+      const html = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
+      expect(html).toContain('./static/passkey/ui.js');
+      expect(html).not.toMatch(/static\/passkey\.js/);
+      expect(html).not.toMatch(/vex/i);
+    }
+  });
+
+  test('index.css carries no dead vex CSS from the deleted static/vex*.css files', () => {
+    // Deleting static/vex.css/vex-theme-flat-attack.css didn't stop
+    // shipping vex's rules — they were also duplicated inline into
+    // static/index.css (still `<link>`ed from index.html). Guards against
+    // that dead weight (and its now-broken vendor SASS attribution)
+    // coming back.
+    const css = readFileSync(new URL('../static/index.css', import.meta.url), 'utf8');
+    expect(css).not.toMatch(/vex/i);
   });
 });
 

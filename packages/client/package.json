@@ -7,7 +7,8 @@
   "type": "module",
   "main": "./src/main.ts",
   "scripts": {
-    "build": "vp build",
+    "build": "vp build && vp build --config vite.passkey.config.ts",
+    "build:passkey": "vp build --config vite.passkey.config.ts",
     "dev": "vp dev",
     "test": "vp test run",
     "test:watch": "vp test",
@@ -17,7 +18,11 @@
   },
   "dependencies": {
     "@ethercalc/shared": "workspace:*",
-    "dompurify": "^3.4.9"
+    "@m3e/icons": "^1.0.8",
+    "@m3e/web": "^2.5.14",
+    "dompurify": "^3.4.9",
+    "lit": "^3.3.3",
+    "tslib": "^2.8.1"
   },
   "devDependencies": {
     "@stryker-mutator/core": "^9.6.1",
