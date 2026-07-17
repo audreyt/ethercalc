@@ -2236,5 +2236,631 @@ describe('AuthDO', () => {
       const callOpts = mockGenerateRegistrationOptions.mock.calls[0]![0];
       expect(callOpts.rpName).toBe('EtherCalc');
     });
+
+  });
+
+  describe('Phase B: cred-null / webAuthnCred construction / body-validation clauses', () => {
+    it('rejects login with the exact "Unknown credential" body text when the credential is undefined', async () => {
+      mockGenerateAuthenticationOptions.mockResolvedValue({
+        challenge: 'phaseb-unknown-cred',
+        rpID: RP_ID,
+        allowCredentials: [],
+        timeout: 60000,
+        userVerification: 'required',
+      });
+      const initRes = await auth.fetch(makeRequest('/_auth/login-init', jsonBody({})));
+      const initBody = (await initRes.json()) as { options: { challenge: string } };
+      const res = await auth.fetch(
+        makeRequest(
+          '/_auth/login-complete',
+          jsonBody({
+            response: { id: 'never-stored-cred', response: {} },
+            challenge: initBody.options.challenge,
+          }),
+        ),
+      );
+      expect(res.status).toBe(401);
+      expect(await res.text()).toBe('Unknown credential');
+      // The verifier must never be reached without a resolved credential.
+      expect(mockVerifyAuthenticationResponse).not.toHaveBeenCalled();
+    });
+
+    it('rejects login when the stored credential value is a null tombstone (not merely undefined)', async () => {
+      const credentialID = 'phaseb-null-tombstone';
+      record.map.set('challenge:phaseb-null-tombstone', { purpose: 'login', exp: Date.now() + 60_000 });
+      record.map.set(`cred:${credentialID}`, null);
+      const res = await auth.fetch(
+        makeRequest(
+          '/_auth/login-complete',
+          jsonBody({
+            response: { id: credentialID, response: {} },
+            challenge: 'phaseb-null-tombstone',
+          }),
+        ),
+      );
+      expect(res.status).toBe(401);
+      expect(await res.text()).toBe('Unknown credential');
+    });
+
+    it('constructs the exact WebAuthnCredential passed to the verifier from the stored record fields (id/publicKey/counter/transports, nothing else)', async () => {
+      const credentialID = 'phaseb-webauthncred-shape';
+      const publicKey = new Uint8Array([9, 8, 7]);
+      record.map.set('challenge:phaseb-webauthncred-shape', { purpose: 'login', exp: Date.now() + 60_000 });
+      record.map.set(`cred:${credentialID}`, {
+        uid: 'uid-phaseb-webauthncred-shape',
+        publicKey,
+        counter: 11,
+        transports: ['usb', 'nfc'],
+        deviceType: 'singleDevice',
+        backedUp: false,
+      });
+      mockVerifyAuthenticationResponse.mockResolvedValue({ verified: false });
+
+      await auth.fetch(
+        makeRequest(
+          '/_auth/login-complete',
+          jsonBody({
+            response: { id: credentialID, response: {} },
+            challenge: 'phaseb-webauthncred-shape',
+          }),
+        ),
+      );
+
+      const verifyOpts = mockVerifyAuthenticationResponse.mock.calls[0]![0];
+      expect(verifyOpts.credential).toEqual({
+        id: credentialID,
+        publicKey,
+        counter: 11,
+        transports: ['usb', 'nfc'],
+      });
+      expect(Object.keys(verifyOpts.credential).sort()).toEqual([
+        'counter',
+        'id',
+        'publicKey',
+        'transports',
+      ]);
+    });
+
+    it('returns the exact "Authentication verification failed" body when the verifier resolves verified:false', async () => {
+      const credentialID = 'phaseb-unverified-body';
+      record.map.set('challenge:phaseb-unverified-body', { purpose: 'login', exp: Date.now() + 60_000 });
+      record.map.set(`cred:${credentialID}`, {
+        uid: 'uid-phaseb-unverified-body',
+        publicKey: new Uint8Array(),
+        counter: 0,
+        transports: [],
+        deviceType: 'singleDevice',
+        backedUp: false,
+      });
+      mockVerifyAuthenticationResponse.mockResolvedValue({ verified: false });
+
+      const res = await auth.fetch(
+        makeRequest(
+          '/_auth/login-complete',
+          jsonBody({
+            response: { id: credentialID, response: {} },
+            challenge: 'phaseb-unverified-body',
+          }),
+        ),
+      );
+      expect(res.status).toBe(401);
+      expect(await res.text()).toBe('Authentication verification failed');
+    });
+
+    it('rejects register-complete with the exact "Invalid or expired challenge" body when challenge lookup fails', async () => {
+      const res = await auth.fetch(
+        makeRequest(
+          '/_auth/register-complete',
+          jsonBody({
+            response: { id: 'x', response: {} },
+            uid: 'u',
+            challenge: 'never-stored-anywhere',
+          }),
+        ),
+      );
+      expect(res.status).toBe(400);
+      expect(await res.text()).toBe('Invalid or expired challenge');
+    });
+
+    it('rejects login-complete with the exact "Invalid or expired challenge" body when the challenge is missing', async () => {
+      const res = await auth.fetch(
+        makeRequest(
+          '/_auth/login-complete',
+          jsonBody({ response: { id: 'x', response: {} }, challenge: 'never-stored-anywhere' }),
+        ),
+      );
+      expect(res.status).toBe(401);
+      expect(await res.text()).toBe('Invalid or expired challenge');
+    });
+
+    it('rejects register-complete with the exact "Credential already registered" body on a duplicate id', async () => {
+      const credentialID = 'phaseb-duplicate-body';
+      record.map.set('challenge:phaseb-duplicate-body', {
+        purpose: 'register',
+        uid: 'uid-phaseb-duplicate-body',
+        exp: Date.now() + 60_000,
+      });
+      record.map.set(`cred:${credentialID}`, { uid: 'uid-existing' });
+      mockVerifyRegistrationResponse.mockResolvedValue({
+        verified: true,
+        registrationInfo: {
+          credential: { id: credentialID, publicKey: new Uint8Array(), counter: 0 },
+          credentialDeviceType: 'singleDevice',
+          credentialBackedUp: false,
+          fmt: 'none',
+          aaguid: '',
+          credentialType: 'public-key',
+          attestationObject: new Uint8Array(),
+          userVerified: true,
+          origin: ORIGIN,
+          rpID: RP_ID,
+        },
+      });
+
+      const res = await auth.fetch(
+        makeRequest(
+          '/_auth/register-complete',
+          jsonBody({
+            response: { id: credentialID, response: {} },
+            uid: 'uid-phaseb-duplicate-body',
+            challenge: 'phaseb-duplicate-body',
+          }),
+        ),
+      );
+      expect(res.status).toBe(409);
+      expect(await res.text()).toBe('Credential already registered');
+    });
+
+    it('rejects register-complete when EXACTLY ONE of response/uid/challenge is invalid, in isolation (three independent single-field cases)', async () => {
+      // response missing, uid/challenge both otherwise-valid strings
+      const missingResponse = await auth.fetch(
+        makeRequest(
+          '/_auth/register-complete',
+          jsonBody({ uid: 'valid-uid', challenge: 'valid-challenge' }),
+        ),
+      );
+      expect(missingResponse.status).toBe(400);
+      expect(await missingResponse.text()).toBe('Missing response, uid, or challenge');
+
+      // uid wrong type, response/challenge both otherwise-valid
+      const badUid = await auth.fetch(
+        makeRequest(
+          '/_auth/register-complete',
+          jsonBody({ response: { id: 'x', response: {} }, uid: 42, challenge: 'valid-challenge' }),
+        ),
+      );
+      expect(badUid.status).toBe(400);
+      expect(await badUid.text()).toBe('Missing response, uid, or challenge');
+
+      // challenge wrong type, response/uid both otherwise-valid
+      const badChallenge = await auth.fetch(
+        makeRequest(
+          '/_auth/register-complete',
+          jsonBody({ response: { id: 'x', response: {} }, uid: 'valid-uid', challenge: 42 }),
+        ),
+      );
+      expect(badChallenge.status).toBe(400);
+      expect(await badChallenge.text()).toBe('Missing response, uid, or challenge');
+
+      // All three individually-valid-shaped but the challenge simply doesn't
+      // exist in storage — this must NOT be caught by the body-validation
+      // guard (400 "Missing..."), it must fall through to the challenge
+      // lookup and fail there instead, proving the validation guard's three
+      // disjuncts are each evaluated independently rather than short-circuited
+      // as a single collapsed condition.
+      const allValidShapeNoChallenge = await auth.fetch(
+        makeRequest(
+          '/_auth/register-complete',
+          jsonBody({
+            response: { id: 'x', response: {} },
+            uid: 'valid-uid',
+            challenge: 'valid-but-nonexistent-challenge',
+          }),
+        ),
+      );
+      expect(allValidShapeNoChallenge.status).toBe(400);
+      expect(await allValidShapeNoChallenge.text()).toBe('Invalid or expired challenge');
+    });
+  });
+
+  describe('Phase B: getSecret memoization, storage boundary, and crypto primitives', () => {
+    it('memoizes the in-memory secret across repeated calls without re-reading storage', async () => {
+      const credentialID = 'phaseb-memo-cred';
+      const uid = 'uid-phaseb-memo';
+      record.map.set(`cred:${credentialID}`, {
+        uid,
+        publicKey: new Uint8Array(),
+        counter: 0,
+        transports: [],
+        deviceType: 'singleDevice',
+        backedUp: false,
+      });
+      mockGenerateAuthenticationOptions
+        .mockResolvedValueOnce({
+          challenge: 'memo-1',
+          rpID: RP_ID,
+          allowCredentials: [],
+          timeout: 60_000,
+          userVerification: 'required',
+        })
+        .mockResolvedValueOnce({
+          challenge: 'memo-2',
+          rpID: RP_ID,
+          allowCredentials: [],
+          timeout: 60_000,
+          userVerification: 'required',
+        });
+      mockVerifyAuthenticationResponse.mockResolvedValue({
+        verified: true,
+        authenticationInfo: {
+          credentialID,
+          newCounter: 1,
+          userVerified: true,
+          credentialDeviceType: 'singleDevice',
+          credentialBackedUp: false,
+          origin: ORIGIN,
+          rpID: RP_ID,
+        },
+      });
+
+      const init1 = await auth.fetch(makeRequest('/_auth/login-init', jsonBody({})));
+      const body1 = (await init1.json()) as { options: { challenge: string } };
+      const login1 = await auth.fetch(
+        makeRequest(
+          '/_auth/login-complete',
+          jsonBody({ response: { id: credentialID, response: {} }, challenge: body1.options.challenge }),
+        ),
+      );
+      const session1 = (await login1.json()) as { session: string };
+      // Delete the persisted secret from storage directly: if #getSecret
+      // re-read storage instead of using its in-memory memo, the SECOND
+      // session mint would generate a brand-new secret and #createSession
+      // would sign with a different key than the first call did.
+      record.map.delete('session-secret');
+      mockVerifyAuthenticationResponse.mockResolvedValue({
+        verified: true,
+        authenticationInfo: {
+          credentialID,
+          newCounter: 2,
+          userVerified: true,
+          credentialDeviceType: 'singleDevice',
+          credentialBackedUp: false,
+          origin: ORIGIN,
+          rpID: RP_ID,
+        },
+      });
+      const init2 = await auth.fetch(makeRequest('/_auth/login-init', jsonBody({})));
+      const body2 = (await init2.json()) as { options: { challenge: string } };
+      const login2 = await auth.fetch(
+        makeRequest(
+          '/_auth/login-complete',
+          jsonBody({ response: { id: credentialID, response: {} }, challenge: body2.options.challenge }),
+        ),
+      );
+      const session2 = (await login2.json()) as { session: string };
+      // Both sessions were signed with the SAME (memoized) secret, so the
+      // first session's MAC is still verifiable via /_auth/verify-session
+      // even though the underlying storage key was wiped in between.
+      const verify1 = await auth.fetch(
+        makeRequest('/_auth/verify-session', jsonBody({ session: session1.session })),
+      );
+      expect(verify1.status).toBe(200);
+      const verify2 = await auth.fetch(
+        makeRequest('/_auth/verify-session', jsonBody({ session: session2.session })),
+      );
+      expect(verify2.status).toBe(200);
+    });
+
+    it('treats an empty-string stored secret as absent and generates a fresh one instead of reusing it', async () => {
+      record.map.set('session-secret', '');
+      mockGenerateAuthenticationOptions.mockResolvedValue({
+        challenge: 'empty-secret-challenge',
+        rpID: RP_ID,
+        allowCredentials: [],
+        timeout: 60_000,
+        userVerification: 'required',
+      });
+      const credentialID = 'phaseb-empty-secret-cred';
+      record.map.set(`cred:${credentialID}`, {
+        uid: 'uid-empty-secret',
+        publicKey: new Uint8Array(),
+        counter: 0,
+        transports: [],
+        deviceType: 'singleDevice',
+        backedUp: false,
+      });
+      mockVerifyAuthenticationResponse.mockResolvedValue({
+        verified: true,
+        authenticationInfo: {
+          credentialID,
+          newCounter: 1,
+          userVerified: true,
+          credentialDeviceType: 'singleDevice',
+          credentialBackedUp: false,
+          origin: ORIGIN,
+          rpID: RP_ID,
+        },
+      });
+      const initRes = await auth.fetch(makeRequest('/_auth/login-init', jsonBody({})));
+      const initBody = (await initRes.json()) as { options: { challenge: string } };
+      const res = await auth.fetch(
+        makeRequest(
+          '/_auth/login-complete',
+          jsonBody({ response: { id: credentialID, response: {} }, challenge: initBody.options.challenge }),
+        ),
+      );
+      expect(res.status).toBe(200);
+      // A freshly-generated 256-bit secret is always overwritten into
+      // storage as a non-empty 64-char hex string — the empty string must
+      // not have been treated as a usable persisted secret.
+      const persisted = record.map.get('session-secret');
+      expect(persisted).not.toBe('');
+      expect(persisted).toMatch(/^[0-9a-f]{64}$/);
+    });
+
+    it('generates the session-signing secret under the literal "session-secret" storage key, not an empty or different key', async () => {
+      mockGenerateAuthenticationOptions.mockResolvedValue({
+        challenge: 'secret-key-check',
+        rpID: RP_ID,
+        allowCredentials: [],
+        timeout: 60_000,
+        userVerification: 'required',
+      });
+      await auth.fetch(makeRequest('/_auth/login-init', jsonBody({})));
+      // #getSecret is invoked lazily; force it via verify-session on a
+      // deliberately-invalid token so #getSecret() runs without requiring a
+      // full login ceremony.
+      await auth.fetch(makeRequest('/_auth/verify-session', jsonBody({ session: 'x.y' })));
+      expect(record.map.has('session-secret')).toBe(true);
+      expect(record.map.has('')).toBe(false);
+      const secret = record.map.get('session-secret');
+      expect(secret).toMatch(/^[0-9a-f]{64}$/);
+    });
+
+    it('bytesToHex zero-pads every byte to exactly two hex digits, including the 0x10 boundary itself', async () => {
+      // Exercise bytesToHex indirectly via the session-secret encoding: seed
+      // a KNOWN 32-byte secret whose hex form is only correct if EVERY byte
+      // (including 0x10 exactly, and every byte below it) is zero-padded to
+      // two digits. A single missing pad collapses the string to fewer than
+      // 64 hex characters and desyncs all subsequent byte boundaries, which
+      // breaks HMAC verification against an independently-computed MAC.
+      const knownSecretBytes = new Uint8Array(32);
+      for (let i = 0; i < 32; i++) knownSecretBytes[i] = i; // 0x00..0x1f, crosses 0x10
+      let hex = '';
+      for (const b of knownSecretBytes) hex += (b < 0x10 ? '0' : '') + b.toString(16);
+      expect(hex).toHaveLength(64);
+      record.map.set('session-secret', hex);
+
+      const uid = 'uid-hex-boundary';
+      const iat = Date.now();
+      const exp = iat + 60_000;
+      const session = await signSessionPayload(hex, JSON.stringify({ uid, iat, exp }));
+      const res = await auth.fetch(makeRequest('/_auth/verify-session', jsonBody({ session })));
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { uid: string };
+      expect(body.uid).toBe(uid);
+    });
+  });
+
+  describe('Phase B: timingSafeEqual length/prefix forgery resistance (via verify-session)', () => {
+    it('rejects a forged mac that is a valid PREFIX of the correct mac but a different length', async () => {
+      const secret = 'phaseb-prefix-forgery-secret';
+      record.map.set('session-secret', secret);
+      const uid = 'uid-phaseb-prefix-forgery';
+      const iat = Date.now();
+      const exp = iat + 60_000;
+      const payloadText = JSON.stringify({ uid, iat, exp });
+      const validSession = await signSessionPayload(secret, payloadText);
+      const dot = validSession.lastIndexOf('.');
+      const payloadB64 = validSession.slice(0, dot);
+      const validMac = validSession.slice(dot + 1);
+
+      // A forged mac that is a strict prefix of the real mac (shorter, but
+      // every character it does have matches). A length-check bypass would
+      // accept this because the XOR-diff loop only walks the SHORTER
+      // string's indices and never notices the length mismatch.
+      const shorterForgedMac = validMac.slice(0, -4);
+      const shorterForgedSession = `${payloadB64}.${shorterForgedMac}`;
+      const shorterRes = await auth.fetch(
+        makeRequest('/_auth/verify-session', jsonBody({ session: shorterForgedSession })),
+      );
+      expect(shorterRes.status).toBe(401);
+
+      // A forged mac that is the real mac PLUS trailing garbage (longer).
+      const longerForgedMac = validMac + 'zzzz';
+      const longerForgedSession = `${payloadB64}.${longerForgedMac}`;
+      const longerRes = await auth.fetch(
+        makeRequest('/_auth/verify-session', jsonBody({ session: longerForgedSession })),
+      );
+      expect(longerRes.status).toBe(401);
+
+      // Sanity: the real, unmodified session is still accepted.
+      const validRes = await auth.fetch(
+        makeRequest('/_auth/verify-session', jsonBody({ session: validSession })),
+      );
+      expect(validRes.status).toBe(200);
+    });
+
+    it('rejects a mac that differs from the correct one only in its very last character', async () => {
+      const secret = 'phaseb-last-char-secret';
+      record.map.set('session-secret', secret);
+      const uid = 'uid-phaseb-last-char';
+      const iat = Date.now();
+      const exp = iat + 60_000;
+      const validSession = await signSessionPayload(secret, JSON.stringify({ uid, iat, exp }));
+      const dot = validSession.lastIndexOf('.');
+      const payloadB64 = validSession.slice(0, dot);
+      const validMac = validSession.slice(dot + 1);
+      const lastChar = validMac.at(-1)!;
+      const flippedChar = lastChar === '0' ? '1' : '0';
+      const tamperedMac = validMac.slice(0, -1) + flippedChar;
+      const tamperedSession = `${payloadB64}.${tamperedMac}`;
+
+      const res = await auth.fetch(
+        makeRequest('/_auth/verify-session', jsonBody({ session: tamperedSession })),
+      );
+      expect(res.status).toBe(401);
+    });
+  });
+
+  describe('Phase B: challenge-consumption dot/alarm-arg boundary hardening', () => {
+    it('rejects a token where the dot sits at index exactly 1 (single-character payload segment)', async () => {
+      const secret = 'phaseb-dot-at-1-secret';
+      record.map.set('session-secret', secret);
+      const res = await auth.fetch(
+        makeRequest('/_auth/verify-session', jsonBody({ session: 'X.deadbeef' })),
+      );
+      expect(res.status).toBe(401);
+    });
+
+    it('scans storage.list with the literal "challenge:" prefix for both #armAlarm arming and alarm() cleanup, never an empty or wrong prefix', async () => {
+      // A wrong/empty prefix passed to storage.list would either sweep ALL
+      // keys (deleting unrelated cred:/session-secret entries) or sweep NONE
+      // (leaving expired challenges to accumulate forever). Assert both
+      // failure modes are absent in one pass.
+      record.map.set('cred:phaseb-prefix-guard', { uid: 'uid-unrelated' });
+      record.map.set('session-secret', 'unrelated-secret-value');
+      record.map.set('challenge:phaseb-prefix-guard-expired', {
+        purpose: 'login',
+        exp: Date.now() - 1,
+      });
+      record.map.set('challenge:phaseb-prefix-guard-valid', {
+        purpose: 'login',
+        exp: Date.now() + 60_000,
+      });
+
+      await auth.alarm();
+
+      expect(record.map.has('challenge:phaseb-prefix-guard-expired')).toBe(false);
+      expect(record.map.has('challenge:phaseb-prefix-guard-valid')).toBe(true);
+      expect(record.map.get('cred:phaseb-prefix-guard')).toEqual({ uid: 'uid-unrelated' });
+      expect(record.map.get('session-secret')).toBe('unrelated-secret-value');
+    });
+
+  });
+
+  describe('Phase B round 2: consumeChallenge null-guard, alarm scan args, counter edge', () => {
+    it('rejects register-complete when the stored challenge value is a null tombstone (not merely undefined)', async () => {
+      record.map.set('challenge:phaseb2-null-tombstone', null);
+      const res = await auth.fetch(
+        makeRequest(
+          '/_auth/register-complete',
+          jsonBody({
+            response: { id: 'x', response: {} },
+            uid: 'u',
+            challenge: 'phaseb2-null-tombstone',
+          }),
+        ),
+      );
+      // A null-guard bypass would instead throw on `stored.purpose` before
+      // reaching this response — the route's own try/catch does not wrap
+      // #consumeChallenge, so a thrown TypeError would surface as an
+      // unhandled rejection / 500, never this deliberate 400.
+      expect(res.status).toBe(400);
+      expect(await res.text()).toBe('Invalid or expired challenge');
+    });
+
+    it('expires a challenge at the EXACT millisecond of its exp timestamp (>=, not >)', async () => {
+      vi.useFakeTimers();
+      try {
+        const exp = Date.now() + 1000;
+        vi.setSystemTime(exp);
+        record.map.set('challenge:phaseb2-exact-exp', {
+          purpose: 'register',
+          uid: 'uid-phaseb2-exact-exp',
+          exp,
+        });
+        const res = await auth.fetch(
+          makeRequest(
+            '/_auth/register-complete',
+            jsonBody({
+              response: { id: 'x', response: {} },
+              uid: 'uid-phaseb2-exact-exp',
+              challenge: 'phaseb2-exact-exp',
+            }),
+          ),
+        );
+        // At now === exp exactly, the challenge must be treated as expired
+        // (and thus deleted), not accepted for one more instant.
+        expect(res.status).toBe(400);
+        expect(await res.text()).toBe('Invalid or expired challenge');
+        expect(record.map.has('challenge:phaseb2-exact-exp')).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('reads the alarm-cleanup challenge map using the literal "challenge:" prefix, never an unfiltered/empty-prefix scan of all keys', async () => {
+      // A "cred:"-prefixed key whose value happens to carry an `.exp` field
+      // <= now, sorted alphabetically BEFORE any "challenge:"-prefixed key.
+      // If storage.list were called with an empty/missing prefix (the
+      // ObjectLiteral->{} or StringLiteral->"" mutants), this key would be
+      // included in the sweep and its exp<=now would queue it for deletion
+      // alongside real challenges. With the correct "challenge:" prefix,
+      // this key is never even fetched, so it must survive untouched.
+      const now = Date.now();
+      record.map.set('cred:already-exp-shaped-decoy', { uid: 'uid-decoy', exp: now - 1 });
+      record.map.set('session-secret', 'unrelated-secret-for-scan-check');
+      record.map.set('challenge:phaseb2-scan-check', { purpose: 'login', exp: now + 60_000 });
+
+      await auth.alarm();
+
+      expect(record.map.get('cred:already-exp-shaped-decoy')).toEqual({
+        uid: 'uid-decoy',
+        exp: now - 1,
+      });
+      expect(record.map.get('session-secret')).toBe('unrelated-secret-for-scan-check');
+      expect(record.map.has('challenge:phaseb2-scan-check')).toBe(true);
+    });
+
+    it('does not delete anything and does not re-arm when the alarm fires with zero challenges of any kind in storage', async () => {
+      record.map.set('cred:phaseb2-empty-sweep', { uid: 'uid-empty-sweep' });
+      record.map.set('session-secret', 'unrelated-empty-sweep-secret');
+
+      await auth.alarm();
+
+      expect(record.alarm).toBeNull();
+      expect(record.map.get('cred:phaseb2-empty-sweep')).toEqual({ uid: 'uid-empty-sweep' });
+      expect(record.map.get('session-secret')).toBe('unrelated-empty-sweep-secret');
+    });
+
+    it('rejects a negative newCounter even when the stored counter is zero (all-zero acceptance is not "any counter when fresh is zero")', async () => {
+      const credentialID = 'phaseb2-negative-counter';
+      record.map.set('challenge:phaseb2-negative-counter', { purpose: 'login', exp: Date.now() + 60_000 });
+      record.map.set(`cred:${credentialID}`, {
+        uid: 'uid-phaseb2-negative-counter',
+        publicKey: new Uint8Array(),
+        counter: 0,
+        transports: [],
+        deviceType: 'singleDevice',
+        backedUp: false,
+      });
+      mockVerifyAuthenticationResponse.mockResolvedValue({
+        verified: true,
+        authenticationInfo: {
+          credentialID,
+          newCounter: -1,
+          userVerified: true,
+          credentialDeviceType: 'singleDevice',
+          credentialBackedUp: false,
+          origin: ORIGIN,
+          rpID: RP_ID,
+        },
+      });
+
+      const res = await auth.fetch(
+        makeRequest(
+          '/_auth/login-complete',
+          jsonBody({
+            response: { id: credentialID, response: {} },
+            challenge: 'phaseb2-negative-counter',
+          }),
+        ),
+      );
+      expect(res.status).toBe(401);
+      expect(await res.text()).toBe('Authentication counter rejected');
+      const stored = record.map.get(`cred:${credentialID}`) as { counter: number };
+      expect(stored.counter).toBe(0);
+    });
   });
 });
