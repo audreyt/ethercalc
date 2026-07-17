@@ -116,23 +116,20 @@ spikes/                   Immutable research provenance (not the maintained work
 ## Session log
 
 Per-session history is in `docs/historic/REWRITE_ULTRAPLAN.md` §14 (append-only,
-newest last). Latest: migrated the repository interface to Vite+ 0.2.4 —
-`vp` package/task/binary commands, catalogued Vite/Vitest dependencies,
-Vite+ test aggregation, Oxlint replacing Biome with the prior rule contract,
-pinned `setup-vp` across CI/deploy/release workflows, and Vite+-spawned e2e
-fixtures. Bun 1.3.14 remains the native runtime and Docker/packed-package
-bootstrap exception. Frozen install, check, typecheck, 2,208 Vitest assertions,
-full package workflow, and 15 Playwright tests passed. Prior: passkey
-accounts + private sheets (Phase A) on `feat/passkey-permissions` —
-WebAuthn `AuthDO` relying party with HttpOnly `ec_sess` sessions,
-RoomDO-enforced `meta:access`/`meta:acl` private rooms (atomic
-`init-private`, tombstoned deletes, index exclusion, deny-overrides WS),
-principal-threaded routes, and a dependency-free passkey UI; PITR main
-merged with `/_do/ping`+pitr routes gate-exempt as operator paths. Post-review
-hardening closed a private-room admission gap (anon/under-privileged visitors
-got a full editable UI, not just a blocked write), a private `submitform`
-sibling leak, a `DELETE`-route ACL bypass when `ETHERCALC_KEY` is unset, and
-added WS session-expiry enforcement (`SessionPrincipal.exp`, fail-closed
-`#closeExpiredSessionSocket`); also fixed a pre-existing (non-regression)
-toolbar-icon 404 from a relative `defaultImagePrefix`. Mutation break
-threshold documented down 90→84 pending Phase B `auth-do.ts` test hardening.
+newest last). Latest: merged passkey accounts + private sheets (Phase A) from
+`feat/passkey-permissions` (PR #841) — WebAuthn `AuthDO` relying party with
+HttpOnly `ec_sess` sessions, RoomDO-enforced `meta:access`/`meta:acl` private
+rooms (atomic `init-private`, tombstoned deletes, index exclusion,
+deny-overrides WS), principal-threaded routes, dependency-free passkey UI,
+and WS session-expiry enforcement (`SessionPrincipal.exp`, fail-closed
+`#closeExpiredSessionSocket`). Rebased onto post-Vite+-migration main;
+Phase-B test-only hardening (auth-do.ts, auth-session.ts/authorize.ts/
+ws-upgrade.ts, rate-limit.ts/room-create-limit.ts) kept the mutation break
+threshold at 90 throughout rather than restoring the branch's stale 84 —
+live PR CI measured 90.22, local re-measurement 90.20, both clearing the
+floor. Prior: migrated the repository interface to Vite+ 0.2.4 — `vp`
+package/task/binary commands, catalogued Vite/Vitest dependencies, Vite+
+test aggregation, Oxlint replacing Biome with the prior rule contract,
+pinned `setup-vp` across CI/deploy/release workflows, and Vite+-spawned
+e2e fixtures. Bun 1.3.14 remains the native runtime and Docker/
+packed-package bootstrap exception.
