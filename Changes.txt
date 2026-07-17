@@ -143,6 +143,13 @@ Test tooling
   multi-sheet assets; and a representative room CRUD/export lifecycle.
   Viewer ACL coverage is not implied: no HTTP sharing route currently creates
   a genuine read-only viewer state.
+- Worker mutation testing (`packages/worker/stryker.conf.json`, `break: 90`):
+  Phase A's post-rebase-onto-main hardening pass (see
+  `docs/MUTATION_REPORT.md`'s 2026-07-17 addendum) closed test-gap
+  clusters in auth-do.ts, auth-session.ts/authorize.ts/ws-upgrade.ts, and
+  rate-limit.ts/room-create-limit.ts, restoring the combined score to
+  90.20% — at or above main's own pre-feature baseline (90.16%). No
+  source/config behavior changed; test-only.
 
 Cleanup
 
