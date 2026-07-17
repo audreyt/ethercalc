@@ -31,13 +31,11 @@ APP_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$APP_DIR"
 
 MIGRATE_TOKEN="sandstorm-grain-local"
-# Each Sandstorm grain IS a single spreadsheet — `/` should land in
-# the live sheet, not the ethercalc.net "create new" landing. The
-# legacy LiveScript EtherCalc initialized a `sheet1` room on grain
-# creation; we point `/` at the same name so existing grains upgrade
-# seamlessly (the migrated `/var/dump.json` content is under
-# `sheet1`).
-export ETHERCALC_DEFAULT_ROOM="sheet1"
+# Each Sandstorm grain IS one workbook. The legacy client opened `/=sheet`,
+# where `sheet` is the table-of-contents room and `sheet1` is its first
+# worksheet. The root handler classifies `sheet`: migrated TOCs and fresh
+# grains open with tabs, while an existing ordinary room stays single-sheet.
+export ETHERCALC_DEFAULT_ROOM="sheet"
 # SH-6: honour Sandstorm viewer vs editor roles via bridge headers.
 export ETHERCALC_SANDSTORM="1"
 # Wrangler/Bun used to need HOME/TMPDIR set in the grain sandbox; now

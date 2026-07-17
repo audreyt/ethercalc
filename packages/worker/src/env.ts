@@ -83,12 +83,12 @@ export interface Env {
   readonly DEVMODE?: string;
 
   /**
-   * Single-grain default room. When set, `GET /` 302-redirects into
-   * `/<ETHERCALC_DEFAULT_ROOM>` instead of serving the "create new
-   * sheet" landing page. Used by Sandstorm grains — where each grain
-   * IS a single sheet — to take the user straight to the spreadsheet
-   * on `/`. Unset on ethercalc.net (shared pool of rooms, where `/`
-   * legitimately is a landing page).
+   * Single-grain default workbook. When set, `GET /` 302-redirects into
+   * this room. Fresh rooms and multi-sheet TOCs open the React workbook
+   * interface; existing ordinary sheets keep the classic single-sheet
+   * interface. Used by Sandstorm grains, where `/` must open the grain's
+   * workbook rather than the shared "create new spreadsheet" landing page.
+   * Unset on ethercalc.net.
    */
   readonly ETHERCALC_DEFAULT_ROOM?: string;
 

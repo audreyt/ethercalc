@@ -85,6 +85,14 @@ sandstorm-grain-local`. This is idempotent — re-running would just
 overwrite each room with the same value — but we drop a
 `/var/.migrated` sentinel to avoid paying the per-boot probe cost.
 
+The grain root opens `/=sheet`: `sheet` is the workbook table-of-contents
+room and its links identify the worksheet rooms (legacy grains normally use
+`sheet1` for the first tab). Rewrite releases before issue #838 instead opened
+`/sheet1` directly, hiding the tab bar. The root handler now classifies the
+configured `sheet` room: migrated TOCs and fresh grains open with tabs. If
+`sheet` is absent but a rewrite-era `sheet1` room exists, the root falls back
+to `/sheet1` so the upgrade never hides user data.
+
 What carries over:
 
   - Directory layout → snapshots + audit logs (legacy keeps only these

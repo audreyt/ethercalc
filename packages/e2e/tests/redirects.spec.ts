@@ -27,6 +27,19 @@ test.describe('/_new redirects', () => {
     expect(loc).toMatch(new RegExp(`^/=${ROOM_ID.source}$`));
   });
 
+  test('landing Create Spreadsheet opens a multi-sheet workbook', async ({
+    workerBase,
+    page,
+  }) => {
+    await page.goto(`${workerBase}/`);
+    const create = page.locator('#newpadbutton');
+    await expect(create).toBeVisible();
+    await create.click();
+    await expect(page).toHaveURL(new RegExp(`/=${ROOM_ID.source}$`));
+    await expect(page.getByRole('tablist')).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Sheet1' })).toBeVisible();
+  });
+
   test('successive /_new calls return different rooms', async ({
     workerBase,
     request,

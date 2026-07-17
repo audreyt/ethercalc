@@ -345,6 +345,9 @@ export class RoomDO implements DurableObject {
     if (path === '/_do/exists' && request.method === 'GET') {
       return this.#getExists();
     }
+    if (path === '/_do/workbook-kind' && request.method === 'GET') {
+      return this.#getWorkbookKind();
+    }
     if (path === '/_do/cells' && request.method === 'GET') {
       return this.#getCells();
     }
@@ -778,6 +781,47 @@ export class RoomDO implements DurableObject {
     return jsonResponse({
       exists: (await hasSnapshot(this.#state.storage)) ? 1 : 0,
     });
+  }
+
+  /**
+   * Classify the default-room entry without sending its full snapshot or CSV
+   * through the Worker. Legacy TOCs put `#url/#title` in row 1; workbooks
+   * initialized through the current cold-room CSV path put the same header in
+   * row 2 because that compatibility path pastes at A2.
+   */
+  async #getWorkbookKind(): Promise<Response> {
+    if (!(await hasSnapshot(this.#state.storage))) {
+      return jsonResponse({ kind: 'absent' });
+    }
+    const ss = await this.#getSpreadsheet();
+    const a1 = (
+      ss.exportCell('A1') as
+        | { readonly datavalue?: unknown }
+        | null
+        | undefined
+    )?.datavalue;
+    const b1 = (
+      ss.exportCell('B1') as
+        | { readonly datavalue?: unknown }
+        | null
+        | undefined
+    )?.datavalue;
+    const a2 = (
+      ss.exportCell('A2') as
+        | { readonly datavalue?: unknown }
+        | null
+        | undefined
+    )?.datavalue;
+    const b2 = (
+      ss.exportCell('B2') as
+        | { readonly datavalue?: unknown }
+        | null
+        | undefined
+    )?.datavalue;
+    const isMulti =
+      (a1 === '#url' && b1 === '#title') ||
+      (a2 === '#url' && b2 === '#title');
+    return jsonResponse({ kind: isMulti ? 'multi' : 'single' });
   }
 
   async #getCells(): Promise<Response> {

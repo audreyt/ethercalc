@@ -41,7 +41,7 @@ Internet-facing self-hosts **must** use the proxy compose (or an equivalent edge
 
 ## Sandstorm
 
-Each Sandstorm grain runs one spreadsheet (`ETHERCALC_DEFAULT_ROOM=sheet1`). Packaging files (`run_grain.sh`, `sandstorm-pkgdef.capnp`) and the `.spk` build recipe are in [SANDSTORM.md](https://github.com/audreyt/ethercalc/blob/main/SANDSTORM.md). Legacy grains auto-migrate `/var/dump*` on first boot.
+Each Sandstorm grain runs one workbook. `ETHERCALC_DEFAULT_ROOM` is set to `sheet`; the root route detects its table of contents and opens `/=sheet`. Worksheet data lives in linked rooms such as `sheet1` or `sheet.1`. A rewrite-era grain that has data only in `sheet1` falls back to `/sheet1` rather than hiding that data. Packaging files (`run_grain.sh`, `sandstorm-pkgdef.capnp`) and the `.spk` build recipe are in [SANDSTORM.md](https://github.com/audreyt/ethercalc/blob/main/SANDSTORM.md). Legacy grains auto-migrate `/var/dump*` on first boot.
 
 ## Local development
 

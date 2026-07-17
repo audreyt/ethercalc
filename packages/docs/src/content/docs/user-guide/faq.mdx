@@ -43,13 +43,13 @@ For compliance retention, export audit periodically (`/_/:room` save string incl
 
 ## Sandstorm: why don't API room names match tab titles?
 
-Each Sandstorm grain is **one spreadsheet**. The default room is `sheet1` (`ETHERCALC_DEFAULT_ROOM` in `run_grain.sh`), not the display name you gave the grain in the Sandstorm UI.
+Each Sandstorm grain is **one workbook**. Its default room is `sheet` (`ETHERCALC_DEFAULT_ROOM` in `run_grain.sh`); the grain root detects its table of contents and opens the multi-sheet interface at `/=sheet`. The `sheet` room is the tab table of contents; worksheet data lives in linked rooms such as legacy `sheet1` or newly seeded `sheet.1`. Rewrite-era grains with data only in `sheet1` continue to open `/sheet1` so an upgrade cannot hide that data.
 
-Multi-sheet workbooks (`/=:room`) use **URL slug ids** from the TOC link column (for example `mybook.2`), not the human-readable tab label. Use `GET /_/:room/cells` or the save string to discover actual ids. See [Sandstorm packaging](https://github.com/audreyt/ethercalc/blob/main/SANDSTORM.md).
+Multi-sheet workbooks (`/=:room`) use **URL slug ids** from that TOC link column, not the human-readable tab label. Use `GET /_/:room/cells` or the save string to discover actual ids. See [Sandstorm packaging](https://github.com/audreyt/ethercalc/blob/main/SANDSTORM.md).
 
 ## Sandstorm: export failed with "Cannot GET /sheet1/=sheet1.xlsx"
 
-Fixed in client-multi: production builds no longer redirect API calls to `http://127.0.0.1:8000` when the grain is served on `localhost:8080`. Exports use same-origin paths like `/_/sheet1/xlsx`.
+Fixed in client-multi: production builds no longer redirect API calls to `http://127.0.0.1:8000` when the grain is served on `localhost:8080`. Exports use same-origin paths like `/_/sheet/xlsx`.
 
 Viewer mode (`?auth=0`) hides multi-sheet export controls when there is no TOC; single-sheet CSV/JSON export still works via the API.
 

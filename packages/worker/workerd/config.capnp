@@ -110,10 +110,9 @@ const mainWorker :Workerd.Worker = (
     (name = "ETHERCALC_RP_NAME", fromEnvironment = "ETHERCALC_RP_NAME"),
     (name = "ETHERCALC_ORIGIN", fromEnvironment = "ETHERCALC_ORIGIN"),
 
-    # Single-grain default room. Sandstorm grains set this to `sheet1`
-    # (the room name the legacy LiveScript EtherCalc initialized
-    # on-grain-creation) so `GET /` lands in the live spreadsheet
-    # instead of the ethercalc.net "create new" landing page.
+    # Default workbook room for a single-grain deployment. The root handler
+    # opens fresh rooms and existing TOCs in the multi-sheet client while
+    # preserving the classic client for existing ordinary rooms.
     (name = "ETHERCALC_DEFAULT_ROOM", fromEnvironment = "ETHERCALC_DEFAULT_ROOM"),
   ],
 

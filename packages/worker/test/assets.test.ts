@@ -2,6 +2,8 @@ import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:
 import { describe, it, expect } from 'vite-plus/test';
 
 import worker from '../src/index.ts';
+import type { Env } from '../src/env.ts';
+import { encodeRoom } from '../src/lib/room-name.ts';
 
 /**
  * Workers integration tests for the Phase 4.1/11 asset layer.
@@ -69,6 +71,8 @@ async function call(
     readonly ASSETS?: Fetcher;
     readonly DEVMODE?: string;
     readonly ETHERCALC_KEY?: string;
+    readonly ETHERCALC_DEFAULT_ROOM?: string;
+    readonly ETHERCALC_SANDSTORM?: string;
   } = {},
 ): Promise<Response> {
   const req = new Request(`https://example.test${path}`, { redirect: 'manual' });
@@ -122,6 +126,23 @@ function buildFullStub(): {
   return { ASSETS: fetcher, calls };
 }
 
+async function resetDefaultRoom(
+  room: string,
+  commands: readonly string[] = [],
+): Promise<void> {
+  const roomEnv = env as unknown as Env;
+  const stub = roomEnv.ROOM.get(roomEnv.ROOM.idFromName(encodeRoom(room)));
+  await stub.fetch('https://do.local/_do/all', { method: 'DELETE' });
+  if (commands.length === 0) return;
+  await stub.fetch('https://do.local/_do/snapshot', { method: 'PUT', body: '' });
+  for (const command of commands) {
+    await stub.fetch('https://do.local/_do/commands', {
+      method: 'POST',
+      body: command,
+    });
+  }
+}
+
 describe('GET / (root)', () => {
   it('proxies through ASSETS to /index.html', async () => {
     const stub = buildFullStub();
@@ -143,6 +164,54 @@ describe('GET / (root)', () => {
     await waitOnExecutionContext(ctx);
     expect(res.status).toBe(404);
     expect(res.headers.get('Content-Type')).toBe('text/plain; charset=utf-8');
+  });
+
+  it('redirects a fresh default room to the multi-sheet interface', async () => {
+    const room = 'default-fresh-838';
+    await resetDefaultRoom(room);
+    const res = await call('/', { ETHERCALC_DEFAULT_ROOM: room });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('Location')).toBe(`/=${room}`);
+  });
+
+  it('keeps an existing single-sheet default room in the single-sheet interface', async () => {
+    const room = 'default-single-838';
+    await resetDefaultRoom(room, ['set A1 text t ordinary']);
+    const res = await call('/', { ETHERCALC_DEFAULT_ROOM: room });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('Location')).toBe(`/${room}`);
+  });
+
+  it('redirects a migrated TOC default room to the multi-sheet interface', async () => {
+    const room = 'default-multi-838';
+    await resetDefaultRoom(room, [
+      'set A1 text t #url',
+      'set B1 text t #title',
+      `set A2 text t /${room}.1`,
+      'set B2 text t Sheet1',
+    ]);
+    const res = await call('/', { ETHERCALC_DEFAULT_ROOM: room });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('Location')).toBe(`/=${room}`);
+  });
+
+  it('keeps rewrite-era Sandstorm sheet1 data reachable when sheet is absent', async () => {
+    await resetDefaultRoom('sheet');
+    await resetDefaultRoom('sheet1', ['set A1 text t preserved']);
+    const res = await call('/', {
+      ETHERCALC_DEFAULT_ROOM: 'sheet',
+      ETHERCALC_SANDSTORM: '1',
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('Location')).toBe('/sheet1');
+  });
+
+  it('normalizes an explicitly multi-sheet default to one equals prefix', async () => {
+    const res = await call('/', {
+      ETHERCALC_DEFAULT_ROOM: '=default-explicit-multi-838',
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('Location')).toBe('/=default-explicit-multi-838');
   });
 });
 

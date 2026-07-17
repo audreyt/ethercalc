@@ -47,6 +47,7 @@ import {
 import { doFetch } from '../lib/do-dispatch.ts';
 import { getSessionPrincipal } from '../lib/session-middleware.ts';
 import { encodeRoom, generateRoomId } from '../lib/room-name.ts';
+import { isSandstormEnforced } from '../lib/sandstorm-access.ts';
 import type { Env, EtherCalcHonoEnv } from '../env.ts';
 
 /**
@@ -120,6 +121,26 @@ export async function serveAsset(env: Env, pathname: string): Promise<Response> 
   });
 }
 
+type WorkbookKind = 'absent' | 'multi' | 'single' | 'unknown';
+
+async function getWorkbookKind(env: Env, room: string): Promise<WorkbookKind> {
+  try {
+    const response = await doFetch(env, room, '/_do/workbook-kind');
+    if (!response.ok) return 'unknown';
+    const body = (await response.json()) as { readonly kind?: unknown };
+    if (
+      body.kind === 'absent' ||
+      body.kind === 'multi' ||
+      body.kind === 'single'
+    ) {
+      return body.kind;
+    }
+  } catch {
+    // A failed classifier must not break the deployment root.
+  }
+  return 'unknown';
+}
+
 /**
  * Register asset-backed routes. See the file header for the inventory.
  */
@@ -127,11 +148,12 @@ export function registerAssets(app: Hono<EtherCalcHonoEnv>): void {
   // Root entry page. Legacy served `index.html` at `/`. We forward to
   // ASSETS which picks it up from the curated dir.
   //
-  // Single-grain deployments (notably Sandstorm, where a grain IS a
-  // single spreadsheet) set `ETHERCALC_DEFAULT_ROOM=sheet1` so `/`
-  // 302-redirects into the live room instead of the "create new sheet"
-  // landing page. Without the env var, the legacy behavior (landing
-  // page) is preserved — this is what ethercalc.net serves.
+  // Single-grain deployments (notably Sandstorm) set a default workbook
+  // room so `/` opens it directly. A legacy multi-sheet migration stores a
+  // TOC in that room, while an existing ordinary room must keep the classic
+  // single-sheet client. Classify only this root entry; the hot `GET /:room`
+  // path remains storage-free. Without the env var, ethercalc.net serves the
+  // landing page.
   app.get('/', async (c) => {
     const defaultRoom = c.env.ETHERCALC_DEFAULT_ROOM;
     // Truthiness, not `!== undefined`: workerd delivers an unset
@@ -139,9 +161,29 @@ export function registerAssets(app: Hono<EtherCalcHonoEnv>): void {
     // redirect every `docker compose up` visitor to `/null`.
     if (defaultRoom) {
       const basepath = c.env.BASEPATH ?? '';
+      const explicitlyMulti = defaultRoom.startsWith('=');
+      const room = explicitlyMulti ? defaultRoom.slice(1) : defaultRoom;
+      let targetRoom = room;
+      let multi = explicitlyMulti;
+      if (!multi) {
+        const kind = await getWorkbookKind(c.env, room);
+        multi = kind === 'absent' || kind === 'multi';
+
+        // Rewrite releases before #838 stored new Sandstorm grains in
+        // `sheet1`. If the restored `sheet` default is absent, keep opening
+        // that existing room so an upgrade never hides user data.
+        if (kind === 'absent' && isSandstormEnforced(c.env)) {
+          const fallbackRoom = `${room}1`;
+          const fallbackKind = await getWorkbookKind(c.env, fallbackRoom);
+          if (fallbackKind === 'single' || fallbackKind === 'multi') {
+            targetRoom = fallbackRoom;
+            multi = fallbackKind === 'multi';
+          }
+        }
+      }
       return new Response('', {
         status: 302,
-        headers: { Location: `${basepath}/${defaultRoom}` },
+        headers: { Location: `${basepath}/${multi ? '=' : ''}${targetRoom}` },
       });
     }
     return serveAsset(c.env, '/index.html');

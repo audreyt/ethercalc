@@ -880,6 +880,59 @@ describe('RoomDO (unit, direct construction)', () => {
     expect(res.headers.get('Content-Type')).toBe('text/plain; charset=utf-8');
   });
 
+  it('GET /_do/workbook-kind classifies a room without a snapshot as absent', async () => {
+    const res = await room.fetch(new Request('https://do/_do/workbook-kind'));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ kind: 'absent' });
+    expect(mockExportCell).not.toHaveBeenCalled();
+  });
+
+  it('GET /_do/workbook-kind classifies an ordinary snapshot as single', async () => {
+    record.map.set(STORAGE_KEYS.snapshot, 'save-text');
+    mockExportCell
+      .mockReturnValueOnce({ datavalue: 'ordinary' })
+      .mockReturnValueOnce({ datavalue: 'heading' })
+      .mockReturnValueOnce(null)
+      .mockReturnValueOnce(null);
+    const res = await room.fetch(new Request('https://do/_do/workbook-kind'));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ kind: 'single' });
+  });
+
+  it('GET /_do/workbook-kind requires both TOC header cells', async () => {
+    record.map.set(STORAGE_KEYS.snapshot, 'save-text');
+    mockExportCell
+      .mockReturnValueOnce({ datavalue: '#url' })
+      .mockReturnValueOnce({ datavalue: 'wrong' })
+      .mockReturnValueOnce({ datavalue: '#url' })
+      .mockReturnValueOnce({ datavalue: 'wrong' });
+    const res = await room.fetch(new Request('https://do/_do/workbook-kind'));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ kind: 'single' });
+  });
+
+  it('GET /_do/workbook-kind recognizes a migrated TOC header in row 1', async () => {
+    record.map.set(STORAGE_KEYS.snapshot, 'save-text');
+    mockExportCell
+      .mockReturnValueOnce({ datavalue: '#url' })
+      .mockReturnValueOnce({ datavalue: '#title' });
+    const res = await room.fetch(new Request('https://do/_do/workbook-kind'));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ kind: 'multi' });
+  });
+
+  it('GET /_do/workbook-kind recognizes the cold-room TOC header in row 2', async () => {
+    record.map.set(STORAGE_KEYS.snapshot, 'save-text');
+    mockExportCell
+      .mockReturnValueOnce(null)
+      .mockReturnValueOnce(null)
+      .mockReturnValueOnce({ datavalue: '#url' })
+      .mockReturnValueOnce({ datavalue: '#title' });
+    const res = await room.fetch(new Request('https://do/_do/workbook-kind'));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ kind: 'multi' });
+  });
+
   it('PUT /_do/snapshot stores body, returns 201 OK', async () => {
     const res = await room.fetch(
       new Request('https://do/_do/snapshot', {

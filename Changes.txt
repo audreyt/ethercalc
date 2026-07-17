@@ -72,6 +72,13 @@ Bug fixes
   explicit `400`/`ImportColumnOutOfRangeError`, instead of silently dropping
   AAA+ payload during replay. Malformed merge end columns (`Infinity`,
   negative, non-integer) fail closed without calling `encodeColumn`.
+- Restored the multi-sheet interface as the default creation flow: the landing
+  page now opens `/=_new` (the legacy `/_new` single-sheet route remains
+  available). Sandstorm grain roots again classify the legacy `sheet` room:
+  migrated TOCs and fresh grains open the `/=sheet` workbook; if only a
+  rewrite-era `sheet1` exists, the root falls back to `/sheet1` so the upgrade
+  cannot hide user data.
+  Fixes #838.
 
 - Browser clients now resolve relative `/_ws/:room` endpoints against the page
   origin before constructing a WebSocket, restoring live synchronization in
