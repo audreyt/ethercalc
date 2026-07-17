@@ -8,6 +8,7 @@ coverage/
 .wrangler/
 .vitest-cache/
 *.log
+logs/
 .claude/
 .clawpatch/
 .worktrees/
@@ -47,3 +48,4 @@ report.md
 # TLS material for the self-host proxy recipe — never commit
 deploy/nginx/certs/*
 !deploy/nginx/certs/.gitkeep
+
