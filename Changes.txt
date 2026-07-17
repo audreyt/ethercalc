@@ -10,6 +10,21 @@ EtherCalc bundles SocialCalc from the audreyt/socialcalc fork; see
 
 
 ==============================================================================
+0.20260717.0 — 2026-07-17
+==============================================================================
+
+Quality
+- worker: restored the Stryker mutation-testing floor (break 90) with three
+  boundary-pinning tests — CSV formula neutralisation's numeric regex
+  (multi-digit integer/decimal/exponent branches, trigger-led non-numeric
+  values), rate-limit config parsing (`rps <= 0` boundary via a numerically-
+  zero-but-non-canonical `"0.0"` input), and RoomDO seed migration's batched
+  log/audit/chat key loop bounds (off-by-one). No source or config changes.
+- SocialCalc 3.1.0 compatibility (client security model migration, dropped
+  regex-injected `sanitizeHTML` patch) shipped in 0.20260716.0 below; no
+  further SocialCalc changes in this release.
+
+==============================================================================
 0.20260716.0 — 2026-07-16
 ==============================================================================
 
