@@ -149,5 +149,26 @@ describe('authorize', () => {
         expect(authorize('write', principalWriter, mode, candidate)).toBe(false);
       }
     });
+    it('rejects malformed principals and empty ACL owner before membership checks', () => {
+      const validLists = { owner: 'user-owner', readers: ['user-reader'], writers: ['user-writer'] };
+      for (const principal of [{ uid: 7 }, { uid: null }, { uid: '' }]) {
+        expect(authorize('read', principal as never, mode, validLists)).toBe(false);
+        expect(authorize('write', principal as never, mode, validLists)).toBe(false);
+      }
+      expect(authorize('read', principalReader, mode, { ...validLists, owner: '' })).toBe(false);
+      expect(authorize('write', principalWriter, mode, { ...validLists, owner: '' })).toBe(false);
+    });
+    it('validates writer members independently from reader membership', () => {
+      const malformedWriters = [
+        ['user-writer', 0],
+        ['user-writer', null],
+        ['user-writer', ''],
+      ];
+      for (const writers of malformedWriters) {
+        const candidate = { owner: 'other', readers: ['user-reader'], writers };
+        expect(authorize('read', principalReader, mode, candidate)).toBe(false);
+        expect(authorize('write', principalWriter, mode, candidate)).toBe(false);
+      }
+    });
   });
 });

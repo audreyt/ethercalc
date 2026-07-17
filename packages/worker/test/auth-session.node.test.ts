@@ -114,6 +114,9 @@ describe('verifyAuthSession', () => {
     ['boolean exp', { uid: 'u', exp: true }],
     ['numeric uid', { uid: 7, exp: Date.now() + 60_000 }],
     ['expired exp', { uid: 'u', exp: Date.now() - 1 }],
+    ['boolean payload', false],
+    ['number payload', 7],
+    ['string payload', 'ok'],
   ])('rejects %s verification payloads', async (_label, body) => {
     const { env } = makeEnv(() => Response.json(body));
     await expect(verifyAuthSession(env, 'signed.token')).resolves.toBeNull();
