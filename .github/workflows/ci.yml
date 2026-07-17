@@ -52,7 +52,7 @@ jobs:
         # Must run BEFORE worker integration tests (miniflare reads
         # wrangler.toml `[assets]` at startup) and `wrangler deploy
         # --dry-run` (validates the directory exists).
-        run: bun scripts/build-assets.ts
+        run: vp exec bun scripts/build-assets.ts
 
       - name: Validate worker D1 migrations
         # Phase 5.1: smoke-check each SQL file in packages/worker/migrations/
@@ -204,7 +204,7 @@ jobs:
         run: vp run @ethercalc/client-multi#build
 
       - name: Build curated assets/ dir
-        run: bun scripts/build-assets.ts
+        run: vp exec bun scripts/build-assets.ts
 
       - name: Run Playwright suite
         run: vp run @ethercalc/e2e#test

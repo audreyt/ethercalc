@@ -235,7 +235,7 @@ jobs:
         run: |
           vp run @ethercalc/client#build
           vp run @ethercalc/client-multi#build
-          bun scripts/build-assets.ts
+          vp exec bun scripts/build-assets.ts
 
       - name: Replay against worker (wrangler dev)
         run: |
@@ -275,7 +275,7 @@ jobs:
         run: |
           vp run @ethercalc/client#build
           vp run @ethercalc/client-multi#build
-          bun scripts/build-assets.ts
+          vp exec bun scripts/build-assets.ts
 
       - name: wrangler deploy --dry-run --env staging
         run: vp exec wrangler deploy --dry-run --env staging

@@ -42,7 +42,7 @@ jobs:
         run: |
           vp run @ethercalc/client#build
           vp run @ethercalc/client-multi#build
-          bun scripts/build-assets.ts
+          vp exec bun scripts/build-assets.ts
 
       - name: Cloudflare API token
         run: ./scripts/ci-cloudflare-token.sh
