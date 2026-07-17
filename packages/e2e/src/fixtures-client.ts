@@ -61,13 +61,11 @@ async function startVite(args: {
   workerBase: string;
 }): Promise<{ process: ChildProcess; baseUrl: string }> {
   const { port, workerBase } = args;
-  const cmd = 'bun';
-  // `x vite dev` keeps us consistent with wrangler's invocation style; the
-  // `--port` flag pins Vite to the random port we chose and `--host 127.0.0.1`
-  // avoids IPv4/IPv6 dual-stack surprises on CI.
+  const cmd = 'vp';
+  // `vp dev` is the repository's Vite interface; the `--port` flag pins Vite
+  // to the random port we chose and `--host 127.0.0.1` avoids IPv4/IPv6
+  // dual-stack surprises on CI.
   const argv = [
-    'x',
-    'vite',
     'dev',
     '--port',
     String(port),

@@ -10,8 +10,8 @@ EtherCalc is a real-time, multi-user spreadsheet server. This documentation cove
 
 ```bash
 git clone https://github.com/audreyt/ethercalc
-cd ethercalc && bun install
-bun run --cwd packages/worker dev   # wrangler dev on http://127.0.0.1:8787
+cd ethercalc && vp install
+vp run @ethercalc/worker#dev   # wrangler dev on http://127.0.0.1:8787
 ```
 
 Open `http://127.0.0.1:8787/_new` to create a sheet.

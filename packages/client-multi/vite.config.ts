@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vite-plus';
 import react from '@vitejs/plugin-react';
 
 // Vite config for the multi-sheet client. Builds to `dist/` with esnext target

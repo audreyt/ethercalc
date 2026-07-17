@@ -1,5 +1,5 @@
 import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:test';
-import { beforeAll, describe, it, expect } from 'vitest';
+import { beforeAll, describe, it, expect } from 'vite-plus/test';
 
 import type { HttpScenario } from '@ethercalc/shared/oracle-scenarios';
 import { dispatchMatcher } from '@ethercalc/oracle-harness/matchers';

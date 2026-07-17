@@ -14,14 +14,15 @@
     "./run": "./src/run.ts"
   },
   "scripts": {
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
+    "test": "vp test run",
+    "test:watch": "vp test",
+    "test:coverage": "vp test run --coverage",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
-    "@vitest/coverage-istanbul": "^4.1.9",
-    "vitest": "^4.1.9"
+    "@vitest/coverage-istanbul": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
   }
 }

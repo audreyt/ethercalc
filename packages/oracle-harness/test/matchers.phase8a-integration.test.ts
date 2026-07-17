@@ -8,7 +8,7 @@
  * edge-case coverage that would clutter the focused test files.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'vite-plus/test';
 
 import {
   dispatchMatcher,

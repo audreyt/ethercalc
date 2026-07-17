@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'vite-plus/test';
 
 import { csvToMarkdown, renderMarkdownTable } from '../src/lib/md.ts';
 

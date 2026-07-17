@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vite-plus/test';
 
 vi.mock('@ethercalc/socialcalc-headless', () => ({
   csvToSave: (csv: string) => `WRAPPED:${csv}`,

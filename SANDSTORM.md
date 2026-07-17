@@ -19,14 +19,16 @@ alongside the worker — four pieces of grain-specific glue:
 
 On a machine with Sandstorm + `spk` installed:
 
-    # 1. Ensure bun is available — run_grain.sh assumes `/usr/local/bin/bun`.
+    # 1. Ensure Bun and Vite+ are available. run_grain.sh assumes
+    #    `/usr/local/bin/bun`.
     curl -fsSL https://bun.sh/install | bash
+    curl -fsSL https://vite.plus | bash
 
     # 2. Install workspace deps (one-time).
-    bun install
+    vp install
 
     # 3. Build the client bundles + curated assets/ dir.
-    bun run build:assets
+    vp run build:assets
 
     # 4. Generate sandstorm-files.list by tracing a dev-mode run.
     spk dev
@@ -57,7 +59,7 @@ Release checklist on a machine with Sandstorm + `spk` + the app private key:
 
 1. Check out the release tag on `main`.
 2. Bump `appVersion` / `appMarketingVersion` in `sandstorm-pkgdef.capnp`.
-3. `bun run build:assets` (and `scripts/build-workerd-bundle.sh` if the
+3. `vp run build:assets` (and `scripts/build-workerd-bundle.sh` if the
    worker bundle changed).
 4. `spk dev` once to refresh `sandstorm-files.list` if file layout changed.
 5. `spk pack ethercalc.spk`.

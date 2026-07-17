@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "astro dev",
-    "build": "astro build",
-    "preview": "astro preview",
-    "typecheck": "astro check"
+    "dev": "vp exec astro dev",
+    "build": "vp exec astro build",
+    "preview": "vp exec astro preview",
+    "typecheck": "vp exec astro check"
   },
   "dependencies": {
     "@astrojs/starlight": "^0.41.3",

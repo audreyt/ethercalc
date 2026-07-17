@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 
 import { applyWsNormalizer, FORM_CLONE_ROOM_RE, AUTOGEN_ROOM_RE, isReplayGeneratedRoom, getWsNormalizer } from '../src/ws-normalize.ts';
 import type { WsScenario } from '@ethercalc/shared/oracle-scenarios';

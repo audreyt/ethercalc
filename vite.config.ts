@@ -9,7 +9,7 @@ import { defineConfig } from 'vite-plus';
 //
 // `test.projects` allowlists each package's existing Vitest config instead,
 // preserving its environment/pool/coverage exactly as configured for
-// `bun run --cwd packages/<pkg> test`. packages/e2e (Playwright),
+// `vp run --filter './packages/*' test`. packages/e2e (Playwright),
 // packages/docs (no tests), and the root `bun:test` files are intentionally
 // absent — they run under their own runners, not Vitest.
 //
@@ -20,6 +20,75 @@ import { defineConfig } from 'vite-plus';
 // explicit `test.name` (`worker:pool` / `worker:node`) to avoid Vitest's
 // unique-project-name collision.
 export default defineConfig({
+  check: {
+    // This repository has never had a formatter gate. Keep that contract while
+    // moving its existing lint gate behind `vp check`.
+    fmt: false,
+  },
+  fmt: {
+    ignorePatterns: [
+      'app-graphics/**',
+      'assets/**',
+      'class-js/**',
+      'docs/historic/**',
+      'images/**',
+      'l10n/**',
+      'multi/**',
+      'packages/**/dist/**',
+      'packages/socialcalc-headless/**',
+      'spikes/**',
+      'static/**',
+      'tests/**',
+      'third-party/**',
+      'wikitwig/**',
+    ],
+  },
+  lint: {
+    // Match the former Biome `preset: none` contract instead of silently
+    // enabling Oxlint's much broader defaults during the toolchain cutover.
+    categories: {
+      correctness: 'off',
+      nursery: 'off',
+      pedantic: 'off',
+      perf: 'off',
+      restriction: 'off',
+      style: 'off',
+      suspicious: 'off',
+    },
+    ignorePatterns: [
+      'app-graphics/**',
+      'assets/**',
+      'class-js/**',
+      'docs/**',
+      'images/**',
+      'l10n/**',
+      'lemma/**',
+      'multi/**',
+      'packages/docs/**',
+      'packages/**/dist/**',
+      'packages/socialcalc-headless/**',
+      'spikes/**',
+      'static/**',
+      'tests/**',
+      'third-party/**',
+      'wikitwig/**',
+    ],
+    options: {
+      denyWarnings: true,
+    },
+    rules: {
+      'eslint/no-unreachable': 'error',
+      'eslint/no-unused-vars': [
+        'error',
+        {
+          args: 'none',
+          caughtErrors: 'none',
+          varsIgnorePattern: '^_',
+        },
+      ],
+      'eslint/prefer-const': 'error',
+    },
+  },
   test: {
     projects: ['packages/*/vitest.config.ts', 'packages/worker/vitest.node.config.ts'],
   },

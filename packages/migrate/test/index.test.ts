@@ -3,7 +3,7 @@
  * reachable from `@ethercalc/migrate` so downstream consumers of the
  * package resolve without hunting for sub-paths.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'vite-plus/test';
 
 import * as migrate from '../src/index.ts';
 

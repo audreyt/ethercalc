@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config';
+import { defineConfig } from 'vite-plus';
 
 /**
  * Pure-logic tests. Runs in the Node environment (no workerd) so istanbul

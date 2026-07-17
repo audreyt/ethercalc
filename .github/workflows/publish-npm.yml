@@ -38,24 +38,24 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: oven-sh/setup-bun@v2
+      # voidzero-dev/setup-vp v1.1.0
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@e1609b468742ba9232ce5e12b3a77bdf14495277
         with:
-          bun-version: latest
+          cache: true
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       - name: Typecheck
-        run: bun run --filter '*' typecheck
+        run: vp run typecheck
 
       - name: Lint
-        run: bun run lint
+        run: vp check
 
-      - name: Rebuild assets
-        run: bun run build:assets
 
-      - name: Run unit and integration tests
-        run: bun test
+      - name: Run full test suite
+        run: vp run test
 
       - name: Pack and verify deterministic package contract
         id: pack
@@ -64,8 +64,8 @@ jobs:
           mkdir -p dist-release
           
           # Pack twice and verify byte-for-byte identity (reproducibility check)
-          bun pm pack --filename dist-release/pack1.tgz
-          bun pm pack --filename dist-release/pack2.tgz
+          vp pm pack --out dist-release/pack1.tgz
+          vp pm pack --out dist-release/pack2.tgz
           
           SHA1="$(sha256sum dist-release/pack1.tgz | awk '{print $1}')"
           SHA2="$(sha256sum dist-release/pack2.tgz | awk '{print $1}')"

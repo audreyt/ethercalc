@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config';
+import { defineConfig } from 'vite-plus';
 
 /**
  * Oracle-harness unit tests run in Node (no workerd needed — we only send
@@ -17,7 +17,7 @@ export default defineConfig({
       provider: 'istanbul',
       include: ['src/**/*.ts'],
       // bin.ts is a 5-line shim that calls main() and exits — exercised by
-      // `bun run record`/`bun run replay`, not by vitest. Everything else
+      // `vp run record`/`vp run replay`, not by Vitest. Everything else
       // (cli logic, matchers, recorder, replayer) is 100% gated.
       exclude: ['src/bin.ts'],
       reporter: ['text', 'json-summary', 'lcov'],

@@ -6,7 +6,7 @@ import {
   STORAGE_KEYS,
   snapshotChunkKey,
 } from '@ethercalc/shared/storage-keys';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { Env } from '../src/env.ts';
 import { RoomDO } from '../src/room.ts';
 

@@ -74,8 +74,8 @@ encoding applied by the legacy `encodeURI` call).
 ## Testing
 
 ```bash
-bun run --cwd packages/migrate test
-bun run --cwd packages/migrate test:coverage   # 100% gate
+vp run @ethercalc/migrate#test
+vp run @ethercalc/migrate#test:coverage   # 100% gate
 ```
 
 All tests run in pure Node — no Redis, no wrangler, no Cloudflare

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 
 import { encodeBase64 } from '../src/matchers.ts';
 import { diffWsMessage, runWsScenario } from '../src/ws-runner.ts';

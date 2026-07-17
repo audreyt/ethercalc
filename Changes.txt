@@ -10,6 +10,22 @@ EtherCalc bundles SocialCalc from the audreyt/socialcalc fork; see
 
 
 ==============================================================================
+Unreleased
+==============================================================================
+
+Tooling
+- Migrated the repository interface to Vite+ 0.2.4: package operations use
+  `vp install/add/remove/update`, workspace tasks use `vp run`, local binaries
+  use `vp exec`, and package Vite/Vitest imports and scripts use Vite+.
+- Replaced the Biome gate with Vite+ Oxlint while preserving the existing
+  three-rule lint contract and the repository's no-formatter-gate policy.
+  CI, deploy, nightly, LemmaScript, and npm validation jobs now use the pinned
+  `setup-vp` action and Vite+ commands.
+- Pinned the underlying package manager as `bun@1.3.14`. Bun remains the
+  native runtime for Bun-specific tests/scripts and for Docker or packed-package
+  bootstrap/runtime paths where Vite+ is intentionally not shipped.
+
+==============================================================================
 0.20260717.0 — 2026-07-17
 ==============================================================================
 

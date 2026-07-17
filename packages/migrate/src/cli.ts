@@ -1,5 +1,5 @@
 /**
- * `bun run src/cli.ts --source redis://… --target http://… --token …`
+ * `vp run @ethercalc/migrate#migrate --source redis://… --target http://… --token …`
  *
  * Reads rooms out of a live RESP-speaking server (real `redis-server`
  * or Zedis that has loaded the legacy `dump.rdb`) and writes them into
@@ -26,7 +26,6 @@ import {
 import {
   roomsFromFilesystem,
   type FsLike,
-  type RoomsFromFilesystemOptions,
 } from './sources/filesystem-source.ts';
 import type { ParsedSource } from './cli-args.ts';
 import {
@@ -47,17 +46,17 @@ export const USAGE: string = [
   'USAGE',
   '  # Point at a real redis-server / Zedis that has already loaded dump.rdb,',
   '  # and at a running worker (start `./bin/ethercalc` in another terminal).',
-  '  bun run src/cli.ts --source redis://127.0.0.1:6379 \\',
-  '                    --target http://127.0.0.1:8000 --token <bearer>',
+  '  vp run @ethercalc/migrate#migrate --source redis://127.0.0.1:6379 \\',
+  '      --target http://127.0.0.1:8000 --token <bearer>',
   '',
   '  # Migrate a legacy filesystem dump (no Redis). This is the path',
   '  # used by Sandstorm grains, where EtherCalc\'s Redis-unavailable',
   '  # fallback wrote snapshots + audit logs to /var/dump or dump.json.',
-  '  bun run src/cli.ts --source file:///var \\',
-  '                    --target http://127.0.0.1:8000 --token <bearer>',
+  '  vp run @ethercalc/migrate#migrate --source file:///var \\',
+  '      --target http://127.0.0.1:8000 --token <bearer>',
   '',
   '  # Dry-run — enumerate rooms and print intended writes, no worker needed.',
-  '  bun run src/cli.ts --source redis://127.0.0.1:6379 --dry-run',
+  '  vp run @ethercalc/migrate#migrate --source redis://127.0.0.1:6379 --dry-run',
   '',
   'OPTIONS',
   '  --source <url>             Legacy data source. One of:',

@@ -2,7 +2,7 @@
  * applyRoomStream() against a recording target — asserts the exact call
  * sequence and stat counts.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'vite-plus/test';
 import {
   applyRoomStream,
   type MigrationTarget,

@@ -6,7 +6,7 @@
  *
  * Coverage target: 100/100/100/100.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import {
   installGraph,
   makePalette,

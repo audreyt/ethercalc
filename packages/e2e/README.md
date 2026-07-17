@@ -8,17 +8,17 @@ no shared state, no port collisions, clean tear-down.
 
 ```bash
 # once per machine: fetch Chromium
-bun run --cwd packages/e2e install:browsers
+vp run @ethercalc/e2e#install:browsers
 
 # the whole suite
-bun run --cwd packages/e2e test
+vp run @ethercalc/e2e#test
 
 # a single spec
-bun run --cwd packages/e2e test -- tests/health.spec.ts
+vp run @ethercalc/e2e#test tests/health.spec.ts
 
 # headed + inspect the HTML report
-bun run --cwd packages/e2e test:headed
-bun run --cwd packages/e2e report
+vp run @ethercalc/e2e#test:headed
+vp run @ethercalc/e2e#report
 ```
 
 ## Specs

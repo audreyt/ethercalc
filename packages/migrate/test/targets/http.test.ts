@@ -3,7 +3,7 @@
  * every branch of the per-room buffering, payload shape, and the health
  * poll loop without any real sockets.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'vite-plus/test';
 
 import {
   HttpTarget,

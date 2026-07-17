@@ -25,7 +25,7 @@ The `break` threshold is **the regression floor.** Any PR that lowers the mutati
 3. **Re-run locally.**
 
    ```bash
-   bun run --cwd packages/<pkg> mutation
+   vp run --filter "./packages/<pkg>" mutation
    ```
 
    Inspect `packages/<pkg>/reports/mutation/mutation.html`. Confirm the target mutant is now marked `killed` (green). Note the new total score (shown at the top of the HTML report and in the terminal's `clear-text` reporter output).
@@ -108,7 +108,7 @@ These five cases target all five surviving mutants on line 71. Each assertion fa
 **Re-run:**
 
 ```bash
-bun run --cwd packages/client mutation
+vp run @ethercalc/client#mutation
 # ... (roughly 30–60s later) ...
 # All files
 # ----------|---------|----------|-----------|------------|----------|---------|
@@ -136,10 +136,10 @@ Commit the test file + config together. The nightly run confirms the new floor; 
 
 ```bash
 # one package at a time (minutes each)
-bun run --cwd packages/shared mutation
+vp run @ethercalc/shared#mutation
 
 # or everything (slow)
-bun run mutation
+vp run mutation
 ```
 
 Reports land in `packages/<pkg>/reports/mutation/{mutation.html,mutation.json}` (gitignored). CI uploads them as artifacts.
@@ -198,7 +198,7 @@ tested. The regression is from untested literal/conditional shapes
 inside `src/room.ts`.
 
 Follow-up target: close the `room.ts` 84.69% → ≥90% by auditing the
-top-gap list (`bun run --cwd packages/worker mutation` + reports/
+top-gap list (`vp run @ethercalc/worker#mutation` + reports/
 mutation/mutation.html) and ratcheting `break` back toward 92.
 
 ---

@@ -59,9 +59,9 @@ async function startWrangler(args: {
   port: number;
 }): Promise<{ process: ChildProcess; baseUrl: string }> {
   const { port } = args;
-  const cmd = 'bun';
+  const cmd = 'vp';
   const argv = [
-    'x',
+    'exec',
     'wrangler',
     'dev',
     '--port',

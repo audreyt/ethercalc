@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config';
+import { defineConfig } from 'vite-plus';
 import react from '@vitejs/plugin-react';
 
 // jsdom env so React Testing Library can mount components.

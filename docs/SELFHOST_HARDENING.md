@@ -91,10 +91,10 @@ rule (SH-2), CF platform TLS (SH-5) + DDoS, and `workers_dev=false`
    (`wrangler.toml` stays authoritative for CF). A self-host default must be overridable
    (operator opt-out), e.g. `${ETHERCALC_DISABLE_ROOM_INDEX:-1}` not a hardcoded `1`.
 3. **Worker-code changes are coverage- + mutation-gated.** Any edit under `src/handlers/**`,
-   `src/lib/**`, or `src/room.ts` must keep `bun run --cwd packages/worker test:coverage` at **100%**
+   `src/lib/**`, or `src/room.ts` must keep `vp run @ethercalc/worker#test:coverage` at **100%**
    (line/branch/function/statement) and not drop the Stryker score below the `break` floor (`92`).
    `src/index.ts` and `src/routes/**` are coverage-excluded but still must not break existing tests.
-   **Commit before running `bun run mutation`** — Stryker `inPlace:true` instruments the working tree;
+   **Commit before running `vp run @ethercalc/worker#mutation`** — Stryker `inPlace:true` instruments the working tree;
    a `git add` mid-run captures corrupted sources (see the StrykerJS memory note).
 4. **British English** in prose/comments. Match surrounding style.
 5. **Preserve oracle equivalence.** Config-default flips that change a default response (e.g. `/_rooms`
@@ -481,7 +481,7 @@ forwards it, but the worker reads `BASEPATH` (not `ETHERCALC_BASEPATH`). `config
 - **CI nightly** (AGENTS.md §11.2): consider a job that boots the self-host image and curls the
   enumeration endpoints to keep the safe default from silently regressing.
 - Any **worker-code** task (SH-2 limiter, SH-6 header enforcement) → keep
-  `bun run --cwd packages/worker test:coverage` at 100% and `bun run --cwd packages/worker mutation`
+  `vp run @ethercalc/worker#test:coverage` at 100% and `vp run @ethercalc/worker#mutation`
   ≥ `break` (commit first — see §2.3).
 
 ---

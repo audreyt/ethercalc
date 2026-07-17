@@ -9,7 +9,7 @@ directory are the materialized output, persisted so reviewers can
 unzip and inspect them from the CLI (`unzip test/fixtures/xlsx/basic.xlsx`).
 
 If a generator function changes, delete the corresponding file here and
-re-run `bun run test` — it gets regenerated on the next test-setup pass.
+re-run `vp run @ethercalc/oracle-harness#test` — it gets regenerated on the next test-setup pass.
 
 ## Naming
 

@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vite-plus/test';
 import {
   createWsAdapter,
   buildWsEndpoint,

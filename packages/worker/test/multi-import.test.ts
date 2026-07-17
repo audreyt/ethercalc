@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:test';
 import * as XLSX from '@e965/xlsx';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import type { Env } from '../src/env.ts';
 import worker from '../src/index.ts';
 

@@ -147,7 +147,7 @@ async function findSocialCalc(plan: AssetBuildPlan): Promise<string> {
   for (const candidate of plan.socialCalcCandidates) {
     if (existsSync(candidate) && (await stat(candidate)).isFile()) return candidate;
   }
-  throw new Error(`missing ${plan.socialCalcCandidates[0]} (run \`bun install\`)`);
+  throw new Error(`missing ${plan.socialCalcCandidates[0]} (run \`vp install\`)`);
 }
 
 async function collectFiles(dir: string): Promise<string[]> {
@@ -168,8 +168,8 @@ export async function buildAssets(rootInput = resolve(dirname(fileURLToPath(impo
   const plan = buildAssetPlan(rootInput);
   const socialCalc = await findSocialCalc(plan);
 
-  await assertFile(plan.playerBundle, `missing ${plan.playerBundle} (run \`bun run --cwd packages/client build\`)`);
-  await assertDirectory(plan.multiDist, `missing ${plan.multiDist} (run \`bun run --cwd packages/client-multi build\`)`);
+  await assertFile(plan.playerBundle, `missing ${plan.playerBundle} (run \`vp run @ethercalc/client#build\`)`);
+  await assertDirectory(plan.multiDist, `missing ${plan.multiDist} (run \`vp run @ethercalc/client-multi#build\`)`);
 
   console.log(`[build-assets] rebuilding ${plan.destination}`);
   await rm(plan.destination, { recursive: true, force: true });

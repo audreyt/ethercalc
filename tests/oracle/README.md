@@ -49,7 +49,7 @@ docker compose -f tests/oracle/docker-compose.yml down -v
 ## Record scenarios
 
 ```bash
-bun run --cwd packages/oracle-harness record \
+vp run @ethercalc/oracle-harness#record \
   --target http://127.0.0.1:8000 \
   --out tests/oracle/recorded
 ```
@@ -63,7 +63,7 @@ When adding a new scenario:
    `rooms-index.ts`, or a new file if a new family emerges).
 2. Export it from the family's `SCENARIOS` array and from
    `scenarios/index.ts`.
-3. Re-record (`bun run record`).
+3. Re-record (`vp run @ethercalc/oracle-harness#record`).
 4. Inspect `recorded/<name>.json`. If the response embeds a UUID /
    timestamp, register a `NormalizeHook` in `src/normalize.ts` that
    rewrites volatile headers to `re:`-prefixed regex patterns.
@@ -72,10 +72,10 @@ When adding a new scenario:
 
 ```bash
 # Terminal 1 — new worker (Phase 4+).
-bun run --cwd packages/worker dev
+vp run @ethercalc/worker#dev
 
 # Terminal 2 — diff it against recordings.
-bun run --cwd packages/oracle-harness replay \
+vp run @ethercalc/oracle-harness#replay \
   --target http://127.0.0.1:8787 \
   --recorded tests/oracle/recorded
 ```
@@ -96,7 +96,7 @@ record — see FINDINGS F-13):
 ```bash
 docker compose -f tests/oracle/docker-compose.yml down -v
 docker compose -f tests/oracle/docker-compose.yml up -d
-bun run --cwd packages/oracle-harness replay \
+vp run @ethercalc/oracle-harness#replay \
   --target http://127.0.0.1:8000
 ```
 

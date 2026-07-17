@@ -1,7 +1,7 @@
 /**
  * CLI tests — parseArgs, dry-run target, and the main() orchestrator.
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vite-plus/test';
 
 import {
   DryRunTarget,

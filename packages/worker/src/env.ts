@@ -109,7 +109,7 @@ export interface Env {
    * Typical local flow:
    *   echo 'ETHERCALC_MIGRATE_TOKEN="local-only"' > packages/worker/.dev.vars
    *   ./bin/ethercalc                                          # Miniflare
-   *   bun run migrate -- --input dump.rdb \
+   *   vp run @ethercalc/migrate#migrate --source file:///path/to/dump-dir \
    *     --target http://127.0.0.1:8000 --token local-only
    */
   readonly ETHERCALC_MIGRATE_TOKEN?: string;

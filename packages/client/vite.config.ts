@@ -1,5 +1,5 @@
 /// <reference types="node" />
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vite-plus';
 import { resolve } from 'node:path';
 
 /**

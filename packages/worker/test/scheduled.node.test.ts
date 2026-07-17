@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vite-plus/test';
 
 import { runScheduled } from '../src/scheduled.ts';
 import type { Env } from '../src/env.ts';

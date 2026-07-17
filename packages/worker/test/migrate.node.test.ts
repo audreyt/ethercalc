@@ -8,7 +8,7 @@
  * suite (`test/migrate.test.ts`) proves the full dispatch through the
  * Hono route into the DO.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'vite-plus/test';
 
 import { parseBulkIndexPayload, parseSeedPayload } from '../src/handlers/migrate.ts';
 import { verifyMigrateToken } from '../src/lib/migrate-auth.ts';

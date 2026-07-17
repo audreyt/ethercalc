@@ -13,11 +13,11 @@ The **oracle** is a pinned pre-rewrite EtherCalc build (Node + Redis) that serve
 docker compose -f tests/oracle/docker-compose.yml up -d
 
 # Record fixtures (oracle on :8000)
-bun run --cwd packages/oracle-harness record
+vp run @ethercalc/oracle-harness#record
 
 # Replay against local worker
-bun run --cwd packages/worker dev &
-bun run --cwd packages/oracle-harness replay --target http://127.0.0.1:8787
+vp run @ethercalc/worker#dev &
+vp run @ethercalc/oracle-harness#replay --target http://127.0.0.1:8787
 ```
 
 ## Scenario catalog

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { Env } from '../src/env.ts';
 import { buildApp } from '../src/index.ts';
 

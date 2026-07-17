@@ -2,7 +2,7 @@
   "name": "@ethercalc/socialcalc-headless",
   "version": "0.0.0",
   "private": true,
-  "description": "Headless SocialCalc wrapper \u2014 runs in Workers/DO with DOM stubs",
+  "description": "Headless SocialCalc wrapper — runs in Workers/DO with DOM stubs",
   "license": "CC0-1.0",
   "type": "module",
   "main": "./src/index.ts",
@@ -11,8 +11,8 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "vp test run",
+    "test:watch": "vp test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -21,7 +21,8 @@
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.18.0",
     "@cloudflare/workers-types": "^4.20260702.1",
-    "vitest": "^4.1.9",
+    "vite": "catalog:",
+    "vitest": "catalog:",
     "wrangler": "^4.107.0"
   }
 }

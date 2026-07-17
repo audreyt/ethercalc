@@ -41,24 +41,25 @@ line/branch/function/statement coverage on gated packages in CI.
 | 10 | Snapshot TTL via DO `setAlarm` |
 | 11 | `ETHERCALC_DISABLE_ROOM_INDEX` gates `/_rooms*` + `/_exists` (default ON in Docker/Helm); legacy `ETHERCALC_CORS` fallback; CORS headers unconditional |
 | 12 | Formal stack: root `lemma/` is a **pump surface** (Dafny CI + Lean gen for Leanstral). Shipping TS is the oracle; findings promote only via Bun tests. Full SocialCalc algebra stays upstream in `../socialcalc/lemma/`. No `lake build` gate. |
+| 13 | Vite+ is the repository interface: `vp install/add/remove/update` for packages, `vp run` for tasks, `vp exec` for local binaries. Bun 1.3.14 remains the package manager and Bun-native runtime. Bare Bun package commands are confined to Docker and packed-package bootstrap/runtime paths where Vite+ is not shipped. |
 
 ## Runbook
 
 ```bash
 git clone https://github.com/audreyt/ethercalc
-cd ethercalc && bun install
+cd ethercalc && vp install
 
-bun run --cwd packages/worker dev          # local worker (:8787)
+vp run @ethercalc/worker#dev          # local worker (:8787)
 docker compose -f tests/oracle/docker-compose.yml up -d   # legacy oracle (:8000)
 
-bun run --cwd packages/oracle-harness record   # record fixtures
-bun run --cwd packages/oracle-harness replay --target http://127.0.0.1:8787
+vp run @ethercalc/oracle-harness#record   # record fixtures
+vp run @ethercalc/oracle-harness#replay --target http://127.0.0.1:8787
 
-bun run --cwd packages/worker test         # workers-pool + node unit tests
+vp run @ethercalc/worker#test         # workers-pool + node unit tests
 
-bun run verify:dafny                       # LemmaScript Dafny VCs (needs dafny)
-bun run verify:lean                        # Lean gen + non-empty + fresh smoke
-bun run verify:context && bun run verify:request   # Leanstral pack (sibling ../socialcalc)
+vp run verify:dafny                       # LemmaScript Dafny VCs (needs dafny)
+vp run verify:lean                        # Lean gen + non-empty + fresh smoke
+vp run verify:context && vp run verify:request   # Leanstral pack (sibling ../socialcalc)
 ```
 
 ## CI gates (PR)
@@ -68,7 +69,7 @@ Typecheck → node tests (100% coverage) → workers-pool → Playwright e2e →
 Parallel: LemmaScript Dafny check + Lean gen smoke
 (`.github/workflows/lemmascript.yml`). Nightly: full Stryker matrix + oracle
 replay against legacy docker + staging dry-run (`.github/workflows/nightly.yml`).
-(Oracle replay is nightly-only, not a PR gate; Biome lint is gated on every PR.)
+(Oracle replay is nightly-only, not a PR gate; Vite+ Oxlint is gated on every PR.)
 
 ## Package map
 
@@ -97,7 +98,7 @@ spikes/                   Immutable research provenance (not the maintained work
    `createSocialCalcFactory()`), but keep the `[[rules]]` entry for `wrangler
    deploy`.
 2. **Docker Desktop macOS/ARM** — virtio networking may hang host curls;
-   use `bun run --cwd packages/worker dev` instead.
+   use `vp run @ethercalc/worker#dev` instead.
 3. **workerd null bindings** — unset env vars arrive as `null`, not `''`.
 4. **`ScheduleSheetCommands`** — headless uses sync `ExecuteSheetCommand`;
    no known gap yet.
@@ -114,9 +115,10 @@ spikes/                   Immutable research provenance (not the maintained work
 ## Session log
 
 Per-session history is in `docs/historic/REWRITE_ULTRAPLAN.md` §14 (append-only,
-newest last). Latest: SocialCalc ^3.0.8→^3.1.0 upgrade — switched from
-regex-injected `SocialCalc.sanitizeHTML` hook to 3.1.0's native
-`untrustedContent`/`securityPolicy.sanitizeHtml` security model; hardened
-package manifest exclusions (directory-level e2e/oracle, stryker-setup glob);
-Bun-native root `test` script; `install-runtime-deps.js` hard-fails on
-missing Bun; behavioral pack-manifest test added.
+newest last). Latest: migrated the repository interface to Vite+ 0.2.4 —
+`vp` package/task/binary commands, catalogued Vite/Vitest dependencies,
+Vite+ test aggregation, Oxlint replacing Biome with the prior rule contract,
+pinned `setup-vp` across CI/deploy/release workflows, and Vite+-spawned e2e
+fixtures. Bun 1.3.14 remains the native runtime and Docker/packed-package
+bootstrap exception. Frozen install, check, typecheck, 2,208 Vitest assertions,
+full package workflow, and 15 Playwright tests passed.

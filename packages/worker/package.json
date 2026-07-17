@@ -7,14 +7,14 @@
   "type": "module",
   "main": "./src/index.ts",
   "scripts": {
-    "dev": "wrangler dev",
-    "test": "bun run test:node && bun run test:workers",
-    "test:node": "vitest run --config vitest.node.config.ts",
-    "test:workers": "vitest run",
-    "test:coverage": "vitest run --config vitest.node.config.ts --coverage",
+    "dev": "vp exec wrangler dev",
+    "test": "vp run test:node && vp run test:workers",
+    "test:node": "vp test run --config vitest.node.config.ts",
+    "test:workers": "vp test run",
+    "test:coverage": "vp test run --config vitest.node.config.ts --coverage",
     "typecheck": "tsc --noEmit",
-    "build:dry": "wrangler deploy --dry-run",
-    "mutation": "stryker run"
+    "build:dry": "vp exec wrangler deploy --dry-run",
+    "mutation": "vp exec stryker run"
   },
   "dependencies": {
     "@e965/xlsx": "^0.20.3",
@@ -29,9 +29,10 @@
     "@ethercalc/oracle-harness": "workspace:*",
     "@stryker-mutator/core": "^9.6.1",
     "@stryker-mutator/vitest-runner": "^9.6.1",
-    "@vitest/coverage-istanbul": "^4.1.9",
-    "@vitest/coverage-v8": "^4.1.9",
-    "vitest": "^4.1.9",
+    "@vitest/coverage-istanbul": "catalog:",
+    "@vitest/coverage-v8": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:",
     "wrangler": "^4.107.0"
   }
 }

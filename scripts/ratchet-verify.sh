@@ -3,7 +3,7 @@
 # ratchet-verify.sh — Local-dev mutation-ratchet audit.
 #
 # For each package with a stryker.conf.json:
-#   1. Run `bun run --cwd packages/<pkg> mutation`.
+#   1. Run `vp run --filter "./packages/<pkg>" mutation`.
 #   2. Parse the JSON report at packages/<pkg>/reports/mutation/mutation.json.
 #   3. Compare the measured score against the `break` threshold in the
 #      package's stryker.conf.json.
@@ -82,7 +82,7 @@ for pkg in "${PACKAGES[@]}"; do
   fi
 
   header "mutation — $pkg"
-  if ! bun run --cwd "packages/$pkg" mutation; then
+  if ! vp run --filter "./packages/$pkg" mutation; then
     fail_pkgs+=("$pkg")
     printf '%-16s %8s %8s %8s %s\n' "$pkg" "-" "-" "-" "${RED}run failed${RESET}"
     exit_code=2

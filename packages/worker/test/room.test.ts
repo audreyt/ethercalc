@@ -1,6 +1,6 @@
 import { env, runInDurableObject } from 'cloudflare:test';
 import { logKey } from '@ethercalc/shared/storage-keys';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import type { Env } from '../src/env.ts';
 import { RoomDO } from '../src/room.ts';
 

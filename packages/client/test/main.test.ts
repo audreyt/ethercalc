@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import { runMain, deriveBaseUrl, createDispatcher, stripRoom, type MainHost } from '../src/main.ts';
 import { makeSocialCalc, makeSpreadsheet } from './mock-socialcalc.ts';
 import { createMockFactory, createFakeTimers } from './mock-ws.ts';
