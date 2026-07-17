@@ -49,7 +49,7 @@ export default defineConfig({
   ],
   test: {
     // Explicit name: this config is aggregated as a Vitest project by the
-    // root vite.config.ts alongside vitest.node.config.ts, which shares
+    // root vite.config.mts alongside vitest.node.config.ts, which shares
     // this package's package.json name and would otherwise collide.
     name: 'worker:pool',
     include: ['test/**/*.test.ts'],

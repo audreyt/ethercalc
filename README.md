@@ -111,8 +111,8 @@ Recommended public-instance settings:
 
 On Apple Silicon, Docker Desktop's virtio networking has an
 intermittent quirk that can make `curl localhost:8000` hang even
-against a healthy container. If you hit it, run the worker directly
-(`vp run @ethercalc/worker#dev`) or use a Linux host.
+against a healthy container. If you hit it, run the app directly
+(`vp dev`) or use a Linux host.
 
 ## CLI
 
@@ -249,7 +249,15 @@ Install [Vite+](https://viteplus.dev/) and Bun 1.3.14. Vite+ is the
 repository interface; Bun remains the runtime for Bun-native scripts and tests.
 
     vp install
-    vp run @ethercalc/worker#dev          # wrangler dev --local
+    vp build                              # browser assets + Worker build output
+    vp dev                                # browser assets + full Worker-backed app; URL printed in terminal
+
+`vp dev` runs the real Hono + Durable Objects app, not a static client
+shell: open `/:room` for the single-sheet UI, `/=:room` for multi-sheet,
+and `GET /_health` to confirm readiness. For focused work on one package,
+the scoped commands still apply:
+
+    vp run @ethercalc/worker#dev          # wrangler dev --local, http://127.0.0.1:8787
     vp run @ethercalc/worker#test         # workers-pool + node tests
 
 Formal verification / Leanstral pump (optional; not required for app builds):

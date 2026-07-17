@@ -33,7 +33,7 @@ export interface MultiEnv {
 /** Fallback room name when the URL doesn't match the `/=<room>` pattern. */
 export const DEFAULT_INDEX = 'foobar';
 
-const DEV_HOST_RE = /(?:127\.0\.0\.1|localhost|\.local):\d+/;
+const DEV_HOST_RE = /(?:127\.0\.0\.1|localhost|\.local):8080(?!\d)/;
 const INDEX_RE = /\/=([^_][^/?]*)(?:\?.*)?$/;
 const AUTH_IN_HREF_RE = /auth=0/;
 const AUTH_QUERY_RE = /\?auth=/;

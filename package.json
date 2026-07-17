@@ -70,7 +70,8 @@
     "!**/test-results",
     "!**/playwright-report",
     "!**/.dev.vars",
-    "!**/dist/**/*.map"
+    "!**/dist/**/*.map",
+    "!packages/worker/dist/"
   ],
   "workspaces": [
     "packages/*"
@@ -79,7 +80,7 @@
     "prepack": "vp run build:assets",
     "postinstall": "node scripts/install-runtime-deps.js",
     "pretest": "vp run build:assets",
-    "test": "bun test scripts/build-assets.test.ts && vp run --filter './packages/*' test",
+    "test": "bun test scripts/build-assets.test.ts scripts/vite-workflow.test.ts && vp run --filter './packages/*' test",
     "build:clients": "vp run @ethercalc/client#build && vp run @ethercalc/client-multi#build",
     "build:assets": "vp run build:clients && bun scripts/build-assets.ts",
     "typecheck": "vp run --filter './packages/*' typecheck",
@@ -100,6 +101,7 @@
     "bun": ">=1.1.0"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.45.1",
     "@stryker-mutator/core": "^9.6.1",
     "@stryker-mutator/vitest-runner": "^9.6.1",
     "lemmascript": "0.5.13",
@@ -109,7 +111,7 @@
     "vitest": "catalog:"
   },
   "dependencies": {
-    "wrangler": "^4.107.0"
+    "wrangler": "^4.112.0"
   },
   "overrides": {
     "vite": "catalog:",

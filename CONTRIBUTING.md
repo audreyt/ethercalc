@@ -6,10 +6,17 @@
 git clone https://github.com/audreyt/ethercalc
 cd ethercalc
 vp install
-vp run @ethercalc/worker#dev    # http://127.0.0.1:8787
+vp build   # browser assets + Worker build output
+vp dev     # browser assets + full Worker-backed app: /:room, /=:room, /_health
 ```
 
-See [AGENTS.md](./AGENTS.md) for agent context, [packages/docs/](packages/docs/) for the Starlight docs site (`vp run @ethercalc/docs#dev`), and [docs/historic/REWRITE_ULTRAPLAN.md](./docs/historic/REWRITE_ULTRAPLAN.md) for the archived rewrite plan.
+`vp dev` serves the real Hono + Durable Objects app (not a static client
+shell) at the URL printed in the terminal. For focused work on one
+package, use the scoped commands, e.g. `vp run @ethercalc/worker#dev`
+(`http://127.0.0.1:8787`) or `vp run @ethercalc/docs#dev` for the
+Starlight docs site.
+
+See [AGENTS.md](./AGENTS.md) for agent context and [docs/historic/REWRITE_ULTRAPLAN.md](./docs/historic/REWRITE_ULTRAPLAN.md) for the archived rewrite plan.
 
 ## Tests and coverage
 

@@ -1,4 +1,14 @@
-import { defineConfig } from 'vite-plus';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+
+import { cloudflare } from '@cloudflare/vite-plugin';
+
+import { applyToBuildOrServe, assetPrepPlugin, isVitestRun } from './scripts/vite-workflow.ts';
+
+import { defineConfig, lazyPlugins } from 'vite-plus';
+
+const repositoryRoot = dirname(fileURLToPath(import.meta.url));
+const workerRoot = resolve(repositoryRoot, 'packages/worker');
 
 // Root config for `vp test` (Vitest under the hood). Without it, Vitest's
 // default whole-repo discovery pulls in packages/e2e's Playwright specs
@@ -36,7 +46,32 @@ import { defineConfig } from 'vite-plus';
 // `test:coverage` gate (socialcalc-headless, and the worker:pool project)
 // are intentionally absent from `include`, matching the per-package CI
 // contract in `.github/workflows/ci.yml`.
+// `vp build` / `vp dev` at repo root must be production-faithful: prepare
+// the curated static assets (`assetPrepPlugin` — `scripts/vite-workflow.ts`)
+// and build/serve the actual Cloudflare Worker (the official
+// `@cloudflare/vite-plugin`), not just whatever bare client bundles Vite
+// itself would otherwise touch. Both plugins are restricted to `build`/
+// `serve` via `applyToBuildOrServe` so `vp test`'s Vitest-driven config
+// resolution — which uses `test.projects` below, not this root config's
+// build/dev pipeline — never runs `build:assets` or loads the Cloudflare
+// plugin's Miniflare/Workers runtime integration.
 export default defineConfig({
+  root: isVitestRun(process.env) ? repositoryRoot : workerRoot,
+  publicDir: resolve(repositoryRoot, 'assets'),
+  server: {
+    allowedHosts: ['assets.local'],
+  },
+  plugins: lazyPlugins(() => [
+    assetPrepPlugin(),
+    // `apply: applyToBuildOrServe` on each Cloudflare sub-plugin keeps the
+    // whole integration (Miniflare, the Workers module graph, wrangler
+    // config resolution) out of `vp test`'s Vitest config path, matching
+    // `assetPrepPlugin` above.
+    ...cloudflare({ configPath: 'wrangler.toml' }).map((plugin) => ({
+      ...plugin,
+      apply: applyToBuildOrServe,
+    })),
+  ]),
   check: {
     // This repository has never had a formatter gate. Keep that contract while
     // moving its existing lint gate behind `vp check`.

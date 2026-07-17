@@ -111,7 +111,10 @@ describe('package manifest (npm pack)', () => {
   // This catches directory-level leaks that individual file exclusions
   // in package.json `files[]` miss.
   test('tarball excludes e2e, oracle-harness, stryker-setup, and test artifacts', async () => {
-    const proc = Bun.spawn(['bun', 'pm', 'pack', '--dry-run'], {
+    // --ignore-scripts: prepack is orthogonal to this test's contract (file
+    // inclusion/exclusion) and would rebuild assets via `vp build`, which is
+    // unnecessary here and can fail in sandboxes without a global `vite`.
+    const proc = Bun.spawn(['bun', 'pm', 'pack', '--dry-run', '--ignore-scripts'], {
       cwd: import.meta.dir + '/..',
       stdout: 'pipe',
       stderr: 'pipe',
@@ -149,6 +152,7 @@ describe('package manifest (npm pack)', () => {
       /vitest\.node\.config\./,
       /playwright\.config\./,
       /stryker\.conf\.json$/,
+      /packages\/worker\/dist\//,
     ];
 
     const leaked = paths.filter((p) => forbidden.some((re) => re.test(p)));

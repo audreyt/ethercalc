@@ -24,6 +24,11 @@ Tooling
 - Pinned the underlying package manager as `bun@1.3.14`. Bun remains the
   native runtime for Bun-specific tests/scripts and for Docker or packed-package
   bootstrap/runtime paths where Vite+ is intentionally not shipped.
+- Made root `vp build` and `vp dev` production-faithful full-stack workflows:
+  Vite+ prepares the curated browser assets once, then the Cloudflare Vite
+  plugin builds or serves the Worker, Durable Objects, bindings, and assets.
+- Kept integrated multi-sheet development same-origin, made standalone port
+  8080 strict, and excluded generated Worker Vite output from npm tarballs.
 
 ==============================================================================
 0.20260717.0 — 2026-07-17

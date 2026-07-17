@@ -46,6 +46,21 @@ describe('parseMultiEnv', () => {
     expect(env.basePath).toBe('http://127.0.0.1:8000');
   });
 
+  it('keeps same-origin basePath on 127.0.0.1:5173 in Vite dev (integrated vp dev)', () => {
+    const env = parseMultiEnv(loc('http://127.0.0.1:5173/=release-visual-multi'), undefined, true);
+    expect(env.basePath).toBe('.');
+  });
+
+  it('keeps same-origin basePath on localhost:5174 in Vite dev', () => {
+    const env = parseMultiEnv(loc('http://localhost:5174/=r'), undefined, true);
+    expect(env.basePath).toBe('.');
+  });
+
+  it('does not match a port merely prefixed by 8080 (boundary check)', () => {
+    const env = parseMultiEnv(loc('http://127.0.0.1:80801/=r'), undefined, true);
+    expect(env.basePath).toBe('.');
+  });
+
   it('keeps same-origin basePath on localhost:8080 in production (Sandstorm #292)', () => {
     const env = parseMultiEnv(loc('http://localhost:8080/=sheet1'), undefined, false);
     expect(env.basePath).toBe('.');
