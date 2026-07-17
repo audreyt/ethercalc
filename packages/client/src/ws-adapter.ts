@@ -15,9 +15,9 @@
  * (matches `return unless SocialCalc.isConnected` in the legacy callback).
  */
 import {
+  type ClientMessage,
   encodeMessage,
   parseServerMessage,
-  type ClientMessage,
   type ServerMessage,
 } from '@ethercalc/shared/messages';
 
@@ -106,11 +106,15 @@ const WS_OPEN = 1;
  * time, after the test has injected its own factory.
  */
 function defaultWsFactory(url: string): WsLike {
-  const ctor = (globalThis as unknown as { WebSocket?: new (u: string) => WsLike }).WebSocket;
+  // Chrome 124 and other older browsers reject relative WebSocket URLs;
+  // resolve against the page first, then translate the HTTP(S) scheme.
+  const browserHref = typeof globalThis.location === 'undefined' ? undefined : globalThis.location.href;
+  const absoluteUrl = browserHref === undefined ? url : toWsUrl(new URL(url, browserHref).href);
+  const ctor = globalThis.WebSocket;
   if (!ctor) {
     throw new Error('ws-adapter: no global WebSocket; pass wsFactory explicitly');
   }
-  return new ctor(url);
+  return new ctor(absoluteUrl);
 }
 
 function defaultSetTimeout(fn: () => void, ms: number): number {

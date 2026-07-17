@@ -1,7 +1,7 @@
-import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  createWsAdapter,
   buildWsEndpoint,
+  createWsAdapter,
   toWsUrl,
 } from '../src/ws-adapter.ts';
 import { createFakeTimers, createMockFactory, MockWebSocket } from './mock-ws.ts';
@@ -29,6 +29,39 @@ describe('ws-adapter URL helpers', () => {
     // 3-trailing-slash case so the quantifier is observable.
     const url = buildWsEndpoint({ url: 'http://h///', room: 'r', user: 'u' });
     expect(url).toBe('ws://h/_ws/r?user=u');
+  });
+  it('resolves relative endpoints before using the browser WebSocket constructor', () => {
+    const originalLocation = Object.getOwnPropertyDescriptor(globalThis, 'location');
+    const originalWebSocket = Object.getOwnPropertyDescriptor(globalThis, 'WebSocket');
+    let socket: MockWebSocket | undefined;
+
+    class StrictWebSocket extends MockWebSocket {
+      constructor(url: string) {
+        if (!/^wss?:\/\//.test(url)) throw new DOMException('WebSocket URL must be absolute');
+        super(url);
+        socket = this;
+      }
+    }
+
+    Object.defineProperty(globalThis, 'location', {
+      configurable: true,
+      value: { href: 'https://example.test/sheets/compat' },
+    });
+    Object.defineProperty(globalThis, 'WebSocket', {
+      configurable: true,
+      value: StrictWebSocket,
+    });
+    cleanupFns.push(() => {
+      if (originalLocation) Object.defineProperty(globalThis, 'location', originalLocation);
+      else Reflect.deleteProperty(globalThis, 'location');
+      if (originalWebSocket) Object.defineProperty(globalThis, 'WebSocket', originalWebSocket);
+      else Reflect.deleteProperty(globalThis, 'WebSocket');
+    });
+
+    const adapter = createWsAdapter({ room: 'r m', user: 'u', url: '/' });
+    adapter.close();
+
+    expect(socket?.url).toBe('wss://example.test/_ws/r%20m?user=u');
   });
 });
 

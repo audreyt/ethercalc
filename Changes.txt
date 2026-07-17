@@ -19,6 +19,10 @@ Bug fixes
   AAA+ payload during replay. Malformed merge end columns (`Infinity`,
   negative, non-integer) fail closed without calling `encodeColumn`.
 
+- Browser clients now resolve relative `/_ws/:room` endpoints against the page
+  origin before constructing a WebSocket, restoring live synchronization in
+  Chrome 124 and other browsers that require absolute `ws://`/`wss://` URLs.
+
 Verification
 - Promoted the Leanstral/LemmaScript pump into root `lemma/` (maintained
   surface; spike kept as immutable Attempt 2 provenance):
