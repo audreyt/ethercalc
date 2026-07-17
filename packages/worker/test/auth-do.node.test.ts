@@ -1462,6 +1462,734 @@ describe('AuthDO', () => {
     });
   });
 
+  describe('response contracts (headers, exact bodies)', () => {
+    it('sends Content-Type: application/json and the exact status on jsonResponse paths', async () => {
+      mockGenerateAuthenticationOptions.mockResolvedValue({
+        challenge: 'contract-challenge',
+        rpID: RP_ID,
+        allowCredentials: [],
+        timeout: 60000,
+        userVerification: 'required',
+      });
+      const res = await auth.fetch(makeRequest('/_auth/login-init', jsonBody({})));
+      expect(res.status).toBe(200);
+      expect(res.headers.get('Content-Type')).toBe('application/json');
+    });
+
+    it('sends Content-Type: text/plain and the exact body text on plainResponse paths', async () => {
+      const res = await auth.fetch(makeRequest('/_auth/unknown'));
+      expect(res.status).toBe(404);
+      expect(res.headers.get('Content-Type')).toBe('text/plain');
+      expect(await res.text()).toBe('Not Found');
+    });
+
+    it('returns the exact 503 body when trust anchors are unset', async () => {
+      const bare = new AuthDO(makeState('auth-503-body', { map: new Map() }), {} as never);
+      const res = await bare.fetch(makeRequest('/_auth/login-init', jsonBody({})));
+      expect(res.status).toBe(503);
+      expect(await res.text()).toBe('Auth is not configured');
+    });
+
+    it('returns the exact body text for every plainResponse error case', async () => {
+      const missingFields = await auth.fetch(
+        makeRequest('/_auth/register-complete', jsonBody({})),
+      );
+      expect(await missingFields.text()).toBe('Missing response, uid, or challenge');
+
+      const invalidChallenge = await auth.fetch(
+        makeRequest(
+          '/_auth/register-complete',
+          jsonBody({ response: { id: 'x', response: {} }, uid: 'u', challenge: 'nope' }),
+        ),
+      );
+      expect(await invalidChallenge.text()).toBe('Invalid or expired challenge');
+
+      const missingLoginFields = await auth.fetch(
+        makeRequest('/_auth/login-complete', jsonBody({})),
+      );
+      expect(await missingLoginFields.text()).toBe('Missing response or challenge');
+
+      const missingSession = await auth.fetch(
+        makeRequest('/_auth/verify-session', jsonBody({})),
+      );
+      expect(await missingSession.text()).toBe('Missing session');
+
+      const invalidSession = await auth.fetch(
+        makeRequest('/_auth/verify-session', jsonBody({ session: 'garbage' })),
+      );
+      expect(await invalidSession.text()).toBe('Invalid session');
+    });
+
+    it('dispatches strictly on exact path AND POST method — GET is not routed', async () => {
+      mockGenerateRegistrationOptions.mockResolvedValue({
+        challenge: 'method-guard-challenge',
+        rp: { name: RP_NAME, id: RP_ID },
+        user: { id: 'u', name: 'u', displayName: '' },
+        pubKeyCredParams: [],
+        excludeCredentials: [],
+        authenticatorSelection: {},
+      });
+      for (const path of [
+        '/_auth/register-init',
+        '/_auth/register-complete',
+        '/_auth/login-init',
+        '/_auth/login-complete',
+        '/_auth/verify-session',
+      ]) {
+        const res = await auth.fetch(makeRequest(path, { method: 'GET' }));
+        expect(res.status, path).toBe(404);
+      }
+      // Sanity: the same paths DO dispatch under POST.
+      const postRes = await auth.fetch(makeRequest('/_auth/register-init', jsonBody({})));
+      expect(postRes.status).toBe(200);
+    });
+
+    it('does not dispatch a near-miss path (verify-session prefix without exact match)', async () => {
+      const res = await auth.fetch(
+        makeRequest('/_auth/verify-session/extra', jsonBody({ session: 'x' })),
+      );
+      expect(res.status).toBe(404);
+    });
+  });
+
+  describe('signed session schema, expiry, and encoding (deterministic)', () => {
+    it('round-trips a real 32-hex uid through register-complete -> verify-session (forces base64 "==" padding)', async () => {
+      vi.useFakeTimers();
+      try {
+        const fixedNow = Date.UTC(2026, 0, 1, 0, 0, 0);
+        vi.setSystemTime(fixedNow);
+        mockGenerateRegistrationOptions.mockResolvedValue({
+          challenge: 'padding-challenge',
+          rp: { name: RP_NAME, id: RP_ID },
+          user: { id: 'generated', name: 'generated', displayName: '' },
+          pubKeyCredParams: [],
+          excludeCredentials: [],
+          authenticatorSelection: {},
+        });
+        const initRes = await auth.fetch(makeRequest('/_auth/register-init', jsonBody({})));
+        const initBody = (await initRes.json()) as { uid: string; options: { challenge: string } };
+        // The DO's own #generateUid() always produces a 32-char lowercase-hex uid.
+        expect(initBody.uid).toMatch(/^[0-9a-f]{32}$/);
+
+        mockVerifyRegistrationResponse.mockResolvedValue({
+          verified: true,
+          registrationInfo: {
+            credential: { id: 'padding-cred', publicKey: new Uint8Array(), counter: 0 },
+            credentialDeviceType: 'singleDevice',
+            credentialBackedUp: false,
+            fmt: 'none',
+            aaguid: '',
+            credentialType: 'public-key',
+            attestationObject: new Uint8Array(),
+            userVerified: true,
+            origin: ORIGIN,
+            rpID: RP_ID,
+          },
+        });
+        const completeRes = await auth.fetch(
+          makeRequest(
+            '/_auth/register-complete',
+            jsonBody({
+              response: { id: 'padding-cred', response: {} },
+              uid: initBody.uid,
+              challenge: initBody.options.challenge,
+            }),
+          ),
+        );
+        const { session } = await readAuthResult(completeRes);
+        // The real payload JSON ({"uid":"<32hex>","iat":<13-digit>,"exp":<13-digit>})
+        // is always 82 bytes, i.e. length % 3 === 1, which forces exactly two '='
+        // padding characters in standard base64 before the url-safe strip. A
+        // regex/anchor/replacement bug in bytesToBase64url's padding-strip step
+        // leaves a stray '=' in the token, which fails atob on decode.
+        const verifyRes = await auth.fetch(
+          makeRequest('/_auth/verify-session', jsonBody({ session })),
+        );
+        expect(verifyRes.status).toBe(200);
+        const verifyBody = (await verifyRes.json()) as { uid: string; exp: number };
+        expect(verifyBody.uid).toBe(initBody.uid);
+        expect(verifyBody.exp).toBe(fixedNow + 30 * 24 * 60 * 60 * 1000);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('accepts a session at the instant it is minted and rejects it exactly at its expiry boundary', async () => {
+      vi.useFakeTimers();
+      try {
+        const fixedNow = Date.UTC(2026, 0, 1, 0, 0, 0);
+        vi.setSystemTime(fixedNow);
+        const secret = 'boundary-secret';
+        record.map.set('session-secret', secret);
+        const uid = 'uid-boundary';
+        const iat = fixedNow;
+        const exp = fixedNow + 1000;
+        const session = await signSessionPayload(secret, JSON.stringify({ uid, iat, exp }));
+
+        vi.setSystemTime(exp - 1);
+        const justBefore = await auth.fetch(
+          makeRequest('/_auth/verify-session', jsonBody({ session })),
+        );
+        expect(justBefore.status).toBe(200);
+
+        vi.setSystemTime(exp);
+        const atExpiry = await auth.fetch(
+          makeRequest('/_auth/verify-session', jsonBody({ session })),
+        );
+        expect(atExpiry.status).toBe(401);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('rejects a session token with no separating dot, and one with the dot in the first position', async () => {
+      const secret = 'dot-secret';
+      record.map.set('session-secret', secret);
+      for (const session of ['nodothere', '.onlymacnopayload']) {
+        const res = await auth.fetch(
+          makeRequest('/_auth/verify-session', jsonBody({ session })),
+        );
+        expect(res.status, session).toBe(401);
+      }
+    });
+
+    it('rejects a session token whose base64url payload segment is not valid base64', async () => {
+      const res = await auth.fetch(
+        makeRequest('/_auth/verify-session', jsonBody({ session: 'not valid base64!.deadbeef' })),
+      );
+      expect(res.status).toBe(401);
+    });
+
+    it('rejects every individual field violation in the session payload schema (each clause independently)', async () => {
+      const secret = 'schema-clause-secret';
+      record.map.set('session-secret', secret);
+      const now = Date.now();
+      const validExp = now + 60_000;
+      const cases: Array<{ label: string; payload: unknown }> = [
+        { label: 'uid is a number', payload: { uid: 42, iat: now, exp: validExp } },
+        { label: 'uid is missing', payload: { iat: now, exp: validExp } },
+        { label: 'iat is a string', payload: { uid: 'u', iat: 'now', exp: validExp } },
+        { label: 'iat is missing', payload: { uid: 'u', exp: validExp } },
+        { label: 'exp is a string', payload: { uid: 'u', iat: now, exp: 'later' } },
+        { label: 'exp is missing', payload: { uid: 'u', iat: now } },
+        { label: 'payload is an array', payload: ['u', now, validExp] },
+        { label: 'payload is a bare number', payload: 12345 },
+        { label: 'payload is null', payload: null },
+      ];
+      for (const { label, payload } of cases) {
+        const session = await signSessionPayload(secret, JSON.stringify(payload));
+        const res = await auth.fetch(
+          makeRequest('/_auth/verify-session', jsonBody({ session })),
+        );
+        expect(res.status, label).toBe(401);
+      }
+    });
+  });
+
+  describe('challenge purpose, expiry, and delete semantics', () => {
+    it('deletes a challenge on every consumption outcome: valid, wrong purpose, and expired', async () => {
+      const now = Date.now();
+      record.map.set('challenge:valid-register', {
+        purpose: 'register',
+        uid: 'uid-valid',
+        exp: now + 60_000,
+      });
+      record.map.set('challenge:wrong-purpose', {
+        purpose: 'login',
+        exp: now + 60_000,
+      });
+      record.map.set('challenge:already-expired', {
+        purpose: 'register',
+        uid: 'uid-expired',
+        exp: now - 1,
+      });
+
+      mockVerifyRegistrationResponse.mockResolvedValue({
+        verified: true,
+        registrationInfo: {
+          credential: { id: 'valid-register-cred', publicKey: new Uint8Array(), counter: 0 },
+          credentialDeviceType: 'singleDevice',
+          credentialBackedUp: false,
+          fmt: 'none',
+          aaguid: '',
+          credentialType: 'public-key',
+          attestationObject: new Uint8Array(),
+          userVerified: true,
+          origin: ORIGIN,
+          rpID: RP_ID,
+        },
+      });
+      const validRes = await auth.fetch(
+        makeRequest(
+          '/_auth/register-complete',
+          jsonBody({
+            response: { id: 'valid-register-cred', response: {} },
+            uid: 'uid-valid',
+            challenge: 'valid-register',
+          }),
+        ),
+      );
+      expect(validRes.status).toBe(200);
+      // Valid consumption deletes the challenge, even on the success path.
+      expect(record.map.has('challenge:valid-register')).toBe(false);
+
+      const wrongPurposeRes = await auth.fetch(
+        makeRequest(
+          '/_auth/register-complete',
+          jsonBody({
+            response: { id: 'x', response: {} },
+            uid: 'uid-any',
+            challenge: 'wrong-purpose',
+          }),
+        ),
+      );
+      expect(wrongPurposeRes.status).toBe(400);
+      // Wrong-purpose lookups must NOT delete a challenge that belongs to a
+      // different ceremony — it is still consumable by its real purpose.
+      expect(record.map.has('challenge:wrong-purpose')).toBe(true);
+
+      const expiredRes = await auth.fetch(
+        makeRequest(
+          '/_auth/register-complete',
+          jsonBody({
+            response: { id: 'x', response: {} },
+            uid: 'uid-expired',
+            challenge: 'already-expired',
+          }),
+        ),
+      );
+      expect(expiredRes.status).toBe(400);
+      // Expired challenges are deleted on the expiry-detecting path too.
+      expect(record.map.has('challenge:already-expired')).toBe(false);
+    });
+
+    it('rejects a login challenge exactly at its expiry boundary and deletes it, one tick before it is still consumed', async () => {
+      vi.useFakeTimers();
+      try {
+        const now = Date.now();
+        const exp = now + 1000;
+        record.map.set('challenge:boundary-login', { purpose: 'login', exp });
+        record.map.set('challenge:boundary-login-2', { purpose: 'login', exp });
+
+        vi.setSystemTime(exp - 1);
+        mockVerifyAuthenticationResponse.mockResolvedValue({ verified: false });
+        const before = await auth.fetch(
+          makeRequest(
+            '/_auth/login-complete',
+            jsonBody({ response: { id: 'x', response: {} }, challenge: 'boundary-login' }),
+          ),
+        );
+        // Not-expired: challenge is consumed (not short-circuited by expiry)
+        // and rejection instead comes from the unverified result, not the
+        // "expired challenge" branch — proving the exp check is exclusive
+        // one tick before expiry.
+        expect(before.status).toBe(401);
+        expect(record.map.has('challenge:boundary-login')).toBe(false);
+
+        vi.setSystemTime(exp);
+        const atBoundary = await auth.fetch(
+          makeRequest(
+            '/_auth/login-complete',
+            jsonBody({ response: { id: 'x', response: {} }, challenge: 'boundary-login-2' }),
+          ),
+        );
+        expect(atBoundary.status).toBe(401);
+        // Exactly-at-expiry challenges are deleted via the expiry branch.
+        expect(record.map.has('challenge:boundary-login-2')).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('never dispatches to the WebAuthn verifier for a challenge purpose mismatch, and leaves the challenge for its real purpose', async () => {
+      record.map.set('challenge:register-purpose-only', {
+        purpose: 'register',
+        uid: 'uid-x',
+        exp: Date.now() + 60_000,
+      });
+      const res = await auth.fetch(
+        makeRequest(
+          '/_auth/login-complete',
+          jsonBody({
+            response: { id: 'x', response: {} },
+            challenge: 'register-purpose-only',
+          }),
+        ),
+      );
+      expect(res.status).toBe(401);
+      expect(mockVerifyAuthenticationResponse).not.toHaveBeenCalled();
+      expect(record.map.has('challenge:register-purpose-only')).toBe(true);
+    });
+  });
+
+  describe('alarm rearm semantics', () => {
+    it('arms exactly one alarm interval into the future when a challenge is stored, and does not re-arm while one is already pending', async () => {
+      vi.useFakeTimers();
+      try {
+        const fixedNow = Date.UTC(2026, 0, 1, 0, 0, 0);
+        vi.setSystemTime(fixedNow);
+        mockGenerateAuthenticationOptions.mockResolvedValue({
+          challenge: 'rearm-1',
+          rpID: RP_ID,
+          allowCredentials: [],
+          timeout: 60000,
+          userVerification: 'required',
+        });
+        await auth.fetch(makeRequest('/_auth/login-init', jsonBody({})));
+        expect(record.alarm).toBe(fixedNow + 5 * 60 * 1000);
+
+        // Advance time and store a second challenge: #armAlarm must be a
+        // no-op while an alarm is already scheduled (current !== null).
+        vi.setSystemTime(fixedNow + 60_000);
+        mockGenerateAuthenticationOptions.mockResolvedValue({
+          challenge: 'rearm-2',
+          rpID: RP_ID,
+          allowCredentials: [],
+          timeout: 60000,
+          userVerification: 'required',
+        });
+        await auth.fetch(makeRequest('/_auth/login-init', jsonBody({})));
+        expect(record.alarm).toBe(fixedNow + 5 * 60 * 1000);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('re-arms a fresh interval from the alarm firing time when challenges remain after cleanup', async () => {
+      vi.useFakeTimers();
+      try {
+        const fixedNow = Date.UTC(2026, 0, 1, 0, 0, 0);
+        vi.setSystemTime(fixedNow);
+        record.map.set('challenge:expired-during-alarm', {
+          purpose: 'login',
+          exp: fixedNow - 1,
+        });
+        record.map.set('challenge:still-valid-during-alarm', {
+          purpose: 'login',
+          exp: fixedNow + 60_000,
+        });
+        record.alarm = fixedNow; // simulate the alarm firing now
+
+        await auth.alarm();
+
+        expect(record.map.has('challenge:expired-during-alarm')).toBe(false);
+        expect(record.map.has('challenge:still-valid-during-alarm')).toBe(true);
+        expect(record.alarm).toBe(fixedNow + 5 * 60 * 1000);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('deletes a challenge exactly at its expiry boundary during alarm cleanup, and keeps one still-valid by one tick', async () => {
+      const now = Date.now();
+      record.map.set('challenge:at-boundary', { purpose: 'login', exp: now });
+      record.map.set('challenge:before-boundary', { purpose: 'login', exp: now + 1 });
+
+      await auth.alarm();
+
+      expect(record.map.has('challenge:at-boundary')).toBe(false);
+      expect(record.map.has('challenge:before-boundary')).toBe(true);
+    });
+
+    it('only lists challenge: -prefixed keys when scanning for cleanup, never other storage keys', async () => {
+      record.map.set('cred:unrelated', { uid: 'uid-unrelated' });
+      record.map.set('session-secret', 'unrelated-secret');
+      record.map.set('challenge:only-this-one', {
+        purpose: 'login',
+        exp: Date.now() - 1,
+      });
+
+      await auth.alarm();
+
+      expect(record.map.has('challenge:only-this-one')).toBe(false);
+      expect(record.map.has('cred:unrelated')).toBe(true);
+      expect(record.map.get('session-secret')).toBe('unrelated-secret');
+    });
+  });
+
+  describe('registration and login verifier guards', () => {
+    it('requires requireUserVerification: true on both registration and authentication verify calls', async () => {
+      mockGenerateRegistrationOptions.mockResolvedValue({
+        challenge: 'verifier-guard-reg',
+        rp: { name: RP_NAME, id: RP_ID },
+        user: { id: 'u', name: 'u', displayName: '' },
+        pubKeyCredParams: [],
+        excludeCredentials: [],
+        authenticatorSelection: {},
+      });
+      const initRes = await auth.fetch(makeRequest('/_auth/register-init', jsonBody({})));
+      const initBody = (await initRes.json()) as { uid: string; options: { challenge: string } };
+      mockVerifyRegistrationResponse.mockResolvedValue({
+        verified: true,
+        registrationInfo: {
+          credential: { id: 'verifier-guard-cred', publicKey: new Uint8Array(), counter: 0 },
+          credentialDeviceType: 'singleDevice',
+          credentialBackedUp: false,
+          fmt: 'none',
+          aaguid: '',
+          credentialType: 'public-key',
+          attestationObject: new Uint8Array(),
+          userVerified: true,
+          origin: ORIGIN,
+          rpID: RP_ID,
+        },
+      });
+      await auth.fetch(
+        makeRequest(
+          '/_auth/register-complete',
+          jsonBody({
+            response: { id: 'verifier-guard-cred', response: {} },
+            uid: initBody.uid,
+            challenge: initBody.options.challenge,
+          }),
+        ),
+      );
+      const regVerifyOpts = mockVerifyRegistrationResponse.mock.calls[0]![0];
+      expect(regVerifyOpts.requireUserVerification).toBe(true);
+    });
+
+    it('rejects when the verifier resolves verified:true but omits registrationInfo entirely', async () => {
+      record.map.set('challenge:no-registration-info', {
+        purpose: 'register',
+        uid: 'uid-no-info-2',
+        exp: Date.now() + 60_000,
+      });
+      mockVerifyRegistrationResponse.mockResolvedValue({ verified: true });
+
+      const res = await auth.fetch(
+        makeRequest(
+          '/_auth/register-complete',
+          jsonBody({
+            response: { id: 'x', response: {} },
+            uid: 'uid-no-info-2',
+            challenge: 'no-registration-info',
+          }),
+        ),
+      );
+      expect(res.status).toBe(400);
+      expect(await res.text()).toBe('Registration verification failed');
+    });
+
+    it('rejects login when the credential is present but the verifier throws mid-verification (fails closed, not open)', async () => {
+      const credentialID = 'throws-mid-verify';
+      record.map.set('challenge:throws-mid-verify', { purpose: 'login', exp: Date.now() + 60_000 });
+      record.map.set(`cred:${credentialID}`, {
+        uid: 'uid-throws-mid-verify',
+        publicKey: new Uint8Array([1]),
+        counter: 3,
+        transports: [],
+        deviceType: 'singleDevice',
+        backedUp: false,
+      });
+      mockVerifyAuthenticationResponse.mockRejectedValue(new TypeError('boom'));
+
+      const res = await auth.fetch(
+        makeRequest(
+          '/_auth/login-complete',
+          jsonBody({
+            response: { id: credentialID, response: {} },
+            challenge: 'throws-mid-verify',
+          }),
+        ),
+      );
+      expect(res.status).toBe(401);
+      // Counter must be untouched on a fail-closed verifier throw.
+      const stored = record.map.get(`cred:${credentialID}`) as { counter: number };
+      expect(stored.counter).toBe(3);
+    });
+
+    it('falls back to an empty transports array when the verifier omits transports on registration', async () => {
+      record.map.set('challenge:no-transports', {
+        purpose: 'register',
+        uid: 'uid-no-transports',
+        exp: Date.now() + 60_000,
+      });
+      mockVerifyRegistrationResponse.mockResolvedValue({
+        verified: true,
+        registrationInfo: {
+          credential: { id: 'no-transports-cred', publicKey: new Uint8Array(), counter: 0 },
+          credentialDeviceType: 'singleDevice',
+          credentialBackedUp: false,
+          fmt: 'none',
+          aaguid: '',
+          credentialType: 'public-key',
+          attestationObject: new Uint8Array(),
+          userVerified: true,
+          origin: ORIGIN,
+          rpID: RP_ID,
+          // transports intentionally omitted
+        },
+      });
+      await auth.fetch(
+        makeRequest(
+          '/_auth/register-complete',
+          jsonBody({
+            response: { id: 'no-transports-cred', response: {} },
+            uid: 'uid-no-transports',
+            challenge: 'no-transports',
+          }),
+        ),
+      );
+      const stored = record.map.get('cred:no-transports-cred') as { transports: unknown[] };
+      expect(stored.transports).toEqual([]);
+    });
+  });
+
+  describe('credential counters and exact response contracts', () => {
+    it('rejects a newCounter exactly equal to the stored counter (no progress is not acceptance)', async () => {
+      const credentialID = 'counter-equal-rejected';
+      record.map.set('challenge:counter-equal', { purpose: 'login', exp: Date.now() + 60_000 });
+      record.map.set(`cred:${credentialID}`, {
+        uid: 'uid-counter-equal',
+        publicKey: new Uint8Array(),
+        counter: 4,
+        transports: [],
+        deviceType: 'singleDevice',
+        backedUp: false,
+      });
+      mockVerifyAuthenticationResponse.mockResolvedValue({
+        verified: true,
+        authenticationInfo: {
+          credentialID,
+          newCounter: 4,
+          userVerified: true,
+          credentialDeviceType: 'singleDevice',
+          credentialBackedUp: false,
+          origin: ORIGIN,
+          rpID: RP_ID,
+        },
+      });
+
+      const res = await auth.fetch(
+        makeRequest(
+          '/_auth/login-complete',
+          jsonBody({ response: { id: credentialID, response: {} }, challenge: 'counter-equal' }),
+        ),
+      );
+      expect(res.status).toBe(401);
+      expect(await res.text()).toBe('Authentication counter rejected');
+      const stored = record.map.get(`cred:${credentialID}`) as { counter: number };
+      expect(stored.counter).toBe(4);
+    });
+
+    it('persists the counter update under the same credential storage key it read from (no key corruption)', async () => {
+      const credentialID = 'counter-key-integrity';
+      record.map.set('challenge:counter-key-integrity', { purpose: 'login', exp: Date.now() + 60_000 });
+      record.map.set(`cred:${credentialID}`, {
+        uid: 'uid-counter-key-integrity',
+        publicKey: new Uint8Array(),
+        counter: 1,
+        transports: [],
+        deviceType: 'singleDevice',
+        backedUp: false,
+      });
+      const sizeBeforeLogin = record.map.size;
+      mockVerifyAuthenticationResponse.mockResolvedValue({
+        verified: true,
+        authenticationInfo: {
+          credentialID,
+          newCounter: 2,
+          userVerified: true,
+          credentialDeviceType: 'multiDevice',
+          credentialBackedUp: true,
+          origin: ORIGIN,
+          rpID: RP_ID,
+        },
+      });
+
+      const res = await auth.fetch(
+        makeRequest(
+          '/_auth/login-complete',
+          jsonBody({ response: { id: credentialID, response: {} }, challenge: 'counter-key-integrity' }),
+        ),
+      );
+      expect(res.status).toBe(200);
+      // The challenge is consumed (deleted, -1) and a session-secret key is
+      // created on first session mint (+1) — net size is unchanged. No NEW
+      // credential key should appear from the counter write: it must land
+      // on the exact same `cred:<id>` key, not an empty-string or malformed
+      // key.
+      expect(record.map.size).toBe(sizeBeforeLogin);
+      expect(record.map.has(`cred:${credentialID}`)).toBe(true);
+      expect(record.map.has('cred:')).toBe(false);
+      const stored = record.map.get(`cred:${credentialID}`) as {
+        counter: number;
+        deviceType: string;
+        backedUp: boolean;
+      };
+      expect(stored.counter).toBe(2);
+      expect(stored.deviceType).toBe('multiDevice');
+      expect(stored.backedUp).toBe(true);
+    });
+
+    it('returns the exact {uid, session} shape (no extra fields) from register-complete', async () => {
+      mockGenerateRegistrationOptions.mockResolvedValue({
+        challenge: 'exact-shape-challenge',
+        rp: { name: RP_NAME, id: RP_ID },
+        user: { id: 'u', name: 'u', displayName: '' },
+        pubKeyCredParams: [],
+        excludeCredentials: [],
+        authenticatorSelection: {},
+      });
+      const initRes = await auth.fetch(makeRequest('/_auth/register-init', jsonBody({})));
+      const initBody = (await initRes.json()) as { uid: string; options: { challenge: string } };
+      mockVerifyRegistrationResponse.mockResolvedValue({
+        verified: true,
+        registrationInfo: {
+          credential: { id: 'exact-shape-cred', publicKey: new Uint8Array(), counter: 0 },
+          credentialDeviceType: 'singleDevice',
+          credentialBackedUp: false,
+          fmt: 'none',
+          aaguid: '',
+          credentialType: 'public-key',
+          attestationObject: new Uint8Array(),
+          userVerified: true,
+          origin: ORIGIN,
+          rpID: RP_ID,
+        },
+      });
+      const completeRes = await auth.fetch(
+        makeRequest(
+          '/_auth/register-complete',
+          jsonBody({
+            response: { id: 'exact-shape-cred', response: {} },
+            uid: initBody.uid,
+            challenge: initBody.options.challenge,
+          }),
+        ),
+      );
+      const completeBody = (await completeRes.json()) as Record<string, unknown>;
+      expect(Object.keys(completeBody).sort()).toEqual(['session', 'uid']);
+    });
+
+    it('returns the exact {options, uid} shape from register-init (no leaked internal fields)', async () => {
+      mockGenerateRegistrationOptions.mockResolvedValue({
+        challenge: 'shape-init-challenge',
+        rp: { name: RP_NAME, id: RP_ID },
+        user: { id: 'u', name: 'u', displayName: '' },
+        pubKeyCredParams: [],
+        excludeCredentials: [],
+        authenticatorSelection: {},
+      });
+      const res = await auth.fetch(makeRequest('/_auth/register-init', jsonBody({})));
+      const body = (await res.json()) as Record<string, unknown>;
+      expect(Object.keys(body).sort()).toEqual(['options', 'uid']);
+    });
+
+    it('returns the exact {uid, exp} shape from verify-session (no session/iat leakage)', async () => {
+      const secret = 'exact-shape-verify-secret';
+      const uid = 'uid-exact-shape-verify';
+      record.map.set('session-secret', secret);
+      const iat = Date.now();
+      const exp = iat + 60_000;
+      const session = await signSessionPayload(secret, JSON.stringify({ uid, iat, exp }));
+      const res = await auth.fetch(makeRequest('/_auth/verify-session', jsonBody({ session })));
+      const body = (await res.json()) as Record<string, unknown>;
+      expect(Object.keys(body).sort()).toEqual(['exp', 'uid']);
+      expect(body.exp).toBe(exp);
+    });
+  });
+
   describe('configuration guard', () => {
     it('fails closed with 503 when the trust anchors are unset', async () => {
       const configs = [
