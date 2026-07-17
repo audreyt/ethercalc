@@ -75,6 +75,8 @@ export interface EditorObject {
   EnsureECellVisible: () => void;
   busy: boolean;
   ensureecell: boolean;
+  /** Room-access UI layout only (`passkey/ui.ts`) — resizes the grid to `width`x`height` px. */
+  ResizeTableEditor?: (width: number, height: number) => void;
 }
 
 export interface SettingsCallback {
@@ -116,6 +118,15 @@ export interface SpreadsheetLike {
   DoOnResize?: () => void;
   ParseSheetSave: (save: string) => void;
   DecodeSpreadsheetSave: (save: string) => DecodedSpreadsheet | undefined;
+  // Room-access UI layout only (`passkey/ui.ts`) — mirrors what SocialCalc's
+  // own `InitializeSpreadsheet{Control,Viewer}` set on the real instance;
+  // not used by boot.ts/main.ts's WS/command-execution concerns.
+  spreadsheetDiv?: HTMLElement;
+  editorDiv?: HTMLElement;
+  height?: number;
+  width?: number;
+  nonviewheight?: number;
+  viewheight?: number;
 }
 
 export interface DecodedSpreadsheet {
@@ -136,8 +147,10 @@ export interface SocialCalcGlobal {
 
   /**
    * Sanitiser hook for `valueformat===text-html` cells. Installed at boot by
-   * `installSanitizeHtml`; the served `/static/socialcalc.js` render sink
-   * calls it (when present) before injecting the value as `innerHTML`. See
+   * `installSecurityPolicy` for backward compatibility with cached
+   * pre-3.1.0 `static/socialcalc.js` assets. SocialCalc 3.1.0's native
+   * security model uses `Callbacks.untrustedContent` +
+   * `Callbacks.securityPolicy.sanitizeHtml` instead. See
    * `src/sanitize-html.ts` and `scripts/build-assets.ts`.
    */
   sanitizeHTML?: (raw: string) => string;
@@ -146,6 +159,12 @@ export interface SocialCalcGlobal {
   Constants: Record<string, string>;
   Callbacks: {
     broadcast?: BroadcastFn;
+    untrustedContent?: boolean;
+    securityPolicy?: {
+      sanitizeHtml?: (html: string) => string;
+      allowedUrlSchemes?: string[];
+      allowedDataMimeTypes?: string[];
+    };
     [k: string]: unknown;
   };
   RecalcInfo: {

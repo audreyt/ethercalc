@@ -1,25 +1,18 @@
 /**
  * Client-side HTML sanitiser for `valueformat===text-html` cells.
  *
- * SocialCalc renders a `text-html` cell's raw value straight into the cell
- * `<div>`'s `innerHTML` (see `FormatValueForDisplay`, the
- * `if (valueformat=="text-html")` branch in the served
- * `/static/socialcalc.js`). `text-html` is a legitimate feature — cells
- * carry links, images, and inline formatting — so we must NOT strip it.
- * Instead we route the raw value through DOMPurify before it reaches the
- * DOM, neutralising stored XSS (`<script>`, `on*` handlers, `javascript:`
- * URLs, `<iframe>`/`<object>`/`<embed>`) while keeping the safe formatting
+ * SocialCalc 3.1.0 ships its own opt-in rendering security model. When
+ * `SocialCalc.Callbacks.untrustedContent` is `true`, the runtime routes
+ * `text-html` cell values through `SocialCalc.EscapeUntrustedHtml`, which
+ * calls `securityPolicy.sanitizeHtml(html)` when that callback is a
+ * function. We wire DOMPurify as that callback at boot, neutralising
+ * stored XSS (`<script>`, `on*` handlers, `javascript:` URLs,
+ * `<iframe>`/`<object>`/`<embed>`) while keeping the safe formatting
  * tags intact.
  *
- * The hook is wired by `scripts/build-assets.ts`, which rewrites the
- * served runtime's text-html branch to
- *
- *   displayvalue = (SocialCalc.sanitizeHTML ? SocialCalc.sanitizeHTML(displayvalue) : displayvalue);
- *
- * so the install below is what makes that branch actually sanitise. If the
- * hook is ever absent (old cached asset), the branch falls back to the raw
- * value — exactly the legacy behaviour — so nothing breaks, it just isn't
- * sanitised. We always install it at boot to close that window.
+ * The `SocialCalc.sanitizeHTML` property is also installed for backward
+ * compatibility with any cached `static/socialcalc.js` assets that still
+ * carry the pre-3.1.0 regex-injected hook.
  */
 
 /**
@@ -32,8 +25,16 @@ export interface PurifyLike {
 }
 
 /** Just the slice of `window.SocialCalc` this module touches. */
-export interface SanitizeHost {
+export interface SecurityPolicyHost {
   sanitizeHTML?: (raw: string) => string;
+  Callbacks?: {
+    untrustedContent?: boolean;
+    securityPolicy?: {
+      sanitizeHtml?: (html: string) => string;
+      allowedUrlSchemes?: string[];
+      allowedDataMimeTypes?: string[];
+    };
+  };
 }
 
 /**
@@ -122,15 +123,32 @@ export const TEXT_HTML_SANITIZE_CONFIG: Readonly<Record<string, unknown>> = {
 };
 
 /**
- * Install `SocialCalc.sanitizeHTML` on the host global.
+ * Install SocialCalc 3.1.0's security policy on the host global.
  *
- * Idempotent: if a hook is already present we leave it in place (a host page
- * may have installed a stricter policy of its own). Returns `true` when we
- * installed, `false` when we skipped.
+ * Enables `untrustedContent` and wires DOMPurify as the
+ * `securityPolicy.sanitizeHtml` callback. Also installs
+ * `SocialCalc.sanitizeHTML` for backward compatibility with cached
+ * pre-3.1.0 `static/socialcalc.js` assets that still carry the
+ * regex-injected hook.
+ *
+ * Idempotent: if `untrustedContent` is already `true` we leave the policy
+ * in place (a host page may have installed a stricter policy of its own).
+ * Returns `true` when we installed, `false` when we skipped.
  */
-export function installSanitizeHtml(host: SanitizeHost, purify: PurifyLike): boolean {
-  if (host.sanitizeHTML) return false;
-  host.sanitizeHTML = (raw: string): string =>
-    purify.sanitize(raw, TEXT_HTML_SANITIZE_CONFIG);
+export function installSecurityPolicy(host: SecurityPolicyHost, purify: PurifyLike): boolean {
+  const callbacks = host.Callbacks ?? (host.Callbacks = {});
+  if (callbacks.untrustedContent) return false;
+
+  const sanitizer = (raw: string): string => purify.sanitize(raw, TEXT_HTML_SANITIZE_CONFIG);
+
+  callbacks.untrustedContent = true;
+  callbacks.securityPolicy = callbacks.securityPolicy ?? {};
+  callbacks.securityPolicy.sanitizeHtml = sanitizer;
+
+  // Backward compat: cached pre-3.1.0 assets may call SocialCalc.sanitizeHTML.
+  if (!host.sanitizeHTML) {
+    host.sanitizeHTML = sanitizer;
+  }
+
   return true;
 }

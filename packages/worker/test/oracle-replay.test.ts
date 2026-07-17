@@ -1,5 +1,5 @@
 import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:test';
-import { beforeAll, describe, it, expect } from 'vitest';
+import { beforeAll, describe, it, expect } from 'vite-plus/test';
 
 import type { HttpScenario } from '@ethercalc/shared/oracle-scenarios';
 import { dispatchMatcher } from '@ethercalc/oracle-harness/matchers';
@@ -182,15 +182,15 @@ async function replayAgainstWorker(scenario: HttpScenario): Promise<{
  * bytes (Express-static mime-table bug). Per §13 Q1 the rewrite
  * corrects it to `image/vnd.microsoft.icon`.
  *
- * `static/get-socialcalc-js` is now ALSO intentionally divergent (per
- * §13 Q1, design "h5"): `scripts/build-assets.ts` injects an XSS
- * sanitisation hook into the served runtime's `valueformat===text-html`
- * render sink (the live-editor stored-XSS fix) — one extra line:
- *   `displayvalue = (SocialCalc.sanitizeHTML ? SocialCalc.sanitizeHTML(displayvalue) : displayvalue);`
- * so the served `static/socialcalc.js` is deliberately no longer
- * byte-identical to the legacy `SocialCalc.js`. We still assert the served
- * file CONTAINS the upstream runtime and the injected hook (see the
- * dedicated test below) rather than dropping the surface entirely.
+ * `static/get-socialcalc-js` is intentionally divergent (per §13 Q1,
+ * design "h5"): SocialCalc 3.1.0 ships its own opt-in rendering security
+ * model (`EscapeUntrustedHtml`, `untrustedContent`,
+ * `securityPolicy.sanitizeHtml`), which the client enables at boot via
+ * `installSecurityPolicy`. The served `static/socialcalc.js` is no
+ * longer byte-identical to the legacy `SocialCalc.js` (strict-mode
+ * wrappers stripped). We assert the served file CONTAINS the upstream
+ * runtime and the 3.1.0 security model rather than the old
+ * regex-injected hook (see the dedicated test below).
  */
 const PHASE5_EXPECTED_PASS = [
   // Phase 4 — stateless redirects + 404s
@@ -232,10 +232,12 @@ describe('oracle replay — Phase 4 + 5 + 5.1 + 5.2 subset (10/13 green)', () =>
   }
 
   // The served `static/socialcalc.js` no longer byte-matches the legacy
-  // oracle fixture (design "h5": `scripts/build-assets.ts` injects the
-  // text-html XSS sanitisation hook). Assert instead that the asset is still served
-  // AND carries the injected hook — that's the security-relevant invariant.
-  it('serves static/socialcalc.js with the text-html sanitisation hook injected', async () => {
+  // oracle fixture (design "h5"). With SocialCalc 3.1.0 the served file
+  // carries the upstream `untrustedContent`/`EscapeUntrustedHtml` security
+  // model; with pre-3.1.0 it carries the regex-injected
+  // `SocialCalc.sanitizeHTML` hook. Assert the asset is still served and
+  // carries one of the two sanitiser mechanisms.
+  it('serves static/socialcalc.js with a text-html sanitiser mechanism', async () => {
     const req = new Request('https://example.test/static/socialcalc.js');
     const ctx = createExecutionContext();
     const res = await worker.fetch(req, env as never, ctx);
@@ -244,10 +246,12 @@ describe('oracle replay — Phase 4 + 5 + 5.1 + 5.2 subset (10/13 green)', () =>
     const body = await res.text();
     // Upstream runtime still present.
     expect(body).toContain('SocialCalc');
-    // The render sink's text-html branch now routes through the hook.
-    expect(body).toContain(
+    // Either the 3.1.0 native security model or the pre-3.1.0 injected hook.
+    const has310Model = body.includes('EscapeUntrustedHtml');
+    const hasLegacyHook = body.includes(
       'SocialCalc.sanitizeHTML ? SocialCalc.sanitizeHTML(displayvalue) : displayvalue',
     );
+    expect(has310Model || hasLegacyHook).toBe(true);
   });
 
   // Meta-check: floor is 10/13

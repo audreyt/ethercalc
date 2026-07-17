@@ -277,3 +277,73 @@ Check if page exists
 + Response 200 (application/json)
 
 
+# Passkey Auth [/_auth]
+
+Available when the deployment sets `ETHERCALC_AUTH` plus the WebAuthn
+trust anchors (`ETHERCALC_RP_ID`, `ETHERCALC_ORIGIN`); otherwise every
+ceremony route responds 404. Sessions are carried by the HttpOnly
+`ec_sess` cookie — tokens never appear in response bodies.
+
+## Register Init [POST /_auth/register-init]
+
+Begin creating a passkey. Returns WebAuthn creation options plus the
+server-generated user id.
+
++ Response 200 (application/json)
+
+## Register Complete [POST /_auth/register-complete]
+
+Takes `{response, uid, challenge}` from the browser ceremony. On
+success sets the `ec_sess` cookie and returns `{uid}`.
+
++ Response 200 (application/json)
+
+## Login Init [POST /_auth/login-init]
+
+Begin a usernameless (discoverable-credential) login.
+
++ Response 200 (application/json)
+
+## Login Complete [POST /_auth/login-complete]
+
+Takes `{response, challenge}`. On success sets the `ec_sess` cookie and
+returns `{uid}`.
+
++ Response 200 (application/json)
+
+## Who Am I [GET /_auth/whoami]
+
+Returns `{uid, enabled}` — `uid` is null for anonymous visitors and
+`enabled` reports whether passkey auth is configured at all.
+
++ Response 200 (application/json)
+
+## Logout [POST /_auth/logout]
+
+Clears the session cookie.
+
++ Response 204
+
+# Private Page [/_/private]
+
+## Create Private Page [POST]
+
+Requires a passkey session. Creates a fresh room readable and writable
+only by the owner, and returns `{room}` with a Location header.
+Private rooms never appear in `/_rooms` listings, and every read,
+write, export, and WebSocket path answers 403 for non-members.
+
++ Response 201 (application/json)
++ Response 401 — no passkey session
+
+# Private Copy [/_from/{id}/private]
+
+## Copy to Private [POST]
+
+Requires a passkey session. Copies a readable page into a fresh
+private room owned by the caller and redirects to its edit view.
+
++ Response 302
++ Response 401 — no passkey session
++ Response 403 — source page not readable by the caller
+

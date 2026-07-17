@@ -6,18 +6,19 @@
   "license": "CC0-1.0",
   "type": "module",
   "scripts": {
-    "pretest": "playwright install chromium",
-    "test": "playwright test",
-    "test:single": "playwright test --project=chromium",
-    "test:headed": "playwright test --headed",
-    "test:ui": "playwright test --ui",
-    "install:browsers": "playwright install --with-deps chromium",
+    "pretest": "vp exec playwright install chromium",
+    "test": "vp exec playwright test",
+    "test:single": "vp exec playwright test --project=chromium",
+    "test:headed": "vp exec playwright test --headed",
+    "test:ui": "vp exec playwright test --ui",
+    "install:browsers": "vp exec playwright install --with-deps chromium",
     "typecheck": "tsc --noEmit",
-    "report": "playwright show-report"
+    "report": "vp exec playwright show-report"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
     "@types/node": "^22.9.0",
+    "fflate": "^0.8.2",
     "wait-port": "^1.1.0"
   }
 }

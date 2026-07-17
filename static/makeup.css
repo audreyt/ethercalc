@@ -184,8 +184,10 @@
     margin: 0px 0px 10px 12px;
 }
 
-/* Tools container = div 2 */
-#tableeditor > div:nth-child(1) > div:nth-child(1) > div:nth-child(2) {
+/* Tools container. The explicit class preserves this styling when the
+   room-access row becomes the first child of SocialCalc's menu wrapper. */
+#tableeditor > div:nth-child(1) > div:nth-child(1) > div:nth-child(2):not(.ec-socialcalc-tabbar),
+#tableeditor > div:nth-child(1) > div:nth-child(1) > .ec-socialcalc-toolbar {
     background:transparent !important;
     padding:10px 0px !important;
     height:40px !important;
@@ -223,8 +225,10 @@
     border-color:transparent !important;
 }
 
-/* Tabs container  = div 2 */
-#tableeditor > div:nth-child(1) > div:nth-child(1) > div:nth-child(1) {
+/* Tabs container. Keep the legacy first-child selector for unmodified
+   pages and target the stable class once the room-access row is present. */
+#tableeditor > div:nth-child(1) > div:nth-child(1) > div:nth-child(1),
+#tableeditor > div:nth-child(1) > div:nth-child(1) > .ec-socialcalc-tabbar {
     background-color:transparent !important;
     margin:0px !important;
     height:24px !important;
@@ -245,15 +249,20 @@
     border-bottom:3px solid #6A5687 !important;
 }
 
-/* Other tabs */
+/* Other tabs. #707070 (not the previous #767676) keeps >= 4.5:1 WCAG AA
+   contrast against the m3e-theme body background (~rgb(250,249,253),
+   see docs/superpowers/specs/2026-07-11-passkey-ui-m3e-design.md's
+   "visual/contrast regression" note) - #767676 only cleared 4.5:1 on
+   pure white and regressed to ~4.33:1 once the theme's near-white
+   background replaced it. */
 #tableeditor td[id$="tab"][style*="#808080"],
 #tableeditor td[id$="tab"][style*="rgb(128"]{
-    color:#767676 !important;
+    color:#707070 !important;
     border-bottom:3px solid white !important;
 }
 #tableeditor td[id$="tab"][style*="#808080"]:hover,
 #tableeditor td[id$="tab"][style*="rgb(128"]:hover{
-    color:#767676 !important;
+    color:#707070 !important;
     border-bottom:3px solid #B49CD9 !important;
 }
 

@@ -15,7 +15,7 @@
  *   - hidden files + non-.txt files in dump/ ignored
  *   - room names with embedded dashes preserved
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'vite-plus/test';
 
 import {
   roomsFromFilesystem,

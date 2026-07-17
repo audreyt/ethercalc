@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { decodeFrame, encodeFrame, PacketType, type Packet } from '../src/framing.ts';
 
 describe('encodeFrame', () => {

@@ -1,6 +1,6 @@
 {
   "name": "ethercalc",
-  "version": "0.20260710.1",
+  "version": "0.20260717.0",
   "description": "Multi-User Spreadsheet Server — TypeScript rewrite (Cloudflare fullstack)",
   "homepage": "http://ethercalc.net/",
   "author": "Audrey Tang <audreyt@audreyt.org>",
@@ -60,11 +60,9 @@
     "!packages/*/vitest.node.config.ts",
     "!packages/*/playwright.config.ts",
     "!packages/*/dist/cache",
-    "!packages/oracle-harness/src",
-    "!packages/e2e/src",
-    "!packages/e2e/tests",
-    "!packages/e2e/README.md",
-    "!packages/e2e/tsconfig.json",
+    "!packages/e2e/",
+    "!packages/oracle-harness/",
+    "!**/stryker-setup-*.js",
     "!scripts/*.test.ts",
     "!**/coverage",
     "!**/reports",
@@ -78,23 +76,23 @@
     "packages/*"
   ],
   "scripts": {
-    "prepack": "bun run build:assets",
+    "prepack": "vp run build:assets",
     "postinstall": "node scripts/install-runtime-deps.js",
-    "pretest": "bun run build:assets",
-    "test": "bun test scripts/build-assets.test.ts && npm run --workspaces --if-present test",
-    "build:clients": "bun run --cwd packages/client build && bun run --cwd packages/client-multi build",
-    "build:assets": "bun run build:clients && bun run scripts/build-assets.ts",
-    "typecheck": "bun run --filter '*' typecheck",
-    "lint": "biome lint",
-    "lint:fix": "biome lint --write",
-    "mutation": "bun run --filter '*' mutation",
-    "verify": "bun run verify:dafny",
+    "pretest": "vp run build:assets",
+    "test": "bun test scripts/build-assets.test.ts && vp run --filter './packages/*' test",
+    "build:clients": "vp run @ethercalc/client#build && vp run @ethercalc/client-multi#build",
+    "build:assets": "vp run build:clients && bun scripts/build-assets.ts",
+    "typecheck": "vp run --filter './packages/*' typecheck",
+    "lint": "vp lint",
+    "lint:fix": "vp lint --fix",
+    "mutation": "vp run --filter './packages/*' mutation",
+    "verify": "vp run verify:dafny",
     "verify:dafny": "lsc check --backend=dafny && bun lemma/assert-fresh.mjs dafny",
     "verify:dafny:gen": "lsc gen --backend=dafny",
     "verify:dafny:regen": "lsc regen --backend=dafny lemma/xlsx-a1.ts",
     "verify:lean:gen": "lsc gen --backend=lean lemma/xlsx-a1.ts",
-    "verify:lean": "bun run verify:lean:gen && test -s lemma/xlsx-a1.types.lean && test -s lemma/xlsx-a1.def.lean && bun lemma/assert-fresh.mjs lean",
-    "verify:both": "bun run verify:dafny && bun run verify:lean",
+    "verify:lean": "vp run verify:lean:gen && test -s lemma/xlsx-a1.types.lean && test -s lemma/xlsx-a1.def.lean && bun lemma/assert-fresh.mjs lean",
+    "verify:both": "vp run verify:dafny && vp run verify:lean",
     "verify:context": "bun lemma/build-context.mjs",
     "verify:request": "bun lemma/build-request.mjs"
   },
@@ -102,14 +100,27 @@
     "bun": ">=1.1.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.1.2",
     "@stryker-mutator/core": "^9.6.1",
     "@stryker-mutator/vitest-runner": "^9.6.1",
     "lemmascript": "0.5.13",
     "typescript": "^7.0.2",
-    "vite-plus": "0.2.4"
+    "vite": "catalog:",
+    "vite-plus": "catalog:",
+    "vitest": "catalog:"
   },
   "dependencies": {
     "wrangler": "^4.107.0"
-  }
+  },
+  "overrides": {
+    "vite": "catalog:",
+    "vitest": "catalog:"
+  },
+  "catalog": {
+    "@vitest/coverage-istanbul": "4.1.10",
+    "@vitest/coverage-v8": "4.1.10",
+    "vite": "npm:@voidzero-dev/vite-plus-core@0.2.4",
+    "vitest": "4.1.10",
+    "vite-plus": "0.2.4"
+  },
+  "packageManager": "bun@1.3.14"
 }

@@ -4,7 +4,7 @@
  * shape so Stryker boundary mutants (`>` → `>=`, `>=` → `>`) can't
  * survive, and the error-message literal survives StringLiteral flips.
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vite-plus/test';
 
 import {
   filterOversized,

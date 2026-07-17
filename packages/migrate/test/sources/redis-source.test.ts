@@ -3,7 +3,7 @@
  * assert exact command sequences per room without a real server.
  * Covers both the pipelined fast path and the sequential fallback.
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vite-plus/test';
 
 import {
   roomsFromRedis,

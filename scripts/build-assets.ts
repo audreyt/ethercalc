@@ -36,6 +36,7 @@ export interface AssetBuildPlan {
   readonly destination: string;
   readonly socialCalcCandidates: readonly string[];
   readonly playerBundle: string;
+  readonly passkeyDist: string;
   readonly multiDist: string;
   readonly requiredFiles: readonly string[];
   readonly requiredDirectories: readonly string[];
@@ -47,6 +48,7 @@ export function buildAssetPlan(rootInput: string): AssetBuildPlan {
   const root = resolve(rootInput);
   const destination = join(root, 'assets');
   const playerBundle = join(root, 'packages/client/dist/player.js');
+  const passkeyDist = join(root, 'packages/client/dist-passkey');
   const multiDist = join(root, 'packages/client-multi/dist');
   const socialCalcCandidates = [
     join(root, 'packages/socialcalc-headless/node_modules/socialcalc/dist/SocialCalc.js'),
@@ -62,11 +64,17 @@ export function buildAssetPlan(rootInput: string): AssetBuildPlan {
       to: join('l10n', `${locale}.json`),
     })),
     { from: playerBundle, to: join('static', 'player.js') },
+    // Served alongside the passkey bundle so the license-notice banner
+    // baked into `dist-passkey/ui.js` (see vite.passkey.config.ts) points
+    // somewhere the deployed site itself can serve, not just a repo-root
+    // path only resolvable by someone with git access.
+    { from: join(root, 'third-party', 'm3e', 'NOTICE'), to: join('static', 'passkey', 'NOTICE') },
   ];
 
   const directoryCopies: CopyDirectoryStep[] = [
     { from: join(root, 'images'), to: 'images' },
     { from: join(root, 'static'), to: 'static' },
+    { from: passkeyDist, to: join('static', 'passkey') },
     { from: multiDist, to: 'multi' },
   ];
 
@@ -75,6 +83,7 @@ export function buildAssetPlan(rootInput: string): AssetBuildPlan {
     destination,
     socialCalcCandidates,
     playerBundle,
+    passkeyDist,
     multiDist,
     requiredFiles: [...staticCopies.map((step) => step.from), playerBundle],
     requiredDirectories: directoryCopies.map((step) => step.from),
@@ -84,19 +93,39 @@ export function buildAssetPlan(rootInput: string): AssetBuildPlan {
 }
 
 export function patchSocialCalcRuntime(input: string): string {
-  const withoutStrict = input
+  // Strip UMD-level "use strict" wrappers (present in 3.0.x with double
+  // quotes and 3.1.0 with single quotes; harmless in-browser but stripped
+  // for parity).
+  const stripped = input
     .replace('(function (root, factory) {\n    "use strict";', '(function (root, factory) {')
-    .replace('function (window) {\n"use strict";', 'function (window) {');
+    .replace('function (window) {\n"use strict";', 'function (window) {')
+    .replace("(function (root, factory) {\n  'use strict';", '(function (root, factory) {')
+    .replace("function (window) {\n  'use strict';", 'function (window) {');
 
+  // SocialCalc 3.1.0 ships its own opt-in rendering security model
+  // (`untrustedContent`, `securityPolicy.sanitizeHtml`,
+  // `EscapeUntrustedHtml`, `SafeUrlForRender`). The client enables it at
+  // boot via `installSecurityPolicy` (see packages/client/src/sanitize-html.ts),
+  // so no regex-injected sanitiser hook is needed.
+  if (stripped.includes('EscapeUntrustedHtml')) {
+    return stripped;
+  }
+
+  // Pre-3.1.0 fallback: inject the SocialCalc.sanitizeHTML hook into the
+  // text-html render sink (the live-editor stored-XSS fix). The client
+  // installs SocialCalc.sanitizeHTML at boot; if absent (old cached asset),
+  // the branch falls back to the raw value.
   const htmlSink =
     "      displayvalue = (SocialCalc.sanitizeHTML ? SocialCalc.sanitizeHTML(displayvalue) : displayvalue);\n";
-  const patched = withoutStrict.replace(
+  const patched = stripped.replace(
     /(if\s*\(\s*valueformat\s*==\s*["']text-html["']\s*\)\s*)\{[\s\S]*?\}/,
     `$1{${"\n"}${htmlSink}    }`,
   );
 
   if (!patched.includes("SocialCalc.sanitizeHTML(displayvalue)")) {
-    throw new Error("text-html sanitize hook not injected into socialcalc.js (upstream render sink changed?)");
+    throw new Error(
+      "text-html sanitize hook not injected into socialcalc.js (upstream render sink changed?)",
+    );
   }
 
   return patched;
@@ -127,7 +156,7 @@ async function findSocialCalc(plan: AssetBuildPlan): Promise<string> {
   for (const candidate of plan.socialCalcCandidates) {
     if (existsSync(candidate) && (await stat(candidate)).isFile()) return candidate;
   }
-  throw new Error(`missing ${plan.socialCalcCandidates[0]} (run \`bun install\`)`);
+  throw new Error(`missing ${plan.socialCalcCandidates[0]} (run \`vp install\`)`);
 }
 
 async function collectFiles(dir: string): Promise<string[]> {
@@ -148,14 +177,16 @@ export async function buildAssets(rootInput = resolve(dirname(fileURLToPath(impo
   const plan = buildAssetPlan(rootInput);
   const socialCalc = await findSocialCalc(plan);
 
-  await assertFile(plan.playerBundle, `missing ${plan.playerBundle} (run \`bun run --cwd packages/client build\`)`);
-  await assertDirectory(plan.multiDist, `missing ${plan.multiDist} (run \`bun run --cwd packages/client-multi build\`)`);
+  await assertFile(plan.playerBundle, `missing ${plan.playerBundle} (run \`vp run @ethercalc/client#build\`)`);
+  await assertDirectory(plan.multiDist, `missing ${plan.multiDist} (run \`vp run @ethercalc/client-multi#build\`)`);
+  await assertDirectory(plan.passkeyDist, `missing ${plan.passkeyDist} (run \`vp run @ethercalc/client#build:passkey\`)`);
 
   console.log(`[build-assets] rebuilding ${plan.destination}`);
   await rm(plan.destination, { recursive: true, force: true });
   await mkdir(join(plan.destination, 'l10n'), { recursive: true });
   await mkdir(join(plan.destination, 'static'), { recursive: true });
   await mkdir(join(plan.destination, 'multi'), { recursive: true });
+  await mkdir(join(plan.destination, 'static', 'passkey'), { recursive: true });
   await mkdir(join(plan.destination, 'images'), { recursive: true });
 
   for (const step of plan.staticCopies) await copyFileStep(plan, step);

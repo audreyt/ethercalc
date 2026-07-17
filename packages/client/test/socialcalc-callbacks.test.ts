@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import {
   parseQuery,
   installCallbacks,
@@ -159,6 +159,30 @@ describe('installCallbacks', () => {
     sc.ScheduleSheetCommands!(sheet, 'set A1 value n 2', false, true);
     expect(origCalled).toBe(3);
     expect(calls).toHaveLength(1);
+  });
+
+  it('does not broadcast or mutate local state for user commands in viewer mode', () => {
+    const sc = makeSocialCalc();
+    sc._view = true;
+    const broadcasts: Array<[string, unknown]> = [];
+    installBroadcast(sc, (type, data) => broadcasts.push([type, data]));
+    let localApplications = 0;
+    sc.ScheduleSheetCommands = () => {
+      localApplications++;
+    };
+    installCallbacks(sc, { broadcast: () => {} });
+    const sheet = makeSheet();
+    sheet._room = 'private-room';
+
+    sc.ScheduleSheetCommands!(sheet, 'set A1 text forbidden-local-change', false, false);
+    expect(localApplications).toBe(0);
+    expect(broadcasts).toHaveLength(0);
+
+    sc.ScheduleSheetCommands!(sheet, 'redisplay', false, false);
+    expect(localApplications).toBe(1);
+
+    sc.ScheduleSheetCommands!(sheet, 'set A1 text remote-snapshot-change', false, true);
+    expect(localApplications).toBe(2);
   });
 
   it('ScheduleSheetCommands rewrites multi-sheet $Title refs', () => {

@@ -45,8 +45,9 @@ import {
   buildTemplateFormRedirect,
 } from '../handlers/room-entry.ts';
 import { doFetch } from '../lib/do-dispatch.ts';
+import { getSessionPrincipal } from '../lib/session-middleware.ts';
 import { encodeRoom, generateRoomId } from '../lib/room-name.ts';
-import type { Env } from '../env.ts';
+import type { Env, EtherCalcHonoEnv } from '../env.ts';
 
 /**
  * Extension → MIME map used when the upstream Fetcher doesn't set a
@@ -122,7 +123,7 @@ export async function serveAsset(env: Env, pathname: string): Promise<Response> 
 /**
  * Register asset-backed routes. See the file header for the inventory.
  */
-export function registerAssets(app: Hono<{ Bindings: Env }>): void {
+export function registerAssets(app: Hono<EtherCalcHonoEnv>): void {
   // Root entry page. Legacy served `index.html` at `/`. We forward to
   // ASSETS which picks it up from the curated dir.
   //
@@ -227,12 +228,27 @@ export function registerAssets(app: Hono<{ Bindings: Env }>): void {
     const template = c.req.param('template') ?? '';
     const newId = generateRoomId();
     const newRoom = `${encodeRoom(template)}_${newId}`;
+    const principal = await getSessionPrincipal(c);
     try {
-      await doFetch(c.env, template, '/_do/clone', {
-        method: 'POST',
-        body: JSON.stringify({ to: newRoom }),
-        headers: { 'Content-Type': 'application/json' },
-      });
+      const cloneRes = await doFetch(
+        c.env,
+        template,
+        '/_do/clone',
+        {
+          method: 'POST',
+          body: JSON.stringify({ to: newRoom }),
+          headers: { 'Content-Type': 'application/json' },
+        },
+        principal,
+      );
+      // A denial is the DO's verdict, not a clone hiccup — propagate it
+      // verbatim instead of redirecting into a phantom empty room.
+      if (cloneRes.status === 401 || cloneRes.status === 403) {
+        return new Response(await cloneRes.text(), {
+          status: cloneRes.status,
+          headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+        });
+      }
     } catch {
       // Legacy always redirected; clone failure yields an empty new room.
     }
@@ -260,10 +276,67 @@ export function registerAssets(app: Hono<{ Bindings: Env }>): void {
  * register `/:room` would force Phase 5 to either register its `/_rooms`
  * etc. before `registerAssets` or run a custom re-ordering step.
  */
-export function registerRoomCatchAll(app: Hono<{ Bindings: Env }>): void {
+export function registerRoomCatchAll(app: Hono<EtherCalcHonoEnv>): void {
   app.get('/:room', async (c) => {
     const roomParam = c.req.param('room') ?? '';
     const authQuery = c.req.query('auth');
+    // `view=1` is terminal: it initializes SpreadsheetViewer, so
+    // re-probing a private room here would redirect `/:room/view` back to
+    // itself forever. App mode remains capability-checked because its
+    // form-data surface is intentionally interactive.
+    const viewerMode = c.req.query('view') !== undefined;
+    if (!viewerMode) {
+      const principal = await getSessionPrincipal(c);
+      const accessRes = await doFetch(c.env, roomParam, '/_do/access', {}, principal);
+      const access: unknown = accessRes.ok
+        ? await accessRes.json().catch(() => null)
+        : null;
+      let redirectMode: 'edit' | 'view' | null = null;
+      if (
+        access !== null &&
+        typeof access === 'object' &&
+        'isPrivate' in access &&
+        'canRead' in access &&
+        'canWrite' in access
+      ) {
+        if (
+          access.isPrivate === true &&
+          c.req.query('app') !== undefined
+        ) {
+          // `submitform` writes through a `<room>_formdata` sibling. Phase A
+          // creates ACL metadata only for the main room, so private app mode
+          // would declassify submissions into its public sibling.
+          redirectMode = 'view';
+        } else if (
+          access.isPrivate === true &&
+          access.canRead === true &&
+          access.canWrite === true &&
+          (authQuery === undefined || authQuery === '' || authQuery === '0')
+        ) {
+          // A private owner must get a fresh non-zero legacy token. `auth=0`
+          // is an absolute WS write veto even when the passkey ACL permits
+          // writes, so serving the old bare entry would create another
+          // divergent editor.
+          redirectMode = 'edit';
+        } else if (access.canRead !== true || access.canWrite !== true) {
+          redirectMode = 'view';
+        }
+      }
+      if (redirectMode !== null) {
+        const location =
+          `${c.env.BASEPATH ?? ''}/${encodeRoom(roomParam)}/${redirectMode}`;
+        const body = `Found. Redirecting to ${location}`;
+        return new Response(body, {
+          status: 302,
+          headers: {
+            Location: location,
+            'Content-Type': 'text/plain; charset=UTF-8',
+            'Content-Length': String(body.length),
+            Vary: 'Accept',
+          },
+        });
+      }
+    }
     const key = c.env.ETHERCALC_KEY;
     const opts = {
       basepath: c.env.BASEPATH ?? '',

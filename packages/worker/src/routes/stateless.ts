@@ -14,9 +14,12 @@ import type { Context, Hono } from 'hono';
 import { buildBlockedPathResponse } from '../handlers/blocked-paths.ts';
 import { buildNewRoomRedirect } from '../handlers/new-room.ts';
 import { buildRoomRedirect, type RoomMode } from '../handlers/room-redirects.ts';
-import type { Env } from '../env.ts';
+import { doFetch } from '../lib/do-dispatch.ts';
+import { encodeRoom } from '../lib/room-name.ts';
+import { getSessionPrincipal } from '../lib/session-middleware.ts';
+import type { EtherCalcHonoEnv } from '../env.ts';
 
-type AppContext = Context<{ Bindings: Env }>;
+type AppContext = Context<EtherCalcHonoEnv>;
 
 /**
  * Express's `res.redirect()` emits a plaintext body of the form
@@ -46,7 +49,7 @@ function expressRedirect(location: string): Response {
  * matters: the specific `/:room/edit` etc come before any catch-all
  * registration in the caller, so Hono's trie routes them correctly.
  */
-export function registerStateless(app: Hono<{ Bindings: Env }>): void {
+export function registerStateless(app: Hono<EtherCalcHonoEnv>): void {
   // Blocked paths — legacy reserves `/etc/*` and `/var/*` explicitly so
   // a stray probe from `/etc/passwd` doesn't fall through to `/:room`.
   app.get('/etc/*', (c: AppContext) => sendBlocked(c));
@@ -74,6 +77,24 @@ export function registerStateless(app: Hono<{ Bindings: Env }>): void {
   // URL-decoded by Hono; our `buildRoomRedirect` re-encodes via encodeURI.
   const handleRoomRedirect = (mode: RoomMode) => async (c: AppContext): Promise<Response> => {
     const room = c.req.param('room') ?? '';
+    if (mode === 'edit') {
+      const principal = await getSessionPrincipal(c);
+      const accessRes = await doFetch(c.env, room, '/_do/access', {}, principal);
+      const access: unknown = accessRes.ok
+        ? await accessRes.json().catch(() => null)
+        : null;
+      if (
+        access !== null &&
+        typeof access === 'object' &&
+        'canRead' in access &&
+        'canWrite' in access &&
+        (access.canRead !== true || access.canWrite !== true)
+      ) {
+        return expressRedirect(
+          `${c.env.BASEPATH ?? ''}/${encodeRoom(room)}/view`,
+        );
+      }
+    }
     // `exactOptionalPropertyTypes` forces us to omit `key` when it's
     // undefined (empty string is fine — computeAuth treats it as unset).
     const key = c.env.ETHERCALC_KEY;

@@ -6,7 +6,7 @@ import {
   STORAGE_KEYS,
   snapshotChunkKey,
 } from '@ethercalc/shared/storage-keys';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { Env } from '../src/env.ts';
 import { RoomDO } from '../src/room.ts';
 
@@ -34,7 +34,7 @@ interface FakeStorageRecord {
 function fakeStorage(record: FakeStorageRecord): DurableObjectStorage {
   const m = record.map;
   if (record.alarm === undefined) record.alarm = null;
-  return {
+  const api = {
     async getAlarm(): Promise<number | null> {
       return record.alarm ?? null;
     },
@@ -91,7 +91,13 @@ function fakeStorage(record: FakeStorageRecord): DurableObjectStorage {
       for (const k of keys) out.set(k, m.get(k)!);
       return out;
     },
-  } as unknown as DurableObjectStorage;
+    async transaction<T>(
+      cb: (txn: DurableObjectTransaction) => Promise<T>,
+    ): Promise<T> {
+      return cb(api as unknown as DurableObjectTransaction);
+    },
+  };
+  return api as unknown as DurableObjectStorage;
 }
 
 /**
@@ -170,6 +176,7 @@ async function drainWaitUntil(
  */
 interface FakeWsLog {
   sent: string[];
+  closed?: boolean;
   serializedAttachment?: unknown;
 }
 function makeFakeWs(log: FakeWsLog, attachment?: unknown): WebSocket {
@@ -183,7 +190,9 @@ function makeFakeWs(log: FakeWsLog, attachment?: unknown): WebSocket {
     deserializeAttachment(): unknown {
       return attachment ?? null;
     },
-    close() {},
+    close() {
+      log.closed = true;
+    },
   } as unknown as WebSocket;
 }
 interface WsAwareState {
@@ -215,6 +224,20 @@ function makeWsAwareState(
 
 function makeEnv(): Env {
   return { ROOM: {} as DurableObjectNamespace };
+}
+
+const PRIVATE_ACL = {
+  owner: 'uid-owner',
+  readers: ['uid-reader'],
+  writers: ['uid-writer'],
+};
+
+const FUTURE_SESSION_EXP = Number.MAX_SAFE_INTEGER;
+
+function markPrivate(record: FakeStorageRecord): void {
+  record.map.set(STORAGE_KEYS.metaAccess, 'private');
+  record.map.set(STORAGE_KEYS.metaAcl, PRIVATE_ACL);
+  record.map.set(STORAGE_KEYS.metaGroup, 'group-private');
 }
 
 /**
@@ -615,6 +638,239 @@ describe('RoomDO (unit, direct construction)', () => {
     const res = await room.fetch(new Request('https://do/anything'));
     expect(res.status).toBe(501);
     expect(await res.text()).toBe('Not implemented');
+  });
+
+  it('denies anonymous access to every private /_do route before dispatch', async () => {
+    markPrivate(record);
+    record.map.set(STORAGE_KEYS.snapshot, 'private-save');
+    const routes = [
+      ['GET', '/_do/snapshot'],
+      ['PUT', '/_do/snapshot'],
+      ['GET', '/_do/log'],
+      ['POST', '/_do/commands'],
+      ['DELETE', '/_do/all'],
+      ['GET', '/_do/exists'],
+      ['GET', '/_do/cells'],
+      ['GET', '/_do/cells/A1'],
+      ['GET', '/_do/html'],
+      ['GET', '/_do/csv'],
+      ['GET', '/_do/csv.json'],
+      ['GET', '/_do/md'],
+      ['GET', '/_do/xlsx'],
+      ['GET', '/_do/ods'],
+      ['GET', '/_do/fods'],
+      ['GET', '/_do/sheet-data'],
+      ['POST', '/_do/rename'],
+      ['POST', '/_do/install'],
+      ['POST', '/_do/clone'],
+      ['POST', '/_do/seed'],
+      ['POST', '/_do/snapshot-chunk?seq=0&chunks=1'],
+      ['GET', '/_do/ws'],
+      ['POST', '/_do/fire-trigger?cell=A1'],
+    ] as const;
+
+    for (const [method, path] of routes) {
+      const init: RequestInit = { method };
+      if (method === 'PUT' || method === 'POST') init.body = '{}';
+      const response = await room.fetch(
+        new Request(`https://do${path}`, init),
+      );
+      expect(response.status, `${method} ${path}`).toBe(403);
+    }
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('private-save');
+  });
+
+  it('exempts worker-internal operator paths from the private gate', async () => {
+    markPrivate(record);
+    record.map.set(STORAGE_KEYS.snapshot, 'private-save');
+
+    // /_do/ping carries no sheet content and is polled anonymously by
+    // the PITR restore route to observe the instance-nonce swap — a 403
+    // here would turn every private-room restore into a false failure.
+    const ping = await room.fetch(new Request('https://do/_do/ping?name=r'));
+    expect(ping.status).toBe(200);
+    const pingBody = (await ping.json()) as { nonce: string };
+    expect(pingBody.nonce).not.toBe('');
+
+    // The pitr routes are reachable only through the deployment-operator
+    // bearer at the worker (operator authority ≥ owner). On the fake
+    // storage PITR is unavailable — the point is the gate does not 403.
+    const restore = await room.fetch(
+      new Request('https://do/_do/pitr-restore', {
+        method: 'POST',
+        body: JSON.stringify({ at: Date.now() }),
+      }),
+    );
+    expect(restore.status).toBe(501);
+
+    const touch = await room.fetch(
+      new Request('https://do/_do/pitr-touch?name=r', { method: 'POST' }),
+    );
+    expect(touch.status).toBe(200);
+    expect(await touch.json()).toEqual({
+      exists: true,
+      updatedAt: expect.any(Number),
+    });
+  });
+
+  it('keeps a restored private room out of the rooms index on pitr-touch', async () => {
+    markPrivate(record);
+    record.map.set(STORAGE_KEYS.snapshot, 'private-save');
+    const d1Calls: D1Call[] = [];
+    const privRoom = new RoomDO(
+      makeState('pitr-touch-private', record),
+      makeEnvWithDb(d1Calls),
+    );
+
+    const res = await privRoom.fetch(
+      new Request('https://do/_do/pitr-touch?name=priv', { method: 'POST' }),
+    );
+
+    expect(res.status).toBe(200);
+    const roomsInsert = d1Calls.find((c) =>
+      c.sql.startsWith('INSERT INTO rooms'),
+    );
+    expect(roomsInsert).toBeUndefined();
+    expect(
+      d1Calls.find((call) => call.sql.includes('DELETE FROM rooms'))?.params,
+    ).toEqual(['priv']);
+  });
+  it('enforces private owner, reader, and writer roles', async () => {
+    markPrivate(record);
+    record.map.set(STORAGE_KEYS.snapshot, 'private-save');
+
+    const ownerRead = await room.fetch(
+      new Request('https://do/_do/snapshot', {
+        headers: { 'X-EC-Uid': 'uid-owner' },
+      }),
+    );
+    const readerRead = await room.fetch(
+      new Request('https://do/_do/snapshot', {
+        headers: { 'X-EC-Uid': 'uid-reader' },
+      }),
+    );
+    const writerRead = await room.fetch(
+      new Request('https://do/_do/snapshot', {
+        headers: { 'X-EC-Uid': 'uid-writer' },
+      }),
+    );
+    const readerWrite = await room.fetch(
+      new Request('https://do/_do/snapshot', {
+        method: 'PUT',
+        headers: { 'X-EC-Uid': 'uid-reader' },
+        body: 'reader-write',
+      }),
+    );
+    const writerWrite = await room.fetch(
+      new Request('https://do/_do/snapshot', {
+        method: 'PUT',
+        headers: { 'X-EC-Uid': 'uid-writer' },
+        body: 'writer-write',
+      }),
+    );
+
+    expect(ownerRead.status).toBe(200);
+    expect(readerRead.status).toBe(200);
+    expect(writerRead.status).toBe(403);
+    expect(readerWrite.status).toBe(403);
+    expect(writerWrite.status).toBe(201);
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('writer-write');
+    expect(record.map.get(STORAGE_KEYS.metaAccess)).toBe('private');
+    expect(record.map.get(STORAGE_KEYS.metaAcl)).toEqual(PRIVATE_ACL);
+    expect(record.map.get(STORAGE_KEYS.metaGroup)).toBe('group-private');
+  });
+
+  it('reports the exact read and write capabilities for private room entry', async () => {
+    markPrivate(record);
+
+    const access = async (uid?: string): Promise<Response> =>
+      room.fetch(
+        new Request('https://do/_do/access', {
+          ...(uid === undefined ? {} : { headers: { 'X-EC-Uid': uid } }),
+        }),
+      );
+
+    await expect(access()).resolves.toMatchObject({ status: 200 });
+    await expect(access('uid-owner')).resolves.toMatchObject({ status: 200 });
+    await expect(access('uid-reader')).resolves.toMatchObject({ status: 200 });
+    await expect(access('uid-writer')).resolves.toMatchObject({ status: 200 });
+    await expect(access('uid-outsider')).resolves.toMatchObject({ status: 200 });
+
+    await expect((await access()).json()).resolves.toEqual({
+      isPrivate: true,
+      canRead: false,
+      canWrite: false,
+    });
+    await expect((await access('uid-owner')).json()).resolves.toEqual({
+      isPrivate: true,
+      canRead: true,
+      canWrite: true,
+    });
+    await expect((await access('uid-reader')).json()).resolves.toEqual({
+      isPrivate: true,
+      canRead: true,
+      canWrite: false,
+    });
+    await expect((await access('uid-writer')).json()).resolves.toEqual({
+      isPrivate: true,
+      canRead: false,
+      canWrite: true,
+    });
+    await expect((await access('uid-outsider')).json()).resolves.toEqual({
+      isPrivate: true,
+      canRead: false,
+      canWrite: false,
+    });
+  });
+
+  it('DELETE /_do/all by the owner leaves a private tombstone', async () => {
+    markPrivate(record);
+    record.map.set(STORAGE_KEYS.snapshot, 'private-save');
+    record.map.set(logKey(0), 'cmd');
+    const res = await room.fetch(
+      new Request('https://do/_do/all', {
+        method: 'DELETE',
+        headers: { 'X-EC-Uid': 'uid-owner' },
+      }),
+    );
+    expect(res.status).toBe(201);
+    expect(record.map.has(STORAGE_KEYS.snapshot)).toBe(false);
+    expect(record.map.has(logKey(0))).toBe(false);
+    expect(record.map.get(STORAGE_KEYS.metaAccess)).toBe('private');
+    expect(record.map.get(STORAGE_KEYS.metaAcl)).toEqual(PRIVATE_ACL);
+    expect(record.map.get(STORAGE_KEYS.metaGroup)).toBe('group-private');
+    expect(record.map.get(STORAGE_KEYS.metaUpdatedAt)).toEqual(expect.any(Number));
+    expect(record.alarm).toEqual(expect.any(Number));
+  });
+
+  it('POST /_do/seed by a writer preserves the private access trio', async () => {
+    markPrivate(record);
+    const res = await room.fetch(
+      new Request('https://do/_do/seed', {
+        method: 'POST',
+        headers: { 'X-EC-Uid': 'uid-writer' },
+        body: JSON.stringify({ snapshot: 'S', updatedAt: 5 }),
+      }),
+    );
+    expect(res.status).toBe(201);
+    expect(record.map.get(STORAGE_KEYS.metaAccess)).toBe('private');
+    expect(record.map.get(STORAGE_KEYS.metaAcl)).toEqual(PRIVATE_ACL);
+    expect(record.map.get(STORAGE_KEYS.metaGroup)).toBe('group-private');
+  });
+
+  it('POST /_do/install by a writer preserves the private access trio', async () => {
+    markPrivate(record);
+    const res = await room.fetch(
+      new Request('https://do/_do/install', {
+        method: 'POST',
+        headers: { 'X-EC-Uid': 'uid-writer' },
+        body: JSON.stringify({ snapshot: 'SAVE' }),
+      }),
+    );
+    expect(res.status).toBe(201);
+    expect(record.map.get(STORAGE_KEYS.metaAccess)).toBe('private');
+    expect(record.map.get(STORAGE_KEYS.metaAcl)).toEqual(PRIVATE_ACL);
+    expect(record.map.get(STORAGE_KEYS.metaGroup)).toBe('group-private');
   });
 
   it('GET /_do/snapshot returns 404 when snapshot unset', async () => {
@@ -1248,6 +1504,33 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
     expect(siblingDeletes[0]).toContain('name=mysheet_formdata');
   });
 
+  it('DELETE cascade forwards the caller uid to the formdata sibling', async () => {
+    const siblingInits: RequestInit[] = [];
+    const env: Env = {
+      ...makeEnvWithDb(d1Calls),
+      ROOM: {
+        idFromName: (n: string) => ({ name: n } as unknown as DurableObjectId),
+        get: (_id: DurableObjectId) => ({
+          fetch: (_url: string, init?: RequestInit) => {
+            if (init) siblingInits.push(init);
+            return Promise.resolve(new Response('OK', { status: 201 }));
+          },
+        } as unknown as DurableObjectStub),
+      } as unknown as DurableObjectNamespace,
+    };
+    const cascadeRoom = new RoomDO(makeState('cascade-uid', record), env);
+    await cascadeRoom.fetch(
+      new Request('https://do/_do/all?name=mysheet', {
+        method: 'DELETE',
+        headers: { 'X-EC-Uid': 'uid-owner' },
+      }),
+    );
+    expect(siblingInits).toHaveLength(1);
+    expect(new Headers(siblingInits[0]?.headers).get('X-EC-Uid')).toBe(
+      'uid-owner',
+    );
+  });
+
   it('DELETE on a _formdata room does NOT cascade further (#442)', async () => {
     const siblingDeletes: string[] = [];
     const env: Env = {
@@ -1297,6 +1580,30 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
     );
     expect(res.status).toBe(201);
     expect(d1Calls).toHaveLength(0);
+  });
+
+  it('does NOT mirror a private room into the rooms index', async () => {
+    const record2: FakeStorageRecord = { map: new Map() };
+    markPrivate(record2);
+    const d1Calls2: D1Call[] = [];
+    const privRoom = new RoomDO(
+      makeState('priv', record2),
+      makeEnvWithDb(d1Calls2),
+    );
+    const res = await privRoom.fetch(
+      new Request('https://do/_do/commands?name=priv', {
+        method: 'POST',
+        headers: { 'X-EC-Uid': 'uid-writer' },
+        body: 'set A1 value n 1',
+      }),
+    );
+    expect(res.status).toBe(202);
+    const roomsInsert = d1Calls2.find((c) =>
+      c.sql.startsWith('INSERT INTO rooms'),
+    );
+    expect(roomsInsert).toBeUndefined();
+    const auditInsert = d1Calls2.find((c) => c.sql.includes('audit_log'));
+    expect(auditInsert).toBeDefined();
   });
 
   /**
@@ -1616,6 +1923,54 @@ describe('RoomDO — cross-DO rename primitives (Phase 6)', () => {
     expect(record.map.size).toBe(0);
   });
 
+  it('POST /_do/rename rejects a private source instead of declassifying it', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    markPrivate(record);
+    record.map.set(STORAGE_KEYS.snapshot, 'private-socialcalc:v1');
+    const siblingCalls: SiblingCall[] = [];
+    const room = new RoomDO(
+      makeState('private-source', record),
+      makeRenameEnv(siblingCalls),
+    );
+
+    const response = await room.fetch(
+      new Request('https://do/_do/rename', {
+        method: 'POST',
+        headers: { 'X-EC-Uid': 'uid-owner' },
+        body: JSON.stringify({ to: 'public-target' }),
+      }),
+    );
+
+    expect(response.status).toBe(409);
+    expect(siblingCalls).toHaveLength(0);
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe(
+      'private-socialcalc:v1',
+    );
+    expect(record.map.get(STORAGE_KEYS.metaAccess)).toBe('private');
+  });
+
+  it('POST /_do/clone rejects a private source instead of declassifying it', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    markPrivate(record);
+    record.map.set(STORAGE_KEYS.snapshot, 'private-socialcalc:v1');
+    const siblingCalls: SiblingCall[] = [];
+    const room = new RoomDO(
+      makeState('private-clone-source', record),
+      makeRenameEnv(siblingCalls),
+    );
+
+    const response = await room.fetch(
+      new Request('https://do/_do/clone', {
+        method: 'POST',
+        headers: { 'X-EC-Uid': 'uid-writer' },
+        body: JSON.stringify({ to: 'public-target' }),
+      }),
+    );
+
+    expect(response.status).toBe(409);
+    expect(siblingCalls).toHaveLength(0);
+  });
+
   it('POST /_do/clone with missing body.to returns 400', async () => {
     const record: FakeStorageRecord = { map: new Map() };
     const room = new RoomDO(makeState('x', record), makeRenameEnv([]));
@@ -1819,10 +2174,17 @@ describe('RoomDO — POST /_do/seed (Phase 11b migration)', () => {
     expect(record.map.get(STORAGE_KEYS.metaUpdatedAt)).toBe(1700);
     expect(record.map.get(logKey(0))).toBe('cmd-1');
     expect(record.map.get(logKey(1))).toBe('cmd-2');
+    // Pins the off-by-one loop bound (`i < length` mutated to `i <= length`
+    // would write an extra `logKey(2)`/`auditKey(2)`/`chatKey(2)` entry with
+    // value `undefined`, which the fake storage's batched `put` would still
+    // persist as a Map key).
+    expect(record.map.has(logKey(2))).toBe(false);
     expect(record.map.get(auditKey(0))).toBe('cmd-1');
     expect(record.map.get(auditKey(1))).toBe('cmd-2');
+    expect(record.map.has(auditKey(2))).toBe(false);
     expect(record.map.get(chatKey(0))).toBe('hello');
     expect(record.map.get(chatKey(1))).toBe('world');
+    expect(record.map.has(chatKey(2))).toBe(false);
     expect(record.map.get(ecellKey('alice'))).toBe('A1');
     expect(record.map.get(ecellKey('bob'))).toBe('B2');
     // D1 mirror was scheduled via `state.waitUntil` — the behavior we
@@ -2298,6 +2660,19 @@ describe('RoomDO — fold: housekeeping alarm', () => {
     expect(chatKeys.length).toBe(500);
     expect(typeof record.alarm).toBe('number');
   });
+  it('alarm() TTL expiry erases a private tombstone completely', async () => {
+    const record: FakeStorageRecord = { map: new Map(), alarm: null };
+    markPrivate(record);
+    record.map.set(STORAGE_KEYS.snapshot, 'SAVE');
+    record.map.set(STORAGE_KEYS.metaUpdatedAt, 1);
+    const env: Env = {
+      ROOM: {} as DurableObjectNamespace,
+      ETHERCALC_EXPIRE: '60',
+    };
+    const room = new RoomDO(makeState('x', record), env);
+    await room.alarm();
+    expect(record.map.size).toBe(0);
+  });
 });
 
 describe('RoomDO — fold: seq counters survive a trim + isolate restart', () => {
@@ -2389,6 +2764,37 @@ describe('RoomDO — fold: inline WS caps', () => {
       room.fetch(
         new Request('https://do/_do/ws', {
           headers: { Upgrade: 'websocket' },
+        }),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('builds sandstorm upgrade options when enforcement is on', async () => {
+    // Same workerd-throw contract as above; the point is the sandstorm
+    // branch of the wsOpts spread executes with enforcement enabled.
+    const record: FakeStorageRecord = { map: new Map() };
+    const { state } = makeWsAwareState('x', record, []);
+    const room = new RoomDO(state, {
+      ROOM: {} as DurableObjectNamespace,
+      ETHERCALC_SANDSTORM: '1',
+    });
+    await expect(
+      room.fetch(
+        new Request('https://do/_do/ws', {
+          headers: { Upgrade: 'websocket', 'X-Sandstorm-Permissions': 'modify' },
+        }),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('threads the trusted uid header into the upgrade options', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const { state } = makeWsAwareState('x', record, []);
+    const room = new RoomDO(state, makeEnv());
+    await expect(
+      room.fetch(
+        new Request('https://do/_do/ws', {
+          headers: { Upgrade: 'websocket', 'X-EC-Uid': 'uid-writer' },
         }),
       ),
     ).rejects.toThrow();
@@ -3554,5 +3960,534 @@ describe('RoomDO — /_do/fire-trigger (Phase 9)', () => {
       });
       expect(sent).toEqual([]);
     });
+  });
+});
+
+describe('RoomDO — private WS gating (Phase A)', () => {
+
+  it('closes an expired private session before it can read a snapshot', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    markPrivate(record);
+    record.map.set(STORAGE_KEYS.snapshot, 'private-save');
+    const { state } = makeWsAwareState('ws-expired-session', record, []);
+    const room = new RoomDO(state, makeEnv());
+    const log: FakeWsLog = { sent: [] };
+    const expiredWriter = makeFakeWs(log, {
+      user: 'w',
+      room: 'r',
+      auth: 'r',
+      uid: 'uid-writer',
+      sessionExp: Date.now() - 1,
+    });
+    await room.webSocketMessage(
+      expiredWriter,
+      JSON.stringify({ type: 'ask.log', room: 'r' }),
+    );
+    expect(log.closed).toBe(true);
+    expect(log.sent).toEqual([]);
+  });
+  it('applies execute frames from ACL writers', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    markPrivate(record);
+    const { state } = makeWsAwareState('ws-priv-1', record, []);
+    const room = new RoomDO(state, makeEnv());
+    const writer = makeFakeWs(
+      { sent: [] },
+      {
+        user: 'w',
+        room: 'r',
+        auth: 'r',
+        uid: 'uid-writer',
+        sessionExp: FUTURE_SESSION_EXP,
+      },
+    );
+    await room.webSocketMessage(
+      writer,
+      JSON.stringify({
+        type: 'execute',
+        room: 'r',
+        user: 'w',
+        auth: 'r',
+        cmdstr: 'set A1 value n 1',
+      }),
+    );
+    expect(record.map.get(logKey(0))).toBe('set A1 value n 1');
+  });
+
+  it('drops any write frame carrying the view-only auth sentinel', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const { state } = makeWsAwareState('ws-sentinel', record, []);
+    const room = new RoomDO(state, makeEnv());
+    const ws = makeFakeWs(
+      { sent: [] },
+      { user: 'viewer', room: 'r', auth: '0' },
+    );
+    await room.webSocketMessage(
+      ws,
+      JSON.stringify({
+        type: 'execute',
+        room: 'r',
+        user: 'viewer',
+        auth: '0',
+        cmdstr: 'set A1 value n 1',
+      }),
+    );
+    expect(record.map.has(logKey(0))).toBe(false);
+  });
+
+  it('drops execute frames from readers and legacy token holders', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    markPrivate(record);
+    const { state } = makeWsAwareState('ws-priv-2', record, []);
+    const room = new RoomDO(state, makeEnv());
+    const attachments = [
+      {
+        user: 'reader',
+        room: 'r',
+        auth: 'r',
+        uid: 'uid-reader',
+        sessionExp: FUTURE_SESSION_EXP,
+      },
+      { user: 'legacy', room: 'r', auth: 'r' },
+    ];
+    for (const attachment of attachments) {
+      const ws = makeFakeWs({ sent: [] }, attachment);
+      await room.webSocketMessage(
+        ws,
+        JSON.stringify({
+          type: 'execute',
+          room: 'r',
+          user: attachment.user,
+          auth: 'r',
+          cmdstr: 'set A1 value n 1',
+        }),
+      );
+    }
+    expect(record.map.has(logKey(0))).toBe(false);
+  });
+
+  it('drops stopHuddle from readers and preserves access metadata for writers', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    markPrivate(record);
+    record.map.set(STORAGE_KEYS.snapshot, 'SAVE');
+    const { state } = makeWsAwareState('ws-priv-3', record, []);
+    const room = new RoomDO(state, makeEnv());
+
+    const reader = makeFakeWs(
+      { sent: [] },
+      {
+        user: 'r',
+        room: 'r',
+        auth: 'r',
+        uid: 'uid-reader',
+        sessionExp: FUTURE_SESSION_EXP,
+      },
+    );
+    await room.webSocketMessage(
+      reader,
+      JSON.stringify({ type: 'stopHuddle', room: 'r', auth: 'r' }),
+    );
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('SAVE');
+
+    const writer = makeFakeWs(
+      { sent: [] },
+      {
+        user: 'w',
+        room: 'r',
+        auth: 'r',
+        uid: 'uid-writer',
+        sessionExp: FUTURE_SESSION_EXP,
+      },
+    );
+    await room.webSocketMessage(
+      writer,
+      JSON.stringify({ type: 'stopHuddle', room: 'r', auth: 'r' }),
+    );
+    expect(record.map.has(STORAGE_KEYS.snapshot)).toBe(false);
+    expect(record.map.get(STORAGE_KEYS.metaAccess)).toBe('private');
+    expect(record.map.get(STORAGE_KEYS.metaAcl)).toEqual(PRIVATE_ACL);
+  });
+
+  it('forwards the sender uid to a public submitform formdata sibling', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const siblingInits: RequestInit[] = [];
+    const env: Env = {
+      ROOM: {
+        idFromName: (name: string) =>
+          ({ toString: () => name }) as DurableObjectId,
+        get: () =>
+          ({
+            async fetch(_url: string, init?: RequestInit) {
+              if (init) siblingInits.push(init);
+              return new Response('', { status: 202 });
+            },
+          }) as unknown as DurableObjectStub,
+      } as unknown as DurableObjectNamespace,
+    };
+    const { state } = makeWsAwareState('ws-priv-4', record, []);
+    const room = new RoomDO(state, env);
+    const writer = makeFakeWs(
+      { sent: [] },
+      {
+        user: 'w',
+        room: 'mysheet',
+        auth: 'mysheet',
+        uid: 'uid-writer',
+        sessionExp: FUTURE_SESSION_EXP,
+      },
+    );
+    await room.webSocketMessage(
+      writer,
+      JSON.stringify({
+        type: 'execute',
+        room: 'mysheet',
+        user: 'w',
+        auth: 'mysheet',
+        cmdstr: 'submitform\rset B1 value n 7',
+      }),
+    );
+    expect(siblingInits).toHaveLength(1);
+    expect(new Headers(siblingInits[0]?.headers).get('X-EC-Uid')).toBe(
+      'uid-writer',
+    );
+  });
+
+  it('drops submitform frames from private rooms before sibling write', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    markPrivate(record);
+    const siblingInits: RequestInit[] = [];
+    const env: Env = {
+      ROOM: {
+        idFromName: (name: string) =>
+          ({ toString: () => name }) as DurableObjectId,
+        get: () =>
+          ({
+            async fetch(_url: string, init?: RequestInit) {
+              if (init) siblingInits.push(init);
+              return new Response('', { status: 202 });
+            },
+          }) as unknown as DurableObjectStub,
+      } as unknown as DurableObjectNamespace,
+    };
+    const { state } = makeWsAwareState('ws-priv-5', record, []);
+    const room = new RoomDO(state, env);
+    const writer = makeFakeWs(
+      { sent: [] },
+      {
+        user: 'w',
+        room: 'mysheet',
+        auth: 'mysheet',
+        uid: 'uid-writer',
+        sessionExp: FUTURE_SESSION_EXP,
+      },
+    );
+    await room.webSocketMessage(
+      writer,
+      JSON.stringify({
+        type: 'execute',
+        room: 'mysheet',
+        user: 'w',
+        auth: 'mysheet',
+        cmdstr: 'submitform\rset B1 value n 7',
+      }),
+    );
+    expect(siblingInits).toHaveLength(0);
+  });
+
+  it('drops submitform frames when access metadata is malformed', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    markPrivate(record);
+    record.map.set(STORAGE_KEYS.metaAccess, 'reserved');
+    const siblingInits: RequestInit[] = [];
+    const env: Env = {
+      ROOM: {
+        idFromName: (name: string) =>
+          ({ toString: () => name }) as DurableObjectId,
+        get: () =>
+          ({
+            async fetch(_url: string, init?: RequestInit) {
+              if (init) siblingInits.push(init);
+              return new Response('', { status: 202 });
+            },
+          }) as unknown as DurableObjectStub,
+      } as unknown as DurableObjectNamespace,
+    };
+    const { state } = makeWsAwareState('ws-malformed-access', record, []);
+    const room = new RoomDO(state, env);
+    const writer = makeFakeWs(
+      { sent: [] },
+      { user: 'w', room: 'mysheet', auth: 'mysheet' },
+    );
+    await room.webSocketMessage(
+      writer,
+      JSON.stringify({
+        type: 'execute',
+        room: 'mysheet',
+        user: 'w',
+        auth: 'mysheet',
+        cmdstr: 'submitform\rset B1 value n 7',
+      }),
+    );
+    expect(siblingInits).toHaveLength(0);
+  });
+
+  it('closes an expired peer instead of broadcasting private data', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    markPrivate(record);
+    const expiredLog: FakeWsLog = { sent: [] };
+    const expiredPeer = makeFakeWs(expiredLog, {
+      user: 'w',
+      room: 'r',
+      auth: 'r',
+      uid: 'uid-writer',
+      sessionExp: Date.now() - 1,
+    });
+    const { state } = makeWsAwareState('ws-expired-peer', record, [expiredPeer]);
+    const room = new RoomDO(state, makeEnv());
+    const sender = makeFakeWs(
+      { sent: [] },
+      {
+        user: 'owner',
+        room: 'r',
+        auth: 'r',
+        uid: 'uid-owner',
+        sessionExp: FUTURE_SESSION_EXP,
+      },
+    );
+    await room.webSocketMessage(
+      sender,
+      JSON.stringify({
+        type: 'execute',
+        room: 'r',
+        user: 'owner',
+        auth: 'r',
+        cmdstr: 'set A1 value n 1',
+      }),
+    );
+    expect(expiredLog.closed).toBe(true);
+    expect(expiredLog.sent).toEqual([]);
+  });
+
+  it('fails closed when a private peer attachment cannot deserialize', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    markPrivate(record);
+    const peerLog: FakeWsLog = { sent: [] };
+    const opaquePeer = {
+      send(data: string) {
+        peerLog.sent.push(data);
+      },
+      close() {
+        peerLog.closed = true;
+      },
+      deserializeAttachment() {
+        throw new Error('attachment corrupt');
+      },
+    } as unknown as WebSocket;
+    const { state } = makeWsAwareState('ws-corrupt-peer', record, [opaquePeer]);
+    const room = new RoomDO(state, makeEnv());
+    const sender = makeFakeWs(
+      { sent: [] },
+      {
+        user: 'owner',
+        room: 'r',
+        auth: 'r',
+        uid: 'uid-owner',
+        sessionExp: FUTURE_SESSION_EXP,
+      },
+    );
+    await room.webSocketMessage(
+      sender,
+      JSON.stringify({
+        type: 'execute',
+        room: 'r',
+        user: 'owner',
+        auth: 'r',
+        cmdstr: 'set A1 value n 1',
+      }),
+    );
+    expect(peerLog.closed).toBe(true);
+    expect(peerLog.sent).toEqual([]);
+  });
+
+  it('closes a session that expires between dispatch and direct reply', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    markPrivate(record);
+    record.map.set(STORAGE_KEYS.snapshot, 'private-save');
+    const { state } = makeWsAwareState('ws-expire-mid-frame', record, []);
+    const room = new RoomDO(state, makeEnv());
+    const log: FakeWsLog = { sent: [] };
+    const ws = makeFakeWs(log, {
+      user: 'w',
+      room: 'r',
+      auth: 'r',
+      uid: 'uid-writer',
+      sessionExp: 1,
+    });
+    const now = vi.spyOn(Date, 'now').mockReturnValueOnce(0).mockReturnValue(1);
+    try {
+      await room.webSocketMessage(ws, JSON.stringify({ type: 'ask.log', room: 'r' }));
+    } finally {
+      now.mockRestore();
+    }
+    expect(log.closed).toBe(true);
+    expect(log.sent).toEqual([]);
+  });
+
+  it('closes an expired peer instead of include-self broadcasting public submitform', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const peerLog: FakeWsLog = { sent: [] };
+    const expiredPeer = makeFakeWs(peerLog, {
+      user: 'w',
+      room: 'r',
+      auth: 'r',
+      uid: 'uid-writer',
+      sessionExp: Date.now() - 1,
+    });
+    const { state } = makeWsAwareState('ws-expired-submitform-peer', record, [
+      expiredPeer,
+    ]);
+    const room = new RoomDO(state, makeEnv());
+    const sender = makeFakeWs(
+      { sent: [] },
+      {
+        user: 'owner',
+        room: 'r',
+        auth: 'r',
+        uid: 'uid-owner',
+        sessionExp: FUTURE_SESSION_EXP,
+      },
+    );
+    await room.webSocketMessage(
+      sender,
+      JSON.stringify({ type: 'execute', room: 'r', user: 'owner', auth: 'r', cmdstr: 'submitform' }),
+    );
+    expect(peerLog.closed).toBe(true);
+    expect(peerLog.sent).toEqual([]);
+  });
+});
+
+describe('RoomDO — POST /_do/init-private (Phase A)', () => {
+
+  it('initializes an empty DO atomically with the private access trio', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('init-1', record), makeEnv());
+    const res = await room.fetch(
+      new Request('https://do/_do/init-private', {
+        method: 'POST',
+        headers: { 'X-EC-Uid': 'uid-owner' },
+        body: JSON.stringify({
+          snapshot: 'SAVE',
+          acl: PRIVATE_ACL,
+          group: 'group-1',
+        }),
+      }),
+    );
+    expect(res.status).toBe(201);
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('SAVE');
+    expect(record.map.get(STORAGE_KEYS.metaAccess)).toBe('private');
+    expect(record.map.get(STORAGE_KEYS.metaAcl)).toEqual(PRIVATE_ACL);
+    expect(record.map.get(STORAGE_KEYS.metaGroup)).toBe('group-1');
+    expect(record.map.get(STORAGE_KEYS.metaUpdatedAt)).toEqual(
+      expect.any(Number),
+    );
+  });
+
+  it('immediately authorizes the owner and denies strangers', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('init-2', record), makeEnv());
+    await room.fetch(
+      new Request('https://do/_do/init-private', {
+        method: 'POST',
+        headers: { 'X-EC-Uid': 'uid-owner' },
+        body: JSON.stringify({ snapshot: 'SAVE', acl: PRIVATE_ACL }),
+      }),
+    );
+    const ownerRead = await room.fetch(
+      new Request('https://do/_do/snapshot', {
+        headers: { 'X-EC-Uid': 'uid-owner' },
+      }),
+    );
+    const anonRead = await room.fetch(new Request('https://do/_do/snapshot'));
+    expect(ownerRead.status).toBe(200);
+    expect(anonRead.status).toBe(403);
+  });
+
+  it('returns 409 when any storage key exists and writes nothing', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    record.map.set(chatKey(0), 'existing');
+    const room = new RoomDO(makeState('init-3', record), makeEnv());
+    const res = await room.fetch(
+      new Request('https://do/_do/init-private', {
+        method: 'POST',
+        headers: { 'X-EC-Uid': 'uid-owner' },
+        body: JSON.stringify({ snapshot: 'SAVE', acl: PRIVATE_ACL }),
+      }),
+    );
+    expect(res.status).toBe(409);
+    expect(record.map.size).toBe(1);
+    expect(record.map.has(STORAGE_KEYS.metaAccess)).toBe(false);
+  });
+
+  it('requires a trusted uid that owns the supplied acl', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('init-4', record), makeEnv());
+    const noUid = await room.fetch(
+      new Request('https://do/_do/init-private', {
+        method: 'POST',
+        body: JSON.stringify({ snapshot: '', acl: PRIVATE_ACL }),
+      }),
+    );
+    const wrongOwner = await room.fetch(
+      new Request('https://do/_do/init-private', {
+        method: 'POST',
+        headers: { 'X-EC-Uid': 'uid-intruder' },
+        body: JSON.stringify({ snapshot: '', acl: PRIVATE_ACL }),
+      }),
+    );
+    expect(noUid.status).toBe(403);
+    expect(wrongOwner.status).toBe(403);
+    expect(record.map.size).toBe(0);
+  });
+
+  it('rejects malformed bodies and malformed ACLs', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('init-5', record), makeEnv());
+    const bodies = [
+      '{',
+      JSON.stringify({ snapshot: 7, acl: PRIVATE_ACL }),
+      JSON.stringify({
+        snapshot: '',
+        acl: { owner: 'uid-owner', readers: 'x', writers: [] },
+      }),
+      JSON.stringify({ snapshot: '', acl: PRIVATE_ACL, group: 7 }),
+      '7',
+      JSON.stringify({ snapshot: '' }),
+    ];
+    for (const body of bodies) {
+      const res = await room.fetch(
+        new Request('https://do/_do/init-private', {
+          method: 'POST',
+          headers: { 'X-EC-Uid': 'uid-owner' },
+          body,
+        }),
+      );
+      expect(res.status).toBe(400);
+    }
+    expect(record.map.size).toBe(0);
+  });
+
+  it('keeps a tombstoned private room non-reinitializable', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    markPrivate(record);
+    const room = new RoomDO(makeState('init-6', record), makeEnv());
+    const res = await room.fetch(
+      new Request('https://do/_do/init-private', {
+        method: 'POST',
+        headers: { 'X-EC-Uid': 'uid-owner' },
+        body: JSON.stringify({ snapshot: 'SAVE', acl: PRIVATE_ACL }),
+      }),
+    );
+    expect(res.status).toBe(409);
+    expect(record.map.has(STORAGE_KEYS.snapshot)).toBe(false);
   });
 });

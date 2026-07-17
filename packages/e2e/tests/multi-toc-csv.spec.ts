@@ -1,9 +1,8 @@
-import { expect, test } from '../src/fixtures-client.ts';
+import { expect, test } from '../src/fixtures.ts';
 
 test.describe('client-multi TOC CSV lifecycle', () => {
   test('cold seed, add, rename, delete, and reload persist the visible tabs', async ({
     workerBase,
-    clientBase,
     page,
     request,
   }) => {
@@ -20,7 +19,7 @@ test.describe('client-multi TOC CSV lifecycle', () => {
     });
 
     try {
-      await page.goto(`${clientBase}/=${room}`);
+      await page.goto(`${workerBase}/=${room}`);
       const tabs = page.getByRole('tab');
       await expect(tabs).toHaveCount(1, { timeout: 15_000 });
       await expect(tabs.filter({ hasText: 'Sheet1' })).toBeVisible();

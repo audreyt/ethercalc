@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 
 import { main } from '../src/run.ts';
 import type { MainDeps } from '../src/run.ts';

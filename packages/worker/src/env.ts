@@ -8,9 +8,26 @@
  * Guard optional string fields with truthiness or `!= null`, never
  * `!== undefined` (see `lib/room-index-access.ts`).
  */
+import type { SessionPrincipal } from './lib/session.ts';
+
 export interface Env {
   /** One Durable Object per spreadsheet room. */
   ROOM: DurableObjectNamespace;
+
+  /** Singleton Durable Object for WebAuthn credentials and sessions. */
+  readonly AUTH?: DurableObjectNamespace;
+
+  /** Enable passkey authentication and private-room routes. */
+  readonly ETHERCALC_AUTH?: string | null;
+
+  /** WebAuthn relying-party identifier, for example `ethercalc.net`. */
+  readonly ETHERCALC_RP_ID?: string | null;
+
+  /** Human-readable WebAuthn relying-party name. */
+  readonly ETHERCALC_RP_NAME?: string | null;
+
+  /** Trusted WebAuthn origin, including scheme and optional port. */
+  readonly ETHERCALC_ORIGIN?: string | null;
 
   /**
    * D1 binding — cross-room index mirror (Phase 5.1). Authoritative room
@@ -109,7 +126,7 @@ export interface Env {
    * Typical local flow:
    *   echo 'ETHERCALC_MIGRATE_TOKEN="local-only"' > packages/worker/.dev.vars
    *   ./bin/ethercalc                                          # Miniflare
-   *   bun run migrate -- --input dump.rdb \
+   *   vp run @ethercalc/migrate#migrate --source file:///path/to/dump-dir \
    *     --target http://127.0.0.1:8000 --token local-only
    */
   readonly ETHERCALC_MIGRATE_TOKEN?: string;
@@ -166,4 +183,12 @@ export interface Env {
    * Set by `run_grain.sh`; inert on Cloudflare/Docker self-host.
    */
   readonly ETHERCALC_SANDSTORM?: string;
+}
+
+/** Shared Hono binding and request-local identity types for every route. */
+export interface EtherCalcHonoEnv {
+  Bindings: Env;
+  Variables: {
+    principal: SessionPrincipal | null | undefined;
+  };
 }

@@ -1,7 +1,7 @@
 # EtherCalc
 
 * Overview: https://ethercalc.net/
-* User guide: [docs.ethercalc.net](https://docs.ethercalc.net) (Starlight). Local: `bun run --cwd packages/docs dev`
+- User guide: [docs.ethercalc.net](https://docs.ethercalc.net) (Starlight). Local: `vp run @ethercalc/docs#dev`
 * 中文版: http://tw.ethercalc.net/
 * 简体中文: http://cn.ethercalc.net/
 * REST API: [API.md](./API.md)
@@ -112,7 +112,7 @@ Recommended public-instance settings:
 On Apple Silicon, Docker Desktop's virtio networking has an
 intermittent quirk that can make `curl localhost:8000` hang even
 against a healthy container. If you hit it, run the worker directly
-(`bun run --cwd packages/worker dev`) or use a Linux host.
+(`vp run @ethercalc/worker#dev`) or use a Linux host.
 
 ## CLI
 
@@ -138,11 +138,11 @@ secrets in `packages/worker/.dev.vars` instead of the environment.
 ## Deploy to Cloudflare
 
     cd packages/worker
-    npx wrangler deploy
+    vp exec wrangler deploy
 
 Store the HMAC secret as a Worker secret:
 
-    npx wrangler secret put ETHERCALC_KEY
+    vp exec wrangler secret put ETHERCALC_KEY
 
 ## Staying on legacy (Redis-backed) EtherCalc
 
@@ -201,12 +201,12 @@ be pushed to a Cloudflare Workers deployment. From the repo root:
 
     # Deploy the worker. Spits out https://ethercalc.<subdomain>.workers.dev
     cd packages/worker
-    npx wrangler login       # one-time browser auth
-    npx wrangler deploy
+    vp exec wrangler login       # one-time browser auth
+    vp exec wrangler deploy
 
     # Mint a migration token and store it as a Cloudflare secret
     TOKEN=$(openssl rand -hex 16)
-    echo "$TOKEN" | npx wrangler secret put ETHERCALC_MIGRATE_TOKEN
+    echo "$TOKEN" | vp exec wrangler secret put ETHERCALC_MIGRATE_TOKEN
 
     # Stand up a temporary local Redis loaded with the legacy dump
     cd ../..
@@ -245,16 +245,19 @@ on-disk legacy dumps (the Sandstorm grain fallback format).
 
 ## Development
 
-    bun install
-    bun run --cwd packages/worker dev          # wrangler dev --local
-    bun run --cwd packages/worker test         # workers-pool + node tests
+Install [Vite+](https://viteplus.dev/) and Bun 1.3.14. Vite+ is the
+repository interface; Bun remains the runtime for Bun-native scripts and tests.
+
+    vp install
+    vp run @ethercalc/worker#dev          # wrangler dev --local
+    vp run @ethercalc/worker#test         # workers-pool + node tests
 
 Formal verification / Leanstral pump (optional; not required for app builds):
 
-    bun run verify:dafny      # LemmaScript → Dafny VCs (needs dafny on PATH)
-    bun run verify:lean       # LemmaScript → Lean gen + non-empty + fresh smoke
-    bun run verify:context    # needs sibling https://github.com/audreyt/socialcalc
-    bun run verify:request    # concatenate prompt+context+Lean for Leanstral
+    vp run verify:dafny      # LemmaScript → Dafny VCs (needs dafny on PATH)
+    vp run verify:lean       # LemmaScript → Lean gen + non-empty + fresh smoke
+    vp run verify:context    # needs sibling https://github.com/audreyt/socialcalc
+    vp run verify:request    # concatenate prompt+context+Lean for Leanstral
     omp --print --no-tools --no-session --mode text \
       --model mistral/labs-leanstral-1-5-1 @lemma/request.md
 
@@ -300,9 +303,24 @@ sensible fixes documented in AGENTS.md §6.1.
 
 ### MIT License (HubSpot, Inc.)
 
-* static/vex-theme-flat-attack.css
-* static/vex.combined.min.js
-* static/vex.css
+vex.js's own files were deleted (`static/vex.css`, `static/vex-theme-flat-attack.css`,
+`static/vex.combined.min.js`), but a pre-bundled copy of it still ships
+inlined inside `static/ethercalc.js` (confirmed via that bundle's own
+source map, which lists `static/vex.combined.min.js` among its sources -
+see `docs/historic/REWRITE_ULTRAPLAN.md` §7.4, a tracked, not-yet-audited
+legacy risk, not something this pass's scope covers).
+
+* static/ethercalc.js (inlined; vex.js portion only)
+
+### Third-party notices (npm-bundled, TypeScript rewrite)
+
+Dependencies statically bundled into a shipped build artifact (where the
+published package's own license file wouldn't otherwise travel with the
+built output) are documented separately -
+[third-party/m3e/NOTICE](./third-party/m3e/NOTICE) covers the Material 3
+Expressive component bundle (`packages/client/dist-passkey/ui.js`):
+`@m3e/web`, `@m3e/icons`, Google's Material Symbols, and their own
+runtime dependencies.
 
 ### MIT License (Stuart Knightley, David Duponchel, Franz Buchinger, Ant'onio Afonso)
 

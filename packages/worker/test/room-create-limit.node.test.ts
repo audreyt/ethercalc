@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach } from 'vitest';
+import { describe, expect, it, beforeEach } from 'vite-plus/test';
 
 import {
   createRateLimitStore,
@@ -37,6 +37,14 @@ describe('parseRoomCreateLimitConfig', () => {
   });
 });
 
+  it('normalizes whitespace and case', () => {
+    expect(parseRoomCreateLimitConfig(' ON ')).toEqual({ capacity: 6, refillPerSec: 0.1 });
+    expect(parseRoomCreateLimitConfig(' 60:12 ')).toEqual({ capacity: 12, refillPerSec: 0.2 });
+    expect(parseRoomCreateLimitConfig(' OFF ')).toBeNull();
+  });
+
+  it.each(['0.00', '-0', 'NaN', 'Infinity', '60:-1', '60:Infinity'])('rejects invalid numeric boundary %s', raw => { expect(parseRoomCreateLimitConfig(raw)).toBeNull(); });
+
 describe('roomCreateLimitFromEnv', () => {
   it('reads ETHERCALC_ROOM_CREATE_LIMIT', () => {
     expect(
@@ -59,6 +67,15 @@ describe('isRoomCreationRoute', () => {
     ['GET', '/', false],
   ] as const)('%s %s → %s', (method, path, expected) => {
     expect(isRoomCreationRoute(method, path)).toBe(expected);
+  });
+});
+
+describe('route method precedence', () => {
+  it('rejects creation paths with wrong methods', () => {
+    expect(isRoomCreationRoute('GET', '/_')).toBe(false);
+    expect(isRoomCreationRoute('POST', '/_new')).toBe(false);
+    expect(isRoomCreationRoute('PUT', '/_from/template')).toBe(false);
+    expect(isRoomCreationRoute('PUT', '/_/')).toBe(false);
   });
 });
 

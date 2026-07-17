@@ -11,17 +11,18 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "vp test run",
+    "test:watch": "vp test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "socialcalc": "^3.0.8"
+    "socialcalc": "^3.1.0"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.18.0",
     "@cloudflare/workers-types": "^4.20260702.1",
-    "vitest": "^4.1.9",
+    "vite": "catalog:",
+    "vitest": "catalog:",
     "wrangler": "^4.107.0"
   }
 }

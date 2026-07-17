@@ -11,6 +11,16 @@ This product consists of components licensed under different licenses.
 Check the contents of each file for a statement of the license for that file.
 Files without license information are licensed under the Artistic License 2.0.
 
+This file covers the original SocialCalc-era codebase and its vendored
+dependencies (see the third-party/ directory - e.g. third-party/wikiwyg/,
+third-party/class-js/). The TypeScript/Cloudflare Workers rewrite under
+packages/ has its own npm-managed dependencies, each declaring its own
+license via its package.json; third-party notices for dependencies
+statically bundled into a shipped build artifact (where the published
+package's own license file would otherwise not travel with the built
+output) are collected separately - see third-party/m3e/NOTICE for the
+Material 3 Expressive component bundle (packages/client/dist-passkey/ui.js).
+
 ======================================================
   COMMON PUBLIC ATTRIBUTION LICENSE VERSION 1.0 (CPAL)
 ======================================================

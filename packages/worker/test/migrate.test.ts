@@ -9,7 +9,7 @@ import {
   env,
   waitOnExecutionContext,
 } from 'cloudflare:test';
-import { beforeAll, describe, it, expect } from 'vitest';
+import { beforeAll, describe, it, expect } from 'vite-plus/test';
 
 import worker from '../src/index.ts';
 

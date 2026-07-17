@@ -29,12 +29,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: oven-sh/setup-bun@v2
+      # voidzero-dev/setup-vp v1.1.0
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@e1609b468742ba9232ce5e12b3a77bdf14495277
         with:
-          bun-version: latest
+          cache: true
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       - name: Cloudflare API token
         run: ./scripts/ci-cloudflare-token.sh
@@ -43,17 +45,17 @@ jobs:
           CLOUDFLARE_OAUTH_REFRESH_TOKEN: ${{ secrets.CLOUDFLARE_OAUTH_REFRESH_TOKEN }}
 
       - name: Build Starlight site
-        run: bun run --cwd packages/docs build
+        run: vp run @ethercalc/docs#build
 
       - name: Ensure Pages project exists
         run: |
-          bun x wrangler pages project list | grep -q ethercalc-docs \
-            || bun x wrangler pages project create ethercalc-docs --production-branch=main
+          vp exec wrangler pages project list | grep -q ethercalc-docs \
+            || vp exec wrangler pages project create ethercalc-docs --production-branch=main
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
       - name: Deploy to Cloudflare Pages
-        run: bun x wrangler pages deploy packages/docs/dist --project-name=ethercalc-docs --branch=main --commit-dirty=true
+        run: vp exec wrangler pages deploy packages/docs/dist --project-name=ethercalc-docs --branch=main --commit-dirty=true
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 

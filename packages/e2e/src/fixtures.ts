@@ -53,15 +53,78 @@ export const test = base.extend<NonNullable<unknown>, WorkerFixtures>({
   ],
 });
 
+export interface AuthWorkerFixtures {
+  /**
+   * Base URL of a SECOND, independently-booted `wrangler dev` instance
+   * whose WebAuthn trust anchors (`ETHERCALC_RP_ID`/`ETHERCALC_ORIGIN`)
+   * are overridden to match Playwright's own navigation origin
+   * (`http://localhost:<port>`) instead of wrangler.toml's production
+   * defaults (`ethercalc.net`). Those defaults can never validate a real
+   * WebAuthn ceremony against a `127.0.0.1`/`localhost` origin — that
+   * mismatch is why every existing passkey spec stubs `/_auth/*` via
+   * `page.route()`. Specs that need a REAL Chromium CDP virtual
+   * authenticator flow (register/login ceremonies that actually hit
+   * AuthDO's `verifyRegistrationResponse`/`verifyAuthenticationResponse`)
+   * must use `authWorkerBase`, not `workerBase`.
+   */
+  authWorkerBase: string;
+}
+
+/**
+ * `authTest` boots its OWN `wrangler dev` (separate port/process from
+ * `workerBase`) so ordinary specs are unaffected — `test`/`workerBase`
+ * above keep booting with wrangler.toml's unmodified defaults.
+ */
+export const authTest = base.extend<NonNullable<unknown>, AuthWorkerFixtures>({
+  authWorkerBase: [
+    // eslint-disable-next-line no-empty-pattern
+    async ({}, use) => {
+      const port = await pickFreePort();
+      const { process: proc, baseUrl } = await startWrangler({
+        port,
+        host: 'localhost',
+        vars: {
+          ETHERCALC_AUTH: '1',
+          ETHERCALC_RP_ID: 'localhost',
+          ETHERCALC_RP_NAME: 'EtherCalc E2E',
+          ETHERCALC_ORIGIN: `http://localhost:${port}`,
+        },
+      });
+      try {
+        await use(baseUrl);
+      } finally {
+        await killTree(proc);
+      }
+    },
+    { scope: 'worker', timeout: 90_000 },
+  ],
+});
+
 export { expect } from '@playwright/test';
 
 async function startWrangler(args: {
   port: number;
+  /**
+   * Extra `--var KEY:VALUE` overrides layered on top of wrangler.toml's
+   * `[vars]`. Used by the auth-enabled fixture to point WebAuthn's RP ID
+   * and origin trust anchors at Playwright's own navigation origin instead
+   * of the production `ethercalc.net` defaults.
+   */
+  vars?: Record<string, string>;
+  /**
+   * Hostname Playwright/tests should use to reach the server. The listener
+   * always binds `127.0.0.1` regardless of this value — `localhost`
+   * resolves to the same loopback interface, but the browser's document
+   * origin (`http://localhost:<port>`) is what a WebAuthn RP ID of
+   * `localhost` validates against. Defaults to `127.0.0.1` (unchanged
+   * behavior for every existing fixture user).
+   */
+  host?: 'localhost' | '127.0.0.1';
 }): Promise<{ process: ChildProcess; baseUrl: string }> {
-  const { port } = args;
-  const cmd = 'bun';
+  const { port, vars = {}, host = '127.0.0.1' } = args;
+  const cmd = 'vp';
   const argv = [
-    'x',
+    'exec',
     'wrangler',
     'dev',
     '--port',
@@ -69,6 +132,9 @@ async function startWrangler(args: {
     '--ip',
     '127.0.0.1',
   ];
+  for (const [key, value] of Object.entries(vars)) {
+    argv.push('--var', `${key}:${value}`);
+  }
   const opts: SpawnOptions = {
     cwd: WORKER_PKG,
     env: {
@@ -118,14 +184,19 @@ async function startWrangler(args: {
   }
 
   // Confirm the health endpoint actually answers before we hand the URL
-  // off — wait-port only knows the socket accepts connections.
-  const baseUrl = `http://127.0.0.1:${port}`;
-  const healthOk = await pingHealth(`${baseUrl}/_health`, timeoutSec * 1000);
+  // off — wait-port only knows the socket accepts connections. Always
+  // probe via 127.0.0.1 (the actual bind address) regardless of `host`,
+  // so DNS resolution of `localhost` can never make this check flaky.
+  const healthOk = await pingHealth(
+    `http://127.0.0.1:${port}/_health`,
+    timeoutSec * 1000,
+  );
   if (!healthOk) {
     await killTree(proc);
     throw new Error(`wrangler opened ${port} but /_health never returned 200`);
   }
 
+  const baseUrl = `http://${host}:${port}`;
   return { process: proc, baseUrl };
 }
 

@@ -1,5 +1,5 @@
 import { cloudflareTest } from '@cloudflare/vitest-pool-workers';
-import { defineConfig } from 'vitest/config';
+import { defineConfig } from 'vite-plus';
 
 // Pool-workers 0.14.x dropped the `singleWorker` / `isolatedStorage`
 // options — the plugin now always runs tests in one isolate per file

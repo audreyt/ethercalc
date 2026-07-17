@@ -91,10 +91,10 @@ rule (SH-2), CF platform TLS (SH-5) + DDoS, and `workers_dev=false`
    (`wrangler.toml` stays authoritative for CF). A self-host default must be overridable
    (operator opt-out), e.g. `${ETHERCALC_DISABLE_ROOM_INDEX:-1}` not a hardcoded `1`.
 3. **Worker-code changes are coverage- + mutation-gated.** Any edit under `src/handlers/**`,
-   `src/lib/**`, or `src/room.ts` must keep `bun run --cwd packages/worker test:coverage` at **100%**
+   `src/lib/**`, or `src/room.ts` must keep `vp run @ethercalc/worker#test:coverage` at **100%**
    (line/branch/function/statement) and not drop the Stryker score below the `break` floor (`92`).
    `src/index.ts` and `src/routes/**` are coverage-excluded but still must not break existing tests.
-   **Commit before running `bun run mutation`** — Stryker `inPlace:true` instruments the working tree;
+   **Commit before running `vp run @ethercalc/worker#mutation`** — Stryker `inPlace:true` instruments the working tree;
    a `git add` mid-run captures corrupted sources (see the StrykerJS memory note).
 4. **British English** in prose/comments. Match surrounding style.
 5. **Preserve oracle equivalence.** Config-default flips that change a default response (e.g. `/_rooms`
@@ -481,7 +481,7 @@ forwards it, but the worker reads `BASEPATH` (not `ETHERCALC_BASEPATH`). `config
 - **CI nightly** (AGENTS.md §11.2): consider a job that boots the self-host image and curls the
   enumeration endpoints to keep the safe default from silently regressing.
 - Any **worker-code** task (SH-2 limiter, SH-6 header enforcement) → keep
-  `bun run --cwd packages/worker test:coverage` at 100% and `bun run --cwd packages/worker mutation`
+  `vp run @ethercalc/worker#test:coverage` at 100% and `vp run @ethercalc/worker#mutation`
   ≥ `break` (commit first — see §2.3).
 
 ---
@@ -515,6 +515,40 @@ forwards it, but the worker reads `BASEPATH` (not `ETHERCALC_BASEPATH`). `config
 
 **Remaining suggested order:** Sandstorm branch SH-6/SH-7 → optional in-Worker limiter /
 room-creation quota if the proxy baseline proves insufficient.
+
+## 7. Passkey auth on self-host (Phase A, 2026-07-10)
+
+Passkey (WebAuthn) login and private rooms ship dark on self-host —
+anonymous read/write on public rooms is untouched either way. To light
+the feature up, set **all four** env vars (Docker compose forwards them;
+`config.capnp` maps them via `fromEnvironment`):
+
+```sh
+ETHERCALC_AUTH=1 \
+ETHERCALC_RP_ID=sheets.example.com \
+ETHERCALC_RP_NAME="My EtherCalc" \
+ETHERCALC_ORIGIN=https://sheets.example.com \
+docker compose up -d
+```
+
+Requirements and behavior:
+
+- **TLS is mandatory** — WebAuthn refuses non-secure origins, so this
+  only works behind the SH-5 nginx proxy (or another TLS terminator).
+  `ETHERCALC_ORIGIN` must exactly match the URL users visit, including
+  scheme and port; `ETHERCALC_RP_ID` is its registrable domain.
+- Credentials, challenges, and the session-signing secret live in the
+  singleton `AuthDO` (uniqueKey `ethercalc-authdo-v1`) under the same
+  `do-storage/` tree as rooms — back it up together.
+- `ETHERCALC_KEY` and passkey sessions are separate trust domains: the
+  legacy HMAC key never signs sessions, and on private rooms ACL
+  membership replaces legacy `?auth=` tokens outright (deny-overrides).
+- Private rooms are excluded from `/_rooms*` mirrors and answer 403 on
+  every read/write/export/WS path for non-members; deleting one leaves
+  an access tombstone so the name cannot be squatted (a TTL from
+  `ETHERCALC_EXPIRE` still reclaims it fully).
+- Partial configuration fails closed: missing anchors ⇒ `/_auth/*`
+  responds 404 at the Worker and the AuthDO itself answers 503.
 
 ---
 

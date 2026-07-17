@@ -40,6 +40,10 @@ COPY index.html start.html panels.html \
 COPY l10n ./l10n
 COPY images ./images
 COPY static ./static
+# Source for the license notice scripts/build-assets.ts copies to
+# static/passkey/NOTICE (see vite.passkey.config.ts's banner comment in
+# the passkey bundle it ships alongside).
+COPY third-party ./third-party
 
 RUN bun install --frozen-lockfile
 

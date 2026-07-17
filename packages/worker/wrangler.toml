@@ -32,9 +32,19 @@ custom_domain = true
 name = "ROOM"
 class_name = "RoomDO"
 
+# Phase A — singleton AuthDO: WebAuthn credentials, challenges, and the
+# session-signing secret. Addressed only as `idFromName('auth')`.
+[[durable_objects.bindings]]
+name = "AUTH"
+class_name = "AuthDO"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["RoomDO"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["AuthDO"]
 
 # Default vars — overridden per-deploy by `wrangler secret put` or
 # wrangler.toml overlays. `ETHERCALC_KEY` is unset by default (anonymous
@@ -47,6 +57,16 @@ new_sqlite_classes = ["RoomDO"]
 [vars]
 BASEPATH = ""
 ETHERCALC_CORS = "1"
+# Phase A — passkey auth. `ETHERCALC_AUTH` is the master switch for the
+# `/_auth/*` ceremonies and the private-room routes. The RP ID / origin
+# are WebAuthn trust anchors: they MUST match the site users visit.
+# NOTE: passkeys registered on https://ethercalc.net do not verify from
+# https://www.ethercalc.net (origin is exact-match); the www host keeps
+# working anonymously.
+ETHERCALC_AUTH = "1"
+ETHERCALC_RP_ID = "ethercalc.net"
+ETHERCALC_RP_NAME = "EtherCalc"
+ETHERCALC_ORIGIN = "https://ethercalc.net"
 
 # Staging overlay — isolated from production routes and cron triggers. It uses
 # its own D1 database and a temporary workers.dev hostname for release checks.
@@ -59,10 +79,20 @@ routes = []
 [env.staging.vars]
 BASEPATH = ""
 ETHERCALC_CORS = "1"
+# Phase A — passkey auth is live on staging for the WebAuthn acceptance test.
+# RP ID / origin MUST match the workers.dev hostname exactly.
+ETHERCALC_AUTH = "1"
+ETHERCALC_RP_ID = "ethercalc-staging.audreyt.workers.dev"
+ETHERCALC_RP_NAME = "EtherCalc Staging"
+ETHERCALC_ORIGIN = "https://ethercalc-staging.audreyt.workers.dev"
 
 [[env.staging.durable_objects.bindings]]
 name = "ROOM"
 class_name = "RoomDO"
+
+[[env.staging.durable_objects.bindings]]
+name = "AUTH"
+class_name = "AuthDO"
 
 [[env.staging.d1_databases]]
 binding = "DB"

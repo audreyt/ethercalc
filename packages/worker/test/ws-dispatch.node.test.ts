@@ -3,7 +3,7 @@
  * the Node coverage gate stays at 100%. Integration-level WS handling
  * (hibernation, attachments, broadcast) is tested via `room.test.ts`.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 
 import {
   buildAskEcellBroadcast,

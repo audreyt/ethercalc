@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": ["ES2022", "ES2024.Promise", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "bundler",
     "strict": true,
@@ -17,5 +17,5 @@
     "types": ["node"],
     "noEmit": true
   },
-  "include": ["src/**/*", "test/**/*", "vite.config.ts", "vitest.config.ts"]
+  "include": ["src/**/*", "test/**/*", "vite.config.ts", "vite.passkey.config.ts", "vitest.config.ts"]
 }

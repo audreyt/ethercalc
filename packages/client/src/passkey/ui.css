@@ -1,0 +1,215 @@
+/*
+ * Light-DOM layout only — never re-implements M3E's own component
+ * chrome (color/shape/motion come from the `<m3e-theme>` wrap in
+ * index.html/start.html + each component's shadow styles). This file
+ * exists because M3E's shadow styles set sensible per-component
+ * defaults that say nothing about how OUR specific composition of those
+ * components should lay out relative to each other or respond to
+ * viewport width — that's this stylesheet's job.
+ */
+
+/* `#ec-room-access` is a real `m3e-toolbar` (not a hand-rolled div): its
+   shadow DOM already provides the correct `toolbar` role AND real
+   keyboard navigation (arrow/Home/End via `RovingTabIndexManager`) — a
+   plain div with `role="toolbar"` would claim that contract without
+   delivering it. `variant="standard" elevated shape="rounded"` gives it
+   the surface background, elevation shadow, and pill radius itself, so
+   this rule is positioning + sizing only — never hand-roll chrome the
+   component already owns.
+
+   `:host { display: inline-block }` is the component's own default, so
+   as a `position: fixed` element it already shrink-wraps to content;
+   only `--m3e-toolbar-size` (default 4rem — far taller than this
+   compact pill wants) and spacing/padding need overriding. */
+#ec-room-access {
+  position: fixed;
+  top: 14px;
+  right: 18px;
+  z-index: 20;
+  --m3e-toolbar-size: 2.5rem;
+  --m3e-toolbar-spacing: 6px;
+  --m3e-toolbar-rounded-padding: 4px 10px;
+}
+
+/* Below 700px, `position: fixed` in the viewport's top-right corner is no
+   longer safe (see `mountRoomAccessCluster()`'s doc comment in ui.ts for
+   the measured collision threshold against SocialCalc's own
+   non-reflowing menu bar) — fall back to a normal in-flow block instead,
+   which `mountRoomAccessCluster()` places immediately before
+   `#tableeditor` for exactly this case. `width: fit-content` +
+   `margin-left: auto` keeps the pill itself shrink-wrapped and
+   right-aligned rather than stretching the whole row full-width.
+   SocialCalc re-measures `#tableeditor`'s new `offsetTop` on its own
+   (see ui.ts) - the grid simply starts lower, the same trade-off the
+   pre-redesign toolbar always made, just no longer paid on desktop
+   where there was room to avoid it entirely.
+
+   700px, not the 840px this needed before folding "Make a private
+   copy"/"Sheet access" into the account menu: the widest remaining
+   content (private badge + avatar alone, ~126px - no second button
+   beside it anymore) measures collision-free only above ~626px; 700px
+   keeps a similar safety margin past that measured minimum instead of
+   tracking it exactly. */
+@media (max-width: 700px) {
+  #ec-room-access {
+    position: static;
+    display: block;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    margin: 8px 12px 8px auto;
+  }
+}
+
+/* `position: relative` needed for the same reason as `.ec-floatnav__link`
+   below — see that rule's comment: a plain, non-custom-element leaf
+   (this badge `<span>`) slotted directly into `m3e-toolbar` needs the
+   explicit opt-in to paint above the toolbar's own `<m3e-state-layer>`
+   hover overlay. Every OTHER child here is a real `m3e-button`/
+   `m3e-icon-button`, which - like every M3E component - already sets
+   `:host { position: relative }` on itself, so none of them need this
+   repeated. */
+.ec-room-access__badge {
+  position: relative;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--md-sys-color-error, #ba1a1a);
+  padding: 0 6px 0 2px;
+  white-space: nowrap;
+}
+
+#ec-private-gate {
+  display: grid;
+  min-height: 60vh;
+  place-items: center;
+  padding: 24px 16px;
+}
+
+m3e-card {
+  width: min(440px, 100%);
+}
+
+#ec-landing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* ---- Floating project-links pill (landing page only) -------------------
+ * start.html's plain `<nav class="ec-floatnav ec-floatnav--top">` — Gsheet-
+ * inspired, `position: fixed` so it persists through scroll instead of
+ * reserving a dedicated top-bar band. Landing-page-only: once a user is
+ * actually inside a sheet, `#ec-room-access` (above) carries just the
+ * account/passkey status - project links aren't useful enough there to
+ * earn permanent top-right real estate (they briefly WERE duplicated
+ * into that cluster too; see `.ec-floatnav__link`'s comment below for
+ * why that was reverted).
+ *
+ * Unlike this file's other rules, the pill needs real chrome (surface,
+ * border, shadow) — there's no M3E component being composed here, just
+ * plain links. Reads the raw `--md-sys-color-*` tokens `m3e-theme`
+ * materializes on `html` (see the reduced-motion block below for why
+ * that's safe to depend on cross-page) rather than start.html's
+ * landing-only `--ec-*` aliases, keeping this file's own dependencies
+ * to `m3e-theme` alone, per the file-header note. */
+
+.ec-floatnav {
+  position: fixed;
+  right: 18px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--md-sys-color-surface, #faf9fd);
+  border: 1px solid var(--md-sys-color-outline-variant, #c3c6cf);
+  box-shadow: 0 1px 2px rgba(12, 49, 89, 0.08), 0 2px 8px rgba(12, 49, 89, 0.06);
+}
+
+.ec-floatnav--top {
+  top: 14px;
+}
+
+/* The landing page's own project links (Docs/API/GitHub) - the ONLY
+   place they render now. They used to be duplicated inside the
+   sheet-page cluster (`#ec-room-access`) too, as `m3e-button`s rather
+   than plain `<a>`s specifically because a plain link slotted into
+   `m3e-toolbar` renders invisible underneath its `<m3e-state-layer>`
+   hover overlay (a CSS stacking-order bug, confirmed empirically - see
+   `.ec-room-access__badge`'s comment above for the mechanism) - but
+   once a user is actually inside a sheet, project links aren't useful
+   enough to earn permanent top-right real estate, so that duplication
+   was removed. This plain `<nav>` isn't inside an `m3e-toolbar` at all,
+   so none of that applies here: plain `<a>` tags render fine, no
+   `position: relative` opt-in needed. */
+.ec-floatnav__link {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--md-sys-color-on-surface-variant, #43474e);
+  text-decoration: none;
+  padding: 6px 12px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.ec-floatnav__link:hover {
+  background: color-mix(in srgb, var(--md-sys-color-on-surface, #1a1c1e) 8%, transparent);
+  color: var(--md-sys-color-on-surface, #1a1c1e);
+}
+
+.ec-floatnav__link:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary, #1e5fa6);
+  outline-offset: 1px;
+}
+
+
+@media (prefers-reduced-motion: reduce) {
+  /* M3E's per-component `@media (prefers-reduced-motion)` rules are
+     incomplete: e.g. `m3e-menu` only zeroes its `transition`, not the
+     `animation: bounce-open …` it separately applies on open (verified
+     against @m3e/web/dist/menu.js source and empirically - the account
+     menu's open animation still ran at full 250ms under emulated
+     reduced motion). `m3e-theme` doesn't zero these either - it just
+     materializes their *default* values as explicit `html` custom
+     properties (see @m3e/web/dist/theme.js's module-level
+     `registerStyleSheet` call), so every component that reads
+     `var(--md-sys-motion-duration-*, …)` / `var(--md-sys-motion-spring-*, …)`
+     - including through shadow DOM, since custom properties inherit
+     across shadow boundaries - still animates at full speed regardless
+     of the user's preference.
+
+     Zeroing the tokens here instead of chasing every component's
+     internal `animation`/`transition` selector (most of which are
+     shadow-DOM-private and unreachable from this light-DOM stylesheet
+     anyway) covers all of them at once. `!important` is required: the
+     theme's token-materialization stylesheet targets the same `html`
+     selector with the same specificity, and network timing makes
+     source order between the two unpredictable (this stylesheet loads
+     via a parsed `<link>`, the theme's via a deferred module script). */
+  html {
+    --md-sys-motion-duration-short-1: 0ms !important;
+    --md-sys-motion-duration-short-2: 0ms !important;
+    --md-sys-motion-duration-short-3: 0ms !important;
+    --md-sys-motion-duration-short-4: 0ms !important;
+    --md-sys-motion-duration-medium-1: 0ms !important;
+    --md-sys-motion-duration-medium-2: 0ms !important;
+    --md-sys-motion-duration-medium-3: 0ms !important;
+    --md-sys-motion-duration-medium-4: 0ms !important;
+    --md-sys-motion-duration-long-1: 0ms !important;
+    --md-sys-motion-duration-long-2: 0ms !important;
+    --md-sys-motion-duration-long-3: 0ms !important;
+    --md-sys-motion-duration-long-4: 0ms !important;
+    --md-sys-motion-duration-extra-long-1: 0ms !important;
+    --md-sys-motion-duration-extra-long-2: 0ms !important;
+    --md-sys-motion-duration-extra-long-3: 0ms !important;
+    --md-sys-motion-duration-extra-long-4: 0ms !important;
+    --md-sys-motion-spring-fast-spatial: 0ms linear !important;
+    --md-sys-motion-spring-default-spatial: 0ms linear !important;
+    --md-sys-motion-spring-slow-spatial: 0ms linear !important;
+    --md-sys-motion-spring-fast-effects: 0ms linear !important;
+    --md-sys-motion-spring-default-effects: 0ms linear !important;
+    --md-sys-motion-spring-slow-effects: 0ms linear !important;
+  }
+}

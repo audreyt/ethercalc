@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
+import * as XLSX from '@e965/xlsx';
 import type { Env } from '../src/env.ts';
 import { buildApp } from '../src/index.ts';
 
@@ -20,6 +21,8 @@ interface Call {
   url: string;
   method: string;
   bodyText?: string;
+  /** `X-EC-Uid` header the route layer attached to the DO fetch (null = none). */
+  uid: string | null;
 }
 
 interface FakeStub {
@@ -48,9 +51,13 @@ function makeFakeRoomNamespace(responder: (call: Call) => Response): {
       }
       const method =
         init?.method ?? (typeof input === 'string' ? 'GET' : input.method);
+      const headers = new Headers(
+        init?.headers ?? (typeof input === 'string' ? undefined : input.headers),
+      );
       const call: Call = {
         url,
         method,
+        uid: headers.get('X-EC-Uid'),
         ...(bodyText !== undefined ? { bodyText } : {}),
       };
       calls.push(call);
@@ -64,6 +71,66 @@ function makeFakeRoomNamespace(responder: (call: Call) => Response): {
     } as unknown as DurableObjectNamespace,
   };
   return { env, calls };
+}
+
+const AUTH_UID = 'uid-passkey-1';
+const AUTH_EXP = Number.MAX_SAFE_INTEGER;
+const AUTH_COOKIE = 'ec_sess=tok-valid';
+
+/**
+ * Layer a fake AUTH namespace over `env` so `getSessionPrincipal` resolves
+ * `AUTH_UID` plus its future expiration for any `ec_sess` cookie.
+ */
+function withAuth(env: Env, uid: string = AUTH_UID): Env {
+  return {
+    ...env,
+    ETHERCALC_AUTH: '1',
+    AUTH: {
+      idFromName: () => ({}) as DurableObjectId,
+      get: () =>
+        ({
+          fetch: async () => Response.json({ uid, exp: AUTH_EXP }),
+        }) as unknown as DurableObjectStub,
+    } as unknown as DurableObjectNamespace,
+  };
+}
+
+/**
+ * D1 stub that records effect ordering into the shared `events` list.
+ * Shape-compatible with `upsertCronTriggers` (prepare/bind/run/batch)
+ * plus the `withCronSchema` retry wrapper (exec).
+ */
+function makeRecordingDb(events: string[]): D1Database {
+  const stmt = {
+    bind: (..._args: unknown[]) => stmt,
+    run: async () => {
+      events.push('d1:run');
+      return {} as never;
+    },
+  };
+  return {
+    prepare: () => stmt,
+    batch: async (_stmts: unknown[]) => {
+      events.push('d1:batch');
+      return [] as never;
+    },
+    exec: async () => ({}) as never,
+  } as unknown as D1Database;
+}
+
+/**
+ * D1 stub where ANY access throws — proves a code path never touches
+ * the database (the route would surface a 500 instead of the verdict).
+ */
+function makePoisonedDb(): D1Database {
+  const poison = () => {
+    throw new Error('D1 must not be touched when the DO denies the write');
+  };
+  return {
+    prepare: poison,
+    batch: poison,
+    exec: poison,
+  } as unknown as D1Database;
 }
 
 describe('POST /_/:room — command execution', () => {
@@ -650,3 +717,182 @@ function makeFakeZipCentralDirectory(
   result.set(eocd, pos);
   return result;
 }
+
+function makeOneCellXlsx(): Uint8Array {
+  const ws: XLSX.WorkSheet = { '!ref': 'A1:A1', A1: { t: 's', v: 'hi' } };
+  const book = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(book, ws, 'Sheet1');
+  return new Uint8Array(
+    XLSX.write(book, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer,
+  );
+}
+
+describe('POST /_/:room — DO write verdict gating (Phase A)', () => {
+  it('propagates a DO 403 on the commands write verbatim', async () => {
+    const { env } = makeFakeRoomNamespace(
+      () => new Response('Forbidden', { status: 403 }),
+    );
+    const app = buildApp();
+    const res = await app.fetch(
+      new Request('https://t.test/_/locked', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ command: 'set A1 value n 1' }),
+      }),
+      env as never,
+    );
+    expect(res.status).toBe(403);
+    expect(res.headers.get('content-type')).toBe('text/plain; charset=utf-8');
+    expect(await res.text()).toBe('Forbidden');
+  });
+
+  it('propagates a DO 401 on the commands write verbatim', async () => {
+    const { env } = makeFakeRoomNamespace(
+      () => new Response('Unauthorized', { status: 401 }),
+    );
+    const app = buildApp();
+    const res = await app.fetch(
+      new Request('https://t.test/_/locked', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ command: 'set A1 value n 1' }),
+      }),
+      env as never,
+    );
+    expect(res.status).toBe(401);
+    expect(await res.text()).toBe('Unauthorized');
+  });
+
+  it('propagates a DO 403 on the xlsx-decoded commands dispatch', async () => {
+    const { env } = makeFakeRoomNamespace(
+      () => new Response('Forbidden', { status: 403 }),
+    );
+    const app = buildApp();
+    const res = await app.fetch(
+      new Request('https://t.test/_/locked', {
+        method: 'POST',
+        headers: {
+          'content-type':
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        },
+        body: makeOneCellXlsx() as unknown as BodyInit,
+      }),
+      env as never,
+    );
+    expect(res.status).toBe(403);
+    expect(await res.text()).toBe('Forbidden');
+  });
+
+  it('threads the verified principal to the commands dispatch', async () => {
+    const { env, calls } = makeFakeRoomNamespace(
+      () => new Response(null, { status: 202 }),
+    );
+    const app = buildApp();
+    const res = await app.fetch(
+      new Request('https://t.test/_/r', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          Cookie: AUTH_COOKIE,
+          'X-EC-Uid': 'uid-forged',
+        },
+        body: JSON.stringify({ command: 'set A1 value n 1' }),
+      }),
+      withAuth(env) as never,
+    );
+    expect(res.status).toBe(202);
+    const dispatch = calls.find((c) => c.url.includes('/_do/commands'));
+    expect(dispatch!.uid).toBe(AUTH_UID);
+  });
+
+  it('a DO 403 write verdict yields ZERO D1 writes for settimetrigger', async () => {
+    const { env } = makeFakeRoomNamespace(
+      () => new Response('Forbidden', { status: 403 }),
+    );
+    const app = buildApp();
+    const res = await app.fetch(
+      new Request('https://t.test/_/locked', {
+        method: 'POST',
+        headers: { 'content-type': 'text/x-socialcalc' },
+        body: 'settimetrigger A1 100,200',
+      }),
+      { ...env, DB: makePoisonedDb() } as never,
+    );
+    // A poisoned D1 stub throws on ANY access — reaching it would
+    // surface a 500 instead of the propagated verdict below.
+    expect(res.status).toBe(403);
+    expect(await res.text()).toBe('Forbidden');
+  });
+
+  it('settimetrigger D1 upsert lands only after the DO write succeeds', async () => {
+    const events: string[] = [];
+    const { env } = makeFakeRoomNamespace((call) => {
+      if (call.url.includes('/_do/commands')) events.push('do:commands');
+      return new Response(null, { status: 202 });
+    });
+    const app = buildApp();
+    const res = await app.fetch(
+      new Request('https://t.test/_/r', {
+        method: 'POST',
+        headers: { 'content-type': 'text/x-socialcalc' },
+        body: 'settimetrigger A1 100,200',
+      }),
+      { ...env, DB: makeRecordingDb(events) } as never,
+    );
+    expect(res.status).toBe(202);
+    expect(events).toEqual(['do:commands', 'd1:batch']);
+  });
+
+  it('a DO 403 write verdict fires ZERO sibling renames for multi-cascade', async () => {
+    const { env, calls } = makeFakeRoomNamespace((call) => {
+      if (call.url.includes('/_do/snapshot') && call.method === 'GET') {
+        // The cascade target IS resolvable (world-readable room) —
+        // only the write verdict may gate the sibling rename.
+        return new Response(
+          'version:1.5\nsheet:c:2:r:5:tvf:g\ncell:A5:t:/r.1\n',
+        );
+      }
+      if (call.url.includes('/_do/commands')) {
+        return new Response('Forbidden', { status: 403 });
+      }
+      return new Response(null, { status: 202 });
+    });
+    const app = buildApp();
+    const res = await app.fetch(
+      new Request('https://t.test/_/r', {
+        method: 'POST',
+        headers: { 'content-type': 'text/x-socialcalc' },
+        body: 'set A5:B3 empty multi-cascade',
+      }),
+      env as never,
+    );
+    expect(res.status).toBe(403);
+    expect(await res.text()).toBe('Forbidden');
+    expect(calls.find((c) => c.url.includes('/_do/rename'))).toBeUndefined();
+  });
+
+  it('multi-cascade sibling rename dispatches only after the commands write', async () => {
+    const { env, calls } = makeFakeRoomNamespace((call) => {
+      if (call.url.includes('/_do/snapshot') && call.method === 'GET') {
+        return new Response(
+          'version:1.5\nsheet:c:2:r:5:tvf:g\ncell:A5:t:/r.1\n',
+        );
+      }
+      return new Response(null, { status: 202 });
+    });
+    const app = buildApp();
+    const res = await app.fetch(
+      new Request('https://t.test/_/r', {
+        method: 'POST',
+        headers: { 'content-type': 'text/x-socialcalc' },
+        body: 'set A5:B3 empty multi-cascade',
+      }),
+      env as never,
+    );
+    expect(res.status).toBe(202);
+    const commandsIdx = calls.findIndex((c) => c.url.includes('/_do/commands'));
+    const renameIdx = calls.findIndex((c) => c.url.includes('/_do/rename'));
+    expect(commandsIdx).toBeGreaterThanOrEqual(0);
+    expect(renameIdx).toBeGreaterThan(commandsIdx);
+  });
+});

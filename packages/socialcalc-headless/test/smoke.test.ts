@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'vite-plus/test';
 import { createSpreadsheet, csvToSave, loadSocialCalc } from '../src/index.js';
 
 describe('socialcalc headless (Phase 1 spike — Plan A)', () => {

@@ -1,0 +1,153 @@
+name: Publish npm package
+
+# On each version tag (e.g. `0.YYYYMMDD.N`), runs full checks, builds assets,
+# packs deterministic archives, and publishes to the npm registry using OIDC
+# Trusted Publishing (no static secrets).
+#
+# Prerequisite: Configure Trusted Publishing for the package "ethercalc" on
+# npmjs.com with the following OIDC settings:
+#   - Owner: audreyt
+#   - Repository: ethercalc
+#   - Workflow: publish-npm.yml
+#   - Environment: npm-publish
+
+on:
+  push:
+    tags:
+      - '0.2*.*'
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "PUBLISH" to override dry-run and publish to npm'
+        required: false
+        default: 'dry-run'
+
+concurrency:
+  group: publish-npm-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: run checks + pack candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      tarball-path: ${{ steps.pack.outputs.tarball-path }}
+      tarball-name: ${{ steps.pack.outputs.tarball-name }}
+      version: ${{ steps.pack.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+
+      # voidzero-dev/setup-vp v1.1.0
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@e1609b468742ba9232ce5e12b3a77bdf14495277
+        with:
+          cache: true
+
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+
+      - name: Typecheck
+        run: vp run typecheck
+
+      - name: Lint
+        run: vp check
+
+
+      - name: Run full test suite
+        run: vp run test
+
+      - name: Pack and verify deterministic package contract
+        id: pack
+        run: |
+          set -euo pipefail
+          mkdir -p dist-release
+          
+          # Pack twice and verify byte-for-byte identity (reproducibility check)
+          vp pm pack --out dist-release/pack1.tgz
+          vp pm pack --out dist-release/pack2.tgz
+          
+          SHA1="$(sha256sum dist-release/pack1.tgz | awk '{print $1}')"
+          SHA2="$(sha256sum dist-release/pack2.tgz | awk '{print $1}')"
+          
+          if [ "$SHA1" != "$SHA2" ]; then
+            echo "::error::Package is non-deterministic: pack1 sha256=$SHA1, pack2 sha256=$SHA2"
+            exit 1
+          fi
+          
+          TARBALL_NAME="ethercalc-${{ github.ref_name }}.tgz"
+          mv dist-release/pack1.tgz "dist-release/$TARBALL_NAME"
+          rm -f dist-release/pack2.tgz
+          
+          # Extract and assert no test, e2e, or Stryker files leaked
+          mkdir -p /tmp/pack-verify-extract
+          tar -xzf "dist-release/$TARBALL_NAME" -C /tmp/pack-verify-extract
+          
+          FORBIDDEN=(
+            "package/packages/e2e"
+            "package/packages/oracle-harness"
+            "package/.stryker-tmp"
+            "package/stryker-setup"
+          )
+          for path in "${FORBIDDEN[@]}"; do
+            if [ -e "/tmp/pack-verify-extract/$path" ]; then
+              echo "::error::Forbidden path leaked into npm package: $path"
+              exit 1
+            fi
+          done
+          
+          VERSION="$(node -p "require('/tmp/pack-verify-extract/package/package.json').version")"
+          
+          {
+            echo "tarball-path=./dist-release/$TARBALL_NAME"
+            echo "tarball-name=$TARBALL_NAME"
+            echo "version=$VERSION"
+          } >> "$GITHUB_OUTPUT"
+          
+          # Archive the build artifact for the publish job
+          mkdir -p /tmp/artifact-sharing
+          cp "dist-release/$TARBALL_NAME" /tmp/artifact-sharing/
+          
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: npm-release-tarball
+          path: dist-release/
+          retention-days: 7
+          if-no-files-found: error
+
+  publish:
+    name: npm OIDC publish
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: npm-publish
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Download release artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: npm-release-tarball
+          path: dist-release
+
+      - name: Setup Node.js (required for npm OIDC publish)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Publish to npm
+        # If triggered by a version tag push, or manual workflow_dispatch with confirm=PUBLISH, publish the package.
+        # Otherwise, run a dry-run check.
+        run: |
+          set -euo pipefail
+          TARBALL="${{ needs.validate.outputs.tarball-path }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.confirm }}" != "PUBLISH" ]; then
+            echo "Dry-run mode: verifying package signature only."
+            npm publish "$TARBALL" --provenance --dry-run
+          else
+            echo "Publishing version ${{ needs.validate.outputs.version }} to npm..."
+            npm publish "$TARBALL" --provenance
+          fi

@@ -29,18 +29,20 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: oven-sh/setup-bun@v2
+      # voidzero-dev/setup-vp v1.1.0
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@e1609b468742ba9232ce5e12b3a77bdf14495277
         with:
-          bun-version: latest
+          cache: true
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       - name: Build client assets
         run: |
-          bun run --cwd packages/client build
-          bun run --cwd packages/client-multi build
-          bun run scripts/build-assets.ts
+          vp run @ethercalc/client#build
+          vp run @ethercalc/client-multi#build
+          vp exec bun scripts/build-assets.ts
 
       - name: Cloudflare API token
         run: ./scripts/ci-cloudflare-token.sh
@@ -49,7 +51,7 @@ jobs:
           CLOUDFLARE_OAUTH_REFRESH_TOKEN: ${{ secrets.CLOUDFLARE_OAUTH_REFRESH_TOKEN }}
 
       - name: Deploy to Cloudflare Workers
-        run: bun x wrangler deploy --env=""
+        run: vp exec wrangler deploy --env=""
         working-directory: packages/worker
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

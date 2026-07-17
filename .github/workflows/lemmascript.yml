@@ -18,9 +18,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: oven-sh/setup-bun@v2
+      # voidzero-dev/setup-vp v1.1.0
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@e1609b468742ba9232ce5e12b3a77bdf14495277
         with:
-          bun-version: latest
+          cache: true
 
       - name: Setup Dafny
         uses: dafny-lang/setup-dafny-action@v1
@@ -28,10 +30,10 @@ jobs:
           dafny-version: "4.9.0"
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       - name: Generate + check Dafny models
-        run: bun run verify:dafny
+        run: vp run verify:dafny
 
       # Fail if committed .dfy / .dfy.gen drifted from what check just wrote.
       # (No hand proofs on this facade — files must stay byte-identical.)
@@ -46,19 +48,21 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: oven-sh/setup-bun@v2
+      # voidzero-dev/setup-vp v1.1.0
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@e1609b468742ba9232ce5e12b3a77bdf14495277
         with:
-          bun-version: latest
+          cache: true
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       # Full `lake build` needs sibling Loom/Velvet/LemmaScript checkouts and
       # solver downloads; CI only asserts Lean backend generation succeeds.
       # verify:context is intentionally NOT run here — it needs sibling
       # ../socialcalc/lemma/a1.{ts,dfy}.
       - name: Generate Lean models from facade
-        run: bun run verify:lean:gen
+        run: vp run verify:lean:gen
 
       - name: Assert Lean artifacts non-empty
         shell: bash

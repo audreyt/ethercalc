@@ -1,61 +1,73 @@
 # @ethercalc/e2e
 
-Playwright end-to-end tests. Fixtures boot `wrangler dev` (Worker) and
-`vite dev` (client-multi SPA) per Playwright worker on random ports —
-no shared state, no port collisions, clean tear-down.
+Playwright end-to-end tests for the EtherCalc Worker and clients. The standard
+fixtures boot `wrangler dev` with Workers Assets on a random port; both the
+single-sheet client and the React 19 multi-sheet client are production builds
+served by that Worker. There is no Vite fixture or separate client server.
 
 ## Run locally
 
 ```bash
 # once per machine: fetch Chromium
-bun run --cwd packages/e2e install:browsers
+vp run @ethercalc/e2e#install:browsers
 
 # the whole suite
-bun run --cwd packages/e2e test
+vp run @ethercalc/e2e#test
 
 # a single spec
-bun run --cwd packages/e2e test -- tests/health.spec.ts
+vp run @ethercalc/e2e#test tests/health.spec.ts
 
 # headed + inspect the HTML report
-bun run --cwd packages/e2e test:headed
-bun run --cwd packages/e2e report
+vp run @ethercalc/e2e#test:headed
+vp run @ethercalc/e2e#report
+
+# typecheck
+vp run @ethercalc/e2e#typecheck
 ```
 
 ## Specs
 
-| Spec                          | Proves                                                                    |
-| ----------------------------- | ------------------------------------------------------------------------- |
-| `health.spec.ts`              | Worker boots; `/_health` returns `{status:'ok', version, now}` JSON.      |
-| `redirects.spec.ts`           | `/_new`, `/=_new`, `/:room/{edit,view,app}` redirect as per AGENTS.md §6. |
-| `blocked.spec.ts`             | `/etc/*` and `/var/*` stay 404 with `text/html` empty body.               |
-| `client-multi-smoke.spec.ts`  | React 18 SPA mounts on `/=<room>`, Radix tablist renders.                 |
-| `client-single-smoke.spec.ts` | SocialCalc single-sheet UI boots, edits cell, asserts persistence and reload. |
+| Spec | Proves |
+| --- | --- |
+| `health.spec.ts` | Worker health JSON contract. |
+| `redirects.spec.ts` | New-room and room mode redirects. |
+| `blocked.spec.ts` | Reserved `/etc/*` and `/var/*` paths remain blocked. |
+| `client-single-smoke.spec.ts` | Production single-sheet assets boot; a cell persists through the Worker and reload. |
+| `client-multi-smoke.spec.ts` | Production React 19 multi-sheet assets boot at `/=<room>`; tabs, frame layout, and browser errors are clean. |
+| `multi-toc-csv.spec.ts` | Multi-sheet add, rename, delete, and reload lifecycle. |
+| `multi-rename.spec.ts` | Renaming one multi-sheet tab preserves its sibling. |
+| `room-crud-export.spec.ts` | Worker room create/read/overwrite/command/cells/delete lifecycle plus CSV, `csv.json`, HTML, XLSX, and Markdown exports on both high-value route forms. |
+| `filldown-persistence.spec.ts` | HTTP command persistence and exported fill-down values. |
+| `form-clone.spec.ts` | Template clone redirect and seeded room behavior. |
+| `landing-import.spec.ts` | Landing-page CSV and workbook imports, including binary fallback. |
+| `landing-layout.spec.ts` | Responsive landing navigation, attribution, and layout. |
+| `passkey-room-access.spec.ts` | Passkey UI/viewer/access chrome with mocked ceremony/access responses. |
+| `passkey-webauthn-real.spec.ts` | Real Chromium virtual-authenticator registration/login, private-room authorization, and WS denial. |
+| `realtime-collab.spec.ts` | Two independent browser contexts exchange live edits over native WebSockets and converge after reload. |
 
-## Strategy for client assets (current)
+## Production asset strategy
 
-The Worker now has the Workers Assets binding wired
-(`[assets] directory = "../../assets"` in `packages/worker/wrangler.toml`,
-populated by `scripts/build-assets.ts`), so the **single-sheet** smoke
-points at `workerBase` directly: `GET /:room` serves `index.html`, which
-pulls in `static/socialcalc.js` + `static/player.js` and mounts the
-editor — no extra fixture needed.
+`scripts/build-assets.ts` copies the built clients into the curated root
+`assets/` directory. `packages/worker/wrangler.toml` binds that directory as
+Workers Assets. A request to `/:room` serves the single-sheet entry; a request
+to `/=<room>` serves `assets/multi/index.html`, whose `/multi/assets/*` chunks
+are served by the same Worker. CI builds both clients and `assets/` before the
+Worker/E2E stages.
 
-The **multi-sheet** SPA still boots `vite dev` on a fixture-owned port:
-its dev-mode SPA fallback for `/=<room>` is convenient and avoids
-rebuilding `assets/multi/` on every run. Pointing it at `workerBase`
-(dropping the Vite fixture) is the remaining cleanup once the multi
-build is part of the standard e2e setup.
+## Real WebAuthn fixture and known viewer gap
 
-## Expanding coverage as phases land
+`passkey-webauthn-real.spec.ts` uses additive `authTest`/`authWorkerBase`
+fixtures. That fixture starts a second Worker with localhost RP/origin vars so
+Chromium's CDP virtual authenticator can complete real ceremonies. The ordinary
+passkey UI spec remains a fast mocked-ceremony suite.
 
-- Phase 5 (Room CRUD): `POST /_` 201, `PUT /_/:room` body-type matrix,
-  `DELETE /_/:room`, `GET /_/:room` read-back, `/_rooms` + `/_roomtimes`.
-- Phase 6 (exec): `POST /_/:room` with `set A1 value n 1`, verify via
-  `GET /_/:room`.
-- Phase 7 (WS): two pages on one room; type in one, assert the second
-  sees the update via `page.waitForFunction`.
-- Phase 8 (exports): `/_/:room/csv`, `/:room.html`, `/:room.xlsx` —
-  assert via `@ethercalc/oracle-harness` structural matchers.
-- Phase 10/10b (realtime client): `client-single-smoke.spec.ts` verifies editor boot, renders grid, edits A1, and reload-hydrates over live WS.
-- Phase 11 (assets): drop the Vite fixture; both SPAs come via Workers
-  Assets served by the Worker.
+A genuine read-only viewer ACL state is not covered: `POST /_/private` seeds
+empty reader/writer lists and no HTTP sharing/ACL-editing route currently adds a
+reader to an existing private room. This is the known follow-up documented by
+AGENTS.md decision #12.
+
+## Harness note
+
+Fixtures, rather than a top-level `webServer`, own Worker process lifetime and
+teardown. The suite intentionally runs one Chromium worker to avoid concurrent
+Miniflare startup contention. Firefox/WebKit coverage is not configured (P2).

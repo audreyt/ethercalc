@@ -5,17 +5,17 @@
 ```bash
 git clone https://github.com/audreyt/ethercalc
 cd ethercalc
-bun install
-bun run --cwd packages/worker dev    # http://127.0.0.1:8787
+vp install
+vp run @ethercalc/worker#dev    # http://127.0.0.1:8787
 ```
 
-See [AGENTS.md](./AGENTS.md) for agent context, [packages/docs/](packages/docs/) for the Starlight docs site (`bun run --cwd packages/docs dev`), and [docs/historic/REWRITE_ULTRAPLAN.md](./docs/historic/REWRITE_ULTRAPLAN.md) for the archived rewrite plan.
+See [AGENTS.md](./AGENTS.md) for agent context, [packages/docs/](packages/docs/) for the Starlight docs site (`vp run @ethercalc/docs#dev`), and [docs/historic/REWRITE_ULTRAPLAN.md](./docs/historic/REWRITE_ULTRAPLAN.md) for the archived rewrite plan.
 
 ## Tests and coverage
 
 ```bash
-bun run test                         # all workspace packages
-bun run --cwd packages/worker test:coverage   # 100% gate on handlers/lib/room
+vp run test                                  # all workspace packages
+vp run @ethercalc/worker#test:coverage       # 100% gate on handlers/lib/room
 ```
 
 Gated packages enforce **100% line/branch/function/statement** coverage in CI. PRs that drop a metric fail.
@@ -42,7 +42,7 @@ This exercises `packages/socialcalc-headless` for formula/export regressions and
 ### 3. HTTP probes (local worker)
 
 ```bash
-bun run --cwd packages/worker dev   # separate terminal
+vp run @ethercalc/worker#dev   # separate terminal
 bun scripts/triage-open-issues.ts --http http://127.0.0.1:8787
 ```
 
@@ -80,5 +80,5 @@ Sandstorm packaging lives on `main`: `SANDSTORM.md`, `run_grain.sh`, `sandstorm-
 
 1. One logical change per PR when possible.
 2. Add or update tests; keep coverage at 100% on gated paths.
-3. Run `bun run typecheck` and affected package tests locally.
+3. Run `vp check`, `vp run typecheck`, and affected package tests locally.
 4. Update [AGENTS.md](./AGENTS.md) session log if the change is architectural.

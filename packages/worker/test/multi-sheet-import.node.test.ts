@@ -1,5 +1,5 @@
 import * as XLSX from '@e965/xlsx';
-import { describe, expect, it, } from 'vitest';
+import { describe, expect, it, } from 'vite-plus/test';
 import { buildMultiSheetImport } from '../src/lib/multi-sheet-import.ts';
 import {
   ImportColumnOutOfRangeError,

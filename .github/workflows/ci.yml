@@ -19,40 +19,32 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: oven-sh/setup-bun@v2
+      # voidzero-dev/setup-vp v1.1.0
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@e1609b468742ba9232ce5e12b3a77bdf14495277
         with:
-          bun-version: latest
+          cache: true
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       - name: Typecheck (all packages)
-        run: |
-          bun run --cwd packages/shared typecheck
-          bun run --cwd packages/socialcalc-headless typecheck
-          bun run --cwd packages/worker typecheck
-          bun run --cwd packages/client typecheck
-          bun run --cwd packages/client-multi typecheck
-          bun run --cwd packages/oracle-harness typecheck
-          bun run --cwd packages/cli typecheck
-          bun run --cwd packages/socketio-shim typecheck
-          bun run --cwd packages/migrate typecheck
-          bun run --cwd packages/e2e typecheck
+        run: vp run --filter './packages/*' typecheck
 
-      - name: Lint (biome)
-        run: bun run lint
+      - name: Lint (Oxlint via Vite+)
+        run: vp check
 
       - name: shared — tests + 100% coverage gate
-        run: bun run --cwd packages/shared test:coverage
+        run: vp run @ethercalc/shared#test:coverage
 
       - name: worker — Node tests + 100% coverage gate
-        run: bun run --cwd packages/worker test:coverage
+        run: vp run @ethercalc/worker#test:coverage
 
       - name: client — Vite build (needed for assets/static/player.js)
-        run: bun run --cwd packages/client build
+        run: vp run @ethercalc/client#build
 
       - name: client-multi — Vite build (needed for assets/multi/)
-        run: bun run --cwd packages/client-multi build
+        run: vp run @ethercalc/client-multi#build
 
       - name: Build curated assets/ dir (scripts/build-assets.ts)
         # Phase 4.1/11: regenerates `assets/` at repo root from the
@@ -60,7 +52,7 @@ jobs:
         # Must run BEFORE worker integration tests (miniflare reads
         # wrangler.toml `[assets]` at startup) and `wrangler deploy
         # --dry-run` (validates the directory exists).
-        run: bun run scripts/build-assets.ts
+        run: vp exec bun scripts/build-assets.ts
 
       - name: Validate worker D1 migrations
         # Phase 5.1: smoke-check each SQL file in packages/worker/migrations/
@@ -75,34 +67,34 @@ jobs:
           done
 
       - name: worker — integration tests (workerd via miniflare)
-        run: bun run --cwd packages/worker test:workers
+        run: vp run @ethercalc/worker#test:workers
 
       - name: worker — wrangler dry-run build
-        run: bun run --cwd packages/worker build:dry
+        run: vp run @ethercalc/worker#build:dry
 
       - name: socialcalc-headless — smoke tests (workerd)
-        run: bun run --cwd packages/socialcalc-headless test
+        run: vp run @ethercalc/socialcalc-headless#test
 
       - name: client — tests + 100% coverage gate
-        run: bun run --cwd packages/client test:coverage
+        run: vp run @ethercalc/client#test:coverage
 
       - name: client-multi — tests + 100% coverage gate
-        run: bun run --cwd packages/client-multi test:coverage
+        run: vp run @ethercalc/client-multi#test:coverage
 
       - name: oracle-harness — tests + 100% coverage gate
-        run: bun run --cwd packages/oracle-harness test:coverage
+        run: vp run @ethercalc/oracle-harness#test:coverage
 
       - name: cli — tests + 100% coverage gate
-        run: bun run --cwd packages/cli test:coverage
+        run: vp run @ethercalc/cli#test:coverage
 
       - name: socketio-shim — tests + 100% coverage gate
-        run: bun run --cwd packages/socketio-shim test:coverage
+        run: vp run @ethercalc/socketio-shim#test:coverage
 
       - name: migrate — tests + 100% coverage gate
-        run: bun run --cwd packages/migrate test:coverage
+        run: vp run @ethercalc/migrate#test:coverage
 
       - name: docs — Starlight production build
-        run: bun run --cwd packages/docs build
+        run: vp run @ethercalc/docs#build
 
       - name: Upload coverage artifacts
         if: always()
@@ -180,23 +172,26 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: test
-    # Mirrors AGENTS.md §11.1 item 8. Boots wrangler + the client-multi
-    # Vite dev server via per-worker fixtures in packages/e2e and exercises
-    # the HTTP surface + SPA mount. Uploads the HTML report on failure so
+    # Mirrors AGENTS.md §11.1 item 8. Boots wrangler with the Worker's
+    # production Workers Assets bundle (both the single-sheet and React 19
+    # multi-sheet clients are served by that same Worker — no separate Vite
+    # server) via per-worker fixtures in packages/e2e, and exercises the
+    # HTTP surface + SPA mounts. Uploads the HTML report on failure so
     # traces/screenshots are recoverable.
     steps:
       - uses: actions/checkout@v6
 
-      - uses: oven-sh/setup-bun@v2
+      # voidzero-dev/setup-vp v1.1.0
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@e1609b468742ba9232ce5e12b3a77bdf14495277
         with:
-          bun-version: latest
+          cache: true
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       - name: Install Playwright browsers (chromium + system deps)
-        run: bunx playwright install --with-deps chromium
-        working-directory: packages/e2e
+        run: vp run @ethercalc/e2e#install:browsers
 
       # Wrangler 4 reads `[assets] directory = "../../assets"` from
       # wrangler.toml; if the dir is missing (or empty, which it is on
@@ -205,16 +200,16 @@ jobs:
       # The `test` job builds these before its own suite; `e2e` runs on
       # a separate runner with a clean workspace, so rebuild here.
       - name: client — Vite build (for assets/static/player.js)
-        run: bun run --cwd packages/client build
+        run: vp run @ethercalc/client#build
 
       - name: client-multi — Vite build (for assets/multi/)
-        run: bun run --cwd packages/client-multi build
+        run: vp run @ethercalc/client-multi#build
 
       - name: Build curated assets/ dir
-        run: bun run scripts/build-assets.ts
+        run: vp exec bun scripts/build-assets.ts
 
       - name: Run Playwright suite
-        run: bun run --cwd packages/e2e test
+        run: vp run @ethercalc/e2e#test
         env:
           CI: 'true'
 
@@ -251,12 +246,14 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: oven-sh/setup-bun@v2
+      # voidzero-dev/setup-vp v1.1.0
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@e1609b468742ba9232ce5e12b3a77bdf14495277
         with:
-          bun-version: latest
+          cache: true
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       - name: Detect changed packages
         id: changed
@@ -288,7 +285,7 @@ jobs:
           for pkg in ${{ steps.changed.outputs.packages }}; do
             if [ -f "packages/$pkg/stryker.conf.json" ]; then
               echo "::group::mutation test — $pkg"
-              bun run --cwd "packages/$pkg" mutation
+              vp run --filter "./packages/$pkg" --fail-if-no-match mutation
               echo "::endgroup::"
             else
               echo "skip: packages/$pkg has no stryker.conf.json"

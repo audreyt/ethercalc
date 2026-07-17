@@ -20,7 +20,7 @@
  */
 /* istanbul ignore file */
 import type { Hono } from 'hono';
-import type { Env } from '../env.ts';
+import type { EtherCalcHonoEnv } from '../env.ts';
 import { upsertCronTriggers } from '../handlers/cron.ts';
 import { classifyCommandBody, joinCommands } from '../handlers/post-command.ts';
 import { classifyRequestBody } from '../handlers/rooms.ts';
@@ -42,6 +42,7 @@ import {
   listRoomTimes,
   renderRoomLinks,
 } from '../lib/rooms-index.ts';
+import { getSessionPrincipal } from '../lib/session-middleware.ts';
 import {
   ImportArchiveTooLargeError,
   ImportColumnOutOfRangeError,
@@ -56,6 +57,17 @@ const HTML_CT = 'text/html; charset=utf-8';
 const JSON_CT = 'application/json; charset=utf-8';
 const PITR_POLL_ATTEMPTS = 20;
 const PITR_POLL_INTERVAL_MS = 100;
+
+/**
+ * Mirror a DO 401/403 auth verdict to the client verbatim (status +
+ * text/plain body). Returns null for any other status so callers fall
+ * through to their normal handling. The RoomDO is the sole authz
+ * boundary (Phase A) — the route layer never rewrites its denials.
+ */
+async function authVerdict(res: Response): Promise<Response | null> {
+  if (res.status !== 401 && res.status !== 403) return null;
+  return sizedResponse(await res.text(), res.status, TEXT_CT);
+}
 
 /**
  * Response with `Content-Length` set from the body. Workers auto-emits it
@@ -92,7 +104,7 @@ async function readBodyBytes(request: Request): Promise<Uint8Array> {
  * `/_new`, `/_start`, `/_health` all have to come before `/_/:room` (the
  * `_` vs `_…` split in Hono's trie is exact-match-first).
  */
-export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
+export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
   // ─── Cross-room index endpoints (Phase 5.1 — backed by D1) ─────────
   //
   // The D1 `rooms` table (migrations/0001_rooms.sql) is maintained by
@@ -133,7 +145,16 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
   // ─── Template copy ─────────────────────────────────────────────────
   app.get('/_from/:template', async (c) => {
     const template = c.req.param('template') ?? '';
-    const snapshotRes = await doFetch(c.env, template, '/_do/snapshot');
+    const principal = await getSessionPrincipal(c);
+    const snapshotRes = await doFetch(
+      c.env,
+      template,
+      '/_do/snapshot',
+      {},
+      principal,
+    );
+    const denied = await authVerdict(snapshotRes);
+    if (denied) return denied;
     if (snapshotRes.status === 404) {
       // Template doesn't exist — legacy still redirects into a blank room.
       // Preserve that but note it in FINDINGS for a potential fix later.
@@ -145,14 +166,69 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
     }
     const snapshot = await snapshotRes.text();
     const newRoom = generateRoomId();
-    await doFetch(c.env, newRoom, '/_do/snapshot', {
-      method: 'PUT',
-      body: snapshot,
-    });
+    const putRes = await doFetch(
+      c.env,
+      newRoom,
+      '/_do/snapshot',
+      { method: 'PUT', body: snapshot },
+      principal,
+    );
+    const putDenied = await authVerdict(putRes);
+    if (putDenied) return putDenied;
     return c.redirect(
       `${c.env.BASEPATH ?? ''}/${newRoom}${c.env.ETHERCALC_KEY ? '/edit' : ''}`,
       302,
     );
+  });
+
+  // ─── Private template copy (P7) ────────────────────────────────────
+  //
+  // Copies `:template` into a fresh private room owned by the verified
+  // session principal. The template read carries the principal so
+  // readable private templates copy too; the DO's atomic
+  // `/_do/init-private` enforces the owner/uid match and 409s on any
+  // occupied id. Ownership exists ONLY at creation (claim-jacking a
+  // public room is impossible by design), which is why this is a
+  // separate route rather than a flag on the public copy above.
+  app.post('/_from/:template/private', async (c) => {
+    const template = c.req.param('template') ?? '';
+    const principal = await getSessionPrincipal(c);
+    if (!principal) {
+      return sizedResponse('Unauthorized', 401, TEXT_CT);
+    }
+    const snapshotRes = await doFetch(
+      c.env,
+      template,
+      '/_do/snapshot',
+      {},
+      principal,
+    );
+    const denied = await authVerdict(snapshotRes);
+    if (denied) return denied;
+    // A missing template still yields a private room, matching the
+    // blank-room fallback of the public copy route above.
+    const snapshot =
+      snapshotRes.status === 404 ? '' : await snapshotRes.text();
+    const newRoom = generateRoomId();
+    const initRes = await doFetch(
+      c.env,
+      newRoom,
+      '/_do/init-private',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          snapshot,
+          acl: { owner: principal.uid, readers: [], writers: [] },
+        }),
+        headers: { 'Content-Type': 'application/json' },
+      },
+      principal,
+    );
+    if (initRes.status !== 201) {
+      // 409 occupied / 403 uid mismatch / 400 malformed — verbatim.
+      return sizedResponse(await initRes.text(), initRes.status, TEXT_CT);
+    }
+    return c.redirect(`${c.env.BASEPATH ?? ''}/${newRoom}/edit`, 302);
   });
 
   // ─── _exists ────────────────────────────────────────────────────────
@@ -167,7 +243,13 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
       return sizedResponse('_exists not available with CORS', 403, TEXT_CT);
     }
     const room = c.req.param('room') ?? '';
-    const res = await doFetch(c.env, room, '/_do/exists');
+    const principal = await getSessionPrincipal(c);
+    const res = await doFetch(c.env, room, '/_do/exists', {}, principal);
+    // A denial must propagate as a denial — folding it into the boolean
+    // would leak (or fabricate) existence for rooms the caller may not
+    // probe.
+    const denied = await authVerdict(res);
+    if (denied) return denied;
     const { exists } = (await res.json()) as { exists: 0 | 1 };
     // Oracle emits a bare JSON boolean with `application/json; charset=utf-8`
     // (see tests/oracle/FINDINGS F-05 + the recorded fixture). Matches the
@@ -213,10 +295,16 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
       snapshot = decoded.kind === 'save' ? decoded.snapshot : '';
     }
     const room = userRoom ?? generateRoomId();
-    await doFetch(c.env, room, '/_do/snapshot', {
-      method: 'PUT',
-      body: snapshot,
-    });
+    const principal = await getSessionPrincipal(c);
+    const putRes = await doFetch(
+      c.env,
+      room,
+      '/_do/snapshot',
+      { method: 'PUT', body: snapshot },
+      principal,
+    );
+    const denied = await authVerdict(putRes);
+    if (denied) return denied;
     return sizedResponse(`/${room}`, 201, TEXT_CT, { Location: `/_/${room}` });
   });
 
@@ -242,18 +330,39 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
     } else {
       snapshot = decoded.kind === 'save' ? decoded.snapshot : '';
     }
-    await doFetch(c.env, room, '/_do/snapshot', {
-      method: 'PUT',
-      body: snapshot,
-    });
+    const principal = await getSessionPrincipal(c);
+    const putRes = await doFetch(
+      c.env,
+      room,
+      '/_do/snapshot',
+      { method: 'PUT', body: snapshot },
+      principal,
+    );
+    const denied = await authVerdict(putRes);
+    if (denied) return denied;
     // Legacy responds with exactly `201 OK` text/plain (src/main.ls:404).
     return sizedResponse('OK', 201, TEXT_CT);
+  });
+
+  // ─── GET /_/:room/access (browser display capability) ──────────────
+  //
+  // The client uses this same-origin relay to render its public/private
+  // chrome. The RoomDO remains the sole authorization boundary: it owns
+  // the metadata and resolves this verdict against the verified session
+  // principal threaded by doFetch.
+  app.get('/_/:room/access', async (c) => {
+    const room = c.req.param('room') ?? '';
+    const principal = await getSessionPrincipal(c);
+    return doFetch(c.env, room, '/_do/access', {}, principal);
   });
 
   // ─── GET /_/:room (raw save) ───────────────────────────────────────
   app.get('/_/:room', async (c) => {
     const room = c.req.param('room') ?? '';
-    const res = await doFetch(c.env, room, '/_do/snapshot');
+    const principal = await getSessionPrincipal(c);
+    const res = await doFetch(c.env, room, '/_do/snapshot', {}, principal);
+    const denied = await authVerdict(res);
+    if (denied) return denied;
     if (res.status === 404) {
       return sizedResponse('', 404, TEXT_CT);
     }
@@ -278,7 +387,10 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
   // literal before the param form.
   app.get('/_/:room/cells', async (c) => {
     const room = c.req.param('room') ?? '';
-    const res = await doFetch(c.env, room, '/_do/cells');
+    const principal = await getSessionPrincipal(c);
+    const res = await doFetch(c.env, room, '/_do/cells', {}, principal);
+    const denied = await authVerdict(res);
+    if (denied) return denied;
     const body = await res.text();
     return new Response(body, {
       status: res.status,
@@ -290,7 +402,16 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
   app.get('/_/:room/cells/:cell', async (c) => {
     const room = c.req.param('room') ?? '';
     const cell = c.req.param('cell') ?? '';
-    const res = await doFetch(c.env, room, `/_do/cells/${encodeURIComponent(cell)}`);
+    const principal = await getSessionPrincipal(c);
+    const res = await doFetch(
+      c.env,
+      room,
+      `/_do/cells/${encodeURIComponent(cell)}`,
+      {},
+      principal,
+    );
+    const denied = await authVerdict(res);
+    if (denied) return denied;
     const body = await res.text();
     return new Response(body, {
       status: res.status,
@@ -480,18 +601,76 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
   // ─── DELETE /_/:room ───────────────────────────────────────────────
   app.delete('/_/:room', async (c) => {
     const room = c.req.param('room') ?? '';
-    // H-2: permanently wiping a room (incl. the never-truncated audit) is
-    // a destructive verb, so gate it on the per-room capability HMAC the
-    // same way the WS `stopHuddle` path does. When no `ETHERCALC_KEY` is
-    // set (anonymous mode), `verifyAuth` returns true for any non-'0'
-    // auth, so this is a no-op and DELETE stays open — matching the
-    // documented anonymous contract (§6.4). When a KEY *is* configured it
-    // closes the HTTP-vs-WS asymmetry where DELETE ignored the key.
-    if (!(await verifyAuth(c.env.ETHERCALC_KEY, room, c.req.query('auth') ?? ''))) {
-      return sizedResponse('Forbidden', 403, TEXT_CT);
+    // H-2: permanently wiping a public room (incl. the never-truncated
+    // audit) needs its per-room HMAC. Private rooms instead use the
+    // RoomDO-owned ACL verdict; their legacy HMAC is intentionally demoted.
+    const authQuery = c.req.query('auth') ?? '';
+    const principal = await getSessionPrincipal(c);
+    if (!(await verifyAuth(c.env.ETHERCALC_KEY, room, authQuery))) {
+      // `auth=0` remains an explicit destructive-write veto even for a
+      // private owner. Bare or stale legacy tokens defer to the RoomDO ACL.
+      if (authQuery === '0') return sizedResponse('Forbidden', 403, TEXT_CT);
+      const accessRes = await doFetch(c.env, room, '/_do/access', {}, principal);
+      const access: unknown = accessRes.ok
+        ? await accessRes.json().catch(() => null)
+        : null;
+      if (
+        access === null ||
+        typeof access !== 'object' ||
+        !('isPrivate' in access) ||
+        !('canWrite' in access) ||
+        access.isPrivate !== true ||
+        access.canWrite !== true
+      ) {
+        return sizedResponse('Forbidden', 403, TEXT_CT);
+      }
     }
-    await doFetch(c.env, room, '/_do/all', { method: 'DELETE' });
+    const res = await doFetch(
+      c.env,
+      room,
+      '/_do/all',
+      { method: 'DELETE' },
+      principal,
+    );
+    const denied = await authVerdict(res);
+    if (denied) return denied;
     return sizedResponse('OK', 201, TEXT_CT);
+  });
+
+  // ─── POST /_/private (P7 — create owned private room) ──────────────
+  //
+  // MUST register before `POST /_/:room` so the static `private`
+  // segment wins against the `:room` param. A verified session is
+  // REQUIRED: private rooms have an owner or they don't exist. The DO
+  // enforces atomic init + uid match; the route only shapes the
+  // request/response.
+  app.post('/_/private', async (c) => {
+    const principal = await getSessionPrincipal(c);
+    if (!principal) {
+      return sizedResponse('Unauthorized', 401, TEXT_CT);
+    }
+    const room = generateRoomId();
+    const initRes = await doFetch(
+      c.env,
+      room,
+      '/_do/init-private',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          snapshot: '',
+          acl: { owner: principal.uid, readers: [], writers: [] },
+        }),
+        headers: { 'Content-Type': 'application/json' },
+      },
+      principal,
+    );
+    if (initRes.status !== 201) {
+      // 409 occupied / 403 uid mismatch / 400 malformed — verbatim.
+      return sizedResponse(await initRes.text(), initRes.status, TEXT_CT);
+    }
+    return sizedResponse(JSON.stringify({ room }), 201, JSON_CT, {
+      Location: `/_/${room}`,
+    });
   });
 
   // ─── POST /_/:room (execute commands) ───────────────────────────────
@@ -556,10 +735,16 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
         return sizedResponse('Could not import workbook', 400, TEXT_CT);
       }
       if (commands.length > 0) {
-        await doFetch(c.env, room, '/_do/commands', {
-          method: 'POST',
-          body: commands.join('\n'),
-        });
+        const principal = await getSessionPrincipal(c);
+        const writeRes = await doFetch(
+          c.env,
+          room,
+          '/_do/commands',
+          { method: 'POST', body: commands.join('\n') },
+          principal,
+        );
+        const denied = await authVerdict(writeRes);
+        if (denied) return denied;
       }
       return new Response(JSON.stringify({ command: commands }), {
         status: 202,
@@ -626,19 +811,31 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
     // the command arrived as JSON -- the client has already composed
     // the array shape it wants.
     let commandOut: string | readonly string[] = command;
+    // Sibling rename target resolved by the multi-cascade read below;
+    // dispatched only after the authorizing DO write succeeds.
+    let cascadeTarget: string | null = null;
+    const principal = await getSessionPrincipal(c);
 
     if (commandKind === 'text-command') {
       const textCmd = command as string;
 
       // Multi-cascade rename (src/main.ls:425-436). Reads the current
-      // snapshot out of this room's DO, matches the
-      // `cell:<ref>:t:/<foreignRoom>` line, and issues /_do/rename on
-      // the foreign room's DO. Errors (missing snapshot, missing cell
-      // line, rename 5xx) are swallowed: legacy proceeds to execute
-      // the command regardless.
+      // snapshot out of this room's DO and matches the
+      // `cell:<ref>:t:/<foreignRoom>` line. The read MUST happen before
+      // the authorizing write below (the command empties the very cell
+      // the reference lives in), but the rename itself is a side effect
+      // and is DEFERRED until that write returns 2xx. Errors (missing
+      // snapshot, missing cell line, rename 5xx) are swallowed: legacy
+      // proceeds to execute the command regardless.
       const cascadeRef = isMultiCascade(textCmd);
       if (cascadeRef !== null) {
-        const snapshotRes = await doFetch(c.env, room, '/_do/snapshot');
+        const snapshotRes = await doFetch(
+          c.env,
+          room,
+          '/_do/snapshot',
+          {},
+          principal,
+        );
         if (snapshotRes.ok) {
           const snapshot = await snapshotRes.text();
           const cellLine = new RegExp(`cell:${cascadeRef}:t:/(.+)`, 'i').exec(snapshot);
@@ -653,11 +850,7 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
             // tenant's room. A foreign target is silently ignored, matching
             // legacy's "proceed with the command regardless" on a no-match.
             if (targetRoom.startsWith(`${room}.`)) {
-              await doFetch(c.env, targetRoom, '/_do/rename', {
-                method: 'POST',
-                body: JSON.stringify({ to: `${targetRoom}.bak` }),
-                headers: { 'Content-Type': 'application/json' },
-              });
+              cascadeTarget = targetRoom;
             }
           }
         }
@@ -668,7 +861,13 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
         const rowQ = Number(c.req.query('row'));
         const rowQueryParam = Number.isNaN(rowQ) ? null : rowQ;
         // Snapshot is needed for the lastrow derivation. Treat 404 as empty.
-        const snapshotRes = await doFetch(c.env, room, '/_do/snapshot');
+        const snapshotRes = await doFetch(
+          c.env,
+          room,
+          '/_do/snapshot',
+          {},
+          principal,
+        );
         const snapshot = snapshotRes.ok ? await snapshotRes.text() : '';
         commandOut = enrichLoadClipboard(textCmd, { rowQueryParam, snapshot });
       }
@@ -679,28 +878,53 @@ export function registerRoomRoutes(app: Hono<{ Bindings: Env }>): void {
     // `cmdstr = command * '\n'`).
     const cmdstr = joinCommands(commandOut);
 
-    // Phase 9 — settimetrigger side-effect. The legacy flow posted the
-    // command to a worker-thread which then emitted a `setcrontrigger`
-    // message (src/sc.ls:220); we short-circuit by detecting the verb
-    // here and writing to D1 before the DO runs the command. The DO
-    // still executes the command (which records a log entry), but the
-    // actual scheduling lives in `cron_triggers`.
-    //
-    // Multi-line dispatches (array command or newline-joined text
-    // block) can carry several settimetrigger lines; we parse each.
-    if (c.env.DB) {
-      for (const line of cmdstr.split('\n')) {
-        const parsed = parseSettimetrigger(line);
-        if (parsed) {
-          await upsertCronTriggers(c.env.DB, room, parsed.cell, parsed.times);
+    // The authorizing DO write runs FIRST — every side effect below
+    // (D1 cron upsert, sibling rename) is gated on its verdict. On a
+    // 401/403 the verdict propagates verbatim with ZERO side effects.
+    const writeRes = await doFetch(
+      c.env,
+      room,
+      '/_do/commands',
+      { method: 'POST', body: cmdstr },
+      principal,
+    );
+    const denied = await authVerdict(writeRes);
+    if (denied) return denied;
+
+    if (writeRes.ok) {
+      // Phase 9 — settimetrigger side-effect. The legacy flow posted the
+      // command to a worker-thread which then emitted a `setcrontrigger`
+      // message (src/sc.ls:220); we short-circuit by detecting the verb
+      // here and writing to D1 once the DO has accepted the command. The
+      // DO also records a log entry; the actual scheduling lives in
+      // `cron_triggers`.
+      //
+      // Multi-line dispatches (array command or newline-joined text
+      // block) can carry several settimetrigger lines; we parse each.
+      if (c.env.DB) {
+        for (const line of cmdstr.split('\n')) {
+          const parsed = parseSettimetrigger(line);
+          if (parsed) {
+            await upsertCronTriggers(c.env.DB, room, parsed.cell, parsed.times);
+          }
         }
       }
+      // Deferred multi-cascade sibling rename (H-4 namespace-guarded
+      // above). Rename failures are swallowed, matching legacy.
+      if (cascadeTarget !== null) {
+        await doFetch(
+          c.env,
+          cascadeTarget,
+          '/_do/rename',
+          {
+            method: 'POST',
+            body: JSON.stringify({ to: `${cascadeTarget}.bak` }),
+            headers: { 'Content-Type': 'application/json' },
+          },
+          principal,
+        );
+      }
     }
-
-    await doFetch(c.env, room, '/_do/commands', {
-      method: 'POST',
-      body: cmdstr,
-    });
 
     // Legacy replies `@response.json 202 {command}` -- `command` is the
     // post-enrichment value (string or array), not the raw body text.

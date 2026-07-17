@@ -4,7 +4,7 @@
  * existence check, and the meta round-trip — all against an in-memory
  * fake storage.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'vite-plus/test';
 
 import { STORAGE_KEYS } from '@ethercalc/shared/storage-keys';
 import {

@@ -25,7 +25,7 @@ The `break` threshold is **the regression floor.** Any PR that lowers the mutati
 3. **Re-run locally.**
 
    ```bash
-   bun run --cwd packages/<pkg> mutation
+   vp run --filter "./packages/<pkg>" mutation
    ```
 
    Inspect `packages/<pkg>/reports/mutation/mutation.html`. Confirm the target mutant is now marked `killed` (green). Note the new total score (shown at the top of the HTML report and in the terminal's `clear-text` reporter output).
@@ -108,7 +108,7 @@ These five cases target all five surviving mutants on line 71. Each assertion fa
 **Re-run:**
 
 ```bash
-bun run --cwd packages/client mutation
+vp run @ethercalc/client#mutation
 # ... (roughly 30–60s later) ...
 # All files
 # ----------|---------|----------|-----------|------------|----------|---------|
@@ -136,10 +136,10 @@ Commit the test file + config together. The nightly run confirms the new floor; 
 
 ```bash
 # one package at a time (minutes each)
-bun run --cwd packages/shared mutation
+vp run @ethercalc/shared#mutation
 
 # or everything (slow)
-bun run mutation
+vp run mutation
 ```
 
 Reports land in `packages/<pkg>/reports/mutation/{mutation.html,mutation.json}` (gitignored). CI uploads them as artifacts.
@@ -198,7 +198,7 @@ tested. The regression is from untested literal/conditional shapes
 inside `src/room.ts`.
 
 Follow-up target: close the `room.ts` 84.69% → ≥90% by auditing the
-top-gap list (`bun run --cwd packages/worker mutation` + reports/
+top-gap list (`vp run @ethercalc/worker#mutation` + reports/
 mutation/mutation.html) and ratcheting `break` back toward 92.
 
 ---
@@ -436,3 +436,42 @@ The full nightly matrix runs six packages in parallel jobs. Indicative per-packa
 After the 2026-04-21 RESP-only rewrite `migrate` is the smallest mutation surface in the repo (parser/LZF/stream modules gone). A fresh nightly will settle the runtime and mutant count; no sharding or concurrency knobs look necessary.
 
 The PR-gate `mutation-gate` job (ci.yml) is already scoped to changed packages, so a single-package edit stays under ~2 minutes regardless of migrate's full-matrix cost.
+
+---
+
+## Addendum: `worker` — passkey Phase A remeasurement (2026-07-17)
+
+**Score: 90.20%** (3987 killed+timeout / 4415 mutants, 401 survived) — passes `break: 90`. Fresh main-baseline comparison on a clean `origin/main` worktree (same mutate scope minus `auth-do.ts`/session files, which don't exist on main): **90.16%**.
+
+PR #841 (passkey accounts + private sheets, Phase A) added `src/auth-do.ts` and expanded `src/room.ts`'s branching surface, which initially dragged the combined worker score from ~91% to 84.1% and forced `break` down to 84 in that PR's original commit history. After rebasing PR #841 onto post-Vite+-migration `main`, `break` was restored to 90 and kept there through four rounds of **test-only** hardening (no source or config behavior changes) targeting the specific survivor clusters the rebase surfaced:
+
+1. `auth-do.ts` — WebAuthn ceremony response contracts, signed-session schema/expiry boundaries, challenge purpose/expiry/delete semantics, alarm re-arm exactness, verifier fail-closed guards, counter-regression rejection. **87 → 15 survivors (77.55% → 96.17%)**.
+2. `auth-session.ts` / `authorize.ts` / `ws-upgrade.ts` (via `ws.test.ts`) — malformed session-verification payload matrix, ACL member-list type validation, principal/owner malformation, WS handshake attachment defaulting and legacy-upgrade tagging. `authorize.ts` **14 → 2 survivors (98.20%)**.
+3. `rate-limit.ts` / `room-create-limit.ts` — token-bucket boundary conditions. **26 → 19** and **30 → 19 survivors** respectively.
+
+`break` was never silently lowered while the score was below 90 during this effort — the interim 88.72% measurement (after round 1 alone) was left as a failing gate on purpose, exactly documenting the real gap, until enough of rounds 2–3 landed to clear the floor.
+
+### Top remaining survivor clusters (this run)
+
+| File | Survivors | File score | Note |
+| --- | --- | --- | --- |
+| `src/room.ts` | 183 | 86.41% | Largest cluster, deliberately untouched this round — see below. |
+| `src/lib/xlsx-import.ts` | 46 | 82.03% | Pre-existing, unrelated to passkey work. |
+| `src/lib/xlsx-build.ts` | 21 | 93.23% | Pre-existing, unrelated to passkey work. |
+| `src/lib/rate-limit.ts` | 19 | 83.90% | Reduced from 26 this round; boundary-condition remainder. |
+| `src/lib/room-create-limit.ts` | 19 | 84.43% | Reduced from 30 this round; boundary-condition remainder. |
+| `src/auth-do.ts` | 15 | 96.17% | Reduced from 87; remainder concentrated in ~8 documented clusters (see `auth-do.node.test.ts` commit history), several confirmed mathematically/behaviorally equivalent. |
+| `src/lib/snapshot-storage.ts` | 10 | 86.90%/87.95% | Pre-existing. |
+| `src/lib/auth-session.ts` | 10 | 81.48% | Reduced from the pre-hardening baseline; remainder is malformed-payload edge combinations not yet parametrized. |
+| `src/lib/ws-upgrade.ts` | 9 | 5.26%/18.18% | `istanbul ignore file` (workerd-only glue, AGENTS.md §5.2) — low file score is expected; behavioral coverage lives in `ws.test.ts`'s workers-pool integration tests, not this file's own unit surface. |
+| `src/lib/sandstorm-access.ts` | 8 | 90.12% | Pre-existing, unrelated to passkey work. |
+
+`room.ts`'s 183 survivors were deliberately left untouched this round: a dedicated hardening pass mapped its clusters (`#armAlarm`/housekeeping-alarm boolean and conditional mutants around L2058–2134, `storage.list` `ObjectLiteral` prefix-argument mutants at several call sites, chunk-cleanup loop-bound mutants, `init-private` ACL/JSON guard mutants) and confirmed the other three workstreams' combined kills were sufficient to clear the `break: 90` floor without it. That cluster map is preserved here for whoever picks up the next ratchet-raise pass on `room.ts` specifically — it is largely pre-existing `main` surface (main's own `room.ts` score is 88.70%/89.21% at 112 survivors before any passkey-specific additions), not passkey-Phase-A-specific debt.
+
+### Measurement-noise caveat
+
+Roughly 27 of the ~4415 total mutants in this run are `Timeout`-classified — Stryker's wall-clock-limit status for a mutant, which is sensitive to machine load and scheduling rather than being a purely deterministic function of the code. A single mutant flipping between `Timeout` and `Killed`/`Survived` across runs shifts the aggregate score by roughly `1/4415 ≈ 0.023pt`. The 90.20% (integrated) vs. 90.16% (fresh `main` baseline) comparison is a real, above-floor result, but the margin is thin enough to sit within that noise band — flagged here rather than presented as an unambiguous wide-margin clear.
+
+### `webauthn-ops.ts` exclusion rationale (independent-review MEDIUM finding, addressed)
+
+`src/lib/webauthn-ops.ts` carries both an `istanbul ignore file` directive and a Stryker `mutate` negation (`!src/lib/webauthn-ops.ts`). This is not a blind spot: the file is a zero-branch forwarding adapter — four direct re-exports of `@simplewebauthn/server` functions behind an injectable interface, with no conditional logic of its own to test at this boundary. Coverage of the actual WebAuthn ceremony logic lives at two layers instead: unit tests mock this interface at the `AuthDO` boundary (`auth-do.node.test.ts`, which is exactly the file responsible for the 87→15 survivor reduction above), and `packages/e2e/tests/passkey-webauthn-real.spec.ts` exercises the real `@simplewebauthn/server` calls end-to-end via a genuine Chromium CDP virtual authenticator (real registration + discoverable-login WebAuthn ceremony bytes, not mocked). The file's own header comment was expanded in this same pass to state this explicitly rather than leaving a bare, unexplained exclusion.

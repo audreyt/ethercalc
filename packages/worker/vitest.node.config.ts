@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config';
+import { defineConfig } from 'vite-plus';
 
 /**
  * Pure-logic tests. Runs in the Node environment (no workerd) so istanbul
@@ -33,6 +33,7 @@ export default defineConfig({
         'src/handlers/**/*.ts',
         'src/lib/**/*.ts',
         'src/room.ts',
+        'src/auth-do.ts',
       ],
       exclude: ['src/lib/ws-upgrade.ts'],
       reporter: ['text', 'json-summary', 'lcov'],

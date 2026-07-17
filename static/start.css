@@ -1,1 +1,456 @@
-html,body,div,span,applet,object,iframe,h1,h2,h3,h4,h5,h6,p,blockquote,pre,a,abbr,acronym,address,big,cite,code,del,dfn,em,font,img,ins,kbd,q,s,samp,small,strike,strong,sub,sup,tt,var,dl,dt,dd,ol,ul,li,fieldset,form,label,legend,table,caption,tbody,tfoot,thead,tr,th,td{margin:0;padding:0;border:0;outline:0;font-weight:inherit;font-style:inherit;font-size:1em;font-family:inherit;vertical-align:baseline}body{line-height:1;color:#333;background:#f7f7f7;font-size:75%}html>body{font-size:12px}.clear{clear:both}em{font-style:italic}strong{font-weight:bold}#container{font-family:Arial,Helvetica,Calibri,sans-serif}body.home{background:#f7f7f7 url(img/davy/bg/home2.png) repeat-x top}.home #container{width:920px;margin:0 auto}#navigation{width:888px;margin:0 auto}.home #top,.home #bottom{width:900px;margin:0 auto}#footer{width:888px;margin:0 auto}#topnav_wrap{background:url(img/davy/bg/product.png) repeat-x top}#navigation{height:38px;overflow:hidden;background:url(img/davy/bg/home2.png) repeat-x top}.home #navigation h1 a{display:none}.home #footer{border-top:1px solid #d9d9d9;margin-top:24px}.nothome #footer{margin-top:0}#footer-inner{border-top:1px solid #f9f9f9;padding:12px 0;color:#666;font-size:.917em}#footer-left{float:left;width:640px}#footer ul{display:inline}#footer li{display:inline;margin-left:1em}#footer #appjet{float:right;margin-right:-12px}#footer #appjet a{background:url(img/davy/gfx/plane.gif) no-repeat right center;padding-right:12px}#top{height:349px;position:relative;background:url(img/davy/gfx/screenshot.png) no-repeat bottom right}#github-ribbon img{z-index:9999;position:absolute;top:0;right:0;border:0}#intro-left{width:340px;float:left;font-family:Arial,Helvetica,sans-serif;text-shadow:0 0 1px #18487F;padding-top:30px}#intro-left h1{width:300px;position:relative;padding:57px 0 0 0;overflow:hidden;background:transparent url(img/davy/gfx/home-logo2.png) no-repeat top left;height:0;margin:0 0 5px -8px}#intro-left h2{color:#d1e5ff;font-size:1.5em;font-weight:bold;line-height:1.2}#intro-left h2 a{color:#9ac6ff;font-style:italic;border-bottom:2px solid}#intro-left h2 a:hover{text-decoration:none;color:#4A91EE}#intro-left p{color:#fff;font-size:1.167em;line-height:1.3;margin:10px 0}#intro-links{position:absolute;bottom:5px;left:-5px;width:500px}#intro-links a{display:block;float:left;position:relative;padding:64px 0 0 0;overflow:hidden;background-repeat:no-repeat;background-position:top left;height:0}#newpadbutton{width:212px;background-image:url(img/davy/btn/createpad-home.png);margin-right:11px}#bottom{padding-top:28px}#drop{display:block;clear:both;margin-top:40px;background:#eee;border:2px dashed #bbb;border-radius:5px;padding:20px;text-align:center;font:20pt bold,"Vollkorn";color:#bbb}#drop div{display:block;font-size:60%;padding-top:.5ex}#drop div label{cursor:pointer}
+/* EtherCalc landing page (start.html).
+ *
+ * The hero is a spreadsheet fragment rendered in M3E material: gridlines,
+ * highlighted A/1 headers, a selection marquee with fill handle around the
+ * headline cell, and a formula bar mirroring it. Color/shape come from the
+ * <m3e-theme color="#0c3159"> token set; every var() carries the concrete
+ * light-scheme value that theme produces as a fallback, so the pre-upgrade
+ * paint (before Lit registers m3e-theme and materializes tokens on <html>)
+ * is byte-identical to the post-upgrade one — no flash.
+ *
+ * Type: system sans for display/body; monospace for the spreadsheet's own
+ * voice (cell refs, formula bar, facts strip). No webfont downloads — this
+ * page makes zero third-party requests.
+ */
+
+:root {
+  --ec-font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --ec-font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace;
+
+  --ec-primary: var(--md-sys-color-primary, #1e5fa6);
+  --ec-on-primary: var(--md-sys-color-on-primary, #ffffff);
+  --ec-primary-container: var(--md-sys-color-primary-container, #d4e3ff);
+  --ec-on-primary-container: var(--md-sys-color-on-primary-container, #004785);
+  --ec-surface: var(--md-sys-color-surface, #faf9fd);
+  --ec-on-surface: var(--md-sys-color-on-surface, #1a1c1e);
+  --ec-on-surface-variant: var(--md-sys-color-on-surface-variant, #43474e);
+  --ec-surface-container: var(--md-sys-color-surface-container, #eeedf1);
+  --ec-surface-container-low: var(--md-sys-color-surface-container-low, #f4f3f7);
+  --ec-outline: var(--md-sys-color-outline, #74777f);
+  --ec-outline-variant: var(--md-sys-color-outline-variant, #c3c6cf);
+  --ec-error: var(--md-sys-color-error, #ba1a1a);
+
+  --ec-gridline: color-mix(in srgb, var(--ec-outline-variant) 62%, var(--ec-surface));
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: var(--ec-font-sans);
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--ec-on-surface);
+  background: var(--ec-surface-container);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- Page title (in-flow, no chrome band) ---------------------------- */
+
+.ec-top {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 22px 24px 6px;
+}
+
+.ec-brand {
+  /* `inline-flex`, not `flex`: since `.ec-top` is no longer itself a flex
+     container (the nav moved out to float independently), a block-level
+     flex h1 would stretch to `.ec-top`'s full content width — its
+     bounding box would extend far past the visible "EtherCalc" text,
+     which is exactly the kind of invisible hit-region a real layout
+     collision check should never measure against. inline-flex keeps the
+     internal icon+text flex layout but shrink-wraps the box itself. */
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 1.125rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.ec-brand__glyph {
+  width: 21px;
+  height: 21px;
+  color: var(--ec-primary);
+}
+
+/* Floating project-links cluster now lives in the SHARED
+ * packages/client/src/passkey/ui.css (both start.html and index.html
+ * already load it) — the sheet page needs the same nav, just anchored
+ * to a different corner (see that file for the full rationale). Only
+ * the landing-page-specific narrow-width override (drop below the
+ * brand) stays here, scoped to `.ec-floatnav--top`. */
+
+/* ---- Layout column -------------------------------------------------- */
+
+.ec-main {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 18px 24px 56px;
+}
+
+/* ---- The sheet hero -------------------------------------------------- */
+
+.ec-sheet {
+  background: var(--ec-surface);
+  border: 1px solid var(--ec-outline-variant);
+  border-radius: 1rem;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(12, 49, 89, 0.10), 0 4px 16px rgba(12, 49, 89, 0.07);
+}
+
+.ec-formulabar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--ec-outline-variant);
+  font-family: var(--ec-font-mono);
+}
+
+.ec-formulabar__ref {
+  font-size: 0.75rem;
+  color: var(--ec-on-surface-variant);
+  background: var(--ec-surface-container);
+  border: 1px solid var(--ec-outline-variant);
+  border-radius: 6px;
+  padding: 2px 10px;
+}
+
+.ec-formulabar__fx {
+  font-size: 0.75rem;
+  font-style: italic;
+  color: var(--ec-on-surface-variant);
+}
+
+.ec-formulabar__value {
+  font-size: 0.8125rem;
+  color: var(--ec-on-surface);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ec-formulabar__value--typing::after {
+  content: '';
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  background: var(--ec-primary);
+  animation: ec-caret 1s steps(2, start) infinite;
+}
+
+@keyframes ec-caret {
+  50% { opacity: 0; }
+}
+
+/* Grid: row-header column + A (wide) + B/C/D. Gridlines via per-cell
+   right/bottom borders; the last row keeps no bottom border so the sheet
+   reads as cropped — it continues past the card edge. */
+.ec-grid {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 2.6fr) 1fr 1fr 1fr;
+}
+
+.ec-grid__corner,
+.ec-grid__col,
+.ec-grid__row {
+  font-family: var(--ec-font-mono);
+  font-size: 0.6875rem;
+  color: var(--ec-on-surface-variant);
+  background: var(--ec-surface-container-low);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-right: 1px solid var(--ec-gridline);
+  border-bottom: 1px solid var(--ec-gridline);
+  min-height: 30px;
+}
+
+.ec-grid__col--active,
+.ec-grid__row--active {
+  background: var(--ec-primary-container);
+  color: var(--ec-on-primary-container);
+  font-weight: 600;
+}
+
+.ec-grid__cell {
+  background: var(--ec-surface);
+  border-right: 1px solid var(--ec-gridline);
+  border-bottom: 1px solid var(--ec-gridline);
+  min-height: 44px;
+}
+
+.ec-grid > :nth-last-child(-n + 5) {
+  border-bottom: none;
+}
+
+.ec-grid > :nth-child(5n) {
+  border-right: none;
+}
+
+/* A1: the selected cell. 2px marquee + fill handle, exactly as a
+   spreadsheet draws its selection. */
+.ec-grid__cell--a1 {
+  position: relative;
+  padding: 22px 26px 24px;
+  box-shadow: inset 0 0 0 2px var(--ec-primary);
+}
+
+.ec-headline {
+  margin: 0;
+  font-size: clamp(1.85rem, 4.4vw, 2.9rem);
+  font-weight: 800;
+  letter-spacing: -0.022em;
+  line-height: 1.1;
+  text-wrap: balance;
+}
+
+.ec-fillhandle {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  width: 8px;
+  height: 8px;
+  background: var(--ec-primary);
+  border: 1px solid var(--ec-surface);
+  z-index: 1;
+}
+
+.ec-grid__cell--a2 {
+  padding: 14px 26px 16px;
+}
+
+.ec-subline {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.55;
+  color: var(--ec-on-surface-variant);
+  max-width: 46ch;
+}
+
+/* ---- Actions row (async enhancement slot) --------------------------- */
+
+#intro-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 26px 2px 0;
+  min-height: 48px;
+}
+
+/* ui.css gives the injected #ec-landing-actions its own margin-top for
+   the legacy layout; inside this flex row it must sit on the baseline. */
+body #intro-links > #ec-landing-actions {
+  margin-top: 0;
+}
+
+/* Visual twin of an m3e-button[variant=filled] so the static public CTA
+   and the async-injected M3E buttons read as one family. */
+.ec-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  padding: 0 24px;
+  border-radius: 999px;
+  background: var(--ec-primary);
+  color: var(--ec-on-primary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+  transition: background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.ec-cta:hover {
+  background: color-mix(in srgb, var(--ec-primary) 92%, #fff);
+  box-shadow: 0 1px 2px rgba(12, 49, 89, 0.3);
+}
+
+.ec-cta:active {
+  background: color-mix(in srgb, var(--ec-primary) 88%, #fff);
+}
+
+.ec-cta:focus-visible {
+  outline: 2px solid var(--ec-on-primary-container);
+  outline-offset: 2px;
+}
+
+/* ---- Import card ----------------------------------------------------- */
+
+.ec-drop {
+  margin-top: 30px;
+  padding: 26px 24px 22px;
+  text-align: center;
+  background: var(--ec-surface-container-low);
+  border: 1.5px dashed var(--ec-outline);
+  border-radius: 0.75rem;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.ec-drop__icon {
+  width: 26px;
+  height: 26px;
+  color: var(--ec-on-surface-variant);
+}
+
+.ec-drop__text {
+  margin: 6px 0 2px;
+  font-size: 0.9375rem;
+  color: var(--ec-on-surface-variant);
+}
+
+.ec-drop--over {
+  border-color: var(--ec-primary);
+  border-style: solid;
+  background: color-mix(in srgb, var(--ec-primary-container) 40%, var(--ec-surface));
+}
+
+.ec-drop--busy .ec-drop__text {
+  color: var(--ec-on-surface);
+  animation: ec-pulse 1.1s ease-in-out infinite;
+}
+
+.ec-drop--error {
+  border-color: var(--ec-error);
+}
+
+.ec-drop--error .ec-drop__text {
+  color: var(--ec-error);
+}
+
+@keyframes ec-pulse {
+  50% { opacity: 0.45; }
+}
+
+.ec-drop__browse-row {
+  margin: 0 0 4px;
+}
+
+.ec-drop__browse {
+  display: inline-block;
+  padding: 6px 14px;
+  border-radius: 999px;
+  color: var(--ec-primary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.ec-drop__browse:hover {
+  background: color-mix(in srgb, var(--ec-primary) 8%, transparent);
+}
+
+.ec-drop__browse-row:focus-within .ec-drop__browse {
+  outline: 2px solid var(--ec-primary);
+  outline-offset: 1px;
+}
+
+#ec-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.ec-drop__rename {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8125rem;
+  color: var(--ec-on-surface-variant);
+  cursor: pointer;
+}
+
+.ec-drop__rename input {
+  accent-color: var(--ec-primary);
+  width: 15px;
+  height: 15px;
+}
+
+/* ---- Facts strip ------------------------------------------------------ */
+
+.ec-facts {
+  margin: 26px 0 0;
+  text-align: center;
+  font-family: var(--ec-font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+  color: var(--ec-on-surface-variant);
+}
+
+.ec-facts a {
+  color: var(--ec-primary);
+  font-weight: 600;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.ec-facts a:focus-visible {
+  outline: 2px solid var(--ec-primary);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+/* ---- Responsive ------------------------------------------------------- */
+
+@media (max-width: 680px) {
+  .ec-top { padding: 16px 16px 2px; }
+  .ec-main { padding: 12px 16px 40px; }
+
+  .ec-grid {
+    grid-template-columns: 34px minmax(0, 2.2fr) 1fr;
+  }
+
+  .ec-grid__hide-sm { display: none; }
+
+  /* :nth-child counts the hidden C/D nodes too. The desktop last-row rule
+     (:nth-last-child(-n+5)) already covers the visible last row here; the
+     only change is the visible right edge, which moves to the B column —
+     DOM indices 5n+3. The desktop 5n rule now targets hidden D cells, so
+     leaving it is harmless. */
+  .ec-grid > :nth-child(5n + 3) { border-right: none; }
+
+  .ec-grid__cell--a1 { padding: 18px 18px 20px; }
+  .ec-grid__cell--a2 { padding: 12px 18px 14px; }
+
+  #intro-links { justify-content: center; }
+  .ec-cta { width: 100%; justify-content: center; }
+}
+
+@media (max-width: 400px) {
+  /* Below ~351px, "EtherCalc" and the floating pill collide side by side
+     (brand right edge ≈160px vs. pill left edge ≈ vw-195px). Drop the
+     pill below the title row instead of shrinking either element. */
+  .ec-floatnav--top {
+    top: 52px;
+    right: 14px;
+  }
+
+  /* The dropped pill's own box now occupies ~52-93px in the viewport.
+     `.ec-main`'s 12px top padding (from the 680px rule) is nowhere near
+     enough clearance — the sheet card would render underneath it.
+     Reserve space so the card starts below the pill. */
+  .ec-main {
+    padding-top: 58px;
+  }
+}
+
+/* ---- Reduced motion --------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .ec-formulabar__value--typing::after { animation: none; }
+  .ec-drop--busy .ec-drop__text { animation: none; }
+  .ec-cta, .ec-drop { transition: none; }
+}

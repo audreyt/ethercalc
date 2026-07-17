@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
 import { renderHook, act } from '@testing-library/react';
 import { HackFoldr } from '../src/Foldr.ts';
 import { DEFAULT_TOC_POLL_MS, useTocPoll } from '../src/useTocPoll.ts';

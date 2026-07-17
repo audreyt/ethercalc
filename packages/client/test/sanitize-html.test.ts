@@ -1,12 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { JSDOM } from 'jsdom';
 import createDOMPurify from 'dompurify';
 
 import {
-  installSanitizeHtml,
+  installSecurityPolicy,
   TEXT_HTML_SANITIZE_CONFIG,
   type PurifyLike,
-  type SanitizeHost,
+  type SecurityPolicyHost,
 } from '../src/sanitize-html.ts';
 
 /**
@@ -25,8 +25,8 @@ function realPurify(): PurifyLike {
   return createDOMPurify(window as unknown as Window & typeof globalThis);
 }
 
-describe('installSanitizeHtml', () => {
-  it('installs SocialCalc.sanitizeHTML that forwards to purify with our config', () => {
+describe('installSecurityPolicy', () => {
+  it('enables untrustedContent and wires securityPolicy.sanitizeHtml with our config', () => {
     const calls: Array<{ dirty: string; config: Record<string, unknown> | undefined }> = [];
     const purify: PurifyLike = {
       sanitize: (dirty, config) => {
@@ -34,35 +34,59 @@ describe('installSanitizeHtml', () => {
         return `CLEAN(${dirty})`;
       },
     };
-    const host: SanitizeHost = {};
+    const host: SecurityPolicyHost = {};
 
-    const installed = installSanitizeHtml(host, purify);
+    const installed = installSecurityPolicy(host, purify);
 
     expect(installed).toBe(true);
-    expect(typeof host.sanitizeHTML).toBe('function');
-    expect(host.sanitizeHTML!('<b>x</b>')).toBe('CLEAN(<b>x</b>)');
+    expect(host.Callbacks?.untrustedContent).toBe(true);
+    expect(typeof host.Callbacks?.securityPolicy?.sanitizeHtml).toBe('function');
+    expect(host.Callbacks!.securityPolicy!.sanitizeHtml!('<b>x</b>')).toBe('CLEAN(<b>x</b>)');
     expect(calls).toHaveLength(1);
     expect(calls[0]!.dirty).toBe('<b>x</b>');
     expect(calls[0]!.config).toBe(TEXT_HTML_SANITIZE_CONFIG);
   });
 
-  it('is idempotent — leaves a pre-existing hook untouched', () => {
+  it('also installs SocialCalc.sanitizeHTML for backward compatibility', () => {
+    const purify: PurifyLike = { sanitize: (d) => `SANITIZED(${d})` };
+    const host: SecurityPolicyHost = {};
+
+    installSecurityPolicy(host, purify);
+
+    expect(typeof host.sanitizeHTML).toBe('function');
+    expect(host.sanitizeHTML!('<b>x</b>')).toBe('SANITIZED(<b>x</b>)');
+  });
+
+  it('preserves a pre-existing SocialCalc.sanitizeHTML but still enables untrustedContent', () => {
     const purify: PurifyLike = { sanitize: (d) => `NEW(${d})` };
     const existing = (raw: string): string => `EXISTING(${raw})`;
-    const host: SanitizeHost = { sanitizeHTML: existing };
+    const host: SecurityPolicyHost = { sanitizeHTML: existing };
 
-    const installed = installSanitizeHtml(host, purify);
+    installSecurityPolicy(host, purify);
+
+    expect(host.sanitizeHTML).toBe(existing);
+    expect(host.Callbacks?.untrustedContent).toBe(true);
+  });
+
+  it('is idempotent — leaves a pre-existing policy untouched', () => {
+    const purify: PurifyLike = { sanitize: (d) => `NEW(${d})` };
+    const existing = (raw: string): string => `EXISTING(${raw})`;
+    const host: SecurityPolicyHost = {
+      Callbacks: { untrustedContent: true, securityPolicy: { sanitizeHtml: existing } },
+    };
+
+    const installed = installSecurityPolicy(host, purify);
 
     expect(installed).toBe(false);
-    expect(host.sanitizeHTML).toBe(existing);
-    expect(host.sanitizeHTML!('x')).toBe('EXISTING(x)');
+    expect(host.Callbacks?.securityPolicy?.sanitizeHtml).toBe(existing);
+    expect(host.Callbacks?.securityPolicy?.sanitizeHtml!('x')).toBe('EXISTING(x)');
   });
 });
 
 describe('TEXT_HTML_SANITIZE_CONFIG with real DOMPurify (stored-XSS payloads)', () => {
-  const host: SanitizeHost = {};
-  installSanitizeHtml(host, realPurify());
-  const sanitize = host.sanitizeHTML!;
+  const host: SecurityPolicyHost = {};
+  installSecurityPolicy(host, realPurify());
+  const sanitize = host.Callbacks!.securityPolicy!.sanitizeHtml!;
 
   it('renders an onerror img payload inert (handler stripped)', () => {
     const out = sanitize('<img src=x onerror=alert(1)>');

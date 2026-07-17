@@ -9,7 +9,7 @@
  * `ws.test.ts` and `legacy-socketio.test.ts` still exercise the full
  * hibernation-API wiring end-to-end.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 
 import {
   dispatchWsMessage,
@@ -134,6 +134,9 @@ function makeCtx(opts: MakeCtxOpts = {}): { ctx: WsContext; calls: CallLog; stat
     },
     async verifyAuth() {
       return opts.authOk !== false;
+    },
+    async allowSubmitForm() {
+      return true;
     },
     siblingDo(room: string): WsSiblingDO {
       return {

@@ -11,7 +11,25 @@ import DOMPurify from 'dompurify';
 
 import { runMain, type MainHost } from './main.ts';
 import { installGraph } from './graph.ts';
-import { installSanitizeHtml } from './sanitize-html.ts';
+import { installSecurityPolicy } from './sanitize-html.ts';
+
+/**
+ * Minimal DOM surface `openLegacyExportDialog` needs to construct an
+ * `m3e-dialog`. See `BootHost.document`'s doc comment for why this is
+ * hand-typed rather than `@m3e/web`'s real element types.
+ */
+export interface DialogHostElement {
+  id: string;
+  slot: string;
+  textContent: string;
+  dismissible: boolean;
+  setAttribute: (name: string, value: string) => void;
+  appendChild: (child: DialogHostElement) => void;
+  addEventListener: (type: string, listener: () => void) => void;
+  show: () => unknown;
+  hide: () => unknown;
+  remove: () => void;
+}
 
 export interface BootHost extends MainHost {
   SocialCalc: MainHost['SocialCalc'];
@@ -21,6 +39,18 @@ export interface BootHost extends MainHost {
       type: string,
       listener: (event: { target?: EventTarget | null }) => void,
     ) => void;
+    /**
+     * Narrow, hand-typed DOM-construction seam for the M3E export
+     * dialog — NOT `@m3e/web`'s real element types (this file never
+     * imports `@m3e/web/*`; it constructs `<m3e-dialog>`/`<m3e-button>`
+     * by tag name, relying on the custom elements the passkey entry's
+     * separately-loaded script registers). Narrow enough to fake in
+     * Node-environment tests without jsdom; `window.document` satisfies
+     * it structurally in production via a cast, matching how `host.vex`
+     * used to work before the M3E rewrite.
+     */
+    createElement?: (tag: string) => DialogHostElement;
+    body?: { appendChild: (el: DialogHostElement) => void };
   };
   /**
    * Test-only override for the URL-opener. In production `host` IS
@@ -37,20 +67,6 @@ export interface BootHost extends MainHost {
     location: {
       href?: string;
       pathname: string;
-    };
-  };
-  vex?: {
-    defaultOptions?: { className?: string };
-    dialog?: {
-      open: (opts: {
-        message: string;
-        callback?: () => void;
-        buttons: Array<Record<string, unknown>>;
-      }) => unknown;
-      buttons?: {
-        YES?: Record<string, unknown>;
-        NO?: Record<string, unknown>;
-      };
     };
   };
   __ETHERCALC_EXPORT_BOUND__?: boolean;
@@ -113,14 +129,14 @@ export function openLegacyExportDialog(host: BootHost): void {
   const room = host.SocialCalc._room ?? '';
   if (!room) return;
 
-  const vex =
-    host.vex ??
-    (
-      typeof window !== 'undefined'
-        ? (window as Window & { vex?: BootHost['vex'] }).vex
-        : undefined
-    );
-  if (!vex?.dialog?.open) return;
+  const dialogDocument =
+    (host.document?.createElement && host.document.body
+      ? (host.document as { createElement: (tag: string) => DialogHostElement; body: { appendChild: (el: DialogHostElement) => void } })
+      : undefined) ??
+    (typeof document !== 'undefined'
+      ? (document as unknown as { createElement: (tag: string) => DialogHostElement; body: { appendChild: (el: DialogHostElement) => void } })
+      : undefined);
+  if (!dialogDocument) return;
 
   // `window.parent.location` throws a SecurityError in cross-origin
   // iframe embeds (Sandstorm, notion integrations, etc.). Fall back to
@@ -145,7 +161,7 @@ export function openLegacyExportDialog(host: BootHost): void {
   // Empty `rows: []` is truthy — must check length (#232 viewer export).
   const isMultiple = (multiRows?.length ?? 0) > 0 || /\.[1-9]\d*$/.test(room);
   // Production path: synthetic `<a>` click. `window.open()` is
-  // popup-blocked in Chrome when called from inside the vex-dialog
+  // popup-blocked in Chrome when called from inside the dialog's
   // button handler (it's one async tick removed from the direct user
   // click, so Chrome's user-activation window has lapsed). Anchor
   // clicks don't hit the popup blocker, and they also honor the
@@ -160,8 +176,8 @@ export function openLegacyExportDialog(host: BootHost): void {
   // Why `fetch → blob → object URL → anchor click` instead of a plain
   // anchor pointing at the server URL: Chrome's "automatic downloads"
   // security policy blocks same-origin navigation/download anchors
-  // that fire after any async hop (our vex dialog button -> callback
-  // -> openFormat is two ticks past the direct user click, so the
+  // that fire after any async hop (our dialog button -> callback ->
+  // openFormat is two ticks past the direct user click, so the
   // user-activation gate has already closed). Pulling the bytes via
   // fetch and then clicking an anchor that points at a blob: URL
   // bypasses that gate — the click is treated as a direct save of
@@ -200,7 +216,6 @@ export function openLegacyExportDialog(host: BootHost): void {
 
   host.SocialCalc.Keyboard ??= {};
   host.SocialCalc.Keyboard.passThru = true;
-  if (vex.defaultOptions) vex.defaultOptions.className = 'vex-theme-flat-attack';
 
   const openFormat = (format: ExportFormat): void => {
     open(
@@ -212,24 +227,66 @@ export function openLegacyExportDialog(host: BootHost): void {
     );
   };
 
-  const yes = vex.dialog.buttons?.YES ?? {};
-  const no = vex.dialog.buttons?.NO ?? {};
+  const dialog = dialogDocument.createElement('m3e-dialog');
+  dialog.dismissible = true;
 
-  vex.dialog.open({
-    message:
-      (host.SocialCalc.Constants.s_loc_export_format ?? 'Please choose an export format.') +
-      (isMultiple ? '<br><small>(ODS and EXCEL support multiple sheets.)</small>' : ''),
-    callback: () => {
-      if (host.SocialCalc.Keyboard) host.SocialCalc.Keyboard.passThru = false;
-    },
-    buttons: [
-      { ...yes, text: 'Excel', click: () => openFormat('xlsx') },
-      { ...yes, text: 'CSV', click: () => openFormat('csv') },
-      { ...yes, text: 'HTML', click: () => openFormat('html') },
-      { ...yes, text: 'ODS', click: () => openFormat('ods') },
-      { ...no, text: host.SocialCalc.Constants.s_loc_cancel ?? 'Cancel' },
-    ],
+  const header = dialogDocument.createElement('span');
+  header.slot = 'header';
+  header.textContent = host.SocialCalc.Constants.s_loc_export ?? 'Export';
+  dialog.appendChild(header);
+
+  const message = dialogDocument.createElement('p');
+  message.textContent =
+    (host.SocialCalc.Constants.s_loc_export_format ?? 'Please choose an export format.') +
+    (isMultiple ? ' (ODS and EXCEL support multiple sheets.)' : '');
+  dialog.appendChild(message);
+
+  const actions = dialogDocument.createElement('div');
+  actions.slot = 'actions';
+
+  // Per `m3e-dialog`'s documented usage (`<m3e-button><m3e-dialog-action
+  // return-value="…">Label</m3e-dialog-action></m3e-button>`):
+  // `m3e-dialog-action` finds its closest `m3e-dialog` ancestor and calls
+  // `.hide()` itself once clicked — no manual `dialog.hide()` call
+  // needed here. (Unlike the passkey dialogs, which deliberately use
+  // plain `m3e-button`s and call `hide()` manually only after success —
+  // see the passkey UI design doc — every choice in *this* dialog
+  // should unconditionally close it, which is exactly what
+  // `m3e-dialog-action` gives for free.)
+  const addFormatButton = (label: string, format: ExportFormat): void => {
+    const button = dialogDocument.createElement('m3e-button');
+    button.setAttribute('variant', 'filled');
+    const action = dialogDocument.createElement('m3e-dialog-action');
+    action.setAttribute('return-value', format);
+    action.textContent = label;
+    button.appendChild(action);
+    button.addEventListener('click', () => openFormat(format));
+    actions.appendChild(button);
+  };
+  addFormatButton('Excel', 'xlsx');
+  addFormatButton('CSV', 'csv');
+  addFormatButton('HTML', 'html');
+  addFormatButton('ODS', 'ods');
+
+  const cancelButton = dialogDocument.createElement('m3e-button');
+  cancelButton.setAttribute('variant', 'text');
+  const cancelAction = dialogDocument.createElement('m3e-dialog-action');
+  cancelAction.setAttribute('return-value', 'cancel');
+  cancelAction.textContent = host.SocialCalc.Constants.s_loc_cancel ?? 'Cancel';
+  cancelButton.appendChild(cancelAction);
+  actions.appendChild(cancelButton);
+  dialog.appendChild(actions);
+
+  // `closed` fires on every dismissal path (action click via `.hide()`,
+  // Escape, or backdrop click via `cancel` → `.hide()` — verified
+  // against `M3eDialogElement`'s source during the passkey UI rewrite),
+  // matching what vex's `callback` option used to cover.
+  dialog.addEventListener('closed', () => {
+    if (host.SocialCalc.Keyboard) host.SocialCalc.Keyboard.passThru = false;
+    dialog.remove();
   });
+  dialogDocument.body.appendChild(dialog);
+  dialog.show();
 }
 
 function findLogoCell(target: EventTarget | null | undefined): unknown {
@@ -338,9 +395,10 @@ async function autoBoot(): Promise<void> {
   if (!w.SocialCalc) return;
   // Close the stored-XSS hole in the live editor: the served SocialCalc
   // runtime renders `text-html` cell values straight into the cell div's
-  // innerHTML. Install the DOMPurify-backed hook the rewritten render sink
-  // calls (see scripts/build-assets.ts) before any sheet data is parsed.
-  installSanitizeHtml(w.SocialCalc, DOMPurify);
+  // innerHTML. Enable SocialCalc 3.1.0's built-in untrustedContent security
+  // model and wire DOMPurify as the sanitiser callback before any sheet data
+  // is parsed (see packages/client/src/sanitize-html.ts).
+  installSecurityPolicy(w.SocialCalc, DOMPurify);
   installGraph({
     SocialCalc: w.SocialCalc,
     win: window as unknown as Parameters<typeof installGraph>[0]['win'],

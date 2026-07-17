@@ -1,7 +1,8 @@
 import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:test';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'vite-plus/test';
 
 import worker from '../src/index.ts';
+import type { Env } from '../src/env.ts';
 
 /**
  * Integration tests for Phase 4 stateless routes. Runs inside workerd
@@ -16,6 +17,27 @@ async function call(path: string, init: RequestInit = {}): Promise<Response> {
   const res = await worker.fetch(req, env as never, ctx);
   await waitOnExecutionContext(ctx);
   return res;
+}
+
+async function initializePrivateRoom(name: string): Promise<void> {
+  const workerEnv = env as unknown as Env;
+  const stub = workerEnv.ROOM.get(workerEnv.ROOM.idFromName(name));
+  await stub.fetch(`https://do.local/_do/all?name=${name}`, {
+    method: 'DELETE',
+    headers: { 'X-EC-Uid': 'uid-owner' },
+  });
+  const res = await stub.fetch(`https://do.local/_do/init-private?name=${name}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-EC-Uid': 'uid-owner',
+    },
+    body: JSON.stringify({
+      snapshot: '',
+      acl: { owner: 'uid-owner', readers: [], writers: [] },
+    }),
+  });
+  expect(res.status).toBe(201);
 }
 
 describe('GET /_new', () => {
@@ -39,6 +61,32 @@ describe('GET /:room/edit', () => {
     const res = await call('/some-room/edit');
     expect(res.status).toBe(302);
     expect(res.headers.get('Location')).toBe('/some-room?auth=some-room');
+  });
+});
+
+describe('private-room entry admission', () => {
+  it('routes an anonymous edit entry to the viewer without a redirect loop', async () => {
+    const room = 'private-entry-admission';
+    await initializePrivateRoom(room);
+
+    const edit = await call(`/${room}/edit`);
+    expect(edit.status).toBe(302);
+    expect(edit.headers.get('Location')).toBe(`/${room}/view`);
+
+    const view = await call(edit.headers.get('Location')!);
+    expect(view.status).toBe(302);
+    expect(view.headers.get('Location')).toBe(`/${room}?auth=${room}&view=1`);
+
+    const terminal = await call(view.headers.get('Location')!);
+    expect(terminal.status).toBe(200);
+
+    const direct = await call(`/${room}?auth=${room}`);
+    expect(direct.status).toBe(302);
+    expect(direct.headers.get('Location')).toBe(`/${room}/view`);
+
+    const app = await call(`/${room}?auth=${room}&app=1`);
+    expect(app.status).toBe(302);
+    expect(app.headers.get('Location')).toBe(`/${room}/view`);
   });
 });
 

@@ -9,11 +9,11 @@ import {
   runInDurableObject,
   waitOnExecutionContext,
 } from 'cloudflare:test';
-import { describe, it, expect } from 'vitest';
-
+import { describe, it, expect } from 'vite-plus/test';
 import worker from '../src/index.ts';
-import type { RoomDO } from '../src/room.ts';
 import type { Env } from '../src/env.ts';
+import { upgradeWebSocket, upgradeLegacySocketIo } from '../src/lib/ws-upgrade.ts';
+import type { RoomDO } from '../src/room.ts';
 
 async function request(method: string, path: string, init: RequestInit = {}) {
   const req = new Request(`https://example.test${path}`, { method, ...init });
@@ -44,6 +44,42 @@ describe('native WS — /_ws/:room', () => {
 });
 
 describe('DO WS — /_do/ws integration (runInDurableObject)', () => {
+  it('preserves query and trusted attachment invariants', () => {
+    let accepted: WebSocket | undefined;
+    const state = { acceptWebSocket(server: WebSocket) { accepted = server; } } as unknown as DurableObjectState;
+    const response = upgradeWebSocket(state, new Request('https://do.local/_do/ws?user=u&auth=a&room=r'), {
+      uid: 'verified', sessionExp: 123, sandstormModify: false,
+    });
+    expect(response.status).toBe(101);
+    expect(accepted?.deserializeAttachment()).toEqual({
+      user: 'u', room: 'r', auth: 'a', sandstormModify: false, uid: 'verified', sessionExp: 123,
+    });
+    expect(accepted).toBeDefined();
+  });
+
+  it('marks legacy upgrades with the connect attachment', () => {
+    let accepted: WebSocket | undefined;
+    const state = { acceptWebSocket(server: WebSocket, tags?: string[]) {
+      accepted = server; expect(tags).toEqual(['legacy']);
+    } } as unknown as DurableObjectState;
+    const response = upgradeLegacySocketIo(state);
+    expect(response.status).toBe(101);
+    expect(accepted?.deserializeAttachment()).toEqual({ user: '', room: '', auth: '', legacy: true });
+    expect(accepted).toBeDefined();
+  });
+  it.each([
+    ['none', '', '', ''],
+    ['user only', 'u', '', ''],
+    ['auth only', '', 'a', ''],
+    ['room only', '', '', 'r'],
+  ])('defaults missing handshake query fields (%s)', (_label, user, auth, room) => {
+    let accepted: WebSocket | undefined;
+    const state = { acceptWebSocket(server: WebSocket) { accepted = server; } } as unknown as DurableObjectState;
+    upgradeWebSocket(state, new Request(`https://do.local/_do/ws?${
+      user ? `user=${user}&` : ''
+    }${auth ? `auth=${auth}&` : ''}${room ? `room=${room}` : ''}`));
+    expect(accepted?.deserializeAttachment()).toMatchObject({ user, auth, room });
+  });
   it('ask.log on empty room replies with {type:log, log:[], chat:[], snapshot:""}', async () => {
     const e = env as unknown as Env;
     const id = e.ROOM.idFromName('ws-asklog');
