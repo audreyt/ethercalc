@@ -29,6 +29,9 @@ Tooling
   plugin builds or serves the Worker, Durable Objects, bindings, and assets.
 - Kept integrated multi-sheet development same-origin, made standalone port
   8080 strict, and excluded generated Worker Vite output from npm tarballs.
+- Hardened self-host Docker builds against local-state leakage: build context
+  excludes dependencies, Vite/Wrangler output, secrets, migration dumps, and
+  persistent room data; the smoke gate asserts the resulting image is clean.
 
 ==============================================================================
 0.20260717.0 — 2026-07-17

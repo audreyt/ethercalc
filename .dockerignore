@@ -1,0 +1,46 @@
+# Local VCS and dependency state must never enter the self-host image.
+.git
+.git/
+.github
+.worktrees
+node_modules
+node_modules/
+**/node_modules
+**/node_modules/
+
+# Build outputs are recreated inside the image. In particular, excluding the
+# Worker output prevents a local Vite-generated Wrangler redirect and .dev.vars
+# snapshot from changing the standalone workerd build.
+assets
+**/dist
+**/dist-*
+**/.wrangler
+.wrangler
+dist
+
+# Persistent self-host and migration data is private runtime state, never an
+# image-build input.
+dump.rdb
+*.rdb
+ethercalc-data
+legacy-redis-data
+logs
+
+# Local secrets and environment overrides.
+.env
+.env.*
+**/.env
+**/.env.*
+.dev.vars
+.dev.vars.*
+**/.dev.vars
+**/.dev.vars.*
+
+# Test and tool output.
+coverage
+**/coverage
+**/test-results
+**/playwright-report
+**/.stryker-tmp
+**/reports
+*.tgz

@@ -30,6 +30,15 @@ trap cleanup EXIT
 echo "[smoke] docker compose build"
 docker compose build ethercalc
 
+echo "[smoke] checking image excludes local Vite state and secrets"
+if ! docker run --rm --entrypoint bash ethercalc:selfhost -c \
+  'test ! -e /app/packages/worker/.dev.vars &&
+   test ! -e /app/packages/worker/dist/ethercalc/.dev.vars &&
+   test ! -e /app/packages/worker/.wrangler/deploy/config.json'; then
+  echo "[smoke] FAIL — image contains local Worker build state or secrets"
+  exit 1
+fi
+
 echo "[smoke] docker compose up -d"
 docker compose up -d
 
