@@ -138,5 +138,16 @@ describe('authorize', () => {
         expect(authorize('admin', principalOwner, mode, acl)).toBe(false);
       });
     });
+      it('rejects ACL lists containing an empty or mixed-type member', () => {
+        const malformed = [
+          { owner: 'user-owner', readers: ['user-reader', ''], writers: [] },
+          { owner: 'user-owner', readers: [], writers: ['user-writer', 7] },
+          { owner: 'user-owner', readers: [null], writers: [] },
+        ];
+        for (const candidate of malformed) {
+          expect(authorize('read', principalReader, mode, candidate)).toBe(false);
+          expect(authorize('write', principalWriter, mode, candidate)).toBe(false);
+        }
+      });
   });
 });

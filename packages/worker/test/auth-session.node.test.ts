@@ -102,6 +102,30 @@ describe('verifyAuthSession', () => {
     ).resolves.toBeNull();
     await expect(verifyAuthSession(badJson, 'signed.token')).resolves.toBeNull();
   });
+  it.each([
+    ['null', null],
+    ['array', []],
+    ['missing exp', { uid: 'u' }],
+    ['missing exp', { uid: 'u' }],
+    ['non-finite exp', { uid: 'u', exp: Number.NaN }],
+    ['string exp', { uid: 'u', exp: String(Date.now() + 60_000) }],
+    ['null exp', { uid: 'u', exp: null }],
+    ['infinite exp', { uid: 'u', exp: Number.POSITIVE_INFINITY }],
+    ['boolean exp', { uid: 'u', exp: true }],
+    ['numeric uid', { uid: 7, exp: Date.now() + 60_000 }],
+    ['expired exp', { uid: 'u', exp: Date.now() - 1 }],
+  ])('rejects %s verification payloads', async (_label, body) => {
+    const { env } = makeEnv(() => Response.json(body));
+    await expect(verifyAuthSession(env, 'signed.token')).resolves.toBeNull();
+  });
+
+  it('rejects sessions at the exact expiry boundary', async () => {
+    const now = Date.now();
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    const { env } = makeEnv(() => Response.json({ uid: 'u', exp: now }));
+    await expect(verifyAuthSession(env, 'signed.token')).resolves.toBeNull();
+    vi.restoreAllMocks();
+  });
 
   it('fails closed when AuthDO dispatch throws', async () => {
     const responder = vi.fn().mockRejectedValue(new Error('binding failed'));
