@@ -57,6 +57,27 @@ describe('zip-canonical helpers', () => {
     expect(VOLATILE_XLSX_DOCPROPS['docProps/app.xml']).toContain('AppVersion');
   });
 
+  it.each([
+    {
+      pathName: 'docProps/core.xml',
+      elementName: 'cp:revision',
+      namespace: 'xmlns:cp="urn:core"',
+    },
+    { pathName: 'docProps/app.xml', elementName: 'TotalTime', namespace: '' },
+  ])(
+    'canonicalizeZipEntry drops volatile $elementName metadata',
+    ({ pathName, elementName, namespace }) => {
+      const xml = `<root${namespace ? ` ${namespace}` : ''}><${elementName}>volatile</${elementName}><keep>stable</keep></root>`;
+      const out = canonicalizeZipEntry(
+        pathName,
+        new TextEncoder().encode(xml),
+        VOLATILE_XLSX_DOCPROPS,
+      );
+      expect(out).not.toContain('volatile');
+      expect(out).toContain('<keep>stable</keep>');
+    },
+  );
+
   it('unzipOrError reports fflate errors', () => {
     const r = unzipOrError(buildCorruptedZip(), 'expected body');
     expect(r.diff).toMatch(/not a valid zip/);
@@ -98,6 +119,11 @@ describe('zip-canonical helpers', () => {
     expect(hex).toBe('000aff');
   });
 
+  it('canonicalizeZipEntry does not pad the first two-digit byte', () => {
+    const hex = canonicalizeZipEntry('x.bin', new Uint8Array([0x0f, 0x10]), {});
+    expect(hex).toBe('0f10');
+  });
+
   it('compareZipArchives surfaces entry-list differences', () => {
     const a = buildBasicXlsx();
     // Build a partial archive with a disjoint path set.
@@ -105,6 +131,20 @@ describe('zip-canonical helpers', () => {
     const r = compareZipArchives(a, partial, VOLATILE_XLSX_DOCPROPS);
     expect(r.equal).toBe(false);
     expect(r.diff).toMatch(/entry list differs/);
+  });
+
+  it('compareZipArchives reports a required path missing from either side', () => {
+    const common = new TextEncoder().encode('<root/>');
+    const full = zipSync({ 'common.xml': common, 'required.xml': common });
+    const partial = zipSync({ 'common.xml': common });
+
+    const missingActual = compareZipArchives(full, partial, {});
+    expect(missingActual.equal).toBe(false);
+    expect(missingActual.diff).toContain('expected-only\nrequired.xml');
+
+    const missingExpected = compareZipArchives(partial, full, {});
+    expect(missingExpected.equal).toBe(false);
+    expect(missingExpected.diff).toContain('actual-only\nrequired.xml');
   });
 
   it('compareZipArchives returns equal for identical archives', () => {
@@ -146,12 +186,64 @@ describe('zip-canonical helpers', () => {
     expect(out).not.toContain('metadata');
   });
 
+  it('canonicalizeContentTypesXml handles prefixed optional and required declarations', () => {
+    const xml = `<ct:Types xmlns:ct="http://schemas.openxmlformats.org/package/2006/content-types">
+      <ct:Default Extension="data" ContentType="drop-default"/>
+      <ct:Default Extension="xml" ContentType="keep-default"/>
+      <ct:Override PartName="/xl/metadata.xml" ContentType="drop-override"/>
+      <ct:Override PartName="/xl/workbook.xml" ContentType="keep-override"/>
+    </ct:Types>`;
+    const out = canonicalizeContentTypesXml(xml, OPTIONAL_XLSX_ZIP_ENTRIES);
+    expect(out).not.toContain('drop-default');
+    expect(out).not.toContain('drop-override');
+    expect(out).toContain('keep-default');
+    expect(out).toContain('keep-override');
+  });
+
   it('canonicalizeWorkbookRelsXml drops optional relationship targets', () => {
     const legacy = `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId2" Target="sharedStrings.xml" Type="sharedStrings"/><Relationship Id="rId1" Target="worksheets/sheet1.xml" Type="worksheet"/></Relationships>`;
     const worker = `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId4" Target="metadata.xml" Type="sheetMetadata"/><Relationship Id="rId1" Target="worksheets/sheet1.xml" Type="worksheet"/></Relationships>`;
     expect(canonicalizeWorkbookRelsXml(legacy, OPTIONAL_XLSX_ZIP_ENTRIES)).toBe(
       canonicalizeWorkbookRelsXml(worker, OPTIONAL_XLSX_ZIP_ENTRIES),
     );
+  });
+
+  it('canonicalizeWorkbookRelsXml keeps prefixed required and targetless relationships', () => {
+    const xml = `<r:Relationships xmlns:r="http://schemas.openxmlformats.org/package/2006/relationships">
+      <r:Relationship Id="drop" Target="metadata.xml" Type="drop-optional"/>
+      <r:Relationship Id="keep" Target="worksheets/sheet1.xml" Type="keep-required"/>
+      <r:Relationship Id="targetless" Type="keep-targetless"/>
+    </r:Relationships>`;
+    const out = canonicalizeWorkbookRelsXml(xml, OPTIONAL_XLSX_ZIP_ENTRIES);
+    expect(out).not.toContain('drop-optional');
+    expect(out).toContain('keep-required');
+    expect(out).toContain('keep-targetless');
+    expect(out).not.toContain('Id=');
+  });
+
+  it('canonicalizeZipEntry routes OOXML metadata files', () => {
+    const contentTypes = `<Types><Default Extension="data" ContentType="drop-default"/></Types>`;
+    const canonicalTypes = canonicalizeZipEntry(
+      '[Content_Types].xml',
+      new TextEncoder().encode(contentTypes),
+      {},
+    );
+    expect(canonicalTypes).not.toContain('drop-default');
+
+    const relationships = `<Relationships><Relationship Target="metadata.xml" Type="drop-optional"/></Relationships>`;
+    const canonicalRelationships = canonicalizeZipEntry(
+      'xl/_rels/workbook.xml.rels',
+      new TextEncoder().encode(relationships),
+      {},
+      OPTIONAL_XLSX_ZIP_ENTRIES,
+    );
+    expect(canonicalRelationships).not.toContain('drop-optional');
+  });
+
+  it('canonicalizeZipEntry treats any .rels path as XML', () => {
+    const xml = '<Relationships><Relationship Target="xl/workbook.xml"/></Relationships>';
+    const out = canonicalizeZipEntry('_rels/.rels', new TextEncoder().encode(xml), {});
+    expect(out).toContain('<Relationship');
   });
 
   it('canonicalizeXlsxWorkbookXml drops date1904 metadata drift', () => {
@@ -177,6 +269,37 @@ describe('zip-canonical helpers', () => {
     const out = canonicalizeZipEntry('xl/worksheets/sheet1.xml', new TextEncoder().encode(xml), {});
     expect(out).toContain('<v>x</v>');
     expect(out).not.toContain('t="str"');
+  });
+
+  it('canonicalizeXlsxWorksheetXml handles namespace-prefixed worksheet scaffolding', () => {
+    const xml = `<x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+      <x:sheetPr codeName="Sheet1"/>
+      <x:dimension ref="A1:A1"/>
+      <x:sheetData><x:row r="1"><x:c r="A1" t="str"><x:v>value</x:v></x:c></x:row></x:sheetData>
+      <x:ignoredErrors/>
+    </x:worksheet>`;
+    const out = canonicalizeXlsxWorksheetXml(xml);
+    expect(out).not.toContain('sheetPr');
+    expect(out).not.toContain('ignoredErrors');
+    expect(out).toContain('ref="A1"');
+    expect(out).not.toContain('t="str"');
+    expect(out).toContain('<x:v>value</x:v>');
+  });
+
+  it('canonicalizeZipEntry routes only numbered worksheet paths', () => {
+    const xml = '<worksheet><sheetPr codeName="Sheet1"/><sheetData/></worksheet>';
+    const encode = (value: string) => new TextEncoder().encode(value);
+
+    expect(canonicalizeZipEntry('xl/worksheets/sheet10.xml', encode(xml), {})).not.toContain(
+      'sheetPr',
+    );
+    expect(canonicalizeZipEntry('xl/worksheets/sheetA.xml', encode(xml), {})).toContain('sheetPr');
+    expect(
+      canonicalizeZipEntry('prefix/xl/worksheets/sheet1.xml', encode(xml), {}),
+    ).toContain('sheetPr');
+    expect(
+      canonicalizeZipEntry('xl/worksheets/sheet1.xml.extra.xml', encode(xml), {}),
+    ).toContain('sheetPr');
   });
 
   it('canonicalizeXlsxWorksheetXml throws on malformed xml', () => {

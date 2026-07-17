@@ -47,6 +47,20 @@ describe('zip-canonical helpers (ods)', () => {
     expect(VOLATILE_ODS_META['meta.xml']).toContain('dc:creator');
   });
 
+  it.each(['meta:editing-duration', 'meta:editing-cycles'])(
+    'canonicalizeZipEntry drops volatile %s metadata',
+    (elementName) => {
+      const xml = `<root xmlns:meta="urn:meta"><${elementName}>volatile</${elementName}><keep>stable</keep></root>`;
+      const out = canonicalizeZipEntry(
+        'meta.xml',
+        new TextEncoder().encode(xml),
+        VOLATILE_ODS_META,
+      );
+      expect(out).not.toContain('volatile');
+      expect(out).toContain('<keep>stable</keep>');
+    },
+  );
+
   it('canonicalizeXmlWithDrops strips listed elements', () => {
     const xml = '<r><a>x</a><b>y</b></r>';
     const keepBoth = canonicalizeXmlWithDrops(xml, []);
@@ -89,10 +103,39 @@ describe('zip-canonical helpers (ods)', () => {
     expect(out).not.toContain('meta.xml');
   });
 
+  it('canonicalizeZipEntry keeps required prefixed manifest entries', () => {
+    const xml = `<m:manifest xmlns:m="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0">
+      <m:file-entry full-path="/meta.xml" media-type="drop-optional"/>
+      <m:file-entry full-path="/content.xml" media-type="keep-required"/>
+      <m:file-entry media-type="keep-pathless"/>
+    </m:manifest>`;
+    const out = canonicalizeZipEntry(
+      'META-INF/manifest.xml',
+      new TextEncoder().encode(xml),
+      {},
+      OPTIONAL_ODS_ZIP_ENTRIES,
+    );
+    expect(out).not.toContain('drop-optional');
+    expect(out).toContain('keep-required');
+    expect(out).toContain('keep-pathless');
+  });
+
   it('canonicalizeOdsContentXml ignores automatic-styles layout drift', () => {
     const legacy = `<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"><office:body><office:spreadsheet><table:table><table:table-row><table:table-cell><text:p>oracle</text:p></table:table-cell></table:table-row></table:table></office:spreadsheet></office:body></office:document-content>`;
     const worker = `<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"><office:automatic-styles/><office:body><office:spreadsheet><table:table table:style-name="ta1"><table:table-row><table:table-cell><text:p>oracle</text:p></table:table-cell></table:table-row></table:table></office:spreadsheet></office:body></office:document-content>`;
     expect(canonicalizeOdsContentXml(legacy)).toBe(canonicalizeOdsContentXml(worker));
+  });
+
+  it('canonicalizeZipEntry routes prefixed ODS content scaffolding', () => {
+    const xml = `<o:document-content xmlns:o="urn:office" xmlns:x="urn:layout" xmlns:table="urn:table">
+      <x:automatic-styles><drop>volatile-layout</drop></x:automatic-styles>
+      <o:body><x:table table:style-name="volatile-prefixed" style-name="volatile-unprefixed"><keep>stable</keep></x:table></o:body>
+    </o:document-content>`;
+    const out = canonicalizeZipEntry('content.xml', new TextEncoder().encode(xml), {});
+    expect(out).not.toContain('volatile-layout');
+    expect(out).not.toContain('volatile-prefixed');
+    expect(out).not.toContain('volatile-unprefixed');
+    expect(out).toContain('<keep>stable</keep>');
   });
 
   it('canonicalizeOdsManifestRdf drops optional file entries', () => {
@@ -134,6 +177,24 @@ describe('zip-canonical helpers (ods)', () => {
     const out = canonicalizeOdsManifestRdf(xml, OPTIONAL_ODS_ZIP_ENTRIES);
     expect(out).toContain('content.xml');
     expect(out).toContain('<hasPart');
+  });
+
+  it('canonicalizeZipEntry routes RDF while keeping slash-prefixed required paths', () => {
+    const xml = `<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:pkg="urn:pkg">
+      <rdf:Description rdf:about="meta.xml"><drop>optional</drop></rdf:Description>
+      <rdf:Description rdf:about="/content.xml"><keep>required-about</keep></rdf:Description>
+      <rdf:Description rdf:about=""><pkg:hasPart rdf:resource="/content.xml"/></rdf:Description>
+    </rdf:RDF>`;
+    const out = canonicalizeZipEntry(
+      'manifest.rdf',
+      new TextEncoder().encode(xml),
+      {},
+      OPTIONAL_ODS_ZIP_ENTRIES,
+    );
+    expect(out).not.toContain('optional');
+    expect(out).toContain('required-about');
+    expect(out).toContain('pkg:hasPart');
+    expect(out).toContain('/content.xml');
   });
 
   it('canonicalizeZipEntry routes manifest.rdf', () => {

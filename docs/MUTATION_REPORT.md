@@ -157,7 +157,7 @@ Per-package `stryker.conf.json`. Key settings:
   | shared           | 89    | 92       | 97        |
   | socketio-shim    | 81    | 84       | 89        |
   | migrate          | 90    | 93       | 98        |
-  | oracle-harness   | 80    | 83       | 88        |
+  | oracle-harness   | 83    | 86       | 91        |
   | client           | 73    | 76       | 81        |
   | worker           | 90    | 93       | 98        |
 
@@ -170,10 +170,10 @@ Per-package `stryker.conf.json`. Key settings:
 | shared           | **89.23%** (58 / 65)           | 7        | high    |
 | socketio-shim    | **81.08%** (300 / 370)         | 70       | high    |
 | migrate          | **90.16%** (605 / 671)         | 66       | high    |
-| oracle-harness   | **80.04%** (1122 / 1402)       | 271      | floor   |
+| oracle-harness   | **83.46%** (1337 / 1602)      | 264      | floor   |
 | client           | **73.81%** (482 / 653)         | 171      | low-ish |
 | worker           | **88.66%** (after 2026-04-20 browser-smoke-fixes) | ~90 | high-ish |
-| **weighted avg** | **~83%** (2276 / 2703)         | 427      | —       |
+| **weighted avg** | **~86%** (~2491 / ~2903)       | ~420     | —       |
 
 All six packages clear their newly-ratcheted `break` floor (each floor = current measured score floored to the integer). The client package is the standout — 171 surviving mutants driven largely by `main.ts` (89) and `socialcalc-callbacks.ts` (60). Both files are full of side-effectful DOM glue where tests verify a call happened but not every parameter. See the walkthrough above for how to close the top gap.
 
@@ -296,34 +296,34 @@ Score before rewrite: 90.16% (605 killed+timeout / 671 mutants, 66 survived). Th
 
 ## Package: `oracle-harness`
 
-**Score: 80.04% (1122 killed+timeout / 1402 mutants, 271 survived)** — measured 2026-06-12 after zip canonicalizer expansion.
+**Score: 83.46% (1337 killed+timeout / 1602 mutants, 264 survived, 1 no coverage)** — measured 2026-07-18 after targeted zip canonicalizer boundary tests.
 
-`break` was ratcheted **83 → 80** in the same PR series that added worker-replay zip drift normalizers (`workbook.xml`, `manifest.rdf`, `sheet1.xml`, etc.). Killing every new `zip-canonical.ts` mutant would be high cost for low signal — the oracle replay suite already asserts semantic export equality. Stryker exclusions were tightened at the same time: `src/scenarios/**` and `src/normalize.ts` (declarative maps, not behavioural logic).
+`break` was ratcheted **80 → 83** after 15 behavioral tests pinned volatile metadata names, required-vs-optional ZIP paths, prefixed XML elements, specialized entry routing, numbered worksheet paths, and the byte-to-hex boundary. Stryker exclusions remain unchanged: `src/scenarios/**` and `src/normalize.ts` are declarative maps, not behavioral logic.
 
-Most survivors are now in **`zip-canonical.ts` (~72% file score, ~153 survived)** — StringLiteral/ConditionalExpression clusters on per-path drop lists, optional-entry sets, and worksheet string-resolution branches. `html-canonical.ts` and `headers.ts` clusters from the 2026-04 baseline remain.
+The largest survivor cluster remains **`zip-canonical.ts` (82.34% file score, 98 survived)**, down from 153 survivors on the same 1602-mutant surface. The remaining clusters are primarily defensive DOM guards, namespace fallbacks, and parser arguments whose mutations are equivalent under linkedom.
 
-### Top 5 surviving mutants (2026-06-12)
+### Top 5 surviving clusters (2026-07-18)
 
-1. **`src/zip-canonical.ts` — StringLiteral cluster** on `OPTIONAL_XLSX_ZIP_ENTRIES` / `OPTIONAL_ODS_ZIP_ENTRIES` and volatile drop lists (`meta:editing-cycles`, etc.). Individual entries can be zeroed without any fixture noticing because other drop rules still mask the diff.
+1. **`src/zip-canonical.ts` (98 survived)** — defensive linkedom node guards, namespace fallbacks, XML parser MIME literals, and optional-parent removal.
 
-2. **`src/zip-canonical.ts` — ConditionalExpression** on optional-path membership (`optionalZipPaths.has(path)`). Tests cover the happy-path drops; few assert the *negative* branch (keep non-optional entries).
+2. **`src/ws-transport.ts` (53 survived)** — event-frame validation and socket cleanup boundaries.
 
-3. **`src/html-canonical.ts:60-64` — StringLiteral cluster** on `REFERRER_ATTRS`. Same as baseline — less-common attrs not individually fixture'd.
+3. **`src/ws-runner.ts` (40 survived)** — timeout, cleanup, and failure-reporting branches.
 
-4. **`src/headers.ts:75:7` — ConditionalExpression** on `if (actual === undefined) return false;`. Tests assert falsy outcomes, not the missing-vs-mismatch distinction.
+4. **`src/matchers.ts` (32 survived)** — HTML/ZIP matcher glue where integration tests cover the route but not every defensive fallback.
 
-5. **`src/matchers.ts` cluster** — HTML/zip matcher glue where integration tests assert end-to-end replay but unit tests don't pin every matcher branch.
+5. **`src/html-canonical.ts` (23 survived)** — less-common volatile-ID and referrer-attribute branches.
 
 ### Recommended test additions
 
-- [ ] `zip-canonical.ts` — parametrized cases for each `OPTIONAL_*` entry and each volatile drop name (one fixture per list item).
-- [ ] `zip-canonical.ts` — negative-branch tests: non-optional `hasPart` / `Relationship` targets must survive canonicalization.
+- [x] `zip-canonical.ts` — behavioral cases for every previously surviving volatile drop name and specialized ZIP/XML route.
+- [x] `zip-canonical.ts` — negative-branch tests proving required `hasPart`, `Relationship`, manifest, and archive paths survive canonicalization.
 - [ ] HTML canonical — add targeted fixtures for each `REFERRER_ATTRS` entry individually.
 - [ ] `headers.ts` — distinguish "header missing" from "header mismatch" in assertions.
 
-### oracle-harness regression note (2026-06-12)
+### oracle-harness regression note (2026-06-12; resolved 2026-07-18)
 
-Zip canonicalizers grew to close nightly worker replay (`exports/get-xlsx`, `exports/get-ods`). Mutation score dropped from ~84.95% → ~80.04%; `break` floor lowered to **80** with `low`/`high` recomputed to **83**/**88**. Oracle replay on worker is **27/27** (nightly run `27430497183`). Raising `break` again means closing `zip-canonical.ts` survivors selectively — not re-expanding Stryker scope to scenario maps.
+Zip canonicalizers grew to close nightly worker replay (`exports/get-xlsx`, `exports/get-ods`). The mutation score initially dropped from ~84.95% to 80.04%, so `break` was temporarily lowered to **80**. On the current 1602-mutant surface, the added boundary tests raised the measured score from **80.02% to 83.46%**, killed 55 additional mutants, and reduced `zip-canonical.ts` survivors from 153 to 98. The floor is restored to **83**, with `low`/`high` recomputed to **86**/**91**.
 
 ---
 

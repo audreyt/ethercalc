@@ -27,9 +27,9 @@
   "inPlace": true,
   "coverageAnalysis": "perTest",
   "thresholds": {
-    "high": 88,
-    "low": 83,
-    "break": 80
+    "high": 91,
+    "low": 86,
+    "break": 83
   },
   "timeoutMS": 120000,
   "concurrency": 4,
