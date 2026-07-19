@@ -11,7 +11,9 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "test": "vp test run",
+    "test": "vp run test:node && vp run test:workers",
+    "test:node": "vp test run --config vitest.node.config.ts",
+    "test:workers": "vp test run",
     "test:watch": "vp test",
     "typecheck": "tsc --noEmit"
   },
