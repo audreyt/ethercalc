@@ -33,6 +33,19 @@ Tooling
   excludes dependencies, Vite/Wrangler output, secrets, migration dumps, and
   persistent room data; the smoke gate asserts the resulting image is clean.
 
+Integration
+- Prepared the headless adapter for the next SocialCalc release: bundle
+  transforms now fail loudly on upstream wrapper drift, and the DOM shim
+  supports safely serialized attributes, class lists, and text content used
+  by accessible sheet rendering.
+- Added multi-sheet bridge regressions for exact TOC routing, child-room
+  isolation/mutation, and cross-sheet recalculation through sibling RoomDO
+  hydration. EtherCalc keeps canonical per-sheet persistence; the embedded
+  SocialCalc workbook remains the in-memory calculation and interchange model.
+- Moved the account/access cluster into its in-flow fallback at or below the
+  measured 920px cutoff, avoiding overlap with SocialCalc's expanded menu while
+  preserving fixed top-right chrome on wider sheets.
+
 ==============================================================================
 0.20260717.0 — 2026-07-17
 ==============================================================================
