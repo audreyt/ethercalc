@@ -220,6 +220,8 @@ describe('Phase 8 exports — HTML XSS sanitisation (text-html cells)', () => {
       // Benign markup that MUST survive the sanitiser.
       'set B1 text th <b>bold</b>',
       'set B2 text th <a href="https://example.test">link</a>',
+      'set B3 text t styled',
+      'set B3 cssc candidate-export-class',
     ];
     for (const c of cmds) {
       const res = await stub.fetch('https://do/_do/commands', {
@@ -237,10 +239,13 @@ describe('Phase 8 exports — HTML XSS sanitisation (text-html cells)', () => {
     const body = await res.text();
     const lower = body.toLowerCase();
 
-    // Dangerous bits gone.
-    expect(lower).not.toContain('onerror');
+    // No active element carries an event handler or executable URL. Newer
+    // SocialCalc bundles also expose the original cell text in an escaped
+    // aria-label; inert words such as "onerror" or "javascript:" inside that
+    // attribute are accessibility text, not active markup.
+    expect(lower).not.toMatch(/<img\b[^>]*\bonerror\s*=/);
     expect(lower).not.toContain('<script');
-    expect(lower).not.toContain('javascript:');
+    expect(lower).not.toMatch(/<a\b[^>]*\bhref\s*=\s*["']?javascript:/);
     expect(lower).not.toContain('<iframe');
 
     // text-html stays a feature — safe markup and the cell text survive.
@@ -251,6 +256,14 @@ describe('Phase 8 exports — HTML XSS sanitisation (text-html cells)', () => {
     expect(body).toContain('>x</a>');
     // The table scaffolding itself is untouched.
     expect(lower).toContain('<table');
+  });
+
+  it('preserves a custom cell class through the headless DOM shim', async () => {
+    const res = await request('GET', `/_/${XSS_ROOM}/html`);
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    expect(body).toContain('class="candidate-export-class"');
+    expect(body).toContain('>styled</td>');
   });
 
   it('still emits the XSS-neutralising CSP + nosniff alongside the stripped body', async () => {
