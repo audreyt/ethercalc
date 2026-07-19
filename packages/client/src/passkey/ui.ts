@@ -307,22 +307,16 @@ function showSheetAccessDialog(): void {
  * once a user is actually inside a sheet, the account/passkey status is
  * the only thing this corner needs to carry.
  *
- * `position: fixed` above 700px viewport width: no knowledge of
+ * `position: fixed` above 920px viewport width: no knowledge of
  * SocialCalc's own menu/toolbar DOM, no insertion into it, so it never
- * touches `spreadsheet.viewheight`/`nonviewheight` — SocialCalc keeps its
- * full natural height and the cluster floats over the top-right corner of
- * its own tab-menu row, which is otherwise empty there (confirmed live:
- * the "Edit Format Sort Audit Comment Names Clipboard" row's own content
- * ends around x=482 of a 1410px-wide row).
+ * touches `spreadsheet.viewheight`/`nonviewheight`. The expanded menu row
+ * ends around x=769 at a 921px viewport; the widest realistic cluster
+ * (private badge + avatar, no adjacent context-action button) is ~126px
+ * wide and begins around x=777 with the fixed 18px right inset. That leaves
+ * a measured 8px clearance at the first fixed-position width.
  *
- * Below 700px that clearance is gone (SocialCalc's menu row is a fixed
- * ~482px wide, non-reflowing table — a `position: fixed` cluster
- * anchored to the viewport's right edge WILL cross into it on any
- * narrower viewport; confirmed live via bounding-rect intersection down
- * to the ~626px mark - the widest realistic content, private badge +
- * avatar alone (no context-action button beside it - see
- * `mountRoomAccess`), measures ~126px wide).
- * `ui.css`'s `@media (max-width: 700px)` switches the cluster to
+ * At or below 920px that clearance is gone. `ui.css`'s
+ * `@media (max-width: 920px)` switches the cluster to
  * `position: static`, so it
  * needs to sit in normal DOM flow immediately before `#tableeditor` — not
  * appended to the end of `body` the way a `position: fixed` element could

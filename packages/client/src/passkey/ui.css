@@ -31,7 +31,7 @@
   --m3e-toolbar-rounded-padding: 4px 10px;
 }
 
-/* Below 700px, `position: fixed` in the viewport's top-right corner is no
+/* At or below 920px, `position: fixed` in the viewport's top-right corner is no
    longer safe (see `mountRoomAccessCluster()`'s doc comment in ui.ts for
    the measured collision threshold against SocialCalc's own
    non-reflowing menu bar) — fall back to a normal in-flow block instead,
@@ -44,13 +44,9 @@
    pre-redesign toolbar always made, just no longer paid on desktop
    where there was room to avoid it entirely.
 
-   700px, not the 840px this needed before folding "Make a private
-   copy"/"Sheet access" into the account menu: the widest remaining
-   content (private badge + avatar alone, ~126px - no second button
-   beside it anymore) measures collision-free only above ~626px; 700px
-   keeps a similar safety margin past that measured minimum instead of
-   tracking it exactly. */
-@media (max-width: 700px) {
+   The expanded menu ends around x=769 at a 921px viewport; the widest
+   ~126px cluster begins around x=777 there, leaving a measured 8px gap. */
+@media (max-width: 920px) {
   #ec-room-access {
     position: static;
     display: block;
@@ -125,7 +121,9 @@ m3e-card {
   border-radius: 999px;
   background: var(--md-sys-color-surface, #faf9fd);
   border: 1px solid var(--md-sys-color-outline-variant, #c3c6cf);
-  box-shadow: 0 1px 2px rgba(12, 49, 89, 0.08), 0 2px 8px rgba(12, 49, 89, 0.06);
+  box-shadow:
+    0 1px 2px rgba(12, 49, 89, 0.08),
+    0 2px 8px rgba(12, 49, 89, 0.06);
 }
 
 .ec-floatnav--top {
@@ -163,7 +161,6 @@ m3e-card {
   outline: 2px solid var(--md-sys-color-primary, #1e5fa6);
   outline-offset: 1px;
 }
-
 
 @media (prefers-reduced-motion: reduce) {
   /* M3E's per-component `@media (prefers-reduced-motion)` rules are

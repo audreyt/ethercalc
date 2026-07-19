@@ -530,7 +530,7 @@ test.describe('passkey room-access chrome', () => {
     );
   });
 
-  test('stays compact and fixed on desktop, falls back in-flow below 700px', async ({
+  test('stays compact and fixed on desktop, falls back in-flow at or below 920px', async ({
     workerBase,
     page,
   }) => {
@@ -538,10 +538,10 @@ test.describe('passkey room-access chrome', () => {
     // viewport, reserving its own height out of the grid on EVERY
     // viewport. The redesign only pays that cost where it's actually
     // required: `position: fixed`, shrink-wrapped, floating free in the
-    // corner above 700px (confirmed clear of SocialCalc's own menu bar);
-    // a normal in-flow block, pushing `#tableeditor` down, below it (see
-    // `mountRoomAccessCluster()`'s doc comment in ui.ts for the measured
-    // collision math that sets that cutoff).
+    // corner above 920px (confirmed clear of SocialCalc's expanded menu
+    // bar); a normal in-flow block pushes `#tableeditor` down at narrower
+    // widths (see `mountRoomAccessCluster()`'s doc comment in ui.ts for
+    // the measured collision math that sets that cutoff).
     const room = `access-compact-${Date.now().toString(36)}`;
     await routeWhoami(page, signedInAuth);
     await page.route('**/_/*/access', (route) =>
@@ -592,26 +592,23 @@ test.describe('passkey room-access chrome', () => {
     workerBase,
     page,
   }) => {
-    // Regression test for a real bug caught in review: SocialCalc's own
-    // "Edit Format Sort Audit Comment Names Clipboard" menu row is a
-    // fixed-width (~482px), non-reflowing table that doesn't shrink with
-    // the viewport. A `position: fixed` cluster anchored to the viewport's
-    // right edge WILL cross into it below a measured ~626px viewport
-    // width — this asserts zero bounding-rect intersection with that real
-    // SocialCalc element, on both sides of the 700px breakpoint, for the
-    // widest realistic cluster content (private badge + avatar, no
-    // context-action button beside it anymore - see `mountRoomAccess`).
-    // It also pins the breakpoint itself, not just collision absence: a
-    // media query that left the cluster in-flow well above 700px would
-    // still pass a collision-only check, so 700/701 assert `position`
-    // directly across the exact cutover.
+    // Regression test for a real candidate-integration bug: SocialCalc's
+    // expanded, non-reflowing menu table reaches about x=769. A fixed
+    // ~126px account cluster anchored 18px from the viewport's right edge
+    // overlaps it at the former 700px cutover. This asserts zero bounding-
+    // rect intersection on both sides of the measured 920px breakpoint
+    // for the widest realistic cluster content (private badge + avatar,
+    // with context actions folded into the account menu).
+    //
+    // Pin the breakpoint itself, not just collision absence: 920/921 assert
+    // `position` directly across the exact cutover.
     const room = `access-nocollide-${Date.now().toString(36)}`;
     await routeWhoami(page, signedInAuth);
     await page.route('**/_/*/access', (route) =>
       route.fulfill({ contentType: 'application/json', body: JSON.stringify(privateOwnerAccess) }),
     );
 
-    for (const width of [600, 700, 701, 800]) {
+    for (const width of [600, 920, 921, 950]) {
       await page.setViewportSize({ width, height: 800 });
       await page.goto(`${workerBase}/${room}`);
       await expect(page.locator('#ec-room-access')).toBeVisible();
@@ -635,7 +632,7 @@ test.describe('passkey room-access chrome', () => {
         };
       });
 
-      expect(geometry.position, `unexpected position at ${width}px`).toBe(width <= 700 ? 'static' : 'fixed');
+      expect(geometry.position, `unexpected position at ${width}px`).toBe(width <= 920 ? 'static' : 'fixed');
       expect(geometry.cluster, `no cluster rect at ${width}px`).not.toBeNull();
       expect(geometry.menu, `no SocialCalc menu row found at ${width}px`).not.toBeNull();
       const c = geometry.cluster!;
