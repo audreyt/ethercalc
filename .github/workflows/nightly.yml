@@ -220,7 +220,7 @@ jobs:
 
       - name: Wait for oracle health
         run: |
-          for i in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             curl -sf http://127.0.0.1:8000/_rooms >/dev/null 2>&1 && exit 0
             sleep 2
           done
@@ -244,7 +244,7 @@ jobs:
           # ETHERCALC_CORS=1 which gates /_rooms* and /_exists).
           (cd packages/worker && vp exec wrangler dev --port 8787 --ip 127.0.0.1 --var ETHERCALC_DISABLE_ROOM_INDEX:0) &
           pid=$!
-          for i in $(seq 1 60); do
+          for _ in $(seq 1 60); do
             curl -sf http://127.0.0.1:8787/_health >/dev/null 2>&1 && break
             sleep 2
           done

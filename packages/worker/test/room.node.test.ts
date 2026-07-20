@@ -4468,6 +4468,34 @@ describe('RoomDO — POST /_do/init-private (Phase A)', () => {
     );
   });
 
+  it('invalidates warm public access metadata after private initialization', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('init-warm-cache', record), makeEnv());
+
+    // This seeds #accessMeta with an empty/public storage read in the same
+    // DO instance that will perform the legitimate metadata mutation below.
+    expect(
+      (await room.fetch(new Request('https://do/_do/access'))).status,
+    ).toBe(200);
+    const init = await room.fetch(
+      new Request('https://do/_do/init-private', {
+        method: 'POST',
+        headers: { 'X-EC-Uid': 'uid-owner' },
+        body: JSON.stringify({ snapshot: 'SAVE', acl: PRIVATE_ACL }),
+      }),
+    );
+    expect(init.status).toBe(201);
+
+    const anonRead = await room.fetch(new Request('https://do/_do/snapshot'));
+    const ownerRead = await room.fetch(
+      new Request('https://do/_do/snapshot', {
+        headers: { 'X-EC-Uid': 'uid-owner' },
+      }),
+    );
+    expect(anonRead.status).toBe(403);
+    expect(ownerRead.status).toBe(200);
+  });
+
   it('immediately authorizes the owner and denies strangers', async () => {
     const record: FakeStorageRecord = { map: new Map() };
     const room = new RoomDO(makeState('init-2', record), makeEnv());

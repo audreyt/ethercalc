@@ -163,6 +163,47 @@ describe('exports — verdict propagation + identity threading', () => {
     expect(calls[0]!.uid).toBe(AUTH_UID);
   });
 
+  it('discards forged identities for HTML, CSV, XLSX, and TOC sheet-data reads', async () => {
+    const simplePaths = [
+      'https://t.test/locked.html',
+      'https://t.test/_/locked/csv',
+      'https://t.test/_/locked/xlsx',
+    ];
+    for (const url of simplePaths) {
+      const { env, calls } = makeFakeRoomNamespace(
+        () => new Response('Forbidden', { status: 403 }),
+      );
+      const res = await buildApp().fetch(
+        new Request(url, {
+          headers: { Cookie: AUTH_COOKIE, 'X-EC-Uid': 'uid-forged' },
+        }),
+        withAuth(env) as never,
+      );
+      expect(res.status, url).toBe(403);
+      expect(calls).toHaveLength(1);
+      expect(calls[0]!.uid, url).toBe(AUTH_UID);
+    }
+
+    const { env, calls } = makeFakeRoomNamespace((call) => {
+      if (call.url.includes('/_do/csv.json')) {
+        return Response.json([
+          ['#url', '#title'],
+          ['/book.1', 'Sheet'],
+        ]);
+      }
+      return Response.json({ cells: {}, valueformats: {} });
+    });
+    const res = await buildApp().fetch(
+      new Request('https://t.test/_/=book/xlsx', {
+        headers: { Cookie: AUTH_COOKIE, 'X-EC-Uid': 'uid-forged' },
+      }),
+      withAuth(env) as never,
+    );
+    expect(res.status).toBe(200);
+    expect(calls.map((call) => call.uid)).toEqual([AUTH_UID, AUTH_UID]);
+    expect(calls[1]!.url).toContain('/_do/sheet-data');
+  });
+
   it('GET /_/=:room/xlsx propagates a 403 TOC read instead of hiding it as 404', async () => {
     const { env } = makeFakeRoomNamespace(
       () => new Response('Forbidden', { status: 403 }),

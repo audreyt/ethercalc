@@ -59,6 +59,41 @@ test('landing nav stays fixed in the viewport corner while the page scrolls', as
   expect(after?.x).toBe(before?.x);
 });
 
+test('landing nav stays bounded and viewport-fixed at the 920px RTL breakpoint', async ({
+  workerBase,
+  page,
+}) => {
+  await page.setViewportSize({ width: 920, height: 700 });
+  await page.goto(`${workerBase}/_start`);
+  const before = await page.evaluate(() => {
+    document.documentElement.dir = 'rtl';
+    const spacer = document.createElement('div');
+    spacer.style.height = '1200px';
+    document.body.append(spacer);
+    const nav = document.querySelector<HTMLElement>('.ec-floatnav');
+    if (!nav) throw new Error('landing nav is missing');
+    const rect = nav.getBoundingClientRect();
+    return {
+      x: rect.x,
+      y: rect.y,
+      left: rect.left,
+      right: rect.right,
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+    };
+  });
+  await page.evaluate(() => window.scrollTo(0, 600));
+  await page.waitForFunction(() => window.scrollY > 0);
+  const after = await page.locator('.ec-floatnav').boundingBox();
+
+  expect(before.scrollWidth).toBe(before.clientWidth);
+  expect(before.left).toBeGreaterThanOrEqual(0);
+  expect(before.right).toBeLessThanOrEqual(before.clientWidth);
+  expect(after).not.toBeNull();
+  expect(after?.x).toBe(before.x);
+  expect(after?.y).toBe(before.y);
+});
+
 test('credits maintainer Audrey Tang on the landing page', async ({
   workerBase,
   page,
