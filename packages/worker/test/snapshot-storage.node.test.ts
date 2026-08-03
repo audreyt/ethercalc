@@ -114,6 +114,124 @@ describe('snapshotEntries', () => {
       new TextEncoder().encode(p);
     }
   });
+
+  it('splits 2-byte and 3-byte scalars without cutting mid-character', () => {
+    // é = 2 UTF-8 bytes; 中 = 3. Cross the chunk boundary with both so the
+    // 2-byte and 3-byte width lanes in chunkString run.
+    const twoByte = 'é'.repeat(Math.floor(SNAPSHOT_CHUNK_BYTES / 2) + 100);
+    const threeByte = '中'.repeat(Math.floor(SNAPSHOT_CHUNK_BYTES / 3) + 100);
+    for (const s of [twoByte, threeByte]) {
+      const entries = snapshotEntries(s);
+      const meta = entries[STORAGE_KEYS.snapshotMeta] as { chunks: number };
+      expect(meta.chunks).toBeGreaterThan(1);
+      const parts: string[] = [];
+      for (let i = 0; i < meta.chunks; i++) {
+        parts.push(
+          entries[`snapshot:chunk:${String(i).padStart(16, '0')}`] as string,
+        );
+      }
+      expect(parts.join('')).toBe(s);
+      for (const p of parts) new TextEncoder().encode(p);
+    }
+  });
+
+  it('counts unpaired surrogates as the 3-byte replacement width', () => {
+    // Lone high and low surrogates match TextEncoder's U+FFFD (3-byte)
+    // replacement so chunk boundaries stay byte-accurate.
+    const high = String.fromCharCode(0xd800);
+    const low = String.fromCharCode(0xdc00);
+    const s = high + 'a'.repeat(SNAPSHOT_CHUNK_BYTES) + low;
+    const entries = snapshotEntries(s);
+    const meta = entries[STORAGE_KEYS.snapshotMeta] as { chunks: number };
+    expect(meta.chunks).toBeGreaterThan(1);
+    const parts: string[] = [];
+    for (let i = 0; i < meta.chunks; i++) {
+      parts.push(
+        entries[`snapshot:chunk:${String(i).padStart(16, '0')}`] as string,
+      );
+    }
+    expect(parts.join('')).toBe(s);
+  });
+
+  it('classifies the exact 1-byte and 2-byte UTF-8 width boundaries', () => {
+    // U+007F is still 1 byte; U+0080 is the first 2-byte scalar. U+07FF is
+    // still 2 bytes; U+0800 is the first 3-byte BMP scalar. Wrong relational
+    // operators on those cutoffs change the chunk count.
+    const oneByteEdge = String.fromCharCode(0x7f).repeat(SNAPSHOT_CHUNK_BYTES + 1);
+    const twoByteStart = String.fromCharCode(0x80).repeat(
+      Math.floor(SNAPSHOT_CHUNK_BYTES / 2) + 1,
+    );
+    const twoByteEdge = String.fromCharCode(0x7ff).repeat(
+      Math.floor(SNAPSHOT_CHUNK_BYTES / 2) + 1,
+    );
+    const threeByteStart = String.fromCharCode(0x800).repeat(
+      Math.floor(SNAPSHOT_CHUNK_BYTES / 3) + 1,
+    );
+    for (const [label, s, expectedChunks] of [
+      ['U+007F', oneByteEdge, 2],
+      ['U+0080', twoByteStart, 2],
+      ['U+07FF', twoByteEdge, 2],
+      ['U+0800', threeByteStart, 2],
+    ] as const) {
+      const entries = snapshotEntries(s);
+      const meta = entries[STORAGE_KEYS.snapshotMeta] as { chunks: number };
+      expect(meta.chunks, label).toBe(expectedChunks);
+      const parts: string[] = [];
+      for (let i = 0; i < meta.chunks; i++) {
+        parts.push(
+          entries[`snapshot:chunk:${String(i).padStart(16, '0')}`] as string,
+        );
+      }
+      expect(parts.join(''), label).toBe(s);
+      for (const p of parts) {
+        expect(new TextEncoder().encode(p).byteLength).toBeLessThanOrEqual(
+          SNAPSHOT_CHUNK_BYTES,
+        );
+      }
+    }
+  });
+
+  it('keeps exact surrogate-pair boundaries as single 4-byte scalars', () => {
+    // First and last valid supplementary-plane scalars: U+10000 and U+10FFFF.
+    const first = String.fromCodePoint(0x10000);
+    const last = String.fromCodePoint(0x10ffff);
+    const s =
+      first.repeat(Math.floor(SNAPSHOT_CHUNK_BYTES / 4) + 2) +
+      last.repeat(Math.floor(SNAPSHOT_CHUNK_BYTES / 4) + 2);
+    const entries = snapshotEntries(s);
+    const meta = entries[STORAGE_KEYS.snapshotMeta] as { chunks: number };
+    expect(meta.chunks).toBeGreaterThan(1);
+    const parts: string[] = [];
+    for (let i = 0; i < meta.chunks; i++) {
+      parts.push(
+        entries[`snapshot:chunk:${String(i).padStart(16, '0')}`] as string,
+      );
+    }
+    expect(parts.join('')).toBe(s);
+    for (const p of parts) {
+      // No orphan high/low halves.
+      expect(p.length % 2 === 0 || !/[\uD800-\uDBFF]$/.test(p)).toBe(true);
+      new TextEncoder().encode(p);
+    }
+  });
+
+  it('treats a trailing unpaired high surrogate as a 3-byte replacement', () => {
+    const high = String.fromCharCode(0xd800);
+    // Fill almost one chunk with ASCII, then end on a lone high surrogate so
+    // the scanner hits the `index + 1 < length` false branch.
+    const s = 'a'.repeat(SNAPSHOT_CHUNK_BYTES - 1) + high;
+    const entries = snapshotEntries(s);
+    const meta = entries[STORAGE_KEYS.snapshotMeta] as { chunks: number };
+    expect(meta.chunks).toBe(2);
+    const parts: string[] = [];
+    for (let i = 0; i < meta.chunks; i++) {
+      parts.push(
+        entries[`snapshot:chunk:${String(i).padStart(16, '0')}`] as string,
+      );
+    }
+    expect(parts.join('')).toBe(s);
+    expect(parts[1]).toBe(high);
+  });
 });
 
 describe('readSnapshot', () => {

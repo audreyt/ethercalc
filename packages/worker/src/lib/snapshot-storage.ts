@@ -124,8 +124,8 @@ export function snapshotEntries(snapshot: string): Record<string, unknown> {
   // Defense in depth only: `#postSnapshotChunk` already refuses uploads
   // declaring more than MAX_SNAPSHOT_CHUNKS chunks, and every other caller
   // is bounded by the 25 MiB request-body cap, so no reachable input
-  // reaches 200 MiB. Exercising it would mean chunking a 200 MiB string
-  // one TextEncoder call per code point — minutes per run.
+  // reaches 200 MiB. The chunker is O(n) over code units; this guard is a
+  // hard ceiling, not a performance hot path.
   /* istanbul ignore next -- @preserve: unreachable below the upload caps */
   if (chunks.length > MAX_SNAPSHOT_CHUNKS) {
     throw new RangeError('snapshot exceeds chunk limit');
@@ -162,41 +162,51 @@ export async function readSnapshotMeta(
  * multi-byte code points. `String.prototype.slice` can leave a high
  * surrogate at the end of one chunk and its pair at the start of the
  * next — that's the behavior we want for JS strings (which are UTF-16)
- * because concat reassembles byte-for-byte. But to bound each chunk
- * by UTF-8 byte length we have to walk character-by-character and
- * accumulate until we'd cross the limit, then cut before the
- * would-overflow character.
+ * because concat reassembles byte-for-byte. To bound UTF-8 bytes without
+ * allocating one `TextEncoder` result per scalar, scan code units, account for
+ * each scalar's encoded width, and slice only at chunk boundaries.
  */
 function chunkString(s: string, maxBytes: number): string[] {
   const out: string[] = [];
-  // Iterate code-points (not code-units) so surrogate pairs stay
-  // together. `for (const ch of s)` does the right thing.
-  let current = '';
+  let start = 0;
+  let index = 0;
   let currentBytes = 0;
-  for (const ch of s) {
-    const chBytes = utf8Bytes(ch);
-    if (currentBytes + chBytes > maxBytes && current.length > 0) {
-      out.push(current);
-      current = '';
+
+  while (index < s.length) {
+    const code = s.charCodeAt(index);
+    let scalarBytes: number;
+    let codeUnits = 1;
+    if (code <= 0x7f) {
+      scalarBytes = 1;
+    } else if (code <= 0x7ff) {
+      scalarBytes = 2;
+    } else if (code >= 0xd800 && code <= 0xdbff && index + 1 < s.length) {
+      const next = s.charCodeAt(index + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        scalarBytes = 4;
+        codeUnits = 2;
+      } else {
+        // TextEncoder replaces an unpaired surrogate with U+FFFD (3 bytes).
+        scalarBytes = 3;
+      }
+    } else {
+      // Three-byte BMP scalar or an unpaired low/final high surrogate.
+      scalarBytes = 3;
+    }
+
+    if (currentBytes + scalarBytes > maxBytes && index > start) {
+      out.push(s.slice(start, index));
+      start = index;
       currentBytes = 0;
     }
-    current += ch;
-    currentBytes += chBytes;
+    currentBytes += scalarBytes;
+    index += codeUnits;
   }
-  // The loop always has at least one character in `current` when it
-  // exits (the last iteration appends before checking the next
-  // threshold), so the tail push is unconditional in practice. The
-  // guard is kept as a sanity check; istanbul treats the false branch
-  // as dead code.
-  /* istanbul ignore else */
-  if (current.length > 0) out.push(current);
-  // Degenerate case: empty input should still produce one empty chunk
-  // so `{chunks: 1}` + `snapshot:chunk:0 = ""` reads back correctly.
-  // In practice callers skip chunking for empty snapshots via the
-  // fast path above, so this only fires if someone passes `""` with
-  // a maxBytes of 0.
-  /* istanbul ignore next */
-  if (out.length === 0) out.push('');
+
+  // Empty input yields one empty chunk (`slice(0)` of `''`). Non-empty input
+  // always leaves `start` on the final incomplete chunk, including when the
+  // whole string fits in one piece (`start === 0`).
+  out.push(s.slice(start));
   return out;
 }
 
