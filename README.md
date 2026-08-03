@@ -91,6 +91,10 @@ Override defaults by exporting these before `docker compose up`:
 | `ETHERCALC_EXPIRE`    | *(unset)*   | Seconds of inactivity before a room is pruned.    |
 | `ETHERCALC_RATELIMIT` | *(unset)*   | Optional in-Worker per-IP limit (off by default). `1` or `10` = 10 req/s; `60:600` = 600 per minute. Belt-and-suspenders behind nginx — not a substitute for the proxy. |
 | `ETHERCALC_ROOM_CREATE_LIMIT` | *(unset)* | Optional per-IP cap on room creation (`POST /_`, `/_new`, `/_from`, `PUT /_/room`). `1` = 6/min. Proxy compose defaults this on. |
+| `ETHERCALC_AUTH` | *(unset)* | Set `1` to enable passkey accounts/private rooms; requires the three trust anchors below. |
+| `ETHERCALC_RP_ID` | *(unset)* | WebAuthn RP domain, e.g. `sheets.example.com`. |
+| `ETHERCALC_RP_NAME` | *(unset)* | Passkey display name, e.g. `EtherCalc`. |
+| `ETHERCALC_ORIGIN` | *(unset)* | Exact public HTTPS origin, e.g. `https://sheets.example.com`. |
 
 Recommended public-instance settings:
 
@@ -108,6 +112,9 @@ Recommended public-instance settings:
   `ETHERCALC_HOST`, which must stay reachable inside the container.
 - Optionally set `ETHERCALC_RATELIMIT=1` for an extra in-Worker per-IP
   cap when nginx is already in place.
+- To enable passkeys/private rooms, set `ETHERCALC_AUTH=1`,
+  `ETHERCALC_RP_ID`, `ETHERCALC_RP_NAME`, and `ETHERCALC_ORIGIN` together.
+  The RP ID and origin must match the HTTPS site users visit.
 
 On Apple Silicon, Docker Desktop's virtio networking has an
 intermittent quirk that can make `curl localhost:8000` hang even

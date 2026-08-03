@@ -20,7 +20,11 @@
  *   - The adapter doesn't own the native WS that the worker opens on
  *     behalf of the client; `getNativeWebSocket(sid)` returns it on demand.
  */
-import type { ClientMessage, ServerMessage } from '@ethercalc/shared/messages';
+import {
+  MAX_WS_FRAME_CHARS,
+  type ClientMessage,
+  type ServerMessage,
+} from '@ethercalc/shared/messages';
 import { decodeFrame, encodeFrame, PacketType } from './framing.ts';
 import {
   buildHandshakeResponse,
@@ -29,6 +33,11 @@ import {
 } from './handshake.ts';
 import { generateSid, validateSid } from './sid.ts';
 import { nativeToSocketIoEvent, socketIoEventToNative } from './translate.ts';
+
+export const MAX_SOCKET_IO_SESSIONS = 1_024;
+export const MAX_XHR_POLL_BYTES = MAX_WS_FRAME_CHARS;
+export const MAX_XHR_POLL_FRAMES = 64;
+export const MAX_XHR_POLL_QUEUE = 128;
 
 /**
  * The minimal WebSocket surface the adapter touches. Matches the intersection
@@ -74,6 +83,9 @@ export interface SocketIoShimOptions {
 
   /** Paired clear for `setTimer`. */
   clearTimer?: (t: Timer) => void;
+
+  /** Clock seam used for idle-session expiry tests. */
+  now?: () => number;
 }
 
 /** Opaque timer handle — whatever `setTimer` returned. */
@@ -106,11 +118,16 @@ export interface SocketIoShim {
   /** Terminate a session. Idempotent. */
   closeSession(sid: string, reason?: string): void;
 
+  /** Drop an unused handshake breadcrumb after a hibernated WS upgrade. */
+  releaseHandshake(sid: string): void;
+
   /** Count of live sessions — exposed for tests. */
   readonly sessionCount: number;
 }
 
 interface Session {
+  /** Session identifier used when queue overflow must fail closed. */
+  sid: string;
   /** The WebSocket we've accepted for this session, if any. */
   ws: WebSocketLike | null;
   /** Heartbeat timer handle. */
@@ -121,6 +138,8 @@ interface Session {
   pollResolver: ((body: string) => void) | null;
   /** Set to true once we've emitted the initial `1::` connect ack. */
   connected: boolean;
+  /** Last request, frame, send, or heartbeat time. */
+  lastSeenAt: number;
 }
 
 /**
@@ -136,22 +155,36 @@ export function createSocketIoShim(opts: SocketIoShimOptions): SocketIoShim {
   const clearTimer =
     opts.clearTimer ??
     ((t) => globalThis.clearInterval(t as Parameters<typeof globalThis.clearInterval>[0]));
+  const now = opts.now ?? Date.now;
 
   const sessions = new Map<string, Session>();
 
-  function ensureSession(sid: string): Session {
-    let s = sessions.get(sid);
-    if (!s) {
-      s = {
+  function ensureSession(sid: string): Session | null {
+    pruneExpiredSessions();
+    let session = sessions.get(sid);
+    if (!session) {
+      if (sessions.size >= MAX_SOCKET_IO_SESSIONS) return null;
+      session = {
+        sid,
         ws: null,
         hbTimer: null,
         pollQueue: [],
         pollResolver: null,
         connected: false,
+        lastSeenAt: now(),
       };
-      sessions.set(sid, s);
+      sessions.set(sid, session);
+    } else {
+      session.lastSeenAt = now();
     }
-    return s;
+    return session;
+  }
+
+  function pruneExpiredSessions(): void {
+    const cutoff = now() - closeTimeoutSec * 1000;
+    for (const [sid, session] of sessions) {
+      if (session.lastSeenAt <= cutoff) closeSession(sid, 'session expired');
+    }
   }
 
   function startHeartbeat(sid: string, session: Session): void {
@@ -167,6 +200,10 @@ export function createSocketIoShim(opts: SocketIoShimOptions): SocketIoShim {
       // ticks. Dropping the frame in that case is correct.
       const live = sessions.get(sid);
       if (!live) return;
+      if (live.lastSeenAt <= now() - closeTimeoutSec * 1000) {
+        closeSession(sid, 'session expired');
+        return;
+      }
       deliverFrame(live, encodeFrame({ type: PacketType.Heartbeat }));
     }, intervalMs);
   }
@@ -182,10 +219,20 @@ export function createSocketIoShim(opts: SocketIoShimOptions): SocketIoShim {
       resolve(frame);
       return;
     }
+    if (session.pollQueue.length >= MAX_XHR_POLL_QUEUE) {
+      closeSession(session.sid, 'poll queue overflow');
+      return;
+    }
     session.pollQueue.push(frame);
   }
 
   function processInboundFrame(sid: string, raw: string): void {
+    const session = sessions.get(sid);
+    // A frame can still land after `closeSession` deleted the session (the
+    // socket close is asynchronous). Without a live session there is no
+    // liveness to record and no client to answer, so drop it.
+    if (!session) return;
+    session.lastSeenAt = now();
     const packet = decodeFrame(raw);
     if (!packet) return;
     switch (packet.type) {
@@ -232,6 +279,34 @@ export function createSocketIoShim(opts: SocketIoShimOptions): SocketIoShim {
     sessions.delete(sid);
   }
 
+  async function readBoundedBody(request: Request): Promise<string | null> {
+    const declared = request.headers.get('content-length');
+    if (
+      declared !== null &&
+      Number.isFinite(Number(declared)) &&
+      Number(declared) > MAX_XHR_POLL_BYTES
+    ) {
+      return null;
+    }
+    if (!request.body) return '';
+    const reader = request.body.getReader();
+    const decoder = new TextDecoder();
+    const chunks: string[] = [];
+    let received = 0;
+    while (true) {
+      const part = await reader.read();
+      if (part.done) break;
+      received += part.value.byteLength;
+      if (received > MAX_XHR_POLL_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        return null;
+      }
+      chunks.push(decoder.decode(part.value, { stream: true }));
+    }
+    chunks.push(decoder.decode());
+    return chunks.join('');
+  }
+
   return {
     handleHandshake(request: Request): Response {
       // Validate the path so we don't return a sid for nonsense URLs.
@@ -239,21 +314,32 @@ export function createSocketIoShim(opts: SocketIoShimOptions): SocketIoShim {
       if (match === null || match.transport !== undefined) {
         return new Response('Not Found', { status: 404 });
       }
-      const sid = generateSid();
+      pruneExpiredSessions();
+      let sid = generateSid();
+      // Two clients must never share a session; retry on the (crypto-RNG
+      // improbable) collision rather than aliasing an existing sid.
+      /* istanbul ignore next -- @preserve: needs a randomUUID collision */
+      while (sessions.has(sid)) sid = generateSid();
+      // `ensureSession` is the single enforcement point for the session
+      // cap — a duplicate pre-check here would be dead code.
+      const session = ensureSession(sid);
+      if (!session) {
+        return new Response('Service Unavailable', {
+          status: 503,
+          headers: { 'Retry-After': String(closeTimeoutSec) },
+        });
+      }
       const body = buildHandshakeResponse({
         sid,
         hbTimeoutSec,
         closeTimeoutSec,
         transports: DEFAULT_TRANSPORTS,
       });
-      // Pre-create the session so a fast client's websocket upgrade
-      // doesn't race with handshake bookkeeping.
-      ensureSession(sid);
       return new Response(body, {
         status: 200,
         headers: {
           'Content-Type': 'text/plain; charset=utf-8',
-          // The legacy server sent no caching hints; mirror that.
+          'Cache-Control': 'no-store',
         },
       });
     },
@@ -262,7 +348,7 @@ export function createSocketIoShim(opts: SocketIoShimOptions): SocketIoShim {
       if (!validateSid(sid)) return null;
 
       const session = ensureSession(sid);
-
+      if (!session) return null;
       // Per §7.23: fresh connect-ack on both first accept and reconnects.
       // Legacy clients rely on the `.on('connect')` handler re-firing so
       // we always emit a `1::` frame, whether or not we've seen this sid
@@ -297,15 +383,20 @@ export function createSocketIoShim(opts: SocketIoShimOptions): SocketIoShim {
         return new Response('Bad Request', { status: 400 });
       }
       const session = ensureSession(sid);
+      if (!session) {
+        return new Response('Service Unavailable', { status: 503 });
+      }
 
       if (request.method === 'POST') {
-        // Polling POSTs carry one or more frames, separated by the
-        // legacy framer byte `\ufffd`. EtherCalc clients only ever send
-        // one per POST; the split handles both cases — a single frame
-        // comes through as `[frame]`, batched frames as N entries.
-        const body = await request.text();
-        const frames = body.split('\ufffd').filter((f) => f.length > 0);
-        for (const f of frames) processInboundFrame(sid, f);
+        const body = await readBoundedBody(request);
+        if (body === null) {
+          return new Response('Payload Too Large', { status: 413 });
+        }
+        const frames = body.split('\ufffd').filter((frame) => frame.length > 0);
+        if (frames.length > MAX_XHR_POLL_FRAMES) {
+          return new Response('Too Many Frames', { status: 413 });
+        }
+        for (const frame of frames) processInboundFrame(sid, frame);
         return new Response('1', {
           status: 200,
           headers: { 'Content-Type': 'text/plain; charset=utf-8' },
@@ -326,6 +417,9 @@ export function createSocketIoShim(opts: SocketIoShimOptions): SocketIoShim {
           headers: { 'Content-Type': 'text/plain; charset=utf-8' },
         });
       }
+      if (session.pollResolver) {
+        return new Response('Poll already pending', { status: 409 });
+      }
 
       // Otherwise, park a resolver. The next deliverFrame() satisfies it.
       const body = await new Promise<string>((resolve) => {
@@ -337,7 +431,19 @@ export function createSocketIoShim(opts: SocketIoShimOptions): SocketIoShim {
       });
     },
 
+    releaseHandshake(sid: string): void {
+      const session = sessions.get(sid);
+      if (
+        session &&
+        !session.connected &&
+        session.ws === null &&
+        session.pollResolver === null
+      ) {
+        sessions.delete(sid);
+      }
+    },
     sendToClient(sid: string, msg: ServerMessage): void {
+      pruneExpiredSessions();
       const session = sessions.get(sid);
       if (!session) return;
       // Route via the native WS if available; otherwise our own queue/ws.

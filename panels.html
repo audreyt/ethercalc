@@ -27,8 +27,8 @@
     <style> html, body, div{ height: 100%; } </style>
   </head>
   <body>
-  
-  
+
+
    <div class="container-fluid">
 
       <div class="row" style="height:80%;">
@@ -50,11 +50,6 @@
       </div>
     </div> <!-- /container -->
 
-    <script>
-      var roomID = window.location.pathname.split("/")[1]; 
-      document.getElementById('webappFrame').src = "/"+ roomID +"/app";  
-      document.getElementById('spreadsheetFrame').src = "/"+ roomID +"";  
-      document.getElementById('formdataFrame').src = "/"+ roomID +"_formdata/view";  
-    </script>
+    <script src="/static/panels.js"></script>
   </body>
 </html>

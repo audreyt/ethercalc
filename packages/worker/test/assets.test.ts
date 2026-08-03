@@ -251,6 +251,19 @@ describe("GET /multi/*", () => {
       "/multi/assets/index.css",
     ]);
   });
+
+  it.each([
+    "/multi/assets/index.js.map",
+    "/multi/assets/index.js%2Emap",
+    "/multi/assets/index.js%252Emap",
+    "/multi/assets/index.js.%6Dap",
+    "/multi/assets/invalid%",
+  ])("does not publish production source-map path %s", async (path) => {
+    const stub = buildFullStub();
+    const response = await call(path, { ASSETS: stub.ASSETS });
+    expect(response.status).toBe(404);
+    expect(stub.calls).toHaveLength(0);
+  });
 });
 
 describe("icon family (10 paths)", () => {

@@ -445,6 +445,23 @@ describe('GraphSetCells', () => {
     expect(env.ss.graphrange).toBe('NAMED');
   });
 
+  it('renders persisted range names as text instead of HTML', () => {
+    const env = makeGraphEnv();
+    installGraph(env.host);
+    const graphlist = env.doc.getElementById(env.ss.idPrefix! + 'graphlist')!;
+    graphlist.selectedIndex = 1;
+    graphlist.options[1] = {
+      text: 'malicious',
+      value: '<img src=x onerror=alert(1)>',
+      selected: true,
+    };
+    (env.ss.editor as unknown as { ecell: { coord: string } }).ecell = { coord: 'A1' };
+    env.win.GraphSetCells!();
+    const rangeDiv = env.doc.getElementById(env.ss.idPrefix! + 'graphrange')!;
+    expect(rangeDiv.textContent).toBe('<img src=x onerror=alert(1)>');
+    expect(rangeDiv.innerHTML).toBe('&lt;img src=x onerror=alert(1)&gt;');
+  });
+
   it('bails when idPrefix missing', () => {
     const env = makeGraphEnv();
     installGraph(env.host);
@@ -494,14 +511,18 @@ describe('doGraph', () => {
     expect(() => env.win.DoGraph!(false, false)).not.toThrow();
   });
 
-  it('no graphrange + no helpflag → writes "Graph range not selected" HTML', () => {
+  it('renders the no-range status as text rather than HTML', () => {
     const env = makeGraphEnv();
     env.ss.graphrange = '';
     installGraph(env.host);
-    env.host.SocialCalc.Constants['s_GraphRangeNotSelected'] = 'nope!';
+    env.host.SocialCalc.Constants['s_GraphRangeNotSelected'] =
+      '<img src=x onerror=alert(1)>';
     env.win.DoGraph!(false, false);
-    const gview = (env.ss.views as { graph: { element: { innerHTML: string } } }).graph.element;
-    expect(gview.innerHTML).toContain('nope!');
+    const gview = (env.ss.views as {
+      graph: { element: { innerHTML: string; textContent: string } };
+    }).graph.element;
+    expect(gview.textContent).toBe('<img src=x onerror=alert(1)>');
+    expect(gview.innerHTML).toBe('&lt;img src=x onerror=alert(1)&gt;');
   });
 
   it('no graphrange + no helpflag with no Constants key → default text', () => {
@@ -514,15 +535,21 @@ describe('doGraph', () => {
     expect(gview.innerHTML).toContain('Graph range not selected');
   });
 
-  it('no graphrange + helpflag=true → calls draw func with null range', () => {
+  it('renders graph help text inertly and without inline handlers', () => {
     const env = makeGraphEnv();
     env.ss.graphrange = '';
     env.ss.graphtype = 'verticalbar';
     installGraph(env.host);
+    (
+      env.host.SocialCalc.GraphTypesInfo!.verticalbar as { display: string }
+    ).display = '<img src=x onerror=alert(1)>';
     env.win.DoGraph!(true, false);
-    const gview = (env.ss.views as { graph: { element: { innerHTML: string } } }).graph.element;
-    // vertical bar's help path writes help HTML.
-    expect(gview.innerHTML).toContain('help');
+    const gview = (env.ss.views as {
+      graph: { element: { innerHTML: string; textContent: string } };
+    }).graph.element;
+    expect(gview.textContent).toContain('<img src=x onerror=alert(1)>');
+    expect(gview.innerHTML).not.toContain('<img');
+    expect(gview.innerHTML).not.toContain('onclick');
   });
 
   it('resolves a name range via Formula.LookupName', () => {
@@ -561,6 +588,33 @@ describe('doGraph', () => {
     env.win.DoGraph!(false, false);
     const gview = (env.ss.views as { graph: { element: { innerHTML: string } } }).graph.element;
     expect(gview.innerHTML).toContain('Unknown range name');
+  });
+
+  it('renders an unknown persisted range name as text instead of HTML', () => {
+    const env = makeGraphEnv();
+    env.ss.graphrange = '<img src=x onerror=alert(1)>';
+    env.host.SocialCalc.Formula = { LookupName: () => undefined as unknown as never };
+    installGraph(env.host);
+    env.win.DoGraph!(false, false);
+    const graphView = env.ss.views?.['graph'];
+    if (!graphView || typeof graphView !== 'object' || !('element' in graphView)) {
+      throw new Error('missing graph view');
+    }
+    const element = graphView.element;
+    if (
+      !element ||
+      typeof element !== 'object' ||
+      !('innerHTML' in element) ||
+      !('textContent' in element)
+    ) {
+      throw new Error('invalid graph view element');
+    }
+    expect(element.textContent).toBe(
+      'Unknown range name: <img src=x onerror=alert(1)>',
+    );
+    expect(element.innerHTML).toBe(
+      'Unknown range name: &lt;img src=x onerror=alert(1)&gt;',
+    );
   });
 
   it('named range value missing `|X|Y|` format → early return', () => {
@@ -1369,5 +1423,72 @@ describe('test helpers', () => {
     expect(op.text).toBe('text');
     expect(op.value).toBe('');
     expect(op.selected).toBe(false);
+  });
+});
+
+describe('graph help rendering with a real document', () => {
+  interface FakeNode {
+    tagName: string;
+    type?: string;
+    value?: string;
+    text?: string;
+    listeners: Record<string, () => void>;
+    addEventListener?(type: string, cb: () => void): void;
+  }
+
+  it('builds a Hide Help control instead of injecting inline HTML', () => {
+    const env = setupChartEnv('verticalbar');
+    const created: FakeNode[] = [];
+    const children: FakeNode[] = [];
+    const gview = (env.ss.views as { graph: { element: Record<string, unknown> } })
+      .graph.element;
+    gview['ownerDocument'] = {
+      createElement(tagName: string): FakeNode {
+        const node: FakeNode = {
+          tagName,
+          listeners: {},
+          addEventListener(type: string, cb: () => void) {
+            node.listeners[type] = cb;
+          },
+        };
+        created.push(node);
+        return node;
+      },
+      createTextNode(text: string): FakeNode {
+        const node: FakeNode = { tagName: '#text', text, listeners: {} };
+        created.push(node);
+        return node;
+      },
+    };
+    gview['replaceChildren'] = (...nodes: FakeNode[]): void => {
+      children.length = 0;
+      children.push(...nodes);
+    };
+
+    installGraph(env.host);
+    env.win.DoGraph!(true, false);
+
+    const button = created.find((node) => node.tagName === 'input');
+    expect(button?.type).toBe('button');
+    expect(button?.value).toBe('Hide Help');
+    // button, br, br, description — no markup string is ever parsed.
+    expect(children.map((node) => node.tagName)).toEqual([
+      'input',
+      'br',
+      'br',
+      '#text',
+    ]);
+    expect(children[3]?.text).toContain('This is the help text');
+
+    // Dismissing re-renders the chart through the same entry point rather
+    // than an inline `onclick` (which CSP now blocks).
+    const redraws: Array<[boolean, boolean]> = [];
+    const original = env.win.DoGraph!;
+    env.win.DoGraph = ((help: boolean, flag: boolean) => {
+      redraws.push([help, flag]);
+    }) as NonNullable<typeof env.win.DoGraph>;
+    button!.listeners['click']!();
+    env.win.DoGraph = original;
+    expect(redraws).toEqual([[false, false]]);
   });
 });

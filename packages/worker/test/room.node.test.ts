@@ -1,3 +1,4 @@
+import { MAX_COMMAND_UTF8_BYTES } from '@ethercalc/shared/messages';
 import {
   auditKey,
   chatKey,
@@ -8,6 +9,9 @@ import {
 } from '@ethercalc/shared/storage-keys';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { Env } from '../src/env.ts';
+import { computeAuth } from '../src/lib/auth.ts';
+import { CHAT_HISTORY_KEEP } from '../src/lib/seq-store.ts';
+import { SNAPSHOT_CHUNK_BYTES } from '../src/lib/snapshot-storage.ts';
 import { RoomDO } from '../src/room.ts';
 
 /**
@@ -50,8 +54,13 @@ function fakeStorage(record: FakeStorageRecord): DurableObjectStorage {
       // batched form so it can fetch N chunk keys in one hop.
       if (typeof key === 'string') return m.get(key);
       if (Array.isArray(key)) {
+        if (key.length > 128) {
+          throw new RangeError('get(keys) supports at most 128 keys');
+        }
         const out = new Map<string, unknown>();
-        for (const k of key) if (m.has(k as string)) out.set(k as string, m.get(k as string));
+        for (const k of key) {
+          if (m.has(k as string)) out.set(k as string, m.get(k as string));
+        }
         return out;
       }
       throw new Error('unexpected get argument shape');
@@ -65,7 +74,11 @@ function fakeStorage(record: FakeStorageRecord): DurableObjectStorage {
         return;
       }
       if (key !== null && typeof key === 'object') {
-        for (const [k, v] of Object.entries(key)) m.set(k, v);
+        const entries = Object.entries(key);
+        if (entries.length > 128) {
+          throw new RangeError('put(entries) supports at most 128 key-value pairs');
+        }
+        for (const [k, v] of entries) m.set(k, v);
         return;
       }
       throw new Error('unexpected put argument shape');
@@ -75,6 +88,9 @@ function fakeStorage(record: FakeStorageRecord): DurableObjectStorage {
       // (matching DurableObjectStorage.delete's overload shape).
       if (typeof key === 'string') return m.delete(key);
       if (Array.isArray(key)) {
+        if (key.length > 128) {
+          throw new RangeError('delete(keys) supports at most 128 keys');
+        }
         let n = 0;
         for (const k of key) if (m.delete(k as string)) n += 1;
         return n;
@@ -168,6 +184,15 @@ async function drainWaitUntil(
   await Promise.all(state.__waitUntilPromises);
 }
 
+
+const FUTURE_SESSION_EXP = Number.MAX_SAFE_INTEGER;
+
+function sessionFor(
+  uid: string,
+  exp: number = FUTURE_SESSION_EXP,
+): string {
+  return `session:${uid}:${exp}`;
+}
 /**
  * WebSocket + state extensions needed for the hibernation-API surface.
  * Node doesn't ship `WebSocketPair` or `state.acceptWebSocket`; we supply
@@ -178,20 +203,38 @@ interface FakeWsLog {
   sent: string[];
   closed?: boolean;
   serializedAttachment?: unknown;
+  closeCode?: number;
+  closeReason?: string;
 }
 function makeFakeWs(log: FakeWsLog, attachment?: unknown): WebSocket {
+  const record =
+    attachment !== null && typeof attachment === 'object'
+      ? (attachment as Record<string, unknown>)
+      : null;
+  const initialAttachment =
+    record !== null &&
+    typeof record['uid'] === 'string' &&
+    typeof record['sessionExp'] === 'number' &&
+    !Object.hasOwn(record, 'session')
+      ? {
+          ...record,
+          session: sessionFor(record['uid'], record['sessionExp']),
+        }
+      : attachment;
   return {
     send(data: string) {
       log.sent.push(data);
     },
-    serializeAttachment(v: unknown) {
-      log.serializedAttachment = v;
+    serializeAttachment(value: unknown) {
+      log.serializedAttachment = value;
     },
     deserializeAttachment(): unknown {
-      return attachment ?? null;
+      return log.serializedAttachment ?? initialAttachment ?? null;
     },
-    close() {
+    close(code?: number, reason?: string) {
       log.closed = true;
+      if (code !== undefined) log.closeCode = code;
+      if (reason !== undefined) log.closeReason = reason;
     },
   } as unknown as WebSocket;
 }
@@ -222,8 +265,40 @@ function makeWsAwareState(
   return { state, accepted, peers };
 }
 
+function withSessionAuth(
+  env: Env,
+  revoked: ReadonlySet<string> = new Set(),
+  verifications: string[] = [],
+): Env {
+  return {
+    ...env,
+    ETHERCALC_AUTH: '1',
+    AUTH: {
+      idFromName: () => ({}) as DurableObjectId,
+      get: () =>
+        ({
+          fetch: async (_input: RequestInfo | URL, init?: RequestInit) => {
+            const body = JSON.parse(String(init?.body)) as { session?: unknown };
+            if (typeof body.session === 'string') verifications.push(body.session);
+            if (
+              typeof body.session !== 'string' ||
+              revoked.has(body.session)
+            ) {
+              return new Response('Invalid session', { status: 401 });
+            }
+            const match = /^session:([^:]+):(\d+)$/.exec(body.session);
+            if (!match) {
+              return new Response('Invalid session', { status: 401 });
+            }
+            return Response.json({ uid: match[1], exp: Number(match[2]) });
+          },
+        }) as unknown as DurableObjectStub,
+    } as unknown as DurableObjectNamespace,
+  };
+}
+
 function makeEnv(): Env {
-  return { ROOM: {} as DurableObjectNamespace };
+  return withSessionAuth({ ROOM: {} as DurableObjectNamespace });
 }
 
 const PRIVATE_ACL = {
@@ -232,7 +307,6 @@ const PRIVATE_ACL = {
   writers: ['uid-writer'],
 };
 
-const FUTURE_SESSION_EXP = Number.MAX_SAFE_INTEGER;
 
 function markPrivate(record: FakeStorageRecord): void {
   record.map.set(STORAGE_KEYS.metaAccess, 'private');
@@ -666,7 +740,6 @@ describe('RoomDO (unit, direct construction)', () => {
       ['POST', '/_do/seed'],
       ['POST', '/_do/snapshot-chunk?seq=0&chunks=1'],
       ['GET', '/_do/ws'],
-      ['POST', '/_do/fire-trigger?cell=A1'],
     ] as const;
 
     for (const [method, path] of routes) {
@@ -711,6 +784,13 @@ describe('RoomDO (unit, direct construction)', () => {
       exists: true,
       updatedAt: expect.any(Number),
     });
+
+    // The public compatibility route authenticates ETHERCALC_KEY before
+    // dispatch; the scheduled handler reaches the DO through its binding.
+    const fire = await room.fetch(
+      new Request('https://do/_do/fire-trigger?cell=A1', { method: 'POST' }),
+    );
+    expect(fire.status).toBe(200);
   });
 
   it('keeps a restored private room out of the rooms index on pitr-touch', async () => {
@@ -937,13 +1017,27 @@ describe('RoomDO (unit, direct construction)', () => {
     const res = await room.fetch(
       new Request('https://do/_do/snapshot', {
         method: 'PUT',
-        body: 'socialcalc:version:1.5\nsheet: cell:A1:t:hi',
+        body:
+          'socialcalc:version:1.5\nsheet:c:1:r:1:tvf:1\ncell:A1:t:hi',
       }),
     );
     expect(res.status).toBe(201);
     expect(await res.text()).toBe('OK');
     expect(record.map.get(STORAGE_KEYS.snapshot)).toContain('cell:A1:t:hi');
     expect(record.map.get(STORAGE_KEYS.metaUpdatedAt)).toEqual(expect.any(Number));
+  });
+
+  it('PUT /_do/snapshot rejects oversized declared dimensions atomically', async () => {
+    const res = await room.fetch(
+      new Request('https://do/_do/snapshot', {
+        method: 'PUT',
+        body:
+          'socialcalc:version:1.5\nsheet:c:702:r:1048576:tvf:1\n',
+      }),
+    );
+    expect(res.status).toBe(413);
+    expect(await res.text()).toBe('snapshot exceeds sheet limits');
+    expect(record.map.size).toBe(0);
   });
 
   it('GET /_do/snapshot returns stored body after PUT', async () => {
@@ -1015,6 +1109,19 @@ describe('RoomDO (unit, direct construction)', () => {
     expect(mockExec).not.toHaveBeenCalled();
   });
 
+  it('POST /_do/commands rejects declared-dimension expansion before execution', async () => {
+    const res = await room.fetch(
+      new Request('https://do/_do/commands', {
+        method: 'POST',
+        body: 'set sheet lastrow 200001',
+      }),
+    );
+    expect(res.status).toBe(413);
+    expect(await res.text()).toBe('command exceeds sheet limits');
+    expect(mockExec).not.toHaveBeenCalled();
+    expect(record.map.size).toBe(0);
+  });
+
   it('POST /_do/commands appends log+audit, runs through SC, updates snapshot', async () => {
     mockSave.mockReturnValueOnce('NEWSNAP');
     const res = await room.fetch(
@@ -1032,6 +1139,24 @@ describe('RoomDO (unit, direct construction)', () => {
     expect(record.map.get(logKey(0))).toBe('set A1 value n 1');
     expect(record.map.get(auditKey(0))).toBe('set A1 value n 1');
     expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('NEWSNAP');
+  });
+
+  it('persists a bounded audit marker for an oversized import command', async () => {
+    mockSave.mockReturnValueOnce('NEWSNAP');
+    const command = `set A1 text t ${'x'.repeat(MAX_COMMAND_UTF8_BYTES)}`;
+    const res = await room.fetch(
+      new Request('https://do/_do/commands?name=large-import', {
+        method: 'POST',
+        body: command,
+      }),
+    );
+    expect(res.status).toBe(202);
+    expect(mockExec).toHaveBeenCalledWith(command);
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('NEWSNAP');
+    expect(record.map.get(logKey(0))).toBe(
+      `[oversized command omitted: ${command.length} UTF-16 code units]`,
+    );
+    expect(record.map.get(auditKey(0))).toBe(record.map.get(logKey(0)));
   });
 
   it('POST /_do/commands broadcasts the applied command to connected peers', async () => {
@@ -1057,12 +1182,13 @@ describe('RoomDO (unit, direct construction)', () => {
     });
   });
 
-  it('POST /_do/commands stores a large snapshot as chunks', async () => {
+  it('POST /_do/commands atomically transitions a small snapshot to chunks', async () => {
     // Force the mock save to exceed the 100 KiB SNAPSHOT_CHUNK_BYTES
     // ceiling so `#appendCommand` routes through snapshotEntries'
     // chunked path: meta row + snapshot:chunk:<i> keys, no single
     // `snapshot` key.
     const big = 'B'.repeat(210 * 1024); // ~2.1× chunk size → 3 chunks
+    record.map.set(STORAGE_KEYS.snapshot, 'old-small-snapshot');
     mockSave.mockReturnValueOnce(big);
     const res = await room.fetch(
       new Request('https://do/_do/commands', {
@@ -1075,6 +1201,8 @@ describe('RoomDO (unit, direct construction)', () => {
     expect(record.map.get(STORAGE_KEYS.snapshotMeta)).toEqual({ chunks: 3 });
     expect(record.map.has(`snapshot:chunk:${String(0).padStart(16, '0')}`)).toBe(true);
     expect(record.map.has(`snapshot:chunk:${String(2).padStart(16, '0')}`)).toBe(true);
+    const stored = await room.fetch(new Request('https://do/_do/snapshot'));
+    expect(await stored.text()).toBe(big);
   });
 
   it('POST /_do/commands skips delete when prior-chunked state is re-chunked to same count', async () => {
@@ -1188,6 +1316,13 @@ describe('RoomDO (unit, direct construction)', () => {
     expect(mockExportCell).toHaveBeenCalledWith('A 1');
   });
 
+  it('rejects malformed percent encoding in a cell path', async () => {
+    const res = await room.fetch(
+      new Request('https://do/_do/cells/%E0%A4%A'),
+    );
+    expect(res.status).toBe(400);
+  });
+
   it('unknown /_do/cells/ path that is not a cell still falls through to 501 on other methods', async () => {
     const res = await room.fetch(
       new Request('https://do/_do/cells/A1', { method: 'POST' }),
@@ -1216,6 +1351,14 @@ describe('RoomDO (unit, direct construction)', () => {
     await room.putEcell('alice', 'A1');
     await room.putEcell('bob', 'B2');
     expect(await room.listEcells()).toEqual({ alice: 'A1', bob: 'B2' });
+  });
+
+  it('preserves a __proto__ username without mutating the result prototype', async () => {
+    await room.putEcell('__proto__', 'C3');
+    const ecells = await room.listEcells();
+    expect(Object.getPrototypeOf(ecells)).toBeNull();
+    expect(Object.hasOwn(ecells, '__proto__')).toBe(true);
+    expect(ecells['__proto__']).toBe('C3');
   });
 
   it('POST /_do/commands resumes sequence from existing log+audit', async () => {
@@ -1713,13 +1856,7 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
     expect(typeof roomsCall?.params[1]).toBe('number');
   });
 
-  /**
-   * Attachment fallback: the DO was opened with a handshake attachment of
-   * `{room: 'alpha', …}`, but the client frame declares `room: 'beta'`.
-   * Since the append lands in the DO's own storage (the one opened for
-   * `alpha`), the mirror must follow the handshake room — not the frame.
-   */
-  it('WS execute mirrors the handshake-attachment room, not the frame room', async () => {
+  it('drops a state-changing frame whose room differs from the attachment', async () => {
     const record3: FakeStorageRecord = { map: new Map() };
     const d1Calls3: D1Call[] = [];
     const env = makeEnvWithDb(d1Calls3);
@@ -1737,26 +1874,38 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
         cmdstr: 'set A1 value n 1',
       }),
     );
-    // Both the rooms index AND the audit mirror follow the handshake room.
-    const roomsCall = d1Calls3.find((c) => c.sql.includes('INSERT INTO rooms'));
-    expect(roomsCall?.params[0]).toBe('alpha');
-    const auditCall = d1Calls3.find((c) => c.sql.includes('INSERT INTO audit_log'));
-    expect(auditCall?.params[0]).toBe('alpha');
+    expect(d1Calls3).toHaveLength(0);
+    expect(record3.map.get(logKey(0))).toBeUndefined();
+    expect(log.closed).not.toBe(true);
   });
 
-  /**
-   * When the handshake attachment is missing (legacy handshake or default
-   * fallback), the mirror room falls back to the frame's `room` field so
-   * we still register the edit somewhere sensible.
-   */
-  it('WS execute with empty attachment room falls back to frame room', async () => {
+  it('drops a broadcast frame whose room differs from the attachment', async () => {
+    const peerLog: FakeWsLog = { sent: [] };
+    const peer = makeFakeWs(peerLog);
+    const { state } = makeWsAwareState('x', { map: new Map() }, [peer]);
+    const wsRoom = new RoomDO(state, makeEnv());
+    const ws = makeFakeWs(
+      { sent: [] },
+      { user: 'u', room: 'alpha', auth: 'alpha' },
+    );
+    await wsRoom.webSocketMessage(
+      ws,
+      JSON.stringify({
+        type: 'ask.ecell',
+        room: 'beta',
+        user: 'u',
+      }),
+    );
+    expect(peerLog.sent).toHaveLength(0);
+  });
+
+  it('drops state-changing frames when the attachment is missing', async () => {
     const record4: FakeStorageRecord = { map: new Map() };
     const d1Calls4: D1Call[] = [];
     const env = makeEnvWithDb(d1Calls4);
     const { state } = makeWsAwareState('x', record4, []);
     const wsRoom = new RoomDO(state, env);
     const log: FakeWsLog = { sent: [] };
-    // makeFakeWs defaults attachment to { user: '', room: '', auth: '' }.
     const ws = makeFakeWs(log);
     await wsRoom.webSocketMessage(
       ws,
@@ -1768,8 +1917,8 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
         cmdstr: 'set A1 value n 1',
       }),
     );
-    const roomsCall = d1Calls4.find((c) => c.sql.includes('INSERT INTO rooms'));
-    expect(roomsCall?.params[0]).toBe('fallback');
+    expect(d1Calls4).toHaveLength(0);
+    expect(record4.map.get(logKey(0))).toBeUndefined();
   });
 
   /**
@@ -1799,15 +1948,13 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
     expect(d1Calls5.some((c) => c.sql.includes('DELETE FROM audit_log'))).toBe(true);
   });
 
-  it('WS stopHuddle with empty attachment falls back to the frame room for unindex', async () => {
+  it('does not unindex a frame room when the attachment is missing', async () => {
     const record6: FakeStorageRecord = { map: new Map() };
     const d1Calls6: D1Call[] = [];
     const env = makeEnvWithDb(d1Calls6);
     const { state } = makeWsAwareState('x', record6, []);
     const wsRoom = new RoomDO(state, env);
-    const log: FakeWsLog = { sent: [] };
-    // Default attachment: { user: '', room: '', auth: '' }.
-    const ws = makeFakeWs(log);
+    const ws = makeFakeWs({ sent: [] });
     await wsRoom.webSocketMessage(
       ws,
       JSON.stringify({
@@ -1816,9 +1963,7 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
         auth: 'fallback-delete',
       }),
     );
-    expect(d1Calls6.find((c) => c.sql.includes('DELETE FROM rooms'))?.params).toEqual([
-      'fallback-delete',
-    ]);
+    expect(d1Calls6).toHaveLength(0);
   });
 
   it('WS stopHuddle is blocked for Sandstorm viewers without modify', async () => {
@@ -1956,6 +2101,25 @@ describe('RoomDO — cross-DO rename primitives (Phase 6)', () => {
     expect(await res.text()).toMatch(/rename body must be \{to: string\}/);
   });
 
+  it('rejects an overlong rename target before deriving a DO id', async () => {
+    const siblingCalls: SiblingCall[] = [];
+    const record: FakeStorageRecord = { map: new Map() };
+    record.map.set(STORAGE_KEYS.snapshot, 'snap');
+    const room = new RoomDO(
+      makeState('x', record),
+      makeRenameEnv(siblingCalls),
+    );
+    const res = await room.fetch(
+      new Request('https://do/_do/rename', {
+        method: 'POST',
+        body: JSON.stringify({ to: 'x'.repeat(2049) }),
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(siblingCalls).toHaveLength(0);
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('snap');
+  });
+
   it('POST /_do/rename with no snapshot returns 204 no-op', async () => {
     const record: FakeStorageRecord = { map: new Map() };
     const room = new RoomDO(makeState('x', record), makeRenameEnv([]));
@@ -1981,12 +2145,12 @@ describe('RoomDO — cross-DO rename primitives (Phase 6)', () => {
     const res = await room.fetch(
       new Request('https://do/_do/rename', {
         method: 'POST',
-        body: JSON.stringify({ to: 'alpha' }),
+        body: JSON.stringify({ to: 'alpha room' }),
       }),
     );
     expect(res.status).toBe(201);
     expect(siblingCalls).toHaveLength(1);
-    expect(siblingCalls[0]?.idFromName).toBe('alpha');
+    expect(siblingCalls[0]?.idFromName).toBe('alpha%20room');
     const parsed = JSON.parse(siblingCalls[0]?.init?.body as string) as {
       snapshot: string;
       log: string[];
@@ -2285,6 +2449,27 @@ describe('RoomDO — POST /_do/seed (Phase 11b migration)', () => {
     expect(chatCall?.params.slice(0, 4)).toEqual(['gamma', 0, 1700, 'hello']);
   });
 
+  it('atomically chunks seed state across the 128-key storage batch limit', async () => {
+    const record: FakeStorageRecord = {
+      map: new Map(Array.from({ length: 129 }, (_, i) => [`stale:${i}`, 'yes'])),
+    };
+    const state = makeState('x', record);
+    const room = new RoomDO(state, makeEnv());
+    const audit = Array.from({ length: 129 }, (_, i) => `audit-${i}`);
+    const res = await room.fetch(
+      new Request('https://do/_do/seed', {
+        method: 'POST',
+        body: JSON.stringify({ audit, updatedAt: 1700 }),
+      }),
+    );
+
+    expect(res.status).toBe(201);
+    expect([...record.map.keys()].some((key) => key.startsWith('stale:'))).toBe(false);
+    expect(record.map.get(auditKey(0))).toBe('audit-0');
+    expect(record.map.get(auditKey(128))).toBe('audit-128');
+    await drainWaitUntil(state);
+  });
+
   it('skipIndex:true suppresses the D1 mirror entirely', async () => {
     // The migrator sends skipIndex:true so it can batch index writes
     // via /_migrate/bulk-index. The DO must NOT schedule the mirror at
@@ -2443,10 +2628,10 @@ describe('RoomDO — fold: log ring buffer', () => {
     await room.fetch(
       new Request('https://do/_do/commands', { method: 'POST', body: 'newcmd' }),
     );
-    // Appended at seq 1024 → log:1024 present, log:0 evicted, audit:0 kept.
+    // Appended at seq 1024: both live tails evict their oldest entry.
     expect(record.map.get(logKey(1024))).toBe('newcmd');
     expect(record.map.has(logKey(0))).toBe(false);
-    expect(record.map.get(auditKey(0))).toBe('c0'); // audit never trimmed
+    expect(record.map.has(auditKey(0))).toBe(false);
     expect(record.map.get(auditKey(1024))).toBe('newcmd');
   });
 
@@ -2458,6 +2643,32 @@ describe('RoomDO — fold: log ring buffer', () => {
     );
     // seq 0 < LOG_RING → no delete. log:0 stays.
     expect(record.map.get(logKey(0))).toBe('first');
+  });
+
+  it('drops the cached spreadsheet when the storage transaction rolls back', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const state = makeState('x', record);
+    Object.assign(state.storage, {
+      async transaction() {
+        throw new Error('storage transaction failed');
+      },
+    });
+    const room = new RoomDO(state, makeEnv());
+
+    await expect(
+      room.fetch(
+        new Request('https://do/_do/commands', {
+          method: 'POST',
+          body: 'set A1 value n 1',
+        }),
+      ),
+    ).rejects.toThrow('storage transaction failed');
+
+    // The command already mutated the in-memory sheet; a rolled-back write
+    // must not leave that mutation visible to the next request.
+    expect(record.map.has(logKey(0))).toBe(false);
+    const cells = await room.fetch(new Request('https://do/_do/cells'));
+    expect(cells.status).toBe(200);
   });
 });
 
@@ -2780,6 +2991,18 @@ describe('RoomDO — fold: seq counters survive a trim + isolate restart', () =>
     expect(record.map.get(chatKey(0))).toBe('first');
   });
 
+  it('appendChat evicts the oldest row as soon as the live tail fills', async () => {
+    const record: FakeStorageRecord = { map: new Map(), alarm: null };
+    for (let i = 0; i < CHAT_HISTORY_KEEP; i++) {
+      record.map.set(chatKey(i), `old${i}`);
+    }
+    const room = new RoomDO(makeState('x', record), makeEnv());
+    const seq = await room.appendChat('NEW');
+    expect(seq).toBe(CHAT_HISTORY_KEEP);
+    expect(record.map.has(chatKey(0))).toBe(false);
+    expect(record.map.get(chatKey(CHAT_HISTORY_KEEP))).toBe('NEW');
+  });
+
   it('POST /_do/commands over a non-contiguous log window resumes from the max index', async () => {
     // Simulate the post-restart state of a long-lived room whose log was
     // ring-trimmed: only log:2000..2002 remain. The next command must land
@@ -2876,21 +3099,147 @@ describe('RoomDO — fold: inline WS caps', () => {
     ).rejects.toThrow();
   });
 
-  it('drops an oversized WS frame (> MAX_FRAME) before parsing', async () => {
+  it('closes a socket that sends a frame beyond the one-MiB cap', async () => {
     const record: FakeStorageRecord = { map: new Map() };
     const { state } = makeWsAwareState('x', record, []);
     const room = new RoomDO(state, makeEnv());
     const log: FakeWsLog = { sent: [] };
     const ws = makeFakeWs(log, { user: 'alice', room: 'r', auth: 'h' });
-    // A valid-shaped chat frame padded past MAX_FRAME (1 MiB). Without the
-    // cap it would persist a chat entry; with the cap it's silently dropped.
     const huge = 'x'.repeat(1024 * 1024 + 1);
     await room.webSocketMessage(
       ws,
       JSON.stringify({ type: 'chat', room: 'r', user: 'alice', msg: huge }),
     );
-    expect(record.map.has(chatKey(0))).toBe(false); // nothing persisted
-    expect(log.sent).toHaveLength(0); // nothing broadcast
+    expect(record.map.has(chatKey(0))).toBe(false);
+    expect(log.sent).toHaveLength(0);
+    expect(log.closeCode).toBe(1009);
+  });
+
+  it('closes a socket whose command exceeds declared sheet limits', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const { state } = makeWsAwareState('x', record, []);
+    const room = new RoomDO(state, makeEnv());
+    const log: FakeWsLog = { sent: [] };
+    const ws = makeFakeWs(log, { user: 'alice', room: 'r', auth: 'r' });
+    // Earlier describes in this file share `mockExec` without clearing it.
+    mockExec.mockClear();
+    await room.webSocketMessage(
+      ws,
+      JSON.stringify({
+        type: 'execute',
+        room: 'r',
+        user: 'alice',
+        auth: 'r',
+        cmdstr: 'set sheet lastrow 200001',
+      }),
+    );
+    expect(log.closeCode).toBe(1008);
+    expect(log.closeReason).toBe('Command exceeds sheet limits');
+    expect(mockExec).not.toHaveBeenCalled();
+    expect(record.map.size).toBe(0);
+  });
+
+  it('closes a socket that exceeds the hibernation-safe frame rate', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const { state } = makeWsAwareState('x', record, []);
+    const room = new RoomDO(state, makeEnv());
+    const log: FakeWsLog = { sent: [] };
+    const ws = makeFakeWs(log, { user: 'alice', room: 'r', auth: 'h' });
+    for (let index = 0; index <= 300; index++) {
+      await room.webSocketMessage(ws, '{}');
+    }
+    expect(log.closeCode).toBe(1008);
+    expect(log.closeReason).toBe('Message rate exceeded');
+  });
+
+  it('restores the aggregate room-rate window after hibernation', async () => {
+    const now = Date.now();
+    const peers = Array.from({ length: 5 }, (_, index) =>
+      makeFakeWs(
+        { sent: [] },
+        {
+          user: `user-${index}`,
+          room: 'r',
+          auth: 'h',
+          rateWindowStartedAt: now,
+          rateMessageCount: 300,
+        },
+      ),
+    );
+    const record: FakeStorageRecord = { map: new Map() };
+    const { state } = makeWsAwareState('x', record, peers);
+    const room = new RoomDO(state, makeEnv());
+    const finalLog: FakeWsLog = { sent: [] };
+    const finalSocket = makeFakeWs(finalLog, {
+      user: 'final',
+      room: 'r',
+      auth: 'h',
+    });
+
+    await room.webSocketMessage(finalSocket, '{}');
+
+    expect(finalLog.closeCode).toBe(1008);
+    expect(finalLog.closeReason).toBe('Room message rate exceeded');
+  });
+
+  it('folds a rehydrated sender into the room window when it is not yet listed', async () => {
+    // getWebSockets() can miss the socket delivering this very frame right
+    // after an isolate restart; its own attachment still carries the window,
+    // and dropping it would hand an attacker a free room-budget reset.
+    // Four listed peers hold 1200 of the 1500 room budget; the sender's own
+    // 300 is what pushes the room (not just the socket) over.
+    const now = Date.now();
+    const peers = Array.from({ length: 4 }, (_unused, index) =>
+      makeFakeWs(
+        { sent: [] },
+        {
+          user: `user-${index}`,
+          room: 'r',
+          auth: 'h',
+          rateWindowStartedAt: now,
+          rateMessageCount: 300,
+        },
+      ),
+    );
+    const record: FakeStorageRecord = { map: new Map() };
+    const { state } = makeWsAwareState('x', record, peers);
+    const room = new RoomDO(state, makeEnv());
+    const log: FakeWsLog = { sent: [] };
+    const ws = makeFakeWs(log, {
+      user: 'alice',
+      room: 'r',
+      auth: 'h',
+      rateWindowStartedAt: now,
+      rateMessageCount: 300,
+    });
+
+    await room.webSocketMessage(ws, '{}');
+
+    expect(log.closeCode).toBe(1008);
+    // Room-wide, not the per-socket cap: without the fold the room counter
+    // would sit at 1201 and the reason would be 'Message rate exceeded'.
+    expect(log.closeReason).toBe('Room message rate exceeded');
+  });
+
+  it('starts a fresh room window once the previous one has elapsed', async () => {
+    const start = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(start);
+    try {
+      const record: FakeStorageRecord = { map: new Map() };
+      const { state } = makeWsAwareState('x', record, []);
+      const room = new RoomDO(state, makeEnv());
+      const log: FakeWsLog = { sent: [] };
+      const ws = makeFakeWs(log, { user: 'alice', room: 'r', auth: 'h' });
+      for (let index = 0; index < 20; index++) {
+        await room.webSocketMessage(ws, '{}');
+      }
+      // One tick past the 10s hibernation-safe window.
+      clock.mockReturnValue(start + 10_001);
+      await room.webSocketMessage(ws, '{}');
+      expect(log.closed).toBeUndefined();
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   it('rejects a legacy-ws upgrade with 426 without Upgrade header', async () => {
@@ -2913,7 +3262,103 @@ describe('RoomDO — fold: inline WS caps', () => {
     expect(res.status).toBe(503);
   });
 
-  it('legacy frame with empty attachment.room forwards execute to the room DO', async () => {
+  it('legacy session-host execute falls back to the handshake auth token', async () => {
+    const fetches: Array<{ url: string; body: string }> = [];
+    const env: Env = {
+      ROOM: {
+        idFromName: (name: string) => ({ toString: () => name }) as DurableObjectId,
+        get: () =>
+          ({
+            fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+              fetches.push({
+                url: typeof input === 'string' ? input : String(input),
+                body: typeof init?.body === 'string' ? init.body : '',
+              });
+              return new Response('', { status: 202 });
+            },
+          }) as unknown as DurableObjectStub,
+      } as unknown as DurableObjectNamespace,
+      ETHERCALC_KEY: 'legacy-secret',
+    };
+    const room = new RoomDO(makeState('x', { map: new Map() }), env);
+    const ws = makeFakeWs(
+      { sent: [] },
+      {
+        user: '',
+        room: '',
+        auth: await computeAuth('legacy-secret', 'sheet1'),
+        legacy: true,
+      },
+    );
+    // No `auth` on the frame — the handshake token is the only credential.
+    const payload = {
+      type: 'execute',
+      room: 'sheet1',
+      user: 'u',
+      cmdstr: 'set A1 text t hi',
+    };
+    await room.webSocketMessage(
+      ws,
+      `5:::${JSON.stringify({ name: 'data', args: [payload] })}`,
+    );
+    expect(fetches).toHaveLength(1);
+    expect(fetches[0]!.body).toBe('set A1 text t hi');
+  });
+
+  it('legacy room frames without a user field still dispatch', async () => {
+    // `stopHuddle` carries no `user`, so the identity rebind is skipped —
+    // the frame must still reach its handler.
+    const record: FakeStorageRecord = { map: new Map() };
+    record.map.set(STORAGE_KEYS.snapshot, 'huddle-save');
+    const { state } = makeWsAwareState('x', record, []);
+    const room = new RoomDO(state, makeEnv());
+    const ws = makeFakeWs(
+      { sent: [] },
+      { user: 'alice', room: 'r', auth: 'r', legacy: true },
+    );
+    await room.webSocketMessage(
+      ws,
+      `5:::${JSON.stringify({ name: 'data', args: [{ type: 'stopHuddle', room: 'r' }] })}`,
+    );
+    expect(record.map.has(STORAGE_KEYS.snapshot)).toBe(false);
+  });
+
+  it('closes a socket whose attachment becomes unreadable before the reply', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const { state } = makeWsAwareState('x', record, []);
+    const room = new RoomDO(state, makeEnv());
+    const log: FakeWsLog = { sent: [] };
+    let reads = 0;
+    const attachment = { user: 'alice', room: 'r', auth: 'h' };
+    const ws = {
+      send(data: string) {
+        log.sent.push(data);
+      },
+      serializeAttachment() {},
+      deserializeAttachment() {
+        reads += 1;
+        // First read feeds dispatch; the reply path re-reads and fails.
+        if (reads > 1) throw new Error('attachment corrupt');
+        return attachment;
+      },
+      close(code?: number, reason?: string) {
+        log.closed = true;
+        if (code !== undefined) log.closeCode = code;
+        if (reason !== undefined) log.closeReason = reason;
+      },
+    } as unknown as WebSocket;
+
+    await room.webSocketMessage(
+      ws,
+      JSON.stringify({ type: 'ask.log', room: 'r', user: 'alice' }),
+    );
+
+    expect(log.sent).toEqual([]);
+    expect(log.closeCode).toBe(1008);
+    expect(log.closeReason).toBe('Session expired');
+  });
+
+  it('legacy session-host execute requires the configured room HMAC', async () => {
     const fetches: Array<{ url: string; body: string }> = [];
     const env: Env = {
       ROOM: {
@@ -2935,6 +3380,7 @@ describe('RoomDO — fold: inline WS caps', () => {
             },
           }) as unknown as DurableObjectStub,
       } as unknown as DurableObjectNamespace,
+      ETHERCALC_KEY: 'legacy-secret',
     };
     const record: FakeStorageRecord = { map: new Map() };
     const room = new RoomDO(makeState('x', record), env);
@@ -2945,11 +3391,15 @@ describe('RoomDO — fold: inline WS caps', () => {
       type: 'execute',
       room: 'sheet1',
       user: 'u',
-      auth: 'a',
+      auth: 'invalid',
       cmdstr: 'set A1 text t hi',
     };
-    const frame = `5:::${JSON.stringify({ name: 'data', args: [payload] })}`;
-    await room.webSocketMessage(ws, frame);
+    const invalidFrame = `5:::${JSON.stringify({ name: 'data', args: [payload] })}`;
+    await room.webSocketMessage(ws, invalidFrame);
+    expect(fetches).toHaveLength(0);
+    payload.auth = await computeAuth('legacy-secret', payload.room);
+    const validFrame = `5:::${JSON.stringify({ name: 'data', args: [payload] })}`;
+    await room.webSocketMessage(ws, validFrame);
     expect(fetches).toHaveLength(1);
     expect(fetches[0]!.url).toContain('/_do/commands');
     expect(fetches[0]!.url).toContain('name=sheet1');
@@ -2995,6 +3445,30 @@ describe('RoomDO — fold: inline WS caps', () => {
     expect(peerLog.sent[0]!).toMatch(/^5:::/);
     expect(peerLog.sent[0]!).toContain('hello-legacy');
     expect(senderLog.sent).toHaveLength(0);
+  });
+
+  it('legacy room-scoped frames cannot broadcast under another room label', async () => {
+    const peerLog: FakeWsLog = { sent: [] };
+    const attachment = {
+      user: 'alice',
+      room: 'r',
+      auth: 'r',
+      legacy: true as const,
+    };
+    const sender = makeFakeWs({ sent: [] }, attachment);
+    const peer = makeFakeWs(peerLog, attachment);
+    const { state } = makeWsAwareState('x', { map: new Map() }, [sender, peer]);
+    const room = new RoomDO(state, makeEnv());
+    const payload = {
+      type: 'ask.ecell',
+      room: 'other',
+      user: 'alice',
+    };
+    await room.webSocketMessage(
+      sender,
+      `5:::${JSON.stringify({ name: 'data', args: [payload] })}`,
+    );
+    expect(peerLog.sent).toHaveLength(0);
   });
 
   it('legacy room-scoped execute uses per-message auth on the wire frame', async () => {
@@ -3081,6 +3555,96 @@ describe('RoomDO — fold: inline WS caps', () => {
       `5:::${JSON.stringify({ name: 'data', args: [chat] })}`,
     );
     expect(fetches).toHaveLength(0);
+  });
+
+  it.each([
+    ['non-numeric window start', { rateWindowStartedAt: 'soon', rateMessageCount: 300 }],
+    ['NaN window start', { rateWindowStartedAt: Number.NaN, rateMessageCount: 300 }],
+    ['future window start', { rateWindowStartedAt: Date.now() + 60_000, rateMessageCount: 300 }],
+    ['stale window start', { rateWindowStartedAt: Date.now() - 60_000, rateMessageCount: 300 }],
+    ['non-numeric count', { rateWindowStartedAt: Date.now(), rateMessageCount: '300' }],
+    ['NaN count', { rateWindowStartedAt: Date.now(), rateMessageCount: Number.NaN }],
+    ['negative count', { rateWindowStartedAt: Date.now(), rateMessageCount: -300 }],
+  ])(
+    'ignores peer rate state that is not a live window: %s',
+    async (_label, rate) => {
+      // Five peers would restore the whole 1500-message room budget if their
+      // attachments counted. Malformed or out-of-window state must be
+      // discarded instead of trusted — otherwise a crafted attachment could
+      // either forge a lockout or (inverted) hand out free budget.
+      const peers = Array.from({ length: 5 }, (_unused, index) =>
+        makeFakeWs({ sent: [] }, { user: `p${index}`, room: 'r', auth: 'h', ...rate }),
+      );
+      const record: FakeStorageRecord = { map: new Map() };
+      const { state } = makeWsAwareState('x', record, peers);
+      const room = new RoomDO(state, makeEnv());
+      const log: FakeWsLog = { sent: [] };
+      const sender = makeFakeWs(log, { user: 'alice', room: 'r', auth: 'h' });
+
+      await room.webSocketMessage(sender, '{}');
+
+      expect(log.closed).toBeUndefined();
+    },
+  );
+
+  it('caps each peer contribution at the per-socket ceiling', async () => {
+    // One peer claiming a wildly inflated count can add at most its own
+    // per-socket allowance (300) to the room window, so five such peers sit
+    // exactly at the 1500 room budget and the next frame trips it.
+    const now = Date.now();
+    const peers = Array.from({ length: 5 }, (_unused, index) =>
+      makeFakeWs(
+        { sent: [] },
+        {
+          user: `p${index}`,
+          room: 'r',
+          auth: 'h',
+          rateWindowStartedAt: now,
+          rateMessageCount: 1_000_000,
+        },
+      ),
+    );
+    const record: FakeStorageRecord = { map: new Map() };
+    const { state } = makeWsAwareState('x', record, peers);
+    const room = new RoomDO(state, makeEnv());
+    const log: FakeWsLog = { sent: [] };
+    const sender = makeFakeWs(log, { user: 'alice', room: 'r', auth: 'h' });
+
+    await room.webSocketMessage(sender, '{}');
+
+    expect(log.closeReason).toBe('Room message rate exceeded');
+  });
+
+  it('skips a peer whose attachment cannot be read during window restore', async () => {
+    const now = Date.now();
+    const opaque = {
+      send() {},
+      serializeAttachment() {},
+      deserializeAttachment() {
+        throw new Error('attachment corrupt');
+      },
+      close() {},
+    } as unknown as WebSocket;
+    const healthy = makeFakeWs(
+      { sent: [] },
+      {
+        user: 'p',
+        room: 'r',
+        auth: 'h',
+        rateWindowStartedAt: now,
+        rateMessageCount: 300,
+      },
+    );
+    const record: FakeStorageRecord = { map: new Map() };
+    const { state } = makeWsAwareState('x', record, [opaque, healthy]);
+    const room = new RoomDO(state, makeEnv());
+    const log: FakeWsLog = { sent: [] };
+    const sender = makeFakeWs(log, { user: 'alice', room: 'r', auth: 'h' });
+
+    await room.webSocketMessage(sender, '{}');
+
+    // 300 restored (not 1500), so the frame is served.
+    expect(log.closed).toBeUndefined();
   });
 
   it('legacy session host drops the filtered text-wiki execute command', async () => {
@@ -3368,6 +3932,7 @@ describe('RoomDO — POST /_do/snapshot-chunk (Phase 11b chunked upload)', () =>
     ['negative seq', 'seq=-1&chunks=2'],
     ['chunks=0', 'seq=0&chunks=0'],
     ['seq >= chunks', 'seq=2&chunks=2'],
+    ['too many chunks', 'seq=2048&chunks=2049'],
   ])('%s → 400', async (_label, qs) => {
     const record: FakeStorageRecord = { map: new Map() };
     const room = new RoomDO(makeState('x', record), makeEnv());
@@ -3382,6 +3947,21 @@ describe('RoomDO — POST /_do/snapshot-chunk (Phase 11b chunked upload)', () =>
       'seq/chunks must be integers with 0 ≤ seq < chunks',
     );
     // Nothing written on the bad-params path.
+    expect(record.map.size).toBe(0);
+  });
+
+  it('rejects a chunk above the per-value storage ceiling', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('x', record), makeEnv());
+    const res = await room.fetch(
+      new Request('https://do/_do/snapshot-chunk?seq=0&chunks=1', {
+        method: 'POST',
+        body: 'x'.repeat(SNAPSHOT_CHUNK_BYTES + 1),
+      }),
+    );
+
+    expect(res.status).toBe(413);
+    expect(await res.text()).toBe('snapshot chunk exceeds 100 KiB');
     expect(record.map.size).toBe(0);
   });
 });
@@ -3456,17 +4036,16 @@ describe('RoomDO — WebSocket acceptance (Phase 7)', () => {
     expect(reply.log).toEqual([]);
   });
 
-  it('webSocketMessage falls back to default attachment when deserialize returns null', async () => {
+  it('drops a frame when its hibernation attachment is missing', async () => {
     const { state } = makeWsAwareState('x', record, []);
     const room = new RoomDO(state, makeEnv());
     const log: FakeWsLog = { sent: [] };
-    // `attachment` arg omitted → deserializeAttachment returns null.
     const ws = makeFakeWs(log);
     await room.webSocketMessage(
       ws,
       JSON.stringify({ type: 'ask.log', room: 'r', user: 'u' }),
     );
-    expect(log.sent).toHaveLength(1);
+    expect(log.sent).toHaveLength(0);
   });
 
   it('webSocketMessage dispatches my.ecell, persists and broadcasts to peers', async () => {
@@ -3481,7 +4060,7 @@ describe('RoomDO — WebSocket acceptance (Phase 7)', () => {
       JSON.stringify({
         type: 'my.ecell',
         room: 'r',
-        user: 'alice',
+        user: 'mallory',
         ecell: 'A1',
       }),
     );
@@ -3489,6 +4068,7 @@ describe('RoomDO — WebSocket acceptance (Phase 7)', () => {
     expect(peerLog.sent).toHaveLength(1);
     expect(senderLog.sent).toHaveLength(0);
     expect(record.map.get(ecellKey('alice'))).toBe('A1');
+    expect(record.map.get(ecellKey('mallory'))).toBeUndefined();
   });
 
   it('webSocketMessage dispatches chat, persists chat entry, broadcasts', async () => {
@@ -3503,12 +4083,35 @@ describe('RoomDO — WebSocket acceptance (Phase 7)', () => {
       JSON.stringify({
         type: 'chat',
         room: 'r',
-        user: 'alice',
+        user: 'mallory',
         msg: 'hi',
       }),
     );
     expect(peerLog.sent).toHaveLength(1);
     expect(record.map.get(chatKey(0))).toBe('hi');
+    const broadcast = JSON.parse(peerLog.sent[0]!) as { user?: unknown };
+    expect(broadcast.user).toBe('alice');
+  });
+
+  it('blocks chat for an explicit view-only attachment', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const { state } = makeWsAwareState('x', record, []);
+    const room = new RoomDO(state, makeEnv());
+    const ws = makeFakeWs({ sent: [] }, {
+      user: 'viewer',
+      room: 'r',
+      auth: '0',
+    });
+    await room.webSocketMessage(
+      ws,
+      JSON.stringify({
+        type: 'chat',
+        room: 'r',
+        user: 'viewer',
+        msg: 'forbidden',
+      }),
+    );
+    expect(record.map.get(chatKey(0))).toBeUndefined();
   });
 
   it('webSocketMessage executes a command (auth OK via identity HMAC) and applies it', async () => {
@@ -3551,7 +4154,6 @@ describe('RoomDO — WebSocket acceptance (Phase 7)', () => {
     };
     const room = new RoomDO(state, env);
     // Compute the real HMAC the message must carry.
-    const { computeAuth } = await import('../src/lib/auth.ts');
     const hmac = await computeAuth('shared-secret', 'r');
     const ws = makeFakeWs({ sent: [] }, { user: 'alice', room: 'r', auth: hmac });
     await room.webSocketMessage(
@@ -3596,7 +4198,11 @@ describe('RoomDO — WebSocket acceptance (Phase 7)', () => {
     const peerLog: FakeWsLog = { sent: [] };
     const peer = makeFakeWs(peerLog);
     const senderLog: FakeWsLog = { sent: [] };
-    const sender = makeFakeWs(senderLog, { user: 'u', room: 'r', auth: 'h' });
+    const sender = makeFakeWs(senderLog, {
+      user: 'u',
+      room: 'mysheet',
+      auth: 'h',
+    });
     // `broadcastAll` iterates `state.getWebSockets()`, which in prod
     // includes the sender because the DO accepted it during handshake.
     const { state } = makeWsAwareState('x', record, [peer, sender]);
@@ -3689,7 +4295,7 @@ describe('RoomDO — WebSocket acceptance (Phase 7)', () => {
     expect(reply.ecells).toEqual({ alice: 'A1' });
   });
 
-  it('webSocketMessage dispatches ask.recalc (reply with snapshot + log)', async () => {
+  it('treats ask.recalc room as decorative while replying with this DO snapshot', async () => {
     record.map.set(STORAGE_KEYS.snapshot, 'SAVE');
     record.map.set(logKey(0), 'cmd');
     const { state } = makeWsAwareState('x', record, []);
@@ -3698,13 +4304,15 @@ describe('RoomDO — WebSocket acceptance (Phase 7)', () => {
     const ws = makeFakeWs(log, { user: 'u', room: 'r', auth: 'h' });
     await room.webSocketMessage(
       ws,
-      JSON.stringify({ type: 'ask.recalc', room: 'r' }),
+      JSON.stringify({ type: 'ask.recalc', room: 'referenced-sheet' }),
     );
     expect(log.sent).toHaveLength(1);
     const reply = JSON.parse(log.sent[0]!) as {
+      room: string;
       snapshot: string;
       log: string[];
     };
+    expect(reply.room).toBe('referenced-sheet');
     expect(reply.snapshot).toBe('SAVE');
     // Authoritative snapshot → empty log (no client-side double-apply).
     expect(reply.log).toEqual([]);
@@ -3737,19 +4345,16 @@ describe('RoomDO — WebSocket acceptance (Phase 7)', () => {
     expect(record.map.get(chatKey(0))).toBe('no-ss');
   });
 
-  it('chat appendLog falls back to the frame room when the attachment room is empty', async () => {
-    // Default attachment is { user: '', room: '', auth: '' }, so the chat
-    // appendLog closure's `attachment.room || messageRoom` takes the
-    // messageRoom branch (the audit/chat-mirror room source).
+  it('does not persist chat when the attachment room is missing', async () => {
     const fresh: FakeStorageRecord = { map: new Map() };
     const { state } = makeWsAwareState('x', fresh, []);
     const room = new RoomDO(state, makeEnv());
-    const ws = makeFakeWs({ sent: [] }); // empty attachment
+    const ws = makeFakeWs({ sent: [] });
     await room.webSocketMessage(
       ws,
       JSON.stringify({ type: 'chat', room: 'fallback-room', user: 'u', msg: 'm' }),
     );
-    expect(fresh.map.get(chatKey(0))).toBe('m');
+    expect(fresh.map.get(chatKey(0))).toBeUndefined();
   });
 
   it('broadcast (exclude-self) skips sender when sender is in the peer list', async () => {
@@ -4062,6 +4667,33 @@ describe('RoomDO — private WS gating (Phase A)', () => {
     expect(log.closed).toBe(true);
     expect(log.sent).toEqual([]);
   });
+
+  it('closes a revoked private session before it can read a snapshot', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    markPrivate(record);
+    record.map.set(STORAGE_KEYS.snapshot, 'private-save');
+    const token = sessionFor('uid-reader');
+    const env = withSessionAuth(
+      { ROOM: {} as DurableObjectNamespace },
+      new Set([token]),
+    );
+    const { state } = makeWsAwareState('ws-revoked-session', record, []);
+    const log: FakeWsLog = { sent: [] };
+    const socket = makeFakeWs(log, {
+      user: 'reader',
+      room: 'r',
+      auth: 'r',
+      uid: 'uid-reader',
+      sessionExp: FUTURE_SESSION_EXP,
+      session: token,
+    });
+    await new RoomDO(state, env).webSocketMessage(
+      socket,
+      JSON.stringify({ type: 'ask.log', room: 'r' }),
+    );
+    expect(log.closed).toBe(true);
+    expect(log.sent).toEqual([]);
+  });
   it('applies execute frames from ACL writers', async () => {
     const record: FakeStorageRecord = { map: new Map() };
     markPrivate(record);
@@ -4344,6 +4976,201 @@ describe('RoomDO — private WS gating (Phase A)', () => {
     expect(expiredLog.sent).toEqual([]);
   });
 
+  it('closes a revoked idle peer instead of broadcasting private data', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    markPrivate(record);
+    const token = sessionFor('uid-reader');
+    const revokedLog: FakeWsLog = { sent: [] };
+    const revokedPeer = makeFakeWs(revokedLog, {
+      user: 'reader',
+      room: 'r',
+      auth: 'r',
+      uid: 'uid-reader',
+      sessionExp: FUTURE_SESSION_EXP,
+      session: token,
+    });
+    const { state } = makeWsAwareState('ws-revoked-peer', record, [
+      revokedPeer,
+    ]);
+    const env = withSessionAuth(
+      { ROOM: {} as DurableObjectNamespace },
+      new Set([token]),
+    );
+    const sender = makeFakeWs(
+      { sent: [] },
+      {
+        user: 'owner',
+        room: 'r',
+        auth: 'r',
+        uid: 'uid-owner',
+        sessionExp: FUTURE_SESSION_EXP,
+      },
+    );
+    await new RoomDO(state, env).webSocketMessage(
+      sender,
+      JSON.stringify({
+        type: 'execute',
+        room: 'r',
+        user: 'owner',
+        auth: 'r',
+        cmdstr: 'set A1 value n 1',
+      }),
+    );
+    expect(revokedLog.closed).toBe(true);
+    expect(revokedLog.sent).toEqual([]);
+  });
+
+  /**
+   * `AuthDO` is a deployment-wide singleton (`idFromName('auth')`), so a
+   * private room that re-verified every peer on every frame would turn one
+   * chatty room into a global login outage: `1 + peers` subrequests per
+   * frame, at the room's message-rate ceiling. The isolate-local memo
+   * collapses that to one verification per distinct token per TTL.
+   */
+  it('verifies each peer session once per TTL, not once per peer per frame', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    markPrivate(record);
+    const verifications: string[] = [];
+    const readerToken = sessionFor('uid-reader');
+    // A second owner device: distinct token, same read-capable identity.
+    const deviceToken = sessionFor('uid-owner', FUTURE_SESSION_EXP - 1);
+    const ownerToken = sessionFor('uid-owner');
+    const readerLog: FakeWsLog = { sent: [] };
+    const deviceLog: FakeWsLog = { sent: [] };
+    const peers = [
+      makeFakeWs(readerLog, {
+        user: 'reader',
+        room: 'r',
+        auth: 'r',
+        uid: 'uid-reader',
+        sessionExp: FUTURE_SESSION_EXP,
+        session: readerToken,
+      }),
+      makeFakeWs(deviceLog, {
+        user: 'owner-phone',
+        room: 'r',
+        auth: 'r',
+        uid: 'uid-owner',
+        sessionExp: FUTURE_SESSION_EXP - 1,
+        session: deviceToken,
+      }),
+    ];
+    const { state } = makeWsAwareState('ws-verify-memo', record, peers);
+    const env = withSessionAuth(
+      { ROOM: {} as DurableObjectNamespace },
+      new Set(),
+      verifications,
+    );
+    const room = new RoomDO(state, env);
+    const sender = makeFakeWs(
+      { sent: [] },
+      {
+        user: 'owner',
+        room: 'r',
+        auth: 'r',
+        uid: 'uid-owner',
+        sessionExp: FUTURE_SESSION_EXP,
+        session: ownerToken,
+      },
+    );
+    for (const value of ['1', '2', '3']) {
+      await room.webSocketMessage(
+        sender,
+        JSON.stringify({
+          type: 'execute',
+          room: 'r',
+          user: 'owner',
+          auth: 'r',
+          cmdstr: `set A1 value n ${value}`,
+        }),
+      );
+    }
+    // Three frames x (sender + two peers) would be nine round trips.
+    expect([...verifications].sort()).toEqual(
+      [ownerToken, readerToken, deviceToken].sort(),
+    );
+    // Memoized authorization still delivers to both authorized peers.
+    expect(readerLog.sent).toHaveLength(3);
+    expect(deviceLog.sent).toHaveLength(3);
+    expect(readerLog.closed).toBeUndefined();
+  });
+
+  it('re-verifies a session once the memo entry ages past its TTL', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    markPrivate(record);
+    const verifications: string[] = [];
+    const token = sessionFor('uid-reader');
+    const { state } = makeWsAwareState('ws-verify-ttl', record, []);
+    const env = withSessionAuth(
+      { ROOM: {} as DurableObjectNamespace },
+      new Set(),
+      verifications,
+    );
+    const room = new RoomDO(state, env);
+    const reader = makeFakeWs(
+      { sent: [] },
+      {
+        user: 'reader',
+        room: 'r',
+        auth: 'r',
+        uid: 'uid-reader',
+        sessionExp: FUTURE_SESSION_EXP,
+        session: token,
+      },
+    );
+    const frame = JSON.stringify({ type: 'ask.log', room: 'r' });
+    const realNow = Date.now();
+    const now = vi.spyOn(Date, 'now').mockReturnValue(realNow);
+    try {
+      await room.webSocketMessage(reader, frame);
+      await room.webSocketMessage(reader, frame);
+      expect(verifications).toEqual([token]);
+      // 3s TTL bounds how long a revocation can go unnoticed by a room.
+      now.mockReturnValue(realNow + 3_000);
+      await room.webSocketMessage(reader, frame);
+      expect(verifications).toEqual([token, token]);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it('evicts the oldest memo entry once the retention cap is exceeded', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    markPrivate(record);
+    const verifications: string[] = [];
+    const { state } = makeWsAwareState('ws-verify-cap', record, []);
+    const env = withSessionAuth(
+      { ROOM: {} as DurableObjectNamespace },
+      new Set(),
+      verifications,
+    );
+    const room = new RoomDO(state, env);
+    const frame = JSON.stringify({ type: 'ask.log', room: 'r' });
+    // One socket per distinct token; `sessionExp` must match the token so
+    // the attachment agrees with the verified principal.
+    const sockets = Array.from({ length: 257 }, (_unused, index) => {
+      const exp = FUTURE_SESSION_EXP - index;
+      return makeFakeWs(
+        { sent: [] },
+        {
+          user: `reader-${index}`,
+          room: 'r',
+          auth: 'r',
+          uid: 'uid-reader',
+          sessionExp: exp,
+          session: sessionFor('uid-reader', exp),
+        },
+      );
+    });
+    for (const socket of sockets) await room.webSocketMessage(socket, frame);
+    expect(verifications).toHaveLength(257);
+    // The 257th token evicted the first; the newest is still memoized.
+    await room.webSocketMessage(sockets[0]!, frame);
+    await room.webSocketMessage(sockets[256]!, frame);
+    expect(verifications).toHaveLength(258);
+    expect(verifications[257]).toBe(sessionFor('uid-reader', FUTURE_SESSION_EXP));
+  });
+
   it('fails closed when a private peer attachment cannot deserialize', async () => {
     const record: FakeStorageRecord = { map: new Map() };
     markPrivate(record);
@@ -4399,9 +5226,16 @@ describe('RoomDO — private WS gating (Phase A)', () => {
       uid: 'uid-writer',
       sessionExp: 1,
     });
-    const now = vi.spyOn(Date, 'now').mockReturnValueOnce(0).mockReturnValue(1);
+    const now = vi
+      .spyOn(Date, 'now')
+      .mockReturnValueOnce(0)
+      .mockReturnValueOnce(0)
+      .mockReturnValue(1);
     try {
-      await room.webSocketMessage(ws, JSON.stringify({ type: 'ask.log', room: 'r' }));
+      await room.webSocketMessage(
+        ws,
+        JSON.stringify({ type: 'ask.log', room: 'r', user: 'w' }),
+      );
     } finally {
       now.mockRestore();
     }
@@ -4466,6 +5300,139 @@ describe('RoomDO — POST /_do/init-private (Phase A)', () => {
     expect(record.map.get(STORAGE_KEYS.metaUpdatedAt)).toEqual(
       expect.any(Number),
     );
+  });
+
+  it('rejects oversized private-room snapshots before creating ACL state', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('init-oversized', record), makeEnv());
+    const res = await room.fetch(
+      new Request('https://do/_do/init-private', {
+        method: 'POST',
+        headers: { 'X-EC-Uid': 'uid-owner' },
+        body: JSON.stringify({
+          snapshot:
+            'socialcalc:version:1.5\nsheet:c:702:r:1048576:tvf:1\n',
+          acl: PRIVATE_ACL,
+        }),
+      }),
+    );
+    expect(res.status).toBe(413);
+    expect(record.map.size).toBe(0);
+  });
+
+  it.each([
+    ['reader is not a string', { ...PRIVATE_ACL, readers: ['uid-reader', 7] }],
+    ['reader is empty', { ...PRIVATE_ACL, readers: [''] }],
+    ['writer is not a string', { ...PRIVATE_ACL, writers: [{ uid: 'x' }] }],
+    ['writer is empty', { ...PRIVATE_ACL, writers: ['uid-writer', ''] }],
+    ['readers is not an array', { ...PRIVATE_ACL, readers: 'uid-reader' }],
+    ['writers is missing', { owner: 'uid-owner', readers: [] }],
+    ['owner is empty', { ...PRIVATE_ACL, owner: '' }],
+    ['owner is not a string', { ...PRIVATE_ACL, owner: 42 }],
+  ])('rejects a malformed private ACL: %s', async (_label, acl) => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('init-bad-acl', record), makeEnv());
+    const res = await room.fetch(
+      new Request('https://do/_do/init-private', {
+        method: 'POST',
+        headers: { 'X-EC-Uid': 'uid-owner' },
+        body: JSON.stringify({ snapshot: 'SAVE', acl }),
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(await res.text()).toBe('init-private body.acl is malformed');
+    expect(record.map.size).toBe(0);
+  });
+
+  it('accepts empty reader and writer lists (owner-only room)', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('init-owner-only', record), makeEnv());
+    const res = await room.fetch(
+      new Request('https://do/_do/init-private', {
+        method: 'POST',
+        headers: { 'X-EC-Uid': 'uid-owner' },
+        body: JSON.stringify({
+          snapshot: 'SAVE',
+          acl: { owner: 'uid-owner', readers: [], writers: [] },
+        }),
+      }),
+    );
+    expect(res.status).toBe(201);
+    expect(await res.text()).toBe('OK');
+  });
+
+  it('pins the remaining init-private rejection bodies', async () => {
+    const post = async (
+      body: string,
+      headers: Record<string, string> = { 'X-EC-Uid': 'uid-owner' },
+    ): Promise<Response> =>
+      new RoomDO(
+        makeState(`init-body-${Math.random()}`, { map: new Map() }),
+        makeEnv(),
+      ).fetch(
+        new Request('https://do/_do/init-private', {
+          method: 'POST',
+          headers,
+          body,
+        }),
+      );
+
+    const anonymous = await post(JSON.stringify({ snapshot: '', acl: PRIVATE_ACL }), {});
+    expect(anonymous.status).toBe(403);
+    expect(await anonymous.text()).toBe('Forbidden');
+
+    const malformedJson = await post('{');
+    expect(malformedJson.status).toBe(400);
+    expect(await malformedJson.text()).toBe('init-private body must be valid JSON');
+
+    const notObject = await post('"nope"');
+    expect(notObject.status).toBe(400);
+    expect(await notObject.text()).toBe('init-private body must be an object');
+
+    const badSnapshot = await post(JSON.stringify({ snapshot: 5, acl: PRIVATE_ACL }));
+    expect(badSnapshot.status).toBe(400);
+    expect(await badSnapshot.text()).toBe(
+      'init-private body.snapshot must be string',
+    );
+
+    const badGroup = await post(
+      JSON.stringify({ snapshot: 'SAVE', acl: PRIVATE_ACL, group: 9 }),
+    );
+    expect(badGroup.status).toBe(400);
+    expect(await badGroup.text()).toBe('init-private body.group must be string');
+
+    const notOwner = await post(
+      JSON.stringify({
+        snapshot: 'SAVE',
+        acl: { owner: 'uid-someone-else', readers: [], writers: [] },
+      }),
+    );
+    expect(notOwner.status).toBe(403);
+    expect(await notOwner.text()).toBe('Forbidden');
+  });
+
+  it('chunks a large private snapshot across the 128-key storage batch limit', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('init-large', record), makeEnv());
+    const snapshot = 'x'.repeat(SNAPSHOT_CHUNK_BYTES * 128 + 1);
+    const created = await room.fetch(
+      new Request('https://do/_do/init-private', {
+        method: 'POST',
+        headers: { 'X-EC-Uid': 'uid-owner' },
+        body: JSON.stringify({ snapshot, acl: PRIVATE_ACL }),
+      }),
+    );
+    expect(created.status).toBe(201);
+
+    expect(record.map.get(STORAGE_KEYS.snapshotMeta)).toEqual({ chunks: 129 });
+    expect(record.map.get(snapshotChunkKey(128))).toBe('x');
+    expect(record.map.get(STORAGE_KEYS.metaAccess)).toBe('private');
+    const read = await room.fetch(
+      new Request('https://do/_do/cells', {
+        headers: { 'X-EC-Uid': 'uid-owner' },
+      }),
+    );
+    expect(read.status).toBe(200);
   });
 
   it('invalidates warm public access metadata after private initialization', async () => {
@@ -4593,5 +5560,343 @@ describe('RoomDO — POST /_do/init-private (Phase A)', () => {
     );
     expect(res.status).toBe(409);
     expect(record.map.has(STORAGE_KEYS.snapshot)).toBe(false);
+  });
+});
+
+describe('RoomDO — response contracts', () => {
+  function makeRoom(record: FakeStorageRecord = { map: new Map() }): {
+    room: RoomDO;
+    record: FakeStorageRecord;
+  } {
+    return {
+      room: new RoomDO(makeState(`contract-${Math.random()}`, record), makeEnv()),
+      record,
+    };
+  }
+
+  it('pins the private-gate and malformed-request bodies', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    markPrivate(record);
+    const { room } = makeRoom(record);
+    const denied = await room.fetch(new Request('https://do/_do/snapshot'));
+    expect(denied.status).toBe(403);
+    expect(await denied.text()).toBe('Forbidden');
+
+    const { room: publicRoom } = makeRoom();
+    // `%` alone is an invalid percent escape, so decodeURIComponent throws.
+    const badCell = await publicRoom.fetch(
+      new Request('https://do/_do/cells/%'),
+    );
+    expect(badCell.status).toBe(400);
+    expect(await badCell.text()).toBe('Bad Request');
+  });
+
+  it('pins the rename and clone refusal bodies on private rooms', async () => {
+    const renameRecord: FakeStorageRecord = { map: new Map() };
+    markPrivate(renameRecord);
+    renameRecord.map.set(STORAGE_KEYS.snapshot, 'SAVE');
+    const rename = await new RoomDO(
+      makeState('contract-rename', renameRecord),
+      makeEnv(),
+    ).fetch(
+      new Request('https://do/_do/rename', {
+        method: 'POST',
+        headers: { 'X-EC-Uid': 'uid-owner' },
+        body: JSON.stringify({ to: 'target' }),
+      }),
+    );
+    expect(rename.status).toBe(409);
+    expect(await rename.text()).toBe('Private room rename is not supported');
+
+    const cloneRecord: FakeStorageRecord = { map: new Map() };
+    markPrivate(cloneRecord);
+    cloneRecord.map.set(STORAGE_KEYS.snapshot, 'SAVE');
+    const clone = await new RoomDO(
+      makeState('contract-clone', cloneRecord),
+      makeEnv(),
+    ).fetch(
+      new Request('https://do/_do/clone', {
+        method: 'POST',
+        headers: { 'X-EC-Uid': 'uid-owner' },
+        body: JSON.stringify({ to: 'target' }),
+      }),
+    );
+    expect(clone.status).toBe(409);
+    expect(await clone.text()).toBe('Private room clone is not supported');
+  });
+
+  it('pins the rename/clone validation bodies', async () => {
+    const { room } = makeRoom();
+    const rename = await room.fetch(
+      new Request('https://do/_do/rename', {
+        method: 'POST',
+        body: JSON.stringify({ to: '' }),
+      }),
+    );
+    expect(rename.status).toBe(400);
+    expect(await rename.text()).toBe('rename body must be {to: string}');
+
+    const { room: cloneRoom } = makeRoom();
+    const clone = await cloneRoom.fetch(
+      new Request('https://do/_do/clone', {
+        method: 'POST',
+        body: JSON.stringify({ to: 5 }),
+      }),
+    );
+    expect(clone.status).toBe(400);
+    expect(await clone.text()).toBe('clone body must be {to: string}');
+  });
+
+  it('pins the legacy websocket upgrade refusals', async () => {
+    const { room } = makeRoom();
+    const noUpgrade = await room.fetch(
+      new Request('https://do/_do/legacy-ws'),
+    );
+    expect(noUpgrade.status).toBe(426);
+    expect(await noUpgrade.text()).toBe('Expected Upgrade: websocket');
+
+    const peers = Array.from({ length: 128 }, () => makeFakeWs({ sent: [] }));
+    const { state } = makeWsAwareState('contract-cap', { map: new Map() }, peers);
+    const capped = await new RoomDO(state, makeEnv()).fetch(
+      new Request('https://do/_do/legacy-ws', {
+        headers: { Upgrade: 'websocket' },
+      }),
+    );
+    expect(capped.status).toBe(503);
+    expect(await capped.text()).toBe('Too many connections');
+  });
+
+  it('pins the init-private conflict body on an occupied room', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    record.map.set(STORAGE_KEYS.snapshot, 'existing');
+    const room = new RoomDO(makeState('contract-occupied', record), makeEnv());
+    const res = await room.fetch(
+      new Request('https://do/_do/init-private', {
+        method: 'POST',
+        headers: { 'X-EC-Uid': 'uid-owner' },
+        body: JSON.stringify({ snapshot: 'SAVE', acl: PRIVATE_ACL }),
+      }),
+    );
+    expect(res.status).toBe(409);
+    expect(await res.text()).toBe('Room already exists');
+  });
+});
+
+describe('RoomDO — attachment-derived decisions', () => {
+  const KEY = 'ws-secret';
+
+  async function keyedRoom(): Promise<{
+    room: RoomDO;
+    record: FakeStorageRecord;
+    auth: string;
+  }> {
+    const record: FakeStorageRecord = { map: new Map() };
+    const { state } = makeWsAwareState('keyed', record, []);
+    const env: Env = { ...makeEnv(), ETHERCALC_KEY: KEY };
+    return { room: new RoomDO(state, env), record, auth: await computeAuth(KEY, 'r') };
+  }
+
+  it('falls back to the handshake auth when a frame omits or malforms its own', async () => {
+    const omitted = await keyedRoom();
+    await omitted.room.webSocketMessage(
+      makeFakeWs({ sent: [] }, { user: 'u', room: 'r', auth: omitted.auth }),
+      JSON.stringify({
+        type: 'execute',
+        room: 'r',
+        user: 'u',
+        cmdstr: 'set A1 value n 1',
+      }),
+    );
+    expect(omitted.record.map.get(logKey(0))).toBe('set A1 value n 1');
+
+    // A frame carrying its OWN (wrong) auth must not borrow the handshake's.
+    const wrong = await keyedRoom();
+    await wrong.room.webSocketMessage(
+      makeFakeWs({ sent: [] }, { user: 'u', room: 'r', auth: wrong.auth }),
+      JSON.stringify({
+        type: 'execute',
+        room: 'r',
+        user: 'u',
+        auth: 'not-the-hmac',
+        cmdstr: 'set A1 value n 1',
+      }),
+    );
+    expect(wrong.record.map.has(logKey(0))).toBe(false);
+  });
+
+  it('applies the same auth fallback to legacy socket.io frames', async () => {
+    const omitted = await keyedRoom();
+    const payload = {
+      type: 'execute',
+      room: 'r',
+      user: 'u',
+      cmdstr: 'set A1 value n 1',
+    };
+    await omitted.room.webSocketMessage(
+      makeFakeWs(
+        { sent: [] },
+        { user: 'u', room: 'r', auth: omitted.auth, legacy: true },
+      ),
+      `5:::${JSON.stringify({ name: 'data', args: [payload] })}`,
+    );
+    expect(omitted.record.map.get(logKey(0))).toBe('set A1 value n 1');
+
+    const wrong = await keyedRoom();
+    await wrong.room.webSocketMessage(
+      makeFakeWs(
+        { sent: [] },
+        { user: 'u', room: 'r', auth: wrong.auth, legacy: true },
+      ),
+      `5:::${JSON.stringify({
+        name: 'data',
+        args: [{ ...payload, auth: 'not-the-hmac' }],
+      })}`,
+    );
+    expect(wrong.record.map.has(logKey(0))).toBe(false);
+  });
+
+  it('starts a fresh per-socket window when the attachment rate state is unusable', async () => {
+    // A crafted attachment must never grant a bigger allowance than a
+    // fresh socket: whatever we claim, the 301st frame still closes us.
+    for (const rate of [
+      { rateWindowStartedAt: 'soon', rateMessageCount: -1_000_000 },
+      { rateWindowStartedAt: Number.NaN, rateMessageCount: Number.NaN },
+      { rateWindowStartedAt: Date.now() + 60_000, rateMessageCount: -5 },
+    ]) {
+      const record: FakeStorageRecord = { map: new Map() };
+      const { state } = makeWsAwareState('rate-reset', record, []);
+      const room = new RoomDO(state, makeEnv());
+      const log: FakeWsLog = { sent: [] };
+      const ws = makeFakeWs(log, { user: 'a', room: 'r', auth: 'h', ...rate });
+      for (let index = 0; index <= 300; index++) {
+        await room.webSocketMessage(ws, '{}');
+      }
+      expect(log.closeReason, JSON.stringify(rate)).toBe('Message rate exceeded');
+    }
+  });
+
+  it('treats a window that has exactly elapsed as a new one', async () => {
+    const start = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(start);
+    try {
+      const record: FakeStorageRecord = { map: new Map() };
+      const { state } = makeWsAwareState('rate-edge', record, []);
+      const room = new RoomDO(state, makeEnv());
+      const log: FakeWsLog = { sent: [] };
+      const ws = makeFakeWs(log, {
+        user: 'a',
+        room: 'r',
+        auth: 'h',
+        // 300 frames already used, window opened exactly 10s ago.
+        rateWindowStartedAt: start - 10_000,
+        rateMessageCount: 300,
+      });
+      await room.webSocketMessage(ws, '{}');
+      expect(log.closed).toBeUndefined();
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it('closes a private socket that carries a uid but no session token', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    markPrivate(record);
+    const { state } = makeWsAwareState('private-no-session', record, []);
+    const room = new RoomDO(state, makeEnv());
+    const log: FakeWsLog = { sent: [] };
+    const ws = {
+      send(data: string) {
+        log.sent.push(data);
+      },
+      serializeAttachment() {},
+      deserializeAttachment() {
+        return {
+          user: 'owner',
+          room: 'r',
+          auth: 'r',
+          uid: 'uid-owner',
+          sessionExp: FUTURE_SESSION_EXP,
+        };
+      },
+      close(code?: number, reason?: string) {
+        log.closed = true;
+        if (code !== undefined) log.closeCode = code;
+        if (reason !== undefined) log.closeReason = reason;
+      },
+    } as unknown as WebSocket;
+
+    await room.webSocketMessage(
+      ws,
+      JSON.stringify({ type: 'ask.log', room: 'r', user: 'owner' }),
+    );
+
+    expect(log.sent).toEqual([]);
+    expect(log.closeReason).toBe('Session invalid');
+  });
+
+  it('closes a private socket whose verified principal does not match its attachment', async () => {
+    for (const mismatch of [
+      { uid: 'uid-someone-else', sessionExp: FUTURE_SESSION_EXP },
+      { uid: 'uid-reader', sessionExp: FUTURE_SESSION_EXP - 1 },
+    ]) {
+      const record: FakeStorageRecord = { map: new Map() };
+      markPrivate(record);
+      const { state } = makeWsAwareState('private-mismatch', record, []);
+      const room = new RoomDO(state, makeEnv());
+      const log: FakeWsLog = { sent: [] };
+      // The token encodes uid-reader with the canonical expiry; the
+      // attachment claims something else.
+      const ws = makeFakeWs(log, {
+        user: 'reader',
+        room: 'r',
+        auth: 'r',
+        session: sessionFor('uid-reader'),
+        ...mismatch,
+      });
+      await room.webSocketMessage(
+        ws,
+        JSON.stringify({ type: 'ask.log', room: 'r', user: 'reader' }),
+      );
+      expect(log.sent, JSON.stringify(mismatch)).toEqual([]);
+      expect(log.closeReason).toBe('Session invalid');
+    }
+  });
+
+  it('lets an ACL writer send frames a reader may also send', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    markPrivate(record);
+    const { state } = makeWsAwareState('private-writer', record, []);
+    const room = new RoomDO(state, makeEnv());
+    const log: FakeWsLog = { sent: [] };
+    // `uid-writer` is in `writers` only — the read-or-write purpose is what
+    // keeps its socket open.
+    const ws = makeFakeWs(log, {
+      user: 'writer',
+      room: 'r',
+      auth: 'r',
+      uid: 'uid-writer',
+      sessionExp: FUTURE_SESSION_EXP,
+      session: sessionFor('uid-writer'),
+    });
+    await room.webSocketMessage(
+      ws,
+      JSON.stringify({ type: 'ask.log', room: 'r', user: 'writer' }),
+    );
+    expect(log.closed).toBeUndefined();
+    expect(log.sent).toHaveLength(1);
+  });
+
+  it('rejects init-private with a present-but-empty uid header', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('init-empty-uid', record), makeEnv());
+    const res = await room.fetch(
+      new Request('https://do/_do/init-private', {
+        method: 'POST',
+        headers: { 'X-EC-Uid': '' },
+        body: JSON.stringify({ snapshot: 'SAVE', acl: PRIVATE_ACL }),
+      }),
+    );
+    expect(res.status).toBe(403);
+    expect(record.map.size).toBe(0);
   });
 });

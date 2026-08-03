@@ -1,5 +1,6 @@
 import { ShimNode } from './dom-shim';
 import { createSocialCalcFactory } from './socialcalc.bundled';
+import { installFormulaLimits } from './formula-limits';
 
 type SocialCalcNamespace = Record<string, unknown> & {
   SpreadsheetControl: new (idPrefix?: string) => SpreadsheetControl;
@@ -68,6 +69,7 @@ export function loadSocialCalc(): SocialCalcNamespace {
   // always yields the SocialCalc namespace (see `socialcalc.bundled.ts`
   // bottom — `return SocialCalc`).
   cachedNamespace = createSocialCalcFactory() as unknown as SocialCalcNamespace;
+  installFormulaLimits(cachedNamespace);
   return cachedNamespace;
 }
 
@@ -131,7 +133,7 @@ export class HeadlessSpreadsheet {
    * pre-fetch sibling sheets into SocialCalc's cache before recalc, so
    * cross-sheet formulas resolve to real values instead of `#NAME?`.
    */
-  findCrossSheetRefs(): string[] {
+  findCrossSheetRefs(limit = Number.POSITIVE_INFINITY): string[] {
     const seen = new Set<string>();
     const cells = this.#ss.sheet.cells as Record<string, { formula?: string }>;
     for (const cell of Object.values(cells)) {
@@ -145,6 +147,7 @@ export class HeadlessSpreadsheet {
       while ((m = re.exec(formula)) !== null) {
         const name = m[1] ?? m[2] ?? m[3];
         if (name) seen.add(name);
+        if (seen.size >= limit) return [...seen];
       }
     }
     return [...seen];

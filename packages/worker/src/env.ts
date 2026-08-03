@@ -93,17 +93,16 @@ export interface Env {
   readonly ETHERCALC_DEFAULT_ROOM?: string;
 
   /**
-   * Cloudflare `send_email` binding (Phase 9, §13 Q3). When present,
-   * the cron/email layer wraps it via `BindingEmailSender`. When
-   * unbound (Node unit tests, or deployments that omit the
-   * `[[send_email]]` entry in wrangler.toml), callers fall back to
-   * `StubEmailSender`. Shape is structural — we only invoke `.send()`.
+   * Cloudflare Email Service `send_email` binding (Phase 9, §13 Q3).
+   * Unbound deployments use `DisabledEmailSender`. The narrow structural
+   * shape matches the recommended Workers structured-message API.
    */
   readonly EMAIL?: {
     send(message: {
-      from: string;
-      to: string;
-      raw: string | ReadableStream<Uint8Array>;
+      readonly from: { readonly email: string; readonly name?: string };
+      readonly to: string;
+      readonly subject: string;
+      readonly text: string;
     }): Promise<unknown>;
   };
 
@@ -117,11 +116,9 @@ export interface Env {
   readonly EMAIL_FROM?: string;
 
   /**
-   * Operator bearer token that unlocks the legacy migration write routes
-   * and hosted `POST /_/:room/pitr-restore`. When unset, those routes
-   * return `404`; migration and recovery are operator-only actions, not
-   * public surfaces. See `src/lib/migrate-auth.ts` for the verifier and
-   * `src/routes/{migrate,rooms}.ts` for the Hono glue.
+   * Operator bearer token that unlocks migration writes, hosted PITR restore,
+   * and the side-effecting legacy `GET /_timetrigger` compatibility route.
+   * When unset those surfaces return `404`. See `src/lib/migrate-auth.ts`.
    *
    * Typical local flow:
    *   echo 'ETHERCALC_MIGRATE_TOKEN="local-only"' > packages/worker/.dev.vars
@@ -168,7 +165,7 @@ export interface Env {
    * false-like → off (hosted deploys rely on the Cloudflare edge).
    * Bare `1`/`true`/`on` → 10 r/s with burst 30 (nginx recipe default).
    * Plain number `N` → `N` requests/s; `window:max` → `max` per `window`
-   * seconds. Keyed on `CF-Connecting-IP` / first `X-Forwarded-For` hop.
+   * seconds. Keyed on `CF-Connecting-IP` / rightmost `X-Forwarded-For` hop.
    */
   readonly ETHERCALC_RATELIMIT?: string;
 

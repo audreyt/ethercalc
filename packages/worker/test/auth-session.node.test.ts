@@ -7,6 +7,7 @@ interface AuthCall {
   readonly name: string;
   readonly url: string;
   readonly method: string;
+  readonly contentType: string | null;
   readonly body: unknown;
 }
 
@@ -21,7 +22,13 @@ function makeEnv(
       const request =
         typeof input === 'string' ? new Request(input, init) : input;
       const body: unknown = await request.clone().json();
-      calls.push({ name, url: request.url, method: request.method, body });
+      calls.push({
+        name,
+        url: request.url,
+        method: request.method,
+        contentType: request.headers.get('Content-Type'),
+        body,
+      });
       return responder(request);
     },
   };
@@ -58,6 +65,7 @@ describe('verifyAuthSession', () => {
         name: 'auth',
         url: 'https://auth.local/_auth/verify-session',
         method: 'POST',
+        contentType: 'application/json',
         body: { session: 'signed.token' },
       },
     ]);
@@ -101,6 +109,18 @@ describe('verifyAuthSession', () => {
       verifyAuthSession(wrongUid, 'signed.token'),
     ).resolves.toBeNull();
     await expect(verifyAuthSession(badJson, 'signed.token')).resolves.toBeNull();
+  });
+
+  it('honours the AuthDO status, not just the payload shape', async () => {
+    // A refusal that still carries a well-formed body must not authenticate.
+    const { env } = makeEnv(
+      () =>
+        Response.json(
+          { uid: 'uid-owner', exp: Date.now() + 60_000 },
+          { status: 401 },
+        ),
+    );
+    await expect(verifyAuthSession(env, 'signed.token')).resolves.toBeNull();
   });
   it.each([
     ['null', null],

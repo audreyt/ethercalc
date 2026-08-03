@@ -55,10 +55,10 @@ const mainWorker :Workerd.Worker = (
     (name = "worker.js", esModule = embed "worker/index.js"),
   ],
 
-  # Pinned to the same compat date wrangler deployed with. Bumping this
-  # without also rebuilding the worker bundle can introduce semantic
-  # drift in the runtime APIs.
-  compatibilityDate = "2025-04-01",
+  # Standalone workerd rejects dates newer than its baked-in release date.
+  # Keep this at or below the workerd version pinned in bun.lock; Wrangler
+  # may safely use a newer date because it clamps with a warning.
+  compatibilityDate = "2026-07-14",
   compatibilityFlags = ["nodejs_compat"],
 
   bindings = [

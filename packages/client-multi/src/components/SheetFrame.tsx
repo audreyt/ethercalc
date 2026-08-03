@@ -15,9 +15,9 @@ export interface SheetFrameProps {
 
 /**
  * Wraps a single iframe. After the iframe's document becomes `complete`, we
- * `postMessage({type:'multi', rows, index}, '*')` into it so the embedded
- * single-sheet app can render its tab chrome. Matches the legacy
- * `renderFrameContent` function.
+ * `postMessage({type:'multi', rows, index}, frameOrigin)` into it so the
+ * embedded single-sheet app can render its tab chrome without disclosing the
+ * TOC to a navigated cross-origin frame.
  *
  * Notes preserved from legacy (see `multi/main.ls:85`):
  *  - 100 ms delay after `doc.readyState === 'complete'` before the postMessage.
@@ -58,7 +58,7 @@ export const SheetFrame: FC<SheetFrameProps> = ({
         if (!win) return;
         win.postMessage(
           JSON.stringify({ type: 'multi', rows, index }, null, 2),
-          '*',
+          new URL(node.src, window.location.href).origin,
         );
         if (isFirst && !firstFocusUsed) {
           win.focus();

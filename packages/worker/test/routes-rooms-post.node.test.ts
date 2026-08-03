@@ -75,11 +75,11 @@ function makeFakeRoomNamespace(responder: (call: Call) => Response): {
 
 const AUTH_UID = 'uid-passkey-1';
 const AUTH_EXP = Number.MAX_SAFE_INTEGER;
-const AUTH_COOKIE = 'ec_sess=tok-valid';
+const AUTH_COOKIE = '__Host-ec_sess=tok-valid';
 
 /**
  * Layer a fake AUTH namespace over `env` so `getSessionPrincipal` resolves
- * `AUTH_UID` plus its future expiration for any `ec_sess` cookie.
+ * `AUTH_UID` plus its future expiration for any `__Host-ec_sess` cookie.
  */
 function withAuth(env: Env, uid: string = AUTH_UID): Env {
   return {
@@ -144,6 +144,23 @@ describe('POST /_/:room — command execution', () => {
     expect(res.status).toBe(400);
     expect(res.headers.get('content-type')).toBe('text/plain; charset=utf-8');
     expect(await res.text()).toBe('Please send command');
+    expect(calls).toHaveLength(0);
+  });
+
+  it('rejects an oversized text command before RoomDO dispatch', async () => {
+    const { env, calls } = makeFakeRoomNamespace(() => new Response('OK'));
+    const response = await buildApp().fetch(
+      new Request('https://t.test/_/r', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/plain',
+          'Content-Length': String(1024 * 1024 + 1),
+        },
+        body: 'set A1 value n 1',
+      }),
+      env as never,
+    );
+    expect(response.status).toBe(413);
     expect(calls).toHaveLength(0);
   });
 
@@ -601,6 +618,35 @@ describe('POST /_/:room — command execution', () => {
     expect(body).toMatch(/ZZ/);
     expect(body).toContain('AAA1');
     expect(calls.find((c) => c.url.includes('/_do/commands'))).toBeUndefined();
+  });
+
+  it('returns 413 for a sparse workbook with oversized declared area', async () => {
+    const { env, calls } = makeFakeRoomNamespace(() => {
+      throw new Error('should not reach DO');
+    });
+    const ws = {
+      '!ref': 'A1:A200001',
+      A200001: { t: 'n', v: 1 },
+    };
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book, ws, 'Sheet1');
+    const bytes = new Uint8Array(
+      XLSX.write(book, { bookType: 'xlsx', type: 'array' }) as ArrayBufferLike,
+    );
+    const res = await buildApp().fetch(
+      new Request('https://t.test/_/r', {
+        method: 'POST',
+        headers: {
+          'content-type':
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        },
+        body: bytes as unknown as BodyInit,
+      }),
+      env as never,
+    );
+    expect(res.status).toBe(413);
+    expect(await res.text()).toMatch(/dimensions/i);
+    expect(calls).toHaveLength(0);
   });
 
   it('returns 400 when text/csv cells exceed SocialCalc ZZ column', async () => {

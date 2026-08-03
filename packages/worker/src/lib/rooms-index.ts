@@ -146,7 +146,7 @@ export async function listRoomTimes(
         'SELECT room, updated_at FROM rooms ORDER BY updated_at DESC, room ASC',
       )
       .all<{ room: string; updated_at: number }>();
-    const out: Record<string, number> = {};
+    const out = Object.create(null) as Record<string, number>;
     for (const row of res.results) {
       if (!isPublicRoomIndexEntry(row.room)) continue;
       out[row.room] = row.updated_at;

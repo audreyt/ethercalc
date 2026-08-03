@@ -57,7 +57,6 @@ const MIME_BY_EXT: Readonly<Record<string, string>> = {
   ".js": "application/javascript; charset=utf-8",
   ".mjs": "application/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
-  ".map": "application/json; charset=utf-8",
   ".svg": "image/svg+xml",
   ".png": "image/png",
   ".jpg": "image/jpeg",
@@ -91,6 +90,27 @@ function mimeForPath(pathname: string): string | undefined {
  * self-host) needs this fix-up.
  */
 export async function serveAsset(env: Env, pathname: string): Promise<Response> {
+  let decodedPath = pathname;
+  try {
+    // Decode repeatedly because edge and binding path normalization need not
+    // happen at the same layer. Conservatively reject encoded source maps.
+    for (let i = 0; i < 3; i += 1) {
+      const next = decodeURIComponent(decodedPath);
+      if (next === decodedPath) break;
+      decodedPath = next;
+    }
+  } catch {
+    return new Response("Not Found", {
+      status: 404,
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
+  }
+  if (decodedPath.toLowerCase().endsWith(".map")) {
+    return new Response("Not Found", {
+      status: 404,
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
+  }
   if (!env.ASSETS) {
     return new Response("Not Found", {
       status: 404,

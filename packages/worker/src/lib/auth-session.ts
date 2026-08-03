@@ -24,11 +24,18 @@ export async function verifyAuthSession(
     if (!response.ok) return null;
     const body: unknown = await response.json();
     if (
+      // The next three narrowing clauses are shadowed by the enclosing
+      // `try`/`catch`: dropping any of them turns a malformed payload into a
+      // TypeError (`'uid' in null`, property access on a primitive) that the
+      // catch converts into the same `null`. They stay for readability.
+      // Stryker disable next-line ConditionalExpression
       body === null ||
+      // Stryker disable next-line ConditionalExpression
       typeof body !== 'object' ||
       !('uid' in body) ||
       typeof body.uid !== 'string' ||
       !('exp' in body) ||
+      // Stryker disable next-line ConditionalExpression
       typeof body.exp !== 'number' ||
       !Number.isFinite(body.exp) ||
       Date.now() >= body.exp

@@ -7,7 +7,7 @@
   "type": "module",
   "main": "./src/index.ts",
   "scripts": {
-    "dev": "vp exec wrangler dev",
+    "dev": "vp exec -- wrangler dev --config=wrangler.toml",
     "test": "vp run test:node && vp run test:workers",
     "test:node": "vp test run --config vitest.node.config.ts",
     "test:workers": "vp test run",

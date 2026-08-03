@@ -106,6 +106,14 @@ describe('socketIoEventToNative', () => {
   it('returns null for unknown client message types', () => {
     expect(socketIoEventToNative(wrapEvent({ type: 'made.up' }))).toBeNull();
   });
+
+  it('uses the shared field validator instead of accepting type-only objects', () => {
+    expect(
+      socketIoEventToNative(
+        wrapEvent({ type: 'chat', room: 'r', user: 'u' }),
+      ),
+    ).toBeNull();
+  });
 });
 
 describe('nativeToSocketIoEvent', () => {

@@ -1,3 +1,4 @@
+import { MAX_MULTI_SHEETS } from '@ethercalc/shared';
 import * as XLSX from '@e965/xlsx';
 import { csvToSocialCalc } from './csv.ts';
 import { encodeCSV } from './csv-encode.ts';
@@ -9,6 +10,16 @@ import {
 } from './xlsx-import.ts';
 
 const TOC_HEADER: readonly string[] = ['#url', '#title'];
+
+export class ImportTooManySheetsError extends Error {
+  readonly sheetCount: number;
+
+  constructor(sheetCount: number) {
+    super(`workbook exceeds ${MAX_MULTI_SHEETS} sheets (${sheetCount})`);
+    this.name = 'ImportTooManySheetsError';
+    this.sheetCount = sheetCount;
+  }
+}
 
 export interface MultiSheetImport {
   readonly tocSave: string;
@@ -23,6 +34,9 @@ export function buildMultiSheetImport(
   enforceImportArchiveLimit(bytes);
   const wb = readFn(bytes, { type: 'array', cellFormula: true });
   const names: string[] = Array.isArray(wb.SheetNames) ? wb.SheetNames : [];
+  if (names.length > MAX_MULTI_SHEETS) {
+    throw new ImportTooManySheetsError(names.length);
+  }
 
   let totalCells = 0;
   for (const name of names) {

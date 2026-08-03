@@ -94,6 +94,25 @@ function makeState(
   } as unknown as DurableObjectState;
 }
 
+function makeSerialState(
+  idString: string,
+  record: FakeStorageRecord,
+): DurableObjectState {
+  const base = makeState(idString, record);
+  let tail: Promise<unknown> = Promise.resolve();
+  return {
+    ...base,
+    blockConcurrencyWhile<T>(callback: () => Promise<T>): Promise<T> {
+      const result = tail.then(callback);
+      tail = result.then(
+        () => undefined,
+        () => undefined,
+      );
+      return result;
+    },
+  } as unknown as DurableObjectState;
+}
+
 // ─── Mock @simplewebauthn/server ─────────────────────────────────────────
 
 const {
@@ -301,6 +320,100 @@ describe('AuthDO', () => {
       });
     });
 
+    it('rejects capacity overflow without evicting a live challenge', async () => {
+      const now = Date.now() + 60_000;
+      for (let index = 0; index < 1_024; index += 1) {
+        record.map.set(`challenge:existing-${index}`, {
+          purpose: 'login',
+          exp: now + index + 1,
+        });
+      }
+      mockGenerateRegistrationOptions.mockResolvedValue({
+        challenge: 'newest',
+        rp: { name: RP_NAME, id: RP_ID },
+        user: { id: 'u', name: 'u', displayName: '' },
+        pubKeyCredParams: [],
+        excludeCredentials: [],
+        authenticatorSelection: {},
+      });
+
+      const response = await auth.fetch(
+        makeRequest('/_auth/register-init', jsonBody({})),
+      );
+      const challengeKeys = Array.from(record.map.keys()).filter((key) =>
+        key.startsWith('challenge:'),
+      );
+      expect(response.status).toBe(503);
+      expect(response.headers.get('Retry-After')).toBe('120');
+      expect(challengeKeys).toHaveLength(1_024);
+      expect(record.map.has('challenge:existing-0')).toBe(true);
+      expect(record.map.has('challenge:newest')).toBe(false);
+    });
+
+    it('rate-limits ceremony initiation per trusted client address', async () => {
+      mockGenerateRegistrationOptions.mockResolvedValue({
+        challenge: 'rate-limited',
+        rp: { name: RP_NAME, id: RP_ID },
+        user: { id: 'u', name: 'u', displayName: '' },
+        pubKeyCredParams: [],
+        excludeCredentials: [],
+        authenticatorSelection: {},
+      });
+      const request = () =>
+        makeRequest('/_auth/register-init', {
+          ...jsonBody({}),
+          headers: {
+            'Content-Type': 'application/json',
+            'X-EC-Client-IP': '198.51.100.2',
+          },
+        });
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        expect((await auth.fetch(request())).status).toBe(200);
+      }
+      const denied = await auth.fetch(request());
+      expect(denied.status).toBe(429);
+      expect(denied.headers.get('Retry-After')).toBe('2');
+    });
+
+    it('purges stale records and safely replaces a repeated challenge', async () => {
+      const now = Date.now();
+      record.map.set('challenge:expired', {
+        purpose: 'login',
+        exp: now - 1,
+      });
+      record.map.set('challenge:malformed', {
+        purpose: 'login',
+        exp: Number.NaN,
+      });
+      record.map.set('challenge:repeated', {
+        purpose: 'login',
+        exp: now + 60_000,
+      });
+      record.map.set('challenge:live', {
+        purpose: 'login',
+        exp: now + 60_000,
+      });
+      mockGenerateRegistrationOptions.mockResolvedValue({
+        challenge: 'repeated',
+        rp: { name: RP_NAME, id: RP_ID },
+        user: { id: 'u', name: 'u', displayName: '' },
+        pubKeyCredParams: [],
+        excludeCredentials: [],
+        authenticatorSelection: {},
+      });
+
+      expect(
+        (
+          await auth.fetch(
+            makeRequest('/_auth/register-init', jsonBody({})),
+          )
+        ).status,
+      ).toBe(200);
+      expect(record.map.has('challenge:expired')).toBe(false);
+      expect(record.map.has('challenge:malformed')).toBe(false);
+      expect(record.map.has('challenge:live')).toBe(true);
+      expect(record.map.has('challenge:repeated')).toBe(true);
+    });
     it('uses injected WebAuthn operations', async () => {
       const generateRegistrationOptions = vi.fn().mockResolvedValue({
         challenge: 'injected-registration-challenge',
@@ -720,6 +833,32 @@ describe('AuthDO', () => {
       expect(stored.purpose).toBe('login');
       expect(stored.exp).toBeGreaterThan(Date.now());
     });
+
+    it('refuses a new login challenge at capacity instead of evicting one', async () => {
+      const now = Date.now() + 60_000;
+      for (let index = 0; index < 1_024; index += 1) {
+        record.map.set(`challenge:existing-${index}`, {
+          purpose: 'login',
+          exp: now + index + 1,
+        });
+      }
+      mockGenerateAuthenticationOptions.mockResolvedValue({
+        challenge: 'newest-login',
+        rpID: RP_ID,
+        allowCredentials: [],
+        timeout: 60_000,
+        userVerification: 'required',
+      });
+
+      const res = await auth.fetch(
+        makeRequest('/_auth/login-init', jsonBody({})),
+      );
+
+      expect(res.status).toBe(503);
+      expect(res.headers.get('Retry-After')).toBe('120');
+      expect(record.map.has('challenge:newest-login')).toBe(false);
+      expect(record.map.has('challenge:existing-0')).toBe(true);
+    });
   });
 
   describe('POST /_auth/login-complete', () => {
@@ -795,6 +934,52 @@ describe('AuthDO', () => {
         k.startsWith('challenge:'),
       );
       expect(challengeKeys).toHaveLength(0);
+    });
+
+    it('atomically consumes a challenge before concurrent verification', async () => {
+      const credentialID = 'cred-atomic-challenge';
+      const concurrentRecord: FakeStorageRecord = { map: new Map() };
+      concurrentRecord.map.set(`cred:${credentialID}`, {
+        uid: 'uid-atomic',
+        publicKey: new Uint8Array([1]),
+        counter: 5,
+        transports: ['internal'],
+        deviceType: 'singleDevice',
+        backedUp: false,
+      });
+      concurrentRecord.map.set('challenge:one-shot', {
+        purpose: 'login',
+        exp: Date.now() + 60_000,
+      });
+      const concurrentAuth = new AuthDO(
+        makeSerialState('auth-atomic', concurrentRecord),
+        makeEnv() as unknown as never,
+      );
+      mockVerifyAuthenticationResponse.mockResolvedValue({
+        verified: true,
+        authenticationInfo: {
+          credentialID,
+          newCounter: 6,
+          userVerified: true,
+          credentialDeviceType: 'singleDevice',
+          credentialBackedUp: false,
+          origin: ORIGIN,
+          rpID: RP_ID,
+        },
+      });
+      const complete = (): Promise<Response> =>
+        concurrentAuth.fetch(
+          makeRequest(
+            '/_auth/login-complete',
+            jsonBody({
+              response: { id: credentialID, response: {} },
+              challenge: 'one-shot',
+            }),
+          ),
+        );
+      const responses = await Promise.all([complete(), complete()]);
+      expect(responses.map((response) => response.status).sort()).toEqual([200, 401]);
+      expect(mockVerifyAuthenticationResponse).toHaveBeenCalledTimes(1);
     });
 
     it('rejects an out-of-order counter regression and preserves newer credential state', async () => {
@@ -1370,6 +1555,95 @@ describe('AuthDO', () => {
       expect(response.status).toBe(400);
     });
 
+    it.each(['null', '[]', '1', '{'])(
+      'returns 400 instead of throwing for an invalid JSON object body: %s',
+      async (body) => {
+        const response = await auth.fetch(
+          makeRequest('/_auth/verify-session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body,
+          }),
+        );
+        expect(response.status).toBe(400);
+        expect(await response.text()).toBe('Missing session');
+      },
+    );
+
+    it('revokes the current uid sessions while allowing a later login', async () => {
+      vi.useFakeTimers();
+      try {
+        const now = 1_700_000_000_000;
+        vi.setSystemTime(now);
+        const secret = 'logout-revocation-secret';
+        const uid = 'uid-logout';
+        record.map.set('session-secret', secret);
+        const session = await signSessionPayload(
+          secret,
+          JSON.stringify({ uid, iat: now, exp: now + 60_000 }),
+        );
+
+        const before = await auth.fetch(
+          makeRequest('/_auth/verify-session', jsonBody({ session })),
+        );
+        const revoked = await auth.fetch(
+          makeRequest('/_auth/revoke-session', jsonBody({ session })),
+        );
+        const revokedAgain = await auth.fetch(
+          makeRequest('/_auth/revoke-session', jsonBody({ session })),
+        );
+        const after = await auth.fetch(
+          makeRequest('/_auth/verify-session', jsonBody({ session })),
+        );
+
+        expect(before.status).toBe(200);
+        expect(revoked.status).toBe(204);
+        expect(revokedAgain.status).toBe(204);
+        expect(after.status).toBe(401);
+        expect(record.map.get(`session-revoked:${uid}`)).toEqual({
+          before: now,
+          exp: now + 30 * 24 * 60 * 60 * 1000,
+        });
+
+        vi.setSystemTime(now + 1);
+        const laterSession = await signSessionPayload(
+          secret,
+          JSON.stringify({
+            uid,
+            iat: now + 1,
+            exp: now + 60_001,
+          }),
+        );
+        expect(
+          (
+            await auth.fetch(
+              makeRequest(
+                '/_auth/verify-session',
+                jsonBody({ session: laterSession }),
+              ),
+            )
+          ).status,
+        ).toBe(200);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it.each([{}, { session: 'invalid' }])(
+      'keeps malformed revocation requests idempotent',
+      async (body) => {
+        const response = await auth.fetch(
+          makeRequest('/_auth/revoke-session', jsonBody(body)),
+        );
+        expect(response.status).toBe(204);
+        expect(
+          Array.from(record.map.keys()).some((key) =>
+            key.startsWith('session-revoked:'),
+          ),
+        ).toBe(false);
+      },
+    );
+
     it('returns 401 for a tampered session token', async () => {
       // Do a real login to get a valid session, then tamper
       const credentialID = 'cred-tamper';
@@ -1430,8 +1704,8 @@ describe('AuthDO', () => {
     });
   });
 
-  describe('alarm (challenge cleanup)', () => {
-    it('deletes expired challenges on alarm', async () => {
+  describe('alarm cleanup', () => {
+    it('deletes expired and malformed challenges and revocations', async () => {
       // Store an expired challenge
       record.map.set('challenge:expired', {
         purpose: 'login',
@@ -1442,16 +1716,45 @@ describe('AuthDO', () => {
         purpose: 'login',
         exp: Date.now() + 60000,
       });
+      record.map.set('challenge:malformed', {
+        purpose: 'login',
+        exp: Number.NaN,
+      });
+      record.map.set('session-revoked:expired', {
+        before: Date.now() - 2_000,
+        exp: Date.now() - 1_000,
+      });
+      record.map.set('session-revoked:malformed', {
+        before: Date.now(),
+        exp: Number.NaN,
+      });
+      record.map.set('session-revoked:valid', {
+        before: Date.now(),
+        exp: Date.now() + 60_000,
+      });
 
       await auth.alarm();
 
       expect(record.map.has('challenge:expired')).toBe(false);
       expect(record.map.has('challenge:valid')).toBe(true);
+      expect(record.map.has('challenge:malformed')).toBe(false);
+      expect(record.map.has('session-revoked:expired')).toBe(false);
+      expect(record.map.has('session-revoked:malformed')).toBe(false);
+      expect(record.map.has('session-revoked:valid')).toBe(true);
     });
 
-    it('does not re-arm when no challenges remain', async () => {
+    it('does not re-arm when no auth records remain', async () => {
       await auth.alarm();
       expect(record.alarm).toBeNull();
+    });
+
+    it('re-arms when only a live revocation remains', async () => {
+      record.map.set('session-revoked:live', {
+        before: Date.now(),
+        exp: Date.now() + 60_000,
+      });
+      await auth.alarm();
+      expect(record.alarm).not.toBeNull();
     });
   });
 
@@ -2861,6 +3164,234 @@ describe('AuthDO', () => {
       expect(await res.text()).toBe('Authentication counter rejected');
       const stored = record.map.get(`cred:${credentialID}`) as { counter: number };
       expect(stored.counter).toBe(0);
+    });
+  });
+
+  describe('ceremony guard contracts', () => {
+    it('pins the capacity and rate-limit refusal bodies', async () => {
+      const now = Date.now() + 60_000;
+      for (let index = 0; index < 1_024; index += 1) {
+        record.map.set(`challenge:full-${index}`, {
+          purpose: 'login',
+          exp: now + index + 1,
+        });
+      }
+      mockGenerateAuthenticationOptions.mockResolvedValue({
+        challenge: 'capacity-body',
+        rpID: RP_ID,
+        allowCredentials: [],
+        timeout: 60_000,
+        userVerification: 'required',
+      });
+      const capacity = await auth.fetch(
+        makeRequest('/_auth/login-init', jsonBody({})),
+      );
+      expect(capacity.status).toBe(503);
+      expect(await capacity.text()).toBe(
+        'Too many active authentication challenges',
+      );
+      expect(capacity.headers.get('Content-Type')).toBe('text/plain');
+
+      record.map.clear();
+      mockGenerateAuthenticationOptions.mockResolvedValue({
+        challenge: 'rate-body',
+        rpID: RP_ID,
+        allowCredentials: [],
+        timeout: 60_000,
+        userVerification: 'required',
+      });
+      const attempt = (): Request =>
+        makeRequest('/_auth/login-init', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-EC-Client-IP': '198.51.100.7',
+          },
+          body: '{}',
+        });
+      for (let index = 0; index < 30; index += 1) {
+        await auth.fetch(attempt());
+      }
+      const limited = await auth.fetch(attempt());
+      expect(limited.status).toBe(429);
+      expect(await limited.text()).toBe('Too many authentication attempts');
+      expect(limited.headers.get('Content-Type')).toBe('text/plain');
+      expect(limited.headers.get('Retry-After')).toBe('2');
+    });
+
+    it('rate-limits ceremony starts per client address, not other paths', async () => {
+      mockGenerateAuthenticationOptions.mockResolvedValue({
+        challenge: 'per-ip',
+        rpID: RP_ID,
+        allowCredentials: [],
+        timeout: 60_000,
+        userVerification: 'required',
+      });
+      const from = (ip: string): Request =>
+        makeRequest('/_auth/login-init', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-EC-Client-IP': ip },
+          body: '{}',
+        });
+      for (let index = 0; index < 30; index += 1) {
+        await auth.fetch(from('203.0.113.1'));
+      }
+      expect((await auth.fetch(from('203.0.113.1'))).status).toBe(429);
+      // A different address is unaffected…
+      expect((await auth.fetch(from('203.0.113.2'))).status).not.toBe(429);
+      // …and the completion endpoints are never bucketed (they fail on
+      // their own validation instead of a 429).
+      const complete = await auth.fetch(
+        makeRequest('/_auth/login-complete', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-EC-Client-IP': '203.0.113.1',
+          },
+          body: '{}',
+        }),
+      );
+      expect(complete.status).toBe(400);
+    });
+
+    it('mints session tokens in base64url, never standard base64', async () => {
+      mockGenerateRegistrationOptions.mockResolvedValue({
+        challenge: 'b64url-challenge',
+        rp: { name: RP_NAME, id: RP_ID },
+        user: { id: 'u', name: 'u', displayName: '' },
+        pubKeyCredParams: [],
+        excludeCredentials: [],
+        authenticatorSelection: {},
+      });
+      const init = await readRegistrationInit(
+        await auth.fetch(makeRequest('/_auth/register-init', jsonBody({}))),
+      );
+      const credentialID = 'cred-b64url';
+      mockVerifyRegistrationResponse.mockResolvedValue({
+        verified: true,
+        registrationInfo: {
+          fmt: 'none',
+          aaguid: 'aaguid',
+          credential: {
+            id: credentialID,
+            publicKey: new Uint8Array([255, 254, 253]),
+            counter: 0,
+            transports: ['internal'],
+          },
+          credentialType: 'public-key',
+          attestationObject: new Uint8Array(),
+          userVerified: true,
+          credentialDeviceType: 'singleDevice',
+          credentialBackedUp: false,
+          origin: ORIGIN,
+          rpID: RP_ID,
+        },
+      });
+      const { session } = await readAuthResult(
+        await auth.fetch(
+          makeRequest(
+            '/_auth/register-complete',
+            jsonBody({
+              response: { id: credentialID, response: {} },
+              uid: init.uid,
+              challenge: init.challenge,
+            }),
+          ),
+        ),
+      );
+      const payloadSegment = session.slice(0, session.lastIndexOf('.'));
+      expect(payloadSegment).not.toMatch(/[+/=]/);
+      // …and it still verifies, so the encoding is reversible.
+      const verified = await auth.fetch(
+        makeRequest('/_auth/verify-session', jsonBody({ session })),
+      );
+      expect(verified.status).toBe(200);
+    });
+
+    it('keeps the furthest-out revocation window when logout repeats', async () => {
+      vi.useFakeTimers();
+      try {
+        const start = 1_800_000_000_000;
+        vi.setSystemTime(start);
+        const secret = 'revocation-merge-secret';
+        const uid = 'uid-revocation-merge';
+        record.map.set('session-secret', secret);
+        const session = await signSessionPayload(
+          secret,
+          JSON.stringify({ uid, iat: start, exp: start + 60_000 }),
+        );
+        await auth.fetch(
+          makeRequest('/_auth/revoke-session', jsonBody({ session })),
+        );
+        const first = record.map.get(`session-revoked:${uid}`) as {
+          before: number;
+          exp: number;
+        };
+        expect(first.before).toBe(start);
+
+        // A later logout moves `before` forward and extends `exp`.
+        vi.setSystemTime(start + 5_000);
+        await auth.fetch(
+          makeRequest('/_auth/revoke-session', jsonBody({ session })),
+        );
+        const second = record.map.get(`session-revoked:${uid}`) as {
+          before: number;
+          exp: number;
+        };
+        expect(second.before).toBe(start + 5_000);
+        expect(second.exp).toBeGreaterThan(first.exp);
+
+        // An out-of-order (earlier) revocation must not walk it back.
+        vi.setSystemTime(start + 1_000);
+        await auth.fetch(
+          makeRequest('/_auth/revoke-session', jsonBody({ session })),
+        );
+        const third = record.map.get(`session-revoked:${uid}`) as {
+          before: number;
+          exp: number;
+        };
+        expect(third.before).toBe(start + 5_000);
+        expect(third.exp).toBe(second.exp);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('fails closed on a corrupt revocation record', async () => {
+      const secret = 'corrupt-revocation-secret';
+      const uid = 'uid-corrupt-revocation';
+      record.map.set('session-secret', secret);
+      const now = Date.now();
+      const session = await signSessionPayload(
+        secret,
+        JSON.stringify({ uid, iat: now, exp: now + 60_000 }),
+      );
+      for (const revocation of [
+        { before: Number.NaN, exp: now + 1_000 },
+        { before: now - 1_000, exp: Number.POSITIVE_INFINITY },
+      ]) {
+        record.map.set(`session-revoked:${uid}`, revocation);
+        const res = await auth.fetch(
+          makeRequest('/_auth/verify-session', jsonBody({ session })),
+        );
+        expect(res.status, JSON.stringify(revocation)).toBe(401);
+      }
+      // A well-formed record that predates the token still verifies.
+      record.map.set(`session-revoked:${uid}`, {
+        before: now - 1_000,
+        exp: now + 1_000,
+      });
+      const ok = await auth.fetch(
+        makeRequest('/_auth/verify-session', jsonBody({ session })),
+      );
+      expect(ok.status).toBe(200);
+    });
+
+    it('ignores revoke-session on the wrong method', async () => {
+      const res = await auth.fetch(
+        makeRequest('/_auth/revoke-session', { method: 'GET' }),
+      );
+      expect(res.status).toBe(404);
     });
   });
 });

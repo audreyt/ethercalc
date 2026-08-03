@@ -14,10 +14,15 @@
  */
 /* istanbul ignore file */
 import type { Hono } from 'hono';
+import {
+  MAX_WS_AUTH_CHARS,
+  MAX_WS_USER_CHARS,
+} from '@ethercalc/shared/messages';
 
 import { roomStub } from '../lib/do-dispatch.ts';
 import { getSessionPrincipal } from '../lib/session-middleware.ts';
-import { encodeRoom } from '../lib/room-name.ts';
+import { parseSessionCookie } from '../lib/session.ts';
+import { encodeRoom, isValidRoomName } from '../lib/room-name.ts';
 import type { EtherCalcHonoEnv } from '../env.ts';
 
 /**
@@ -43,8 +48,29 @@ export function registerWs(app: Hono<EtherCalcHonoEnv>): void {
       return c.text('Expected Upgrade: websocket', 426);
     }
     const room = c.req.param('room') ?? '';
+    const url = new URL(c.req.url);
+    const users = url.searchParams.getAll('user');
+    const authValues = url.searchParams.getAll('auth');
+    const user = users[0] ?? '';
+    const auth = authValues[0] ?? '';
+    if (
+      !isValidRoomName(room) ||
+      users.length > 1 ||
+      authValues.length > 1 ||
+      user.length > MAX_WS_USER_CHARS ||
+      auth.length > MAX_WS_AUTH_CHARS
+    ) {
+      return c.text('Invalid WebSocket parameters', 400);
+    }
+    const session = parseSessionCookie(c.req.header('Cookie') ?? null);
+    if (session !== null) {
+      const expectedOrigin = c.env.ETHERCALC_ORIGIN;
+      if (!expectedOrigin || c.req.header('Origin') !== expectedOrigin) {
+        return c.text('Forbidden', 403);
+      }
+    }
     const stub = roomStub(c.env, room);
-    const doUrl = buildDoUrl(room, new URL(c.req.url));
+    const doUrl = buildDoUrl(room, url);
     // The forwarded header set is built from scratch — inbound
     // `X-EC-*` headers are NEVER copied. The DO trusts `X-EC-Uid`
     // (P9 WS identity), so it is stamped exclusively from the verified
@@ -58,6 +84,7 @@ export function registerWs(app: Hono<EtherCalcHonoEnv>): void {
     if (principal) {
       fwd.set('X-EC-Uid', principal.uid);
       fwd.set('X-EC-Session-Exp', String(principal.exp));
+      if (session !== null) fwd.set('X-EC-Session', session);
     }
     const req = new Request(doUrl, {
       method: 'GET',

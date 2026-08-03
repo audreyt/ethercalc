@@ -18,7 +18,7 @@
  *   server → client: wrap the ServerMessage into an `args[0]` slot.
  */
 import {
-  CLIENT_MESSAGE_TYPES,
+  parseClientMessageValue,
   type ClientMessage,
   type ServerMessage,
 } from '@ethercalc/shared/messages';
@@ -38,10 +38,8 @@ interface SocketIoEventPayload {
  *   - `name` is not "data"
  *   - `args` is missing, empty, or the first arg isn't a ClientMessage
  *
- * We deliberately don't validate payload shape beyond the `type` field —
- * the native WS layer owes deeper validation for *its* input, and the
- * shim's job is to be a thin translator. Duplicating type checks here
- * would drift from the canonical parser in shared/messages.ts.
+ * Payload validation is delegated to the canonical shared parser so native
+ * and socket.io transports enforce the same required fields and limits.
  */
 export function socketIoEventToNative(packet: Packet): ClientMessage | null {
   if (packet.type !== PacketType.Event) return null;
@@ -59,14 +57,7 @@ export function socketIoEventToNative(packet: Packet): ClientMessage | null {
 
   if (!Array.isArray(parsed.args) || parsed.args.length === 0) return null;
 
-  const first = parsed.args[0];
-  if (!first || typeof first !== 'object') return null;
-
-  const type = (first as { type?: unknown }).type;
-  if (typeof type !== 'string') return null;
-  if (!(CLIENT_MESSAGE_TYPES as readonly string[]).includes(type)) return null;
-
-  return first as ClientMessage;
+  return parseClientMessageValue(parsed.args[0]);
 }
 
 /**

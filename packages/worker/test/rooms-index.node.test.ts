@@ -198,6 +198,18 @@ describe('listRoomTimes', () => {
     });
     expect(await listRoomTimes(db)).toEqual({ newer: 250, oldest: 100 });
   });
+
+  it('preserves a __proto__ room as data without prototype mutation', async () => {
+    const { db } = makeFakeDb({
+      'SELECT room, updated_at FROM rooms ORDER BY updated_at DESC, room ASC': [
+        { room: '__proto__', updated_at: 100 },
+      ],
+    });
+    const out = await listRoomTimes(db);
+    expect(Object.getPrototypeOf(out)).toBeNull();
+    expect(Object.hasOwn(out, '__proto__')).toBe(true);
+    expect(out['__proto__']).toBe(100);
+  });
 });
 
 describe('renderRoomLinks', () => {

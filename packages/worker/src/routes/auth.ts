@@ -3,7 +3,7 @@
  *
  * Thin glue between the browser and the singleton AuthDO: ceremony
  * bodies are forwarded verbatim (the DO validates them), and the opaque
- * session token minted on completion becomes an HttpOnly `ec_sess`
+ * session token minted on completion becomes an HttpOnly `__Host-ec_sess`
  * cookie — it never appears in a response body, so page-level XSS
  * cannot lift it.
  *
@@ -14,11 +14,13 @@
 /* istanbul ignore file */
 import type { Hono } from 'hono';
 
+import { clientIpFromHeaders } from '../lib/rate-limit.ts';
 import { flagEnabled } from '../lib/room-index-access.ts';
 import { getSessionPrincipal } from '../lib/session-middleware.ts';
 import {
   SESSION_COOKIE_NAME,
   createSessionCookie,
+  parseSessionCookie,
 } from '../lib/session.ts';
 import type { Env, EtherCalcHonoEnv } from '../env.ts';
 
@@ -40,11 +42,12 @@ function authEnabled(env: Env): boolean {
   );
 }
 
-/** Forward one ceremony step to the singleton AuthDO. */
+/** Forward one authentication operation to the singleton AuthDO. */
 async function dispatchCeremony(
   env: Env,
   path: string,
   body: string,
+  clientIp: string,
 ): Promise<Response> {
   const namespace = env.AUTH;
   /* istanbul ignore next -- guarded by authEnabled at every callsite */
@@ -52,12 +55,31 @@ async function dispatchCeremony(
   const stub = namespace.get(namespace.idFromName('auth'));
   return stub.fetch(`${AUTH_DO_HOST}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'X-EC-Client-IP': clientIp,
+    },
     body,
   });
 }
 
 export function registerAuth(app: Hono<EtherCalcHonoEnv>): void {
+  app.use('/_auth/*', async (c, next) => {
+    if (c.req.method === 'POST' && authEnabled(c.env)) {
+      if (c.req.header('Origin') !== c.env.ETHERCALC_ORIGIN) {
+        return c.text('Forbidden', 403);
+      }
+      if (
+        c.req.path !== '/_auth/logout' &&
+        c.req.header('Content-Type')?.split(';', 1)[0]?.trim().toLowerCase() !==
+          'application/json'
+      ) {
+        return c.text('Unsupported Media Type', 415);
+      }
+    }
+    await next();
+    c.header('Cache-Control', 'no-store');
+  });
   // Ceremony initiation — the DO's JSON (options + uid) passes through
   // untouched; there is no session yet, so no cookie.
   for (const step of ['register-init', 'login-init'] as const) {
@@ -67,6 +89,7 @@ export function registerAuth(app: Hono<EtherCalcHonoEnv>): void {
         c.env,
         `/_auth/${step}`,
         await c.req.text(),
+        clientIpFromHeaders(c.req.raw.headers),
       );
       return new Response(res.body, res);
     });
@@ -81,6 +104,7 @@ export function registerAuth(app: Hono<EtherCalcHonoEnv>): void {
         c.env,
         `/_auth/${step}`,
         await c.req.text(),
+        clientIpFromHeaders(c.req.raw.headers),
       );
       if (!res.ok) return new Response(res.body, res);
       const body: unknown = await res.json();
@@ -111,9 +135,26 @@ export function registerAuth(app: Hono<EtherCalcHonoEnv>): void {
     const principal = enabled ? await getSessionPrincipal(c) : null;
     return c.json({ uid: principal?.uid ?? null, enabled });
   });
-  // Logout is purely a cookie clear — AuthDO sessions are stateless
-  // HMAC tokens, so there is nothing server-side to revoke in Phase A.
-  app.post('/_auth/logout', () => {
+  // Revoke every token issued to this uid at or before the current session,
+  // then clear the browser cookie. A revocation failure must not claim that
+  // logout succeeded while a copied bearer token remains usable.
+  app.post('/_auth/logout', async (c) => {
+    if (authEnabled(c.env)) {
+      const session = parseSessionCookie(c.req.header('Cookie') ?? null);
+      if (session !== null) {
+        try {
+          const response = await dispatchCeremony(
+            c.env,
+            '/_auth/revoke-session',
+            JSON.stringify({ session }),
+            clientIpFromHeaders(c.req.raw.headers),
+          );
+          if (!response.ok) return c.text('Logout unavailable', 503);
+        } catch {
+          return c.text('Logout unavailable', 503);
+        }
+      }
+    }
     return new Response(null, {
       status: 204,
       headers: {

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html manifest="manifest.appcache">
+<html>
 <head>
 <meta charset="utf-8" />
 <meta content="IE=edge" http-equiv="X-UA-Compatible"/>
@@ -20,44 +20,12 @@
 <meta name="theme-color" content="#0c3159">
 <base target="_blank"/>
 <title>EtherCalc - Share the URL to your friends and edit together!</title>
-<script>
-if (!(window.location.hash.replace('#', ''))) {
-    if (window.location.href.match(/\/([^_][^\*\$\/\?]*)(?:\?.*)?$/)) {
-        window.EtherCalc = window.SocialCalc = { _room: RegExp.$1 };
-        document.title = SocialCalc._room + " – EtherCalc";
-    }
-    else {
-        window.location = './_start';
-    }
-}
-window.addEventListener("message", function(it){
-    if (/"type"\s*:\s*"multi"/.test(it.data)) {
-        window.__MULTI__ = (function(){ try { return JSON.parse(it.data); } catch (e$) {} }());
-    }
-}, false);
-</script>
+<script src="./static/index-bootstrap.js"></script>
 <script src="./static/jquery.js"></script>
 <script src="./static/socialcalc.js"></script>
 <script type="module" src="./static/passkey/ui.js"></script>
 <script type="module" src="./static/player.js"></script>
-<script>
-var readl10nfile = function(data) {
-  for (var k in data) {
-        SocialCalc.Constants[k] = data[k];
-    }
-}
-$.ajax({url: ("./l10n/" + navigator.language + ".json").replace(/de-\w+/, 'de').replace(/zh-Hant/i, 'zh-TW').replace(/fr-\w+/, 'fr').replace(/en-\w+/, 'en'),
-        async: false,
-        success: function(data){readl10nfile(data)},
-        error: function() {
-          $.ajax({url: "./l10n/en.json",
-                  async: false,
-                  success: function(data){readl10nfile(data)},
-                  error: function(){console.error("Language file not found.")}
-          });
-        }
-  });
-</script>
+<script src="./static/index-l10n.js"></script>
 
 <link rel="stylesheet" type="text/css" href="./static/socialcalc.css">
 <link rel="stylesheet" type="text/css" href="./static/index.css">
@@ -74,14 +42,14 @@ body
 <link rel="stylesheet" type="text/css" href="./static/makeup.css">
 <script src="./static/makeup.js"></script>
 </head>
-<body onresize="if (typeof doresize != 'undefined') doresize();">
+<body>
 <m3e-theme color="#0c3159" scheme="light" variant="expressive" motion="expressive">
 <div id="msg" style="position:absolute;right:15px;top: 8px; bottom: 80px; display: none">
 <textarea id="msgtext" style="margin-top:10px;width:110px;height:100%;"></textarea><br>
 <form id="msgform">
 <input type="text" id="msgout" name="msgout" style="width: 110px">
 <br>
-<input type="submit" style="font-size:x-small;" value="Add a line" onclick="val = document.getElementById('msgout').value; if (/\S/.test(val)) {SocialCalc.Callbacks.broadcast('chat', {msg: val}); addmsg(val, false); document.getElementById('msgout').value = ''}; return false"><br>
+<input type="submit" style="font-size:x-small;" value="Add a line"><br>
 </form>
 </div>
 <div id="tableeditor">&nbsp;<div class="loader"></div></div>

@@ -35,6 +35,18 @@ export interface SettimetriggerParsed {
   readonly times: readonly number[];
 }
 
+/** Keeps one D1 batch below the platform's 100-statement ceiling. */
+export const MAX_CRON_TIMES_PER_CELL = 64;
+const MAX_CRON_ROW = 1_048_576;
+
+/** Restrict scheduled cells to SocialCalc's A1:ZZ1048576 address space. */
+export function isValidCronCell(cell: unknown): cell is string {
+  if (typeof cell !== 'string') return false;
+  const match = /^[A-Z]{1,2}([1-9]\d{0,6})$/.exec(cell);
+  return match !== null && Number(match[1]) <= MAX_CRON_ROW;
+}
+
+
 /**
  * Parse a raw SocialCalc command of the form
  *   settimetrigger <cell> <t1>,<t2>,…
@@ -63,9 +75,10 @@ export function parseSettimetrigger(
   // `parts[1]` is guaranteed non-empty because we `trim()`d before
   // splitting on `\s+` — no empty tokens are produced in any position.
   const cell = parts[1]!;
+  if (!isValidCronCell(cell)) return null;
   const rawTimes = parts.slice(2).join(' ');
   const times: number[] = [];
-  for (const raw of rawTimes.split(',')) {
+  for (const raw of rawTimes.split(',', MAX_CRON_TIMES_PER_CELL)) {
     const trimmedRaw = raw.trim();
     if (trimmedRaw.length === 0) continue;
     const n = Number(trimmedRaw);

@@ -30,14 +30,28 @@ import {
   STORAGE_KEYS,
   snapshotChunkKey,
 } from '@ethercalc/shared/storage-keys';
+import { getStorageValuesBatched } from './storage-batch.ts';
 
 /** Max bytes per chunk — well under the 128 KiB DO-storage ceiling. */
 export const SNAPSHOT_CHUNK_BYTES = 100 * 1024;
+/** Defense-in-depth cap for chunk-upload metadata (about 200 MiB). */
+export const MAX_SNAPSHOT_CHUNKS = 2_048;
 
 /** Shape of the `snapshot:meta` value when chunking is in use. */
 export interface SnapshotMeta {
   /** Number of `snapshot:chunk:<i>` entries, 1-based count. */
   readonly chunks: number;
+}
+
+function isValidSnapshotMeta(value: unknown): value is SnapshotMeta {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    'chunks' in value &&
+    Number.isSafeInteger(value.chunks) &&
+    (value.chunks as number) >= 1 &&
+    (value.chunks as number) <= MAX_SNAPSHOT_CHUNKS
+  );
 }
 
 /**
@@ -68,11 +82,14 @@ export async function readSnapshot(
   const single = await storage.get<string>(STORAGE_KEYS.snapshot);
   if (typeof single === 'string') return single;
   // Chunked path: meta tells us how many pieces to fetch.
-  const meta = await storage.get<SnapshotMeta>(STORAGE_KEYS.snapshotMeta);
+  const meta = await storage.get<unknown>(STORAGE_KEYS.snapshotMeta);
   if (meta === undefined || meta === null) return null;
+  if (!isValidSnapshotMeta(meta)) {
+    throw new Error('invalid snapshot chunk metadata');
+  }
   const keys: string[] = [];
   for (let i = 0; i < meta.chunks; i++) keys.push(snapshotChunkKey(i));
-  const got = await storage.get<string>(keys);
+  const got = await getStorageValuesBatched<string>(storage, keys);
   const parts: string[] = [];
   for (let i = 0; i < meta.chunks; i++) {
     const k = snapshotChunkKey(i);
@@ -87,10 +104,8 @@ export async function readSnapshot(
 }
 
 /**
- * Produce the snapshot-related entries for a batched `storage.put()`.
- * Does NOT write anything — the caller merges the returned keys into
- * its own entries object so the whole seed lands atomically in one
- * `put(entries)` call.
+ * Produce snapshot-related key-value entries for callers to store with the
+ * platform-sized batch helpers. This function does not perform I/O.
  *
  * For snapshots ≤ {@link SNAPSHOT_CHUNK_BYTES}, returns `{snapshot: …}`.
  * For larger, returns `{snapshot:meta: {chunks}, snapshot:chunk:<i>: …}`.
@@ -106,6 +121,15 @@ export function snapshotEntries(snapshot: string): Record<string, unknown> {
     return { [STORAGE_KEYS.snapshot]: snapshot };
   }
   const chunks = chunkString(snapshot, SNAPSHOT_CHUNK_BYTES);
+  // Defense in depth only: `#postSnapshotChunk` already refuses uploads
+  // declaring more than MAX_SNAPSHOT_CHUNKS chunks, and every other caller
+  // is bounded by the 25 MiB request-body cap, so no reachable input
+  // reaches 200 MiB. Exercising it would mean chunking a 200 MiB string
+  // one TextEncoder call per code point — minutes per run.
+  /* istanbul ignore next -- @preserve: unreachable below the upload caps */
+  if (chunks.length > MAX_SNAPSHOT_CHUNKS) {
+    throw new RangeError('snapshot exceeds chunk limit');
+  }
   const out: Record<string, unknown> = {
     [STORAGE_KEYS.snapshotMeta]: { chunks: chunks.length } satisfies SnapshotMeta,
   };
@@ -125,8 +149,12 @@ export function snapshotEntries(snapshot: string): Record<string, unknown> {
 export async function readSnapshotMeta(
   storage: DurableObjectStorage,
 ): Promise<SnapshotMeta | null> {
-  const meta = await storage.get<SnapshotMeta>(STORAGE_KEYS.snapshotMeta);
-  return meta ?? null;
+  const meta = await storage.get<unknown>(STORAGE_KEYS.snapshotMeta);
+  if (meta === undefined || meta === null) return null;
+  if (!isValidSnapshotMeta(meta)) {
+    throw new Error('invalid snapshot chunk metadata');
+  }
+  return meta;
 }
 
 /**

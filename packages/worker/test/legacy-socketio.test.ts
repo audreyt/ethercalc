@@ -73,4 +73,16 @@ describe('legacy socket.io shim — routes', () => {
     const res = await request('POST', '/socket.io/1/xhr-polling/too-short');
     expect(res.status).toBe(400);
   });
+
+  it('rejects an oversized XHR polling body before buffering it', async () => {
+    const res = await request(
+      'POST',
+      '/socket.io/1/xhr-polling/0123456789abcdef0123456789abcdef',
+      {
+        headers: { 'Content-Length': String(1024 * 1024 + 1025) },
+        body: '5:::{}',
+      },
+    );
+    expect(res.status).toBe(413);
+  });
 });

@@ -6,14 +6,12 @@
 import {
   createExecutionContext,
   env,
-  runInDurableObject,
   waitOnExecutionContext,
 } from 'cloudflare:test';
 import { describe, it, expect } from 'vite-plus/test';
 import worker from '../src/index.ts';
 import type { Env } from '../src/env.ts';
 import { upgradeWebSocket, upgradeLegacySocketIo } from '../src/lib/ws-upgrade.ts';
-import type { RoomDO } from '../src/room.ts';
 
 async function request(method: string, path: string, init: RequestInit = {}) {
   const req = new Request(`https://example.test${path}`, { method, ...init });
@@ -88,11 +86,12 @@ describe('DO WS — /_do/ws integration (runInDurableObject)', () => {
     let accepted: WebSocket | undefined;
     const state = { acceptWebSocket(server: WebSocket) { accepted = server; } } as unknown as DurableObjectState;
     const response = upgradeWebSocket(state, new Request('https://do.local/_do/ws?user=u&auth=a&room=r'), {
-      uid: 'verified', sessionExp: 123, sandstormModify: false,
+      uid: 'verified', sessionExp: 123, session: 'signed.token', sandstormModify: false,
     });
     expect(response.status).toBe(101);
     expect(accepted?.deserializeAttachment()).toEqual({
       user: 'u', room: 'r', auth: 'a', sandstormModify: false, uid: 'verified', sessionExp: 123,
+      session: 'signed.token',
     });
     expect(accepted).toBeDefined();
   });
@@ -160,21 +159,66 @@ describe('DO WS — /_do/ws integration (runInDurableObject)', () => {
     const e = env as unknown as Env;
     const id = e.ROOM.idFromName('ws-chat');
     const stub = e.ROOM.get(id);
-    const upgradeRes = await stub.fetch('https://do.local/_do/ws?user=alice&auth=0', {
+    const upgradeRes = await stub.fetch('https://do.local/_do/ws?user=alice&auth=ws-chat&room=ws-chat', {
       headers: { Upgrade: 'websocket' },
     });
     const client = upgradeRes.webSocket!;
     client.accept();
-    client.send(JSON.stringify({ type: 'chat', room: 'ws-chat', user: 'alice', msg: 'hi' }));
-    // Give the DO time to commit the chat storage write.
-    await new Promise((r) => setTimeout(r, 30));
-
-    // Verify storage via the instance runInDurableObject.
-    await runInDurableObject(stub, async (instance: RoomDO) => {
-      const chatLog = await instance.fetch(new Request('https://do.local/_do/log'));
-      const body = (await chatLog.json()) as { chat: string[] };
-      expect(body.chat).toContain('hi');
+    const { promise, resolve } = Promise.withResolvers<string>();
+    client.addEventListener('message', (event) => {
+      if (typeof event.data === 'string') resolve(event.data);
     });
+    client.send(
+      JSON.stringify({
+        type: 'chat',
+        room: 'ws-chat',
+        user: 'alice',
+        msg: 'hi',
+      }),
+    );
+    client.send(
+      JSON.stringify({
+        type: 'ask.log',
+        room: 'ws-chat',
+        user: 'alice',
+      }),
+    );
+    const body = JSON.parse(await promise) as { chat: string[] };
+    expect(body.chat).toContain('hi');
+    client.close();
+  });
+
+  it('does not persist chat from an explicit view-only socket', async () => {
+    const e = env as unknown as Env;
+    const id = e.ROOM.idFromName('ws-chat-viewer');
+    const stub = e.ROOM.get(id);
+    const upgradeRes = await stub.fetch(
+      'https://do.local/_do/ws?user=viewer&auth=0&room=ws-chat-viewer',
+      { headers: { Upgrade: 'websocket' } },
+    );
+    const client = upgradeRes.webSocket!;
+    client.accept();
+    const { promise, resolve } = Promise.withResolvers<string>();
+    client.addEventListener('message', (event) => {
+      if (typeof event.data === 'string') resolve(event.data);
+    });
+    client.send(
+      JSON.stringify({
+        type: 'chat',
+        room: 'ws-chat-viewer',
+        user: 'viewer',
+        msg: 'forbidden',
+      }),
+    );
+    client.send(
+      JSON.stringify({
+        type: 'ask.log',
+        room: 'ws-chat-viewer',
+        user: 'viewer',
+      }),
+    );
+    const body = JSON.parse(await promise) as { chat: string[] };
+    expect(body.chat).toEqual([]);
     client.close();
   });
 

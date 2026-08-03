@@ -174,7 +174,11 @@ describe('currentRoom', () => {
   it('returns null for a bare root path', () => {
     expect(currentRoom('/')).toBeNull();
   });
+  it('returns null instead of throwing on malformed percent encoding', () => {
+    expect(currentRoom('/%E0%A4%A')).toBeNull();
+  });
 });
+
 
 describe('roomEditLocation', () => {
   it('builds an encoded /:room/edit path', () => {

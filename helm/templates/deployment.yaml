@@ -32,6 +32,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "ethercalc.serviceAccountName" . }}
+      automountServiceAccountToken: false
       {{- with .Values.podSecurityContext }}
       securityContext:
         {{- toYaml . | nindent 8 }}
@@ -78,6 +79,16 @@ spec:
             {{- if .Values.config.roomCreateLimit }}
             - name: ETHERCALC_ROOM_CREATE_LIMIT
               value: {{ .Values.config.roomCreateLimit | quote }}
+            {{- end }}
+            {{- if .Values.config.auth.enabled }}
+            - name: ETHERCALC_AUTH
+              value: "1"
+            - name: ETHERCALC_RP_ID
+              value: {{ required "config.auth.rpId is required when passkey auth is enabled" .Values.config.auth.rpId | quote }}
+            - name: ETHERCALC_RP_NAME
+              value: {{ required "config.auth.rpName is required when passkey auth is enabled" .Values.config.auth.rpName | quote }}
+            - name: ETHERCALC_ORIGIN
+              value: {{ required "config.auth.origin is required when passkey auth is enabled" .Values.config.auth.origin | quote }}
             {{- end }}
             - name: ETHERCALC_KEY
               valueFrom:

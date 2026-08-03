@@ -139,6 +139,15 @@ describe('parseSeedPayload', () => {
     expect(r).toEqual({ ok: false, error: 'ecell keys must be non-empty' });
   });
 
+  it('preserves an own __proto__ ecell key without prototype mutation', () => {
+    const ecell = JSON.parse('{"__proto__":"A1"}') as Record<string, unknown>;
+    const result = parseSeedPayload({ ecell }, now);
+    if (!result.ok) throw new Error(result.error);
+    expect(Object.getPrototypeOf(result.value.ecell)).toBeNull();
+    expect(Object.hasOwn(result.value.ecell, '__proto__')).toBe(true);
+    expect(result.value.ecell['__proto__']).toBe('A1');
+  });
+
   it('rejects non-finite updatedAt', () => {
     const r = parseSeedPayload({ updatedAt: Number.NaN }, now);
     expect(r).toEqual({ ok: false, error: 'updatedAt must be a finite number' });

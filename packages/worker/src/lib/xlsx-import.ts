@@ -18,6 +18,11 @@
 import * as XLSX from '@e965/xlsx';
 import { loadSocialCalc } from '@ethercalc/socialcalc-headless';
 import { encodeColumn, parseCoord } from './xlsx-build.ts';
+import {
+  MAX_SHEET_CELLS,
+  MAX_SOCIALCALC_COL,
+  MAX_SOCIALCALC_ROW,
+} from './command-limits.ts';
 
 /**
  * Upper bound on the number of populated cells we will replay from an
@@ -28,10 +33,7 @@ import { encodeColumn, parseCoord } from './xlsx-build.ts';
  * spreadsheet while capping the replay work. Exported so callers/tests can
  * reference the limit.
  */
-export const MAX_IMPORT_CELLS = 200_000;
-
-/** SocialCalc max column (1-based ZZ). SheetJS 0-based max is 701. */
-export const MAX_SOCIALCALC_COL = 702;
+export const MAX_IMPORT_CELLS = MAX_SHEET_CELLS;
 
 /** Thrown by `xlsxToSave` when an import exceeds {@link MAX_IMPORT_CELLS}. */
 export class ImportTooLargeError extends Error {
@@ -63,6 +65,34 @@ export class ImportColumnOutOfRangeError extends Error {
   }
 }
 
+/** Thrown when a workbook cell or merge exceeds the maintained row ceiling. */
+export class ImportRowOutOfRangeError extends Error {
+  readonly coord: string;
+  readonly row: number;
+  constructor(coord: string, row: number) {
+    super(
+      `xlsx/ods import row ${coord} exceeds EtherCalc max ${MAX_SOCIALCALC_ROW}; row index ${row}`,
+    );
+    this.name = 'ImportRowOutOfRangeError';
+    this.coord = coord;
+    this.row = row;
+  }
+}
+
+/** Thrown when a sparse workbook's declared rectangular extent is too large. */
+export class ImportDimensionsTooLargeError extends Error {
+  readonly rows: number;
+  readonly columns: number;
+  constructor(rows: number, columns: number) {
+    super(
+      `xlsx/ods import dimensions ${columns}x${rows} exceed ${MAX_SHEET_CELLS} cells`,
+    );
+    this.name = 'ImportDimensionsTooLargeError';
+    this.rows = rows;
+    this.columns = columns;
+  }
+}
+
 export const MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES = 25 * 1024 * 1024;
 
 export class ImportArchiveTooLargeError extends Error {
@@ -77,23 +107,27 @@ export class ImportArchiveTooLargeError extends Error {
 }
 
 export function enforceImportArchiveLimit(bytes: Uint8Array): void {
-  const b = bytes as any;
+  // Every read below is bounds-guarded, so the index is always populated —
+  // the assertion keeps the bitwise arithmetic typed under
+  // `noUncheckedIndexedAccess` without reaching for `any`.
+  const b = (index: number): number => bytes[index] as number;
+  const length = bytes.length;
   // Stryker disable all
-  if (b.length < 2 || b[0] !== 0x50 || b[1] !== 0x4b) {
+  if (length < 2 || b(0) !== 0x50 || b(1) !== 0x4b) {
     return;
   }
-  if (b.length < 22) {
+  if (length < 22) {
     return;
   }
   let eocdOffset = -1;
-  const startScan = b.length - 22;
-  const endScan = Math.max(0, b.length - 22 - 0xffff);
+  const startScan = length - 22;
+  const endScan = Math.max(0, length - 22 - 0xffff);
   for (let i = startScan; i >= endScan; i--) {
     if (
-      b[i] === 0x50 &&
-      b[i + 1] === 0x4b &&
-      b[i + 2] === 0x05 &&
-      b[i + 3] === 0x06
+      b(i) === 0x50 &&
+      b(i + 1) === 0x4b &&
+      b(i + 2) === 0x05 &&
+      b(i + 3) === 0x06
     ) {
       eocdOffset = i;
       break;
@@ -103,25 +137,25 @@ export function enforceImportArchiveLimit(bytes: Uint8Array): void {
   if (eocdOffset === -1) {
     return;
   }
-  const entryCount = b[eocdOffset + 10] | (b[eocdOffset + 11] << 8);
-  const cdSize = ((b[eocdOffset + 12]) | (b[eocdOffset + 13] << 8) | (b[eocdOffset + 14] << 16) | (b[eocdOffset + 15] << 24)) >>> 0;
-  const cdOffset = ((b[eocdOffset + 16]) | (b[eocdOffset + 17] << 8) | (b[eocdOffset + 18] << 16) | (b[eocdOffset + 19] << 24)) >>> 0;
+  const entryCount = b(eocdOffset + 10) | (b(eocdOffset + 11) << 8);
+  const cdSize = (b(eocdOffset + 12) | (b(eocdOffset + 13) << 8) | (b(eocdOffset + 14) << 16) | (b(eocdOffset + 15) << 24)) >>> 0;
+  const cdOffset = (b(eocdOffset + 16) | (b(eocdOffset + 17) << 8) | (b(eocdOffset + 18) << 16) | (b(eocdOffset + 19) << 24)) >>> 0;
 
   if (entryCount === 0xffff || cdSize === 0xffffffff || cdOffset === 0xffffffff) {
     throw new ImportArchiveTooLargeError(Number.MAX_SAFE_INTEGER);
   }
 
   let offset = cdOffset;
-  if (offset + 4 <= b.length) {
-    const sig = ((b[offset] | (b[offset + 1] << 8) | (b[offset + 2] << 16) | (b[offset + 3] << 24)) >>> 0);
+  if (offset + 4 <= length) {
+    const sig = (b(offset) | (b(offset + 1) << 8) | (b(offset + 2) << 16) | (b(offset + 3) << 24)) >>> 0;
     if (sig !== 0x02014b50) {
       const expectedEocdOffset = cdOffset + cdSize;
       if (expectedEocdOffset < eocdOffset) {
         const prefixLength = eocdOffset - expectedEocdOffset;
         const testOffset = cdOffset + prefixLength;
-        /* istanbul ignore else -- expectedEocdOffset sits ~22B before buffer end, so testOffset + 4 <= b.length is always true. Defensive guard. */
-        if (testOffset + 4 <= b.length) {
-          const testSig = ((b[testOffset] | (b[testOffset + 1] << 8) | (b[testOffset + 2] << 16) | (b[testOffset + 3] << 24)) >>> 0);
+        /* istanbul ignore else -- expectedEocdOffset sits ~22B before buffer end, so testOffset + 4 <= length is always true. Defensive guard. */
+        if (testOffset + 4 <= length) {
+          const testSig = (b(testOffset) | (b(testOffset + 1) << 8) | (b(testOffset + 2) << 16) | (b(testOffset + 3) << 24)) >>> 0;
           if (testSig === 0x02014b50) {
             offset = testOffset;
           }
@@ -133,25 +167,25 @@ export function enforceImportArchiveLimit(bytes: Uint8Array): void {
   let totalUncompressedSize = 0;
   for (let i = 0; i < entryCount; i++) {
     // Stryker disable next-line all : equivalent check on out-of-bounds offset
-    if (offset + 46 > b.length) {
+    if (offset + 46 > length) {
       return;
     }
-    const signature = ((b[offset] | (b[offset + 1] << 8) | (b[offset + 2] << 16) | (b[offset + 3] << 24)) >>> 0);
+    const signature = (b(offset) | (b(offset + 1) << 8) | (b(offset + 2) << 16) | (b(offset + 3) << 24)) >>> 0;
     if (signature !== 0x02014b50) {
       return;
     }
-    const compressedSize = ((b[offset + 20] | (b[offset + 21] << 8) | (b[offset + 22] << 16) | (b[offset + 23] << 24)) >>> 0);
-    const uncompressedSize = ((b[offset + 24] | (b[offset + 25] << 8) | (b[offset + 26] << 16) | (b[offset + 27] << 24)) >>> 0);
-    const fileNameLength = b[offset + 28] | (b[offset + 29] << 8);
-    const extraLength = b[offset + 30] | (b[offset + 31] << 8);
-    const commentLength = b[offset + 32] | (b[offset + 33] << 8);
+    const compressedSize = (b(offset + 20) | (b(offset + 21) << 8) | (b(offset + 22) << 16) | (b(offset + 23) << 24)) >>> 0;
+    const uncompressedSize = (b(offset + 24) | (b(offset + 25) << 8) | (b(offset + 26) << 16) | (b(offset + 27) << 24)) >>> 0;
+    const fileNameLength = b(offset + 28) | (b(offset + 29) << 8);
+    const extraLength = b(offset + 30) | (b(offset + 31) << 8);
+    const commentLength = b(offset + 32) | (b(offset + 33) << 8);
 
     if (compressedSize === 0xffffffff || uncompressedSize === 0xffffffff) {
       throw new ImportArchiveTooLargeError(Number.MAX_SAFE_INTEGER);
     }
 
     // Stryker disable next-line all : equivalent check on out-of-bounds offset
-    if (offset + 46 + fileNameLength > b.length) {
+    if (offset + 46 + fileNameLength > length) {
       return;
     }
 
@@ -206,24 +240,20 @@ export function enforceImportLimit(cellCount: number): void {
 }
 
 /**
- * Reject worksheets that touch any column beyond SocialCalc's ZZ (702).
- * SheetJS 0-based column indices > 701 map to AAA+ addresses that
- * SocialCalc's `coordToCr` parses as `{col:0}` and silently drops.
- * Called before per-cell replay so the import fails closed.
+ * Reject worksheets outside SocialCalc's ZZ (702) column grammar or the
+ * maintained row ceiling. Sparse far-away cells and merges are dangerous even
+ * when the populated-cell count is small: rendering/recalculation walks the
+ * declared dimensions synchronously.
  *
- * Fail-closed also for:
- * - non-metadata keys that `parseCoord` cannot parse (would otherwise be
- *   silently ignored during replay)
- * - merge end columns that are missing, non-number, non-safe-integer,
- *   negative, or >701
- *
- * `encodeColumn` is only invoked for safe non-negative integer indices —
- * never for `Infinity` / NaN / fractions (which would hang or mislabel
- * the error coord).
+ * Fail closed before replay for unparseable cell keys and malformed merge
+ * endpoints. `encodeColumn` is only invoked after the column endpoint has
+ * passed its finite, non-negative integer checks.
  */
 export function enforceSocialCalcColumnLimit(
   ws: Record<string, unknown>,
 ): void {
+  let maxRow = 1;
+  let maxColumn = 1;
   for (const addr of Object.keys(ws)) {
     if (addr.startsWith('!')) continue;
     const rc = parseCoord(addr);
@@ -236,6 +266,14 @@ export function enforceSocialCalcColumnLimit(
     if (rc.c > MAX_SOCIALCALC_COL - 1) {
       throw new ImportColumnOutOfRangeError(addr, rc.c + 1);
     }
+    if (
+      !Number.isSafeInteger(rc.r) ||
+      rc.r > MAX_SOCIALCALC_ROW - 1
+    ) {
+      throw new ImportRowOutOfRangeError(addr, rc.r + 1);
+    }
+    maxRow = Math.max(maxRow, rc.r + 1);
+    maxColumn = Math.max(maxColumn, rc.c + 1);
   }
   const merges: Array<{
     s?: { r?: number; c?: number };
@@ -246,36 +284,53 @@ export function enforceSocialCalcColumnLimit(
         e?: { r?: number; c?: number };
       }>)
     : [];
-  for (const m of merges) {
-    const endC = m?.e?.c;
-    if (typeof endC !== 'number') {
-      // Missing / non-number merge endpoint — fail closed without encodeColumn.
-      throw new ImportColumnOutOfRangeError(
-        `merge:e.c=${String(endC)}`,
-        Number.NaN,
-      );
-    }
-    // Fail closed on anything outside the safe 0..701 band. Safe integer
-    // gate excludes Infinity/NaN/fractions before encodeColumn is called.
-    if (
-      !Number.isSafeInteger(endC) ||
-      endC < 0 ||
-      endC > MAX_SOCIALCALC_COL - 1
-    ) {
-      // Missing/non-number end row defaults to 0 → label uses row 1.
-      const endR = typeof m?.e?.r === 'number' ? m.e.r : 0;
-      if (Number.isSafeInteger(endC) && endC >= 0) {
-        // Finite integer past ZZ — label with encodeColumn (e.g. 702 → AAA).
+  for (const merge of merges) {
+    for (const endpointName of ['s', 'e'] as const) {
+      const endpoint = merge[endpointName];
+      const column = endpoint?.c;
+      const row = endpoint?.r;
+      if (
+        typeof column !== 'number' ||
+        !Number.isSafeInteger(column) ||
+        column < 0 ||
+        column > MAX_SOCIALCALC_COL - 1
+      ) {
+        if (Number.isSafeInteger(column) && (column as number) >= 0) {
+          const labelRow =
+            typeof row === 'number' && Number.isFinite(row) ? row + 1 : 1;
+          throw new ImportColumnOutOfRangeError(
+            `${encodeColumn(column as number)}${labelRow}`,
+            (column as number) + 1,
+          );
+        }
         throw new ImportColumnOutOfRangeError(
-          `${encodeColumn(endC)}${endR + 1}`,
-          endC + 1,
+          `merge:${endpointName}.c=${String(column)}`,
+          typeof column === 'number' && Number.isFinite(column)
+            ? Math.trunc(column)
+            : Number.NaN,
         );
       }
-      throw new ImportColumnOutOfRangeError(
-        `merge:e.c=${String(endC)}`,
-        Number.isFinite(endC) ? Math.trunc(endC) : Number.NaN,
-      );
+      if (
+        typeof row !== 'number' ||
+        !Number.isSafeInteger(row) ||
+        row < 0 ||
+        row > MAX_SOCIALCALC_ROW - 1
+      ) {
+        throw new ImportRowOutOfRangeError(
+          `${encodeColumn(column)}${
+            typeof row === 'number' && Number.isFinite(row)
+              ? row + 1
+              : String(row)
+          }`,
+          typeof row === 'number' ? row + 1 : Number.NaN,
+        );
+      }
+      maxRow = Math.max(maxRow, row + 1);
+      maxColumn = Math.max(maxColumn, column + 1);
     }
+  }
+  if (maxRow * maxColumn > MAX_SHEET_CELLS) {
+    throw new ImportDimensionsTooLargeError(maxRow, maxColumn);
   }
 }
 

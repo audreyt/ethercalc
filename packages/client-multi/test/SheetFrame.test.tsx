@@ -65,6 +65,9 @@ describe('<SheetFrame />', () => {
       rows: [{ link: '/b', title: 'B', row: 2 }],
       index: 'room',
     });
+    expect(postSpy.mock.calls[0]?.[1]).toBe(
+      new URL('/b', window.location.href).origin,
+    );
     expect(focusSpy).toHaveBeenCalled();
     expect(onFirstFocus).toHaveBeenCalledTimes(1);
   });

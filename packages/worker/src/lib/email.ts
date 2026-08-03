@@ -12,9 +12,8 @@
  *        `" [E-mail Sent]"` string legacy produced (src/emailer.ls:33
  *        and `:51`). Used in tests + when no Cloudflare binding is
  *        available.
- *      - `BindingEmailSender` — wraps a Cloudflare `send_email`
- *        binding. Formats the message as a minimal RFC822/MIME envelope
- *        and invokes `binding.send(EmailMessage)`.
+ *      - `BindingEmailSender` — wraps Cloudflare Email Service's structured
+ *        Workers binding (`from`/`to`/`subject`/`text`).
  *
  * Nothing here touches `env.*` directly: routes/DO code builds an
  * `EmailSender` and injects it. Keeps the module pure + 100% Node
@@ -115,6 +114,8 @@ export const STUB_SENT_MESSAGE = ' [E-mail Sent]';
  * `confirmemailsent` WS broadcast nor any operator log can mislead.
  */
 export const EMAIL_DISABLED_MESSAGE = ' [E-mail not sent: email is not configured]';
+/** Stable client-facing transport failure without provider/internal details. */
+export const EMAIL_FAILURE_MESSAGE = ' [E-mail not sent]';
 
 /**
  * In-process email transport. Returns the legacy success string for
@@ -143,37 +144,24 @@ export class DisabledEmailSender implements EmailSender {
 }
 
 /**
- * Minimal shape of the Cloudflare `send_email` binding. We don't import
- * from `@cloudflare/workers-types` because the SendEmail type pulls in
- * the whole `cloudflare:email` module at type-time which is not
- * available under Node tests. Instead we declare a narrow structural
- * interface matching what we call.
- *
- * The actual binding constructor takes an `EmailMessage` (`from`,
- * `to`, raw MIME). We build the MIME envelope here in `BindingEmailSender`.
+ * Minimal structural shape of Cloudflare Email Service's Workers binding.
+ * The recommended structured API avoids the legacy `EmailMessage` raw-MIME
+ * constructor and follows the current `{from: {email}, to, subject, text}` API.
  */
 export interface SendEmailBinding {
-  send(message: BindingEmailMessage): Promise<unknown>;
-}
-
-/** Shape we pass to `binding.send()`. Minimal RFC822/MIME envelope. */
-export interface BindingEmailMessage {
-  readonly from: string;
-  readonly to: string;
-  readonly raw: ReadableStream<Uint8Array> | string;
+  send(message: {
+    readonly from: { readonly email: string; readonly name?: string };
+    readonly to: string;
+    readonly subject: string;
+    readonly text: string;
+  }): Promise<unknown>;
 }
 
 /**
- * Wraps an `env.EMAIL` Cloudflare binding. On `send()`:
- *   1. Build a minimal RFC822 MIME envelope (From/To/Subject/blank/body).
- *   2. Call `binding.send({from, to, raw})`.
- *   3. On success return the legacy `" [E-mail Sent]"` message.
- *   4. On failure return `" EMAIL ERROR - <msg>"` — matches
- *      src/emailer.ls:47 exactly.
- *
- * The legacy transport swallowed errors and reported them through the
- * same WS callback channel; we preserve that contract so the client's
- * `confirmemailsent` handler keeps its existing expectations.
+ * Wraps an `env.EMAIL` Cloudflare Email Service binding. Header fields are
+ * sanitized again at this final boundary; the cell body is sent as plain
+ * text. Transport failures stay generic because this result is broadcast to
+ * every room client and must not expose provider or deployment internals.
  */
 export class BindingEmailSender implements EmailSender {
   readonly #binding: SendEmailBinding;
@@ -185,38 +173,16 @@ export class BindingEmailSender implements EmailSender {
   }
 
   async send(to: string, subject: string, body: string): Promise<SendResult> {
-    const raw = buildMimeEnvelope(this.#fromAddress, to, subject, body);
     try {
-      await this.#binding.send({ from: this.#fromAddress, to, raw });
+      await this.#binding.send({
+        from: { email: stripHeaderInjection(this.#fromAddress) },
+        to: stripHeaderInjection(to),
+        subject: stripHeaderInjection(subject),
+        text: body,
+      });
       return { message: STUB_SENT_MESSAGE };
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      return { message: ` EMAIL ERROR - ${errMsg}` };
+    } catch {
+      return { message: EMAIL_FAILURE_MESSAGE };
     }
   }
-}
-
-/**
- * Build the RFC822/MIME envelope as a plain string. Exported so tests
- * can pin the byte shape. The Cloudflare binding accepts either a
- * `ReadableStream<Uint8Array>` or a raw string — we pass a string and
- * let workerd handle the stream conversion.
- */
-export function buildMimeEnvelope(
-  from: string,
-  to: string,
-  subject: string,
-  body: string,
-): string {
-  // RFC822 requires CRLF line endings. `\r\n` everywhere. Header values are
-  // re-sanitized here (defense-in-depth alongside `parseSendemail`) so this
-  // function can never emit a folded/injected header regardless of caller.
-  const headers = [
-    `From: ${stripHeaderInjection(from)}`,
-    `To: ${stripHeaderInjection(to)}`,
-    `Subject: ${stripHeaderInjection(subject)}`,
-    'MIME-Version: 1.0',
-    'Content-Type: text/plain; charset=utf-8',
-  ];
-  return `${headers.join('\r\n')}\r\n\r\n${body}`;
 }

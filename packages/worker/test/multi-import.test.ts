@@ -69,6 +69,20 @@ describe('PUT multi-sheet import', () => {
     expect(res.status).toBe(201);
   });
 
+  it('rejects an oversized suffix-import body before workbook parsing', async () => {
+    const req = new Request('https://example.test/=oversized.xlsx', {
+      method: 'PUT',
+      headers: { 'Content-Length': String(25 * 1024 * 1024 + 1) },
+      body: 'not-a-workbook',
+    });
+    const ctx = {
+      waitUntil() {},
+      passThroughOnException() {},
+    } satisfies Partial<ExecutionContext> as unknown as ExecutionContext;
+    const response = await worker.fetch(req, env as unknown as Env, ctx);
+    expect(response.status).toBe(413);
+  });
+
   it('PUT /=:room.xlsx returns 400 when a sheet exceeds SocialCalc ZZ column', async () => {
     // Pins routes/multi-import.ts ImportColumnOutOfRangeError → 400 mapping.
     // Removing that catch (or mapping to 413/500) fails this test.

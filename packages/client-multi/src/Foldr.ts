@@ -1,3 +1,9 @@
+import {
+  isSafeMultiSheetLink,
+  MAX_MULTI_SHEETS,
+  MAX_MULTI_SHEET_TITLE_LENGTH,
+} from '@ethercalc/shared';
+
 /**
  * Port of `multi/foldr.ls` (`HackFoldr`) from LiveScript/superagent to TS/fetch.
  *
@@ -131,6 +137,8 @@ export class HackFoldr {
 
   /** Append a new row (writes to server, then pushes locally). */
   async push(row: FoldrRow): Promise<this> {
+    if (!isSafeMultiSheetLink(row.link)) return this;
+    row.title = row.title.slice(0, MAX_MULTI_SHEET_TITLE_LENGTH);
     await this.initIfNeeded(row);
     const res = await this.postCsv(row.link, row.title);
     const command = extractCommand(res);
@@ -151,8 +159,12 @@ export class HackFoldr {
   async setAt(idx: number, patch: Partial<FoldrRow>): Promise<this> {
     const existing = this.rows[idx];
     if (!existing) return this;
+    if (patch.link !== undefined && !isSafeMultiSheetLink(patch.link)) return this;
     if (patch.title !== undefined) {
-      await this.sendCmd(`set B${existing.row} text t ${patch.title}`);
+      const title = patch.title.slice(0, MAX_MULTI_SHEET_TITLE_LENGTH);
+      await this.sendCmd(`set B${existing.row} text t ${encodeSocialCalcText(title)}`);
+      Object.assign(existing, patch, { title });
+      return this;
     }
     Object.assign(existing, patch);
     return this;
@@ -266,14 +278,15 @@ export class HackFoldr {
  */
 export function parseTocBody(body: unknown): FoldrRow[] {
   if (!Array.isArray(body) || body.length === 0) return [];
-  const rowsIn = body.slice(1) as unknown[];
+  const rowsIn = body.slice(1, MAX_MULTI_SHEETS + 1) as unknown[];
   const parsed: FoldrRow[] = [];
   rowsIn.forEach((raw, idx) => {
     if (!Array.isArray(raw)) return;
     const link = typeof raw[0] === 'string' ? raw[0] : '';
     let title = typeof raw[1] === 'string' ? raw[1] : '';
-    if (!link || link.startsWith('#')) return;
+    if (!isSafeMultiSheetLink(link)) return;
     if (!title) title = 'Sheet' + (idx + 1);
+    title = title.slice(0, MAX_MULTI_SHEET_TITLE_LENGTH);
     parsed.push({ link, title, row: idx + 2 });
   });
   // Legacy seeding can POST the same link more than once (see FINDINGS.md).
@@ -309,6 +322,14 @@ export function tocRowsEqual(a: readonly FoldrRow[], b: readonly FoldrRow[]): bo
 
 function escapeCsv(s: string): string {
   return s.replace(/"/g, '""');
+}
+
+/** Encode text embedded in a SocialCalc command without permitting a new command line. */
+export function encodeSocialCalcText(value: string): string {
+  return value
+    .replace(/\\/g, '\\b')
+    .replace(/:/g, '\\c')
+    .replace(/\r\n?|\n/g, '\\n');
 }
 
 /**

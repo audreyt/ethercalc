@@ -4,12 +4,11 @@ import { withAuditSchema, withChatSchema } from './d1-schema.ts';
  * D1-backed durable stores for the per-room `audit_log` and `chat_log`
  * tables (the storage-growth fold, follow-up to Phase 5.1).
  *
- * The DO's `state.storage` keeps a bounded recent tail of `audit:`/`chat:`
- * (ring/alarm-trimmed), but the COMPLETE record lives here in D1 so the
- * trims don't lose data: every command mirrors its audit entry and every
- * chat message mirrors here at append time, and the alarm only drops DO
- * entries that have already been mirrored. Both tables share the shape
- * `(room TEXT, seq INTEGER, ts INTEGER, body TEXT, PRIMARY KEY(room, seq))`.
+ * Both the DO's `state.storage` and the D1 mirrors keep bounded recent
+ * tails of `audit:`/`chat:`. Every command and chat message is mirrored
+ * before the oldest sequence falls out of the per-room window. Both tables
+ * share `(room TEXT, seq INTEGER, ts INTEGER, body TEXT,
+ * PRIMARY KEY(room, seq))`.
  *
  * Mirror semantics:
  *   - `appendAuditRows` / `appendChatRows` — idempotent batch insert
@@ -37,12 +36,17 @@ export interface SeqRow {
  * safe batch size is 25 (see rooms-index.ts `bulkMirrorRoomsToD1`). */
 const ROWS_PER_INSERT = 25;
 
+/** Per-room durable tails. Bounds attacker-driven D1 growth. */
+export const AUDIT_HISTORY_KEEP = 1024;
+export const CHAT_HISTORY_KEEP = 500;
+
 async function appendRows(
   db: D1Database,
   withSchema: <T>(db: D1Database, op: () => Promise<T>) => Promise<T>,
   table: string,
   room: string,
   rows: readonly SeqRow[],
+  keep: number,
 ): Promise<void> {
   await withSchema(db, async () => {
     for (let i = 0; i < rows.length; i += ROWS_PER_INSERT) {
@@ -56,6 +60,16 @@ async function appendRows(
             'ON CONFLICT(room, seq) DO NOTHING',
         )
         .bind(...params)
+        .run();
+    }
+    let highestSeq = -1;
+    for (const row of rows) {
+      if (row.seq > highestSeq) highestSeq = row.seq;
+    }
+    if (highestSeq >= keep) {
+      await db
+        .prepare(`DELETE FROM ${table} WHERE room = ?1 AND seq <= ?2`)
+        .bind(room, highestSeq - keep)
         .run();
     }
   });
@@ -78,7 +92,7 @@ export async function appendAuditRows(
   room: string,
   rows: readonly SeqRow[],
 ): Promise<void> {
-  await appendRows(db, withAuditSchema, 'audit_log', room, rows);
+  await appendRows(db, withAuditSchema, 'audit_log', room, rows, AUDIT_HISTORY_KEEP);
 }
 
 /** Mirror chat rows into D1 `chat_log` (idempotent). */
@@ -87,7 +101,7 @@ export async function appendChatRows(
   room: string,
   rows: readonly SeqRow[],
 ): Promise<void> {
-  await appendRows(db, withChatSchema, 'chat_log', room, rows);
+  await appendRows(db, withChatSchema, 'chat_log', room, rows, CHAT_HISTORY_KEEP);
 }
 
 /** Drop a room's `audit_log` rows (on room deletion). */

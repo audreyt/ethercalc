@@ -78,6 +78,7 @@ export interface BootHost extends MainHost {
   __ETHERCALC_LOGO_BOUND__?: boolean;
 }
 
+
 const EXPORT_SELECTOR = '.te_download tr:nth-child(2) td:first-child';
 const LOGO_SELECTOR = 'td[id$="_logo"]';
 // CPAL Exhibit B requires the logo to link to the Attribution URL. The

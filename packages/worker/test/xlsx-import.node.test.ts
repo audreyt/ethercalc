@@ -5,17 +5,22 @@ import * as XLSX from '@e965/xlsx';
 import { createSpreadsheet } from '@ethercalc/socialcalc-headless';
 import { describe, expect, it } from 'vite-plus/test';
 import {
+  MAX_SOCIALCALC_COL,
+  MAX_SOCIALCALC_ROW,
+} from '../src/lib/command-limits.ts';
+import {
   cellToCommand,
   countWorksheetCells,
   enforceImportArchiveLimit,
   enforceImportLimit,
   enforceSocialCalcColumnLimit,
+  ImportDimensionsTooLargeError,
   ImportArchiveTooLargeError,
   ImportColumnOutOfRangeError,
+  ImportRowOutOfRangeError,
   ImportTooLargeError,
   MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES,
   MAX_IMPORT_CELLS,
-  MAX_SOCIALCALC_COL,
   workbookToLoadClipboardCommand,
   xlsxToLoadClipboardCommands,
   xlsxToSave,
@@ -452,6 +457,7 @@ describe('SocialCalc ZZ column ceiling on import', () => {
         A1: { t: 'n', v: 1 },
         ZZ1: { t: 'n', v: 2 },
       }),
+
     ).not.toThrow();
   });
 
@@ -489,6 +495,86 @@ describe('SocialCalc ZZ column ceiling on import', () => {
     // → "A1:1". SocialCalc lastcol for A1 is 1 → colLetters(0) === "A".
     expect(cmd!).toContain('copiedfrom\\cA1\\cA1');
     expect(cmd!).not.toMatch(/copiedfrom\\cA1\\c1(?:\\n|$)/);
+  });
+});
+describe('SocialCalc declared-area ceiling on import', () => {
+  it('rejects sparse cells and merges whose rectangular extent is oversized', () => {
+    expect(() =>
+      enforceSocialCalcColumnLimit({
+        A200001: { t: 'n', v: 1 },
+      }),
+    ).toThrow(ImportDimensionsTooLargeError);
+    expect(() =>
+      enforceSocialCalcColumnLimit({
+        A1: { t: 'n', v: 1 },
+        '!merges': [
+          { s: { r: 0, c: 0 }, e: { r: 100_000, c: 1 } },
+        ],
+      }),
+    ).toThrow(ImportDimensionsTooLargeError);
+  });
+
+  it('accepts an exact-area sparse sheet', () => {
+    expect(() =>
+      enforceSocialCalcColumnLimit({
+        [`A${MAX_IMPORT_CELLS}`]: { t: 'n', v: 1 },
+      }),
+    ).not.toThrow();
+  });
+
+  it('rejects rows beyond the spreadsheet protocol ceiling', () => {
+    expect(() =>
+      enforceSocialCalcColumnLimit({
+        [`A${MAX_SOCIALCALC_ROW + 1}`]: { t: 'n', v: 1 },
+      }),
+    ).toThrow(ImportRowOutOfRangeError);
+  });
+
+  it('validates both merge endpoints', () => {
+    expect(() =>
+      enforceSocialCalcColumnLimit({
+        A1: { t: 'n', v: 1 },
+        '!merges': [{ e: { r: 0, c: 0 } }],
+      }),
+    ).toThrow(ImportColumnOutOfRangeError);
+  });
+
+  it('rejects merge endpoints whose row is out of range, missing, or NaN', () => {
+    const cases: Array<{
+      readonly row: unknown;
+      readonly label: string;
+      readonly reported: number;
+    }> = [
+      // In range as a number, past the protocol ceiling.
+      {
+        row: MAX_SOCIALCALC_ROW,
+        label: `A${MAX_SOCIALCALC_ROW + 1}`,
+        reported: MAX_SOCIALCALC_ROW + 1,
+      },
+      // Numeric but not finite — the label falls back to the raw value.
+      { row: Number.NaN, label: 'ANaN', reported: Number.NaN },
+      // Absent endpoint row — neither label nor report can use arithmetic.
+      { row: undefined, label: 'Aundefined', reported: Number.NaN },
+    ];
+    for (const { row, label, reported } of cases) {
+      let caught: unknown;
+      try {
+        enforceSocialCalcColumnLimit({
+          A1: { t: 'n', v: 1 },
+          '!merges': [{ s: { r: 0, c: 0 }, e: { r: row, c: 0 } }],
+        });
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught, label).toBeInstanceOf(ImportRowOutOfRangeError);
+      const failure = caught as ImportRowOutOfRangeError & {
+        readonly coord?: string;
+        readonly row?: number;
+      };
+      expect(failure.message).toContain(label);
+      if (Number.isNaN(reported)) expect(failure.row).toBeNaN();
+      else expect(failure.row).toBe(reported);
+    }
   });
 });
 
@@ -915,5 +1001,116 @@ describe('enforceImportArchiveLimit', () => {
     withMaxComment[eocdOffset + 20] = 0xff;
     withMaxComment[eocdOffset + 21] = 0xff;
     expect(() => enforceImportArchiveLimit(withMaxComment)).toThrow(ImportArchiveTooLargeError);
+  });
+
+  it('decodes every byte lane of the declared sizes', () => {
+    // Each size lane must be read: a 16 MiB entry needs the <<24 lane, a
+    // 9 MiB one the <<16 lane, and together they cross the 25 MiB budget.
+    const bytes = makeFakeZipCentralDirectory([
+      { name: 'xl/workbook.xml', compressedSize: 1, uncompressedSize: 0x01000000 },
+      { name: 'xl/styles.xml', compressedSize: 1, uncompressedSize: 0x00900001 },
+    ]);
+    expect(() => enforceImportArchiveLimit(bytes)).toThrow(
+      ImportArchiveTooLargeError,
+    );
+    // 16 MiB + 8 MiB stays inside the budget.
+    const withinBudget = makeFakeZipCentralDirectory([
+      { name: 'xl/workbook.xml', compressedSize: 1, uncompressedSize: 0x01000000 },
+      { name: 'xl/styles.xml', compressedSize: 1, uncompressedSize: 0x00800000 },
+    ]);
+    expect(() => enforceImportArchiveLimit(withinBudget)).not.toThrow();
+  });
+
+  it('walks past multi-byte extra and comment fields to the next entry', () => {
+    // The second entry is only reachable if the >255 extra/comment lengths
+    // are decoded across both byte lanes.
+    const bytes = makeFakeZipCentralDirectory([
+      {
+        name: 'xl/styles.xml',
+        compressedSize: 1,
+        uncompressedSize: 1,
+        extraLength: 300,
+        commentLength: 400,
+      },
+      {
+        name: 'xl/workbook.xml',
+        compressedSize: 1,
+        uncompressedSize: MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES + 1,
+      },
+    ]);
+    expect(() => enforceImportArchiveLimit(bytes)).toThrow(
+      ImportArchiveTooLargeError,
+    );
+  });
+
+  it('normalizes only leading slashes when matching relevant entries', () => {
+    const oversize = MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES + 1;
+    const relevant = [
+      '///xl/workbook.xml',
+      'xl/worksheets/sheet12.xml',
+      'xl/worksheets/_rels/sheet12.xml.rels',
+    ];
+    for (const name of relevant) {
+      expect(() =>
+        enforceImportArchiveLimit(
+          makeFakeZipCentralDirectory([
+            { name, compressedSize: 1, uncompressedSize: oversize },
+          ]),
+        ),
+        name,
+      ).toThrow(ImportArchiveTooLargeError);
+    }
+    const irrelevant = [
+      'prefix/xl/workbook.xml',
+      'xl/worksheets/sheet.xml',
+      'xl/worksheets/sheetA.xml',
+      'xl/worksheets/sheet1.xml.rels',
+      'xl/worksheets/_rels/sheet1.xml',
+      'xl/workbook.xml.bak',
+    ];
+    for (const name of irrelevant) {
+      expect(() =>
+        enforceImportArchiveLimit(
+          makeFakeZipCentralDirectory([
+            { name, compressedSize: 1, uncompressedSize: oversize },
+          ]),
+        ),
+        name,
+      ).not.toThrow();
+    }
+  });
+
+  it('names every import error for the route layer to switch on', () => {
+    expect(new ImportTooLargeError(1).name).toBe('ImportTooLargeError');
+    expect(new ImportColumnOutOfRangeError('A1', 1).name).toBe(
+      'ImportColumnOutOfRangeError',
+    );
+    expect(new ImportRowOutOfRangeError('A1', 1).name).toBe(
+      'ImportRowOutOfRangeError',
+    );
+    expect(new ImportDimensionsTooLargeError(1, 1).name).toBe(
+      'ImportDimensionsTooLargeError',
+    );
+    expect(new ImportArchiveTooLargeError(1).name).toBe(
+      'ImportArchiveTooLargeError',
+    );
+  });
+
+  it('anchors the worksheet-entry patterns at both ends', () => {
+    const oversize = MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES + 1;
+    for (const name of [
+      'xl/worksheets/sheet1.xml/extra',
+      'xl/worksheets/_rels/sheet1.xml.rels/extra',
+      'xl/worksheets/sheet1.xmlx',
+    ]) {
+      expect(() =>
+        enforceImportArchiveLimit(
+          makeFakeZipCentralDirectory([
+            { name, compressedSize: 1, uncompressedSize: oversize },
+          ]),
+        ),
+        name,
+      ).not.toThrow();
+    }
   });
 });

@@ -96,11 +96,11 @@ describe('clientIpFromHeaders', () => {
     expect(clientIpFromHeaders(headers)).toBe('203.0.113.1');
   });
 
-  it('uses the first X-Forwarded-For hop when CF header is absent', () => {
+  it('uses the rightmost X-Forwarded-For hop when CF header is absent', () => {
     const headers = new Headers({
       'X-Forwarded-For': '198.51.100.2, 203.0.113.9',
     });
-    expect(clientIpFromHeaders(headers)).toBe('198.51.100.2');
+    expect(clientIpFromHeaders(headers)).toBe('203.0.113.9');
   });
 
   it('falls back to unknown when no client IP headers are present', () => {
@@ -115,13 +115,21 @@ describe('clientIpFromHeaders', () => {
     expect(clientIpFromHeaders(headers)).toBe('10.0.0.1');
   });
 
-  it('trims the selected forwarded hop', () => { expect(clientIpFromHeaders(new Headers({'X-Forwarded-For': ' 198.51.100.2 , 203.0.113.9' }))).toBe('198.51.100.2'); });
+  it('trims the selected forwarded hop', () => { expect(clientIpFromHeaders(new Headers({'X-Forwarded-For': '198.51.100.2, 203.0.113.9 ' }))).toBe('203.0.113.9'); });
 
   it('falls back to unknown when X-Forwarded-For has no client hop', () => {
     const headers = new Headers({
       'X-Forwarded-For': ' , ',
     });
     expect(clientIpFromHeaders(headers)).toBe('unknown');
+  });
+
+  it.each([
+    ['CF-Connecting-IP', 'attacker.example'],
+    ['CF-Connecting-IP', '1'.repeat(65)],
+    ['X-Forwarded-For', 'unknown'],
+  ])('rejects malformed %s values', (name, value) => {
+    expect(clientIpFromHeaders(new Headers({ [name]: value }))).toBe('unknown');
   });
 });
 
@@ -146,8 +154,7 @@ describe('createRateLimitStore', () => {
     store.consume('a', tight, 0);
     store.consume('a', tight, 0);
     const denied = store.consume('a', tight, 0);
-    expect(denied.allowed).toBe(false);
-    expect(denied.retryAfterSec).toBe(1);
+    expect(denied).toEqual({ allowed: false, retryAfterSec: 1 });
   });
 
   it('reports the full retry delay for a slow bucket', () => {
@@ -175,6 +182,16 @@ describe('createRateLimitStore', () => {
     expect(store.consume('b', tight, 0).allowed).toBe(true);
   });
 
+
+  it('evicts the oldest bucket instead of growing without bound', () => {
+    const bounded = createRateLimitStore(2);
+    bounded.consume('oldest', tight, 0);
+    bounded.consume('oldest', tight, 0);
+    expect(bounded.consume('oldest', tight, 0).allowed).toBe(false);
+    bounded.consume('second', tight, 0);
+    bounded.consume('third', tight, 0);
+    expect(bounded.consume('oldest', tight, 0).allowed).toBe(true);
+  });
   it('reset clears all state', () => {
     store.consume('a', tight, 0);
     store.consume('a', tight, 0);
@@ -205,5 +222,128 @@ describe('isRateLimitExemptPath', () => {
   it('exempts the health probe only', () => {
     expect(isRateLimitExemptPath('/_health')).toBe(true);
     expect(isRateLimitExemptPath('/')).toBe(false);
+  });
+});
+
+describe('createRateLimitStore — degenerate bucket cap', () => {
+  it('serves requests when the store may retain no buckets at all', () => {
+    const store = createRateLimitStore(0);
+    const config = { capacity: 2, refillPerSec: 1 };
+    // size >= maxBuckets on every call, but there is never an oldest key
+    // to evict — the guard must not throw or deny.
+    expect(store.consume('1.1.1.1', config, 0).allowed).toBe(true);
+    expect(store.consume('2.2.2.2', config, 0).allowed).toBe(true);
+  });
+});
+
+describe('rate-limit parsing and bucket boundaries', () => {
+  it('treats each disable spelling as off, case- and space-insensitively', () => {
+    for (const raw of ['', '0', 'false', 'no', 'off']) {
+      expect(parseRateLimitConfig(raw), raw).toBeNull();
+      expect(parseRateLimitConfig(`  ${raw.toUpperCase()}  `), raw).toBeNull();
+    }
+    // A value that merely contains a disable word is not a disable value.
+    expect(parseRateLimitConfig('offset')).toBeNull();
+    expect(parseRateLimitConfig('0.5')).toEqual({
+      capacity: 1.5,
+      refillPerSec: 0.5,
+    });
+  });
+
+  it('parses window:max and rejects non-positive or non-finite parts', () => {
+    expect(parseRateLimitConfig('60:600')).toEqual({
+      capacity: 600,
+      refillPerSec: 10,
+    });
+    // Whitespace around either side is tolerated.
+    expect(parseRateLimitConfig(' 60 : 600 ')).toEqual({
+      capacity: 600,
+      refillPerSec: 10,
+    });
+    expect(parseRateLimitConfig(':600')).toBeNull();
+    expect(parseRateLimitConfig('60:')).toBeNull();
+    expect(parseRateLimitConfig('Infinity:600')).toBeNull();
+    expect(parseRateLimitConfig('60:Infinity')).toBeNull();
+    expect(parseRateLimitConfig('-1:600')).toBeNull();
+    expect(parseRateLimitConfig('60:-1')).toBeNull();
+  });
+
+  it('rejects a client IP that is empty, overlong, or not address-shaped', () => {
+    const ipFor = (value: string): string =>
+      clientIpFromHeaders(new Headers({ 'CF-Connecting-IP': value }));
+    expect(ipFor('203.0.113.7')).toBe('203.0.113.7');
+    expect(ipFor('  203.0.113.7  ')).toBe('203.0.113.7');
+    expect(ipFor('2001:db8::1')).toBe('2001:db8::1');
+    expect(ipFor('')).toBe('unknown');
+    expect(ipFor('   ')).toBe('unknown');
+    expect(ipFor('a'.repeat(65))).toBe('unknown');
+    expect(ipFor('f'.repeat(64))).toBe('f'.repeat(64));
+    expect(ipFor('203.0.113.7; drop')).toBe('unknown');
+  });
+
+  it('takes the last X-Forwarded-For hop only when CF-Connecting-IP is unusable', () => {
+    expect(
+      clientIpFromHeaders(
+        new Headers({
+          'CF-Connecting-IP': 'not an ip',
+          'X-Forwarded-For': '10.0.0.1, 203.0.113.9',
+        }),
+      ),
+    ).toBe('203.0.113.9');
+    expect(
+      clientIpFromHeaders(new Headers({ 'X-Forwarded-For': '10.0.0.1, bogus!' })),
+    ).toBe('unknown');
+  });
+
+  it('refills to the cap and never past it', () => {
+    const store = createRateLimitStore();
+    const config = { capacity: 2, refillPerSec: 1 };
+    expect(store.consume('a', config, 0).allowed).toBe(true);
+    expect(store.consume('a', config, 0).allowed).toBe(true);
+    expect(store.consume('a', config, 0).allowed).toBe(false);
+    // Same instant: no refill happens, so the bucket stays empty.
+    expect(store.consume('a', config, 0).allowed).toBe(false);
+    // One second later exactly one token is back.
+    expect(store.consume('a', config, 1000).allowed).toBe(true);
+    expect(store.consume('a', config, 1000).allowed).toBe(false);
+    // A long idle period cannot bank more than the capacity.
+    expect(store.consume('a', config, 100_000).allowed).toBe(true);
+    expect(store.consume('a', config, 100_000).allowed).toBe(true);
+    expect(store.consume('a', config, 100_000).allowed).toBe(false);
+  });
+
+  it('ignores clock skew instead of granting free tokens', () => {
+    const store = createRateLimitStore();
+    const config = { capacity: 1, refillPerSec: 1 };
+    expect(store.consume('skew', config, 10_000).allowed).toBe(true);
+    // A backwards clock must not refill (elapsed is clamped at zero).
+    expect(store.consume('skew', config, 0).allowed).toBe(false);
+  });
+
+  it('evicts the oldest bucket once the table is full', () => {
+    const store = createRateLimitStore(2);
+    const config = { capacity: 1, refillPerSec: 0.001 };
+    expect(store.consume('first', config, 0).allowed).toBe(true);
+    expect(store.consume('second', config, 0).allowed).toBe(true);
+    // `third` evicts `first`, so `first` comes back with a fresh bucket…
+    expect(store.consume('third', config, 0).allowed).toBe(true);
+    expect(store.consume('first', config, 0).allowed).toBe(true);
+    // …while `third`, still resident, stays throttled.
+    expect(store.consume('third', config, 0).allowed).toBe(false);
+  });
+
+  it('reset drops all retained buckets', () => {
+    const store = createRateLimitStore();
+    const config = { capacity: 1, refillPerSec: 0.001 };
+    expect(store.consume('x', config, 0).allowed).toBe(true);
+    expect(store.consume('x', config, 0).allowed).toBe(false);
+    store.reset();
+    expect(store.consume('x', config, 0).allowed).toBe(true);
+  });
+
+  it('exempts only the health probe path', () => {
+    expect(isRateLimitExemptPath('/_health')).toBe(true);
+    expect(isRateLimitExemptPath('/_healthz')).toBe(false);
+    expect(isRateLimitExemptPath('/_health/')).toBe(false);
   });
 });

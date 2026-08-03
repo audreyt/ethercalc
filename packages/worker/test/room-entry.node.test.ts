@@ -132,15 +132,15 @@ describe('buildTemplateFormRedirect', () => {
   it('uses generateRoomId when idGen is not injected (stub branch)', () => {
     const r = buildTemplateFormRedirect({ template: 't' });
     expect(r.status).toBe(TEMPLATE_FORM_STUB_STATUS);
-    // Body embeds the generated id; must match the 12-char hex shape.
-    expect(r.body).toMatch(/\/t_[0-9a-f]{12}\/app/);
+    // Body embeds the generated id; it matches the legacy base36 shape.
+    expect(r.body).toMatch(/\/t_[0-9a-z]{12}\/app/);
   });
 
   it('uses generateRoomId when idGen is not injected (redirect branch)', () => {
     const r = buildTemplateFormRedirect({ template: 't', phase5Ready: true });
     expect(r.status).toBe(302);
     if (r.status === 302) {
-      expect(r.headers.Location).toMatch(/^\/t_[0-9a-f]{12}\/app$/);
+      expect(r.headers.Location).toMatch(/^\/t_[0-9a-z]{12}\/app$/);
     }
   });
 

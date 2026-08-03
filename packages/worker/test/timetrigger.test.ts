@@ -6,6 +6,7 @@ import {
 import { beforeAll, beforeEach, describe, it, expect } from 'vite-plus/test';
 
 import worker from '../src/index.ts';
+import { runScheduled } from '../src/scheduled.ts';
 
 /**
  * Phase 9 integration: the backwards-compat `GET /_timetrigger` HTTP
@@ -21,6 +22,7 @@ import worker from '../src/index.ts';
  * isn't reachable through `worker.fetch` — that's covered in
  * `test/scheduled.node.test.ts`.
  */
+const OPERATOR_TOKEN = 'timetrigger-test-token';
 
 beforeAll(async () => {
   const db = (env as unknown as { DB: D1Database }).DB;
@@ -41,15 +43,39 @@ beforeEach(async () => {
   await db.exec('DELETE FROM cron_triggers');
 });
 
-async function request(method: string, path: string) {
-  const req = new Request(`https://example.test${path}`, { method });
+async function request(
+  method: string,
+  path: string,
+  authorization: string | null = `Bearer ${OPERATOR_TOKEN}`,
+) {
+  const headers = new Headers();
+  if (authorization !== null) headers.set('Authorization', authorization);
+  const req = new Request(`https://example.test${path}`, { method, headers });
   const ctx = createExecutionContext();
-  const res = await worker.fetch(req, env as never, ctx);
+  const runtimeEnv = {
+    ...env,
+    ETHERCALC_MIGRATE_TOKEN: OPERATOR_TOKEN,
+  };
+  const res = await worker.fetch(req, runtimeEnv as never, ctx);
   await waitOnExecutionContext(ctx);
   return res;
 }
 
 describe('GET /_timetrigger', () => {
+  it('is hidden when disabled and rejects missing or bad bearer tokens', async () => {
+    const ctx = createExecutionContext();
+    const disabled = await worker.fetch(
+      new Request('https://example.test/_timetrigger'),
+      env as never,
+      ctx,
+    );
+    const missing = await request('GET', '/_timetrigger', null);
+    const bad = await request('GET', '/_timetrigger', 'Bearer wrong');
+    expect(disabled.status).toBe(404);
+    expect(missing.status).toBe(401);
+    expect(bad.status).toBe(401);
+  });
+
   it('returns {} when cron_triggers is empty', async () => {
     const res = await request('GET', '/_timetrigger');
     expect(res.status).toBe(200);
@@ -92,6 +118,27 @@ describe('GET /_timetrigger', () => {
       .bind('r1', 'A1')
       .all<{ fire_at: number }>();
     expect(remaining.results.map((r) => r.fire_at)).toEqual([99999999]);
+  });
+
+  it('atomically claims a due row across concurrent scheduler invocations', async () => {
+    const db = (env as unknown as { DB: D1Database }).DB;
+    await db
+      .prepare(
+        'INSERT INTO cron_triggers (room, cell, fire_at) VALUES (?1, ?2, ?3)',
+      )
+      .bind('concurrent room', 'A1', 1)
+      .run();
+
+    const runtimeEnv = env as unknown as Parameters<typeof runScheduled>[0]['env'];
+    const [first, second] = await Promise.all([
+      runScheduled({ env: runtimeEnv, nowMinutes: 2 }),
+      runScheduled({ env: runtimeEnv, nowMinutes: 2 }),
+    ]);
+    expect(first.fired.length + second.fired.length).toBe(1);
+    const remaining = await db
+      .prepare('SELECT COUNT(*) AS count FROM cron_triggers')
+      .first<{ count: number }>();
+    expect(remaining?.count).toBe(0);
   });
 
   it('groups multiple future fire_at into a comma list', async () => {

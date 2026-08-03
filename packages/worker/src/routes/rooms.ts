@@ -45,7 +45,9 @@ import {
 import { getSessionPrincipal } from '../lib/session-middleware.ts';
 import {
   ImportArchiveTooLargeError,
+  ImportDimensionsTooLargeError,
   ImportColumnOutOfRangeError,
+  ImportRowOutOfRangeError,
   ImportTooLargeError,
   workbookToLoadClipboardCommand,
   xlsxToLoadClipboardCommands,
@@ -175,6 +177,9 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
     );
     const putDenied = await authVerdict(putRes);
     if (putDenied) return putDenied;
+    if (!putRes.ok) {
+      return sizedResponse(await putRes.text(), putRes.status, TEXT_CT);
+    }
     return c.redirect(
       `${c.env.BASEPATH ?? ''}/${newRoom}${c.env.ETHERCALC_KEY ? '/edit' : ''}`,
       302,
@@ -283,10 +288,17 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
       try {
         snapshot = xlsxToSave(bytes);
       } catch (err) {
-        if (err instanceof ImportTooLargeError || err instanceof ImportArchiveTooLargeError) {
+        if (
+          err instanceof ImportTooLargeError ||
+          err instanceof ImportArchiveTooLargeError ||
+          err instanceof ImportDimensionsTooLargeError
+        ) {
           return sizedResponse(err.message, 413, TEXT_CT);
         }
-        if (err instanceof ImportColumnOutOfRangeError) {
+        if (
+          err instanceof ImportColumnOutOfRangeError ||
+          err instanceof ImportRowOutOfRangeError
+        ) {
           return sizedResponse(err.message, 400, TEXT_CT);
         }
         snapshot = '';
@@ -305,6 +317,9 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
     );
     const denied = await authVerdict(putRes);
     if (denied) return denied;
+    if (!putRes.ok) {
+      return sizedResponse(await putRes.text(), putRes.status, TEXT_CT);
+    }
     return sizedResponse(`/${room}`, 201, TEXT_CT, { Location: `/_/${room}` });
   });
 
@@ -319,10 +334,17 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
       try {
         snapshot = xlsxToSave(bytes);
       } catch (err) {
-        if (err instanceof ImportTooLargeError || err instanceof ImportArchiveTooLargeError) {
+        if (
+          err instanceof ImportTooLargeError ||
+          err instanceof ImportArchiveTooLargeError ||
+          err instanceof ImportDimensionsTooLargeError
+        ) {
           return sizedResponse(err.message, 413, TEXT_CT);
         }
-        if (err instanceof ImportColumnOutOfRangeError) {
+        if (
+          err instanceof ImportColumnOutOfRangeError ||
+          err instanceof ImportRowOutOfRangeError
+        ) {
           return sizedResponse(err.message, 400, TEXT_CT);
         }
         snapshot = '';
@@ -340,6 +362,9 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
     );
     const denied = await authVerdict(putRes);
     if (denied) return denied;
+    if (!putRes.ok) {
+      return sizedResponse(await putRes.text(), putRes.status, TEXT_CT);
+    }
     // Legacy responds with exactly `201 OK` text/plain (src/main.ls:404).
     return sizedResponse('OK', 201, TEXT_CT);
   });
@@ -722,10 +747,17 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
       try {
         commands = xlsxToLoadClipboardCommands(bytes);
       } catch (err) {
-        if (err instanceof ImportTooLargeError || err instanceof ImportArchiveTooLargeError) {
+        if (
+          err instanceof ImportTooLargeError ||
+          err instanceof ImportArchiveTooLargeError ||
+          err instanceof ImportDimensionsTooLargeError
+        ) {
           return sizedResponse(err.message, 413, TEXT_CT);
         }
-        if (err instanceof ImportColumnOutOfRangeError) {
+        if (
+          err instanceof ImportColumnOutOfRangeError ||
+          err instanceof ImportRowOutOfRangeError
+        ) {
           return sizedResponse(err.message, 400, TEXT_CT);
         }
         /* istanbul ignore next -- xlsxToLoadClipboardCommands only throws
@@ -735,12 +767,13 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
         return sizedResponse('Could not import workbook', 400, TEXT_CT);
       }
       if (commands.length > 0) {
+        const cmdstr = commands.join('\n');
         const principal = await getSessionPrincipal(c);
         const writeRes = await doFetch(
           c.env,
           room,
           '/_do/commands',
-          { method: 'POST', body: commands.join('\n') },
+          { method: 'POST', body: cmdstr },
           principal,
         );
         const denied = await authVerdict(writeRes);
@@ -770,11 +803,15 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
       } catch (err) {
         if (
           err instanceof ImportTooLargeError ||
-          err instanceof ImportArchiveTooLargeError
+          err instanceof ImportArchiveTooLargeError ||
+          err instanceof ImportDimensionsTooLargeError
         ) {
           return sizedResponse(err.message, 413, TEXT_CT);
         }
-        if (err instanceof ImportColumnOutOfRangeError) {
+        if (
+          err instanceof ImportColumnOutOfRangeError ||
+          err instanceof ImportRowOutOfRangeError
+        ) {
           return sizedResponse(err.message, 400, TEXT_CT);
         }
         return sizedResponse('Could not import CSV', 400, TEXT_CT);

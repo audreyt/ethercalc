@@ -6,8 +6,9 @@
  */
 import { describe, it, expect } from 'vite-plus/test';
 
-import { STORAGE_KEYS } from '@ethercalc/shared/storage-keys';
+import { STORAGE_KEYS, snapshotChunkKey } from '@ethercalc/shared/storage-keys';
 import {
+  MAX_SNAPSHOT_CHUNKS,
   SNAPSHOT_CHUNK_BYTES,
   hasSnapshot,
   readSnapshot,
@@ -26,6 +27,9 @@ function fakeStorage(): FakeStorage {
     async get(key: unknown) {
       if (typeof key === 'string') return m.get(key);
       if (Array.isArray(key)) {
+        if (key.length > 128) {
+          throw new RangeError('get(keys) supports at most 128 keys');
+        }
         const out = new Map<string, unknown>();
         for (const k of key) if (m.has(k as string)) out.set(k as string, m.get(k as string));
         return out;
@@ -130,6 +134,24 @@ describe('readSnapshot', () => {
     expect(await readSnapshot(s)).toBe(big);
   });
 
+  it('reassembles snapshots whose chunk count exceeds one storage batch', async () => {
+    // What matters here is the 128-key `storage.get(keys)` ceiling, not the
+    // payload size: seeding tiny chunks directly keeps the test off the
+    // per-code-point UTF-8 chunker (12.8 MiB there costs seconds, and times
+    // out under Stryker's instrumented dry run).
+    const s = fakeStorage();
+    const chunks = 129;
+    s.__map.set(STORAGE_KEYS.snapshotMeta, { chunks });
+    let expected = '';
+    for (let index = 0; index < chunks; index += 1) {
+      const part = `part-${index};`;
+      expected += part;
+      s.__map.set(snapshotChunkKey(index), part);
+    }
+
+    expect(await readSnapshot(s)).toBe(expected);
+  });
+
   it('throws when a chunk is missing (never-silently-corrupt)', async () => {
     const s = fakeStorage();
     const big = 'w'.repeat(SNAPSHOT_CHUNK_BYTES + 100);
@@ -138,6 +160,17 @@ describe('readSnapshot', () => {
     await s.delete(`snapshot:chunk:${String(1).padStart(16, '0')}`);
     await expect(readSnapshot(s)).rejects.toThrow(/chunk 1 missing/);
   });
+
+  it.each([{ chunks: 0 }, { chunks: 2049 }, { chunks: 1.5 }, { chunks: NaN }])(
+    'rejects invalid chunk metadata $chunks',
+    async (meta) => {
+      const s = fakeStorage();
+      s.__map.set(STORAGE_KEYS.snapshotMeta, meta);
+      await expect(readSnapshot(s)).rejects.toThrow(
+        'invalid snapshot chunk metadata',
+      );
+    },
+  );
 });
 
 describe('hasSnapshot', () => {
@@ -168,5 +201,77 @@ describe('readSnapshotMeta', () => {
     await s.put(snapshotEntries('p'.repeat(SNAPSHOT_CHUNK_BYTES * 2 + 1)));
     const meta = await readSnapshotMeta(s);
     expect(meta).toEqual({ chunks: 3 });
+  });
+});
+
+describe('snapshot chunk metadata', () => {
+  it('rejects malformed stored chunk metadata instead of trusting it', async () => {
+    const storage = fakeStorage();
+    storage.__map.set(STORAGE_KEYS.snapshotMeta, { chunks: -1 });
+    await expect(readSnapshotMeta(storage)).rejects.toThrow(
+      'invalid snapshot chunk metadata',
+    );
+  });
+});
+
+describe('chunk metadata validation boundaries', () => {
+  it('accepts only a safe-integer chunk count inside the retention range', async () => {
+    const accept = async (chunks: unknown): Promise<boolean> => {
+      const s = fakeStorage();
+      s.__map.set(STORAGE_KEYS.snapshotMeta, chunks);
+      try {
+        await readSnapshotMeta(s);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    expect(await accept({ chunks: 1 })).toBe(true);
+    expect(await accept({ chunks: MAX_SNAPSHOT_CHUNKS })).toBe(true);
+    expect(await accept({ chunks: 0 })).toBe(false);
+    expect(await accept({ chunks: MAX_SNAPSHOT_CHUNKS + 1 })).toBe(false);
+    expect(await accept({ chunks: 1.5 })).toBe(false);
+    expect(await accept({ chunks: '2' })).toBe(false);
+    expect(await accept({ chunks: Number.MAX_SAFE_INTEGER + 2 })).toBe(false);
+    expect(await accept({})).toBe(false);
+    expect(await accept('meta')).toBe(false);
+    expect(await accept([])).toBe(false);
+  });
+
+  it('treats an absent meta key as "no chunked snapshot"', async () => {
+    const s = fakeStorage();
+    await expect(readSnapshotMeta(s)).resolves.toBeNull();
+    s.__map.set(STORAGE_KEYS.snapshotMeta, null);
+    await expect(readSnapshotMeta(s)).resolves.toBeNull();
+  });
+
+  it('reports existence under either layout and neither', async () => {
+    const empty = fakeStorage();
+    expect(await hasSnapshot(empty)).toBe(false);
+    const single = fakeStorage();
+    await single.put(STORAGE_KEYS.snapshot, '');
+    expect(await hasSnapshot(single)).toBe(true);
+    const chunked = fakeStorage();
+    chunked.__map.set(STORAGE_KEYS.snapshotMeta, { chunks: 2 });
+    expect(await hasSnapshot(chunked)).toBe(true);
+    // A non-string value under the single key is not a snapshot.
+    const bogus = fakeStorage();
+    bogus.__map.set(STORAGE_KEYS.snapshot, 42);
+    expect(await hasSnapshot(bogus)).toBe(false);
+  });
+
+  it('splits exactly at the byte ceiling without splitting a code point', () => {
+    // A chunk holds SNAPSHOT_CHUNK_BYTES bytes; one more byte starts a new one.
+    const exact = 'a'.repeat(SNAPSHOT_CHUNK_BYTES);
+    expect(Object.keys(snapshotEntries(exact))).toEqual([STORAGE_KEYS.snapshot]);
+    const overflow = snapshotEntries(`${exact}b`);
+    expect(overflow[STORAGE_KEYS.snapshotMeta]).toEqual({ chunks: 2 });
+    expect(overflow[snapshotChunkKey(0)]).toBe(exact);
+    expect(overflow[snapshotChunkKey(1)]).toBe('b');
+    // A 4-byte code point straddling the boundary moves whole to chunk 2.
+    const straddle = `${'a'.repeat(SNAPSHOT_CHUNK_BYTES - 2)}😀`;
+    const parts = snapshotEntries(straddle);
+    expect(parts[snapshotChunkKey(0)]).toBe('a'.repeat(SNAPSHOT_CHUNK_BYTES - 2));
+    expect(parts[snapshotChunkKey(1)]).toBe('😀');
   });
 });

@@ -15,6 +15,11 @@ services:
       dockerfile: Dockerfile
     image: ethercalc:selfhost
     restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
     expose:
       - "8000"
     volumes:
@@ -31,6 +36,12 @@ services:
       ETHERCALC_EXPIRE: "${ETHERCALC_EXPIRE:-2592000}"
       ETHERCALC_ROOM_CREATE_LIMIT: "${ETHERCALC_ROOM_CREATE_LIMIT:-1}"
       ETHERCALC_MIGRATE_TOKEN: "${ETHERCALC_MIGRATE_TOKEN:-}"
+      # Passkey trust anchors. All four must be set together; the public
+      # origin must be the HTTPS URL users actually visit through this proxy.
+      ETHERCALC_AUTH: "${ETHERCALC_AUTH:-}"
+      ETHERCALC_RP_ID: "${ETHERCALC_RP_ID:-}"
+      ETHERCALC_RP_NAME: "${ETHERCALC_RP_NAME:-}"
+      ETHERCALC_ORIGIN: "${ETHERCALC_ORIGIN:-}"
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8000/_health >/dev/null || exit 1"]
       interval: 2s
@@ -41,6 +52,13 @@ services:
   proxy:
     image: nginx:1.27-alpine
     restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /var/cache/nginx:size=64m
+      - /var/run:size=1m
+      - /tmp:size=16m,mode=1777
     depends_on:
       ethercalc:
         condition: service_healthy

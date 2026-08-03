@@ -1,8 +1,13 @@
 import { describe, it, expect, vi } from 'vite-plus/test';
 
 import {
+  MAX_CROSS_SHEET_NAME_CHARS,
+  MAX_CROSS_SHEET_REFS,
+  MAX_CROSS_SHEET_SAVE_BYTES,
+  MAX_CROSS_SHEET_TOTAL_CHARS,
   extractSheetSave,
   hydrateCrossSheetRefs,
+  readBoundedResponseText,
   type CrossSheetSpreadsheet,
 } from '../src/lib/cross-sheet.ts';
 
@@ -85,6 +90,23 @@ describe('extractSheetSave', () => {
   });
 });
 
+describe('readBoundedResponseText', () => {
+  it('rejects declared and streamed bodies over the byte limit', async () => {
+    const declared = new Response('x', {
+      headers: { 'Content-Length': '6' },
+    });
+    expect(await readBoundedResponseText(declared, 5)).toBeNull();
+    expect(await readBoundedResponseText(new Response('123456'), 5)).toBeNull();
+  });
+
+  it('decodes bounded UTF-8 and handles a bodyless response', async () => {
+    expect(await readBoundedResponseText(new Response('éé'), 4)).toBe('éé');
+    expect(
+      await readBoundedResponseText(new Response(null, { status: 204 }), 4),
+    ).toBe('');
+  });
+});
+
 describe('hydrateCrossSheetRefs', () => {
   function makeSS(
     refs: string[],
@@ -95,7 +117,8 @@ describe('hydrateCrossSheetRefs', () => {
     const added: string[] = [];
     let recalced = 0;
     return {
-      findCrossSheetRefs: () => refs,
+      findCrossSheetRefs: (limit = Number.POSITIVE_INFINITY) =>
+        refs.slice(0, limit),
       addSiblingSheet: (name: string) => {
         added.push(name);
       },
@@ -127,6 +150,43 @@ describe('hydrateCrossSheetRefs', () => {
     expect(added).toBe(2);
     expect(ss.added).toEqual(['alpha', 'beta']);
     expect(ss.recalced).toBe(1);
+  });
+
+  it('caps sibling subrequests even when a spreadsheet advertises more refs', async () => {
+    const refs = Array.from({ length: MAX_CROSS_SHEET_REFS + 5 }, (_, i) => `r${i}`);
+    const ss = makeSS(refs);
+    ss.findCrossSheetRefs = () => refs;
+    const fetchSibling = vi.fn(async () => 'version:1.5\n');
+    expect(await hydrateCrossSheetRefs(ss, fetchSibling)).toBe(
+      MAX_CROSS_SHEET_REFS,
+    );
+    expect(fetchSibling).toHaveBeenCalledTimes(MAX_CROSS_SHEET_REFS);
+  });
+
+  it('skips oversized siblings and enforces an aggregate cache budget', async () => {
+    const oversized = 'x'.repeat(MAX_CROSS_SHEET_SAVE_BYTES + 1);
+    const oversizedSheet = makeSS(['huge']);
+    expect(
+      await hydrateCrossSheetRefs(oversizedSheet, async () => oversized),
+    ).toBe(0);
+
+    const bounded = 'x'.repeat(MAX_CROSS_SHEET_SAVE_BYTES);
+    const count = Math.floor(
+      MAX_CROSS_SHEET_TOTAL_CHARS / MAX_CROSS_SHEET_SAVE_BYTES,
+    );
+    const aggregateSheet = makeSS(
+      Array.from({ length: count + 1 }, (_, i) => `r${i}`),
+    );
+    expect(
+      await hydrateCrossSheetRefs(aggregateSheet, async () => bounded),
+    ).toBe(count);
+  });
+
+  it('rejects an oversized sibling name before DO dispatch', async () => {
+    const ss = makeSS(['x'.repeat(MAX_CROSS_SHEET_NAME_CHARS + 1), 'ok']);
+    const fetchSibling = vi.fn(async () => 'version:1.5\n');
+    expect(await hydrateCrossSheetRefs(ss, fetchSibling)).toBe(1);
+    expect(fetchSibling).toHaveBeenCalledExactlyOnceWith('ok');
   });
 
   it('skips self-references', async () => {
@@ -166,5 +226,93 @@ describe('hydrateCrossSheetRefs', () => {
     const added = await hydrateCrossSheetRefs(ss, fetchSibling);
     expect(added).toBe(0);
     expect(ss.recalced).toBe(0);
+  });
+});
+
+describe('readBoundedResponseText — cancel failure', () => {
+  it('still refuses an oversized body when cancelling the stream rejects', async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(8));
+      },
+      cancel() {
+        // A stalled sibling can reject here; the read must still fail closed.
+        return Promise.reject(new Error('cancel failed'));
+      },
+    });
+    const response = new Response(stream);
+    await expect(readBoundedResponseText(response, 4)).resolves.toBeNull();
+  });
+});
+
+describe('cross-sheet fetch guards', () => {
+  function makeSS(refs: string[]): CrossSheetSpreadsheet & { added: string[] } {
+    const added: string[] = [];
+    return {
+      findCrossSheetRefs: () => refs,
+      addSiblingSheet: (name: string) => void added.push(name),
+      recalc: () => {},
+      get added() {
+        return added;
+      },
+    };
+  }
+
+  it('honours a declared Content-Length above the cap without reading the body', async () => {
+    const response = new Response('short', {
+      headers: { 'Content-Length': String(MAX_CROSS_SHEET_SAVE_BYTES + 1) },
+    });
+    await expect(readBoundedResponseText(response)).resolves.toBeNull();
+  });
+
+  it('ignores an absent or non-numeric Content-Length and streams instead', async () => {
+    const noHeader = new Response('body');
+    await expect(readBoundedResponseText(noHeader)).resolves.toBe('body');
+    const bogus = new Response('body', {
+      headers: { 'Content-Length': 'not-a-number' },
+    });
+    await expect(readBoundedResponseText(bogus)).resolves.toBe('body');
+    const atCap = new Response('body', {
+      headers: { 'Content-Length': String(MAX_CROSS_SHEET_SAVE_BYTES) },
+    });
+    await expect(readBoundedResponseText(atCap)).resolves.toBe('body');
+  });
+
+  it('decodes multi-byte characters split across stream chunks', async () => {
+    const euro = new TextEncoder().encode('€');
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(euro.subarray(0, 1));
+        controller.enqueue(euro.subarray(1));
+        controller.close();
+      },
+    });
+    await expect(readBoundedResponseText(new Response(stream))).resolves.toBe('€');
+  });
+
+  it('skips refs that are empty or longer than the name cap', async () => {
+    const ss = makeSS(['', 'x'.repeat(MAX_CROSS_SHEET_NAME_CHARS + 1), 'ok']);
+    const seen: string[] = [];
+    const added = await hydrateCrossSheetRefs(ss, async (name) => {
+      seen.push(name);
+      return 'version:1.5\n';
+    });
+    expect(seen).toEqual(['ok']);
+    expect(added).toBe(1);
+    // A name exactly at the cap is still fetched.
+    const atCap = 'y'.repeat(MAX_CROSS_SHEET_NAME_CHARS);
+    const ssAtCap = makeSS([atCap]);
+    await hydrateCrossSheetRefs(ssAtCap, async () => 'version:1.5\n');
+    expect(ssAtCap.added).toEqual([atCap]);
+  });
+
+  it('skips a sibling whose fetch rejects and keeps hydrating the rest', async () => {
+    const ss = makeSS(['broken', 'fine']);
+    const added = await hydrateCrossSheetRefs(ss, async (name) => {
+      if (name === 'broken') throw new Error('recursion limit');
+      return 'version:1.5\n';
+    });
+    expect(added).toBe(1);
+    expect(ss.added).toEqual(['fine']);
   });
 });

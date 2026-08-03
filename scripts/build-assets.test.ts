@@ -19,6 +19,7 @@ describe('patchSocialCalcRuntime', () => {
     expect(patched).not.toContain('SocialCalc.sanitizeHTML');
   });
 
+
   test('3.0.x: strips strict-mode and injects sanitizer hook for pre-3.1.0 runtime', () => {
     const input = `(function (root, factory) {\n    "use strict";\n  factory(root);\n})(this, function (window) {\n"use strict";\nif (valueformat=="text-html") { // HTML - output as it as is\n   ;\n}\n});`;
 

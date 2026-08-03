@@ -3,14 +3,19 @@
  * Object. Keeps the route layer free of `env.ROOM.get(idFromName(…))`
  * boilerplate and makes it trivial to stub `ROOM` in route tests.
  */
-import { encodeRoom } from './room-name.ts';
+import { encodeRoom, isValidRoomName } from './room-name.ts';
 import type { SessionPrincipal } from './session.ts';
 import type { Env } from '../env.ts';
 
-/** Return the DO stub for `room`, keyed by its legacy-encoded form. */
-export function roomStub(env: Env, room: string): DurableObjectStub {
+function roomStubForValidName(env: Env, room: string): DurableObjectStub {
   const id = env.ROOM.idFromName(encodeRoom(room));
   return env.ROOM.get(id);
+}
+
+/** Return the DO stub for `room`, keyed by its legacy-encoded form. */
+export function roomStub(env: Env, room: string): DurableObjectStub {
+  if (!isValidRoomName(room)) throw new RangeError('Invalid room name');
+  return roomStubForValidName(env, room);
 }
 
 /**
@@ -37,7 +42,13 @@ export async function doFetch(
   init: RequestInit = {},
   principal: SessionPrincipal | null = null,
 ): Promise<Response> {
-  const stub = roomStub(env, room);
+  if (!isValidRoomName(room)) {
+    return new Response('Invalid room name', {
+      status: 400,
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    });
+  }
+  const stub = roomStubForValidName(env, room);
   const sep = path.includes('?') ? '&' : '?';
   const url = `https://do.local${path}${sep}name=${encodeURIComponent(room)}`;
   const headers = new Headers(init.headers);

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vite-plus/test';
 
-import { runScheduled } from '../src/scheduled.ts';
+import { MAX_CRON_ROWS_PER_RUN, runScheduled } from '../src/scheduled.ts';
 import type { Env } from '../src/env.ts';
 
 /**
@@ -24,6 +24,7 @@ interface FakeDBState {
 
 function makeFakeDb(
   rows: Array<{ room: string; cell: string; fire_at: number }>,
+  claimChanges = 1,
 ): { db: D1Database; state: FakeDBState } {
   const state: FakeDBState = { rows: rows.slice(), batchCalls: [], prepareSqls: [] };
 
@@ -60,7 +61,14 @@ function makeFakeDb(
     }),
     batch: vi.fn(async (stmts: unknown[]) => {
       state.batchCalls.push(stmts);
-      return [];
+      return stmts.map(
+        () =>
+          ({
+            success: true,
+            meta: { changes: claimChanges },
+            results: [],
+          }) as unknown as D1Result,
+      );
     }),
   } as unknown as D1Database;
   return { db, state };
@@ -110,14 +118,16 @@ describe('runScheduled', () => {
     expect(fetches[0]!.url).toContain('room=r1');
   });
 
-  it('URL-encodes the cell coord when dispatching', async () => {
-    const { db } = makeFakeDb([
+  it('deletes a malformed stored cell without dispatching it', async () => {
+    const { db, state } = makeFakeDb([
       { room: 'r', cell: 'A 1', fire_at: 50 },
     ]);
     const { namespace, fetches } = makeFakeRoomNamespace();
     const env = { DB: db, ROOM: namespace } as unknown as Env;
-    await runScheduled({ env, nowMinutes: 100 });
-    expect(fetches[0]!.url).toContain('cell=A%201');
+    const result = await runScheduled({ env, nowMinutes: 100 });
+    expect(result.fired).toEqual([]);
+    expect(fetches).toHaveLength(0);
+    expect(state.batchCalls[0]).toHaveLength(1);
   });
 
   it('batches a DELETE per due row via db.batch', async () => {
@@ -135,7 +145,27 @@ describe('runScheduled', () => {
     expect(state.batchCalls[0]).toHaveLength(2);
   });
 
-  it('swallows DO fetch failures and leaves row in D1', async () => {
+  it('bounds each scheduler scan and dispatch batch', async () => {
+    const rows = Array.from(
+      { length: MAX_CRON_ROWS_PER_RUN + 5 },
+      (_, index) => ({
+        room: `r${index}`,
+        cell: 'A1',
+        fire_at: 100,
+      }),
+    );
+    const { db, state } = makeFakeDb(rows);
+    const { namespace, fetches } = makeFakeRoomNamespace();
+    const env = { DB: db, ROOM: namespace } as unknown as Env;
+    const result = await runScheduled({ env, nowMinutes: 200 });
+    expect(result.due).toHaveLength(MAX_CRON_ROWS_PER_RUN);
+    expect(result.fired).toHaveLength(MAX_CRON_ROWS_PER_RUN);
+    expect(fetches).toHaveLength(MAX_CRON_ROWS_PER_RUN);
+    expect(state.batchCalls[0]).toHaveLength(MAX_CRON_ROWS_PER_RUN);
+    expect(state.prepareSqls[0]).toContain('LIMIT ?1');
+  });
+
+  it('does not retry a claimed row after an ambiguous DO fetch failure', async () => {
     const { db, state } = makeFakeDb([
       { room: 'r', cell: 'A1', fire_at: 100 },
     ]);
@@ -150,8 +180,68 @@ describe('runScheduled', () => {
     const env = { DB: db, ROOM: namespace } as unknown as Env;
     const result = await runScheduled({ env, nowMinutes: 200 });
     expect(result.fired).toEqual([]);
-    // No batch because no rows fired successfully.
-    expect(state.batchCalls).toHaveLength(0);
+    expect(state.batchCalls).toHaveLength(1);
+    expect(state.batchCalls[0]).toHaveLength(1);
+  });
+
+  it('claims non-2xx and successful rows together before dispatch', async () => {
+    const { db, state } = makeFakeDb([
+      { room: 'ok', cell: 'A1', fire_at: 100 },
+      { room: 'failed', cell: 'B2', fire_at: 100 },
+    ]);
+    const namespace = {
+      idFromName: (name: string) => ({ toString: () => name }),
+      get: (id: { toString: () => string }) => ({
+        fetch: async () =>
+          new Response('', {
+            status: id.toString() === 'ok' ? 200 : 503,
+          }),
+      }),
+    } as unknown as DurableObjectNamespace;
+    const env = { DB: db, ROOM: namespace } as unknown as Env;
+    const result = await runScheduled({ env, nowMinutes: 200 });
+    expect(result.fired).toEqual([{ room: 'ok', cell: 'A1' }]);
+    expect(state.batchCalls).toHaveLength(1);
+    expect(state.batchCalls[0]).toHaveLength(2);
+  });
+
+  it('deletes a permanent 4xx trigger failure instead of poisoning retries', async () => {
+    const { db, state } = makeFakeDb([
+      { room: 'denied', cell: 'A1', fire_at: 100 },
+    ]);
+    const namespace = {
+      idFromName: () => ({ toString: () => 'denied' }),
+      get: () => ({
+        fetch: async () => new Response('', { status: 403 }),
+      }),
+    } as unknown as DurableObjectNamespace;
+    const env = { DB: db, ROOM: namespace } as unknown as Env;
+    const result = await runScheduled({ env, nowMinutes: 200 });
+    expect(result.fired).toEqual([]);
+    expect(state.batchCalls[0]).toHaveLength(1);
+  });
+
+  it('does not dispatch a row claimed by a concurrent invocation', async () => {
+    const { db, state } = makeFakeDb(
+      [{ room: 'lost-race', cell: 'A1', fire_at: 100 }],
+      0,
+    );
+    const { namespace, fetches } = makeFakeRoomNamespace();
+    const env = { DB: db, ROOM: namespace } as unknown as Env;
+    const result = await runScheduled({ env, nowMinutes: 200 });
+    expect(result.fired).toEqual([]);
+    expect(fetches).toHaveLength(0);
+    expect(state.batchCalls).toHaveLength(1);
+  });
+
+  it('canonicalizes room names before deriving the DO id', async () => {
+    const { db } = makeFakeDb([
+      { room: 'space room', cell: 'A1', fire_at: 100 },
+    ]);
+    const { namespace, fetches } = makeFakeRoomNamespace();
+    const env = { DB: db, ROOM: namespace } as unknown as Env;
+    await runScheduled({ env, nowMinutes: 200 });
+    expect(fetches[0]?.room).toBe('space%20room');
   });
 
   it('handles empty results array on the initial SELECT', async () => {

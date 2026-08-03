@@ -235,8 +235,12 @@ export async function copyToPrivate(host: PasskeyLogicHost, room: string): Promi
 export function currentRoom(pathname: string): string | null {
   const match = /^\/(?:_\/)?([^_/][^/]*?)(?:\/(?:edit|view|app))?\/?$/.exec(pathname);
   if (!match?.[1]) return null;
-  const room = decodeURIComponent(match[1]);
-  return room === '_start' || room === '_new' ? null : room;
+  try {
+    const room = decodeURIComponent(match[1]);
+    return room === '_start' || room === '_new' ? null : room;
+  } catch {
+    return null;
+  }
 }
 
 export async function roomAccess(host: PasskeyLogicHost, room: string): Promise<RoomAccessVerdict | null> {

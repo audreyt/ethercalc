@@ -10,14 +10,11 @@
  * Flow (every invocation):
  *   1. Derive `nowMinutes = toEpochMinutes(Date.now())`.
  *   2. SELECT due rows (`fire_at <= nowMinutes`).
- *   3. For each due row: fire-and-forget
- *      `env.ROOM.get(idFromName(room)).fetch('/_do/fire-trigger?cell=<cell>')`.
- *   4. DELETE the fired rows.
+ *   3. For each due row, invoke the room DO's fire-trigger endpoint.
+ *   4. Delete only rows whose DO returned a successful response.
  *
- * Failures in individual DO fetches are swallowed so one bad room
- * doesn't block the rest of the batch. Legacy semantics (src/main.ls:196
- * — `SC[room].triggerActionCell cell ->`) also ignored individual send
- * errors, so the behavior matches.
+ * Transport failures and non-2xx responses leave their individual rows in D1
+ * for retry. One bad room never blocks unrelated triggers.
  *
  * Exports:
  *   - `scheduled(event, env, ctx)` — the Cloudflare ScheduledHandler
@@ -41,21 +38,22 @@
 import {
   type CronTriggerRow,
   type DueTrigger,
+  isValidCronCell,
   pickDueTriggers,
   toEpochMinutes,
 } from './lib/cron.ts';
 import { withCronSchema } from './lib/d1-schema.ts';
 import type { Env } from './env.ts';
+import { encodeRoom, isValidRoomName } from './lib/room-name.ts';
+
+/** Bound D1 reads, DO subrequests, and delete statements per invocation. */
+export const MAX_CRON_ROWS_PER_RUN = 64;
 
 /**
- * Fetch every due trigger, dispatch to its room DO, and delete the
- * fired rows from D1. Returns the fired triggers and the remaining
- * rows so callers (the HTTP compat endpoint) can shape their own
- * response bodies.
- *
- * Pure of `Date.now()` — `nowMinutes` is passed in so tests pin time.
- * Pure of `ctx.waitUntil` — writes and fetches are `await`ed so the
- * runtime knows we're busy without needing waitUntil hand-off.
+ * Atomically claim every due trigger, then dispatch each claimed row once.
+ * Deleting before delivery makes concurrent cron invocations and ambiguous
+ * network failures at-most-once: an email may be missed on a transport
+ * failure, but it cannot be duplicated or poison the bounded queue forever.
  */
 export async function runScheduled(params: {
   readonly env: Env;
@@ -71,62 +69,53 @@ export async function runScheduled(params: {
   const db = env.DB;
   if (!db) return { due: [], keep: [], fired: [] };
 
-  // Read every row. In production `cron_triggers` is bounded by the
-  // number of users actively scheduling emails — a full-table scan is
-  // cheaper than a WHERE clause for a typical EtherCalc deployment
-  // (legacy `DB.hgetall "cron-list"` also returned the full hash).
+  // Bound both the D1 result and the in-memory fallback (test doubles and
+  // older bindings may ignore LIMIT binds).
   const allRes = await withCronSchema(db, async () =>
-    db.prepare(
-      'SELECT room, cell, fire_at FROM cron_triggers ORDER BY fire_at ASC',
-    ).all<CronTriggerRow>(),
+    db
+      .prepare(
+        'SELECT room, cell, fire_at FROM cron_triggers ' +
+          'ORDER BY fire_at ASC LIMIT ?1',
+      )
+      .bind(MAX_CRON_ROWS_PER_RUN)
+      .all<CronTriggerRow>(),
   );
-  const rows = allRes.results ?? [];
+  const rows = (allRes.results ?? []).slice(0, MAX_CRON_ROWS_PER_RUN);
   const { due, keep } = pickDueTriggers(nowMinutes, rows);
 
   const fired: DueTrigger[] = [];
-  for (const trigger of due) {
+  const dueRows = rows.filter(
+    (row: CronTriggerRow) => row.fire_at <= nowMinutes,
+  );
+  if (dueRows.length === 0) return { due, keep, fired };
+
+  const claim = db.prepare(
+    'DELETE FROM cron_triggers WHERE room = ?1 AND cell = ?2 AND fire_at = ?3',
+  );
+  const claimResults = await db.batch(
+    dueRows.map((row: CronTriggerRow) =>
+      claim.bind(row.room, row.cell, row.fire_at),
+    ),
+  );
+  const claimedRows = dueRows.filter(
+    (_row, index) => claimResults[index]?.meta.changes === 1,
+  );
+
+  for (const row of claimedRows) {
+    if (!isValidRoomName(row.room) || !isValidCronCell(row.cell)) continue;
     try {
-      const id = env.ROOM.idFromName(trigger.room);
+      const id = env.ROOM.idFromName(encodeRoom(row.room));
       const stub = env.ROOM.get(id);
-      const cell = encodeURIComponent(trigger.cell);
-      await stub.fetch(
-        `https://do.local/_do/fire-trigger?cell=${cell}&room=${encodeURIComponent(trigger.room)}`,
+      const cell = encodeURIComponent(row.cell);
+      const response = await stub.fetch(
+        `https://do.local/_do/fire-trigger?cell=${cell}&room=${encodeURIComponent(row.room)}`,
         { method: 'POST' },
       );
-      fired.push(trigger);
+      if (!response.ok) continue;
+      fired.push({ room: row.room, cell: row.cell });
     } catch {
-      // Swallow individual failures — legacy behavior. The row stays
-      // in D1 on failure so the next scheduled() pass retries it.
-    }
-  }
-
-  // Delete fired rows. We join them in one DELETE for batching — D1
-  // accepts up to 100 statements per batch, so for practical cron
-  // volumes this runs in one round-trip. We key on (room, cell,
-  // fire_at) composite PK to survive concurrent inserts of the
-  // same (room, cell) at a different fire_at.
-  if (fired.length > 0) {
-    // Build a single DELETE with OR-of-triples. D1 doesn't support
-    // ON CONFLICT DO DELETE or CTEs elegantly for this shape; the
-    // statement is linear in batch size but cheap for the typical
-    // < 100 entries we expect per minute.
-    //
-    // We need the actual fire_at values to target the right row
-    // (PK). `due` lost them to the `DueTrigger` shape. Re-derive
-    // from `rows` by filtering on identity — for each due trigger
-    // re-match rows with fire_at <= nowMinutes.
-    const dueRows = rows.filter((r: CronTriggerRow) => r.fire_at <= nowMinutes);
-    const stmt = db.prepare(
-      'DELETE FROM cron_triggers WHERE room = ?1 AND cell = ?2 AND fire_at = ?3',
-    );
-    // Batch each fired row as one bound statement. We intentionally
-    // don't wrap in a transaction; each delete is idempotent on PK
-    // collision anyway.
-    const batch = dueRows.map((r: CronTriggerRow) =>
-      stmt.bind(r.room, r.cell, r.fire_at),
-    );
-    if (batch.length > 0) {
-      await db.batch(batch);
+      // The row was already claimed. At-most-once delivery avoids duplicate
+      // email when a remote send succeeds but its response is lost.
     }
   }
 

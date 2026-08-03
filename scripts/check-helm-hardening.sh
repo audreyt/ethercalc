@@ -10,8 +10,9 @@ cd "$ROOT"
 tmp_default="$(mktemp)"
 tmp_optout="$(mktemp)"
 tmp_ingress="$(mktemp)"
+tmp_auth="$(mktemp)"
 cleanup() {
-  rm -f "$tmp_default" "$tmp_optout" "$tmp_ingress"
+  rm -f "$tmp_default" "$tmp_optout" "$tmp_ingress" "$tmp_auth"
 }
 trap cleanup EXIT
 
@@ -22,7 +23,7 @@ if ! grep -A1 'name: ETHERCALC_DISABLE_ROOM_INDEX' "$tmp_default" | grep -q 'val
 fi
 
 # SH-8: the default render must ship the restricted pod/container profile.
-for needle in 'runAsNonRoot: true' 'readOnlyRootFilesystem: true' 'allowPrivilegeEscalation: false'; do
+for needle in 'runAsNonRoot: true' 'readOnlyRootFilesystem: true' 'allowPrivilegeEscalation: false' 'automountServiceAccountToken: false'; do
   if ! grep -q "$needle" "$tmp_default"; then
     echo "[helm-hardening] FAIL: default render missing '$needle'" >&2
     exit 1
@@ -32,6 +33,30 @@ done
 helm template ci ./helm --set config.disableRoomIndex=false > "$tmp_optout"
 if ! grep -A1 'name: ETHERCALC_DISABLE_ROOM_INDEX' "$tmp_optout" | grep -q 'value: "0"'; then
   echo "[helm-hardening] FAIL: opt-out render does not set ETHERCALC_DISABLE_ROOM_INDEX=0" >&2
+  exit 1
+fi
+
+# Passkey auth must render every trust anchor together and fail closed when an
+# operator enables it without an RP ID/origin.
+helm template ci ./helm \
+  --set config.auth.enabled=true \
+  --set config.auth.rpId=sheets.example.com \
+  --set config.auth.rpName='Example Sheets' \
+  --set config.auth.origin=https://sheets.example.com > "$tmp_auth"
+for pair in \
+  'ETHERCALC_AUTH|"1"' \
+  'ETHERCALC_RP_ID|"sheets.example.com"' \
+  'ETHERCALC_RP_NAME|"Example Sheets"' \
+  'ETHERCALC_ORIGIN|"https://sheets.example.com"'; do
+  name="${pair%%|*}"
+  value="${pair#*|}"
+  if ! grep -A1 "name: $name" "$tmp_auth" | grep -q "value: $value"; then
+    echo "[helm-hardening] FAIL: passkey render missing $name=$value" >&2
+    exit 1
+  fi
+done
+if helm template ci ./helm --set config.auth.enabled=true >/dev/null 2>&1; then
+  echo "[helm-hardening] FAIL: incomplete passkey trust anchors rendered" >&2
   exit 1
 fi
 

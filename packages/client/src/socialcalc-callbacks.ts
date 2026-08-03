@@ -11,6 +11,10 @@
  * with `SocialCalc.OrigDoPositionCalculations` exactly like the legacy file
  * did (line 4).
  */
+import {
+  isSafeMultiSheetLink,
+  MAX_MULTI_SHEET_TITLE_LENGTH,
+} from '@ethercalc/shared';
 import type {
   BroadcastFn,
   SocialCalcGlobal,
@@ -39,7 +43,19 @@ export function parseQuery(raw: string): Record<string, string> {
     const k = eq >= 0 ? pair.slice(0, eq) : pair;
     const v = eq >= 0 ? pair.slice(eq + 1) : '';
     if (!k) continue;
-    query[decodeURIComponent(k)] = decodeURIComponent(v);
+    try {
+      const key = decodeURIComponent(k);
+      if (
+        key === '__proto__' ||
+        key === 'prototype' ||
+        key === 'constructor'
+      ) {
+        continue;
+      }
+      query[key] = decodeURIComponent(v);
+    } catch {
+      // One malformed percent escape must not abort the entire client boot.
+    }
   }
   return query;
 }
@@ -151,8 +167,16 @@ export function installCallbacks(
         ?.__MULTI__;
       if (multi?.rows?.length && /set \w+ formula /.test(cmd)) {
         for (const { link, title } of multi.rows) {
-          const re = new RegExp(`\\$${title}\\.([A-Z]+[1-9][0-9]*)`, 'ig');
-          cmd = cmd.replace(re, `"${link.replace('/', '')}"!$1`);
+          if (
+            !isSafeMultiSheetLink(link) ||
+            title.length === 0 ||
+            title.length > MAX_MULTI_SHEET_TITLE_LENGTH
+          ) {
+            continue;
+          }
+          const escapedTitle = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const re = new RegExp(`\\$${escapedTitle}\\.([A-Z]+[1-9][0-9]*)`, 'ig');
+          cmd = cmd.replace(re, (_match, coord: string) => `"${link.slice(1)}"!${coord}`);
         }
       }
       SocialCalc.Callbacks.broadcast?.('execute', {

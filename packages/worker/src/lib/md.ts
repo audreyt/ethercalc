@@ -28,16 +28,21 @@
 import { parseCSV } from './csv-parse.ts';
 
 /**
- * Escape a cell value for GFM table context. The only character that breaks
- * table cell parsing is `|`; we also escape backticks and backslashes to keep
- * values unambiguous, and replace embedded newlines with `<br>` (the standard
- * workaround since GFM doesn't allow newlines inside a table cell).
+ * Escape a cell value as inert text in GFM table context. In addition to
+ * structural table escapes, HTML delimiters and link brackets are encoded so
+ * attacker-controlled cells cannot become active HTML, links, or remote
+ * images when the downloaded Markdown is rendered by a permissive consumer.
  */
 function escapeCell(value: string): string {
   return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
     .replace(/\\/g, '\\\\')
     .replace(/\|/g, '\\|')
     .replace(/`/g, '\\`')
+    .replace(/\[/g, '\\[')
+    .replace(/\]/g, '\\]')
     .replace(/\r\n|\n|\r/g, '<br>');
 }
 

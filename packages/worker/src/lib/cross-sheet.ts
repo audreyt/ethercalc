@@ -31,9 +31,46 @@ export function extractSheetSave(save: string): string {
  * dependency on `@ethercalc/socialcalc-headless`.
  */
 export interface CrossSheetSpreadsheet {
-  findCrossSheetRefs(): readonly string[];
+  findCrossSheetRefs(limit?: number): readonly string[];
   addSiblingSheet(name: string, save: string): void;
   recalc(): void;
+}
+
+export const MAX_CROSS_SHEET_REFS = 16;
+export const MAX_CROSS_SHEET_NAME_CHARS = 2048;
+export const MAX_CROSS_SHEET_SAVE_BYTES = 2 * 1024 * 1024;
+export const MAX_CROSS_SHEET_TOTAL_CHARS = 4 * 1024 * 1024;
+
+/** Read a sibling response without buffering an attacker-sized snapshot. */
+export async function readBoundedResponseText(
+  response: Response,
+  maxBytes = MAX_CROSS_SHEET_SAVE_BYTES,
+): Promise<string | null> {
+  const declared = response.headers.get('Content-Length');
+  if (
+    declared !== null &&
+    Number.isFinite(Number(declared)) &&
+    Number(declared) > maxBytes
+  ) {
+    return null;
+  }
+  if (response.body === null) return '';
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  const chunks: string[] = [];
+  let received = 0;
+  while (true) {
+    const part = await reader.read();
+    if (part.done) break;
+    received += part.value.byteLength;
+    if (received > maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      return null;
+    }
+    chunks.push(decoder.decode(part.value, { stream: true }));
+  }
+  chunks.push(decoder.decode());
+  return chunks.join('');
 }
 
 /**
@@ -52,14 +89,19 @@ export async function hydrateCrossSheetRefs(
   fetchSibling: (name: string) => Promise<string | null>,
   ownName?: string,
 ): Promise<number> {
-  const refs = ss.findCrossSheetRefs();
+  const refs = ss.findCrossSheetRefs(MAX_CROSS_SHEET_REFS);
   // Stryker disable next-line ConditionalExpression : early-out optimization
   // that's functionally redundant — an empty `refs` makes the for-loop a
   // no-op, so dropping the guard produces identical output.
   if (refs.length === 0) return 0;
   let added = 0;
+  let attempted = 0;
+  let totalChars = 0;
   for (const ref of refs) {
     if (ownName && ref === ownName) continue;
+    if (ref.length === 0 || ref.length > MAX_CROSS_SHEET_NAME_CHARS) continue;
+    if (attempted >= MAX_CROSS_SHEET_REFS) break;
+    attempted += 1;
     let save: string | null;
     try {
       save = await fetchSibling(ref);
@@ -72,6 +114,9 @@ export async function hydrateCrossSheetRefs(
       continue;
     }
     if (!save) continue;
+    if (save.length > MAX_CROSS_SHEET_SAVE_BYTES) continue;
+    if (totalChars + save.length > MAX_CROSS_SHEET_TOTAL_CHARS) continue;
+    totalChars += save.length;
     ss.addSiblingSheet(ref, extractSheetSave(save));
     added++;
   }

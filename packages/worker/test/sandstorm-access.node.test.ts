@@ -68,3 +68,34 @@ describe('sandstormAllowsWsWrite', () => {
     expect(sandstormAllowsWsWrite({}, false)).toBe(true);
   });
 });
+
+describe('sandstorm route and permission matching', () => {
+  it('matches the modify permission exactly, ignoring surrounding space', () => {
+    const withPerms = (value: string): Headers =>
+      new Headers({ 'X-Sandstorm-Permissions': value });
+    expect(sandstormCanModify(withPerms('modify'))).toBe(true);
+    expect(sandstormCanModify(withPerms(' modify '))).toBe(true);
+    expect(sandstormCanModify(withPerms('read, modify'))).toBe(true);
+    expect(sandstormCanModify(withPerms('read'))).toBe(false);
+    expect(sandstormCanModify(withPerms('modifyx'))).toBe(false);
+    expect(sandstormCanModify(withPerms('xmodify'))).toBe(false);
+    expect(sandstormCanModify(withPerms(''))).toBe(false);
+  });
+
+  it.each([
+    ['POST', '/_', true],
+    ['POST', '/_/room', true],
+    ['POST', '/_x', false],
+    ['POST', '/other', false],
+    ['PUT', '/_/room', true],
+    ['PUT', '/room', false],
+    ['GET', '/_new', true],
+    ['GET', '/=_new', true],
+    ['GET', '/_from/tpl', true],
+    ['GET', '/room', false],
+    ['GET', '/_', false],
+    ['HEAD', '/_', false],
+  ] as const)('classifies %s %s as mutating=%s', (method, pathname, expected) => {
+    expect(isSandstormMutationRoute(method, pathname)).toBe(expected);
+  });
+});

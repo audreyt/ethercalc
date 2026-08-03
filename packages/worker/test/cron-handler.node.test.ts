@@ -5,6 +5,7 @@ import {
   BindingEmailSender,
   DisabledEmailSender,
 } from '../src/lib/email.ts';
+import { MAX_CRON_TIMES_PER_CELL } from '../src/lib/cron.ts';
 import type { Env } from '../src/env.ts';
 
 /**
@@ -106,6 +107,16 @@ describe('upsertCronTriggers', () => {
     expect(batch[2]!.params).toEqual(['r', 'B2', 60]);
   });
 
+  it('caps direct callers below the D1 batch ceiling', async () => {
+    const { db, batchCalls } = makeFakeDb();
+    const values = Array.from(
+      { length: MAX_CRON_TIMES_PER_CELL + 10 },
+      (_, index) => index,
+    );
+    await upsertCronTriggers(db, 'r', 'A1', values);
+    expect(batchCalls[0]).toHaveLength(MAX_CRON_TIMES_PER_CELL + 1);
+  });
+
   it('delete-only path when times is empty', async () => {
     const { db, calls, batchCalls } = makeFakeDb();
     await upsertCronTriggers(db, 'r', 'C3', []);
@@ -133,6 +144,9 @@ describe('buildEmailSender', () => {
   });
 
   it('uses env.EMAIL_FROM when provided, default otherwise', async () => {
+    // Email Service's Workers binding takes `from: string | {email, name?}`
+    // (developers.cloudflare.com/email-service/api/send-emails/workers-api/).
+    // We always send the structured form.
     const send1 = vi.fn(async (_m: unknown) => undefined);
     const env1 = {
       EMAIL: { send: send1 },
@@ -140,8 +154,8 @@ describe('buildEmailSender', () => {
     } as unknown as Env;
     const sender1 = buildEmailSender(env1);
     await sender1.send('u@ex.com', 's', 'b');
-    const msg1 = send1.mock.calls[0]![0] as { from: string };
-    expect(msg1.from).toBe('a@ex.com');
+    const msg1 = send1.mock.calls[0]![0] as { from: { email: string } };
+    expect(msg1.from).toEqual({ email: 'a@ex.com' });
 
     const send2 = vi.fn(async (_m: unknown) => undefined);
     const env2 = {
@@ -149,7 +163,7 @@ describe('buildEmailSender', () => {
     } as unknown as Env;
     const sender2 = buildEmailSender(env2);
     await sender2.send('u@ex.com', 's', 'b');
-    const msg2 = send2.mock.calls[0]![0] as { from: string };
-    expect(msg2.from).toBe('noreply@ethercalc.invalid');
+    const msg2 = send2.mock.calls[0]![0] as { from: { email: string } };
+    expect(msg2.from).toEqual({ email: 'noreply@ethercalc.invalid' });
   });
 });

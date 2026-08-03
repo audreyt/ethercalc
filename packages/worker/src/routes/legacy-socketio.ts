@@ -85,6 +85,9 @@ export function registerLegacySocketIo(app: Hono<EtherCalcHonoEnv>): void {
     }
     const sid = c.req.param('sid') ?? '';
     if (!validateSid(sid)) return c.text('Invalid sid', 400);
+    // The hibernated DO owns this transport from here. Remove the
+    // isolate-local handshake breadcrumb when both requests hit one isolate.
+    ensureShim().releaseHandshake(sid);
     // Forward the upgrade to a sid-keyed RoomDO. The DO accepts via the
     // hibernation API (`upgradeLegacySocketIo`) so the socket does not pin
     // any room DO — or this Worker isolate — awake between frames.

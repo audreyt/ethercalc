@@ -15,7 +15,14 @@ interface AuthCall {
   url: string;
   method: string;
   body: string;
+  clientIp: string | null;
 }
+
+const AUTH_ORIGIN = 'https://ethercalc.net';
+const AUTH_JSON_HEADERS = {
+  'Content-Type': 'application/json',
+  Origin: AUTH_ORIGIN,
+} as const;
 
 function makeAuthEnv(
   responder: (call: AuthCall) => Response,
@@ -28,10 +35,12 @@ function makeAuthEnv(
         typeof init?.body === 'string'
           ? init.body
           : await new Response(init?.body as BodyInit).text();
+      const headers = new Headers(init?.headers);
       const call: AuthCall = {
         url,
         method: init?.method ?? 'GET',
         body,
+        clientIp: headers.get('X-EC-Client-IP'),
       };
       calls.push(call);
       return responder(call);
@@ -47,7 +56,7 @@ function makeAuthEnv(
     ETHERCALC_AUTH: '1',
     ETHERCALC_RP_ID: 'ethercalc.net',
     ETHERCALC_RP_NAME: 'EtherCalc',
-    ETHERCALC_ORIGIN: 'https://ethercalc.net',
+    ETHERCALC_ORIGIN: AUTH_ORIGIN,
   };
   return { env: env as Env, calls };
 }
@@ -62,7 +71,11 @@ describe('auth routes', () => {
     const res = await app.fetch(
       new Request('https://t.test/_auth/register-init', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          ...AUTH_JSON_HEADERS,
+          'CF-Connecting-IP': '198.51.100.2',
+          'X-EC-Client-IP': 'attacker-controlled',
+        },
         body: '{}',
       }),
       env,
@@ -78,6 +91,7 @@ describe('auth routes', () => {
         url: 'https://auth.local/_auth/register-init',
         method: 'POST',
         body: '{}',
+        clientIp: '198.51.100.2',
       },
     ]);
     expect(res.headers.get('Set-Cookie')).toBeNull();
@@ -92,7 +106,7 @@ describe('auth routes', () => {
     const res = await app.fetch(
       new Request('https://t.test/_auth/login-complete', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: AUTH_JSON_HEADERS,
         body: JSON.stringify({ response: { id: 'cred' }, challenge: 'c' }),
       }),
       env,
@@ -101,7 +115,7 @@ describe('auth routes', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ uid: 'uid-owner' });
     expect(res.headers.get('Set-Cookie')).toBe(
-      'ec_sess=signed.token; Path=/; Max-Age=2592000; HttpOnly; Secure; SameSite=Lax',
+      '__Host-ec_sess=signed.token; Path=/; Max-Age=2592000; HttpOnly; Secure; SameSite=Lax',
     );
     expect(calls[0]?.url).toBe('https://auth.local/_auth/login-complete');
   });
@@ -115,6 +129,7 @@ describe('auth routes', () => {
     const res = await app.fetch(
       new Request('https://t.test/_auth/login-complete', {
         method: 'POST',
+        headers: AUTH_JSON_HEADERS,
         body: '{}',
       }),
       env,
@@ -132,6 +147,7 @@ describe('auth routes', () => {
     const res = await app.fetch(
       new Request('https://t.test/_auth/register-complete', {
         method: 'POST',
+        headers: AUTH_JSON_HEADERS,
         body: '{}',
       }),
       env,
@@ -185,7 +201,7 @@ describe('auth routes', () => {
 
     const authed = await app.fetch(
       new Request('https://t.test/_auth/whoami', {
-        headers: { Cookie: 'ec_sess=signed.token' },
+        headers: { Cookie: '__Host-ec_sess=signed.token' },
       }),
       env,
     );
@@ -195,7 +211,7 @@ describe('auth routes', () => {
     );
     const disabled = await app.fetch(
       new Request('https://t.test/_auth/whoami', {
-        headers: { Cookie: 'ec_sess=signed.token' },
+        headers: { Cookie: '__Host-ec_sess=signed.token' },
       }),
       { ROOM: {} as DurableObjectNamespace } as Env,
     );
@@ -203,20 +219,98 @@ describe('auth routes', () => {
     expect(await authed.json()).toEqual({ uid: 'uid-owner', enabled: true });
     expect(await anon.json()).toEqual({ uid: null, enabled: true });
     expect(await disabled.json()).toEqual({ uid: null, enabled: false });
+    expect(authed.headers.get('Cache-Control')).toBe('private, no-store');
+    expect(anon.headers.get('Cache-Control')).toBe('private, no-store');
+    expect(disabled.headers.get('Cache-Control')).toBe('private, no-store');
   });
 
-  it('logout clears the session cookie', async () => {
-    const { env } = makeAuthEnv(() => new Response('x'));
+  it('revokes the current session before clearing its cookie', async () => {
+    const { env, calls } = makeAuthEnv(() => new Response(null, { status: 204 }));
     const app = buildApp();
 
     const res = await app.fetch(
-      new Request('https://t.test/_auth/logout', { method: 'POST' }),
+      new Request('https://t.test/_auth/logout', {
+        method: 'POST',
+        headers: {
+          Origin: AUTH_ORIGIN,
+          Cookie: '__Host-ec_sess=signed.token',
+        },
+      }),
       env,
     );
 
     expect(res.status).toBe(204);
+    expect(calls).toEqual([
+      {
+        url: 'https://auth.local/_auth/revoke-session',
+        method: 'POST',
+        body: JSON.stringify({ session: 'signed.token' }),
+        clientIp: 'unknown',
+      },
+    ]);
     expect(res.headers.get('Set-Cookie')).toBe(
-      'ec_sess=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax',
+      '__Host-ec_sess=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax',
     );
+  });
+
+  it('does not claim logout succeeded when server-side revocation fails', async () => {
+    const { env } = makeAuthEnv(
+      () => new Response('unavailable', { status: 503 }),
+    );
+    const response = await buildApp().fetch(
+      new Request('https://t.test/_auth/logout', {
+        method: 'POST',
+        headers: {
+          Origin: AUTH_ORIGIN,
+          Cookie: '__Host-ec_sess=signed.token',
+        },
+      }),
+      env,
+    );
+    expect(response.status).toBe(503);
+    expect(response.headers.get('Set-Cookie')).toBeNull();
+  });
+
+  it.each([undefined, 'https://evil.test'])(
+    'rejects ceremony POSTs from an untrusted Origin (%s)',
+    async (origin) => {
+      const { env, calls } = makeAuthEnv(() => Response.json({}));
+      const headers = new Headers({ 'Content-Type': 'application/json' });
+      if (origin !== undefined) headers.set('Origin', origin);
+      const res = await buildApp().fetch(
+        new Request('https://t.test/_auth/login-init', {
+          method: 'POST',
+          headers,
+          body: '{}',
+        }),
+        env,
+      );
+      expect(res.status).toBe(403);
+      expect(calls).toEqual([]);
+    },
+  );
+
+  it('rejects non-JSON and oversized ceremony bodies before AuthDO dispatch', async () => {
+    const { env, calls } = makeAuthEnv(() => Response.json({}));
+    const app = buildApp();
+    const wrongType = await app.fetch(
+      new Request('https://t.test/_auth/login-init', {
+        method: 'POST',
+        headers: { Origin: AUTH_ORIGIN, 'Content-Type': 'text/plain' },
+        body: '{}',
+      }),
+      env,
+    );
+    const tooLarge = await app.fetch(
+      new Request('https://t.test/_auth/login-init', {
+        method: 'POST',
+        headers: AUTH_JSON_HEADERS,
+        body: 'x'.repeat(64 * 1024 + 1),
+      }),
+      env,
+    );
+    expect(wrongType.status).toBe(415);
+    expect(tooLarge.status).toBe(413);
+    expect(calls).toEqual([]);
   });
 });

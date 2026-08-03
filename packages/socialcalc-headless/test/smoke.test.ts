@@ -143,6 +143,10 @@ describe('socialcalc headless (Phase 1 spike — Plan A)', () => {
       'single-quoted-room',
       'bare_room',
     ]);
+    expect(ss.findCrossSheetRefs(2)).toEqual([
+      'room-with-dashes',
+      'single-quoted-room',
+    ]);
   });
 
   /**

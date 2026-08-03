@@ -17,24 +17,107 @@
  * istanbul-ignored). Keeping the predicates here means the security-relevant
  * decisions are unit-tested rather than hidden inside an uncovered route.
  *
- * Why strip rather than escape: `text-html` is a legitimate feature — cells
- * hold links/images/formatting — so we preserve safe markup and only remove
- * script-bearing elements, `on*` event handlers, and `javascript:`/`data:`
- * URLs. This mirrors the client-side DOMPurify allowlist
- * (`@ethercalc/client` `src/sanitize-html.ts`).
+ * Why strip rather than escape: `text-html` is a legitimate feature. The
+ * policy mirrors the client DOMPurify allowlist: safe formatting survives,
+ * unknown tags are unwrapped, and active/raw-text elements are removed.
  */
 
 /**
- * Elements removed from the export entirely (tag + contents). These can
- * execute script or load active content regardless of CSP-stripping
- * environments. `<embed>` is void (no contents) but still listed so its
- * `src` never resolves.
+ * Elements removed with their contents. This includes executable/embedded
+ * content plus parser-state and document-control elements that are unsafe
+ * when a downloaded export is opened without response CSP headers.
  */
 export const DANGEROUS_ELEMENTS: readonly string[] = [
-  'script',
-  'iframe',
-  'object',
+  'applet',
+  'base',
   'embed',
+  'frame',
+  'frameset',
+  'iframe',
+  'link',
+  'math',
+  'meta',
+  'noembed',
+  'noframes',
+  'noscript',
+  'object',
+  'plaintext',
+  'script',
+  'style',
+  'svg',
+  'template',
+  'textarea',
+  'title',
+  'xmp',
+];
+
+/** Formatting elements permitted by the live client sanitizer. */
+export const ALLOWED_ELEMENTS: readonly string[] = [
+  'a',
+  'abbr',
+  'b',
+  'blockquote',
+  'br',
+  'caption',
+  'code',
+  'col',
+  'colgroup',
+  'div',
+  'em',
+  'font',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'hr',
+  'i',
+  'img',
+  'li',
+  'ol',
+  'p',
+  'pre',
+  's',
+  'small',
+  'span',
+  'strike',
+  'strong',
+  'sub',
+  'sup',
+  'table',
+  'tbody',
+  'td',
+  'tfoot',
+  'th',
+  'thead',
+  'tr',
+  'u',
+  'ul',
+];
+
+/** Safe presentation/link attributes retained on allowed elements. */
+export const ALLOWED_ATTRIBUTES: readonly string[] = [
+  'align',
+  'alt',
+  'border',
+  'cellpadding',
+  'cellspacing',
+  'class',
+  'color',
+  'colspan',
+  'face',
+  'height',
+  'href',
+  'rel',
+  'rowspan',
+  'size',
+  'src',
+  'style',
+  'target',
+  'title',
+  'valign',
+  'width',
 ];
 
 /**
@@ -49,23 +132,61 @@ export function isEventHandlerAttribute(name: string): boolean {
 }
 
 /**
- * True when a URL-bearing attribute value uses a dangerous scheme
- * (`javascript:`, `data:`, or `vbscript:`). Leading ASCII whitespace and
- * embedded control characters are stripped first because browsers tolerate
- * `java\tscript:` and ` javascript:` — the canonical bypasses. Matching is
- * case-insensitive.
+ * URL-bearing attributes retained by the allowlist and scheme-checked.
+ */
+export const URL_ATTRIBUTES: readonly string[] = ['href', 'src'];
+
+/**
+ * True unless a URL uses http(s), mailto, tel, ftp, or a relative/reference
+ * form. C0 controls are removed before classification to catch obfuscated
+ * schemes such as `java\tscript:`.
  */
 export function isUnsafeUrlValue(value: string): boolean {
-  // Drop ASCII whitespace + C0 control chars (U+0000..U+0020, incl. tab /
-  // newline) that browsers ignore when resolving the scheme, then inspect
-  // the prefix.
+  // `+` vs a single-char class is a wash under the `g` flag (every occurrence
+  // is replaced either way) — the quantifier is kept for intent.
   // eslint-disable-next-line no-control-regex
-  const collapsed = value.replace(/[\x00-\x20]+/g, '').toLowerCase();
-  return /^(?:javascript|data|vbscript):/.test(collapsed);
+  // Stryker disable next-line Regex
+  const collapsed = value.replace(/[\x00-\x20]+/g, '');
+  return !/^(?:(?:https?|mailto|tel|ftp):|[^a-z]|[a-z+.-]+(?:[^a-z+.:-]|$))/i.test(
+    collapsed,
+  );
 }
 
-/** URL-bearing attributes we scheme-check on every surviving element. */
-export const URL_ATTRIBUTES: readonly string[] = ['href', 'src', 'xlink:href'];
+/**
+ * Image sources in exported user content must stay local. Served exports
+ * already have CSP, but downloaded HTML loses response headers; allowing an
+ * absolute or protocol-relative source there would turn a sheet into a
+ * viewer-tracking beacon.
+ */
+export function isExternalImageSource(value: string): boolean {
+  // eslint-disable-next-line no-control-regex
+  // Stryker disable next-line Regex
+  const collapsed = value.replace(/[\x00-\x20]+/g, '');
+  return /^(?:[a-z][a-z0-9+.-]*:|[\\/]{2})/i.test(collapsed);
+}
+
+/**
+ * Inline styles preserve spreadsheet formatting, but CSS can also issue
+ * network requests. Strip the whole attribute when it contains a fetch-capable
+ * construct (including common escaped/comment-obfuscated spellings) so a
+ * downloaded HTML export cannot become a tracking beacon after response CSP
+ * headers are gone.
+ */
+export function isUnsafeInlineStyle(value: string): boolean {
+  // Backslash escapes and comments can splice attacker-controlled CSS tokens.
+  if (value.includes('\\') || value.includes('/*') || value.includes('@')) {
+    return true;
+  }
+  // eslint-disable-next-line no-control-regex
+  // Stryker disable next-line Regex
+  const compact = value.toLowerCase().replace(/[\x00-\x20]+/g, '');
+  return (
+    /(?:url|image(?:-set)?|cross-fade|element|paint|expression|behavior|-moz-binding)\s*\(/.test(
+      compact,
+    ) ||
+    /(?:https?|ftp|file|data|blob):|[\\/]{2}/.test(compact)
+  );
+}
 
 /**
  * Decide what to do with a single attribute during sanitisation.
@@ -75,9 +196,17 @@ export const URL_ATTRIBUTES: readonly string[] = ['href', 'src', 'xlink:href'];
  * adapter and every branch is exercised by the Node unit suite.
  */
 export function attributeAction(name: string, value: string): 'keep' | 'remove' {
+  // Defence in depth: no allowlisted attribute name starts with `on`, so the
+  // allowlist check below already rejects handlers. This keeps the intent
+  // explicit if the allowlist ever grows.
+  // Stryker disable next-line ConditionalExpression
   if (isEventHandlerAttribute(name)) return 'remove';
-  if (URL_ATTRIBUTES.includes(name.toLowerCase()) && isUnsafeUrlValue(value)) {
+  const normalized = name.toLowerCase();
+  if (!ALLOWED_ATTRIBUTES.includes(normalized)) return 'remove';
+  if (URL_ATTRIBUTES.includes(normalized) && isUnsafeUrlValue(value)) {
     return 'remove';
   }
+  if (normalized === 'src' && isExternalImageSource(value)) return 'remove';
+  if (normalized === 'style' && isUnsafeInlineStyle(value)) return 'remove';
   return 'keep';
 }

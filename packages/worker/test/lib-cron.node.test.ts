@@ -3,6 +3,8 @@ import { describe, it, expect } from 'vite-plus/test';
 import {
   buildTimetriggerBody,
   parseSettimetrigger,
+  MAX_CRON_TIMES_PER_CELL,
+  isValidCronCell,
   pickDueTriggers,
   toEpochMinutes,
 } from '../src/lib/cron.ts';
@@ -81,6 +83,31 @@ describe('parseSettimetrigger', () => {
 
   it('returns null on a different verb', () => {
     expect(parseSettimetrigger('sendemail A1 1,2')).toBeNull();
+  });
+
+  it('rejects cells outside the bounded SocialCalc coordinate space', () => {
+    expect(isValidCronCell('A1')).toBe(true);
+    expect(isValidCronCell('ZZ1048576')).toBe(true);
+    for (const cell of ['A0', 'A1048577', 'AAA1', 'a1', 'A1;DROP']) {
+      expect(isValidCronCell(cell)).toBe(false);
+      expect(parseSettimetrigger(`settimetrigger ${cell} 1`)).toBeNull();
+    }
+  });
+
+  it('rejects non-string cells', () => {
+    expect(isValidCronCell(null)).toBe(false);
+  });
+
+  it('bounds one cell schedule below the D1 batch ceiling', () => {
+    const values = Array.from(
+      { length: MAX_CRON_TIMES_PER_CELL + 10 },
+      (_, index) => index,
+    );
+    const parsed = parseSettimetrigger(
+      `settimetrigger A1 ${values.join(',')}`,
+    );
+    expect(parsed?.times).toHaveLength(MAX_CRON_TIMES_PER_CELL);
+    expect(parsed?.times.at(-1)).toBe(MAX_CRON_TIMES_PER_CELL - 1);
   });
 });
 

@@ -52,6 +52,10 @@ describe('isMultiCascade', () => {
   it('allows trailing content after multi-cascade (anchor-left-only)', () => {
     expect(isMultiCascade('set A7:B2 empty multi-cascade extra')).toBe('A7');
   });
+  it('anchors at the command start and reads the full B index', () => {
+    expect(isMultiCascade('xset A7:B2 empty multi-cascade')).toBeNull();
+    expect(isMultiCascade('set A7:B24 empty multi-cascade')).toBe('A7');
+  });
 });
 
 describe('isBannedWikiFormat', () => {
@@ -71,6 +75,11 @@ describe('isBannedWikiFormat', () => {
   it('rejects unrelated commands', () => {
     expect(isBannedWikiFormat('')).toBe(false);
     expect(isBannedWikiFormat('set A1 value n 1')).toBe(false);
+  });
+  it('anchors at the command start', () => {
+    expect(
+      isBannedWikiFormat('x set sheet defaulttextvalueformat text-wiki'),
+    ).toBe(false);
   });
 });
 
@@ -143,5 +152,24 @@ describe('enrichLoadClipboard', () => {
       'insertrow A2',
       'paste A2 all',
     ]);
+  });
+});
+
+describe('enrichLoadClipboard sheet-dimension digits', () => {
+  const LC = 'loadclipboard cell:A1:t:x\\n';
+
+  it('reads multi-digit column and row indices from the sheet line', () => {
+    expect(
+      enrichLoadClipboard(LC, {
+        rowQueryParam: null,
+        snapshot: '\nsheet:c:30:r:5:tvf:g\n',
+      }),
+    ).toEqual([LC, 'paste A6 all']);
+    expect(
+      enrichLoadClipboard(LC, {
+        rowQueryParam: null,
+        snapshot: '\nsheet:c:3:r:50:tvf:g\n',
+      }),
+    ).toEqual([LC, 'paste A51 all']);
   });
 });

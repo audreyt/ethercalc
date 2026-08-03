@@ -35,6 +35,8 @@ import {
   defaultWebAuthnOps,
   type WebAuthnOps,
 } from './lib/webauthn-ops.ts';
+import { createRateLimitStore } from './lib/rate-limit.ts';
+import { deleteStorageKeysBatched } from './lib/storage-batch.ts';
 
 /**
  * Environment for the AuthDO. The Worker passes `ETHERCALC_RP_ID`,
@@ -80,9 +82,21 @@ interface SessionPayload {
   readonly exp: number;
 }
 
+/** Logout-all cutoff for one uid, keyed by `session-revoked:<uid>`. */
+interface SessionRevocation {
+  readonly before: number;
+  readonly exp: number;
+}
+
 const CHALLENGE_TTL_MS = 120_000; // 2 minutes
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const ALARM_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_ACTIVE_CHALLENGES = 1_024;
+const SESSION_REVOCATION_PREFIX = 'session-revoked:';
+const CEREMONY_RATE_LIMIT = {
+  capacity: 30,
+  refillPerSec: 30 / 60,
+} as const;
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -96,6 +110,28 @@ function plainResponse(body: string, status: number): Response {
     status,
     headers: { 'Content-Type': 'text/plain' },
   });
+}
+
+function challengeCapacityResponse(): Response {
+  return new Response('Too many active authentication challenges', {
+    status: 503,
+    headers: {
+      'Content-Type': 'text/plain',
+      'Retry-After': String(CHALLENGE_TTL_MS / 1000),
+    },
+  });
+}
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+async function readJsonObject(request: Request): Promise<Record<string, unknown> | null> {
+  try {
+    const value: unknown = await request.json();
+    return isJsonObject(value) ? value : null;
+  } catch {
+    return null;
+  }
 }
 
 
@@ -187,6 +223,7 @@ export class AuthDO implements DurableObject {
   readonly #env: AuthEnv;
   readonly #ops: WebAuthnOps;
   #sessionSecret: string | null = null;
+  readonly #ceremonyRateLimit = createRateLimitStore(2_048);
 
   constructor(
     state: DurableObjectState,
@@ -214,6 +251,24 @@ export class AuthDO implements DurableObject {
       origin,
       rpName: this.#env.ETHERCALC_RP_NAME || 'EtherCalc',
     };
+    if (
+      (path === '/_auth/register-init' || path === '/_auth/login-init') &&
+      request.method === 'POST'
+    ) {
+      const rate = this.#ceremonyRateLimit.consume(
+        request.headers.get('X-EC-Client-IP') ?? 'unknown',
+        CEREMONY_RATE_LIMIT,
+      );
+      if (!rate.allowed) {
+        return new Response('Too many authentication attempts', {
+          status: 429,
+          headers: {
+            'Content-Type': 'text/plain',
+            'Retry-After': String(rate.retryAfterSec),
+          },
+        });
+      }
+    }
 
     if (path === '/_auth/register-init' && request.method === 'POST') {
       return this.#registerInit(config);
@@ -229,6 +284,9 @@ export class AuthDO implements DurableObject {
     }
     if (path === '/_auth/verify-session' && request.method === 'POST') {
       return this.#verifySession(request);
+    }
+    if (path === '/_auth/revoke-session' && request.method === 'POST') {
+      return this.#revokeSession(request);
     }
     return plainResponse('Not Found', 404);
   }
@@ -256,30 +314,57 @@ export class AuthDO implements DurableObject {
     return bytesToHex(raw);
   }
 
-  /** Store a challenge and arm the cleanup alarm. */
+  /**
+   * Store a challenge without evicting another live ceremony. Returns false
+   * at capacity so an attacker cannot invalidate a victim's in-flight login.
+   */
   async #storeChallenge(
     challenge: string,
     record: StoredChallenge,
-  ): Promise<void> {
-    await this.#state.storage.put(`challenge:${challenge}`, record);
-    await this.#armAlarm();
+  ): Promise<boolean> {
+    const key = `challenge:${challenge}`;
+    return this.#state.blockConcurrencyWhile(async () => {
+      const existing = await this.#state.storage.list<StoredChallenge>({
+        prefix: 'challenge:',
+        limit: MAX_ACTIVE_CHALLENGES + 1,
+      });
+      const now = Date.now();
+      const deletions: string[] = [];
+      let liveCount = 0;
+      for (const [existingKey, value] of existing) {
+        if (!Number.isFinite(value.exp) || value.exp <= now) {
+          deletions.push(existingKey);
+        } else if (existingKey !== key) {
+          liveCount += 1;
+        }
+      }
+      if (deletions.length > 0) {
+        await deleteStorageKeysBatched(this.#state.storage, deletions);
+      }
+      if (liveCount >= MAX_ACTIVE_CHALLENGES) return false;
+      await this.#state.storage.put(key, record);
+      await this.#armAlarm();
+      return true;
+    });
   }
 
-  /** Find and consume a challenge. Returns the stored record or null. */
+  /** Find and atomically consume one challenge. */
   async #consumeChallenge(
     challenge: string,
     purpose: 'register' | 'login',
   ): Promise<StoredChallenge | null> {
     const key = `challenge:${challenge}`;
-    const stored = await this.#state.storage.get<StoredChallenge>(key);
-    if (stored === undefined || stored === null) return null;
-    if (stored.purpose !== purpose) return null;
-    if (Date.now() >= stored.exp) {
+    return this.#state.blockConcurrencyWhile(async () => {
+      const stored = await this.#state.storage.get<StoredChallenge>(key);
+      if (stored === undefined || stored === null) return null;
+      if (stored.purpose !== purpose) return null;
+      if (Date.now() >= stored.exp) {
+        await this.#state.storage.delete(key);
+        return null;
+      }
       await this.#state.storage.delete(key);
-      return null;
-    }
-    await this.#state.storage.delete(key);
-    return stored;
+      return stored;
+    });
   }
 
   async #armAlarm(): Promise<void> {
@@ -289,18 +374,31 @@ export class AuthDO implements DurableObject {
   }
 
   async alarm(): Promise<void> {
-    const map = await this.#state.storage.list<StoredChallenge>({
-      prefix: 'challenge:',
-    });
+    const [challenges, revocations] = await Promise.all([
+      this.#state.storage.list<StoredChallenge>({ prefix: 'challenge:' }),
+      this.#state.storage.list<SessionRevocation>({
+        prefix: SESSION_REVOCATION_PREFIX,
+      }),
+    ]);
     const now = Date.now();
     const expired: string[] = [];
-    for (const [key, val] of map) {
-      if (val.exp <= now) expired.push(key);
+    for (const [key, val] of challenges) {
+      if (!Number.isFinite(val.exp) || val.exp <= now) expired.push(key);
     }
-    if (expired.length > 0) await this.#state.storage.delete(expired);
-    // Re-arm if there are remaining challenges
-    const remaining = await this.#state.storage.list({ prefix: 'challenge:', limit: 1 });
-    if (remaining.size > 0) {
+    for (const [key, val] of revocations) {
+      if (!Number.isFinite(val.exp) || val.exp <= now) expired.push(key);
+    }
+    if (expired.length > 0) {
+      await deleteStorageKeysBatched(this.#state.storage, expired);
+    }
+    const [remainingChallenges, remainingRevocations] = await Promise.all([
+      this.#state.storage.list({ prefix: 'challenge:', limit: 1 }),
+      this.#state.storage.list({
+        prefix: SESSION_REVOCATION_PREFIX,
+        limit: 1,
+      }),
+    ]);
+    if (remainingChallenges.size > 0 || remainingRevocations.size > 0) {
       await this.#state.storage.setAlarm(Date.now() + ALARM_INTERVAL_MS);
     }
   }
@@ -319,11 +417,12 @@ export class AuthDO implements DurableObject {
         userVerification: 'required',
       },
     });
-    await this.#storeChallenge(options.challenge, {
+    const stored = await this.#storeChallenge(options.challenge, {
       purpose: 'register',
       uid,
       exp: Date.now() + CHALLENGE_TTL_MS,
     });
+    if (!stored) return challengeCapacityResponse();
     return jsonResponse({ options, uid });
   }
 
@@ -331,12 +430,13 @@ export class AuthDO implements DurableObject {
     request: Request,
     config: AuthConfig,
   ): Promise<Response> {
-    const body = (await request.json()) as {
-      response?: RegistrationResponseJSON;
-      uid?: unknown;
-      challenge?: unknown;
-    };
-    if (!body.response || typeof body.uid !== 'string' || typeof body.challenge !== 'string') {
+    const body = await readJsonObject(request);
+    if (
+      body === null ||
+      !isJsonObject(body.response) ||
+      typeof body.uid !== 'string' ||
+      typeof body.challenge !== 'string'
+    ) {
       return plainResponse('Missing response, uid, or challenge', 400);
     }
     const challengeRecord = await this.#consumeChallenge(body.challenge, 'register');
@@ -346,7 +446,7 @@ export class AuthDO implements DurableObject {
     let verified: VerifiedRegistrationResponse;
     try {
       verified = await this.#ops.verifyRegistrationResponse({
-        response: body.response,
+        response: body.response as unknown as RegistrationResponseJSON,
         expectedChallenge: body.challenge,
         expectedOrigin: config.origin,
         expectedRPID: config.rpID,
@@ -385,10 +485,11 @@ export class AuthDO implements DurableObject {
       // No allowCredentials — discoverable/usernameless login
       userVerification: 'required',
     });
-    await this.#storeChallenge(options.challenge, {
+    const stored = await this.#storeChallenge(options.challenge, {
       purpose: 'login',
       exp: Date.now() + CHALLENGE_TTL_MS,
     });
+    if (!stored) return challengeCapacityResponse();
     return jsonResponse({ options });
   }
 
@@ -396,11 +497,13 @@ export class AuthDO implements DurableObject {
     request: Request,
     config: AuthConfig,
   ): Promise<Response> {
-    const body = (await request.json()) as {
-      response?: AuthenticationResponseJSON;
-      challenge?: unknown;
-    };
-    if (!body.response || typeof body.challenge !== 'string') {
+    const body = await readJsonObject(request);
+    if (
+      body === null ||
+      !isJsonObject(body.response) ||
+      typeof body.response.id !== 'string' ||
+      typeof body.challenge !== 'string'
+    ) {
       return plainResponse('Missing response or challenge', 400);
     }
     const challengeRecord = await this.#consumeChallenge(body.challenge, 'login');
@@ -421,7 +524,7 @@ export class AuthDO implements DurableObject {
     let verified: VerifiedAuthenticationResponse;
     try {
       verified = await this.#ops.verifyAuthenticationResponse({
-        response: body.response,
+        response: body.response as unknown as AuthenticationResponseJSON,
         expectedChallenge: body.challenge,
         expectedOrigin: config.origin,
         expectedRPID: config.rpID,
@@ -474,15 +577,54 @@ export class AuthDO implements DurableObject {
   }
 
   // ─── Session verification ──────────────────────────────────────────────
+  async #revokeSession(request: Request): Promise<Response> {
+    const body = await readJsonObject(request);
+    if (body === null || typeof body.session !== 'string') {
+      return new Response(null, { status: 204 });
+    }
+    const secret = await this.#getSecret();
+    const payload = await decodeSession(body.session, secret);
+    if (payload === null) return new Response(null, { status: 204 });
+    await this.#state.blockConcurrencyWhile(async () => {
+      const key = `${SESSION_REVOCATION_PREFIX}${payload.uid}`;
+      const current =
+        await this.#state.storage.get<SessionRevocation>(key);
+      const now = Date.now();
+      const before =
+        current && Number.isFinite(current.before)
+          ? Math.max(current.before, now)
+          : now;
+      const exp =
+        current && Number.isFinite(current.exp)
+          ? Math.max(current.exp, now + SESSION_TTL_MS)
+          : now + SESSION_TTL_MS;
+      await this.#state.storage.put(key, { before, exp });
+      await this.#armAlarm();
+    });
+    return new Response(null, { status: 204 });
+  }
+
 
   async #verifySession(request: Request): Promise<Response> {
-    const body = (await request.json()) as { session?: unknown };
-    if (typeof body.session !== 'string') {
+    const body = await readJsonObject(request);
+    if (body === null || typeof body.session !== 'string') {
       return plainResponse('Missing session', 400);
     }
     const secret = await this.#getSecret();
     const payload = await decodeSession(body.session, secret);
     if (payload === null) {
+      return plainResponse('Invalid session', 401);
+    }
+    const revocation =
+      await this.#state.storage.get<SessionRevocation>(
+        `${SESSION_REVOCATION_PREFIX}${payload.uid}`,
+      );
+    if (
+      revocation !== undefined &&
+      (!Number.isFinite(revocation.before) ||
+        !Number.isFinite(revocation.exp) ||
+        payload.iat <= revocation.before)
+    ) {
       return plainResponse('Invalid session', 401);
     }
     return jsonResponse({ uid: payload.uid, exp: payload.exp });

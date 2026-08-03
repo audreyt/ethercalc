@@ -174,7 +174,7 @@ function parseStringRecord(raw: unknown): RecordResult {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
     return { ok: false, error: 'ecell must be Record<string, string>' };
   }
-  const out: Record<string, string> = {};
+  const out = Object.create(null) as Record<string, string>;
   for (const [key, value] of Object.entries(raw)) {
     if (key.length === 0) {
       return { ok: false, error: 'ecell keys must be non-empty' };

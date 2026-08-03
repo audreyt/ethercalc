@@ -23,9 +23,9 @@ helm install my-ethercalc ./helm \
 
 EtherCalc's self-host image runs a single `workerd serve` process that
 owns all Durable Object state locally under `/data`. Two pods sharing
-the same PVC will corrupt rooms silently — Miniflare has no consensus
-layer, so a second writer can overwrite the first's view of a sheet
-with no conflict detection. The chart enforces `replicas: 1` and
+the same PVC will corrupt rooms silently — standalone workerd has no
+consensus layer, so a second writer can overwrite the first's view of a
+sheet with no conflict detection. The chart enforces `replicas: 1` and
 `strategy: Recreate`.
 
 If you need horizontal scale, deploy to **Cloudflare Workers + Durable
@@ -49,6 +49,10 @@ See `values.yaml` for the full list. Common overrides:
 | `config.defaultRoom`     | `""`                     | Redirect `/` to this room.                            |
 | `config.expire`          | `""`                     | Seconds before inactive rooms are pruned.             |
 | `config.rateLimit`       | `""`                     | Optional in-Worker per-IP limit (`1` = 10 req/s).     |
+| `config.auth.enabled` | `false` | Enable passkey accounts and private rooms. |
+| `config.auth.rpId` | `""` | WebAuthn RP domain; required when auth is enabled. |
+| `config.auth.rpName` | `"EtherCalc"` | Display name shown by passkey clients. |
+| `config.auth.origin` | `""` | Exact public HTTPS origin; required when auth is enabled. |
 | `secrets.key`            | `""`                     | HMAC key for read-only vs. edit auth.                 |
 | `secrets.migrateToken`   | `""`                     | Gates `PUT /_migrate/seed/:room`.                     |
 | `ingress.enabled`        | `false`                  | Create an Ingress resource.                           |
@@ -74,6 +78,17 @@ room enumeration. For public scratch deployments, consider setting
 Optionally set `config.rateLimit=1` for an extra in-Worker cap when
 ingress rate limits are already in place.
 TLS should be terminated by your Ingress or load balancer.
+
+Passkeys require an exact, externally visible WebAuthn trust anchor. Enable
+all fields together; the chart refuses an incomplete configuration:
+
+```bash
+helm upgrade --install my-ethercalc ./helm \
+  --set config.auth.enabled=true \
+  --set config.auth.rpId=sheets.example.com \
+  --set config.auth.rpName='Example Sheets' \
+  --set config.auth.origin=https://sheets.example.com
+```
 
 ## Upgrading
 

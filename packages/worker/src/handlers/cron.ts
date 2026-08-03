@@ -26,6 +26,7 @@ import {
   DisabledEmailSender,
   type EmailSender,
 } from '../lib/email.ts';
+import { MAX_CRON_TIMES_PER_CELL } from '../lib/cron.ts';
 import { withCronSchema } from '../lib/d1-schema.ts';
 import type { Env } from '../env.ts';
 
@@ -53,7 +54,10 @@ export async function upsertCronTriggers(
     // the client. `Set` preserves insertion order; we only care about
     // uniqueness here because the index ordering is applied at scan
     // time by `scheduled()`.
-    const uniqueTimes = Array.from(new Set(times));
+    const uniqueTimes = Array.from(new Set(times)).slice(
+      0,
+      MAX_CRON_TIMES_PER_CELL,
+    );
     if (uniqueTimes.length === 0) {
       await del.run();
       return;

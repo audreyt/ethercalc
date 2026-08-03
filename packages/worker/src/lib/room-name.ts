@@ -3,13 +3,10 @@
  *
  * `generateRoomId` — produce a fresh 12-char lowercase alphanumeric ID.
  *
- * Legacy used `uuid-pure`'s `newId(12, 36)` which drew 12 random characters
- * from the 36-char alphabet `[0-9a-z]`. The compatibility risk §7 item 6
- * in AGENTS.md commits us to replicating the *shape* via
- * `crypto.randomUUID().replace(/-/g,'').slice(0,12)` — that gives us 12
- * lowercase hex chars, a strict subset of `[0-9a-z]`. The oracle
- * recording `misc/get-new-redirect` regexes `^/[a-z0-9]{12}$`, so the
- * subset still matches.
+ * Legacy used `uuid-pure`'s `newId(12, 36)`, yielding about 62 bits from
+ * `[0-9a-z]`. Project the full random UUID into base36 before taking the
+ * final 12 digits; slicing UUID hex directly would retain only 48 bits.
+ * The oracle's `^/[a-z0-9]{12}$` shape remains unchanged.
  *
  * `encodeRoom` — parity with legacy `encodeURI(params.room)` used on
  * every room-derived code path (src/main.ls:101,272,278,297…). In Hono
@@ -20,13 +17,43 @@
  */
 
 const ROOM_ID_LEN = 12;
+export const MAX_ROOM_NAME_CHARS = 2_048;
+const ROOM_CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
+
+/** Validate a room before it becomes a DO id, D1 key, URL, or header value. */
+export function isValidRoomName(raw: unknown): raw is string {
+  if (
+    typeof raw !== 'string' ||
+    raw.length === 0 ||
+    raw.length > MAX_ROOM_NAME_CHARS ||
+    ROOM_CONTROL_CHARS.test(raw)
+  ) {
+    return false;
+  }
+  for (let index = 0; index < raw.length; index += 1) {
+    const code = raw.charCodeAt(index);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = raw.charCodeAt(index + 1);
+      // A high surrogate at the very end yields NaN here; every `<`/`>`
+      // comparison against NaN is false, so the test must be positive.
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return false;
+      index += 1;
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      return false;
+    }
+  }
+  return true;
+}
 
 /**
- * Generate a fresh 12-char lowercase alphanumeric room id. Uses
- * `crypto.randomUUID` (Web Crypto, available in Node ≥ 19 and workerd).
+ * Generate a fresh 12-char lowercase base36 room id.
  */
 export function generateRoomId(): string {
-  return crypto.randomUUID().replace(/-/g, '').slice(0, ROOM_ID_LEN);
+  const hex = crypto.randomUUID().replaceAll('-', '');
+  return BigInt(`0x${hex}`)
+    .toString(36)
+    .padStart(ROOM_ID_LEN, '0')
+    .slice(-ROOM_ID_LEN);
 }
 
 /**
@@ -39,5 +66,6 @@ export function generateRoomId(): string {
  * for completeness. No fix planned — preserve legacy behavior.
  */
 export function encodeRoom(raw: string): string {
+  if (!isValidRoomName(raw)) throw new RangeError('Invalid room name');
   return encodeURI(raw);
 }

@@ -40,14 +40,12 @@ export interface SecurityPolicyHost {
 /**
  * DOMPurify allowlist for `text-html` cells.
  *
- * `ALLOWED_TAGS` covers the formatting + media tags real spreadsheets use
- * (links, images, lists, tables, basic inline styling). `<script>`,
- * `<iframe>`, `<object>`, and `<embed>` are deliberately absent, so they are
- * dropped. `ALLOWED_ATTR` keeps `href`/`src`/`alt`/`title`/`style` etc. but
- * NOT any `on*` event-handler attribute (those are never on the list, so
- * DOMPurify removes them). `ALLOWED_URI_REGEXP` constrains `href`/`src` to
- * safe schemes — `http`, `https`, `mailto`, `tel`, and relative URLs — so a
- * `javascript:` (or `data:`) URL is stripped from the attribute.
+ * `ALLOWED_TAGS` covers formatting + media tags real spreadsheets use.
+ * Executable/embedded elements are absent. Inline `style` and `class` are
+ * also excluded: DOMPurify does not sanitize CSS declarations, and a
+ * `position:fixed` fragment or host-CSS gadget could otherwise overlay the
+ * trusted editor UI without JavaScript. `ALLOWED_URI_REGEXP` constrains
+ * `href`/`src` to safe schemes.
  */
 export const TEXT_HTML_SANITIZE_CONFIG: Readonly<Record<string, unknown>> = {
   ALLOWED_TAGS: [
@@ -100,8 +98,6 @@ export const TEXT_HTML_SANITIZE_CONFIG: Readonly<Record<string, unknown>> = {
     'title',
     'target',
     'rel',
-    'style',
-    'class',
     'colspan',
     'rowspan',
     'align',

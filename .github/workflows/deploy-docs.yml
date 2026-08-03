@@ -20,14 +20,18 @@ concurrency:
   group: deploy-docs
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   deploy:
     name: Cloudflare Pages (docs)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    environment: docs-production
     if: inputs.confirm == 'deploy'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       # voidzero-dev/setup-vp v1.1.0
       - name: Setup Vite+
@@ -38,14 +42,15 @@ jobs:
       - name: Install dependencies
         run: vp install --frozen-lockfile
 
+
+      - name: Build Starlight site
+        run: vp run @ethercalc/docs#build
       - name: Cloudflare API token
+        id: cloudflare-token
         run: ./scripts/ci-cloudflare-token.sh
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_OAUTH_REFRESH_TOKEN: ${{ secrets.CLOUDFLARE_OAUTH_REFRESH_TOKEN }}
-
-      - name: Build Starlight site
-        run: vp run @ethercalc/docs#build
 
       - name: Ensure Pages project exists
         run: |
@@ -53,11 +58,13 @@ jobs:
             || vp exec wrangler pages project create ethercalc-docs --production-branch=main
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ steps.cloudflare-token.outputs.cloudflare_api_token }}
 
       - name: Deploy to Cloudflare Pages
         run: vp exec wrangler pages deploy packages/docs/dist --project-name=ethercalc-docs --branch=main --commit-dirty=true
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ steps.cloudflare-token.outputs.cloudflare_api_token }}
 
   rejected:
     name: confirmation check
@@ -65,6 +72,8 @@ jobs:
     if: inputs.confirm != 'deploy'
     steps:
       - name: Abort — confirmation mismatch
+        env:
+          CONFIRM_INPUT: ${{ inputs.confirm }}
         run: |
-          echo 'Input confirm must be exactly "deploy". Got:' "${{ inputs.confirm }}"
+          echo 'Input confirm must be exactly "deploy". Got:' "$CONFIRM_INPUT"
           exit 1

@@ -820,6 +820,10 @@ describe('parseSource', () => {
     });
   });
 
+  it('reports malformed file URL encoding as a CLI input error', () => {
+    expect(() => parseSource('file:///var/%E0%A4%A')).toThrow(CliArgError);
+  });
+
   it('treats a bare absolute path as a filesystem source', () => {
     expect(parseSource('/var/dump')).toEqual({
       kind: 'file',

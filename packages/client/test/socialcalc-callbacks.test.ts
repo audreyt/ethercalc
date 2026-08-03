@@ -23,6 +23,11 @@ describe('parseQuery', () => {
   it('ignores empty key entries', () => {
     expect(parseQuery('&a=1&')).toEqual({ a: '1' });
   });
+  it('skips malformed encoding and prototype-shaped keys', () => {
+    expect(
+      parseQuery('?ok=1&bad=%E0%A4%A&__proto__=x&constructor=y&after=2'),
+    ).toEqual({ ok: '1', after: '2' });
+  });
 });
 
 describe('installCallbacks', () => {
@@ -199,6 +204,54 @@ describe('installCallbacks', () => {
     sc.ScheduleSheetCommands!(sheet, 'set A1 formula $Sales.B2', false, false);
     expect(calls).toHaveLength(1);
     expect(calls[0]![1]['cmdstr']).toBe('set A1 formula "foo"!B2');
+  });
+
+  it('escapes regex titles and replacement tokens in multi-sheet references', () => {
+    const sc = makeSocialCalc();
+    const calls: Array<[string, Record<string, unknown>]> = [];
+    installBroadcast(sc, (type, data) => calls.push([type, data as Record<string, unknown>]));
+    sc.ScheduleSheetCommands = () => {};
+    installCallbacks(sc, {
+      broadcast: () => {},
+      win: {
+        __MULTI__: {
+          rows: [{ link: '/$&room', title: 'Sales(2026)+' }],
+        },
+      },
+    });
+    const sheet = makeSheet();
+    sheet._room = 'r1';
+    sc.ScheduleSheetCommands!(
+      sheet,
+      'set A1 formula $Sales(2026)+.B2',
+      false,
+      false,
+    );
+    expect(calls[0]?.[1]['cmdstr']).toBe('set A1 formula "$&room"!B2');
+  });
+
+  it('ignores unsafe or unbounded multi-sheet rows', () => {
+    const sc = makeSocialCalc();
+    const calls: Array<[string, Record<string, unknown>]> = [];
+    installBroadcast(sc, (type, data) => calls.push([type, data as Record<string, unknown>]));
+    sc.ScheduleSheetCommands = () => {};
+    installCallbacks(sc, {
+      broadcast: () => {},
+      win: {
+        __MULTI__: {
+          rows: [
+            { link: '//evil.example', title: 'External' },
+            { link: '/empty', title: '' },
+            { link: '/huge', title: 'x'.repeat(257) },
+          ],
+        },
+      },
+    });
+    const sheet = makeSheet();
+    sheet._room = 'r1';
+    const command = 'set A1 formula $External.A1+$empty.A1';
+    sc.ScheduleSheetCommands!(sheet, command, false, false);
+    expect(calls[0]?.[1]['cmdstr']).toBe(command);
   });
 
   it('Sheet.prototype.ScheduleSheetCommands delegates to SocialCalc.ScheduleSheetCommands', () => {

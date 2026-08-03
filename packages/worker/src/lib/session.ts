@@ -1,5 +1,5 @@
-/** Cookie name shared by Worker auth middleware and browser clients. */
-export const SESSION_COOKIE_NAME = 'ec_sess';
+/** Host-only cookie name shared by Worker auth middleware and browsers. */
+export const SESSION_COOKIE_NAME = '__Host-ec_sess';
 
 /** Thirty-day lifetime, matching the AuthDO token expiry. */
 export const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;

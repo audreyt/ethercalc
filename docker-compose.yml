@@ -19,9 +19,18 @@ services:
     image: ethercalc:selfhost
     container_name: ethercalc
     restart: unless-stopped
+    # Contain a Worker compromise: application bytes stay immutable and
+    # setuid/file-capability privilege gains are disabled. Durable state keeps
+    # its dedicated writable mount; libc/workerd scratch is isolated in tmpfs.
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
     ports:
-      # Host 8000 matches the legacy port from the old compose file.
-      - "8000:8000"
+      # Local-only by default. Internet-facing installs MUST use the proxy
+      # compose file (or an equivalent hardened reverse proxy).
+      - "127.0.0.1:${ETHERCALC_PORT:-8000}:${ETHERCALC_PORT:-8000}"
     volumes:
       # Persistent Durable Object state. Survives container restarts.
       # Created on first `up` if missing.

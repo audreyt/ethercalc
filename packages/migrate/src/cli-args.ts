@@ -144,10 +144,14 @@ export function parseSource(source: string): ParsedSource {
   if (source.startsWith('redis://')) return { kind: 'redis', url: source };
   if (source.startsWith('file://')) {
     // `new URL('file:///var').pathname` is '/var' — standard WHATWG
-    // file-URL parsing. Decoding %xx escapes too is cheap and matches
-    // what users expect from file:// URLs.
-    const u = new URL(source);
-    return { kind: 'file', path: decodeURIComponent(u.pathname) };
+    // file-URL parsing. Normalize parser/percent-decoding failures into the
+    // CLI's stable input-error contract rather than leaking a raw URIError.
+    try {
+      const u = new URL(source);
+      return { kind: 'file', path: decodeURIComponent(u.pathname) };
+    } catch {
+      throw new CliArgError(`Invalid file URL: ${source}`);
+    }
   }
   if (source.startsWith('/')) return { kind: 'file', path: source };
   throw new CliArgError(

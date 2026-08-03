@@ -281,8 +281,8 @@ Check if page exists
 
 Available when the deployment sets `ETHERCALC_AUTH` plus the WebAuthn
 trust anchors (`ETHERCALC_RP_ID`, `ETHERCALC_ORIGIN`); otherwise every
-ceremony route responds 404. Sessions are carried by the HttpOnly
-`ec_sess` cookie — tokens never appear in response bodies.
+ceremony route responds 404. Sessions use the HttpOnly, host-only
+`__Host-ec_sess` cookie — tokens never appear in response bodies.
 
 ## Register Init [POST /_auth/register-init]
 
@@ -294,7 +294,7 @@ server-generated user id.
 ## Register Complete [POST /_auth/register-complete]
 
 Takes `{response, uid, challenge}` from the browser ceremony. On
-success sets the `ec_sess` cookie and returns `{uid}`.
+success sets the `__Host-ec_sess` cookie and returns `{uid}`.
 
 + Response 200 (application/json)
 
@@ -306,7 +306,7 @@ Begin a usernameless (discoverable-credential) login.
 
 ## Login Complete [POST /_auth/login-complete]
 
-Takes `{response, challenge}`. On success sets the `ec_sess` cookie and
+Takes `{response, challenge}`. On success sets the `__Host-ec_sess` cookie and
 returns `{uid}`.
 
 + Response 200 (application/json)

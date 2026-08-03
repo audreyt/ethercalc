@@ -26,23 +26,46 @@ DATA_DIR="${ETHERCALC_DATA_DIR:-/data}"
 ASSETS_DIR="${ETHERCALC_ASSETS_DIR:-$APP_ROOT/assets}"
 DO_DIR="$DATA_DIR/do"
 
+if [[ "$DATA_DIR" == "/" ]]; then
+  echo "workerd-entrypoint: ERROR — ETHERCALC_DATA_DIR must not be /" >&2
+  exit 64
+fi
+
 mkdir -p "$DO_DIR"
 
 # Self-host defaults: hide cross-room discovery unless the operator opts out.
 # This does not affect anonymous read/write of known room URLs.
 export ETHERCALC_DISABLE_ROOM_INDEX="${ETHERCALC_DISABLE_ROOM_INDEX:-1}"
 
-# Locate the workerd binary. `bun install` drops the platform-matched
-# package under node_modules/.bun/@cloudflare+workerd-<arch>-<abi>/.
-# `find -executable` is GNU-only; use a portable `test -x` filter so
-# this entrypoint works on both macOS and Linux CI runners.
+# Locate the workerd binary. Prefer the copy `wrangler` itself depends on:
+# that is the version pinned in bun.lock, which is what config.capnp's
+# compatibilityDate is validated against (scripts/vite-workflow.test.ts).
+# Other packages can install an OLDER workerd alongside it, and a
+# first-match `find` then boots whichever the filesystem happened to list
+# first — an older binary refuses the config outright ("This Worker
+# requires compatibility date …") and the container crash-loops.
 WORKERD_BIN=""
-while IFS= read -r candidate; do
-  if [[ -x "$candidate" ]]; then
-    WORKERD_BIN="$candidate"
-    break
+if [[ -d "$APP_ROOT/node_modules/wrangler" ]]; then
+  # `cd -P` resolves the store symlink so `..` lands on wrangler's own
+  # dependency directory. `readlink -f` is GNU-only; this is portable.
+  wrangler_deps="$(cd -P "$APP_ROOT/node_modules/wrangler" 2>/dev/null && cd .. && pwd -P)" || wrangler_deps=""
+  if [[ -n "$wrangler_deps" && -x "$wrangler_deps/workerd/bin/workerd" ]]; then
+    WORKERD_BIN="$wrangler_deps/workerd/bin/workerd"
   fi
-done < <(find "$APP_ROOT/node_modules" -name workerd -type f 2>/dev/null)
+fi
+# Fallback for images without wrangler (bare-metal / Sandstorm packaging):
+# `bun install` drops the platform-matched package under
+# node_modules/.bun/@cloudflare+workerd-<arch>-<abi>/. `find -executable`
+# is GNU-only; use a portable `test -x` filter so this entrypoint works on
+# both macOS and Linux CI runners.
+if [[ -z "$WORKERD_BIN" ]]; then
+  while IFS= read -r candidate; do
+    if [[ -x "$candidate" ]]; then
+      WORKERD_BIN="$candidate"
+      break
+    fi
+  done < <(find "$APP_ROOT/node_modules" -name workerd -type f 2>/dev/null)
+fi
 if [[ -z "$WORKERD_BIN" ]]; then
   echo "workerd-entrypoint: ERROR — no workerd binary found under node_modules" >&2
   exit 127
@@ -78,10 +101,21 @@ fi
 # Kubernetes the chart sets runAsNonRoot + fsGroup instead, so this
 # branch is skipped and workerd execs directly.
 RUN_AS_USER="${ETHERCALC_RUN_AS_USER:-bun}"
-if [[ "$(id -u)" == "0" ]] && id "$RUN_AS_USER" >/dev/null 2>&1 \
-   && command -v setpriv >/dev/null 2>&1; then
+if [[ "$(id -u)" == "0" ]]; then
+  if ! command -v setpriv >/dev/null 2>&1; then
+    echo "workerd-entrypoint: ERROR — setpriv is required when starting as root" >&2
+    exit 70
+  fi
+  if ! id "$RUN_AS_USER" >/dev/null 2>&1; then
+    echo "workerd-entrypoint: ERROR — privilege-drop user does not exist" >&2
+    exit 70
+  fi
   run_uid="$(id -u "$RUN_AS_USER")"
   run_gid="$(id -g "$RUN_AS_USER")"
+  if [[ "$run_uid" == "0" ]]; then
+    echo "workerd-entrypoint: ERROR — refusing to run workerd as root" >&2
+    exit 70
+  fi
   # Check the DEEPEST dir, not $DATA_DIR: the mkdir above ran as root, so
   # even when /data itself is already bun-owned (anonymous/named volumes
   # initialised from the image layer), a freshly created /data/do is

@@ -72,11 +72,11 @@ function makeFakeRoomNamespace(responder: (call: Call) => Response): {
 
 const AUTH_UID = 'uid-passkey-1';
 const AUTH_EXP = Number.MAX_SAFE_INTEGER;
-const AUTH_COOKIE = 'ec_sess=tok-valid';
+const AUTH_COOKIE = '__Host-ec_sess=tok-valid';
 
 /**
  * Layer a fake AUTH namespace over `env` so `getSessionPrincipal` resolves
- * `AUTH_UID` plus its future expiration for any `ec_sess` cookie.
+ * `AUTH_UID` plus its future expiration for any `__Host-ec_sess` cookie.
  */
 function withAuth(env: Env, uid: string = AUTH_UID): Env {
   return {
@@ -93,15 +93,29 @@ function withAuth(env: Env, uid: string = AUTH_UID): Env {
 }
 
 describe('route glue — env.ROOM dispatch shapes', () => {
-  it('GET on www.* domain redirects to naked domain with 301', async () => {
+  it('redirects only the configured origin www alias', async () => {
     const app = buildApp();
     const res = await app.fetch(
-      new Request('https://www.ethercalc.net/_exists/foo'),
-      {} as never,
+      new Request('http://www.ethercalc.net:8080/_exists/foo'),
+      { ETHERCALC_ORIGIN: 'https://ethercalc.net' } as never,
     );
     expect(res.status).toBe(301);
-    expect(res.headers.get('Location')).toBe('https://ethercalc.net/_exists/foo');
+    expect(res.headers.get('Location')).toBe(
+      'https://ethercalc.net/_exists/foo',
+    );
   });
+
+  it.each(['https://ethercalc.net', 'not a URL'])(
+    'never redirects an untrusted Host under origin config %s',
+    async (origin) => {
+      const response = await buildApp().fetch(
+        new Request('https://www.evil.test/_health'),
+        { ETHERCALC_ORIGIN: origin } as never,
+      );
+      expect(response.status).toBe(200);
+      expect(response.headers.get('Location')).toBeNull();
+    },
+  );
 
   it('GET /_exists/:room calls /_do/exists and returns bare boolean', async () => {
     const { env, calls } = makeFakeRoomNamespace(() =>
@@ -623,6 +637,33 @@ describe('route glue — DO auth verdict propagation (Phase A)', () => {
     expect(res.status).toBe(403);
     expect(res.headers.get('content-type')).toBe('text/plain; charset=utf-8');
     expect(await res.text()).toBe('Forbidden');
+  });
+
+  it('snapshot mutations propagate a DO 413 sheet-limit verdict', async () => {
+    const { env } = makeFakeRoomNamespace(
+      () => new Response('snapshot exceeds sheet limits', { status: 413 }),
+    );
+    const app = buildApp();
+    const put = await app.fetch(
+      new Request('https://t.test/_/oversized', {
+        method: 'PUT',
+        headers: { 'content-type': 'text/x-socialcalc' },
+        body: 'oversized',
+      }),
+      env as never,
+    );
+    const create = await app.fetch(
+      new Request('https://t.test/_', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ room: 'oversized', snapshot: 'oversized' }),
+      }),
+      env as never,
+    );
+    expect(put.status).toBe(413);
+    expect(create.status).toBe(413);
+    expect(await put.text()).toBe('snapshot exceeds sheet limits');
+    expect(await create.text()).toBe('snapshot exceeds sheet limits');
   });
 
   it('POST /_ with an explicit room propagates a DO 403 (occupied private id)', async () => {

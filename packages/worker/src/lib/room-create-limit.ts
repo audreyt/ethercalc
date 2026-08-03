@@ -18,6 +18,9 @@ export interface RoomCreateLimitEnv {
 const DEFAULT_CAPACITY = 6;
 const DEFAULT_REFILL_PER_SEC = 6 / 60;
 
+// Equivalent-by-construction with the numeric fallback in
+// `parseRoomCreateLimitConfig` — see the note on `rateLimitDisabled`.
+// Stryker disable all
 function limitDisabled(raw: string): boolean {
   switch (raw.trim().toLowerCase()) {
     case '':
@@ -30,6 +33,7 @@ function limitDisabled(raw: string): boolean {
       return false;
   }
 }
+// Stryker restore all
 
 /**
  * Parse `ETHERCALC_ROOM_CREATE_LIMIT` — same forms as `ETHERCALC_RATELIMIT`
@@ -87,11 +91,24 @@ export function roomCreateLimitFromEnv(
 
 /** Routes that mint or seed a new room DO. */
 export function isRoomCreationRoute(method: string, pathname: string): boolean {
-  if (method === 'POST' && pathname === '/_') return true;
+  if (method === 'POST' && (pathname === '/_' || pathname === '/_/private')) {
+    return true;
+  }
   if (method === 'GET' && (pathname === '/_new' || pathname === '/=_new')) {
     return true;
   }
-  if (method === 'GET' && pathname.startsWith('/_from/')) return true;
+  if (method === 'GET' && /^\/_from\/[^/]+$/.test(pathname)) return true;
+  if (method === 'POST' && /^\/_from\/[^/]+\/private$/.test(pathname)) {
+    return true;
+  }
+  if (method === 'GET' && /^\/[^/]+\/form$/.test(pathname)) return true;
+  if (
+    method === 'PUT' &&
+    (/^\/=[^/]+\.(?:xlsx|ods|fods)$/.test(pathname) ||
+      /^\/_\/=[^/]+\/(?:xlsx|ods|fods)$/.test(pathname))
+  ) {
+    return true;
+  }
   if (method === 'PUT' && pathname.startsWith('/_/')) {
     const rest = pathname.slice(3);
     return rest.length > 0 && !rest.includes('/');

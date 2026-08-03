@@ -35,7 +35,7 @@ describe('session middleware', () => {
     const response = await app.fetch(
       new Request('https://test.local/who', {
         headers: {
-          Cookie: 'ec_sess=signed.token',
+          Cookie: '__Host-ec_sess=signed.token',
           'X-EC-Uid': 'uid-forged',
         },
       }),
@@ -68,7 +68,7 @@ describe('session middleware', () => {
 
     const response = await app.fetch(
       new Request('https://test.local/who', {
-        headers: { Cookie: 'ec_sess=signed.token' },
+        headers: { Cookie: '__Host-ec_sess=signed.token' },
       }),
       env,
     );
@@ -105,7 +105,7 @@ describe('session middleware', () => {
 
     const response = await app.fetch(
       new Request('https://test.local/who', {
-        headers: { Cookie: 'ec_sess=signed.token' },
+        headers: { Cookie: '__Host-ec_sess=signed.token' },
       }),
       env,
     );
@@ -139,13 +139,13 @@ describe('session middleware', () => {
 
     const health = await app.fetch(
       new Request('https://test.local/_health', {
-        headers: { Cookie: 'ec_sess=signed.token' },
+        headers: { Cookie: '__Host-ec_sess=signed.token' },
       }),
       requestEnv,
     );
     const asset = await app.fetch(
       new Request('https://test.local/static/test.js', {
-        headers: { Cookie: 'ec_sess=signed.token' },
+        headers: { Cookie: '__Host-ec_sess=signed.token' },
       }),
       requestEnv,
     );

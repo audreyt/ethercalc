@@ -10,6 +10,9 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   test:
     name: typecheck + test + coverage gate
@@ -17,7 +20,7 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       # voidzero-dev/setup-vp v1.1.0
       - name: Setup Vite+
@@ -98,7 +101,7 @@ jobs:
 
       - name: Upload coverage artifacts
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: coverage-lcov
           path: |
@@ -121,10 +124,10 @@ jobs:
     # Mirrors AGENTS.md §11.1 item 10. Uses the Dockerfile + docker-compose
     # at the repo root and hits /_health via scripts/smoke-selfhost.sh.
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
       - name: Smoke — build image, compose up, curl /_health, compose down
         run: ./scripts/smoke-selfhost.sh
@@ -138,10 +141,10 @@ jobs:
     timeout-minutes: 5
     # Catches chart syntax drift and template bugs on every PR.
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Install Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
 
       - name: helm lint
         run: helm lint ./helm
@@ -179,7 +182,7 @@ jobs:
     # HTTP surface + SPA mounts. Uploads the HTML report on failure so
     # traces/screenshots are recoverable.
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       # voidzero-dev/setup-vp v1.1.0
       - name: Setup Vite+
@@ -215,7 +218,7 @@ jobs:
 
       - name: Upload Playwright HTML report
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: playwright-report
           path: packages/e2e/playwright-report/
@@ -224,7 +227,7 @@ jobs:
 
       - name: Upload trace + screenshots on failure
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: playwright-test-results
           path: packages/e2e/test-results/
@@ -242,7 +245,7 @@ jobs:
     # nightly.yml; see AGENTS.md §5.3 + docs/MUTATION_REPORT.md for the
     # ratchet workflow.
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
 
@@ -281,8 +284,15 @@ jobs:
 
       - name: Run Stryker on changed packages
         if: steps.changed.outputs.packages != ''
+        env:
+          CHANGED_PACKAGES: ${{ steps.changed.outputs.packages }}
         run: |
-          for pkg in ${{ steps.changed.outputs.packages }}; do
+          while IFS= read -r pkg; do
+            [ -n "$pkg" ] || continue
+            if [[ ! "$pkg" =~ ^[A-Za-z0-9_-]+$ ]]; then
+              echo "::error::Unsafe package name in changed-file output"
+              exit 1
+            fi
             if [ -f "packages/$pkg/stryker.conf.json" ]; then
               echo "::group::mutation test — $pkg"
               vp run --filter "./packages/$pkg" --fail-if-no-match mutation
@@ -290,11 +300,11 @@ jobs:
             else
               echo "skip: packages/$pkg has no stryker.conf.json"
             fi
-          done
+          done < <(printf '%s' "$CHANGED_PACKAGES" | tr ' ' '\n')
 
       - name: Upload mutation reports on failure
         if: failure() && steps.changed.outputs.packages != ''
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: mutation-gate-reports
           path: packages/*/reports/mutation/

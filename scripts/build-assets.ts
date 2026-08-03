@@ -21,6 +21,23 @@ export const REQUIRED_LOCALES = ['en', 'de', 'es-ES', 'fr', 'ru-RU', 'zh-CN', 'z
 
 const ROOT_HTML_FILES = ['index.html', 'start.html', 'panels.html'] as const;
 
+/**
+ * Page scripts extracted out of the root HTML documents. The app CSP still
+ * carries `script-src 'unsafe-inline'` (SocialCalc's toolbar emits inline
+ * handlers), so this is hygiene plus a prerequisite for tightening that
+ * directive later — not a boundary on its own. They live in `static/` and
+ * reach `assets/` through the whole-directory copy, which does not check
+ * individual names, so assert them here. Without this, renaming or dropping
+ * one produces a clean build whose landing page 404s its own bootstrap.
+ */
+const REQUIRED_PAGE_SCRIPTS = [
+  'index-bootstrap.js',
+  'index-l10n.js',
+  'start-bootstrap.js',
+  'start-page.js',
+  'panels.js',
+] as const;
+
 export interface CopyFileStep {
   readonly from: string;
   readonly to: string;
@@ -85,7 +102,11 @@ export function buildAssetPlan(rootInput: string): AssetBuildPlan {
     playerBundle,
     passkeyDist,
     multiDist,
-    requiredFiles: [...staticCopies.map((step) => step.from), playerBundle],
+    requiredFiles: [
+      ...staticCopies.map((step) => step.from),
+      playerBundle,
+      ...REQUIRED_PAGE_SCRIPTS.map((file) => join(root, 'static', file)),
+    ],
     requiredDirectories: directoryCopies.map((step) => step.from),
     staticCopies,
     directoryCopies,
@@ -122,9 +143,9 @@ export function patchSocialCalcRuntime(input: string): string {
     `$1{${"\n"}${htmlSink}    }`,
   );
 
-  if (!patched.includes("SocialCalc.sanitizeHTML(displayvalue)")) {
+  if (!patched.includes('SocialCalc.sanitizeHTML(displayvalue)')) {
     throw new Error(
-      "text-html sanitize hook not injected into socialcalc.js (upstream render sink changed?)",
+      'text-html sanitize hook not injected into socialcalc.js (upstream render sink changed?)',
     );
   }
 
@@ -149,7 +170,11 @@ async function copyFileStep(plan: AssetBuildPlan, step: CopyFileStep): Promise<v
 }
 
 async function copyDirectoryStep(plan: AssetBuildPlan, step: CopyDirectoryStep): Promise<void> {
-  await cp(step.from, destinationPath(plan, step.to), { recursive: true });
+  await cp(step.from, destinationPath(plan, step.to), {
+    recursive: true,
+    // Source maps expose source paths and comments and are never runtime assets.
+    filter: (source) => !source.toLowerCase().endsWith('.map'),
+  });
 }
 
 async function findSocialCalc(plan: AssetBuildPlan): Promise<string> {

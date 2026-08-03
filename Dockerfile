@@ -19,7 +19,7 @@
 #   4. /app/bin/workerd-entrypoint.sh launches `workerd serve` with
 #      per-invocation disk overrides (`-ddo=/data/do -dassets=…`).
 
-FROM oven/bun:1.3
+FROM oven/bun:1.3.14
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 

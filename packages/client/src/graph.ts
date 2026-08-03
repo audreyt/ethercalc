@@ -206,7 +206,7 @@ export function installGraph(host: GraphHost): void {
       spreadsheet.graphrange = lele.options[lele.selectedIndex]!.value;
     }
     const ele = doc.getElementById(spreadsheet.idPrefix + 'graphrange');
-    if (ele) ele.innerHTML = spreadsheet.graphrange;
+    if (ele) ele.textContent = spreadsheet.graphrange;
     doGraph(false, false);
   }
 
@@ -220,18 +220,23 @@ export function installGraph(host: GraphHost): void {
     const ginfo = gti[spreadsheet.graphtype] as { display: string; func: GraphDrawFn } | undefined;
     const gfunc = ginfo?.func;
     if (!spreadsheet.graphrange) {
-      if (gfunc && helpflag) gfunc(spreadsheet, null, gview, spreadsheet.graphtype, helpflag, isResize);
-      else
-        gview.innerHTML = `<div style="padding:30px;font-weight:bold;">${
-          SocialCalc.Constants['s_GraphRangeNotSelected'] ?? 'Graph range not selected'
-        }</div>`;
+      if (gfunc && helpflag) {
+        gfunc(spreadsheet, null, gview, spreadsheet.graphtype, helpflag, isResize);
+      } else {
+        gview.textContent =
+          SocialCalc.Constants['s_GraphRangeNotSelected'] ??
+          'Graph range not selected';
+      }
       return;
     }
     let grange = spreadsheet.graphrange;
     if (grange && grange.indexOf(':') === -1) {
       const nrange = SocialCalc.Formula?.LookupName?.(spreadsheet.sheet, grange);
       if (!nrange || nrange.type !== 'range') {
-        gview.innerHTML = (SocialCalc.LocalizeString?.('Unknown range name') ?? 'Unknown range name') + ': ' + grange;
+        gview.textContent =
+          (SocialCalc.LocalizeString?.('Unknown range name') ?? 'Unknown range name') +
+          ': ' +
+          grange;
         return;
       }
       const rparts = /^(.*)\|(.*)\|$/.exec(nrange.value);
@@ -464,14 +469,37 @@ function collectValues(
   return { values, labels, byrow, nitems };
 }
 
+/** Render chart help without dynamic HTML or CSP-blocked inline handlers. */
+function renderGraphHelp(
+  host: GraphHost,
+  gview: HTMLElement,
+  description: string,
+): void {
+  const hideHelp = host.SocialCalc.Constants['s_loc_hide_help'] ?? 'Hide Help';
+  const owner = gview.ownerDocument;
+  if (!owner) {
+    // Minimal DOM test hosts have no ownerDocument; textContent preserves the
+    // same inert rendering contract.
+    gview.textContent = `${hideHelp}\n\n${description}`;
+    return;
+  }
+  const button = owner.createElement('input');
+  button.type = 'button';
+  button.value = hideHelp;
+  button.addEventListener('click', () => host.win.DoGraph?.(false, false));
+  gview.replaceChildren(
+    button,
+    owner.createElement('br'),
+    owner.createElement('br'),
+    owner.createTextNode(description),
+  );
+}
+
 function drawVerticalBar(host: GraphHost, palette: Palette): GraphDrawFn {
   return (spreadsheet, range, gview, gtype, helpflag) => {
     if (helpflag || !range) {
-      const hideHelp = host.SocialCalc.Constants['s_loc_hide_help'] ?? 'Hide Help';
       const display = (host.SocialCalc.GraphTypesInfo![gtype] as { display: string }).display;
-      gview.innerHTML =
-        `<input type="button" value="${hideHelp}" onclick="DoGraph(false,false);"><br><br>` +
-        `This is the help text for graph type: ${display}.`;
+      renderGraphHelp(host, gview, `This is the help text for graph type: ${display}.`);
       return;
     }
     const { values, labels } = collectValues(host, spreadsheet, range);
@@ -510,10 +538,9 @@ function drawVerticalBar(host: GraphHost, palette: Palette): GraphDrawFn {
 }
 
 function drawHorizontalBar(host: GraphHost, palette: Palette): GraphDrawFn {
-  return (spreadsheet, range, gview, gtype, helpflag) => {
+  return (spreadsheet, range, gview, _gtype, helpflag) => {
     if (helpflag || !range) {
-      const hideHelp = host.SocialCalc.Constants['s_loc_hide_help'] ?? 'Hide Help';
-      gview.innerHTML = `<input type="button" value="${hideHelp}" onclick="DoGraph(false,false);"><br><br>Horizontal bar help.`;
+      renderGraphHelp(host, gview, 'Horizontal bar help.');
       return;
     }
     const { values, labels } = collectValues(host, spreadsheet, range);

@@ -27,6 +27,8 @@ interface Call {
   upgrade: string | null;
   /** Verified session expiry attached only by the WS proxy (null = absent). */
   sessionExp: string | null;
+  /** Opaque verified session token attached only by the WS proxy. */
+  session: string | null;
 }
 
 interface FakeStub {
@@ -61,6 +63,7 @@ function makeFakeRoomNamespace(responder: (call: Call) => Response): {
         uid: headers.get('X-EC-Uid'),
         upgrade: headers.get('Upgrade'),
         sessionExp: headers.get('X-EC-Session-Exp'),
+        session: headers.get('X-EC-Session'),
         ...(bodyText !== undefined ? { bodyText } : {}),
       };
       calls.push(call);
@@ -78,16 +81,17 @@ function makeFakeRoomNamespace(responder: (call: Call) => Response): {
 
 const AUTH_UID = 'uid-passkey-1';
 const AUTH_EXP = Number.MAX_SAFE_INTEGER;
-const AUTH_COOKIE = 'ec_sess=tok-valid';
+const AUTH_COOKIE = '__Host-ec_sess=tok-valid';
 
 /**
  * Layer a fake AUTH namespace over `env` so `getSessionPrincipal` resolves
- * `AUTH_UID` plus its future expiration for any `ec_sess` cookie.
+ * `AUTH_UID` plus its future expiration for any `__Host-ec_sess` cookie.
  */
 function withAuth(env: Env, uid: string = AUTH_UID): Env {
   return {
     ...env,
     ETHERCALC_AUTH: '1',
+    ETHERCALC_ORIGIN: 'https://t.test',
     AUTH: {
       idFromName: () => ({}) as DurableObjectId,
       get: () =>
@@ -235,6 +239,59 @@ describe('exports — verdict propagation + identity threading', () => {
     expect(res.status).toBe(403);
     expect(await res.text()).toBe('Forbidden');
   });
+
+  it('rejects a TOC above the shared 256-sheet fan-out limit', async () => {
+    const rows = [
+      ['#url', '#title'],
+      ...Array.from({ length: 257 }, (_, i) => [`/book.${i + 1}`, `Sheet ${i + 1}`]),
+    ];
+    const { env, calls } = makeFakeRoomNamespace(() => Response.json(rows));
+    const res = await buildApp().fetch(
+      new Request('https://t.test/_/=book/xlsx'),
+      env as never,
+    );
+
+    expect(res.status).toBe(413);
+    expect(calls).toHaveLength(1);
+    expect(await res.text()).toBe('multi-sheet export exceeds resource limits');
+  });
+
+  it('does not dispatch unsafe persisted TOC links', async () => {
+    const { env, calls } = makeFakeRoomNamespace(() =>
+      Response.json([
+        ['#url', '#title'],
+        ['//attacker.test/sheet', 'Unsafe'],
+      ]),
+    );
+    const res = await buildApp().fetch(
+      new Request('https://t.test/_/=book/xlsx'),
+      env as never,
+    );
+
+    expect(res.status).toBe(404);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('rejects an oversized sub-sheet response before buffering it', async () => {
+    const { env, calls } = makeFakeRoomNamespace((call) => {
+      if (call.url.includes('/_do/csv.json')) {
+        return Response.json([
+          ['#url', '#title'],
+          ['/book.1', 'Alpha'],
+        ]);
+      }
+      return new Response('', {
+        headers: { 'Content-Length': String(8 * 1024 * 1024 + 1) },
+      });
+    });
+    const res = await buildApp().fetch(
+      new Request('https://t.test/_/=book/xlsx'),
+      env as never,
+    );
+
+    expect(res.status).toBe(413);
+    expect(calls).toHaveLength(2);
+  });
 });
 
 describe('multi-sheet import — write verdict gating', () => {
@@ -379,12 +436,16 @@ describe('private owner entry with ETHERCALC_KEY', () => {
 });
 
 describe('/_ws/:room upgrade — verified identity only', () => {
-  it('never copies an inbound X-EC-Uid onto the DO upgrade request', async () => {
+  it('never copies inbound X-EC identity headers onto the DO upgrade', async () => {
     const { env, calls } = makeFakeRoomNamespace(() => new Response('ws-ok'));
     const app = buildApp();
     const res = await app.fetch(
       new Request('https://t.test/_ws/r?user=u1&auth=0', {
-        headers: { Upgrade: 'websocket', 'X-EC-Uid': 'uid-forged' },
+        headers: {
+          Upgrade: 'websocket',
+          'X-EC-Uid': 'uid-forged',
+          'X-EC-Session': 'session-forged',
+        },
       }),
       env as never,
     );
@@ -392,6 +453,7 @@ describe('/_ws/:room upgrade — verified identity only', () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]!.upgrade).toBe('websocket');
     expect(calls[0]!.uid).toBeNull();
+    expect(calls[0]!.session).toBeNull();
     // Query params still flow through untouched.
     expect(calls[0]!.url).toBe(
       'https://do.local/_do/ws?user=u1&auth=0&room=r',
@@ -405,6 +467,7 @@ describe('/_ws/:room upgrade — verified identity only', () => {
       new Request('https://t.test/_ws/r?user=u1', {
         headers: {
           Upgrade: 'websocket',
+          Origin: 'https://t.test',
           Cookie: AUTH_COOKIE,
           'X-EC-Uid': 'uid-forged',
         },
@@ -416,5 +479,192 @@ describe('/_ws/:room upgrade — verified identity only', () => {
     // Exactly the verified uid — never the forged inbound value.
     expect(calls[0]!.uid).toBe(AUTH_UID);
     expect(calls[0]!.sessionExp).toBe(String(AUTH_EXP));
+    expect(calls[0]!.session).toBe('tok-valid');
+  });
+
+  it.each([undefined, 'https://evil.test'])(
+    'rejects a session-bearing upgrade from an untrusted Origin: %s',
+    async (origin) => {
+      const { env, calls } = makeFakeRoomNamespace(() => new Response('ws-ok'));
+      const headers: Record<string, string> = {
+        Upgrade: 'websocket',
+        Cookie: AUTH_COOKIE,
+      };
+      if (origin !== undefined) headers['Origin'] = origin;
+      const res = await buildApp().fetch(
+        new Request('https://t.test/_ws/r?user=u1', { headers }),
+        withAuth(env) as never,
+      );
+      expect(res.status).toBe(403);
+      expect(calls).toHaveLength(0);
+    },
+  );
+
+  it.each([
+    'user=a&user=b',
+    `user=${'u'.repeat(257)}`,
+    `auth=${'a'.repeat(513)}`,
+  ])('rejects ambiguous or oversized upgrade parameters: %s', async (query) => {
+    const { env, calls } = makeFakeRoomNamespace(() => new Response('ws-ok'));
+    const res = await buildApp().fetch(
+      new Request(`https://t.test/_ws/r?${query}`, {
+        headers: { Upgrade: 'websocket' },
+      }),
+      env as never,
+    );
+    expect(res.status).toBe(400);
+    expect(calls).toHaveLength(0);
+  });
+});
+
+
+describe('session mutation CSRF boundary', () => {
+  it.each([
+    ['https://evil.test', undefined],
+    [undefined, 'cross-site'],
+  ])(
+    'rejects a session mutation with Origin=%s Sec-Fetch-Site=%s',
+    async (origin, fetchSite) => {
+      const { env, calls } = makeFakeRoomNamespace(
+        () => new Response(null, { status: 201 }),
+      );
+      const headers = new Headers({
+        Cookie: AUTH_COOKIE,
+        'Content-Type': 'text/x-socialcalc',
+      });
+      if (origin !== undefined) headers.set('Origin', origin);
+      if (fetchSite !== undefined) headers.set('Sec-Fetch-Site', fetchSite);
+      const response = await buildApp().fetch(
+        new Request('https://t.test/_/csrf-room', {
+          method: 'PUT',
+          headers,
+          body: 'version:1.5',
+        }),
+        withAuth(env) as never,
+      );
+      expect(response.status).toBe(403);
+      expect(calls).toHaveLength(0);
+    },
+  );
+
+  it('allows the configured origin to mutate with a session', async () => {
+    const { env, calls } = makeFakeRoomNamespace(
+      () => new Response(null, { status: 201 }),
+    );
+    const response = await buildApp().fetch(
+      new Request('https://t.test/_/csrf-room', {
+        method: 'PUT',
+        headers: {
+          Cookie: AUTH_COOKIE,
+          Origin: 'https://t.test',
+          'Content-Type': 'text/x-socialcalc',
+        },
+        body: 'version:1.5',
+      }),
+      withAuth(env) as never,
+    );
+    expect(response.status).toBe(201);
+    expect(calls.length).toBeGreaterThan(0);
+  });
+});
+
+describe('global response hardening', () => {
+  it('adds browser baseline headers without blocking documented framing', async () => {
+    const { env } = makeFakeRoomNamespace(() => new Response());
+    const response = await buildApp().fetch(
+      new Request('https://t.test/_health'),
+      env as never,
+    );
+    expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
+    expect(response.headers.get('Referrer-Policy')).toBe(
+      'strict-origin-when-cross-origin',
+    );
+    const csp = response.headers.get('Content-Security-Policy');
+    expect(csp).toContain("default-src 'self'");
+    expect(csp).toContain("script-src 'self' 'unsafe-inline'");
+    expect(csp).toContain("object-src 'none'");
+    expect(csp).toContain("connect-src 'self' wss://t.test");
+    const connectSources = csp
+      ?.split(';')
+      .find((directive) => directive.trimStart().startsWith('connect-src'))
+      ?.trim()
+      .split(/\s+/);
+    expect(connectSources).not.toContain('ws:');
+    expect(connectSources).not.toContain('wss:');
+    expect(csp).toContain("img-src 'self' data:");
+    expect(csp).not.toContain('img-src https:');
+    expect(csp).toContain('upgrade-insecure-requests');
+    expect(csp).not.toContain('frame-ancestors');
+    expect(response.headers.get('Permissions-Policy')).toBe(
+      'camera=(), geolocation=(), microphone=()',
+    );
+    expect(response.headers.get('Cross-Origin-Opener-Policy')).toBe('same-origin');
+    expect(response.headers.get('Strict-Transport-Security')).toBe('max-age=31536000');
+    expect(response.headers.get('X-Frame-Options')).toBeNull();
+  });
+
+  it('allows only the request host for local plaintext WebSockets', async () => {
+    const { env } = makeFakeRoomNamespace(() => new Response());
+    const response = await buildApp().fetch(
+      new Request('http://127.0.0.1:8787/_health'),
+      env as never,
+    );
+    expect(response.headers.get('Content-Security-Policy')).toContain(
+      "connect-src 'self' ws://127.0.0.1:8787",
+    );
+  });
+
+  it('makes every session-bearing response private and non-cacheable', async () => {
+    const { env } = makeFakeRoomNamespace(() => new Response());
+    const response = await buildApp().fetch(
+      new Request('https://t.test/_health', {
+        headers: { Cookie: AUTH_COOKIE },
+      }),
+      env as never,
+    );
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+    expect(response.headers.get('Vary')).toContain('Cookie');
+    expect(response.headers.get('X-Frame-Options')).toBe('SAMEORIGIN');
+    expect(response.headers.get('Content-Security-Policy')).toContain(
+      "frame-ancestors 'self'",
+    );
+  });
+
+  it('makes bearer and operator-route responses non-cacheable', async () => {
+    const { env } = makeFakeRoomNamespace(() => new Response());
+    const response = await buildApp().fetch(
+      new Request('https://t.test/_health', {
+        headers: { Authorization: 'Bearer test' },
+      }),
+      env as never,
+    );
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+    expect(response.headers.get('Vary')).toContain('Authorization');
+  });
+
+  it('does not upgrade resources on a direct HTTP self-host response', async () => {
+    const { env } = makeFakeRoomNamespace(() => new Response());
+    const response = await buildApp().fetch(
+      new Request('http://t.test/_health'),
+      env as never,
+    );
+    expect(response.headers.get('Strict-Transport-Security')).toBeNull();
+    expect(response.headers.get('Content-Security-Policy')).not.toContain(
+      'upgrade-insecure-requests',
+    );
+  });
+
+  it('honors the official proxy HTTPS scheme header', async () => {
+    const { env } = makeFakeRoomNamespace(() => new Response());
+    const response = await buildApp().fetch(
+      new Request('http://t.test/_health', {
+        headers: { 'X-Forwarded-Proto': 'https' },
+      }),
+      env as never,
+    );
+    expect(response.headers.get('Strict-Transport-Security')).toBe('max-age=31536000');
+    expect(response.headers.get('Content-Security-Policy')).toContain(
+      'upgrade-insecure-requests',
+    );
   });
 });

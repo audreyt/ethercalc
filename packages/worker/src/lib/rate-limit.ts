@@ -1,10 +1,10 @@
 /**
  * Optional per-source request rate limiting for self-host deployments.
  *
- * Gated by `ETHERCALC_RATELIMIT` (default off). When enabled, applies a
- * token bucket keyed on `CF-Connecting-IP` / the first `X-Forwarded-For`
- * hop. Hosted Cloudflare deploys leave the flag unset and rely on the
- * platform edge instead (AGENTS.md §13 Q7).
+ * token bucket keyed on the platform-provided `CF-Connecting-IP`, or the
+ * rightmost `X-Forwarded-For` hop supplied by the mandatory self-host proxy.
+ * Hosted Cloudflare deploys leave the flag unset and rely on the platform
+ * edge instead (AGENTS.md §13 Q7).
  */
 
 export interface RateLimitEnv {
@@ -18,11 +18,17 @@ export interface RateLimitConfig {
   readonly refillPerSec: number;
 }
 
-export interface RateLimitResult {
-  readonly allowed: boolean;
-  /** Whole seconds until a request would likely succeed (429 Retry-After). */
-  readonly retryAfterSec?: number;
-}
+/**
+ * A denial always carries its retry hint — the union keeps callers from
+ * inventing a fallback for a state the store cannot produce.
+ */
+export type RateLimitResult =
+  | { readonly allowed: true }
+  | {
+      readonly allowed: false;
+      /** Whole seconds until a request would likely succeed (429 Retry-After). */
+      readonly retryAfterSec: number;
+    };
 
 interface BucketState {
   tokens: number;
@@ -32,7 +38,14 @@ interface BucketState {
 /** Aligns with the nginx recipe's `rate=10r/s` + `burst=30`. */
 const DEFAULT_CAPACITY = 30;
 const DEFAULT_REFILL_PER_SEC = 10;
+const MAX_BUCKETS = 10_000;
 
+// Every spelling below also fails the numeric parse at the bottom of
+// `parseRateLimitConfig` (`Number('off')` is NaN, `Number('')`/`Number('0')`
+// are <= 0), which returns `null` too. So this list is intent documentation,
+// not behaviour: mutating any case label or the whole switch produces an
+// observationally identical parser.
+// Stryker disable all
 function rateLimitDisabled(raw: string): boolean {
   switch (raw.trim().toLowerCase()) {
     case '':
@@ -45,6 +58,7 @@ function rateLimitDisabled(raw: string): boolean {
       return false;
   }
 }
+// Stryker restore all
 
 /**
  * Parse `ETHERCALC_RATELIMIT`.
@@ -103,12 +117,24 @@ export function rateLimitConfigFromEnv(env: RateLimitEnv): RateLimitConfig | nul
   return parseRateLimitConfig(env.ETHERCALC_RATELIMIT);
 }
 
+function validClientIp(value: string | undefined): string | null {
+  const candidate = value?.trim();
+  if (
+    !candidate ||
+    candidate.length > 64 ||
+    !/^[0-9a-f:.]+$/i.test(candidate)
+  ) {
+    return null;
+  }
+  return candidate;
+}
+
 export function clientIpFromHeaders(headers: Headers): string {
-  const cf = headers.get('CF-Connecting-IP')?.trim();
+  const cf = validClientIp(headers.get('CF-Connecting-IP') ?? undefined);
   if (cf) return cf;
-  const first = headers.get('X-Forwarded-For')?.split(',')[0]?.trim();
-  if (first) return first;
-  return 'unknown';
+  const forwarded = headers.get('X-Forwarded-For')?.split(',');
+  const last = validClientIp(forwarded?.at(-1));
+  return last ?? 'unknown';
 }
 
 export interface RateLimitStore {
@@ -117,13 +143,19 @@ export interface RateLimitStore {
   reset(): void;
 }
 
-export function createRateLimitStore(): RateLimitStore {
+export function createRateLimitStore(
+  maxBuckets = MAX_BUCKETS,
+): RateLimitStore {
   const buckets = new Map<string, BucketState>();
 
   return {
     consume(ip, config, nowMs = Date.now()) {
       let bucket = buckets.get(ip);
       if (!bucket) {
+        if (buckets.size >= maxBuckets) {
+          const oldest = buckets.keys().next().value;
+          if (oldest !== undefined) buckets.delete(oldest);
+        }
         bucket = { tokens: config.capacity, lastRefillMs: nowMs };
         buckets.set(ip, bucket);
       }

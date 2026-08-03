@@ -1,10 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import {
+  encodeSocialCalcText,
   HackFoldr,
   parseTocBody,
   tocRowsEqual,
   type FetchImpl,
 } from '../src/Foldr.ts';
+import {
+  MAX_MULTI_SHEETS,
+  MAX_MULTI_SHEET_TITLE_LENGTH,
+} from '@ethercalc/shared';
 
 interface FakeRequest {
   url: string;
@@ -338,15 +343,11 @@ describe('HackFoldr', () => {
       expect(f.rows[1]).toMatchObject({ row: 4 });
     });
 
-    it('escapes double-quotes in CSV payloads', async () => {
-      const { fetchImpl, calls } = makeFetch([
-        { json: [['#', '#'], ['/a', 'A']] },
-        { ok: true, json: null },
-      ]);
+    it('escapes double-quotes in the low-level CSV encoder', async () => {
+      const { fetchImpl, calls } = makeFetch([{ ok: true, json: null }]);
       const f = new HackFoldr('http://x', { fetchImpl });
-      await f.fetch('r');
-      await f.push({ link: '/a"b', title: 'T"t', row: 0 });
-      expect(calls[1]?.body).toBe('"/a""b","T""t"');
+      await f.postCsv('/a"b', 'T"t');
+      expect(calls[0]?.body).toBe('"/a""b","T""t"');
     });
   });
 
@@ -361,6 +362,31 @@ describe('HackFoldr', () => {
       await f.setAt(0, { title: 'Renamed' });
       expect(calls[1]?.body).toBe('set B2 text t Renamed');
       expect(f.at(0)).toMatchObject({ title: 'Renamed' });
+    });
+
+    it('encodes title metacharacters without creating a second command', async () => {
+      const { fetchImpl, calls } = makeFetch([
+        { json: [['#', '#'], ['/a', 'A']] },
+        { ok: true, json: null },
+      ]);
+      const f = new HackFoldr('http://x', { fetchImpl });
+      await f.fetch('r');
+      await f.setAt(0, { title: 'Quarter:1\\draft\r\nset A9 text t owned' });
+      expect(calls[1]?.body).toBe(
+        'set B2 text t Quarter\\c1\\bdraft\\nset A9 text t owned',
+      );
+      expect(calls[1]?.body).not.toContain('\n');
+    });
+
+    it('rejects an unsafe link mutation', async () => {
+      const { fetchImpl, calls } = makeFetch([
+        { json: [['#', '#'], ['/a', 'A']] },
+      ]);
+      const f = new HackFoldr('http://x', { fetchImpl });
+      await f.fetch('r');
+      await f.setAt(0, { link: '//evil.example' });
+      expect(calls).toHaveLength(1);
+      expect(f.at(0).link).toBe('/a');
     });
 
     it('skips the command when no title patch is given', async () => {
@@ -384,6 +410,14 @@ describe('HackFoldr', () => {
       expect(calls).toHaveLength(1);
     });
   });
+
+    it('rejects an unsafe row before writing or mounting it', async () => {
+      const { fetchImpl, calls } = makeFetch([]);
+      const f = new HackFoldr('http://x', { fetchImpl });
+      await f.push({ link: 'https://evil.example', title: 'Evil', row: 0 });
+      expect(calls).toHaveLength(0);
+      expect(f.rows).toEqual([]);
+    });
 
   describe('deleteAt()', () => {
     it('sends a multi-cascade empty command and removes the row', async () => {
@@ -531,6 +565,34 @@ describe('HackFoldr', () => {
     it('returns [] for non-array or empty input', () => {
       expect(parseTocBody(null)).toEqual([]);
       expect(parseTocBody([])).toEqual([]);
+    });
+
+    it('drops cross-origin and traversal links from persisted TOC data', () => {
+      expect(
+        parseTocBody([
+          ['#url', '#title'],
+          ['https://evil.example', 'external'],
+          ['//evil.example', 'protocol-relative'],
+          ['/%2e%2e', 'traversal'],
+          ['/safe.1', 'Safe'],
+        ]),
+      ).toEqual([{ link: '/safe.1', title: 'Safe', row: 5 }]);
+    });
+
+    it('bounds TOC fan-out and sheet-title length', () => {
+      const rows = Array.from({ length: MAX_MULTI_SHEETS + 5 }, (_, index) => [
+        `/room.${index + 1}`,
+        't'.repeat(MAX_MULTI_SHEET_TITLE_LENGTH + 1),
+      ]);
+      const parsed = parseTocBody([['#url', '#title'], ...rows]);
+      expect(parsed).toHaveLength(MAX_MULTI_SHEETS);
+      expect(parsed[0]?.title).toHaveLength(MAX_MULTI_SHEET_TITLE_LENGTH);
+    });
+
+    it('encodes the complete SocialCalc text-command metacharacter set', () => {
+      expect(encodeSocialCalcText('a:b\\c\rd\ne\r\nf')).toBe(
+        'a\\cb\\bc\\nd\\ne\\nf',
+      );
     });
   });
 

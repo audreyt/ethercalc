@@ -10,13 +10,16 @@ concurrency:
   group: lemmascript-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   dafny:
     name: lsc check (Dafny)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       # voidzero-dev/setup-vp v1.1.0
       - name: Setup Vite+
@@ -25,7 +28,7 @@ jobs:
           cache: true
 
       - name: Setup Dafny
-        uses: dafny-lang/setup-dafny-action@v1
+        uses: dafny-lang/setup-dafny-action@be023fc606339d46ed6b077dcb8614d0279ded31 # v1
         with:
           dafny-version: "4.9.0"
 
@@ -46,7 +49,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       # voidzero-dev/setup-vp v1.1.0
       - name: Setup Vite+

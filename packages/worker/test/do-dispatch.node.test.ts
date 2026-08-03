@@ -41,6 +41,16 @@ describe('do-dispatch', () => {
     expect(stub).toBeDefined();
   });
 
+  it('roomStub rejects invalid room identifiers before namespace lookup', () => {
+    const idFromName = vi.fn();
+    const env = {
+      ROOM: { idFromName, get: vi.fn() },
+    } as unknown as Env;
+    expect(() => roomStub(env, '')).toThrow(RangeError);
+    expect(() => roomStub(env, 'bad\u0000room')).toThrow(RangeError);
+    expect(idFromName).not.toHaveBeenCalled();
+  });
+
   it('doFetch composes the DO URL + init and threads the room name', async () => {
     const calls: RecordedFetch[] = [];
     // Room name is threaded as `?name=<encoded>` so the DO can self-
@@ -71,6 +81,18 @@ describe('do-dispatch', () => {
     expect(calls[0]?.url).toBe('https://do.local/_do/log?name=some%20room');
   });
 
+  it('doFetch returns 400 without dispatching an invalid room name', async () => {
+    const calls: RecordedFetch[] = [];
+    const res = await doFetch(
+      makeRecordingEnv(calls),
+      'x'.repeat(2049),
+      '/_do/log',
+    );
+    expect(res.status).toBe(400);
+    expect(await res.text()).toBe('Invalid room name');
+    expect(calls).toHaveLength(0);
+  });
+
   it('doFetch strips forged X-EC-Uid headers when no principal is supplied', async () => {
     const calls: RecordedFetch[] = [];
     await doFetch(makeRecordingEnv(calls), 'r', '/_do/snapshot', {
@@ -92,5 +114,16 @@ describe('do-dispatch', () => {
     );
     const headers = new Headers(calls[0]?.init?.headers);
     expect(headers.get('X-EC-Uid')).toBe('uid-verified');
+  });
+});
+
+describe('do-dispatch refusal shape', () => {
+  it('names the invalid room in both the stub and fetch paths', async () => {
+    const env = makeRecordingEnv([]);
+    expect(() => roomStub(env, 'bad\u0000name')).toThrow('Invalid room name');
+    const res = await doFetch(env, 'bad\u0000name', '/_do/ping');
+    expect(res.status).toBe(400);
+    expect(await res.text()).toBe('Invalid room name');
+    expect(res.headers.get('Content-Type')).toBe('text/plain; charset=utf-8');
   });
 });

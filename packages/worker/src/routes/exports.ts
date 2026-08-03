@@ -32,8 +32,14 @@
  */
 /* istanbul ignore file */
 import type { Hono } from 'hono';
+import {
+  MAX_MULTI_SHEETS,
+  MAX_MULTI_SHEET_TITLE_LENGTH,
+  isSafeMultiSheetLink,
+} from '@ethercalc/shared';
 
 import { doFetch } from '../lib/do-dispatch.ts';
+import { readBoundedResponseText } from '../lib/cross-sheet.ts';
 import { getSessionPrincipal } from '../lib/session-middleware.ts';
 import type { SessionPrincipal } from '../lib/session.ts';
 import {
@@ -42,12 +48,24 @@ import {
   buildMultiSheetWorkbookFromSheets,
 } from '../lib/xlsx-build.ts';
 import {
+  ALLOWED_ELEMENTS,
   DANGEROUS_ELEMENTS,
   attributeAction,
 } from '../lib/html-sanitize.ts';
+import { MAX_IMPORT_CELLS } from '../lib/xlsx-import.ts';
 import type { Env, EtherCalcHonoEnv } from '../env.ts';
 
 const TEXT_CT = 'text/plain; charset=utf-8';
+const MAX_MULTI_EXPORT_TOC_BYTES = 1024 * 1024;
+const MAX_MULTI_EXPORT_SHEET_BYTES = 8 * 1024 * 1024;
+const MAX_MULTI_EXPORT_TOTAL_CHARS = 12 * 1024 * 1024;
+
+function multiExportTooLarge(): Response {
+  return new Response('multi-sheet export exceeds resource limits', {
+    status: 413,
+    headers: { 'Content-Type': TEXT_CT },
+  });
+}
 
 /**
  * Mirror a DO 401/403 auth verdict to the client verbatim (status +
@@ -83,25 +101,71 @@ async function fetchMultiSheetBundle(
   const tocDenied = await authVerdict(tocRes);
   if (tocDenied) return tocDenied;
   if (tocRes.status !== 200) return null;
-  const rows = (await tocRes.json()) as unknown;
+  const tocText = await readBoundedResponseText(
+    tocRes,
+    MAX_MULTI_EXPORT_TOC_BYTES,
+  );
+  if (tocText === null) return multiExportTooLarge();
+  let rows: unknown;
+  try {
+    rows = JSON.parse(tocText);
+  } catch {
+    return null;
+  }
   if (!Array.isArray(rows) || rows.length < 2) return null;
+  if (rows.length - 1 > MAX_MULTI_SHEETS) return multiExportTooLarge();
 
-  // Skip header row. Each remaining row is `[link, title]`.
+  // Skip the header row. Import and export share the same persisted TOC
+  // limits, so a hand-edited TOC cannot fan one request out across an
+  // unbounded number of Durable Objects.
   const tocRows = rows.slice(1) as unknown[];
   const bundle: Array<{ name: string; view: unknown }> = [];
+  let totalChars = 0;
+  let totalCells = 0;
   for (const raw of tocRows) {
     if (!Array.isArray(raw)) continue;
     const link = typeof raw[0] === 'string' ? raw[0] : '';
-    const title = typeof raw[1] === 'string' && raw[1] ? raw[1] : `Sheet${bundle.length + 1}`;
-    // Links start with `/` — strip to get the sub-room name.
-    if (!link || link.startsWith('#')) continue;
-    const subroom = link.replace(/^\//, '');
-    if (!subroom) continue;
+    if (!isSafeMultiSheetLink(link)) continue;
+    const subroom = link.slice(1);
+    const rawTitle = typeof raw[1] === 'string' ? raw[1] : '';
+    const title =
+      rawTitle.length > 0 && rawTitle.length <= MAX_MULTI_SHEET_TITLE_LENGTH
+        ? rawTitle
+        : `Sheet${bundle.length + 1}`;
     const sheetRes = await doFetch(env, subroom, '/_do/sheet-data', {}, principal);
     const sheetDenied = await authVerdict(sheetRes);
     if (sheetDenied) return sheetDenied;
     if (sheetRes.status !== 200) continue;
-    const view = (await sheetRes.json()) as unknown;
+    const sheetText = await readBoundedResponseText(
+      sheetRes,
+      MAX_MULTI_EXPORT_SHEET_BYTES,
+    );
+    if (
+      sheetText === null ||
+      totalChars + sheetText.length > MAX_MULTI_EXPORT_TOTAL_CHARS
+    ) {
+      return multiExportTooLarge();
+    }
+    let view: unknown;
+    try {
+      view = JSON.parse(sheetText);
+    } catch {
+      continue;
+    }
+    const cells =
+      view !== null &&
+      typeof view === 'object' &&
+      'cells' in view &&
+      view.cells !== null &&
+      typeof view.cells === 'object' &&
+      !Array.isArray(view.cells)
+        ? Object.keys(view.cells).length
+        : 0;
+    if (totalCells + cells > MAX_IMPORT_CELLS) {
+      return multiExportTooLarge();
+    }
+    totalChars += sheetText.length;
+    totalCells += cells;
     bundle.push({ name: title, view });
   }
   return bundle.length > 0 ? bundle : null;
@@ -177,31 +241,27 @@ interface ExportFormat {
 }
 
 /**
- * Strip script-bearing markup from an HTML body using Cloudflare's native
- * `HTMLRewriter`. Removes `<script>`/`<iframe>`/`<object>`/`<embed>` whole,
- * drops every `on*` event-handler attribute, and clears `href`/`src` URLs
- * with a dangerous scheme (`javascript:`/`data:`/`vbscript:`). Safe
- * formatting, links, and images survive — `text-html` stays a feature.
+ * Sanitize the export with the same element/attribute allowlist as the live
+ * client. Active and parser-state elements are removed with their contents;
+ * unknown inert tags are unwrapped so their text survives.
  *
  * The decision rules live in `lib/html-sanitize.ts` (pure, coverage-gated);
  * this wiring is workerd-only so the file carries `istanbul ignore file`.
  */
 function sanitizeHtmlBody(html: string, headers: Record<string, string>): Response {
-  let rewriter = new HTMLRewriter();
-  for (const tag of DANGEROUS_ELEMENTS) {
-    rewriter = rewriter.on(tag, {
-      element(el) {
-        el.remove();
-      },
-    });
-  }
-  rewriter = rewriter.on('*', {
+  const rewriter = new HTMLRewriter().on('*', {
     element(el) {
+      const tag = el.tagName.toLowerCase();
+      if (DANGEROUS_ELEMENTS.includes(tag)) {
+        el.remove();
+        return;
+      }
+      if (!ALLOWED_ELEMENTS.includes(tag)) {
+        el.removeAndKeepContent();
+        return;
+      }
       // `el.attributes` yields `[name, value]` pairs at runtime (workerd).
-      // The ambient `Element` type tsgo resolves here disagrees on the
-      // attribute shape across lib/workers-types, so we read through the
-      // runtime contract explicitly. We collect first because
-      // `removeAttribute` mutates the element while we iterate.
+      // Collect first because removeAttribute mutates the iterator.
       const attrIter = el.attributes as unknown as Iterable<readonly string[]>;
       const attrs: Array<readonly string[]> = [];
       for (const attr of attrIter) attrs.push(attr);
@@ -211,6 +271,9 @@ function sanitizeHtmlBody(html: string, headers: Record<string, string>): Respon
         if (attributeAction(name, value) === 'remove') {
           el.removeAttribute(name);
         }
+      }
+      if (tag === 'a' && el.getAttribute('target')?.toLowerCase() === '_blank') {
+        el.setAttribute('rel', 'noopener noreferrer');
       }
     },
   });

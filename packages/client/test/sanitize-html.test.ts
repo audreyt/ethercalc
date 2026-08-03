@@ -126,6 +126,15 @@ describe('TEXT_HTML_SANITIZE_CONFIG with real DOMPurify (stored-XSS payloads)', 
     expect(out).toContain('<i>italic</i>');
   });
 
+  it('strips inline CSS and host-page class gadgets', () => {
+    const out = sanitize(
+      '<div class="vex-overlay" style="position:fixed;inset:0">cover</div>',
+    );
+    expect(out).toContain('<div>cover</div>');
+    expect(out).not.toContain('class=');
+    expect(out).not.toContain('style=');
+  });
+
   it('keeps a safe https link', () => {
     const out = sanitize('<a href="https://x">link</a>');
     expect(out).toContain('href="https://x"');

@@ -87,7 +87,7 @@ export interface WsContext {
    * behind `state.blockConcurrencyWhile`; the handler layer stays
    * transport-agnostic.
    */
-  readonly applyCommand: (cmdstr: string) => Promise<void>;
+  readonly applyCommand: (cmdstr: string) => Promise<boolean>;
   /**
    * Broadcast a message to every other peer in the room. If
    * `includeSelf` is true, the sender also receives the frame — this is
@@ -128,6 +128,7 @@ export async function handleChat(
   ctx: WsContext,
   msg: Extract<ClientMessage, { type: 'chat' }>,
 ): Promise<void> {
+  if (!(await ctx.verifyAuth())) return;
   await ctx.storage.appendLog('chat:', msg.msg);
   await ctx.broadcast(buildChatBroadcast(msg), false);
 }
@@ -154,9 +155,8 @@ export async function handleMyEcell(
   ctx: WsContext,
   msg: Extract<ClientMessage, { type: 'my.ecell' }>,
 ): Promise<void> {
-  if (msg.user.length > 0) {
-    await ctx.storage.putHash('ecell:', msg.user, msg.ecell);
-  }
+  if (!(await ctx.verifyAuth())) return;
+  if (msg.user) await ctx.storage.putHash('ecell:', msg.user, msg.ecell);
   await ctx.broadcast(buildMyEcellBroadcast(msg), false);
 }
 
@@ -198,7 +198,7 @@ export async function handleExecute(
     return;
   }
 
-  await ctx.applyCommand(msg.cmdstr);
+  if (!(await ctx.applyCommand(msg.cmdstr))) return;
   await ctx.broadcast(buildExecuteBroadcast(msg, false), false);
 }
 

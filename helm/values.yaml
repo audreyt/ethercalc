@@ -108,6 +108,13 @@ config:
   rateLimit: ""
   # Optional per-IP cap on room creation (POST /_, /_new, /_from, PUT /_/room).
   roomCreateLimit: ""
+  # Optional passkey accounts/private-room UI. Enabling requires all three
+  # WebAuthn trust anchors; origin must be the exact public HTTPS origin.
+  auth:
+    enabled: false
+    rpId: ""
+    rpName: "EtherCalc"
+    origin: ""
 
 # Secrets held in a Kubernetes Secret, never in values.yaml plaintext in
 # production. Set `existingSecret: <name>` to reference an external Secret

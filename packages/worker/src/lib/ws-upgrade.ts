@@ -33,6 +33,12 @@ export interface WsAttachment {
   readonly uid?: string;
   /** Verified session expiry paired with `uid`, if any. */
   readonly sessionExp?: number;
+  /** Opaque session token, forwarded only by the verified Worker upgrade. */
+  readonly session?: string;
+  /** Start of the current per-socket rate window (Unix milliseconds). */
+  readonly rateWindowStartedAt?: number;
+  /** Frames consumed in the current rate window. */
+  readonly rateMessageCount?: number;
 }
 
 /**
@@ -47,6 +53,7 @@ export function upgradeWebSocket(
     readonly sandstormModify?: boolean;
     readonly uid?: string;
     readonly sessionExp?: number;
+    readonly session?: string;
   },
 ): Response {
   const url = new URL(request.url);
@@ -66,6 +73,7 @@ export function upgradeWebSocket(
       : {}),
     ...(opts?.uid !== undefined ? { uid: opts.uid } : {}),
     ...(opts?.sessionExp !== undefined ? { sessionExp: opts.sessionExp } : {}),
+    ...(opts?.session !== undefined ? { session: opts.session } : {}),
   };
   server.serializeAttachment(attachment);
   return new Response(null, { status: 101, webSocket: client });

@@ -20,7 +20,7 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
     assetsDir: 'assets',
-    sourcemap: true,
+    sourcemap: false,
   },
   server: {
     port: 8080,

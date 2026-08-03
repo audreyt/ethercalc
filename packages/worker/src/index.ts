@@ -6,10 +6,12 @@
  * hits through Hono's bundled invocation path (see AGENTS.md §5.2).
  */
 /* istanbul ignore file */
+import { MAX_WS_FRAME_CHARS } from '@ethercalc/shared/messages';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { cors } from 'hono/cors';
 
+import { websocketAuthority } from './lib/csp.ts';
 import { buildHealthBody } from './handlers/health.ts';
 import {
   clientIpFromHeaders,
@@ -22,6 +24,7 @@ import {
   isRoomCreationRoute,
   roomCreateLimitFromEnv,
 } from './lib/room-create-limit.ts';
+import { parseSessionCookie } from './lib/session.ts';
 import { sandstormBlocksMutation } from './lib/sandstorm-access.ts';
 import { registerAuth } from './routes/auth.ts';
 import { registerAssets, registerRoomCatchAll } from './routes/assets.ts';
@@ -60,18 +63,110 @@ const roomCreateStore = createRoomCreateStore();
 
 export function buildApp(): Hono<EtherCalcHonoEnv> {
   const app = new Hono<EtherCalcHonoEnv>();
-  // All API endpoints are CORS-friendly — external embeds (hackfoldr,
-  // third-party dashboards) fetch /_/:room/csv etc cross-origin.
-  // Redirect www.* to the naked domain to canonicalize the origin for WebAuthn.
+  // APIs remain CORS-friendly for external embeds and dashboards.
+  app.use('*', cors());
+  app.use('*', async (c, next) => {
+    await next();
+    const hasSession = parseSessionCookie(c.req.header('Cookie') ?? null) !== null;
+    const isAuthRoute = c.req.path.startsWith('/_auth/');
+    const hasAuthorization = c.req.header('Authorization') !== undefined;
+    const isOperatorRoute =
+      c.req.path.startsWith('/_migrate/') ||
+      c.req.path === '/_timetrigger' ||
+      c.req.path.endsWith('/pitr-restore');
+    const hasRouteCsp = c.res.headers.has('Content-Security-Policy');
+    const forwardedProto = c.req.header('X-Forwarded-Proto');
+    const requestUrl = new URL(c.req.url);
+    const secureTransport =
+      requestUrl.protocol === 'https:' || forwardedProto === 'https';
+    // The WebSocket authority in `connect-src` is a trust anchor like the
+    // `www` redirect below: prefer the configured origin so a spoofed `Host`
+    // cannot name a third-party host in our own policy. Self-hosts that leave
+    // `ETHERCALC_ORIGIN` unset fall back to the request host.
+    // SocialCalc's trusted toolbar/dialog renderer still emits inline event
+    // handlers. Stored cell HTML is separately sanitized by DOMPurify; keep
+    // inline handlers enabled here until the upstream UI stops generating them.
+    const csp = [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data:",
+      "font-src 'self' data:",
+      `connect-src 'self' ${websocketAuthority(c.env.ETHERCALC_ORIGIN, requestUrl, secureTransport)}`,
+      "worker-src 'self'",
+      "frame-src 'self'",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+    ];
+    if (hasSession) csp.push("frame-ancestors 'self'");
+    if (secureTransport) csp.push('upgrade-insecure-requests');
+    if (!hasRouteCsp) c.header('Content-Security-Policy', csp.join('; '));
+    c.header('X-Content-Type-Options', 'nosniff');
+    c.header('Referrer-Policy', 'strict-origin-when-cross-origin');
+    c.header('Permissions-Policy', 'camera=(), geolocation=(), microphone=()');
+    c.header('Cross-Origin-Opener-Policy', 'same-origin');
+    if (secureTransport) {
+      c.header('Strict-Transport-Security', 'max-age=31536000');
+    }
+    if (hasSession && !hasRouteCsp) {
+      c.header('X-Frame-Options', 'SAMEORIGIN');
+    }
+    if (hasSession || isAuthRoute || hasAuthorization || isOperatorRoute) {
+      c.header('Cache-Control', 'private, no-store');
+    }
+    if (hasSession || isAuthRoute) {
+      c.header('Vary', 'Cookie', { append: true });
+    }
+    if (hasAuthorization || isOperatorRoute) {
+      c.header('Vary', 'Authorization', { append: true });
+    }
+  });
+  // Redirect only the configured relying-party host's `www` alias. Never
+  // derive a cross-origin Location from an attacker-controlled Host header.
   app.use('*', async (c, next) => {
     const url = new URL(c.req.url);
-    if (url.hostname.startsWith('www.')) {
-      url.hostname = url.hostname.slice(4);
-      return c.redirect(url.toString(), 301);
+    const configuredOrigin = c.env.ETHERCALC_ORIGIN;
+    if (typeof configuredOrigin === 'string' && configuredOrigin.length > 0) {
+      try {
+        const canonical = new URL(configuredOrigin);
+        if (url.hostname === `www.${canonical.hostname}`) {
+          const destination = new URL(canonical.origin);
+          destination.pathname = url.pathname;
+          destination.search = url.search;
+          destination.hash = url.hash;
+          return c.redirect(destination.toString(), 301);
+        }
+      } catch {
+        // Invalid deploy configuration must not create an open redirect.
+      }
     }
     await next();
   });
-  app.use('*', cors());
+  // SameSite=Lax blocks ordinary cross-site session CSRF, but not an
+  // untrusted sibling subdomain (same-site, cross-origin). Browser mutations
+  // carry Origin; require the configured WebAuthn origin whenever a session
+  // cookie accompanies an unsafe request. Origin-less non-browser API callers
+  // remain compatible unless they explicitly identify as cross-site.
+  app.use('*', async (c, next) => {
+    const method = c.req.method;
+    const unsafe = method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS';
+    const hasSession =
+      parseSessionCookie(c.req.header('Cookie') ?? null) !== null;
+    if (unsafe && hasSession) {
+      const origin = c.req.header('Origin');
+      const fetchSite = c.req.header('Sec-Fetch-Site');
+      if (origin !== undefined || fetchSite === 'cross-site') {
+        if (
+          typeof c.env.ETHERCALC_ORIGIN !== 'string' ||
+          origin !== c.env.ETHERCALC_ORIGIN
+        ) {
+          return c.text('Forbidden', 403);
+        }
+      }
+    }
+    await next();
+  });
   // Optional self-host abuse belt-and-suspenders (§13 Q7). Default off;
   // when `ETHERCALC_RATELIMIT` is set, apply a per-IP token bucket before
   // routing. Health probes stay exempt.
@@ -86,9 +181,7 @@ export function buildApp(): Hono<EtherCalcHonoEnv> {
       config,
     );
     if (!result.allowed) {
-      if (result.retryAfterSec != null) {
-        c.header('Retry-After', String(result.retryAfterSec));
-      }
+      c.header('Retry-After', String(result.retryAfterSec));
       return c.text('Too Many Requests', 429);
     }
     await next();
@@ -109,9 +202,7 @@ export function buildApp(): Hono<EtherCalcHonoEnv> {
       config,
     );
     if (!result.allowed) {
-      if (result.retryAfterSec != null) {
-        c.header('Retry-After', String(result.retryAfterSec));
-      }
+      c.header('Retry-After', String(result.retryAfterSec));
       return c.text('Too Many Requests', 429);
     }
     await next();
@@ -130,16 +221,36 @@ export function buildApp(): Hono<EtherCalcHonoEnv> {
     }
     await next();
   });
-  // Cap the body of the anonymous write routes (POST `/_`, PUT/POST
-  // `/_/:room`) so an unauthenticated client can't force the worker to
-  // buffer + persist an unbounded payload (§5). 25 MiB comfortably covers
-  // any real interactive snapshot/command batch; genuinely huge rooms are
-  // seeded through the token-gated, chunked `/_migrate/*` path which is
-  // intentionally not capped here. GET exports under `/_/:room/*` carry no
-  // request body, so the limit is a no-op for them.
+  // Bound every public buffering path before its route reads the body.
+  // General snapshots and workbook imports may use 25 MiB; ordinary command
+  // JSON/text is capped at 1 MiB. Auth ceremonies get a tighter 64 KiB cap.
   const MAX_WRITE_BYTES = 25 * 1024 * 1024;
+  const MAX_COMMAND_BODY_BYTES = 1024 * 1024;
+  const MAX_AUTH_BODY_BYTES = 64 * 1024;
+  const MAX_LEGACY_BODY_BYTES = MAX_WS_FRAME_CHARS + 1024;
   app.use('/_', bodyLimit({ maxSize: MAX_WRITE_BYTES }));
   app.use('/_/*', bodyLimit({ maxSize: MAX_WRITE_BYTES }));
+  app.use('/:room', bodyLimit({ maxSize: MAX_WRITE_BYTES }));
+  app.use('/_migrate/*', bodyLimit({ maxSize: MAX_WRITE_BYTES }));
+  const commandBodyLimit = bodyLimit({ maxSize: MAX_COMMAND_BODY_BYTES });
+  app.use('/_/:room', async (c, next) => {
+    if (c.req.method !== 'POST') return next();
+    const contentType = (c.req.header('content-type') ?? '')
+      .split(';', 1)[0]!
+      .trim()
+      .toLowerCase();
+    if (
+      contentType === 'text/csv' ||
+      contentType ===
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+      contentType === 'application/vnd.oasis.opendocument.spreadsheet'
+    ) {
+      return next();
+    }
+    return commandBodyLimit(c, next);
+  });
+  app.use('/_auth/*', bodyLimit({ maxSize: MAX_AUTH_BODY_BYTES }));
+  app.use('/socket.io/*', bodyLimit({ maxSize: MAX_LEGACY_BODY_BYTES }));
   app.get('/_health', (c) => c.json(buildHealthBody()));
   // Phase 7: native WS + legacy socket.io shim. Register early so their
   // literal prefixes win against the `/:room` catch-all. `/_ws/:room` is

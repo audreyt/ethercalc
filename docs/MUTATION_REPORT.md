@@ -154,11 +154,11 @@ Per-package `stryker.conf.json`. Key settings:
 
   | Package          | break | low (+3) | high (+8) |
   | ---------------- | ----- | -------- | --------- |
-  | shared           | 89    | 92       | 97        |
-  | socketio-shim    | 81    | 84       | 89        |
+  | shared           | 99    | 100      | 100       |
+  | socketio-shim    | 84    | 87       | 92        |
   | migrate          | 90    | 93       | 98        |
   | oracle-harness   | 83    | 86       | 91        |
-  | client           | 73    | 76       | 81        |
+  | client           | 77    | 80       | 85        |
   | worker           | 90    | 93       | 98        |
 
 - **Excludes**: barrel re-exports (`index.ts`), thin CLI glue (`cli.ts`, `bin.ts`), oracle recorder/replayer integration modules (`record.ts`, `replay.ts`), declarative scenario/normalize maps (`oracle-harness`: `src/scenarios/**`, `src/normalize.ts`), Hono-bundled routes (not traced by istanbul per §5.2), `src/graph.ts` in the client (615-line canvas-heavy; covered but too large for first-pass mutation).
@@ -167,15 +167,32 @@ Per-package `stryker.conf.json`. Key settings:
 
 | Package          | Score (killed+timeout / total) | Survived | Verdict |
 | ---------------- | ------------------------------ | -------- | ------- |
-| shared           | **89.23%** (58 / 65)           | 7        | high    |
-| socketio-shim    | **81.08%** (300 / 370)         | 70       | high    |
-| migrate          | **90.16%** (605 / 671)         | 66       | high    |
-| oracle-harness   | **83.46%** (1337 / 1602)      | 264      | floor   |
-| client           | **73.81%** (482 / 653)         | 171      | low-ish |
-| worker           | **88.66%** (after 2026-04-20 browser-smoke-fixes) | ~90 | high-ish |
-| **weighted avg** | **~86%** (~2491 / ~2903)       | ~420     | —       |
+| shared           | **99.69%** (326 / 327)         | 1        | high    |
+| socketio-shim    | **84.68%** (398 / 470)         | 72       | high    |
+| migrate          | **90.38%** (855 / 946)         | 91       | high    |
+| oracle-harness   | **83.46%** (1337 / 1602)       | 265      | floor   |
+| client           | **77.61%** (551 / 710)         | 159      | low-ish |
+| worker           | **90.21%** (5474 / 6068)       | 594      | high    |
 
-All six packages clear their newly-ratcheted `break` floor (each floor = current measured score floored to the integer). The client package is the standout — 171 surviving mutants driven largely by `main.ts` (89) and `socialcalc-callbacks.ts` (60). Both files are full of side-effectful DOM glue where tests verify a call happened but not every parameter. See the walkthrough above for how to close the top gap.
+Measured 2026-08-03 after the security-audit sweep. All six packages clear
+their `break` floor. `oracle-harness` and `client` remain the laggards:
+`client` survivors are concentrated in side-effectful DOM glue (`main.ts`,
+`socialcalc-callbacks.ts`) where tests assert that a call happened but not
+every parameter.
+
+### security-audit sweep (2026-08-03)
+
+The audit added defensive guards across the Worker (auth/session, WS caps,
+import/export limits, rate-limit classification), which grew the mutant
+population faster than the new tests killed it — worker dipped to 89.20
+mid-sweep. It was brought back over the floor by (a) targeted contract tests
+for the new guards and (b) `// Stryker disable` annotations, each with a
+written justification, on mutants that are provably equivalent: the
+`rateLimitDisabled`/`limitDisabled` spelling lists (the numeric fallback
+returns `null` for exactly the same inputs), the `[\x00-\x20]+` collapses in
+`html-sanitize.ts` (identical under the `g` flag), the event-handler
+pre-check in `attributeAction` (already subsumed by the allowlist), and the
+`verifyAuthSession` narrowing clauses shadowed by their enclosing `catch`.
 
 ### worker regression note (2026-04-20)
 

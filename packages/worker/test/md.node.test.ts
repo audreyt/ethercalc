@@ -51,6 +51,17 @@ describe('renderMarkdownTable', () => {
     expect(renderMarkdownTable([['`code`']])).toBe('| \\`code\\` |\n| --- |');
   });
 
+  it('renders HTML and Markdown links as inert cell text', () => {
+    expect(
+      renderMarkdownTable([
+        ['<script>alert(1)</script>', '![track](https://evil.test/pixel)', '&lt;b&gt;'],
+      ]),
+    ).toBe(
+      '| &lt;script&gt;alert(1)&lt;/script&gt; | !\\[track\\](https://evil.test/pixel) | &amp;lt;b&amp;gt; |\n' +
+        '| --- | --- | --- |',
+    );
+  });
+
   it('replaces embedded LF with <br>', () => {
     expect(renderMarkdownTable([['a\nb']])).toBe('| a<br>b |\n| --- |');
   });

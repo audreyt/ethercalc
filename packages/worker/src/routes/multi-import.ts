@@ -14,10 +14,15 @@ import type { Env, EtherCalcHonoEnv } from '../env.ts';
 import { doFetch } from '../lib/do-dispatch.ts';
 import { getSessionPrincipal } from '../lib/session-middleware.ts';
 import type { SessionPrincipal } from '../lib/session.ts';
-import { buildMultiSheetImport } from '../lib/multi-sheet-import.ts';
+import {
+  buildMultiSheetImport,
+  ImportTooManySheetsError,
+} from '../lib/multi-sheet-import.ts';
 import {
   ImportArchiveTooLargeError,
+  ImportDimensionsTooLargeError,
   ImportColumnOutOfRangeError,
+  ImportRowOutOfRangeError,
   ImportTooLargeError,
 } from '../lib/xlsx-import.ts';
 
@@ -50,13 +55,21 @@ async function importWorkbook(
     tocSave = res.tocSave;
     subSheets = res.subSheets;
   } catch (err) {
-    if (err instanceof ImportTooLargeError || err instanceof ImportArchiveTooLargeError) {
+    if (
+      err instanceof ImportTooLargeError ||
+      err instanceof ImportArchiveTooLargeError ||
+      err instanceof ImportDimensionsTooLargeError ||
+      err instanceof ImportTooManySheetsError
+    ) {
       return new Response(err.message, {
         status: 413,
         headers: { 'Content-Type': TEXT_CT },
       });
     }
-    if (err instanceof ImportColumnOutOfRangeError) {
+    if (
+      err instanceof ImportColumnOutOfRangeError ||
+      err instanceof ImportRowOutOfRangeError
+    ) {
       return new Response(err.message, {
         status: 400,
         headers: { 'Content-Type': TEXT_CT },

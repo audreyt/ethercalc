@@ -22,8 +22,13 @@
  * isolate. Mutations that would drift cache vs storage are wrapped in
  * `state.blockConcurrencyWhile` to keep the DO serialized.
  */
-import type { ServerMessage } from '@ethercalc/shared/messages';
-import { encodeMessage, parseClientMessage } from '@ethercalc/shared/messages';
+import {
+  encodeMessage,
+  MAX_WS_FRAME_CHARS,
+  isStorageSafeCommand,
+  parseClientMessage,
+  type ServerMessage,
+} from '@ethercalc/shared/messages';
 import {
   decodeFrame,
   nativeToSocketIoEvent,
@@ -46,8 +51,16 @@ import type { Env } from './env.ts';
 import { buildEmailSender } from './handlers/cron.ts';
 import { parseSeedPayload } from './handlers/migrate.ts';
 import { verifyAuth } from './lib/auth.ts';
+import { verifyAuthSession } from './lib/auth-session.ts';
 import { authorize as authorizeRoom } from './lib/authorize.ts';
-import { hydrateCrossSheetRefs } from './lib/cross-sheet.ts';
+import {
+  hydrateCrossSheetRefs,
+  readBoundedResponseText,
+} from './lib/cross-sheet.ts';
+import {
+  isCommandBatchWithinLimits,
+  isSnapshotWithinSheetLimits,
+} from './lib/command-limits.ts';
 import { neutralizeCSVDocument } from './lib/csv-encode.ts';
 import { parseCSV } from './lib/csv-parse.ts';
 import { parseSendemail } from './lib/email.ts';
@@ -58,7 +71,7 @@ import {
   isPitrUnavailableError,
   parsePitrRequest,
 } from './lib/pitr.ts';
-import { encodeRoom } from './lib/room-name.ts';
+import { encodeRoom, isValidRoomName } from './lib/room-name.ts';
 import {
   deleteRoomFromD1,
   mirrorRoomToD1,
@@ -68,20 +81,30 @@ import {
   sandstormAllowsWsWrite,
   sandstormCanModify,
 } from './lib/sandstorm-access.ts';
+import type { SessionPrincipal } from './lib/session.ts';
 import {
+  AUDIT_HISTORY_KEEP,
   appendAuditRows,
   appendChatRows,
+  CHAT_HISTORY_KEEP,
   deleteAuditRows,
   deleteChatRows,
   type SeqRow,
 } from './lib/seq-store.ts';
 import {
   hasSnapshot,
+  SNAPSHOT_CHUNK_BYTES,
+  MAX_SNAPSHOT_CHUNKS,
   readSnapshot,
   readSnapshotMeta,
   type SnapshotMeta,
   snapshotEntries,
 } from './lib/snapshot-storage.ts';
+import {
+  deleteStorageKeysBatched,
+  putStorageEntriesBatched,
+  replaceStorageEntriesBatched,
+} from './lib/storage-batch.ts';
 import { isFilteredExecuteCommand } from './lib/ws-dispatch.ts';
 import {
   dispatchWsMessage,
@@ -114,6 +137,28 @@ const TEXT_HTML = 'text/html; charset=utf-8';
 const TEXT_MARKDOWN = 'text/x-markdown; charset=utf-8';
 
 /**
+ * How long one AuthDO session verification stays reusable inside a
+ * RoomDO isolate, and how many distinct tokens it retains.
+ *
+ * Without a cache, one inbound frame in a private room costs `1 + N`
+ * subrequests against the deployment-wide `idFromName('auth')` object
+ * (one per peer re-checked by `#broadcast`), so a single authorized
+ * client sitting at the room message-rate ceiling could saturate the
+ * global login path. The TTL is the resulting revocation-latency
+ * ceiling — the same bounded-staleness tradeoff already accepted for
+ * `#accessMeta`. Session *expiry* never depends on this cache:
+ * `#closeExpiredSessionSocket` reads `sessionExp` off the socket
+ * attachment synchronously, before any verification runs.
+ */
+const SESSION_VERIFY_TTL_MS = 3_000;
+const SESSION_VERIFY_CAP = 256;
+
+type SessionVerification = {
+  readonly at: number;
+  readonly principal: Promise<SessionPrincipal | null>;
+};
+
+/**
  * Ring-buffer length for the command log. The stored snapshot is
  * authoritative on hydrate (see `#getSpreadsheet`), so `log:` is now a
  * pure client-catch-up buffer: `ask.log` returns the recent tail alongside
@@ -124,6 +169,7 @@ const TEXT_MARKDOWN = 'text/x-markdown; charset=utf-8';
  * here (it is the append-only record).
  */
 const LOG_RING = 1024;
+
 
 /**
  * Cap on distinct `ecell:<user>` keys retained per room. ecells are keyed
@@ -140,31 +186,11 @@ const ECELL_CAP = 256;
  */
 const MAX_CONN = 128;
 
-/**
- * Maximum accepted size (in UTF-16 code units) of a single WS frame.
- * Generous enough for a large collaborative paste (a `loadclipboard` /
- * `execute` frame carries the whole clipboard save) while still capping a
- * single client from forcing a multi-MB `JSON.parse` + storage write.
- * Pastes larger than this go through the HTTP write path, which has its own
- * 25 MiB cap (`MAX_WRITE_BYTES` in `src/index.ts`).
- */
-const MAX_FRAME = 1024 * 1024;
+/** Hibernation-safe per-socket message-rate window. */
+const WS_RATE_WINDOW_MS = 10_000;
+const MAX_WS_MESSAGES_PER_WINDOW = 300;
+const MAX_ROOM_WS_MESSAGES_PER_WINDOW = 1_500;
 
-/**
- * Number of `chat:` entries the alarm handler keeps in DO storage when it
- * trims. Chat is mirrored to D1 (`chat_log`) at append time (§13 Q9), so the
- * dropped oldest entries stay durable there — the DO copy only needs to
- * cover live catch-up (`ask.log` returns this recent tail).
- */
-const CHAT_KEEP = 500;
-
-/**
- * Number of `audit:` entries the alarm keeps in DO storage when it trims.
- * The full audit record is mirrored to D1 (`audit_log`) at command time, so
- * the DO copy is only a recent tail. `audit:` is no longer "never truncated"
- * in the DO — the durable, queryable record lives in D1.
- */
-const AUDIT_KEEP = 1024;
 
 /**
  * Cadence (ms) at which the housekeeping alarm re-fires while a room stays
@@ -260,6 +286,8 @@ export class RoomDO implements DurableObject {
   #ecellOrder: string[] | null = null;
   /** Whether the housekeeping alarm is known to be armed (cheap dedupe). */
   #alarmArmed = false;
+  #roomRateWindowStartedAt = 0;
+  #roomRateMessageCount = 0;
   /**
    * Cached room name — set from `?name=…` on each request and retained
    * for cross-sheet formula resolution (so sibling DO lookups can skip
@@ -274,6 +302,14 @@ export class RoomDO implements DurableObject {
    * request.
    */
   #accessMeta: { access: unknown; acl: unknown } | null = null;
+  /**
+   * Isolate-local AuthDO verification memo, keyed by opaque session
+   * token (see `SESSION_VERIFY_TTL_MS`). Insertion-ordered, so the
+   * oldest entry is evicted once `SESSION_VERIFY_CAP` distinct tokens
+   * are retained — an attacker cycling tokens pays the AuthDO round
+   * trip they would have paid anyway, and cannot grow this map.
+   */
+  #sessionVerifications = new Map<string, SessionVerification>();
 
   constructor(state: DurableObjectState, env: Env) {
     this.#state = state;
@@ -298,14 +334,15 @@ export class RoomDO implements DurableObject {
     const roomName = url.searchParams.get('name');
     if (roomName) this.#ownName = roomName;
     // Worker-internal capability and operator paths bypass the generic ACL
-    // gate. None serve sheet content: `/_do/access` returns only a
-    // DO-owned read/write verdict so the Worker can select the safe viewer
-    // surface; the PITR paths remain deployment-operator controlled.
+    // gate. None serve sheet content: access returns only a verdict, PITR is
+    // operator-authenticated, and fire-trigger is reached only by the Worker
+    // scheduler (the public compatibility route requires the operator token).
     const isGateExemptPath =
       path === '/_do/access' ||
       path === '/_do/ping' ||
       path === '/_do/pitr-restore' ||
-      path === '/_do/pitr-touch';
+      path === '/_do/pitr-touch' ||
+      path === '/_do/fire-trigger';
     if (!isGateExemptPath) {
       const purpose = request.method === 'GET' ? 'read' : 'write';
       if (!(await this.#isAuthorized(request, purpose))) {
@@ -353,7 +390,11 @@ export class RoomDO implements DurableObject {
     }
     const cellMatch = path.match(/^\/_do\/cells\/(.+)$/);
     if (cellMatch && request.method === 'GET') {
-      return this.#getCell(decodeURIComponent(cellMatch[1]!));
+      try {
+        return this.#getCell(decodeURIComponent(cellMatch[1]!));
+      } catch {
+        return plainResponse('Bad Request', 400);
+      }
     }
     // ─── Phase 8: export routes ────────────────────────────────────────
     if (path === '/_do/html' && request.method === 'GET') {
@@ -589,10 +630,8 @@ export class RoomDO implements DurableObject {
     // headroom).
     const single = await this.#state.storage.get<string>(STORAGE_KEYS.snapshot);
     if (typeof single === 'string') return plainResponse(single);
-    const meta = await this.#state.storage.get<SnapshotMeta>(
-      STORAGE_KEYS.snapshotMeta,
-    );
-    if (meta === undefined || meta === null) return notFound();
+    const meta = await readSnapshotMeta(this.#state.storage);
+    if (meta === null) return notFound();
     // Chunked path: stream the reassembled save. Materializing a 148 MB
     // string into a Response body hits workerd's DO-response-size limit
     // (empirically ~96 MB on the paid plan); a streamed body bypasses
@@ -625,12 +664,13 @@ export class RoomDO implements DurableObject {
   async #putSnapshot(request: Request, roomName: string | null): Promise<Response> {
     const body = await request.text();
     let updatedAt = 0;
+    if (!isSnapshotWithinSheetLimits(body)) {
+      return plainResponse('snapshot exceeds sheet limits', 413);
+    }
     await this.#state.blockConcurrencyWhile(async () => {
       const accessEntries = await this.#readAccessEntries();
-      await this.#state.storage.deleteAll();
       updatedAt = Date.now();
-      // One batched put — chunked or single, always lands atomically.
-      await this.#state.storage.put({
+      await replaceStorageEntriesBatched(this.#state.storage, {
         ...accessEntries,
         ...snapshotEntries(body),
         [STORAGE_KEYS.metaUpdatedAt]: updatedAt,
@@ -642,10 +682,8 @@ export class RoomDO implements DurableObject {
       this.#resetVolatile();
     });
     await this.#mirrorIndex(roomName, updatedAt);
-    // Arm the housekeeping alarm so a room created/replaced via PUT and
-    // never subsequently edited still gets TTL expiry. `#putSnapshot`
-    // deleteAll's (which clears any pending alarm) and `#resetVolatile`s,
-    // so we must re-arm here — the command/chat/ecell write paths arm too.
+    // Keep housekeeping active so a room created/replaced via PUT and never
+    // subsequently edited still gets TTL expiry.
     await this.#armAlarm();
     return plainResponse('OK', 201);
   }
@@ -661,13 +699,14 @@ export class RoomDO implements DurableObject {
   async #postCommands(request: Request, roomName: string | null): Promise<Response> {
     const body = await request.text();
     if (!body) return plainResponse('', 202);
-    await this.#applyCommandAndMirror(roomName, body);
+    const applied = await this.#applyCommandAndMirror(roomName, body);
+    if (!applied) return plainResponse('command exceeds sheet limits', 413);
     // HTTP commands have no originating socket to exclude. Fan out only
     // after persistence succeeds; native WS commands use handleExecute's
     // separate broadcast path and never enter #postCommands.
     const broadcastRoom = roomName ?? this.#ownName;
     if (broadcastRoom) {
-      this.#broadcastAll({
+      await this.#broadcastAll({
         type: 'execute',
         room: broadcastRoom,
         user: '',
@@ -684,18 +723,30 @@ export class RoomDO implements DurableObject {
    * the WS path, `/_rooms` and `/_roomtimes` go stale whenever a browser
    * client edits a fresh room (found during 2026-04-20 browser smoke).
    */
-  async #applyCommandAndMirror(roomName: string | null, cmdstr: string): Promise<void> {
-    let auditSeq = 0;
-    let updatedAt = 0;
-    await this.#state.blockConcurrencyWhile(async () => {
-      const applied = await this.#appendCommand(cmdstr);
-      auditSeq = applied.auditSeq;
-      updatedAt = applied.ts;
-    });
-    await this.#mirrorIndex(roomName, updatedAt);
+  async #applyCommandAndMirror(
+    roomName: string | null,
+    cmdstr: string,
+  ): Promise<boolean> {
+    const applied = await this.#state.blockConcurrencyWhile(() =>
+      this.#appendCommand(cmdstr),
+    );
+    if (applied === null) return false;
+    await this.#mirrorIndex(roomName, applied.ts);
     // Offload the audit entry to D1 (the durable record) so the alarm's DO
     // audit-trim doesn't lose it. Best-effort, outside the lock.
-    await this.#mirrorAudit(roomName, [{ seq: auditSeq, ts: updatedAt, body: cmdstr }]);
+    await this.#mirrorAudit(roomName, [
+      {
+        seq: applied.auditSeq,
+        ts: applied.ts,
+        body: applied.auditBody,
+      },
+    ]);
+    if (applied.auditSeq >= AUDIT_HISTORY_KEEP) {
+      await this.#state.storage.delete(
+        auditKey(applied.auditSeq - AUDIT_HISTORY_KEEP),
+      );
+    }
+    return true;
   }
 
   async #deleteAll(
@@ -902,7 +953,7 @@ export class RoomDO implements DurableObject {
   async #postRename(request: Request): Promise<Response> {
     const parsed = (await request.json()) as { to?: unknown };
     const to = parsed.to;
-    if (typeof to !== 'string' || to.length === 0) {
+    if (!isValidRoomName(to)) {
       return new Response('rename body must be {to: string}', { status: 400 });
     }
     if (
@@ -922,7 +973,9 @@ export class RoomDO implements DurableObject {
       // No-op: legacy `if snapshot` guard at main.ls:427 -- nothing to rename.
       return new Response(null, { status: 204 });
     }
-    const targetStub = this.#env.ROOM.get(this.#env.ROOM.idFromName(to));
+    const targetStub = this.#env.ROOM.get(
+      this.#env.ROOM.idFromName(encodeRoom(to)),
+    );
     const installRes = await targetStub.fetch('https://do.local/_do/install', {
       method: 'POST',
       body: JSON.stringify({ snapshot, log, audit }),
@@ -949,7 +1002,7 @@ export class RoomDO implements DurableObject {
   async #postClone(request: Request): Promise<Response> {
     const parsed = (await request.json()) as { to?: unknown };
     const to = parsed.to;
-    if (typeof to !== 'string' || to.length === 0) {
+    if (!isValidRoomName(to)) {
       return new Response('clone body must be {to: string}', { status: 400 });
     }
     // A clone copies this room's snapshot into a PUBLIC target — on a
@@ -1025,16 +1078,6 @@ export class RoomDO implements DurableObject {
     const logTail = (payload.log as string[]).slice(-LOG_RING);
     await this.#state.blockConcurrencyWhile(async () => {
       const accessEntries = await this.#readAccessEntries();
-      await this.#state.storage.deleteAll();
-      // One batched `storage.put(entries)` call instead of N
-      // sequential awaits. Each individual `put` is a subrequest
-      // against the DO's SQLite, billed against the request's
-      // 10-ms-CPU budget on the Workers free tier (and a seed for a
-      // room with a 26 KB snapshot + a handful of log entries can hit
-      // that limit). A single entries-object put batches the whole
-      // seed into one transactional write, dropping CPU below the
-      // ceiling. DO storage supports up to 128 keys per call — well
-      // above what a real dump row ever carries.
       const entries: Record<string, unknown> = {
         ...accessEntries,
         [STORAGE_KEYS.metaUpdatedAt]: payload.updatedAt,
@@ -1061,7 +1104,8 @@ export class RoomDO implements DurableObject {
       for (const [user, cell] of Object.entries(payload.ecell)) {
         entries[ecellKey(user)] = cell;
       }
-      await this.#state.storage.put(entries);
+
+      await replaceStorageEntriesBatched(this.#state.storage, entries);
       this.#ss = null;
       this.#nextLogSeq = logTail.length;
       this.#nextAuditSeq = payload.audit.length;
@@ -1156,13 +1200,18 @@ export class RoomDO implements DurableObject {
       seq < 0 ||
       !Number.isInteger(chunks) ||
       chunks < 1 ||
+      chunks > MAX_SNAPSHOT_CHUNKS ||
       seq >= chunks
     ) {
       return new Response('seq/chunks must be integers with 0 ≤ seq < chunks', {
         status: 400,
       });
     }
-    const body = await request.text();
+    const bytes = await request.arrayBuffer();
+    if (bytes.byteLength > SNAPSHOT_CHUNK_BYTES) {
+      return plainResponse('snapshot chunk exceeds 100 KiB', 413);
+    }
+    const body = new TextDecoder().decode(bytes);
     const isFinal = seq === chunks - 1;
     let updatedAt = 0;
     await this.#state.blockConcurrencyWhile(async () => {
@@ -1177,18 +1226,20 @@ export class RoomDO implements DurableObject {
       // or it's absent, both fine.
       const priorMeta = await readSnapshotMeta(this.#state.storage);
       updatedAt = Date.now();
-      await this.#state.storage.put({
-        [snapshotChunkKey(seq)]: body,
-        [STORAGE_KEYS.snapshotMeta]: { chunks } satisfies SnapshotMeta,
-        [STORAGE_KEYS.metaUpdatedAt]: updatedAt,
-      });
       const stale: string[] = [STORAGE_KEYS.snapshot];
       if (priorMeta !== null) {
         for (let i = chunks; i < priorMeta.chunks; i++) {
           stale.push(snapshotChunkKey(i));
         }
       }
-      await this.#state.storage.delete(stale);
+      await this.#state.storage.transaction(async (txn) => {
+        await txn.put({
+          [snapshotChunkKey(seq)]: body,
+          [STORAGE_KEYS.snapshotMeta]: { chunks } satisfies SnapshotMeta,
+          [STORAGE_KEYS.metaUpdatedAt]: updatedAt,
+        });
+        await deleteStorageKeysBatched(txn, stale);
+      });
       // Next `#getSpreadsheet` will rehydrate from the reassembled save.
       this.#ss = null;
     });
@@ -1225,7 +1276,6 @@ export class RoomDO implements DurableObject {
     const logTail = (log as string[]).slice(-LOG_RING);
     await this.#state.blockConcurrencyWhile(async () => {
       const accessEntries = await this.#readAccessEntries();
-      await this.#state.storage.deleteAll();
       const entries: Record<string, unknown> = {
         ...accessEntries,
         ...snapshotEntries(foldedSnapshot),
@@ -1237,7 +1287,7 @@ export class RoomDO implements DurableObject {
       for (let i = 0; i < audit.length; i++) {
         entries[auditKey(i)] = audit[i] as string;
       }
-      await this.#state.storage.put(entries);
+      await replaceStorageEntriesBatched(this.#state.storage, entries);
       this.#ss = null;
       this.#nextLogSeq = logTail.length;
       this.#nextAuditSeq = audit.length;
@@ -1278,6 +1328,9 @@ export class RoomDO implements DurableObject {
     if (snapshot === null) {
       return plainResponse('init-private body.snapshot must be string', 400);
     }
+    if (!isSnapshotWithinSheetLimits(snapshot)) {
+      return plainResponse('init-private snapshot exceeds sheet limits', 413);
+    }
     const acl = 'acl' in raw ? raw.acl : null;
     if (
       acl === null ||
@@ -1301,23 +1354,22 @@ export class RoomDO implements DurableObject {
     if (acl.owner !== uid) {
       return plainResponse('Forbidden', 403);
     }
+    const privateEntries = {
+      ...snapshotEntries(snapshot),
+      [STORAGE_KEYS.metaAccess]: 'private',
+      [STORAGE_KEYS.metaAcl]: {
+        owner: acl.owner,
+        readers: acl.readers,
+        writers: acl.writers,
+      },
+      ...(group === undefined ? {} : { [STORAGE_KEYS.metaGroup]: group }),
+      [STORAGE_KEYS.metaUpdatedAt]: Date.now(),
+    };
     const created = await this.#state.blockConcurrencyWhile(() =>
       this.#state.storage.transaction(async (txn) => {
         const existing = await txn.list({ limit: 1 });
         if (existing.size > 0) return false;
-        await txn.put({
-          ...snapshotEntries(snapshot),
-          [STORAGE_KEYS.metaAccess]: 'private',
-          [STORAGE_KEYS.metaAcl]: {
-            owner: acl.owner,
-            readers: acl.readers,
-            writers: acl.writers,
-          },
-          ...(group === undefined
-            ? {}
-            : { [STORAGE_KEYS.metaGroup]: group }),
-          [STORAGE_KEYS.metaUpdatedAt]: Date.now(),
-        });
+        await putStorageEntriesBatched(txn, privateEntries);
         return true;
       }),
     );
@@ -1382,7 +1434,7 @@ export class RoomDO implements DurableObject {
     if (!parsed) return plainResponse('', 200);
     const sender = buildEmailSender(this.#env);
     const { message } = await sender.send(parsed.to, parsed.subject, parsed.body);
-    this.#broadcastAll({ type: 'confirmemailsent', message });
+    await this.#broadcastAll({ type: 'confirmemailsent', message });
     return plainResponse('', 200);
   }
 
@@ -1390,8 +1442,8 @@ export class RoomDO implements DurableObject {
 
   /**
    * `GET /_do/ws?user=<user>&auth=<hmac>` — upgrade to WebSocket using the
-   * hibernation API. We attach `{user, room, auth}` so downstream handlers
-   * can gate writes without re-verifying on every frame.
+   * hibernation API. The attachment binds the room/user plus any verified
+   * session token so private-room frames can honor logout revocation.
    */
   #acceptWebSocket(request: Request): Response {
     if (request.headers.get('Upgrade') !== 'websocket') {
@@ -1412,6 +1464,7 @@ export class RoomDO implements DurableObject {
      */
     const uid = request.headers.get('X-EC-Uid');
     const sessionExpHeader = request.headers.get('X-EC-Session-Exp');
+    const session = request.headers.get('X-EC-Session');
     /* istanbul ignore next -- workerd-only WebSocket attachment wiring */
     const sessionExp =
       sessionExpHeader === null ? null : Number(sessionExpHeader);
@@ -1424,6 +1477,7 @@ export class RoomDO implements DurableObject {
       ...(sessionExp === null || !Number.isFinite(sessionExp)
         ? {}
         : { sessionExp }),
+      ...(session === null ? {} : { session }),
     };
     return upgradeWebSocket(this.#state, request, wsOpts);
   }
@@ -1463,24 +1517,146 @@ export class RoomDO implements DurableObject {
     const attachment =
       (ws.deserializeAttachment() as WsAttachment | null) ??
       { user: '', room: '', auth: '' };
-    if (this.#closeExpiredSessionSocket(ws, attachment)) return;
+    const messageSize =
+      typeof message === 'string' ? message.length : message.byteLength;
+    if (messageSize > MAX_WS_FRAME_CHARS) {
+      try {
+        ws.close(1009, 'Message too large');
+      } catch {
+        // The peer may already be gone.
+      }
+      return;
+    }
+    if (this.#rateLimitSocket(ws, attachment)) return;
     if (typeof message !== 'string') return;
-    // Per-frame byte cap — drop oversized frames before parsing so a
-    // single client can't force a multi-MB JSON.parse + storage write.
-    if (message.length > MAX_FRAME) return;
+    if (
+      await this.#closeUnauthorizedPrivateSocket(
+        ws,
+        attachment,
+        'read-or-write',
+      )
+    ) {
+      return;
+    }
     if (attachment.legacy) {
       await this.#handleLegacyFrame(ws, attachment, message);
       return;
     }
     const parsed = parseClientMessage(message);
-    if (!parsed) return;
-    // Auth-bearing message variants (`execute`, `ecell`, `stopHuddle`)
-    // carry their own `auth` string; others never do. Default to empty so
-    // the downstream `verifyAuth` treats it as view-only.
+    if (!parsed || !attachment.room) return;
+    // Every room-labelled frame stays on its accepted socket. `ask.recalc`
+    // is the one legacy exception: its room names a cross-sheet reference,
+    // while this DO supplies the current cached snapshot.
+    if (parsed.type !== 'ask.recalc' && parsed.room !== attachment.room) return;
+    // The handshake defines the cosmetic user identity for this socket.
+    // Canonical parsing produced a fresh object, so rebinding cannot mutate
+    // caller-owned state.
+    if ('user' in parsed) parsed.user = attachment.user;
     const perMessageAuth =
-      'auth' in parsed && typeof parsed.auth === 'string' ? parsed.auth : '';
-    const ctx = this.#buildWsContext(ws, attachment, parsed.room, perMessageAuth);
+      'auth' in parsed && typeof parsed.auth === 'string'
+        ? parsed.auth
+        : attachment.auth;
+    const ctx = this.#buildWsContext(
+      ws,
+      attachment,
+      attachment.room,
+      perMessageAuth,
+    );
     await dispatchWsMessage(ctx, parsed);
+  }
+
+
+  #rateLimitSocket(ws: WebSocket, attachment: WsAttachment): boolean {
+    const now = Date.now();
+    const startedAt = attachment.rateWindowStartedAt;
+    const inCurrentWindow =
+      typeof startedAt === 'number' &&
+      Number.isFinite(startedAt) &&
+      now >= startedAt &&
+      now - startedAt < WS_RATE_WINDOW_MS;
+    const priorCount =
+      typeof attachment.rateMessageCount === 'number' &&
+      Number.isFinite(attachment.rateMessageCount) &&
+      attachment.rateMessageCount >= 0
+        ? attachment.rateMessageCount
+        : 0;
+    const rateMessageCount = inCurrentWindow ? priorCount + 1 : 1;
+    const rateWindowStartedAt = inCurrentWindow ? startedAt : now;
+
+    // A hibernated object can be reconstructed between frames. Recover the
+    // aggregate window once from per-socket attachments so eviction cannot
+    // reset the room-wide amplification limit.
+    if (this.#roomRateWindowStartedAt === 0) {
+      let restoredCount = 0;
+      let restoredStartedAt = now;
+      let sawCurrentSocket = false;
+      for (const peer of this.#state.getWebSockets()) {
+        if (peer === ws) sawCurrentSocket = true;
+        let peerAttachment: WsAttachment | null = null;
+        try {
+          peerAttachment = peer.deserializeAttachment() as WsAttachment | null;
+        } catch {
+          continue;
+        }
+        const peerStartedAt = peerAttachment?.rateWindowStartedAt;
+        const peerCount = peerAttachment?.rateMessageCount;
+        if (
+          typeof peerStartedAt === 'number' &&
+          Number.isFinite(peerStartedAt) &&
+          now >= peerStartedAt &&
+          now - peerStartedAt < WS_RATE_WINDOW_MS &&
+          typeof peerCount === 'number' &&
+          Number.isFinite(peerCount) &&
+          peerCount >= 0
+        ) {
+          restoredStartedAt = Math.min(restoredStartedAt, peerStartedAt);
+          restoredCount += Math.min(peerCount, MAX_WS_MESSAGES_PER_WINDOW);
+        }
+      }
+      if (!sawCurrentSocket && inCurrentWindow) {
+        restoredStartedAt = Math.min(restoredStartedAt, rateWindowStartedAt);
+        restoredCount += Math.min(priorCount, MAX_WS_MESSAGES_PER_WINDOW);
+      }
+      this.#roomRateWindowStartedAt = restoredStartedAt;
+      this.#roomRateMessageCount = restoredCount;
+    }
+
+    const roomInCurrentWindow =
+      now >= this.#roomRateWindowStartedAt &&
+      now - this.#roomRateWindowStartedAt < WS_RATE_WINDOW_MS;
+    if (roomInCurrentWindow) {
+      this.#roomRateMessageCount += 1;
+    } else {
+      this.#roomRateWindowStartedAt = now;
+      this.#roomRateMessageCount = 1;
+    }
+    try {
+      ws.serializeAttachment({
+        ...attachment,
+        rateWindowStartedAt,
+        rateMessageCount,
+      } satisfies WsAttachment);
+    } catch {
+      try {
+        ws.close(1011, 'Attachment state unavailable');
+      } catch {
+        // The peer may already be gone.
+      }
+      return true;
+    }
+    const socketExceeded = rateMessageCount > MAX_WS_MESSAGES_PER_WINDOW;
+    const roomExceeded =
+      this.#roomRateMessageCount > MAX_ROOM_WS_MESSAGES_PER_WINDOW;
+    if (!socketExceeded && !roomExceeded) return false;
+    try {
+      ws.close(
+        1008,
+        roomExceeded ? 'Room message rate exceeded' : 'Message rate exceeded',
+      );
+    } catch {
+      // The peer may already be gone.
+    }
+    return true;
   }
 
   /**
@@ -1518,7 +1694,8 @@ export class RoomDO implements DurableObject {
       if (parsed.type !== 'execute') return;
       if (isFilteredExecuteCommand(parsed.cmdstr)) return;
       const room = parsed.room;
-      if (!room) return;
+      const auth = parsed.auth ?? attachment.auth;
+      if (!(await verifyAuth(this.#env.ETHERCALC_KEY, room, auth))) return;
       try {
         const stub = this.#env.ROOM.get(
           this.#env.ROOM.idFromName(encodeRoom(room)),
@@ -1534,9 +1711,20 @@ export class RoomDO implements DurableObject {
     }
 
     // Room-scoped legacy socket: full native dispatch with framing on send.
+    // Same room-binding invariant as the native path. Cross-sheet
+    // `ask.recalc` keeps its legacy target-room label.
+    if (parsed.type !== 'ask.recalc' && parsed.room !== attachment.room) return;
+    if ('user' in parsed) parsed.user = attachment.user;
     const perMessageAuth =
-      'auth' in parsed && typeof parsed.auth === 'string' ? parsed.auth : '';
-    const ctx = this.#buildWsContext(ws, attachment, parsed.room, perMessageAuth);
+      'auth' in parsed && typeof parsed.auth === 'string'
+        ? parsed.auth
+        : attachment.auth;
+    const ctx = this.#buildWsContext(
+      ws,
+      attachment,
+      attachment.room,
+      perMessageAuth,
+    );
     await dispatchWsMessage(ctx, parsed);
   }
 
@@ -1556,9 +1744,8 @@ export class RoomDO implements DurableObject {
    * deliberately small: captured closures over `this` that translate
    * handler calls into storage I/O, socket sends, and sibling-DO fetches.
    *
-   * The `room` arg is taken from the incoming message (not the handshake
-   * attachment) because legacy clients sometimes multiplex a single WS
-   * across multiple rooms — the per-frame `room` is the authority.
+   * State-changing frames are room-bound before this method is called.
+   * Read/poll message room fields remain decorative for legacy parity.
    */
   #buildWsContext(
     ws: WebSocket,
@@ -1581,19 +1768,19 @@ export class RoomDO implements DurableObject {
         }
       },
       appendLog: (prefix, value) =>
-        this.#appendLogEntry(prefix, value, attachment.room || messageRoom),
+        this.#appendLogEntry(prefix, value, attachment.room),
       getSnapshot: async () => (await readSnapshot(this.#state.storage)) ?? undefined,
       deleteAll: async () => {
         // WS `stopHuddle` is the hot path. Mirror the HTTP DELETE flow:
         // wipe storage AND drop the D1 index row so `/_rooms`,
         // `/_roomlinks`, and `/_roomtimes` stop listing the dead room.
-        // Uses the handshake attachment room (falls back to the frame's
-        // `room` when the attachment is empty — see #applyCommandAndMirror
-        // for the rationale). The handler enforces auth before calling
-        // this, so we don't need to re-verify here.
-        const nameToUnindex = attachment.room || messageRoom;
+        // Always the handshake room: a frame naming another room never
+        // reaches dispatch (`webSocketMessage` drops it), so the
+        // attacker-supplied `room` field can't unindex a third party.
+        // The handler enforces auth before calling this, so we don't
+        // need to re-verify here.
         await this.#deleteAllAndUnindex(
-          nameToUnindex,
+          attachment.room,
           true,
           attachment.uid ?? null,
         );
@@ -1609,16 +1796,25 @@ export class RoomDO implements DurableObject {
         // Mirror the DO's own room (from the WS handshake attachment),
         // not the per-frame `room` field, because the append lands in
         // *this* DO's storage regardless of what room the frame names.
-        // For normal (non-multiplexed) clients the two are equal.
-        const nameToMirror = attachment.room || messageRoom;
-        await this.#applyCommandAndMirror(nameToMirror, cmdstr);
+        const applied = await this.#applyCommandAndMirror(
+          attachment.room,
+          cmdstr,
+        );
+        if (!applied) {
+          try {
+            ws.close(1008, 'Command exceeds sheet limits');
+          } catch {
+            // The peer may already be gone.
+          }
+        }
+        return applied;
       },
       broadcast: async (msg, includeSelf) => {
-        if (includeSelf) this.#broadcastAll(msg);
-        else this.#broadcast(ws, msg);
+        if (includeSelf) await this.#broadcastAll(msg);
+        else await this.#broadcast(ws, msg);
       },
       reply: async (msg) => {
-        this.#sendTo(ws, msg);
+        await this.#sendTo(ws, msg);
       },
       verifyAuth: async () => {
         // Sandstorm viewers lack `modify` — block WS writes (SH-6).
@@ -1636,13 +1832,13 @@ export class RoomDO implements DurableObject {
           // the legacy HMAC — an old ?auth= token must not bypass the
           // ACL, and members must not need one. The uid comes from the
           // handshake attachment, minted from the verified session.
+          // `webSocketMessage` closes any private-room socket without a
+          // verified uid before dispatch, so the null arm is unreachable
+          // defense in depth for a future caller of this closure.
           const uid = attachment.uid;
-          return authorizeRoom(
-            'write',
-            uid === undefined ? null : { uid },
-            access,
-            acl,
-          );
+          /* istanbul ignore next -- @preserve: private gate guarantees a uid */
+          const principal = uid === undefined ? null : { uid };
+          return authorizeRoom('write', principal, access, acl);
         }
         // Execute/ecell/stopHuddle carry their own per-message `auth`
         // string; legacy verified against that field (src/main.ls:516).
@@ -1708,7 +1904,84 @@ export class RoomDO implements DurableObject {
     return true;
   }
 
-  #sendTo(ws: WebSocket, msg: ServerMessage): void {
+  /**
+   * Verify an opaque session token against the singleton AuthDO,
+   * reusing a recent in-isolate result when one is still fresh.
+   */
+  #verifySession(session: string): Promise<SessionPrincipal | null> {
+    const now = Date.now();
+    const cached = this.#sessionVerifications.get(session);
+    if (cached !== undefined && now - cached.at < SESSION_VERIFY_TTL_MS) {
+      return cached.principal;
+    }
+    // `verifyAuthSession` folds every failure into `null`, so a cached
+    // promise can never be a sticky rejection.
+    const principal = verifyAuthSession(this.#env, session);
+    // Re-insert so the refreshed token becomes the newest entry, then
+    // drop from the oldest end until the retention cap holds.
+    this.#sessionVerifications.delete(session);
+    this.#sessionVerifications.set(session, { at: now, principal });
+    for (const token of this.#sessionVerifications.keys()) {
+      if (this.#sessionVerifications.size <= SESSION_VERIFY_CAP) break;
+      this.#sessionVerifications.delete(token);
+    }
+    return principal;
+  }
+
+  async #closeUnauthorizedPrivateSocket(
+    ws: WebSocket,
+    attachment?: WsAttachment | null,
+    purpose: 'read' | 'read-or-write' = 'read',
+  ): Promise<boolean> {
+    let stored = attachment;
+    if (stored === undefined) {
+      try {
+        stored = ws.deserializeAttachment() as WsAttachment | null;
+      } catch {
+        try {
+          ws.close(1008, 'Session invalid');
+        } catch {
+          // The socket may already be closed.
+        }
+        return true;
+      }
+    }
+    if (this.#closeExpiredSessionSocket(ws, stored)) return true;
+    const { access, acl } = await this.#getAccessMeta();
+    if (access !== 'private') return false;
+    if (
+      !stored ||
+      stored.uid === undefined ||
+      stored.session === undefined
+    ) {
+      try {
+        ws.close(1008, 'Session invalid');
+      } catch {
+        // The socket may already be closed.
+      }
+      return true;
+    }
+    const principal = await this.#verifySession(stored.session);
+    const authorized =
+      principal !== null &&
+      principal.uid === stored.uid &&
+      principal.exp === stored.sessionExp &&
+      (authorizeRoom('read', principal, access, acl) ||
+        (purpose === 'read-or-write' &&
+          authorizeRoom('write', principal, access, acl)));
+    if (authorized) return false;
+    try {
+      ws.close(1008, 'Session invalid');
+    } catch {
+      // The socket may already be closed.
+    }
+    return true;
+  }
+
+
+  async #sendTo(ws: WebSocket, msg: ServerMessage): Promise<void> {
+    // The inbound frame already passed the private-session check. Re-check
+    // expiry synchronously before replying without a duplicate AuthDO call.
     if (this.#closeExpiredSessionSocket(ws)) return;
     try {
       ws.send(this.#frameFor(ws, msg));
@@ -1723,24 +1996,32 @@ export class RoomDO implements DurableObject {
     return att?.legacy ? nativeToSocketIoEvent(msg) : encodeMessage(msg);
   }
 
-  /** Send to every peer except `skip`. */
-  #broadcast(skip: WebSocket, msg: ServerMessage): void {
-    for (const peer of this.#state.getWebSockets()) {
-      if (peer === skip || this.#closeExpiredSessionSocket(peer)) continue;
+  /** Send to every authorized peer except `skip`. */
+  async #broadcast(skip: WebSocket, msg: ServerMessage): Promise<void> {
+    const peers = this.#state.getWebSockets().filter((peer) => peer !== skip);
+    const denied = await Promise.all(
+      peers.map((peer) => this.#closeUnauthorizedPrivateSocket(peer)),
+    );
+    for (let i = 0; i < peers.length; i += 1) {
+      if (denied[i]) continue;
       try {
-        peer.send(this.#frameFor(peer, msg));
+        peers[i]!.send(this.#frameFor(peers[i]!, msg));
       } catch {
         // Skip dead peer; the rest still receive.
       }
     }
   }
 
-  /** Send to every peer (including the sender). Used by submitform. */
-  #broadcastAll(msg: ServerMessage): void {
-    for (const peer of this.#state.getWebSockets()) {
-      if (this.#closeExpiredSessionSocket(peer)) continue;
+  /** Send to every authorized peer (including the sender). */
+  async #broadcastAll(msg: ServerMessage): Promise<void> {
+    const peers = this.#state.getWebSockets();
+    const denied = await Promise.all(
+      peers.map((peer) => this.#closeUnauthorizedPrivateSocket(peer)),
+    );
+    for (let i = 0; i < peers.length; i += 1) {
+      if (denied[i]) continue;
       try {
-        peer.send(this.#frameFor(peer, msg));
+        peers[i]!.send(this.#frameFor(peers[i]!, msg));
       } catch {
         // Best-effort; individual peer errors are expected.
       }
@@ -1774,7 +2055,7 @@ export class RoomDO implements DurableObject {
   /** List entries under `prefix` as a `{key-without-prefix: value}` map. */
   async #listHash(prefix: string): Promise<Record<string, string>> {
     const map = await this.#state.storage.list<string>({ prefix });
-    const out: Record<string, string> = {};
+    const out = Object.create(null) as Record<string, string>;
     for (const [k, v] of map) out[k.slice(prefix.length)] = v;
     return out;
   }
@@ -1785,12 +2066,30 @@ export class RoomDO implements DurableObject {
    * for wrapping this in `blockConcurrencyWhile` when called from a
    * handler that needs serialization.
    */
-  async #appendCommand(body: string): Promise<{ auditSeq: number; ts: number }> {
+  async #appendCommand(
+    body: string,
+  ): Promise<{
+    auditSeq: number;
+    ts: number;
+    auditBody: string;
+  } | null> {
     const ss = await this.#getSpreadsheet();
+    const attribs = ss.exportSheetData().attribs;
+    if (
+      !isCommandBatchWithinLimits(body, {
+        rows: Number(attribs['lastrow'] ?? 1),
+        columns: Number(attribs['lastcol'] ?? 1),
+      })
+    ) {
+      return null;
+    }
     await this.#ensureSeqs();
     const logSeq = this.#nextLogSeq!;
     const auditSeq = this.#nextAuditSeq!;
     const ts = Date.now();
+    const auditBody = isStorageSafeCommand(body)
+      ? body
+      : `[oversized command omitted: ${body.length} UTF-16 code units]`;
     ss.executeCommand(body);
     // Cross-sheet formulas added in this command may have resolved to
     // `#NAME?` because the referenced siblings weren't in the formula
@@ -1799,52 +2098,50 @@ export class RoomDO implements DurableObject {
     await this.#hydrateCrossSheetRefs(ss, this.#ownName);
     const newSnapshot = ss.createSpreadsheetSave();
 
-    // Figure out the PRIOR snapshot layout so we can clean up stale
-    // chunk keys when the new save either (a) fits in the single-key
-    // fast path while the old one was chunked, or (b) uses fewer
-    // chunks than before. Without this cleanup, orphan chunks would
-    // silently extend the save on next read.
+    // Build one atomic snapshot/log/audit replacement. Both transitions need
+    // cleanup: chunked → single removes meta/chunks, while single → chunked
+    // removes the old fast-path key or readers would keep returning stale data.
     const priorMeta = await readSnapshotMeta(this.#state.storage);
     const newEntries = snapshotEntries(newSnapshot);
     const newMeta = newEntries[STORAGE_KEYS.snapshotMeta] as
       | { chunks: number }
       | undefined;
     const newChunkCount = newMeta?.chunks ?? 0;
-
-    await this.#state.storage.put({
-      ...newEntries,
-      [STORAGE_KEYS.metaUpdatedAt]: ts,
-      [logKey(logSeq)]: body,
-      [auditKey(auditSeq)]: body,
-    });
-
-    // Stale-chunk cleanup only runs when the prior layout had chunks
-    // we didn't overwrite: shrinking chunk count, or switching back to
-    // single-key. When prior was also single-key (no meta) the new
-    // single-key write already overwrote it and there's nothing to do.
+    const stale: string[] = [];
+    if (newMeta) {
+      stale.push(STORAGE_KEYS.snapshot);
+    } else if (priorMeta !== null) {
+      stale.push(STORAGE_KEYS.snapshotMeta);
+    }
     if (priorMeta !== null) {
-      const stale: string[] = [];
-      if (!(STORAGE_KEYS.snapshotMeta in newEntries)) {
-        stale.push(STORAGE_KEYS.snapshotMeta);
-      }
       for (let i = newChunkCount; i < priorMeta.chunks; i++) {
         stale.push(snapshotChunkKey(i));
       }
-      if (stale.length > 0) await this.#state.storage.delete(stale);
     }
-
-    // Ring-buffer the log: now that the snapshot is authoritative on
-    // hydrate, `log:` only needs to retain the most recent `LOG_RING`
-    // entries for client catch-up. Drop the entry that just fell off the
-    // tail. `audit:` is intentionally NOT trimmed.
     if (logSeq >= LOG_RING) {
-      await this.#state.storage.delete(logKey(logSeq - LOG_RING));
+      stale.push(logKey(logSeq - LOG_RING));
+    }
+    try {
+      await this.#state.storage.transaction(async (txn) => {
+        await putStorageEntriesBatched(txn, {
+          ...newEntries,
+          [STORAGE_KEYS.metaUpdatedAt]: ts,
+          [logKey(logSeq)]: auditBody,
+          [auditKey(auditSeq)]: auditBody,
+        });
+        await deleteStorageKeysBatched(txn, stale);
+      });
+    } catch (error) {
+      // `ss` already executed the command. Drop the mutated cache so a
+      // rolled-back write cannot leak into later requests in this isolate.
+      this.#ss = null;
+      throw error;
     }
 
     this.#nextLogSeq = logSeq + 1;
     this.#nextAuditSeq = auditSeq + 1;
     await this.#armAlarm();
-    return { auditSeq, ts };
+    return { auditSeq, ts, auditBody };
   }
 
   // ─── Internals ─────────────────────────────────────────────────────────
@@ -1900,7 +2197,7 @@ export class RoomDO implements DurableObject {
       method: 'GET',
     });
     if (res.status !== 200) return null;
-    const text = await res.text();
+    const text = await readBoundedResponseText(res);
     return text || null;
   }
 
@@ -2044,6 +2341,9 @@ export class RoomDO implements DurableObject {
     // Mirror to the durable D1 `chat_log` so the alarm's chat-trim drops only
     // entries that are already durable there. Best-effort, outside the lock.
     await this.#mirrorChat(roomName, [{ seq, ts: Date.now(), body: message }]);
+    if (seq >= CHAT_HISTORY_KEEP) {
+      await this.#state.storage.delete(chatKey(seq - CHAT_HISTORY_KEEP));
+    }
     return seq;
   }
 
@@ -2158,13 +2458,15 @@ export class RoomDO implements DurableObject {
         return;
       }
     }
-    // (a) Trim the DO copies of chat + audit to a recent tail. The full
-    // record is mirrored to D1 (chat_log / audit_log) at append time, so the
-    // dropped oldest entries stay durable there.
-    const chatTrimmed = await this.#trimTail(STORAGE_KEYS.chatPrefix, CHAT_KEEP);
+    // (a) Catch up tails from migrated or pre-cap state. Normal append paths
+    // evict one oldest row immediately; the alarm handles existing overflow.
+    const chatTrimmed = await this.#trimTail(
+      STORAGE_KEYS.chatPrefix,
+      CHAT_HISTORY_KEEP,
+    );
     const auditTrimmed = await this.#trimTail(
       STORAGE_KEYS.auditPrefix,
-      AUDIT_KEEP,
+      AUDIT_HISTORY_KEEP,
     );
     // Invariant: write paths call `#armAlarm()`; this gate only decides
     // whether the idle cadence continues. See method doc above for the
@@ -2189,7 +2491,10 @@ export class RoomDO implements DurableObject {
     const keys = Array.from(map.keys());
     if (keys.length <= keep) return false;
     // list() returns ascending key order; the oldest are at the front.
-    await this.#state.storage.delete(keys.slice(0, keys.length - keep));
+    await deleteStorageKeysBatched(
+      this.#state.storage,
+      keys.slice(0, keys.length - keep),
+    );
     return true;
   }
 
@@ -2198,7 +2503,7 @@ export class RoomDO implements DurableObject {
     const map = await this.#state.storage.list<string>({
       prefix: STORAGE_KEYS.ecellPrefix,
     });
-    const out: Record<string, string> = {};
+    const out = Object.create(null) as Record<string, string>;
     for (const [k, v] of map) {
       out[k.slice(STORAGE_KEYS.ecellPrefix.length)] = v;
     }

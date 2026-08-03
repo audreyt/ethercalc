@@ -116,20 +116,30 @@ spikes/                   Immutable research provenance (not the maintained work
 ## Session log
 
 Per-session history is in `docs/historic/REWRITE_ULTRAPLAN.md` §14 (append-only,
-newest last). Latest: merged passkey accounts + private sheets (Phase A) from
-`feat/passkey-permissions` (PR #841) — WebAuthn `AuthDO` relying party with
-HttpOnly `ec_sess` sessions, RoomDO-enforced `meta:access`/`meta:acl` private
-rooms (atomic `init-private`, tombstoned deletes, index exclusion,
-deny-overrides WS), principal-threaded routes, dependency-free passkey UI,
-and WS session-expiry enforcement (`SessionPrincipal.exp`, fail-closed
-`#closeExpiredSessionSocket`). Rebased onto post-Vite+-migration main;
-Phase-B test-only hardening (auth-do.ts, auth-session.ts/authorize.ts/
-ws-upgrade.ts, rate-limit.ts/room-create-limit.ts) kept the mutation break
-threshold at 90 throughout rather than restoring the branch's stale 84 —
-live PR CI measured 90.22, local re-measurement 90.20, both clearing the
-floor. Prior: migrated the repository interface to Vite+ 0.2.4 — `vp`
-package/task/binary commands, catalogued Vite/Vitest dependencies, Vite+
-test aggregation, Oxlint replacing Biome with the prior rule contract,
-pinned `setup-vp` across CI/deploy/release workflows, and Vite+-spawned
-e2e fixtures. Bun 1.3.14 remains the native runtime and Docker/
-packed-package bootstrap exception.
+newest last). Latest: full security audit of `main` against prod
+`ethercalc.net`, with every confirmed finding fixed at its owning boundary —
+stored DOM XSS in the client graph panel, multi-sheet `postMessage`/TOC trust,
+per-message WS/Socket.IO authentication and attachment-room binding (no more
+client-supplied `parsed.room`), protocol-wide frame/chat/cell caps in
+`@ethercalc/shared`, bounded auth + import ingestion (body guard, ZIP/sheet/
+cell caps, bounded cross-sheet hydration), a gated `/_timetrigger` plus a
+scheduler that no longer treats refusals as fires, `__Host-ec_sess` with
+AuthDO-side revocation and per-IP ceremony limits, trusted-proxy correctness
+(`CF-Connecting-IP` only from the edge; nginx replaces forwarding headers),
+≥62-bit room IDs, `no-store` + global security headers, and an export
+sanitizer mirroring the client allowlist. CSP WebSocket authority is anchored
+on `ETHERCALC_ORIGIN` by `lib/csp.ts`, so a spoofed request `Host` cannot
+widen `connect-src`; unconfigured self-hosts retain a request-host fallback.
+Root-page inline scripts moved to five tracked `static/*.js` files, asserted
+by `scripts/build-assets.ts` (`script-src 'unsafe-inline'` is still required
+by SocialCalc's toolbar, so that move is hygiene, not a boundary). Infra:
+compat date 2026-07-21 (capnp in lockstep), `run_worker_first`, pinned base
+image, read-only containers, `automountServiceAccountToken: false`,
+fail-closed Helm passkey anchors.
+Mutation floors re-measured: worker 90.21, shared 99.69, socketio-shim 84.68,
+migrate 90.38, oracle-harness 83.46, client 77.61 — equivalent mutants carry
+written `// Stryker disable` justifications rather than padded tests.
+Prior: merged passkey accounts + private sheets (Phase A) from
+`feat/passkey-permissions` (PR #841) — WebAuthn `AuthDO` relying party,
+RoomDO-enforced `meta:access`/`meta:acl` private rooms, principal-threaded
+routes, dependency-free passkey UI, WS session-expiry enforcement.

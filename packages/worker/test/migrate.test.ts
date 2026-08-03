@@ -12,6 +12,7 @@ import {
 import { beforeAll, describe, it, expect } from 'vite-plus/test';
 
 import worker from '../src/index.ts';
+import { SNAPSHOT_CHUNK_BYTES } from '../src/lib/snapshot-storage.ts';
 
 const TOKEN = 'local-only-test-token';
 
@@ -319,6 +320,29 @@ describe('PUT /_migrate/snapshot-chunk/:room', () => {
       { ETHERCALC_MIGRATE_TOKEN: TOKEN },
     );
     expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when chunk metadata exceeds the snapshot cap', async () => {
+    const res = await request(
+      'PUT',
+      '/_migrate/snapshot-chunk/chunky-cap?seq=2048&chunks=2049',
+      { headers: { Authorization: `Bearer ${TOKEN}` }, body: 'chunk' },
+      { ETHERCALC_MIGRATE_TOKEN: TOKEN },
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 413 before dispatching a chunk above 100 KiB', async () => {
+    const res = await request(
+      'PUT',
+      '/_migrate/snapshot-chunk/chunky-large?seq=0&chunks=1',
+      {
+        headers: { Authorization: `Bearer ${TOKEN}` },
+        body: 'x'.repeat(SNAPSHOT_CHUNK_BYTES + 1),
+      },
+      { ETHERCALC_MIGRATE_TOKEN: TOKEN },
+    );
+    expect(res.status).toBe(413);
   });
 
   it('returns 400 when :room segment is empty (unreachable path, but asserted)', async () => {

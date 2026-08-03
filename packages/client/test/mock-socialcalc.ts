@@ -87,6 +87,7 @@ export interface FakeElement {
   tagName: string;
   id: string;
   innerHTML: string;
+  textContent: string;
   value: string;
   length: number;
   selectedIndex: number;
@@ -142,10 +143,28 @@ export function makeFakeCtx(): FakeCtx {
 }
 
 export function makeFakeElement(tagName: string, id: string): FakeElement {
+  let innerHtmlValue = '';
+  let textContentValue = '';
   const el: FakeElement = {
     tagName,
     id,
-    innerHTML: '',
+    get innerHTML(): string {
+      return innerHtmlValue;
+    },
+    set innerHTML(value: string) {
+      innerHtmlValue = value;
+      textContentValue = value;
+    },
+    get textContent(): string {
+      return textContentValue;
+    },
+    set textContent(value: string) {
+      textContentValue = value;
+      innerHtmlValue = value
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;');
+    },
     value: '',
     length: 0,
     selectedIndex: 0,

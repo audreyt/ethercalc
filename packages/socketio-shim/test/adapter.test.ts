@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vite-plus/test';
 import type { ClientMessage, ServerMessage } from '@ethercalc/shared/messages';
 import {
   createSocketIoShim,
+  MAX_SOCKET_IO_SESSIONS,
+  MAX_XHR_POLL_BYTES,
+  MAX_XHR_POLL_FRAMES,
+  MAX_XHR_POLL_QUEUE,
   type SocketIoShimOptions,
   type WebSocketLike,
 } from '../src/adapter.ts';
@@ -139,6 +143,51 @@ describe('handleHandshake', () => {
     const { shim } = makeShim();
     const body = await shim.handleHandshake(new Request('https://x/socket.io/1/')).text();
     expect(body.split(':').slice(1).join(':')).toBe('60:60:websocket,xhr-polling');
+  });
+
+  it('marks handshake responses non-cacheable', () => {
+    const { shim } = makeShim();
+    const response = shim.handleHandshake(
+      new Request('https://x/socket.io/1/'),
+    );
+    expect(response.headers.get('cache-control')).toBe('no-store');
+  });
+
+  it('prunes idle handshake sessions at the advertised close timeout', () => {
+    let now = 0;
+    const { shim } = makeShim({
+      closeTimeoutSec: 60,
+      now: () => now,
+    });
+    shim.handleHandshake(new Request('https://x/socket.io/1/'));
+    expect(shim.sessionCount).toBe(1);
+    now = 60_000;
+    shim.handleHandshake(new Request('https://x/socket.io/1/'));
+    expect(shim.sessionCount).toBe(1);
+  });
+
+  it('bounds unclaimed handshake sessions', () => {
+    const { shim } = makeShim();
+    for (let index = 0; index < MAX_SOCKET_IO_SESSIONS; index++) {
+      expect(
+        shim.handleHandshake(new Request('https://x/socket.io/1/')).status,
+      ).toBe(200);
+    }
+    const rejected = shim.handleHandshake(
+      new Request('https://x/socket.io/1/'),
+    );
+    expect(rejected.status).toBe(503);
+    expect(rejected.headers.get('retry-after')).toBe('60');
+  });
+
+  it('releases an unused handshake breadcrumb', async () => {
+    const { shim } = makeShim();
+    const response = shim.handleHandshake(
+      new Request('https://x/socket.io/1/'),
+    );
+    const sid = (await response.text()).split(':')[0]!;
+    shim.releaseHandshake(sid);
+    expect(shim.sessionCount).toBe(0);
   });
 });
 
@@ -390,6 +439,18 @@ describe('sendToClient', () => {
     const resp = await pending;
     expect((await resp.text()).startsWith('5:::')).toBe(true);
   });
+
+  it('closes a session instead of growing an unbounded poll queue', async () => {
+    const { shim } = makeShim();
+    const handshake = shim.handleHandshake(
+      new Request('https://x/socket.io/1/'),
+    );
+    const sid = (await handshake.text()).split(':')[0]!;
+    for (let index = 0; index <= MAX_XHR_POLL_QUEUE; index++) {
+      shim.sendToClient(sid, { type: 'ignore' });
+    }
+    expect(shim.sessionCount).toBe(0);
+  });
 });
 
 describe('handleXhrPoll', () => {
@@ -507,6 +568,78 @@ describe('handleXhrPoll', () => {
       VALID_SID,
     );
     expect(await resp.text()).toBe(encodeFrame({ type: PacketType.Heartbeat }));
+  });
+
+  it('expires an idle polling session instead of refreshing it from server heartbeats', async () => {
+    let now = 0;
+    const { shim, timers } = makeShim({
+      closeTimeoutSec: 60,
+      now: () => now,
+    });
+    await shim.handleXhrPoll(
+      new Request(`https://x/socket.io/1/xhr-polling/${VALID_SID}`),
+      VALID_SID,
+    );
+    expect(shim.sessionCount).toBe(1);
+    now = 60_000;
+    timers.advance();
+    expect(shim.sessionCount).toBe(0);
+    expect(timers.count()).toBe(0);
+  });
+
+  it('rejects a declared or streamed POST body beyond the byte cap', async () => {
+    const declared = await makeShim().shim.handleXhrPoll(
+      new Request(`https://x/socket.io/1/xhr-polling/${VALID_SID}`, {
+        method: 'POST',
+        headers: { 'Content-Length': String(MAX_XHR_POLL_BYTES + 1) },
+        body: 'x',
+      }),
+      VALID_SID,
+    );
+    expect(declared.status).toBe(413);
+
+    const streamed = await makeShim().shim.handleXhrPoll(
+      new Request(`https://x/socket.io/1/xhr-polling/${VALID_SID}`, {
+        method: 'POST',
+        body: 'x'.repeat(MAX_XHR_POLL_BYTES + 1),
+      }),
+      VALID_SID,
+    );
+    expect(streamed.status).toBe(413);
+  });
+
+  it('rejects a POST batch beyond the frame-count cap', async () => {
+    const body = Array.from(
+      { length: MAX_XHR_POLL_FRAMES + 1 },
+      () => '2::',
+    ).join('\ufffd');
+    const response = await makeShim().shim.handleXhrPoll(
+      new Request(`https://x/socket.io/1/xhr-polling/${VALID_SID}`, {
+        method: 'POST',
+        body,
+      }),
+      VALID_SID,
+    );
+    expect(response.status).toBe(413);
+  });
+
+  it('rejects a second outstanding poll without orphaning the first', async () => {
+    const { shim } = makeShim();
+    await shim.handleXhrPoll(
+      new Request(`https://x/socket.io/1/xhr-polling/${VALID_SID}`),
+      VALID_SID,
+    );
+    const first = shim.handleXhrPoll(
+      new Request(`https://x/socket.io/1/xhr-polling/${VALID_SID}`),
+      VALID_SID,
+    );
+    const second = await shim.handleXhrPoll(
+      new Request(`https://x/socket.io/1/xhr-polling/${VALID_SID}`),
+      VALID_SID,
+    );
+    expect(second.status).toBe(409);
+    shim.sendToClient(VALID_SID, { type: 'ignore' });
+    expect((await first).status).toBe(200);
   });
 });
 
@@ -674,5 +807,225 @@ describe('frame decoding robustness', () => {
 
     // And the frame decodes symmetrically.
     expect(decodeFrame(frame)?.type).toBe(PacketType.Event);
+  });
+});
+
+describe('session cap and teardown edges', () => {
+  function fillSessions(shim: ReturnType<typeof createSocketIoShim>): void {
+    for (let index = 0; index < MAX_SOCKET_IO_SESSIONS; index++) {
+      shim.handleHandshake(new Request('https://x/socket.io/1/'));
+    }
+  }
+
+  it('refuses a poll for an unseen sid once the session table is full', async () => {
+    const { shim } = makeShim();
+    fillSessions(shim);
+    const response = await shim.handleXhrPoll(
+      new Request(`https://x/socket.io/1/xhr-polling/${VALID_SID}`),
+      VALID_SID,
+    );
+    expect(response.status).toBe(503);
+  });
+
+  it('refuses a websocket upgrade for an unseen sid once the table is full', () => {
+    const { shim } = makeShim();
+    fillSessions(shim);
+    expect(
+      shim.handleWebSocketUpgrade(new Request('https://x/'), VALID_SID),
+    ).toBeNull();
+  });
+
+  it('ignores frames that arrive after the session is torn down', () => {
+    const { shim, clientMessages } = makeShim();
+    const ws = new FakeWebSocket();
+    shim.handleWebSocketUpgrade(new Request('https://x/'), VALID_SID)!.accept(ws);
+    // Client disconnect deletes the session…
+    ws.emit('message', { data: encodeFrame({ type: PacketType.Disconnect }) });
+    expect(shim.sessionCount).toBe(0);
+    // …a late frame on the same socket must not resurrect or crash it.
+    const msg: ClientMessage = { type: 'chat', room: 'r', user: 'u', msg: 'late' };
+    ws.emit('message', {
+      data: encodeFrame({
+        type: PacketType.Event,
+        data: JSON.stringify({ name: 'data', args: [msg] }),
+      }),
+    });
+    expect(clientMessages).toHaveLength(0);
+    expect(shim.sessionCount).toBe(0);
+  });
+
+  it('treats a bodyless POST as an empty batch', async () => {
+    const { shim, clientMessages } = makeShim();
+    const response = await shim.handleXhrPoll(
+      new Request(`https://x/socket.io/1/xhr-polling/${VALID_SID}`, {
+        method: 'POST',
+      }),
+      VALID_SID,
+    );
+    expect(response.status).toBe(200);
+    expect(clientMessages).toHaveLength(0);
+  });
+
+  it('rejects an oversized streamed POST even when cancelling it rejects', async () => {
+    const { shim } = makeShim();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(MAX_XHR_POLL_BYTES + 1));
+      },
+      cancel() {
+        return Promise.reject(new Error('cancel failed'));
+      },
+    });
+    const response = await shim.handleXhrPoll(
+      new Request(`https://x/socket.io/1/xhr-polling/${VALID_SID}`, {
+        method: 'POST',
+        body: stream,
+        // @ts-expect-error — undici requires duplex for a stream body.
+        duplex: 'half',
+      }),
+      VALID_SID,
+    );
+    expect(response.status).toBe(413);
+  });
+
+  it('keeps a claimed session when the handshake is released', async () => {
+    const { shim } = makeShim();
+    const handshake = shim.handleHandshake(new Request('https://x/socket.io/1/'));
+    const sid = (await handshake.text()).split(':')[0]!;
+    shim.handleWebSocketUpgrade(new Request('https://x/'), sid)!.accept(
+      new FakeWebSocket(),
+    );
+    shim.releaseHandshake(sid);
+    expect(shim.sessionCount).toBe(1);
+  });
+});
+
+describe('error responses and close reasons are stable', () => {
+  const TEXT_PLAIN = 'text/plain; charset=utf-8';
+
+  it('pins the handshake rejection bodies', async () => {
+    const { shim } = makeShim();
+    const notFound = shim.handleHandshake(
+      new Request('https://x/socket.io/1/websocket/abc'),
+    );
+    expect(notFound.status).toBe(404);
+    expect(await notFound.text()).toBe('Not Found');
+
+    for (let index = 0; index < MAX_SOCKET_IO_SESSIONS; index++) {
+      shim.handleHandshake(new Request('https://x/socket.io/1/'));
+    }
+    const full = shim.handleHandshake(new Request('https://x/socket.io/1/'));
+    expect(full.status).toBe(503);
+    expect(await full.text()).toBe('Service Unavailable');
+    // Clients back off for the advertised close timeout, not immediately.
+    expect(full.headers.get('Retry-After')).toBe('60');
+  });
+
+  it('pins the xhr-poll rejection bodies and content types', async () => {
+    const { shim } = makeShim();
+    const badSid = await shim.handleXhrPoll(
+      new Request('https://x/socket.io/1/xhr-polling/bad'),
+      'bad',
+    );
+    expect(await badSid.text()).toBe('Bad Request');
+
+    const tooLarge = await shim.handleXhrPoll(
+      new Request(`https://x/socket.io/1/xhr-polling/${VALID_SID}`, {
+        method: 'POST',
+        headers: { 'Content-Length': String(MAX_XHR_POLL_BYTES + 1) },
+        body: 'x',
+      }),
+      VALID_SID,
+    );
+    expect(await tooLarge.text()).toBe('Payload Too Large');
+
+    const tooManyFrames = await shim.handleXhrPoll(
+      new Request(`https://x/socket.io/1/xhr-polling/${VALID_SID}`, {
+        method: 'POST',
+        body: Array.from({ length: MAX_XHR_POLL_FRAMES + 1 }, () => '2::').join(
+          '\ufffd',
+        ),
+      }),
+      VALID_SID,
+    );
+    expect(await tooManyFrames.text()).toBe('Too Many Frames');
+
+    // A POST ack is the literal `1` with the socket.io text content type.
+    const ack = await shim.handleXhrPoll(
+      new Request(`https://x/socket.io/1/xhr-polling/${VALID_SID}`, {
+        method: 'POST',
+        body: '2::',
+      }),
+      VALID_SID,
+    );
+    expect(await ack.text()).toBe('1');
+    expect(ack.headers.get('content-type')).toBe(TEXT_PLAIN);
+
+    // Drain the connect ack, then park a poll and reject the second one.
+    const first = await shim.handleXhrPoll(
+      new Request(`https://x/socket.io/1/xhr-polling/${VALID_SID}`),
+      VALID_SID,
+    );
+    expect(first.headers.get('content-type')).toBe(TEXT_PLAIN);
+    const parked = shim.handleXhrPoll(
+      new Request(`https://x/socket.io/1/xhr-polling/${VALID_SID}`),
+      VALID_SID,
+    );
+    const conflict = await shim.handleXhrPoll(
+      new Request(`https://x/socket.io/1/xhr-polling/${VALID_SID}`),
+      VALID_SID,
+    );
+    expect(conflict.status).toBe(409);
+    expect(await conflict.text()).toBe('Poll already pending');
+    shim.sendToClient(VALID_SID, { type: 'ignore' } as unknown as ServerMessage);
+    const resolved = await parked;
+    expect(resolved.headers.get('content-type')).toBe(TEXT_PLAIN);
+  });
+
+  it('pins the close reason for each teardown path', () => {
+    const disconnect = makeShim();
+    const disconnectWs = new FakeWebSocket();
+    disconnect.shim
+      .handleWebSocketUpgrade(new Request('https://x/'), VALID_SID)!
+      .accept(disconnectWs);
+    disconnectWs.emit('message', {
+      data: encodeFrame({ type: PacketType.Disconnect }),
+    });
+    expect(disconnectWs.closed?.reason).toBe('client disconnected');
+
+    const overflow = makeShim();
+    const overflowWs = new FakeWebSocket();
+    overflow.shim
+      .handleWebSocketUpgrade(new Request('https://x/'), VALID_SID)!
+      .accept(overflowWs);
+    // Detach the socket so frames queue for the (absent) poller instead.
+    overflowWs.emit('close', {});
+    for (let index = 0; index <= MAX_XHR_POLL_QUEUE; index++) {
+      overflow.shim.sendToClient(VALID_SID, {
+        type: 'ignore',
+      } as unknown as ServerMessage);
+    }
+    expect(overflow.shim.sessionCount).toBe(0);
+
+    let now = 0;
+    const idle = makeShim({ closeTimeoutSec: 60, now: () => now });
+    const idleWs = new FakeWebSocket();
+    idle.shim
+      .handleWebSocketUpgrade(new Request('https://x/'), VALID_SID)!
+      .accept(idleWs);
+    now = 60_001;
+    idle.shim.handleHandshake(new Request('https://x/socket.io/1/'));
+    expect(idleWs.closed?.reason).toBe('session expired');
+  });
+
+  it('keeps a claimed session across a websocket drop', () => {
+    const { shim } = makeShim();
+    const ws = new FakeWebSocket();
+    shim.handleWebSocketUpgrade(new Request('https://x/'), VALID_SID)!.accept(ws);
+    // The socket goes away but the session stays claimed, so a late
+    // handshake release must not evict a reconnecting client.
+    ws.emit('close', {});
+    shim.releaseHandshake(VALID_SID);
+    expect(shim.sessionCount).toBe(1);
   });
 });

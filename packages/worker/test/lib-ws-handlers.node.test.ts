@@ -94,6 +94,7 @@ interface CallLog {
 
 interface MakeCtxOpts {
   authOk?: boolean;
+  applyOk?: boolean;
   state?: StorageState;
   siblingFetchFails?: boolean;
   siblingResponseStatus?: number;
@@ -118,13 +119,15 @@ function makeCtx(opts: MakeCtxOpts = {}): { ctx: WsContext; calls: CallLog; stat
     user: 'u',
     auth: 'h',
     storage: makeStorage(state),
-    async applyCommand(cmdstr: string): Promise<void> {
+    async applyCommand(cmdstr: string): Promise<boolean> {
       calls.applied.push(cmdstr);
+      if (opts.applyOk === false) return false;
       state.log.set(
         `log:${String(state.log.size).padStart(10, '0')}`,
         cmdstr,
       );
       state.snapshot = 'SNAP';
+      return true;
     },
     async broadcast(msg, includeSelf) {
       calls.broadcasts.push({ msg, includeSelf });
@@ -291,6 +294,19 @@ describe('handleExecute', () => {
     expect(calls.broadcasts).toHaveLength(1);
     expect(calls.broadcasts[0]!.includeSelf).toBe(false);
     expect(calls.broadcasts[0]!.msg.type).toBe('execute');
+  });
+
+  it('does not broadcast a command rejected by the storage boundary', async () => {
+    const { ctx, calls, state } = makeCtx({ applyOk: false });
+    await handleExecute(ctx, {
+      type: 'execute',
+      room: 'r',
+      user: 'u',
+      cmdstr: 'set sheet lastrow 999999999',
+    });
+    expect(calls.applied).toEqual(['set sheet lastrow 999999999']);
+    expect(calls.broadcasts).toHaveLength(0);
+    expect(state.snapshot).toBeUndefined();
   });
 
   it('broadcast payload carries auth field through when supplied', async () => {
@@ -817,7 +833,7 @@ describe('WsContext wiring corners', () => {
     expect(state.wiped).toBe(0);
   });
 
-  it('verifyAuth is only called for write/ecell types (not ask.* or chat/my.ecell)', async () => {
+  it('verifyAuth gates chat/my.ecell while read and poll types stay public', async () => {
     const authSpy = vi.fn<() => Promise<boolean>>(async () => true);
     const base = makeCtx();
     const ctx: WsContext = { ...base.ctx, verifyAuth: authSpy };
@@ -837,7 +853,30 @@ describe('WsContext wiring corners', () => {
     await dispatchWsMessage(ctx, { type: 'ask.log', room: 'r', user: 'u' });
     await dispatchWsMessage(ctx, { type: 'ask.recalc', room: 'r' });
     await dispatchWsMessage(ctx, { type: 'ask.ecell', room: 'r', user: 'u' });
-    expect(authSpy).not.toHaveBeenCalled();
+    expect(authSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('drops chat and my.ecell when write authorization fails', async () => {
+    const base = makeCtx();
+    const ctx: WsContext = {
+      ...base.ctx,
+      verifyAuth: async () => false,
+    };
+    await dispatchWsMessage(ctx, {
+      type: 'chat',
+      room: 'r',
+      user: 'u',
+      msg: 'x',
+    });
+    await dispatchWsMessage(ctx, {
+      type: 'my.ecell',
+      room: 'r',
+      user: 'u',
+      ecell: 'A1',
+    });
+    expect(base.calls.broadcasts).toHaveLength(0);
+    expect(base.state.chat.size).toBe(0);
+    expect(base.state.ecell.size).toBe(0);
   });
 
   it('broadcast receives the exact frame produced by the builder helpers', async () => {

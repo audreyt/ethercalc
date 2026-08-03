@@ -24,6 +24,10 @@ import { doFetch } from '../lib/do-dispatch.ts';
 import { parseBulkIndexPayload } from '../handlers/migrate.ts';
 import { verifyMigrateToken } from '../lib/migrate-auth.ts';
 import { bulkMirrorRoomsToD1 } from '../lib/rooms-index.ts';
+import {
+  MAX_SNAPSHOT_CHUNKS,
+  SNAPSHOT_CHUNK_BYTES,
+} from '../lib/snapshot-storage.ts';
 import type { EtherCalcHonoEnv } from '../env.ts';
 
 const TEXT_CT = 'text/plain; charset=utf-8';
@@ -124,12 +128,17 @@ export function registerMigrate(app: Hono<EtherCalcHonoEnv>): void {
     }
     const seq = Number(c.req.query('seq'));
     const chunks = Number(c.req.query('chunks'));
-    if (!Number.isInteger(seq) || seq < 0 || !Number.isInteger(chunks) || chunks < 1 || seq >= chunks) {
+    if (!Number.isInteger(seq) || seq < 0 || !Number.isInteger(chunks) || chunks < 1 || chunks > MAX_SNAPSHOT_CHUNKS || seq >= chunks) {
       return c.text('seq/chunks must be integers with 0 ≤ seq < chunks', 400, {
         'Content-Type': TEXT_CT,
       });
     }
     const body = await c.req.raw.arrayBuffer();
+    if (body.byteLength > SNAPSHOT_CHUNK_BYTES) {
+      return c.text('snapshot chunk exceeds 100 KiB', 413, {
+        'Content-Type': TEXT_CT,
+      });
+    }
     const res = await doFetch(
       c.env,
       room,
@@ -137,6 +146,6 @@ export function registerMigrate(app: Hono<EtherCalcHonoEnv>): void {
       { method: 'POST', body },
     );
     const text = await res.text();
-    return c.text(text, res.status as 201 | 400, { 'Content-Type': TEXT_CT });
+    return c.text(text, res.status as 201 | 400 | 413, { 'Content-Type': TEXT_CT });
   });
 }

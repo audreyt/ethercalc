@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { EventEmitter } from 'node:events';
 import type { ChildProcess } from 'node:child_process';
 import { resolve } from 'node:path';
@@ -434,4 +435,22 @@ test('metadata-only config resolution (vp check) skips asset prep and Cloudflare
     if (previousMetadata === undefined) delete process.env.VP_RESOLVING_CONFIG_METADATA;
     else process.env.VP_RESOLVING_CONFIG_METADATA = previousMetadata;
   }
+});
+
+test('standalone compatibility date does not exceed the pinned workerd release', () => {
+  const root = resolve(import.meta.dir, '..');
+  const lock = readFileSync(resolve(root, 'bun.lock'), 'utf8');
+  const config = readFileSync(
+    resolve(root, 'packages/worker/workerd/config.capnp'),
+    'utf8',
+  );
+  const workerdDate = lock.match(
+    /^\s+"workerd": \["workerd@1\.(\d{8})\./m,
+  )?.[1];
+  const configuredDate = config
+    .match(/compatibilityDate = "(\d{4}-\d{2}-\d{2})"/)?.[1]
+    ?.replaceAll('-', '');
+  expect(workerdDate).toMatch(/^\d{8}$/);
+  expect(configuredDate).toMatch(/^\d{8}$/);
+  expect(Number(configuredDate)).toBeLessThanOrEqual(Number(workerdDate));
 });

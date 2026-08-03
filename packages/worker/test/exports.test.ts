@@ -217,6 +217,13 @@ describe('Phase 8 exports — HTML XSS sanitisation (text-html cells)', () => {
       'set A2 text th <script>alert(1)</script>',
       'set A3 text th <a href="javascript:alert(1)">x</a>',
       'set A4 text th <iframe src="https://evil"></iframe>',
+      'set A5 text th <meta http-equiv="refresh" content="0;url=https://evil.test">',
+      'set A6 text th <style>body{background:url(https://evil.test/pixel)}</style>',
+      'set A7 text th <form action="https://evil.test"><input name=x><button>submit</button></form>',
+      'set A8 text th <svg><a href="https://evil.test">svg-link</a></svg>',
+      'set A9 text th <a href="file:///etc/passwd">file-link</a>',
+      'set A10 text th <custom-tag data-x="1">custom-text</custom-tag>',
+      'set A11 text th <a href="https://example.test/new" target="_blank">new-tab</a>',
       // Benign markup that MUST survive the sanitiser.
       'set B1 text th <b>bold</b>',
       'set B2 text th <a href="https://example.test">link</a>',
@@ -247,6 +254,14 @@ describe('Phase 8 exports — HTML XSS sanitisation (text-html cells)', () => {
     expect(lower).not.toContain('<script');
     expect(lower).not.toMatch(/<a\b[^>]*\bhref\s*=\s*["']?javascript:/);
     expect(lower).not.toContain('<iframe');
+    expect(lower).not.toContain('<meta');
+    expect(lower).not.toContain('<style');
+    expect(lower).not.toContain('<form');
+    expect(lower).not.toContain('<input');
+    expect(lower).not.toContain('<button');
+    expect(lower).not.toContain('<svg');
+    expect(lower).not.toMatch(/<a\b[^>]*\bhref\s*=\s*["']?file:/);
+    expect(lower).not.toContain('<custom-tag');
 
     // text-html stays a feature — safe markup and the cell text survive.
     expect(lower).toContain('<b>bold</b>');
@@ -254,6 +269,11 @@ describe('Phase 8 exports — HTML XSS sanitisation (text-html cells)', () => {
     expect(body).toContain('>link</a>');
     // Anchor text from the javascript: payload is kept; only the href dies.
     expect(body).toContain('>x</a>');
+    expect(body).toContain('file-link');
+    expect(body).toContain('custom-text');
+    expect(lower).toMatch(
+      /<a\b[^>]*href="https:\/\/example\.test\/new"[^>]*target="_blank"[^>]*rel="noopener noreferrer"/,
+    );
     // The table scaffolding itself is untouched.
     expect(lower).toContain('<table');
   });

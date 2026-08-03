@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vite-plus/test';
 
 import {
+  AUDIT_HISTORY_KEEP,
   appendAuditRows,
   appendChatRows,
+  CHAT_HISTORY_KEEP,
   deleteAuditRows,
   deleteChatRows,
   type SeqRow,
@@ -81,6 +83,16 @@ describe('appendAuditRows', () => {
     expect(runs[0]!.params).toHaveLength(25 * 4);
     expect(runs[1]!.params).toEqual(['r', 25, 1725, 'b25']);
   });
+
+  it('evicts audit rows older than the bounded per-room tail', async () => {
+    const { db, runs } = makeFakeDb();
+    await appendAuditRows(db, 'r', [row(AUDIT_HISTORY_KEEP)]);
+    expect(runs).toHaveLength(2);
+    expect(runs[1]!.sql).toContain(
+      'DELETE FROM audit_log WHERE room = ?1 AND seq <= ?2',
+    );
+    expect(runs[1]!.params).toEqual(['r', 0]);
+  });
 });
 
 describe('appendChatRows', () => {
@@ -89,6 +101,15 @@ describe('appendChatRows', () => {
     await appendChatRows(db, 'r', [row(0)]);
     expect(runs[0]!.sql).toContain('INSERT INTO chat_log (room, seq, ts, body)');
     expect(runs[0]!.params).toEqual(['r', 0, 1700, 'b0']);
+  });
+
+  it('evicts chat rows older than the bounded per-room tail', async () => {
+    const { db, runs } = makeFakeDb();
+    await appendChatRows(db, 'r', [row(CHAT_HISTORY_KEEP)]);
+    expect(runs[1]!.sql).toContain(
+      'DELETE FROM chat_log WHERE room = ?1 AND seq <= ?2',
+    );
+    expect(runs[1]!.params).toEqual(['r', 0]);
   });
 });
 
@@ -105,5 +126,18 @@ describe('deleteAuditRows / deleteChatRows', () => {
     await deleteChatRows(db, 'gone');
     expect(runs[0]!.sql).toContain('DELETE FROM chat_log WHERE room = ?1');
     expect(runs[0]!.params).toEqual(['gone']);
+  });
+});
+
+describe('appendAuditRows — out-of-order sequences', () => {
+  it('trims against the highest seq, not the last row written', async () => {
+    const { db, runs } = makeFakeDb();
+    const rows: SeqRow[] = [
+      { seq: AUDIT_HISTORY_KEEP + 5, ts: 1, body: 'newest' },
+      { seq: 1, ts: 2, body: 'replayed-old' },
+    ];
+    await appendAuditRows(db, 'r', rows);
+    const del = runs.find((run) => run.sql.startsWith('DELETE FROM audit_log'));
+    expect(del?.params).toEqual(['r', 5]);
   });
 });
