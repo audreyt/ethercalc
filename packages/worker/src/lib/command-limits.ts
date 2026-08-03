@@ -439,7 +439,11 @@ export function isSnapshotWithinSheetLimits(snapshot: string): boolean {
   for (const sheetLine of snapshot.matchAll(
     /(?:^|[\r\n])sheet:([^\r\n]*)/g,
   )) {
-    const dimensions = /^c:(\d+):r:(\d+)(?::|$)/.exec(sheetLine[1]!);
+    const payload = sheetLine[1]!;
+    // A bare `sheet:` line is the empty default sheet SocialCalc emits for
+    // new/small saves (no declared c/r yet). It is not an oversize claim.
+    if (payload.length === 0) continue;
+    const dimensions = /^c:(\d+):r:(\d+)(?::|$)/.exec(payload);
     if (dimensions === null) return false;
     const columns = Number(dimensions[1]);
     const rows = Number(dimensions[2]);

@@ -405,6 +405,20 @@ describe('isCommandBatchWithinLimits', () => {
 describe('isSnapshotWithinSheetLimits', () => {
   it('accepts empty and bounded canonical saves', () => {
     expect(isSnapshotWithinSheetLimits('')).toBe(true);
+    // Bare `sheet:` is the empty default SocialCalc emits before any c/r.
+    expect(isSnapshotWithinSheetLimits('sheet:')).toBe(true);
+    expect(
+      isSnapshotWithinSheetLimits(
+        [
+          'SocialCalcSpreadsheetControlSave',
+          'version:1.5',
+          'part:sheet',
+          'sheet:',
+          'cell:A1:t:tpl-seed:1',
+          'end',
+        ].join('\n'),
+      ),
+    ).toBe(true);
     expect(isSnapshotWithinSheetLimits('sheet:c:1:r:1')).toBe(true);
     expect(
       isSnapshotWithinSheetLimits(
