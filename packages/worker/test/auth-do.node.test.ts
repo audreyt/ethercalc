@@ -2184,14 +2184,29 @@ describe('AuthDO', () => {
     });
 
     it('deletes a challenge exactly at its expiry boundary during alarm cleanup, and keeps one still-valid by one tick', async () => {
-      const now = Date.now();
-      record.map.set('challenge:at-boundary', { purpose: 'login', exp: now });
-      record.map.set('challenge:before-boundary', { purpose: 'login', exp: now + 1 });
+      vi.useFakeTimers();
+      try {
+        // Real wall clocks can advance past `now + 1` between the two
+        // `Date.now()` reads (seed vs alarm), which flakes this one-tick
+        // boundary on slow CI hosts. Pin time so the comparison is exact.
+        const fixedNow = Date.UTC(2026, 0, 1, 0, 0, 0);
+        vi.setSystemTime(fixedNow);
+        record.map.set('challenge:at-boundary', {
+          purpose: 'login',
+          exp: fixedNow,
+        });
+        record.map.set('challenge:before-boundary', {
+          purpose: 'login',
+          exp: fixedNow + 1,
+        });
 
-      await auth.alarm();
+        await auth.alarm();
 
-      expect(record.map.has('challenge:at-boundary')).toBe(false);
-      expect(record.map.has('challenge:before-boundary')).toBe(true);
+        expect(record.map.has('challenge:at-boundary')).toBe(false);
+        expect(record.map.has('challenge:before-boundary')).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('only lists challenge: -prefixed keys when scanning for cleanup, never other storage keys', async () => {
