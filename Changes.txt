@@ -13,6 +13,25 @@ EtherCalc bundles SocialCalc from the audreyt/socialcalc fork; see
 Unreleased
 ==============================================================================
 
+Security
+- Closed stored DOM-XSS and cross-origin `postMessage` seams in graph and
+  multi-sheet clients; HTML exports now use the same element, attribute, URL,
+  and CSS-fetch allowlist as the live editor.
+- Bound native and legacy WebSocket mutations to the authenticated attachment
+  room, validate complete message schemas and resource caps, re-check auth on
+  every state-changing frame, and reap bounded Socket.IO handshake sessions.
+- Added bounded auth/import bodies, ZIP/sheet/cell/command limits, AuthDO
+  challenge capacity and per-IP ceremony limits, revocable `__Host-ec_sess`
+  sessions, live-socket expiry, and fail-closed private-room authorization.
+- Gated `/_timetrigger`, fixed partial scheduler retries, hardened trusted
+  proxy attribution and room-ID entropy, and added private-response no-store
+  plus CSP/HSTS/nosniff/referrer/permissions/COOP headers. CSP WebSocket
+  authority now comes from `ETHERCALC_ORIGIN`, not a spoofable `Host`.
+- Hardened Docker/Helm defaults (read-only/no-new-privileges containers,
+  disabled service-account token mounting, fail-closed passkey anchors) and
+  upgraded docs image processing to `sharp` 0.35.3, resolving
+  GHSA-f88m-g3jw-g9cj in its bundled libvips.
+
 Tooling
 - Migrated the repository interface to Vite+ 0.2.4: package operations use
   `vp install/add/remove/update`, workspace tasks use `vp run`, local binaries
