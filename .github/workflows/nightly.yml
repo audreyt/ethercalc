@@ -283,6 +283,9 @@ jobs:
           vp run @ethercalc/client-multi#build
           vp exec bun scripts/build-assets.ts
 
-      - name: wrangler deploy --dry-run --env staging
-        run: vp exec wrangler deploy --dry-run --env staging
+      # Vite writes `.wrangler/deploy/config.json`, redirecting Wrangler to
+      # the generated production config. An explicit source config is required
+      # here; otherwise `--env staging` silently validates production instead.
+      - name: wrangler deploy --dry-run --config wrangler.toml --env staging
+        run: vp exec wrangler deploy --dry-run --config wrangler.toml --env staging
         working-directory: packages/worker

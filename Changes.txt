@@ -31,6 +31,9 @@ Security
   disabled service-account token mounting, fail-closed passkey anchors) and
   upgraded docs image processing to `sharp` 0.35.3, resolving
   GHSA-f88m-g3jw-g9cj in its bundled libvips.
+- Made staging deploy validation pass `--config wrangler.toml` explicitly, so
+  Vite's generated production-config redirect cannot silently ignore
+  `--env staging`.
 
 Tooling
 - Migrated the repository interface to Vite+ 0.2.4: package operations use

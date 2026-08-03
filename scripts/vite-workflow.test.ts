@@ -454,3 +454,17 @@ test('standalone compatibility date does not exceed the pinned workerd release',
   expect(configuredDate).toMatch(/^\d{8}$/);
   expect(Number(configuredDate)).toBeLessThanOrEqual(Number(workerdDate));
 });
+
+test('nightly staging validation bypasses the generated production config', () => {
+  const root = resolve(import.meta.dir, '..');
+  const workflow = readFileSync(
+    resolve(root, '.github/workflows/nightly.yml'),
+    'utf8',
+  );
+  expect(workflow).toContain(
+    'vp exec wrangler deploy --dry-run --config wrangler.toml --env staging',
+  );
+  expect(workflow).not.toContain(
+    'run: vp exec wrangler deploy --dry-run --env staging',
+  );
+});
