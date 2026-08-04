@@ -15,15 +15,17 @@
  *     byte representation of the original HTML doesn't constrain
  *     attribute order per the HTML spec, so this is safe.
  *   • The following attributes are dropped anywhere they appear:
- *       - `id` values matching `/^(SocialCalc|[a-f0-9-]{32,})/` —
- *         SocialCalc generates ids like `SocialCalc-edittools-...`
- *         each page load; UUID-shaped ids also rotate.
+ *       - `id` values matching
+ *         `/^(SocialCalc|cell_[A-Z]{1,2}[1-9][0-9]*$|[a-f0-9-]{32,})/` —
+ *         SocialCalc generates ids like `SocialCalc-edittools-...` each page
+ *         load; UUID-shaped ids also rotate; and the hardened Worker export
+ *         sanitizer intentionally strips generated `cell_A1`-style ids.
  *       - references to those ids in `for`, `aria-labelledby`,
  *         `aria-controls`, `aria-describedby`, `headers`,
  *         `form`, `list`, and `href="#..."`.
  *
- * The `id` drop is conservative: we only strip the *volatile* id,
- * not an id like `id="result"` that a test fixture might assert on.
+ * The `id` drop is conservative: we only strip volatile or target-stripped
+ * generated ids, not an id like `id="result"` that a fixture might assert on.
  *
  * The `canonicalizeXml` export applies the same rules and is used by
  * the xlsx/ods matchers in `zip-canonical.ts`. Volatile-id logic still
@@ -64,8 +66,9 @@ export const VOLATILE_ID_REFERRERS: readonly string[] = [
   'list',
 ];
 
-/** Regex that flags an `id` attribute value as volatile. */
-export const VOLATILE_ID_REGEX = /^(SocialCalc|[a-f0-9-]{32,})/;
+/** Regex that flags a volatile or target-stripped generated `id` value. */
+export const VOLATILE_ID_REGEX =
+  /^(?:SocialCalc|cell_[A-Z]{1,2}[1-9][0-9]*$|[a-f0-9-]{32,})/;
 
 /** Node-type constants — avoid depending on DOM globals. */
 const ELEMENT_NODE = 1;

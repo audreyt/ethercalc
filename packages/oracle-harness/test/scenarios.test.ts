@@ -37,6 +37,9 @@ describe('scenario catalog', () => {
 
   it('exposes the cron scenario', () => {
     expect(CRON_SCENARIOS.map((s) => s.name)).toEqual(['cron/get-timetrigger']);
+    expect(CRON_SCENARIOS[0]?.request.headers).toEqual({
+      Authorization: 'Bearer oracle-replay',
+    });
   });
 
   it('exposes three rooms-index scenarios', () => {

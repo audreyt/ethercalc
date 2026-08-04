@@ -4,7 +4,10 @@
     "kind": "http",
     "request": {
       "method": "GET",
-      "path": "/_timetrigger"
+      "path": "/_timetrigger",
+      "headers": {
+        "Authorization": "Bearer oracle-replay"
+      }
     },
     "expect": {
       "status": 200,

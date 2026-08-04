@@ -94,7 +94,9 @@ jobs:
           if-no-files-found: warn
 
       - name: Open issue on break-threshold regression
-        if: steps.stryker.outcome == 'failure'
+        # Setup/dry-run failures produce no mutation report and are not score
+        # regressions; the red matrix cell and logs remain the notification.
+        if: steps.stryker.outcome == 'failure' && hashFiles(format('packages/{0}/reports/mutation/mutation.json', matrix.package)) != ''
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
           PACKAGE: ${{ matrix.package }}
@@ -171,7 +173,12 @@ jobs:
       - name: Propagate Stryker exit code
         if: steps.stryker.outcome == 'failure'
         run: |
-          echo "Stryker failed for packages/${{ matrix.package }}; see uploaded report."
+          report="packages/${{ matrix.package }}/reports/mutation/mutation.json"
+          if [[ -f "$report" ]]; then
+            echo "Stryker failed for packages/${{ matrix.package }}; see uploaded report."
+          else
+            echo "Stryker failed before producing a mutation report; inspect the job log."
+          fi
           exit 1
 
   # Summary — one job so the README nightly badge reflects mutation,
@@ -245,10 +252,13 @@ jobs:
 
       - name: Replay against worker (wrangler dev)
         run: |
-          # wrangler must run from packages/worker; replay from repo root.
-          # Room-index routes must match legacy oracle (wrangler.toml defaults
-          # ETHERCALC_CORS=1 which gates /_rooms* and /_exists).
-          (cd packages/worker && vp exec wrangler dev --port 8787 --ip 127.0.0.1 --var ETHERCALC_DISABLE_ROOM_INDEX:0) &
+          # Pin the source config: a stale Vite deploy redirect can otherwise
+          # make a local/manual replay exercise dist/ instead of current source.
+          # Room-index routes must match legacy, and the side-effecting
+          # /_timetrigger compatibility scenario must authenticate.
+          (cd packages/worker && vp exec wrangler dev --config wrangler.toml --port 8787 --ip 127.0.0.1 \
+            --var ETHERCALC_DISABLE_ROOM_INDEX:0 \
+            --var ETHERCALC_MIGRATE_TOKEN:oracle-replay) &
           pid=$!
           for _ in $(seq 1 60); do
             curl -sf http://127.0.0.1:8787/_health >/dev/null 2>&1 && break

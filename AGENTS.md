@@ -54,6 +54,7 @@ vp run @ethercalc/worker#dev          # local worker (:8787)
 docker compose -f tests/oracle/docker-compose.yml up -d   # legacy oracle (:8000)
 
 vp run @ethercalc/oracle-harness#record   # record fixtures
+# Replay requires the source-pinned, operator-token command in tests/oracle/README.md.
 vp run @ethercalc/oracle-harness#replay --target http://127.0.0.1:8787
 
 vp run @ethercalc/worker#test         # workers-pool + node unit tests

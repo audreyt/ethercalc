@@ -71,14 +71,20 @@ When adding a new scenario:
 ## Replay against the new worker
 
 ```bash
-# Terminal 1 — new worker (Phase 4+).
-vp run @ethercalc/worker#dev
+# Terminal 1 — current Worker source (Phase 4+). The fixed, non-secret token
+# authorizes only the local replay of the side-effecting legacy cron route.
+(cd packages/worker && vp exec wrangler dev --config wrangler.toml \
+  --var ETHERCALC_DISABLE_ROOM_INDEX:0 \
+  --var ETHERCALC_MIGRATE_TOKEN:oracle-replay)
 
 # Terminal 2 — diff it against recordings.
 vp run @ethercalc/oracle-harness#replay \
   --target http://127.0.0.1:8787 \
   --recorded tests/oracle/recorded
 ```
+
+Pinning `wrangler.toml` keeps a prior Vite deploy redirect from serving a stale
+`dist/` bundle during local replay.
 
 Replay asserts status, non-volatile headers, and the body per the
 recorded `bodyMatcher` (`exact` / `json` / `scsave` / `ignore` /

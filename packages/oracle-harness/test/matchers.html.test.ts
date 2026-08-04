@@ -57,6 +57,11 @@ describe('canonicalizeHtml', () => {
     expect(canonical).toContain('<div>x</div>');
   });
 
+  it('drops target-stripped SocialCalc export cell ids', () => {
+    const { canonical } = canonicalizeHtml('<td id="cell_ZZ999">x</td>');
+    expect(canonical).toBe('<td>x</td>');
+  });
+
   it('drops long-hex (UUID-shaped) ids', () => {
     const { canonical } = canonicalizeHtml('<div id="abcdef0123456789abcdef0123456789">x</div>');
     expect(canonical).toBe('<div>x</div>');
@@ -124,6 +129,9 @@ describe('canonicalizeHtml', () => {
 describe('normalizeDomNode (direct)', () => {
   it('exports constants used by the canonicalizer', () => {
     expect(VOLATILE_ID_REGEX.test('SocialCalc-foo')).toBe(true);
+    expect(VOLATILE_ID_REGEX.test('cell_A1')).toBe(true);
+    expect(VOLATILE_ID_REGEX.test('cell_ZZ999')).toBe(true);
+    expect(VOLATILE_ID_REGEX.test('cell_A0')).toBe(false);
     expect(VOLATILE_ID_REGEX.test('a'.repeat(32))).toBe(true);
     expect(VOLATILE_ID_REGEX.test('short')).toBe(false);
     expect(VOLATILE_ID_REFERRERS).toContain('for');
