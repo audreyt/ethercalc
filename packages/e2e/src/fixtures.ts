@@ -16,6 +16,7 @@ import {
   type SpawnOptions,
 } from 'node:child_process';
 import { once } from 'node:events';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import waitPort from 'wait-port';
@@ -25,6 +26,7 @@ import { pickFreePort } from './port.ts';
 const HERE = dirname(fileURLToPath(import.meta.url));
 // `packages/e2e/src/` → `packages/worker/`
 const WORKER_PKG = resolve(HERE, '..', '..', 'worker');
+const WORKER_SOURCE_CONFIG = 'wrangler.toml';
 
 export interface WorkerFixtures {
   /** Base URL of the Worker, e.g. `http://127.0.0.1:8901`. No trailing slash. */
@@ -66,6 +68,11 @@ export interface AuthWorkerFixtures {
    * authenticator flow (register/login ceremonies that actually hit
    * AuthDO's `verifyRegistrationResponse`/`verifyAuthenticationResponse`)
    * must use `authWorkerBase`, not `workerBase`.
+   *
+   * Boots against a generated route-free wrangler config: production
+   * `[[routes]]` custom domains make wrangler rewrite
+   * `Host: localhost:<port>` → `ethercalc.net` in local dev, which then
+   * fails the Origin CSRF check on `/_auth/*`.
    */
   authWorkerBase: string;
 }
@@ -80,20 +87,36 @@ export const authTest = base.extend<NonNullable<unknown>, AuthWorkerFixtures>({
     // eslint-disable-next-line no-empty-pattern
     async ({}, use) => {
       const port = await pickFreePort();
-      const { process: proc, baseUrl } = await startWrangler({
-        port,
-        host: 'localhost',
-        vars: {
-          ETHERCALC_AUTH: '1',
-          ETHERCALC_RP_ID: 'localhost',
-          ETHERCALC_RP_NAME: 'EtherCalc E2E',
-          ETHERCALC_ORIGIN: `http://localhost:${port}`,
-        },
-      });
+      const configName = `.wrangler-e2e-auth-${port}.toml`;
+      const configPath = resolve(WORKER_PKG, configName);
+      writeFileSync(
+        configPath,
+        stripCustomDomainRoutes(
+          readFileSync(resolve(WORKER_PKG, WORKER_SOURCE_CONFIG), 'utf8'),
+        ),
+      );
+      let proc: ChildProcess | undefined;
       try {
-        await use(baseUrl);
+        const started = await startWrangler({
+          port,
+          host: 'localhost',
+          config: configName,
+          vars: {
+            ETHERCALC_AUTH: '1',
+            ETHERCALC_RP_ID: 'localhost',
+            ETHERCALC_RP_NAME: 'EtherCalc E2E',
+            ETHERCALC_ORIGIN: `http://localhost:${port}`,
+          },
+        });
+        proc = started.process;
+        await use(started.baseUrl);
       } finally {
-        await killTree(proc);
+        if (proc) await killTree(proc);
+        try {
+          rmSync(configPath, { force: true });
+        } catch {
+          // Best-effort cleanup of the generated config.
+        }
       }
     },
     { scope: 'worker', timeout: 90_000 },
@@ -120,13 +143,30 @@ async function startWrangler(args: {
    * behavior for every existing fixture user).
    */
   host?: 'localhost' | '127.0.0.1';
+  /**
+   * Wrangler config filename relative to `packages/worker`. Defaults to the
+   * source `wrangler.toml` so Vite's deploy redirect cannot silently point
+   * local e2e at a stale `dist/` bundle.
+   */
+  config?: string;
 }): Promise<{ process: ChildProcess; baseUrl: string }> {
-  const { port, vars = {}, host = '127.0.0.1' } = args;
+  const {
+    port,
+    vars = {},
+    host = '127.0.0.1',
+    config = WORKER_SOURCE_CONFIG,
+  } = args;
   const cmd = 'vp';
+  // Always pin an explicit source config. Vite's deploy redirect
+  // (`.wrangler/deploy/config.json` → `dist/ethercalc/wrangler.json`) otherwise
+  // silently runs a stale production bundle, so local e2e can green while CI
+  // (fresh checkout, no redirect) exercises current `src/` and fails.
   const argv = [
     'exec',
     'wrangler',
     'dev',
+    '--config',
+    config,
     '--port',
     String(port),
     '--ip',
@@ -219,6 +259,43 @@ async function pingHealth(url: string, timeoutMs: number): Promise<boolean> {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * Drop production `[[routes]]` custom-domain tables from a wrangler.toml
+ * body and force `workers_dev = true`.
+ *
+ * Wrangler 4 local dev rewrites `Host: localhost:<port>` to the first
+ * custom-domain route (`ethercalc.net`) when those tables are present. The
+ * auth Origin CSRF check then compares the browser's
+ * `Origin: http://localhost:<port>` against the rewritten request and 403s
+ * every real WebAuthn ceremony. Ordinary public-room e2e stays on the
+ * production config (127.0.0.1 Host is not rewritten).
+ */
+function stripCustomDomainRoutes(sourceToml: string): string {
+  const lines = sourceToml.split(/\r?\n/);
+  const out: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i]!;
+    if (line.trim().startsWith('[[routes]]')) {
+      i += 1;
+      while (i < lines.length) {
+        const next = lines[i]!;
+        if (next.startsWith('[') || next.startsWith('[[')) break;
+        i += 1;
+      }
+      continue;
+    }
+    if (line.trim().startsWith('workers_dev')) {
+      out.push('workers_dev = true');
+      i += 1;
+      continue;
+    }
+    out.push(line);
+    i += 1;
+  }
+  return `${out.join('\n')}\n`;
 }
 
 /**

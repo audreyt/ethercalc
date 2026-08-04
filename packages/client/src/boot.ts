@@ -375,14 +375,19 @@ export function initializeSpreadsheet(host: BootHost): void {
   ss.InitializeSpreadsheetViewer?.('tableeditor', 0, 0, 0);
   ss.InitializeSpreadsheetControl?.('tableeditor', 0, 0, 0);
 
+  // Form-data siblings live on a separate room DO (`<room>_formdata`). The
+  // main-room socket is room-bound, so a formdata-labelled `ask.log` is either
+  // dropped or would need its own attachment — it must never be the sole
+  // hydrate request. Always ask the main room for the editor snapshot; when a
+  // formDataViewer exists, also request its sibling so submitform state can
+  // load (and `applyFormDataLog` still chains a main-room refresh on reply).
   if (!SocialCalc._view && ss.formDataViewer) {
     const room = `${SocialCalc._room ?? ''}_formdata`;
     ss.formDataViewer.sheet._room = room;
     ss.formDataViewer._room = room;
     SocialCalc.Callbacks.broadcast?.('ask.log', { room });
-  } else {
-    SocialCalc.Callbacks.broadcast?.('ask.log');
   }
+  SocialCalc.Callbacks.broadcast?.('ask.log');
 
   ss.ExecuteCommand?.('redisplay', '');
   ss.ExecuteCommand?.('set sheet defaulttextvalueformat text-wiki');

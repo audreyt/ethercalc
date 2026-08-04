@@ -180,7 +180,7 @@ describe('initializeSpreadsheet', () => {
     expect(resize).toHaveBeenCalled();
   });
 
-  it('requests formdata first when a formDataViewer is present', () => {
+  it('requests formdata then main-room log when a formDataViewer is present', () => {
     const host = makeHost();
     const ss = makeSpreadsheet();
     const formDataViewer = makeSpreadsheet() as NonNullable<typeof ss.formDataViewer>;
@@ -194,7 +194,10 @@ describe('initializeSpreadsheet', () => {
 
     expect(formDataViewer._room).toBe('room1_formdata');
     expect(formDataViewer.sheet._room).toBe('room1_formdata');
-    expect(broadcast).toHaveBeenCalledWith('ask.log', { room: 'room1_formdata' });
+    expect(broadcast.mock.calls).toEqual([
+      ['ask.log', { room: 'room1_formdata' }],
+      ['ask.log'],
+    ]);
   });
 
   it('returns quietly when no spreadsheet constructor is available', () => {

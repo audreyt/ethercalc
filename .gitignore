@@ -6,6 +6,7 @@ dist/
 dist-passkey/
 coverage/
 .wrangler/
+.wrangler-e2e-auth-*.toml
 .vitest-cache/
 *.log
 logs/
