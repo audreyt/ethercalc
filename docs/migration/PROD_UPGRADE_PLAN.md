@@ -344,6 +344,7 @@ Note on configuration variables & staging deployment safety:
 - The Phase 1 branch (`.worktrees/phase1-lifecycle/packages/worker/wrangler.toml`) contains no `ETHERCALC_AUTH` in `[env.staging.vars]`, so Phase 1 on staging is passkey-off by construction.
 - Conversely, Phase 2 for production requires a release branch (`release/phase2-rollout`) whose `packages/worker/wrangler.toml` sets `ETHERCALC_AUTH = "0"` in both `[vars]` and `[env.staging.vars]` (see §4.3). Staging rehearsal MUST deploy from this release branch.
 - **CRITICAL WARNING [EMPIRICALLY VERIFIED]**: When `.wrangler/deploy/config.json` exists, running `wrangler deploy --env staging` without `--config wrangler.toml` does **NOT** throw an error — Wrangler silently falls back to the top-level production configuration in `dist/ethercalc/wrangler.json` (which drops `[env.staging]`), binding directly to the **production D1 database (`ethercalc_rooms`)** and **production WebAuthn RP ID (`ethercalc.net`)**. Operators MUST ALWAYS pass `--config wrangler.toml --env=staging` to guarantee staging database and domain isolation.
+  > **PARTIALLY AUTOMATED** — Root test `nightly staging validation bypasses the generated production config` (`scripts/vite-workflow.test.ts:458-469`; root `vp run test`) pins the nightly command to `--config wrangler.toml --env staging` and rejects its unqualified form. It does not protect an operator's ad hoc CLI command; the explicit `--config` live-deploy check remains load-bearing.
 - **WARNING**: An ambient exported shell variable (e.g., `ETHERCALC_AUTH="0" wrangler deploy`) has no effect on deployed Worker vars because Wrangler resolves Worker variables from `wrangler.toml`, not the ambient process environment.
 - **[OPERATOR-VERIFY]**: An operator MAY use a `wrangler deploy --var ETHERCALC_AUTH:0` override as an alternative, provided they run `wrangler deploy --help` first to verify that `--var` exists in the pinned Wrangler CLI version (it is not confirmed in published Wrangler CLI documentation).
 
@@ -367,38 +368,48 @@ Execute the following verification checklist against `https://ethercalc-staging.
 1. **Legacy Un-migrated Room Handling**:
    - Access a room created prior to the upgrade (or a newly generated room without `meta:access`/`meta:acl` DO storage keys).
    - Verify `authorize()` in `packages/worker/src/lib/authorize.ts:20-22` evaluates `access == null` as `'public'`, returning HTTP 200 and allowing full read/write access (proven by `packages/worker/test/room.test.ts:257-353`).
+   > **PARTIALLY AUTOMATED** — `legacy room without meta:access or meta:acl storage keys remains fully accessible to anonymous users` (`packages/worker/test/room.test.ts:258-353`; worker `test:workers`, CI `test`) proves anonymous HTTP, WebSocket, and write access without either key. Staging still proves that the deployed artifact can read an actual pre-upgrade DO.
 2. **Legacy `?auth=` Query Parameter Link**:
    - Request `https://ethercalc-staging.audreyt.workers.dev/testroom?auth=legacysecret`.
    - Verify room opens without 500 error or authentication breakdown (`auth=0` remains view-only).
+   > **PARTIALLY AUTOMATED** — The same workers-pool test (`room.test.ts:314-353`; worker `test:workers`, CI `test`) proves the legacy `auth=0` WebSocket path is view-only, while `packages/e2e/tests/redirects.spec.ts:52-62` (CI `e2e`) preserves generated `?auth=` links. Neither assertion opens this arbitrary legacy-secret URL against the deployed staging route.
 3. **Form/App-Mode Room Hydration**:
    - Open a form-mode sheet (`ss.formDataViewer` active).
    - Verify that the new client bundle (`boot.ts:384-390`) sends `ask.log` for the main room in addition to `<room>_formdata`, successfully hydrating the sheet grid.
+   > **PARTIALLY AUTOMATED** — `requests formdata then main-room log when a formDataViewer is present` (`packages/client/test/boot.test.ts:183-200`; client `test:coverage`, CI `test`) asserts both `ask.log` calls in order. The browser check adds proof that the built client shipped and hydrates through the live staging Worker.
 4. **Large Command Batch & Limit Enforcement**:
    - Submit a command batch exceeding `MAX_SHEET_CELLS = 200_000` (e.g. `POST /_/staging-limit-test` expanding dimensions to A1:Z10000 = 260,000 cells).
    - Verify the HTTP response is `413 Payload Too Large` with `Content-Type: text/plain; charset=utf-8` and the exact lowercase body `command exceeds sheet limits` (`packages/worker/src/room.ts:703`, matching local Worker baseline in §5 Probe 6), while the WebSocket closes with `1008` and the distinct capitalized reason `Command exceeds sheet limits` (`packages/worker/src/room.ts:1805`).
+   > **PARTIALLY AUTOMATED** — `routes-rooms.node.test.ts:810-825` asserts the route's exact HTTP 413, MIME, and lowercase body; `room.node.test.ts:3118-3139` asserts WebSocket close 1008 with the capitalized reason (worker `test:coverage`, CI `test`). Staging adds end-to-end proof for the deployed artifact and binding path.
 5. **Legacy `/socket.io/*` Transport Shim**:
    - Request `curl -fsS "https://ethercalc-staging.audreyt.workers.dev/socket.io/1/?t=$(date +%s)"`.
    - Verify response returns HTTP 200, `Content-Type: text/plain; charset=utf-8`, and body matching `<32-hex-session-id>:60:60:websocket,xhr-polling` (matching local Worker baseline in §5 Probe 8).
+   > **PARTIALLY AUTOMATED** — `GET /socket.io/1/ returns a colon-delimited handshake body` (`packages/worker/test/legacy-socketio.test.ts:35-46`; worker `test:workers`, CI `test`) asserts 200, text/plain, a 32-hex SID, and WebSocket transport. It only requires positive timeout fields, not the runbook's exact `60:60`, and does not exercise staging routing.
 6. **XLSX Import and Export**:
    - Upload a test `.xlsx` file via `POST /_/staging-xlsx-test` with header `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` (which decodes binary workbook data into `loadclipboard` + `paste A1 all` commands via the `xlsx-deferred` handler in `packages/worker/src/routes/rooms.ts:745`).
    - Export sheet via `GET /staging-xlsx-test.xlsx` (or the alternative valid export spelling `GET /_/staging-xlsx-test/xlsx`). Verify response returns `200 OK` with `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`, binary body starting with ZIP signature bytes `PK\x03\x04`, and `Content-Disposition: attachment; filename="staging-xlsx-test.xlsx"`. Confirm downloaded file parses correctly and preserves cell data.
    - **CRITICAL WARNING**: The `GET /_/staging-xlsx-test.xlsx` spelling is **NOT** an export route. It targets a raw room named `staging-xlsx-test.xlsx` and returns `404 Not Found` with an empty `text/plain` body (matching local Worker baseline in §5 Probe 10a). An operator following the incorrect `/_/<room>.xlsx` spelling during staging rehearsal would see a 404, erroneously conclude XLSX export is broken, and could halt an otherwise healthy cutover.
+   > **PARTIALLY AUTOMATED** — Worker tests assert XLSX import decoding (`routes-rooms-post.node.test.ts:167-218`) and export MIME, disposition, ZIP signature, and both valid routes (`exports.test.ts:151-172`); Playwright additionally imports real XLSX files (`packages/e2e/tests/landing-import.spec.ts:98-159`). Gates: worker `test:coverage`/`test:workers` and CI `e2e`. They do not assert the misleading `/_/<room>.xlsx` 404 or the staging artifact.
 7. **Phase 2 Passkey Disabled Check (`ETHERCALC_AUTH="0"`)**:
    - Query `curl -fsS https://ethercalc-staging.audreyt.workers.dev/_auth/whoami`.
    - Verify body returns `{"uid":null,"enabled":false}` and `POST /_/private` returns `401 Unauthorized`.
    - This single probe proves the kill switch actually shipped to staging with passkeys disabled and would have caught deploying staging with `ETHERCALC_AUTH="1"`. Local proof of kill-switch lockout behavior is in `packages/worker/test/routes-rooms.node.test.ts` (test named `keeps an existing private room locked when ETHERCALC_AUTH is off`).
+   > **PARTIALLY AUTOMATED** — `whoami reports enabled:false when ETHERCALC_AUTH is "0" or null` (`packages/worker/test/routes-auth.node.test.ts:232-251`) and private-room route tests (`routes-rooms.node.test.ts:925-1008`) prove the kill switch locally under worker `test:coverage` (CI `test`). This live probe adds the distinct, essential assertion that `ETHERCALC_AUTH="0"` actually shipped to staging.
 8. **Phase 3 Passkey Enabled Check (`ETHERCALC_AUTH="1"`)**:
    - Query `curl -fsS https://ethercalc-staging.audreyt.workers.dev/_auth/whoami`.
    - Verify body returns `{"uid":null,"enabled":true}`.
    - Initiate passkey registration ceremony at `POST /_auth/register-init` and complete at `POST /_auth/register-complete`.
    - **CRITICAL NOTE**: Passkeys registered on staging are bound to WebAuthn RP ID `ethercalc-staging.audreyt.workers.dev` (`packages/worker/wrangler.toml:84`). They are **NOT portable** to production (`ethercalc.net`) because WebAuthn RP IDs strictly enforce exact domain matching.
+   > **PARTIALLY AUTOMATED** — `whoami reports the verified principal, anonymity, and availability` (`routes-auth.node.test.ts:201-229`; worker `test:coverage`) covers the enabled response, while `packages/e2e/tests/passkey-webauthn-real.spec.ts:194-407` (CI `e2e`) completes real virtual-authenticator registration and private-room authorization against a localhost RP. The manual ceremony proves the staging RP/origin and deployed credentials, which those local gates cannot.
 9. **Asset Purge & Freshness Check**:
    - Request `curl -fsSI https://ethercalc-staging.audreyt.workers.dev/static/player.js`.
    - Confirm asset loads cleanly with `200 OK` and `Content-Type: text/javascript; charset=utf-8` (matching local Worker baseline in §5 Probe 4).
    - **Note**: Production Cloudflare Workers Assets edge may emit `Content-Type: application/javascript` or `text/javascript` depending on global edge MIME tables; operators should treat a MIME subtype mismatch as informational as long as HTTP status is `200 OK`.
+   > **PARTIALLY AUTOMATED** — `packages/worker/test/assets.test.ts:358-365` (worker `test:workers`, CI `test`) asserts that `/static/player.js` is served with 200, and `packages/e2e/tests/client-single-smoke.spec.ts:37-125` (CI `e2e`) proves the bundle boots and persists an edit. Neither checks staging edge-cache freshness or pins the MIME subtype.
 10. **Cross-Room Index Gating (`/_rooms*`)**:
    - Request `curl -sS -i https://ethercalc-staging.audreyt.workers.dev/_rooms`.
    - On staging (`ETHERCALC_CORS="1"`), verify endpoint returns HTTP `403 Forbidden`, `Content-Type: text/plain; charset=utf-8`, and body matching exactly `_rooms not available with CORS` (30 bytes, no trailing newline, matching local Worker baseline in §5 Probe 9).
+   > **PARTIALLY AUTOMATED** — `GET /_rooms returns 403 when room index is disabled` (`packages/worker/test/routes-rooms.node.test.ts:606-631`) asserts both `ETHERCALC_DISABLE_ROOM_INDEX` and legacy `ETHERCALC_CORS="1"` paths plus the exact body; `room-index-access.node.test.ts:29-87` covers precedence (worker `test:coverage`, CI `test`). Staging still proves the intended vars shipped.
 
 ---
 
@@ -429,6 +440,7 @@ Before running `vp exec wrangler deploy --env=""` or `npx wrangler deploy` in `p
    `Using redirected Wrangler configuration.`
 2. If a redirect exists locally, ALWAYS pass `--config wrangler.toml` explicitly (e.g. `npx wrangler deploy --config wrangler.toml --env=""`) to force Wrangler to read `wrangler.toml` directly and upload from `assets/`.
 3. For staging deploys, ALWAYS pass `--config wrangler.toml --env staging` (e.g. `npx wrangler deploy --config wrangler.toml --env staging`) so Wrangler reads `wrangler.toml` directly and applies `[env.staging]` overlay bindings.
+> **PARTIALLY AUTOMATED** — Root test `nightly staging validation bypasses the generated production config` (`scripts/vite-workflow.test.ts:458-469`; root `vp run test`) guarantees the checked-in nightly staging gate uses explicit source config. It does not inspect an operator workspace, production workflow command, or ad hoc deploy, so the redirect-banner check above still protects the artifact actually being uploaded.
 
 ### 4.1 Step 1: Pre-Deploy D1 Database Migrations
 
@@ -612,6 +624,7 @@ npx wrangler versions deploy <PHASE2_VERSION_ID>@100% --env=""
 # 6. MANDATORY EDGE CACHE PURGE:
 # Cloudflare Dashboard -> Caching -> Configuration -> Purge Everything
 ```
+> **PARTIALLY AUTOMATED** — The root nightly-config test (`scripts/vite-workflow.test.ts:458-469`; root `vp run test`) protects the checked-in staging dry run, worker auth tests (`routes-auth.node.test.ts:232-251`) protect the disabled response, and `build:assets` is a preflight gate. They do not upload this version, prove the flag/config selected by Wrangler, ramp live traffic, observe analytics, or purge the edge cache; those operator actions remain load-bearing.
 
 **ROLLBACK TARGET FOR PHASE 2**: Phase 2 contains ZERO DO lifecycle changes. **Phase 2 can be rolled back to Phase 1 instantly at any time via `npx wrangler versions deploy <PHASE1_VERSION_ID>@100% --env=""`**. Because `ETHERCALC_AUTH = "0"`, no private rooms or passkeys can be created during Phase 2, making rollback completely safe and hazard-free.
 
@@ -683,10 +696,12 @@ custom-domain redirects.
 curl -fsS -i https://ethercalc.net/_health
 # Expected [VERIFIED LOCALLY]: HTTP 200, Content-Type: application/json, body
 # `{"status":"ok","version":"0.0.0","now":"<ISO-8601 timestamp>"}`
+# **PARTIALLY AUTOMATED** — `health.test.ts:6-19` (worker `test:workers`, CI `test`) and Playwright `health.spec.ts:9-24` (CI `e2e`) assert this status, MIME, and body shape locally. This production probe adds deployed-runtime and live-binding evidence; the tests do not identify the deployed SHA because `version` remains `0.0.0`.
 
 # Probe 2: Phase 2 Behavioral Probe (Verifies new code running with Passkeys OFF)
 curl -fsS -i https://ethercalc.net/_auth/whoami
 # Expected [VERIFIED LOCALLY]: HTTP 200, body `{"uid":null,"enabled":false}`
+# **PARTIALLY AUTOMATED** — `routes-auth.node.test.ts:232-251` asserts this exact disabled response under worker `test:coverage` (CI `test`). The production response proves the Phase 2 flag shipped to the version serving traffic.
 
 # Probe 3: Anonymous Private Room Creation Check
 curl -sS -i -X POST https://ethercalc.net/_/private
@@ -694,6 +709,7 @@ curl -sS -i -X POST https://ethercalc.net/_/private
 # (no trailing newline). This proves an anonymous caller cannot create a
 # private room. It does not by itself prove the flag is off: the same anonymous
 # request also returned 401 with ETHERCALC_AUTH="1"; Probe 2 proves the flag.
+# **PARTIALLY AUTOMATED** — `routes-rooms.node.test.ts:925-956` asserts exact 401 `Unauthorized` both anonymously and with a session while auth is off (worker `test:coverage`, CI `test`). The live probe confirms the deployed route, but—as noted above—Probe 2 is what identifies the flag state.
 
 # Probe 4: Fresh Client Asset Probe (Verifies Cache Purge)
 curl -fsSI https://ethercalc.net/static/player.js
@@ -701,6 +717,7 @@ curl -fsSI https://ethercalc.net/static/player.js
 # `Content-Type: text/javascript; charset=utf-8`. The local Workers Assets
 # binding also returned `Cache-Control: public, max-age=0, must-revalidate`;
 # production edge-cache freshness must still be checked after the purge.
+# **PARTIALLY AUTOMATED** — `assets.test.ts:358-365` asserts a 200 asset response (worker `test:workers`, CI `test`), and Playwright `client-single-smoke.spec.ts:37-125` proves the shipped asset set boots locally (CI `e2e`). Only this live check can validate the post-purge production edge cache and its MIME table.
 
 # Probe 5: Public Sheet Read/Write Probe
 curl -fsS -i https://ethercalc.net/testprodcutover
@@ -709,6 +726,7 @@ curl -fsS -i https://ethercalc.net/testprodcutover
 curl -sS -i -X POST https://ethercalc.net/_/testprodcutover -d "page-size: A4"
 # Expected [VERIFIED LOCALLY]: HTTP 202, Content-Type:
 # application/json; charset=utf-8, body `{"command":"page-size: A4"}`
+# **PARTIALLY AUTOMATED** — Playwright `client-single-smoke.spec.ts:37-125` and `room-crud-export.spec.ts:4-204` cover a real local Worker public-sheet boot, edit, persistence, reload, and command API (CI `e2e`). This probe confirms the production route and Durable Object deployment.
 
 # Probe 6: Sheet Limit Enforcement Probe
 # Use a fresh room so a rejected command is observable as an absent snapshot.
@@ -726,6 +744,7 @@ curl -sS -i -X POST "https://ethercalc.net/_/${LIMIT_ROOM}" \
 curl -sS -i "https://ethercalc.net/_/${LIMIT_ROOM}"
 # Expected: HTTP 404 with an empty body, independently proving the rejected
 # mutation did not create a snapshot in the fresh room.
+# **PARTIALLY AUTOMATED** — `routes-rooms.node.test.ts:810-838` asserts 413 propagation and the 202 positive control; `room.node.test.ts:1110-1122` asserts rejection leaves storage empty (worker `test:coverage`, CI `test`). The fresh production-room sequence adds proof that the deployed route and RoomDO agree and that no production snapshot was created.
 
 # Probe 7: WebSocket Upgrade Probe
 curl --http1.1 --max-time 2 -sS -D - -o /dev/null \
@@ -739,11 +758,13 @@ curl --http1.1 --max-time 2 -sS -D - -o /dev/null \
 # `Sec-WebSocket-Accept`. curl then exits 28 when --max-time closes the still
 # open socket; that timeout after the 101 is expected. This raw probe verifies
 # the upgrade, not the contents of a decoded snapshot frame.
+# **PARTIALLY AUTOMATED** — `packages/worker/test/ws.test.ts:24-40` asserts 426 without Upgrade and 101 with a WebSocket handle (worker `test:workers`, CI `test`); Playwright `realtime-collab.spec.ts:75-152` proves real local WebSocket edits converge (CI `e2e`). The curl probe adds production proxy/edge upgrade evidence and an explicit `Sec-WebSocket-Accept` check.
 
 # Probe 8: Legacy socket.io Compatibility Probe
 curl -fsS -i "https://ethercalc.net/socket.io/1/?t=$(date +%s)"
 # Expected [VERIFIED LOCALLY]: HTTP 200, Content-Type: text/plain; charset=utf-8,
 # body `<32-hex-session-id>:60:60:websocket,xhr-polling`
+# **PARTIALLY AUTOMATED** — `legacy-socketio.test.ts:35-46` asserts 200, text/plain, 32-hex SID, and WebSocket transport (worker `test:workers`, CI `test`), but only checks that both timeout fields are positive rather than exactly `60:60`. Production routing and the stricter response remain live checks.
 
 # Probe 9: Cross-Room Index Gate
 curl -sS -i https://ethercalc.net/_rooms
@@ -751,6 +772,7 @@ curl -sS -i https://ethercalc.net/_rooms
 # text/plain; charset=utf-8, body exactly `_rooms not available with CORS`
 # (30 bytes, no trailing newline) when ETHERCALC_CORS="1" and
 # ETHERCALC_DISABLE_ROOM_INDEX is unset.
+# **PARTIALLY AUTOMATED** — `routes-rooms.node.test.ts:606-631` asserts the two flag paths and exact 403 body, with precedence covered by `room-index-access.node.test.ts:29-87` (worker `test:coverage`, CI `test`). Production still confirms the intended vars are active.
 
 # Probe 10a: Documented XLSX Path
 curl -sS -i https://ethercalc.net/_/testprodcutover.xlsx
@@ -766,12 +788,14 @@ curl -fsS -D - -o /dev/null https://ethercalc.net/testprodcutover.xlsx
 # body beginning with ZIP signature bytes `PK\x03\x04`, and
 # `Content-Disposition: attachment; filename="testprodcutover.xlsx"`.
 # The other valid export spelling is `/_/testprodcutover/xlsx`.
+# **PARTIALLY AUTOMATED** — `exports.test.ts:151-172` asserts 200, XLSX MIME, exact disposition, ZIP signature, and both valid route forms (worker `test:workers`, CI `test`); Playwright `room-crud-export.spec.ts:157-186` parses the ZIP structure (CI `e2e`). The manual probe confirms that export behavior is present in production.
 
 # ─── PHASE 3 PROBES (ETHERCALC_AUTH = "1") ───────────────────────────
 
 # Probe 11: Phase 3 Behavioral Probe (Verifies Passkeys ON)
 curl -fsS -i https://ethercalc.net/_auth/whoami
 # Expected [VERIFIED LOCALLY]: HTTP 200, body `{"uid":null,"enabled":true}`
+# **PARTIALLY AUTOMATED** — `routes-auth.node.test.ts:201-229` asserts the enabled anonymous response (worker `test:coverage`, CI `test`), and `passkey-webauthn-real.spec.ts:194-407` performs a real localhost-RP ceremony (CI `e2e`). This live response proves the Phase 3 flag and bindings reached production; it does not replace a production passkey ceremony.
 
 # Probe 12: WebAuthn www Alias Redirect Probe
 curl -fsSI https://www.ethercalc.net/_auth/register-init
@@ -903,6 +927,7 @@ For self-hosted deployments running EtherCalc via Docker Compose or Kubernetes/H
 2. **Base Image & Workerd Bundle Verification (`[SOURCE-VERIFIED]`)**:
    - `Dockerfile:22` pins base image `FROM oven/bun:1.3.14`.
    - `Dockerfile:60` builds the standalone ES module bundle via `scripts/build-workerd-bundle.sh`, which runs `bunx wrangler deploy --dry-run --outdir=packages/worker/workerd/worker/` to produce `packages/worker/workerd/worker/index.js` alongside checked-in `packages/worker/workerd/config.capnp`.
+   > **PARTIALLY AUTOMATED** — CI `build:selfhost` runs `scripts/smoke-selfhost.sh`, which builds this Dockerfile, rejects leaked `.dev.vars`/generated Wrangler config, boots the resulting workerd container, and exercises health plus persistent CRUD (`scripts/smoke-selfhost.sh:30-141`). That proves the checked-in image path builds and runs, not that the operator selected or pulled the intended release image.
 3. **Compatibility Date Lockstep & Pinned Version Check (`[SOURCE-VERIFIED]`)**:
    - `packages/worker/wrangler.toml:3` specifies `compatibility_date = "2026-07-21"`.
    - `packages/worker/workerd/config.capnp:61` specifies `compatibilityDate = "2026-07-14"`.
@@ -911,6 +936,7 @@ For self-hosted deployments running EtherCalc via Docker Compose or Kubernetes/H
      - **Hoisted / Production Dependency (`wrangler@4.112.0`)**: `workerd@1.20260714.1` (and all 5 platform packages at `1.20260714.1`), which decodes to release date `2026-07-14`.
      - **Nested Test Dependency (`@cloudflare/vitest-pool-workers@0.18.0`)**: `workerd@1.20260701.1` under `miniflare/workerd` and `wrangler/workerd` (and all 5 platform packages at `1.20260701.1`), which decodes to release date `2026-07-01` (`2026-07-01 < 2026-07-14`).
    - **Zero-Margin Lockstep Invariant — CI-Guarded**: The lockstep condition `2026-07-14 <= 2026-07-14` holds with **zero margin of slack**. Bumping `config.capnp`'s `compatibilityDate` by even a single day without simultaneously updating the pinned `workerd` dependency would make standalone `workerd serve` hard-reject the config. This mismatch is guarded by the root test `standalone compatibility date does not exceed the pinned workerd release` (`scripts/vite-workflow.test.ts:440-456`): after extracting the hoisted workerd release date from `bun.lock` and the configured date from `config.capnp`, `scripts/vite-workflow.test.ts:455` asserts `expect(Number(configuredDate)).toBeLessThanOrEqual(Number(workerdDate));`. The test runs through the root `test` script (`package.json:83`) under preflight Gate 3; the recorded Gate 3 run passed all 36 root tests (`docs/migration/PREFLIGHT_RESULTS.md:94-101`). Therefore, a mismatched date fails fast in CI/preflight rather than becoming a mystery production crash-loop, provided that gate is honored. Conversely, updating `workerd` alone is safe (it widens the margin). The deployment asymmetry remains critical: `wrangler.toml`'s `compatibility_date = "2026-07-21"` is 7 days ahead and safe because Wrangler clamps with a warning, but syncing `config.capnp` to `"2026-07-21"` without a workerd bump would fail the named test and break standalone self-host while Cloudflare edge deploys remain viable.
+   > **ALREADY AUTOMATED — skim after a green root test gate.** `standalone compatibility date does not exceed the pinned workerd release` (`scripts/vite-workflow.test.ts:440-456`; root `vp run test`) parses the real `bun.lock` and `config.capnp` values and asserts `configuredDate <= workerdDate`. Recomputing that inequality manually adds no live-deployment evidence.
    - **Entrypoint Binary Targeting & Test-Runtime Skew**: `bin/workerd-entrypoint.sh:40-55` explicitly targets wrangler's pinned dependency `$APP_ROOT/node_modules/wrangler/../workerd/bin/workerd` (`1.20260714.1`) to ensure runtime execution does not pick up the older nested `1.20260701.1` binary (which would refuse the config and crash-loop). This is a historical failure guard, not hypothetical defensive complexity: the entrypoint comment records that a first-match `find` can boot whichever workerd the filesystem lists first. Maintainers MUST NOT simplify the preferred-binary block back to first-match discovery. Additionally, note that `@cloudflare/vitest-pool-workers` executes workers-pool tests against the older `1.20260701.1` binary (a 13-day skew from the `1.20260714.1` deployment runtime); while `config.capnp` is not loaded in vitest, test behavior depending on workerd engine changes between 2026-07-01 and 2026-07-14 is not exercised by the 196 workers-pool tests. Operator host `workerd` binary MUST be dated `>= 2026-07-14` (pinned release: `1.20260714.1`).
 
 ### 7.2 Durable Object On-Disk Storage Backup
@@ -935,6 +961,7 @@ Before restarting containers, back up the local DO storage directory.
 ### 7.3 Mandatory Nginx Reverse Proxy Requirement
 
 Internet-facing self-host installations MUST run the nginx proxy recipe (`deploy/nginx/ethercalc.conf`) for rate-limiting and client IP header sanitization (overwriting client-supplied `CF-Connecting-IP`, `X-Forwarded-For`, and `X-Forwarded-Proto` with `$remote_addr` and `$scheme`). Note: CSP headers are injected directly by the Worker application layer (`packages/worker/src/lib/csp.ts`), not by Nginx. Validate basic proxy syntax, routing, health, room-index gating, and WebSocket upgrades with `./scripts/smoke-proxy.sh`.
+> **PARTIALLY AUTOMATED** — CI `build:selfhost` runs `scripts/smoke-proxy.sh`, which asserts `nginx -t`, proxied health/root success, `/_rooms` 403, and a 101 WebSocket upgrade (`scripts/smoke-proxy.sh:29-85`). A self-host operator still must prove that this proxy is the public ingress; the script does not exercise rate-limit thresholds, header replacement semantics, TLS, or the operator's deployed stack.
 ### 7.4 Security Environment Variables & Passkey Anchors
 
 Self-host operators MUST configure passkey environment variables to enable passkey features.
@@ -989,6 +1016,7 @@ Self-host operators MUST configure passkey environment variables to enable passk
 #### 2. What an Operator Must Set to Enable Passkeys
 
 To light up passkey authentication and private rooms, the operator MUST provide all four WebAuthn trust anchors matching their exact public HTTPS origin:
+> **PARTIALLY AUTOMATED** — `check-helm-hardening.sh:41-61` (CI `helm-lint`) asserts all Helm trust anchors render together and incomplete enablement fails closed; worker `routes-auth.node.test.ts:160-251` (CI `test`) asserts disabled/enabled route behavior. Automation cannot decide whether an operator's RP ID and origin match the real public HTTPS host.
 
 - **Docker Compose Operator Overrides (`.env` or shell export)**:
 
@@ -998,6 +1026,7 @@ To light up passkey authentication and private rooms, the operator MUST provide 
   ETHERCALC_RP_NAME="Example Sheets"
   ETHERCALC_ORIGIN="https://sheets.example.com"
   ```
+  > **PARTIALLY AUTOMATED** — Worker auth tests cover the resulting flag/binding semantics, but no Docker smoke enables passkeys or validates these Compose-supplied values. The operator must confirm the concrete environment and public origin.
 
 - **Kubernetes / Helm Operator Overrides (`values.yaml` or `--set`)**:
 
@@ -1012,6 +1041,7 @@ To light up passkey authentication and private rooms, the operator MUST provide 
   secrets:
     key: "openssl-rand-hex-32-value"
   ```
+  > **PARTIALLY AUTOMATED** — `check-helm-hardening.sh:41-61` (CI `helm-lint`) proves these Helm values render all four Worker variables and rejects incomplete anchors. It does not apply the chart to a cluster or validate the chosen RP/origin and secret there.
 
 - **Consequence of Leaving Unset**: `authEnabled()` in `packages/worker/src/routes/auth.ts:34-43` checks `flagEnabled(env.ETHERCALC_AUTH) && env.AUTH !== undefined && env.ETHERCALC_RP_ID && env.ETHERCALC_ORIGIN`. If passkey variables are left unset, `authEnabled()` returns `false` (fails closed), returning HTTP 404 for `/_auth/*` endpoints and HTTP 401 for private room creation.
 - **Room Index Access Fallback**: `shouldDisableRoomIndex()` in `packages/worker/src/lib/room-index-access.ts:40-46` checks `ETHERCALC_DISABLE_ROOM_INDEX` first; if absent, it falls back to legacy `ETHERCALC_CORS`. Defaults to `1` (gated) in self-host manifests.
@@ -1020,6 +1050,7 @@ To light up passkey authentication and private rooms, the operator MUST provide 
   bash scripts/check-helm-hardening.sh
   ./scripts/smoke-selfhost.sh
   ```
+  > **ALREADY AUTOMATED — skim manual reruns when the required CI jobs are green.** CI `helm-lint` runs `check-helm-hardening.sh` (`.github/workflows/ci.yml:138-171`), and CI `build:selfhost` runs both `smoke-selfhost.sh` and `smoke-proxy.sh` (`ci.yml:119-136`). Re-running the same scripts against the same tree adds no live-cluster evidence; validating the operator's deployed stack is a separate manual responsibility.
 
 ### 7.5 Verification Status & Local Execution Gate Note
 
@@ -1073,14 +1104,29 @@ The following five items have been evaluated and categorized:
 ## §9 Go / No-Go Checklist
 
 This checklist has nine conditions and spans the full cutover. Before executing Phase 1 (`npx wrangler deploy --env=""`), items 1–7 MUST be satisfied; items 5 and 6 are already complete and therefore intentionally checked below. Item 8 gates the Phase 2 upload, and item 9 gates Phase 3.
+### 9.1 Manual-Attention Calibration
+
+The audit unit is one `[OPERATOR-VERIFY]` site, numbered §3.2 check, §5 probe
+(`10a` and `10b` counted separately), actionable §7 check, or §9 condition:
+**47 checks total — 5 ALREADY AUTOMATED, 28 PARTIALLY AUTOMATED, and 14
+GENUINELY MANUAL**. Thus **33/47 are automation-backed**, but 28 of those still
+add a distinct live-artifact, live-binding, edge, or deployment assertion.
+`ALREADY AUTOMATED` items may be skimmed after their named gate is green;
+`PARTIALLY AUTOMATED` items must retain the stated live delta; the remaining
+14 demand credentials, backups, operational judgment, or soak observation.
+
 
 - [ ] **1. Baseline Capture & Subsystem Verification**: `wrangler deployments list`, `wrangler versions list`, and `wrangler d1 info ethercalc_rooms --json` executed and recorded, confirming D1 storage subsystem `version: "production"` for Time Travel availability (§0.2, §0.2.1).
 - [ ] **2. Preflight Gates Green Against Final Tree (9/9 Runnable Gates Verified; 2 Docker Smokes Pending CI)**: All 9 locally-runnable preflight gates (`vp run typecheck`, `vp lint`, `vp run test`, worker `test:node` & `test:workers`, worker 100% coverage gate `test:coverage`, `build:assets` + `e2e#test`, `build:dry`, `check-helm-hardening.sh`, and `ratchet-verify.sh`) passed 100% green against the final tree state including the `rooms.ts` command-rejection status propagation fix (§1.2, `docs/migration/PREFLIGHT_RESULTS.md`). The 2 Docker smoke gates (`./scripts/smoke-selfhost.sh`, `./scripts/smoke-proxy.sh`) remain unverified locally due to missing local `docker compose` CLI subcommand and require CI execution before final cutover.
+  > **ALREADY AUTOMATED — inspect gate status rather than re-performing its assertions.** The root/worker/client gates run the named test and coverage commands; CI `test`, `e2e`, and `helm-lint` execute their corresponding suites, while CI `build:selfhost` runs both Docker smokes (`.github/workflows/ci.yml:17-235`). Once those required jobs are green on the final tree, repeating the same local assertions adds no deployment evidence.
 - [ ] **3. Secrets Provisioned in Production**: `wrangler secret list` confirms `ETHERCALC_KEY` and `ETHERCALC_MIGRATE_TOKEN` are active in Cloudflare Secrets (§0.1).
 - [ ] **4. D1 Database Export & Time Travel Bookmark Recorded**: `npx wrangler d1 export ethercalc_rooms --remote --output=...` executed (using required `--output` flag), account plan confirmed (30d Paid / 7d Free retention), and Time Travel bookmark timestamp captured (§2.1, §6.4).
 - [x] **5. Phase 1 Branch (Forward-Fix Artifact) Prepared**: `release/phase1-lifecycle` branch built, typechecks, and dry-runs cleanly (§4.2, §6.1, and §8 item 1; verified via `vp run @ethercalc/worker#typecheck` and `vp run @ethercalc/worker#build:dry`).
+  > **ALREADY AUTOMATED — this preparation condition adds no live check.** The named worker `typecheck` and Wrangler `build:dry` gates compile and bundle the Phase 1 tree; their recorded green outputs are the condition itself. Deployment and soak are intentionally separate items 8 and 9.
 - [x] **6. PR 4 Command-Rejection Propagation Landed and Verified for Phase 2**: `POST /_/:room` returns the RoomDO status and body for every non-2xx verdict, matching `PUT /_/:room` at `packages/worker/src/routes/rooms.ts:355-369`. Verified via route contract tests `POST /_/:room command mutations propagate a DO 413 sheet-limit verdict` and `POST /_/:room returns 202 command echo on successful DO dispatch` in `packages/worker/test/routes-rooms.node.test.ts` (52 node files / 1520 tests; 13 workers-pool files / 196 tests; §8 item 5; §10 item 3).
+  > **ALREADY AUTOMATED — skim after the worker coverage gate.** `routes-rooms.node.test.ts:810-838` asserts exact 413 propagation plus the 202 success path under worker `test:coverage` (CI `test`), while `room.node.test.ts:1110-1122` asserts RoomDO rejection and no write. This checklist line contains no additional live assertion.
 - [ ] **7. Staging Rehearsal Passed**: Phase 1, Phase 2, and Phase 3 deployed and verified on `https://ethercalc-staging.audreyt.workers.dev` (§§3.1–3.2).
+  > **PARTIALLY AUTOMATED** — Every §3.2 behavior has a named local guard, and root test `nightly staging validation bypasses the generated production config` pins the nightly dry-run command. Only the rehearsal proves all three deployed artifacts, staging bindings/RP, existing DO state, and edge behavior together; use the per-item §3.2 deltas rather than treating local green as a substitute.
 - [ ] **8. Phase 1 Deployed & Soaked Before Phase 2 Upload**: Phase 1 (`npx wrangler deploy`) executed and verified stable before uploading the Phase 2 gradual release (§4.2 and §4.3).
 - [ ] **9. Phase 2 Soaked with `ETHERCALC_AUTH="0"` Before Phase 3**: Phase 2 fully rolled out to 100% and soaked before activating passkeys in Phase 3 (§4.3 and §4.4).
 
