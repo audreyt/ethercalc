@@ -1719,18 +1719,15 @@ Deploy all three phases to `[env.staging]` (`ethercalc-staging`) to execute end-
 
 #### A.0.1 Old §3.1 — Rehearsing Phase 1 & Deploying to Staging
 
-> **Superseded staging path (analysis only).** For the live cutover, rehearse §4.3 on staging instead. The Phase 1 worktree + Phase 2 `AUTH=0` release-branch steps below are retained to document the old three-phase rehearsal; **do not** use them as the production dress rehearsal.
+> **Superseded staging path (analysis only).** For the live cutover, rehearse **§3** (single-ramp / `AUTH="1"`) instead. The Phase 1 worktree + Phase 2 `AUTH=0` release-branch steps below are retained to document the old three-phase rehearsal; **do not** use them as the production dress rehearsal.
 >
 > Historical text follows: deploy Phase 1 from the worktree (`.worktrees/phase1-lifecycle`), followed by Phase 2 from the Phase 2 release branch (`release/phase2-rollout`).
 
-Note on configuration variables & staging deployment safety:
+Note on configuration variables (historical three-phase only):
 
 - The Phase 1 branch (`.worktrees/phase1-lifecycle/packages/worker/wrangler.toml`) contains no `ETHERCALC_AUTH` in `[env.staging.vars]`, so Phase 1 on staging is passkey-off by construction.
-- Conversely, Phase 2 for production requires a release branch (`release/phase2-rollout`) whose `packages/worker/wrangler.toml` sets `ETHERCALC_AUTH = "0"` in both `[vars]` and `[env.staging.vars]` (see §4.3). Staging rehearsal MUST deploy from this release branch.
-- **CRITICAL WARNING [EMPIRICALLY VERIFIED]**: When `.wrangler/deploy/config.json` exists, running `wrangler deploy --env staging` without `--config wrangler.toml` does **NOT** throw an error — Wrangler silently falls back to the top-level production configuration in `dist/ethercalc/wrangler.json` (which drops `[env.staging]`), binding directly to the **production D1 database (`ethercalc_rooms`)** and **production WebAuthn RP ID (`ethercalc.net`)**. Operators MUST ALWAYS pass `--config wrangler.toml --env=staging` to guarantee staging database and domain isolation.
-  > **PARTIALLY AUTOMATED** — Root test `nightly staging validation bypasses the generated production config` (`scripts/vite-workflow.test.ts:458-469`; root `vp run test`) pins the nightly command to `--config wrangler.toml --env staging` and rejects its unqualified form. It does not protect an operator's ad hoc CLI command; the explicit `--config` live-deploy check remains load-bearing.
-- **WARNING**: An ambient exported shell variable (e.g., `ETHERCALC_AUTH="0" wrangler deploy`) has no effect on deployed Worker vars because Wrangler resolves Worker variables from `wrangler.toml`, not the ambient process environment.
-- **[OPERATOR-VERIFY]**: An operator MAY use a `wrangler deploy --var ETHERCALC_AUTH:0` override as an alternative, provided they run `wrangler deploy --help` first to verify that `--var` exists in the pinned Wrangler CLI version (it is not confirmed in published Wrangler CLI documentation).
+- Conversely, Phase 2 for production required a release branch (`release/phase2-rollout`) whose `packages/worker/wrangler.toml` sets `ETHERCALC_AUTH = "0"` in both `[vars]` and `[env.staging.vars]`. Staging rehearsal under the old plan deployed from that release branch.
+- **Load-bearing staging deploy safety** (CRITICAL `--config wrangler.toml --env=staging` warning, ambient-shell-var warning, and `--var` `[OPERATOR-VERIFY]`) is **not** repeated here — it lives only in **live §3.1** (and §4.0). Apply those guards for any real staging deploy; do not treat this appendix block as the safety source of truth.
 
 ```bash
 # 1. Build client assets
