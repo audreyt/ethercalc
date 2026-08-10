@@ -755,7 +755,7 @@ These guards are baseline-independent and load-bearing for **every** staging dep
 - **CRITICAL WARNING [EMPIRICALLY VERIFIED]**: When `.wrangler/deploy/config.json` exists, running `wrangler deploy --env staging` without `--config wrangler.toml` does **NOT** throw an error — Wrangler silently falls back to the top-level production configuration in `dist/ethercalc/wrangler.json` (which drops `[env.staging]`), binding directly to the **production D1 database (`ethercalc_rooms`)** and **production WebAuthn RP ID (`ethercalc.net`)**. Operators MUST ALWAYS pass `--config wrangler.toml --env=staging` to guarantee staging database and domain isolation.
   > **PARTIALLY AUTOMATED** — Root test `nightly staging validation bypasses the generated production config` (`scripts/vite-workflow.test.ts:458-469`; root `vp run test`) pins the nightly command to `--config wrangler.toml --env staging` and rejects its unqualified form. It does not protect an operator's ad hoc CLI command; the explicit `--config` live-deploy check remains load-bearing.
 - **WARNING**: An ambient exported shell variable (e.g., `ETHERCALC_AUTH="0" wrangler deploy`) has no effect on deployed Worker vars because Wrangler resolves Worker variables from `wrangler.toml`, not the ambient process environment. Checked-in staging vars already set `ETHERCALC_AUTH = "1"` (`packages/worker/wrangler.toml` `[env.staging.vars]`); leave that value alone for this rehearsal.
-- **[OPERATOR-VERIFY]**: An operator MAY use a `wrangler deploy --var ETHERCALC_AUTH:0` override as an alternative, provided they run `wrangler deploy --help` first to verify that `--var` exists in the pinned Wrangler CLI version (it is not confirmed in published Wrangler CLI documentation). **Do not use that override for this cutover's staging rehearsal** — live procedure keeps auth enabled. The note exists so operators know ambient shell exports are not a substitute for `wrangler.toml` / confirmed `--var` mechanics.
+- **[OPERATOR-VERIFY]**: Whether `wrangler deploy --var <KEY>:<VALUE>` is accepted at all is **not** confirmed in published Wrangler CLI documentation for the pinned CLI. Run `wrangler deploy --help` before relying on `--var` for any key. Ambient shell exports are not a substitute for values in `wrangler.toml` (or a confirmed `--var` mechanism). **This cutover's staging rehearsal must not override `ETHERCALC_AUTH` off** — keep the checked-in `"1"`.
 
 Also apply the §4.0 deploy-configuration source-of-truth / redirect-banner guard before any local Wrangler upload or deploy to staging.
 
@@ -852,15 +852,15 @@ Optional but strongly recommended under override before ramp (**`[OPERATOR-VERIF
 
 ```bash
 cd packages/worker
-npx wrangler versions deploy <STAGING_SHIP_VERSION_ID>@10% --env=staging
+npx wrangler versions deploy <STAGING_SHIP_VERSION_ID>@10% --config=wrangler.toml --env=staging
 # Dwell; watch error/latency analytics; spot-check Step 5 / §5-style probes on default staging traffic
-npx wrangler versions deploy <STAGING_SHIP_VERSION_ID>@50% --env=staging
+npx wrangler versions deploy <STAGING_SHIP_VERSION_ID>@50% --config=wrangler.toml --env=staging
 # Dwell again
-npx wrangler versions deploy <STAGING_SHIP_VERSION_ID>@100% --env=staging
+npx wrangler versions deploy <STAGING_SHIP_VERSION_ID>@100% --config=wrangler.toml --env=staging
 cd ../..
 ```
 
-**`[OPERATOR-VERIFY]`**: §4.3 production ramp uses `--env=""`. Confirm `versions deploy … --env=staging` selects the staging Worker on the pinned CLI; if not, record the working form (still with explicit `--config=wrangler.toml` when required by §3.1 / §4.0).
+**`[OPERATOR-VERIFY]`**: §4.3 production ramp uses `--env=""` (and explicit `--config` on upload). Confirm `versions deploy … --config=wrangler.toml --env=staging` selects the staging Worker on the pinned CLI; if not, record the working form (still with explicit `--config=wrangler.toml` per §3.1 / §4.0).
 
 After the first percentage step that serves new HTML/JS to real staging clients, and again at 100%, purge edge cache **if** staging is fronted by a cached hostname — same Dashboard path as §4.3:
 
@@ -874,7 +874,7 @@ Cloudflare Dashboard → Caching → Configuration → Purge Everything
 
 ```bash
 cd packages/worker
-npx wrangler versions deploy <STAGING_PRE_RAMP_VERSION_ID>@100% --env=staging
+npx wrangler versions deploy <STAGING_PRE_RAMP_VERSION_ID>@100% --config=wrangler.toml --env=staging
 cd ../..
 # Purge edge again if Step 4 required purge, so clients drop ship HTML that points at new static/* files
 ```
@@ -1650,10 +1650,10 @@ To light up passkey authentication and private rooms, the operator MUST provide 
 
 The following seven items have been evaluated and categorized:
 
-1. **Phase 1 Minimal Branch (Forward-Fix Artifact) Preparation** — **not required for live hosted §4 cutover** (v2/`AuthDO` already live; see STOP banner). Retained as historical prep / Appendix A context:
-   - **Specification**: Build and validate `release/phase1-lifecycle` branch (`149ebcf...` + `AuthDO` + `v2` migration).
-   - **Status**: **DONE**. Local branch `release/phase1-lifecycle` built and verified in git worktree `.worktrees/phase1-lifecycle` (`5351653` / `6b7c758`). Both `vp run @ethercalc/worker#typecheck` and `vp run @ethercalc/worker#build:dry` pass cleanly with zero errors. The branch is committed locally and has NOT been pushed or deployed.
-   - **Artifact Identity & Forward-Fix Strategy**: The `release/phase1-lifecycle` branch **is** the forward-fix artifact. Because Cloudflare blocks rollbacks past the `v2` migration tag, rolling back from Phase 2 or Phase 3 to a pre-passkey state is executed by redeploying the Phase 1 deployment ID (`npx wrangler versions deploy <PHASE1_VERSION_ID>@100% --env=""`). The version already exists on Cloudflare, so recovery is a redeployment of a known-good version, not a new build. A new build is needed only if Phase 1 itself proves defective in production, in which case the operator branches from `release/phase1-lifecycle` and forward-fixes from there — which is why Phase 1's diff is kept minimal and behaviorally inert (a small surface is a small failure surface).
+1. **Phase 1 Minimal Branch (Forward-Fix Artifact) Preparation** — **SUPERSEDED for live hosted cutover / not a live step** (v2/`AuthDO` already live; see STOP banner). Retained only as historical prep / **Appendix A** context. **Do not** build, push, or deploy `release/phase1-lifecycle` or `.worktrees/phase1-lifecycle` for the §4 single-ramp procedure.
+   - **Historical specification** (Appendix A only): Build and validate `release/phase1-lifecycle` branch (`149ebcf...` + `AuthDO` + `v2` migration).
+   - **Historical status**: **DONE** as analysis prep. Local branch `release/phase1-lifecycle` was built and verified in git worktree `.worktrees/phase1-lifecycle` (`5351653` / `6b7c758`). Both `vp run @ethercalc/worker#typecheck` and `vp run @ethercalc/worker#build:dry` passed cleanly with zero errors. The branch was committed locally and was **not** pushed or deployed — and must not be deployed for this cutover.
+   - **Why it is not live**: The old three-phase plan treated Phase 1 as the forward-fix artifact and rollback target (`npx wrangler versions deploy <PHASE1_VERSION_ID>@100% --env=""`). Live production is already post-`v2` in `[d2afa90, b7d8840)`; the live rollback floor is `CURRENT_PROD_VERSION_ID` (§4.4), not a lifecycle-only bundle. Full historical write-up: Appendix A.1.2 / A.2.
 
 2. **PR 1: Build Version Stamp in `/_health`** (`packages/worker/src/handlers/health.ts:12-18` & `health.node.test.ts:8-12`)
    - **Specification**: Update `buildHealthBody` to return the version from root `package.json` (`0.20260717.0`) or git SHA via an esbuild `define` constant.
