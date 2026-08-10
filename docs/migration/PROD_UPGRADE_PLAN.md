@@ -249,6 +249,65 @@ Because Cloudflare Workers provides no operator-side bulk export API for Durable
      - **Phase 2** deploys `main` with `ETHERCALC_AUTH = "0"`. Setting `ETHERCALC_AUTH = "0"` **structurally guarantees** that no passkey registration or private room creation can occur while major code changes soak. If Phase 2 encounters bugs, rolling Phase 2 back to Phase 1 carries **zero risk** of private room data exposure or lockout.
      - **Phase 3** enables `ETHERCALC_AUTH = "1"` only after Phase 2 has soaked and proven stable.
 
+### 2.3 Durable Object PITR Contract and Eligibility
+
+The recovery floor for Durable Object state is real only because both deployed classes use the correct storage backend. Cloudflare's [SQLite-backed Durable Object Storage documentation](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/) lists `PITR API` as available for SQLite-backed classes and unavailable for KV-backed classes. EtherCalc declares `RoomDO` in migration `v1` and `AuthDO` in migration `v2` under `new_sqlite_classes` (`packages/worker/wrangler.toml:41-47`), so both classes meet that prerequisite.
+
+The same Cloudflare contract says that these methods can “restore a Durable Object's embedded SQLite database to any point in time in the past 30 days” and that they “apply to the entire SQLite database contents, including both the object's stored SQL data and stored key-value data using the key-value `put()` API.” This second guarantee is essential for EtherCalc: `RoomDO` persists snapshots, log/audit/chat entries, cell metadata, and room metadata through `this.#state.storage.put(...)` or transaction `put(...)` calls (for example `packages/worker/src/room.ts:619,1219,1235-1240,2125-2131,2334,2388`), rather than application-defined SQL tables. Those values are nevertheless inside the SQLite-backed object's PITR scope.
+
+Cloudflare exposes three bookmark primitives:
+
+- `getCurrentBookmark()` returns the object's current history bookmark.
+- `getBookmarkForTime(timestamp)` resolves an approximate bookmark for a timestamp within the 30-day window.
+- `onNextSessionRestoreBookmark(bookmark)` configures the object so that, on its next restart, its storage matches that bookmark. Cloudflare states: “After calling this, the application should typically invoke `ctx.abort()` to restart the Durable Object, thus completing the point-in-time recovery.” The method returns a bookmark for the moment immediately before recovery, so submitting that bookmark in a second restore undoes the first restore.
+
+EtherCalc wraps the latter two primitives in the bearer-gated `POST /_/:room/pitr-restore` contract documented in `API.md:133-197`; the response includes `undoBookmark`, which the operator MUST retain before proceeding to the next room.
+
+Cloudflare also states: “The PITR API is not supported in local development because a durable log of data changes is not stored locally.” This agrees with `API.md:137`: Miniflare and standalone workerd return `501`. Therefore **the PITR safeguard cannot be rehearsed locally**. The operator MUST exercise the dry-run, restore, verification, and undo sequence against a real Cloudflare staging deployment before relying on it in production.
+
+PITR is scoped to one Durable Object instance, not a namespace. EtherCalc has one `RoomDO` per room (`packages/worker/wrangler.toml:28-33`), so there is no “restore all rooms” platform operation. `AuthDO` is different only in cardinality: the application addresses the singleton as `idFromName('auth')` (`packages/worker/src/routes/auth.ts:52-56`), so AuthDO recovery is a single-object operation rather than a room iteration. Although `AuthDO` is PITR-eligible, the checked-in operator endpoint currently dispatches only to `RoomDO`; the repository has no AuthDO restore command.
+
+### 2.4 Mass RoomDO Recovery Procedure
+
+D1 and Durable Object PITR supply complementary halves of broad recovery: the D1 `rooms` table supplies indexed room names and their last-write times, while per-room PITR restores the content of each corresponding `RoomDO`. `GET /_rooms` and `GET /_roomtimes` expose the same index, but a direct D1 query is safer for an operator procedure because it returns both fields in one captured result.
+
+1. **Freeze the recovery inputs.** Record the incident start and end in UTC and select one restore timestamp immediately before the first bad write. It MUST be within Cloudflare's 30-day Durable Object PITR window. Do not derive a different timestamp for each room unless the incident analysis explicitly requires it.
+2. **Capture the candidate list before restoring anything.** `updated_at` is a JavaScript millisecond epoch (`Date.now()`), so query with millisecond boundaries. Replace the example values with the incident window and save the complete output:
+
+   ```bash
+   npx wrangler d1 execute ethercalc_rooms \
+     --remote \
+     --config=packages/worker/wrangler.toml \
+     --env="" \
+     --command="SELECT room, updated_at FROM rooms WHERE updated_at BETWEEN 1786363200000 AND 1786366800000 ORDER BY updated_at ASC;"
+   ```
+
+   The equivalent HTTP sources are `GET /_rooms` for names and `GET /_roomtimes` for timestamps. Prefer the D1 query when filtering an incident window.
+3. **Dry-run every candidate sequentially.** For each D1 row, URL-encode the room as one path segment and resolve the common pre-incident timestamp without scheduling a restore:
+
+   ```bash
+   curl -sS --fail-with-body -w '\nHTTP %{http_code}\n' -X POST "https://ethercalc.net/_/<URL_ENCODED_ROOM>/pitr-restore" \
+     -H "Authorization: Bearer $ETHERCALC_MIGRATE_TOKEN" \
+     -H "Content-Type: application/json" \
+     --data '{"at":"2026-08-10T11:59:59.000Z","dryRun":true}'
+   ```
+
+   Record the room, D1 `updated_at`, requested timestamp, resolved `bookmark`, HTTP status, and response. Stop on any non-200 response; do not silently skip a room.
+4. **Apply and verify one room at a time.** Submit the dry-run bookmark, retain the returned `undoBookmark`, then verify the room's snapshot/content before advancing:
+
+   ```bash
+   curl -sS --fail-with-body -w '\nHTTP %{http_code}\n' -X POST "https://ethercalc.net/_/<URL_ENCODED_ROOM>/pitr-restore" \
+     -H "Authorization: Bearer $ETHERCALC_MIGRATE_TOKEN" \
+     -H "Content-Type: application/json" \
+     --data '{"bookmark":"<BOOKMARK_FROM_DRY_RUN>"}'
+   ```
+
+   A successful response reports `restored: true`; `exists: false` means the target predates creation of that room. If verification fails, submit the recorded `undoBookmark` as `bookmark` before investigating. Preserve the full candidate list and per-room responses as the recovery audit record.
+
+This is intentionally a **sequential, per-room** procedure. Its throughput and request rate are limited by the delay, retry, and concurrency controls the operator puts into an incident script; EtherCalc supplies none. PITR rewinds the entire RoomDO SQLite database to the selected timestamp, including later key-value state, so it cannot selectively remove one bad SocialCalc command while retaining later good commands.
+
+**Enumeration limitations and tooling gap:** No bulk-PITR script or CLI exists under `packages/cli/`, `scripts/`, or `bin/`; only the single-room HTTP endpoint exists. An operator facing a broad incident must write and peer-review the enumeration/restore driver under pressure unless one is prepared in advance. In addition, the D1 `rooms` table is not a complete namespace inventory: private rooms are deliberately omitted (`packages/worker/src/room.ts:2266-2272`), and `_formdata` sibling rooms are filtered from the public index (`packages/worker/src/lib/formdata-sibling.ts:13-19`). The D1-driven procedure therefore covers indexed rooms only. Known private or form-data room names require a separately maintained inventory and the same per-room restore call; Cloudflare provides no API to enumerate every Durable Object instance.
+
 ---
 
 ## §3 Staging Rehearsal & Phase 1 Rehearsal
