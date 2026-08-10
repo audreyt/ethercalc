@@ -1699,6 +1699,7 @@ The following eight items have been evaluated and categorized:
 
    - **Operational consequence**: Every audited package sits within one percentage point of its Stryker `thresholds.break` floor, and `@ethercalc/worker` has three hundredths. A single surviving mutant fails CI's conditional `mutation-gate`. A pre-cutover PR that touches these packages — **especially `@ethercalc/worker` at +0.03pp** — can therefore trip `mutation-gate` even when every functional test passes. Contributors should run `scripts/ratchet-verify.sh` locally *before* pushing rather than discovering the failure in CI.
    - **Remedy constraint** (from `AGENTS.md`): an equivalent mutant is handled with a written `// Stryker disable` justification — **not** a padded test, and **not** by lowering a floor.
+   - **Survivor inventory**: full per-mutant classification for `@ethercalc/worker` (570 survived at this measurement) is in [`docs/migration/MUTATION_SURVIVORS.md`](./MUTATION_SURVIVORS.md) — **552 REAL GAP / 18 EQUIVALENT / 0 UNCERTAIN**; margin is recoverable, not irreducible.
 
 ---
 
