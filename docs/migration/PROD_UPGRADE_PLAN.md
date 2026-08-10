@@ -1471,13 +1471,12 @@ cd ..
 
 ## §5 Post-Cutover Verification
 
-Execute this numbered probe checklist immediately following Phase 2 & Phase 3
-cutovers.
+Execute this numbered probe checklist immediately after the **§4 single-ramp** reaches `@100%` and the required edge purge. **Live auth contract:** `ETHERCALC_AUTH` stays `"1"` for the entire cutover — accept `GET /_auth/whoami` → `{"uid":null,"enabled":true}` (see §4.3 Step 5). Do **not** expect `enabled:false`; that contract belonged to the superseded Phase 2 `AUTH=0` soak (Appendix A only).
 
 The response contracts below were exercised on 2026-08-10 with
-`wrangler dev` at `http://127.0.0.1:8787`. The Phase 2 run used
-`--var ETHERCALC_AUTH:0`; the Phase 3 run used the checked-in local
-`ETHERCALC_AUTH = "1"`. D1 and Durable Object state was Miniflare-local, not
+`wrangler dev` at `http://127.0.0.1:8787`. A superseded local matrix also ran
+`--var ETHERCALC_AUTH:0` for historical Phase-2 labels; the **live** contracts
+match the checked-in `ETHERCALC_AUTH = "1"` run. D1 and Durable Object state was Miniflare-local, not
 production state. The local Workers Assets binding also supplies its own MIME
 and cache headers. Finally, local requests retain the configured
 `ETHERCALC_ORIGIN`, so their CSP contained
@@ -1487,7 +1486,7 @@ the local run as evidence about production data, edge cache state, or
 custom-domain redirects.
 
 ```bash
-# ─── PHASE 2 PROBES (ETHERCALC_AUTH = "0") ───────────────────────────
+# ─── POST-RAMP PROBES (live cutover; ETHERCALC_AUTH = "1") ────────────
 
 # Probe 1: Health Check Probe (Confirms Worker runtime execution)
 curl -fsS -i https://ethercalc.net/_health
@@ -1495,17 +1494,19 @@ curl -fsS -i https://ethercalc.net/_health
 # `{"status":"ok","version":"0.0.0","now":"<ISO-8601 timestamp>"}`
 # **PARTIALLY AUTOMATED** — `health.test.ts:6-19` (worker `test:workers`, CI `test`) and Playwright `health.spec.ts:9-24` (CI `e2e`) assert this status, MIME, and body shape locally. This production probe adds deployed-runtime and live-binding evidence; the tests do not identify the deployed SHA because `version` remains `0.0.0`.
 
-# Probe 2: Phase 2 Behavioral Probe (Verifies new code running with Passkeys OFF)
+# Probe 2: Auth steady-state (passkeys stay ON for this cutover)
 curl -fsS -i https://ethercalc.net/_auth/whoami
-# Expected [VERIFIED LOCALLY]: HTTP 200, body `{"uid":null,"enabled":false}`
-# **PARTIALLY AUTOMATED** — `routes-auth.node.test.ts:232-251` asserts this exact disabled response under worker `test:coverage` (CI `test`). The production response proves the Phase 2 flag shipped to the version serving traffic.
+# Expected [LIVE CUTOVER]: HTTP 200, body `{"uid":null,"enabled":true}`
+# Abort if enabled is false — that indicates an AUTH=0 / auth-unbound bundle.
+# **PARTIALLY AUTOMATED** — `routes-auth.node.test.ts:201-229` asserts the enabled anonymous response under worker `test:coverage` (CI `test`). Live response proves auth bindings and ETHERCALC_AUTH="1" on the version serving traffic.
+# Historical note: superseded three-phase Phase 2 expected enabled:false (Appendix A only).
 
 # Probe 3: Anonymous Private Room Creation Check
 curl -sS -i -X POST https://ethercalc.net/_/private
 # Expected [VERIFIED LOCALLY]: HTTP 401, body exactly `Unauthorized`
 # (no trailing newline). This proves an anonymous caller cannot create a
-# private room. It does not by itself prove the flag is off: the same anonymous
-# request also returned 401 with ETHERCALC_AUTH="1"; Probe 2 proves the flag.
+# private room. The same anonymous 401 holds with auth on; Probe 2 confirms
+# enabled:true so this is deny-anonymous, not AUTH=0 lockout.
 # **PARTIALLY AUTOMATED** — `routes-rooms.node.test.ts:925-956` asserts exact 401 `Unauthorized` both anonymously and with a session while auth is off (worker `test:coverage`, CI `test`). The live probe confirms the deployed route, but—as noted above—Probe 2 is what identifies the flag state.
 
 # Probe 4: Fresh Client Asset Probe (Verifies Cache Purge)
@@ -1528,6 +1529,13 @@ curl -fsSI https://ethercalc.net/static/player.js
 # `client-single-smoke.spec.ts:37-125` proves the shipped asset set
 # boots locally (CI `e2e`). Only this live check can validate the
 # post-purge production edge cache.
+#
+# Ship-tree root layout (security-audit): also require extracted page script
+# and no appcache manifest on root HTML (§4.3 Step 5):
+curl -fsS -o /dev/null -w '%{http_code}\n' https://ethercalc.net/static/index-bootstrap.js
+# Expected: 200
+curl -fsS https://ethercalc.net/ | head -c 8000
+# Expect: static/index-bootstrap.js (and related page scripts); no manifest.appcache
 
 # Probe 5: Public Sheet Read/Write Probe
 curl -fsS -i https://ethercalc.net/testprodcutover
@@ -1547,7 +1555,7 @@ curl -sS -i -X POST "https://ethercalc.net/_/${LIMIT_ROOM}" \
 # text/plain; charset=utf-8, body exactly `command exceeds sheet limits`.
 # This well-formed SocialCalc command expands the declared area to
 # 10,000 rows × 26 columns = 260,000 cells. It is the production acceptance
-# probe for §9 item 6: the HTTP route surfaces RoomDO's status and body.
+# probe for command-rejection propagation (§8 item / live §4 residual risk): the HTTP route surfaces RoomDO's status and body.
 # Before PR 4, raw main returned HTTP 202 with
 # `{"command":"set Z10000 value n 1"}` here; reproducing that false success is
 # a NO-GO.
@@ -1600,12 +1608,12 @@ curl -fsS -D - -o /dev/null https://ethercalc.net/testprodcutover.xlsx
 # The other valid export spelling is `/_/testprodcutover/xlsx`.
 # **PARTIALLY AUTOMATED** — `exports.test.ts:151-172` asserts 200, XLSX MIME, exact disposition, ZIP signature, and both valid route forms (worker `test:workers`, CI `test`); Playwright `room-crud-export.spec.ts:157-186` parses the ZIP structure (CI `e2e`). The manual probe confirms that export behavior is present in production.
 
-# ─── PHASE 3 PROBES (ETHERCALC_AUTH = "1") ───────────────────────────
+# ─── ADDITIONAL AUTH / EDGE PROBES (same auth-on steady state) ───────
 
-# Probe 11: Phase 3 Behavioral Probe (Verifies Passkeys ON)
+# Probe 11: Auth steady-state recheck (same contract as Probe 2; not a Phase 3 flip)
 curl -fsS -i https://ethercalc.net/_auth/whoami
-# Expected [VERIFIED LOCALLY]: HTTP 200, body `{"uid":null,"enabled":true}`
-# **PARTIALLY AUTOMATED** — `routes-auth.node.test.ts:201-229` asserts the enabled anonymous response (worker `test:coverage`, CI `test`), and `passkey-webauthn-real.spec.ts:194-407` performs a real localhost-RP ceremony (CI `e2e`). This live response proves the Phase 3 flag and bindings reached production; it does not replace a production passkey ceremony.
+# Expected [LIVE CUTOVER]: HTTP 200, body `{"uid":null,"enabled":true}`
+# **PARTIALLY AUTOMATED** — `routes-auth.node.test.ts:201-229` asserts the enabled anonymous response (worker `test:coverage`, CI `test`), and `passkey-webauthn-real.spec.ts:194-407` performs a real localhost-RP ceremony (CI `e2e`). Live response reconfirms auth bindings after ramp; it does not replace a production passkey ceremony. Historical note: old three-phase used this as a Phase 3 enable probe (Appendix A).
 
 # Probe 12: WebAuthn www Alias Redirect Probe
 curl -fsSI https://www.ethercalc.net/_auth/register-init
