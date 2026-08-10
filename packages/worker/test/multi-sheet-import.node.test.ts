@@ -1,11 +1,16 @@
 import * as XLSX from '@e965/xlsx';
-import { describe, expect, it, } from 'vite-plus/test';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import {
   buildMultiSheetImport,
+  buildMultiSheetAppendImport,
+  getMaxSubsheetIndex,
+  rewriteSheetReferences,
   ImportTooManySheetsError,
 } from '../src/lib/multi-sheet-import.ts';
 import {
+  ImportArchiveTooLargeError,
   ImportColumnOutOfRangeError,
+  ImportDimensionsTooLargeError,
   MAX_IMPORT_CELLS,
   worksheetToSave,
 } from '../src/lib/xlsx-import.ts';
@@ -18,7 +23,65 @@ function workbookBytes(sheets: Array<{ name: string; aoa: (string | number | boo
   }
   return new Uint8Array(XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer);
 }
-
+function makeFakeZipCentralDirectory(
+  entries: Array<{ name: string; compressedSize: number; uncompressedSize: number; extraLength?: number; commentLength?: number }>
+): Uint8Array {
+  const cdHeaders: Uint8Array[] = [];
+  let cdOffset = 0;
+  for (const entry of entries) {
+    const nameBytes = new TextEncoder().encode(entry.name);
+    const extraLen = entry.extraLength ?? 0;
+    const commentLen = entry.commentLength ?? 0;
+    const header = new Uint8Array(46 + nameBytes.length + extraLen + commentLen);
+    header[0] = 0x50;
+    header[1] = 0x4b;
+    header[2] = 0x01;
+    header[3] = 0x02;
+    header[20] = entry.compressedSize & 0xff;
+    header[21] = (entry.compressedSize >> 8) & 0xff;
+    header[22] = (entry.compressedSize >> 16) & 0xff;
+    header[23] = (entry.compressedSize >> 24) & 0xff;
+    header[24] = entry.uncompressedSize & 0xff;
+    header[25] = (entry.uncompressedSize >> 8) & 0xff;
+    header[26] = (entry.uncompressedSize >> 16) & 0xff;
+    header[27] = (entry.uncompressedSize >> 24) & 0xff;
+    header[28] = nameBytes.length & 0xff;
+    header[29] = (nameBytes.length >> 8) & 0xff;
+    header[30] = extraLen & 0xff;
+    header[31] = (extraLen >> 8) & 0xff;
+    header[32] = commentLen & 0xff;
+    header[33] = (commentLen >> 8) & 0xff;
+    header.set(nameBytes, 46);
+    cdHeaders.push(header);
+    cdOffset += header.length;
+  }
+  const eocd = new Uint8Array(22);
+  eocd[0] = 0x50;
+  eocd[1] = 0x4b;
+  eocd[2] = 0x05;
+  eocd[3] = 0x06;
+  eocd[8] = cdHeaders.length & 0xff;
+  eocd[9] = (cdHeaders.length >> 8) & 0xff;
+  eocd[10] = cdHeaders.length & 0xff;
+  eocd[11] = (cdHeaders.length >> 8) & 0xff;
+  eocd[12] = cdOffset & 0xff;
+  eocd[13] = (cdOffset >> 8) & 0xff;
+  eocd[14] = (cdOffset >> 16) & 0xff;
+  eocd[15] = (cdOffset >> 24) & 0xff;
+  eocd[16] = 0;
+  eocd[17] = 0;
+  eocd[18] = 0;
+  eocd[19] = 0;
+  const total = cdOffset + 22;
+  const zip = new Uint8Array(total);
+  let pos = 0;
+  for (const h of cdHeaders) {
+    zip.set(h, pos);
+    pos += h.length;
+  }
+  zip.set(eocd, pos);
+  return zip;
+}
 describe('worksheetToSave', () => {
   it('converts a simple worksheet object to SocialCalc save format', () => {
     const ws = {
@@ -191,5 +254,126 @@ describe('multi-sheet import contract', () => {
     const out = buildMultiSheetImport(bytes, 'demo');
     expect(out.tocSave).toContain('#url');
     expect(out.tocSave).toContain('#title');
+  });
+});
+describe('buildMultiSheetAppendImport', () => {
+  it('allocates new subrooms strictly after current max index and rewrites formulas', () => {
+    const bytes = workbookBytes([
+      { name: 'First', aoa: [[1]] },
+      { name: 'Second', aoa: [[2]] },
+    ]);
+    const existingLinks = ['/room.1', '/room.5'];
+    const existingTitles = ['Sheet1', 'Data'];
+
+    const result = buildMultiSheetAppendImport(bytes, 'room', existingLinks, existingTitles);
+    expect(result.subSheets).toHaveLength(2);
+    expect(result.subSheets[0]).toMatchObject({
+      subroom: 'room.6',
+      link: '/room.6',
+      title: 'First',
+    });
+    expect(result.subSheets[1]).toMatchObject({
+      subroom: 'room.7',
+      link: '/room.7',
+      title: 'Second',
+    });
+  });
+
+  it('deduplicates sheet titles against existing titles and skips missing sheets', () => {
+    const readFn = ((): unknown => ({
+      SheetNames: ['Sheet1', 'Missing', 'Data'],
+      Sheets: {
+        Sheet1: { '!ref': 'A1', A1: { t: 'n', v: 1 } },
+        Data: { '!ref': 'A1', A1: { t: 'n', v: 2 } },
+      },
+    })) as unknown as typeof XLSX.read;
+
+    const result = buildMultiSheetAppendImport(
+      new Uint8Array(),
+      'room',
+      ['/room.1'],
+      ['Sheet1'],
+      readFn,
+    );
+
+    expect(result.subSheets).toHaveLength(2);
+    expect(result.subSheets[0]?.title).toBe('Sheet1_2');
+    expect(result.subSheets[1]?.title).toBe('Data');
+  });
+
+  it('handles missing SheetNames or blank sheet titles defensively', () => {
+    const readFnNoNames = ((): unknown => ({})) as unknown as typeof XLSX.read;
+    const resEmpty = buildMultiSheetAppendImport(
+      new Uint8Array(),
+      'room',
+      [],
+      [],
+      readFnNoNames,
+    );
+    expect(resEmpty.subSheets).toHaveLength(0);
+
+    const readFnBlankTitle = ((): unknown => ({
+      SheetNames: ['   '],
+      Sheets: {
+        '   ': { '!ref': 'A1', A1: { t: 'n', v: 1 } },
+      },
+    })) as unknown as typeof XLSX.read;
+    const resBlank = buildMultiSheetAppendImport(
+      new Uint8Array(),
+      'room',
+      ['/room.1'],
+      [],
+      readFnBlankTitle,
+    );
+    expect(resBlank.subSheets[0]?.title).toBe('Sheet2');
+  });
+
+  it('rejects an over-25-MiB uncompressed ZIP before calling XLSX.read', () => {
+    const bytes = makeFakeZipCentralDirectory([
+      { name: 'xl/worksheets/sheet1.xml', compressedSize: 100, uncompressedSize: 30 * 1024 * 1024 },
+    ]);
+    const readFn = vi.fn();
+
+    expect(() =>
+      buildMultiSheetAppendImport(bytes, 'room', [], [], readFn as any),
+    ).toThrow(ImportArchiveTooLargeError);
+
+    expect(readFn).not.toHaveBeenCalled();
+  });
+
+  it('rejects an absurd !ref range (A1:ZZ1000000) before worksheetToSave or cell replay', () => {
+    const readFn = vi.fn().mockReturnValue({
+      SheetNames: ['Absurd'],
+      Sheets: {
+        Absurd: { '!ref': 'A1:ZZ1000000', A1: { t: 'n', v: 1 } },
+      },
+    });
+
+    expect(() =>
+      buildMultiSheetAppendImport(new Uint8Array(), 'room', [], [], readFn as any),
+    ).toThrow(ImportDimensionsTooLargeError);
+  });
+
+  it('enforces total sheet limit when appending', () => {
+    const existingLinks = Array.from({ length: MAX_MULTI_SHEETS }, (_, i) => `/room.${i + 1}`);
+    const bytes = workbookBytes([{ name: 'Extra', aoa: [[1]] }]);
+
+    expect(() =>
+      buildMultiSheetAppendImport(bytes, 'room', existingLinks, []),
+    ).toThrow(ImportTooManySheetsError);
+  });
+});
+
+describe('getMaxSubsheetIndex & rewriteSheetReferences', () => {
+  it('getMaxSubsheetIndex finds max index for current room links only', () => {
+    expect(getMaxSubsheetIndex(['/room.0', '/room.1', '/room.8', '/other.99', '/room.invalid'], 'room')).toBe(8);
+    expect(getMaxSubsheetIndex([], 'room')).toBe(0);
+  });
+
+  it('rewriteSheetReferences replaces sheet references with subroom ids', () => {
+    expect(rewriteSheetReferences("cell:A1:vtf:n:1:Second!A1", ['First', 'Second'], 'room', 6)).toBe(
+      "cell:A1:vtf:n:1:'room.7'!A1",
+    );
+    expect(rewriteSheetReferences('body', [], 'room', 6)).toBe('body');
   });
 });

@@ -113,6 +113,65 @@ describe('PUT multi-sheet import', () => {
     expect(sub1.status).toBe(404);
   });
 });
+describe('POST multi-sheet append import', () => {
+  it('POST /=:room.xlsx appends worksheets strictly after the current max index and updates TOC', async () => {
+    const room = `mappend-${Math.random().toString(36).slice(2, 8)}`;
+
+    // Initial 2-sheet PUT
+    const putRes = await request('PUT', `/=${room}.xlsx`, twoSheetXlsx());
+    expect(putRes.status).toBe(201);
+
+    // Append 2 sheets via POST
+    const postRes = await request('POST', `/=${room}.xlsx`, twoSheetXlsx());
+    expect(postRes.status).toBe(201);
+
+    // Assert TOC has 4 sheets (.1, .2, .3, .4)
+    const tocJson = await request('GET', `/_/${room}/csv.json`);
+    expect(tocJson.status).toBe(200);
+    const tocGrid = (await tocJson.json()) as string[][];
+    expect(tocGrid).toEqual([
+      ['#url', '#title'],
+      [`/${room}.1`, 'First'],
+      [`/${room}.2`, 'Second'],
+      [`/${room}.3`, 'First_3'],
+      [`/${room}.4`, 'Second_4'],
+    ]);
+
+    // Assert original subrooms .1 and .2 were not overwritten
+    const cells1 = (await (await request('GET', `/_/${room}.1/cells`)).json()) as Record<
+      string,
+      { datavalue?: unknown }
+    >;
+    expect(cells1.A1?.datavalue).toBe('hello');
+
+    // Assert appended subroom .3 exists and has value
+    const cells3 = (await (await request('GET', `/_/${room}.3/cells`)).json()) as Record<
+      string,
+      { datavalue?: unknown }
+    >;
+    expect(cells3.A1?.datavalue).toBe('hello');
+  });
+
+  it('POST /_/:room/ods is accepted too for append', async () => {
+    const room = `mappend-ods-${Math.random().toString(36).slice(2, 8)}`;
+    const postRes = await request('POST', `/_/=${room}/ods`, twoSheetXlsx());
+    expect(postRes.status).toBe(201);
+  });
+
+  it('POST /=:room.xlsx returns 400 when a sheet exceeds SocialCalc ZZ column', async () => {
+    const room = `mappend-overflow-${Math.random().toString(36).slice(2, 8)}`;
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([['ok']]);
+    ws.AAA1 = { t: 's', v: 'too wide' };
+    ws['!ref'] = 'A1:AAA1';
+    XLSX.utils.book_append_sheet(wb, ws, 'TooWide');
+    const bytes = new Uint8Array(XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer);
+
+    const res = await request('POST', `/=${room}.xlsx`, bytes);
+    expect(res.status).toBe(400);
+    expect(await res.text()).toContain('exceeds SocialCalc max ZZ');
+  });
+});
 
 describe('canonical two-sheet workbook: TOC + child contract', () => {
   it('exact TOC rows, exact child values/formula, durable single-child mutation via real command route', async () => {

@@ -1,31 +1,12 @@
-import { describe, it, expect, vi, afterEach } from 'vite-plus/test';
+import { describe, it, expect, vi } from 'vite-plus/test';
 import { MAX_MULTI_SHEETS } from '@ethercalc/shared';
 import { HackFoldr, type FetchImpl } from '../src/Foldr.ts';
 import {
   appendImportedWorkbook,
   getMaxSubsheetIndex,
-  loadXlsx,
   parseFileToSheets,
   rewriteSheetReferences,
-  sheetToSocialCalc,
-  type XlsxApi,
 } from '../src/importWorkbook.ts';
-
-const encodeCell = ({ r, c }: { r: number; c: number }): string =>
-  `${String.fromCharCode(65 + c)}${r + 1}`;
-
-function fakeXlsx(
-  sheetNames: readonly string[],
-  sheets: Readonly<Record<string, unknown>>,
-): XlsxApi {
-  return {
-    read: vi.fn().mockReturnValue({ SheetNames: sheetNames, Sheets: sheets }),
-    utils: {
-      decode_range: vi.fn().mockReturnValue({ s: { r: 0, c: 0 }, e: { r: 1, c: 2 } }),
-      encode_cell: encodeCell,
-    },
-  };
-}
 
 function existingFoldr(tocFetch: FetchImpl): HackFoldr {
   const foldr = new HackFoldr('http://localhost', { fetchImpl: tocFetch });
@@ -38,65 +19,7 @@ function existingFoldr(tocFetch: FetchImpl): HackFoldr {
   return foldr;
 }
 
-afterEach(() => {
-  delete window.XLSX;
-  vi.restoreAllMocks();
-});
-
-describe('browser SheetJS loader', () => {
-  it('reuses SheetJS when the page already loaded it', async () => {
-    const xlsx = fakeXlsx([], {});
-    window.XLSX = xlsx;
-    await expect(loadXlsx()).resolves.toBe(xlsx);
-  });
-
-  it('loads the tracked JSZip and SheetJS assets in order', async () => {
-    const xlsx = fakeXlsx([], {});
-    const loaded: string[] = [];
-    const fakeWindow = {} as Window;
-    const fakeDocument = {
-      createElement: () => ({ src: '', onload: null, onerror: null }),
-      head: {
-        append: (script: HTMLScriptElement) => {
-          loaded.push(script.src);
-          if (script.src.endsWith('/static/xlsx.core.min.js')) fakeWindow.XLSX = xlsx;
-          script.onload?.(new Event('load'));
-        },
-      },
-    } as unknown as Document;
-
-    await expect(loadXlsx(fakeWindow, fakeDocument)).resolves.toBe(xlsx);
-    expect(loaded).toEqual(['/static/jszip.js', '/static/xlsx.core.min.js']);
-  });
-
-  it('rejects when a tracked parser asset cannot load', async () => {
-    const fakeDocument = {
-      createElement: () => ({ src: '', onload: null, onerror: null }),
-      head: {
-        append: (script: HTMLScriptElement) => script.onerror?.(new Event('error')),
-      },
-    } as unknown as Document;
-
-    await expect(loadXlsx({} as Window, fakeDocument)).rejects.toThrow(
-      'failed to load /static/jszip.js',
-    );
-  });
-
-  it('rejects when the scripts load without initializing SheetJS', async () => {
-    const fakeDocument = {
-      createElement: () => ({ src: '', onload: null, onerror: null }),
-      head: {
-        append: (script: HTMLScriptElement) => script.onload?.(new Event('load')),
-      },
-    } as unknown as Document;
-
-    await expect(loadXlsx({} as Window, fakeDocument)).rejects.toThrow(
-      'SheetJS did not initialize',
-    );
-  });
-});
-
-
+describe('importWorkbook helpers', () => {
   it('finds only numeric indices belonging to the current room', () => {
     expect(
       getMaxSubsheetIndex(
@@ -107,34 +30,6 @@ describe('browser SheetJS loader', () => {
     expect(getMaxSubsheetIndex([], 'room')).toBe(0);
   });
 
-describe('workbook conversion', () => {
-  it('preserves text, numbers, formulas, dimensions, and SocialCalc escaping', () => {
-    const xlsx = fakeXlsx([], {});
-    const save = sheetToSocialCalc(
-      {
-        '!ref': 'A1:C2',
-        A1: { t: 's', v: 'a:b\\c\nd' },
-        B1: { t: 'n', v: 42 },
-        C1: { t: 'n', v: 42, f: 'Second!A1' },
-        A2: { t: 'b', v: true },
-      },
-      xlsx,
-    );
-
-    expect(save).toContain('cell:A1:t:a\\cb\\bc\\nd');
-    expect(save).toContain('cell:B1:v:42');
-    expect(save).toContain('cell:C1:vtf:n:42:Second!A1');
-    expect(save).not.toContain('cell:A2');
-    expect(save).toContain('sheet:c:3:r:2:tvf:1');
-    expect(save).toContain('copiedfrom:A1:C2');
-  });
-
-  it('produces a valid empty SocialCalc envelope for a blank worksheet', () => {
-    const save = sheetToSocialCalc({}, fakeXlsx([], {}));
-    expect(save).toContain('# SocialCalc Spreadsheet Control Save');
-    expect(save).not.toContain('copiedfrom:');
-  });
-
   it('rewrites cross-sheet formulas to allocated offset subroom ids', () => {
     const body = "cell:A1:vtf:n:1:Second!A1+'O''Brien'!B2";
     expect(rewriteSheetReferences(body, ['First', 'Second', "O'Brien"], 'room', 6)).toBe(
@@ -143,7 +38,7 @@ describe('workbook conversion', () => {
     expect(rewriteSheetReferences(body, [], 'room', 6)).toBe(body);
   });
 
-  it('parses SocialCalc and CSV text without loading SheetJS', async () => {
+  it('parses SocialCalc and CSV text files', async () => {
     const socialCalc = await parseFileToSheets(
       new File(['socialcalc:version:1.5'], 'saved.socialcalc'),
     );
@@ -161,35 +56,91 @@ describe('workbook conversion', () => {
     });
   });
 
-  it('parses every workbook sheet into a SocialCalc save', async () => {
-    const xlsx = fakeXlsx(
-      ['First', 'Missing', 'Second'],
-      {
-        First: { '!ref': 'A1', A1: { t: 's', v: 'one' } },
-        Second: { '!ref': 'A1', A1: { t: 'n', v: 2 } },
-      },
+  it('rejects unsupported file formats', async () => {
+    await expect(parseFileToSheets(new File(['unknown'], 'data.unknown'))).rejects.toThrow(
+      'Unsupported text import format: data.unknown',
     );
-    const parsed = await parseFileToSheets(new File([new Uint8Array([1, 2])], 'book.xlsx'), xlsx);
-
-    expect(parsed.map((sheet) => sheet.title)).toEqual(['First', 'Second']);
-    expect(parsed.every((sheet) => sheet.contentType.startsWith('text/x-socialcalc'))).toBe(true);
-  });
-
-  it('uses the browser-loaded parser for a real workbook upload path', async () => {
-    const xlsx = fakeXlsx(['Only'], {
-      Only: { '!ref': 'A1', A1: { t: 's', v: 'loaded' } },
-    });
-    window.XLSX = xlsx;
-
-    const parsed = await parseFileToSheets(
-      new File([new Uint8Array([1, 2])], 'browser.xlsx'),
-    );
-    expect(parsed[0]?.body).toContain('cell:A1:t:loaded');
   });
 });
 
 describe('appendImportedWorkbook', () => {
-  it('allocates strictly after the current room maximum and appends the TOC row', async () => {
+  it('POSTs binary workbooks (.xlsx, .ods, .fods) directly to the server multi-import route', async () => {
+    const alert = vi.fn();
+    const fetchFn = vi.fn().mockResolvedValue(new Response('OK', { status: 201 }));
+    const foldr = existingFoldr(fetchFn);
+
+    const xlsx = new File([new Uint8Array([1, 2, 3])], 'book.xlsx');
+    const ok = await appendImportedWorkbook({
+      foldr,
+      index: 'room',
+      basePath: 'http://localhost/',
+      file: xlsx,
+      fetchImpl: fetchFn,
+      alertImpl: alert,
+    });
+
+    expect(ok).toBe(true);
+    expect(alert).not.toHaveBeenCalled();
+    expect(fetchFn).toHaveBeenCalledWith('http://localhost/_/=room/xlsx', {
+      method: 'POST',
+      body: xlsx,
+    });
+  });
+
+  it('surfaces server status and body on binary workbook upload rejection', async () => {
+    const alert = vi.fn();
+    const fetchFn = vi.fn().mockResolvedValue(
+      new Response('workbook exceeds 200000 cells', { status: 413 }),
+    );
+    const foldr = existingFoldr(fetchFn);
+
+    const ok = await appendImportedWorkbook({
+      foldr,
+      index: 'room',
+      basePath: 'http://localhost',
+      file: new File([new Uint8Array([1])], 'large.ods'),
+      fetchImpl: fetchFn,
+      alertImpl: alert,
+    });
+
+    expect(ok).toBe(false);
+    expect(alert).toHaveBeenCalledWith('Import failed (413): workbook exceeds 200000 cells');
+
+    const fetchFallback = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      text: vi.fn().mockRejectedValue(new Error('no body')),
+    });
+    await appendImportedWorkbook({
+      foldr: existingFoldr(fetchFallback),
+      index: 'room',
+      basePath: 'http://localhost',
+      file: new File([new Uint8Array([1])], 'error.fods'),
+      fetchImpl: fetchFallback,
+      alertImpl: alert,
+    });
+    expect(alert).toHaveBeenLastCalledWith('Import failed (500): Server rejected sheet.');
+  });
+
+  it('surfaces network error on binary workbook upload failure', async () => {
+    const alert = vi.fn();
+    const fetchFn = vi.fn().mockRejectedValue(new Error('Network error'));
+    const foldr = existingFoldr(fetchFn);
+
+    const ok = await appendImportedWorkbook({
+      foldr,
+      index: 'room',
+      basePath: 'http://localhost',
+      file: new File([new Uint8Array([1])], 'data.fods'),
+      fetchImpl: fetchFn,
+      alertImpl: alert,
+    });
+
+    expect(ok).toBe(false);
+    expect(alert).toHaveBeenCalledWith('Import failed: Network error');
+  });
+
+  it('allocates strictly after the current room maximum for single-sheet text uploads', async () => {
     const tocFetch = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ command: [0, 'paste A5 all'] }), {
         status: 200,
@@ -208,6 +159,7 @@ describe('appendImportedWorkbook', () => {
       fetchImpl: put,
       alertImpl: alert,
     });
+
     expect(alert).not.toHaveBeenCalled();
     expect(result).toBe(true);
 
@@ -218,51 +170,53 @@ describe('appendImportedWorkbook', () => {
     expect(foldr.rows.at(-1)).toEqual({ link: '/room.6', title: 'Data_6', row: 5 });
   });
 
-  it('rewrites workbook formulas using indices after the existing maximum', async () => {
+  it('rewrites cross-sheet formula references when appending a .socialcalc text file', async () => {
     const tocFetch = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ command: [0, 'paste A6 all'] }), { status: 200 }),
+      new Response(JSON.stringify({ command: [0, 'paste A5 all'] }), { status: 200 }),
     ) as FetchImpl;
+    const alert = vi.fn();
     const foldr = existingFoldr(tocFetch);
     const put = vi.fn().mockResolvedValue(new Response('OK', { status: 201 }));
-    const xlsx = fakeXlsx(
-      ['First', 'Second'],
-      {
-        First: { '!ref': 'A1', A1: { t: 'n', v: 2, f: 'Second!A1' } },
-        Second: { '!ref': 'A1', A1: { t: 'n', v: 2 } },
-      },
-    );
 
-    await appendImportedWorkbook({
-      foldr,
-      index: 'room',
-      basePath: 'http://localhost',
-      file: new File([new Uint8Array([1])], 'book.xlsx'),
-      fetchImpl: put,
-      alertImpl: vi.fn(),
-      xlsxImpl: xlsx,
+    const socialCalcFile = new File(["cell:A1:vtf:n:1:Formula!A1"], 'Formula.socialcalc', {
+      type: 'text/plain',
     });
 
-    expect(put.mock.calls[0]?.[1]?.body).toContain("'room.7'!A1");
-    expect(put.mock.calls[1]?.[0]).toBe('http://localhost/_/room.7');
-  });
+    const result = await appendImportedWorkbook({
+      foldr,
+      index: 'room',
+      basePath: 'http://localhost/',
+      file: socialCalcFile,
+      fetchImpl: put,
+      alertImpl: alert,
+    });
 
-  it('surfaces file-read, network, server 413, and TOC rejection failures', async () => {
+    expect(result).toBe(true);
+    expect(put).toHaveBeenCalledWith(
+      'http://localhost/_/room.6',
+      expect.objectContaining({
+        method: 'PUT',
+        body: "cell:A1:vtf:n:1:'room.6'!A1",
+      }),
+    );
+  });
+  it('surfaces file-read, network, server 413, and TOC rejection failures for text uploads', async () => {
     const alert = vi.fn();
-    const readFailure = new File([''], 'book.xlsx');
-    vi.spyOn(readFailure, 'arrayBuffer').mockRejectedValue(new Error('read failed'));
     const acceptedToc = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ command: [0, 'paste A5 all'] }), { status: 200 }),
     ) as FetchImpl;
+
+    const unreadable = new File([''], 'bad.txt');
+    vi.spyOn(unreadable, 'text').mockRejectedValue(new Error('read failed'));
 
     await expect(
       appendImportedWorkbook({
         foldr: existingFoldr(acceptedToc),
         index: 'room',
         basePath: '',
-        file: readFailure,
+        file: unreadable,
         fetchImpl: vi.fn(),
         alertImpl: alert,
-        xlsxImpl: fakeXlsx([], {}),
       }),
     ).resolves.toBe(false);
     expect(alert).toHaveBeenLastCalledWith('Import failed — could not parse file.');

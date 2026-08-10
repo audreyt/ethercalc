@@ -254,6 +254,29 @@ export function enforceSocialCalcColumnLimit(
 ): void {
   let maxRow = 1;
   let maxColumn = 1;
+
+  const ref = typeof ws['!ref'] === 'string' ? ws['!ref'] : '';
+  if (ref) {
+    const parts = ref.split(':');
+    const startCoord = parseCoord(parts[0]);
+    if (startCoord !== null) {
+      const endCoord = parts[1] !== undefined ? parseCoord(parts[1]) : startCoord;
+      if (endCoord !== null) {
+        const refLabel = parts.length > 1 ? (parts[1] as string) : ref;
+        if (endCoord.c > MAX_SOCIALCALC_COL - 1) {
+          throw new ImportColumnOutOfRangeError(refLabel, endCoord.c + 1);
+        }
+        if (!Number.isSafeInteger(endCoord.r) || endCoord.r > MAX_SOCIALCALC_ROW - 1) {
+          throw new ImportRowOutOfRangeError(refLabel, endCoord.r + 1);
+        }
+        const refRows = Math.max(1, endCoord.r - startCoord.r + 1);
+        const refCols = Math.max(1, endCoord.c - startCoord.c + 1);
+        maxRow = Math.max(maxRow, refRows);
+        maxColumn = Math.max(maxColumn, refCols);
+      }
+    }
+  }
+
   for (const addr of Object.keys(ws)) {
     if (addr.startsWith('!')) continue;
     const rc = parseCoord(addr);

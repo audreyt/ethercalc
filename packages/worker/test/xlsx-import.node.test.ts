@@ -498,7 +498,62 @@ describe('SocialCalc ZZ column ceiling on import', () => {
   });
 });
 describe('SocialCalc declared-area ceiling on import', () => {
-  it('rejects sparse cells and merges whose rectangular extent is oversized', () => {
+  it('rejects sparse cells, merges, and !ref ranges whose rectangular extent is oversized or out of bounds', () => {
+    expect(() =>
+      enforceSocialCalcColumnLimit({
+        '!ref': 'A1',
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      enforceSocialCalcColumnLimit({
+        AAA1: { t: 'n', v: 1 },
+      }),
+    ).toThrow(ImportColumnOutOfRangeError);
+
+    expect(() =>
+      enforceSocialCalcColumnLimit({
+        '!ref': 'A1048577',
+      }),
+    ).toThrow(ImportRowOutOfRangeError);
+
+    expect(() =>
+      enforceSocialCalcColumnLimit({
+        '!ref': 'A1:A2000000',
+      }),
+    ).toThrow(ImportRowOutOfRangeError);
+
+    expect(() =>
+      enforceSocialCalcColumnLimit({
+        '!ref': 'A1:AAA1',
+      }),
+    ).toThrow(ImportColumnOutOfRangeError);
+
+    expect(() =>
+      enforceSocialCalcColumnLimit({
+        '!ref': 'invalid:A1',
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      enforceSocialCalcColumnLimit({
+        '!ref': 'A1:',
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      enforceSocialCalcColumnLimit({
+        A1: { t: 'n', v: 1 },
+        '!merges': [{ s: { c: 702 } }],
+      }),
+    ).toThrow(ImportColumnOutOfRangeError);
+
+    expect(() =>
+      enforceSocialCalcColumnLimit({
+        A1: { t: 'n', v: 1 },
+        '!merges': [{ s: { c: 702, r: 0 } }],
+      }),
+    ).toThrow(ImportColumnOutOfRangeError);
     expect(() =>
       enforceSocialCalcColumnLimit({
         A200001: { t: 'n', v: 1 },
