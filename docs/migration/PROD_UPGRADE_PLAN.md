@@ -631,6 +631,88 @@ npx wrangler versions deploy <PHASE2_VERSION_ID>@100% --env=""
 
 **ROLLBACK TARGET FOR PHASE 2**: Phase 2 contains ZERO DO lifecycle changes. **Phase 2 can be rolled back to Phase 1 instantly at any time via `npx wrangler versions deploy <PHASE1_VERSION_ID>@100% --env=""`**. Because `ETHERCALC_AUTH = "0"`, no private rooms or passkeys can be created during Phase 2, making rollback completely safe and hazard-free.
 
+#### 4.3.1 Mixed-Version Cross-Room Interaction During the Phase 2 Ramp
+
+Cloudflare gradual deployments pin **each Durable Object instance to one Worker version** for the life of that deployment, while the front-door Worker isolate that handles an ingress request may be a *different* version than a sibling room it later reaches ([Gradual deployments with Durable Objects](https://developers.cloudflare.com/workers/versions-and-deployments/gradual-deployments/with-durable-objects/)). EtherCalc has **one `RoomDO` per room**, so a 10% / 50% ramp means different rooms can run Phase 1 (`149ebcf` + `AuthDO`) and Phase 2 (`main`, `ETHERCALC_AUTH="0"`) code **at the same time**. Cross-room traffic is therefore the real mixed-version surface — not only the per-room WebSocket restart already covered in §4.5–§4.6.
+
+Unknown `/_do/*` paths on both trees fall through to **`501 Not implemented`** (baseline router end at the `149ebcf` `room.ts` fetch handler; HEAD `packages/worker/src/room.ts:489`) — not 404.
+
+##### Cross-room path map (verified against `packages/worker/src`)
+
+| Path | Initiator | Hop | Target `/_do/*` | Request / response contract |
+| :--- | :-------- | :-- | :-------------- | :-------------------------- |
+| **Cross-sheet formula hydration** | `RoomDO.#getSpreadsheet` → `#hydrateCrossSheetRefs` (`room.ts:2179`, `room.ts:2204-2208`; pure orchestration in `lib/cross-sheet.ts:87-126`) | **DO→DO** | sibling `GET /_do/snapshot` via `#fetchSibling` (`room.ts:2194-2201`) — no `?name=`, no `X-EC-Uid` | Body: raw SocialCalc save text. Non-200 or empty → `null`; caller skips the ref and formulas degrade to `#NAME?` (`room.ts:2157-2159`). HEAD also bounds body size via `readBoundedResponseText` (`cross-sheet.ts:45-74`, `room.ts:2200`). |
+| **WS `submitform` → `_formdata` sibling** | `handleExecute` in the source room (`lib/ws-handlers.ts:177-198`) through `ctx.siblingDo` (`room.ts:1853-1866`) | **DO→DO** | `POST /_do/commands?name=<room>_formdata` with plaintext command body | Failures swallowed (`ws-handlers.ts:193-195`). HEAD additionally gates private rooms with `allowSubmitForm` (`room.ts:1849-1851`) and may thread `X-EC-Uid`. |
+| **DELETE room → wipe `_formdata` sibling** | `RoomDO.#deleteFormdataSibling` (`room.ts:809-828`) from `#deleteAllAndUnindex` | **DO→DO** | `DELETE /_do/all?name=<sibling>` | Best-effort; errors swallowed (`room.ts:826-827`). HEAD may forward `X-EC-Uid`. |
+| **Multi-cascade rename install leg** | Source `RoomDO.#postRename` after Worker `POST /_do/rename` (`room.ts:953-995`) | **DO→DO** | target `POST /_do/install` with JSON `{ snapshot, log, audit }` (`room.ts:979-982`) | Source expects 2xx or returns `502 install failed` (`room.ts:984-985`); on success source `deleteAll`s itself and returns `201`. Install body shape is unchanged from `149ebcf`. |
+| **Template clone** | Source `RoomDO.#postClone` after Worker `POST /_do/clone` (`room.ts:1002-1030`; Worker glue `routes/assets.ts` template form) | **DO→DO** | target `PUT /_do/snapshot?name=<to>` with raw snapshot body | `201` / `502 clone failed`. |
+| **Legacy socket.io sid-host `execute` forward** | Sid-keyed `RoomDO.#handleLegacyFrame` when `attachment.room` is empty (`room.ts:1693-1709`) | **DO→DO** | real room `POST /_do/commands?name=<room>` | Best-effort; errors swallowed. |
+| **Multi-cascade rename (Worker leg)** | `POST /_/:room` when command matches multi-cascade (`routes/rooms.ts:870-967`) | **Worker→DO** then DO→DO above | (1) `GET /_do/snapshot` on TOC room; (2) after authorizing write, `POST /_do/rename` `{ to: "<subsheet>.bak" }` on namespace-guarded `<room>.<n>` | Rename failures swallowed (`rooms.ts:954-955`). HEAD defers rename until the TOC write returns 2xx; `149ebcf` issued rename *before* the write. |
+| **Multi-sheet workbook entry / export** | Worker `getWorkbookKind` (`routes/assets.ts:140-151`); multi export walks TOC (`routes/exports.ts:100-138`) | **Worker→DO** (fan-out across child rooms) | `GET /_do/workbook-kind` → `{ kind: "absent"\|"multi"\|"single" }`; multi export uses `GET /_do/csv.json` then per-child `GET /_do/sheet-data` | `workbook-kind` non-OK → `"unknown"` (no throw). Missing child sheet-data → `continue` (skip sheet). |
+| **Page / edit access probes** | `registerRoomCatchAll`, `/:room/edit`, `DELETE /_/:room` (`routes/assets.ts:349-350`, `routes/stateless.ts:82-85`, `routes/rooms.ts:638-650`) | **Worker→DO** | `GET /_do/access` → `{ isPrivate, canRead, canWrite }` | Non-OK / malformed JSON → `access = null`. HTML/`edit` probes then take the public path; DELETE fails closed to `403`. |
+| **Private room init** | `POST /_/private` and `POST /_from/:template/private` (`routes/rooms.ts:218-234`, `678-694`) | **Worker→DO** | `POST /_do/init-private` with JSON `{ snapshot, acl, group? }` | Caller requires `201`; any other status (including old DO **`501 Not implemented`**) is returned **verbatim** to the client (`rooms.ts:232-234`, `692-694`) — user-visible failure, not a soft fallback. |
+| **Ordinary room CRUD / commands / exports** | Worker route handlers via `doFetch` (`lib/do-dispatch.ts:38-57`) | **Worker→DO** | pre-existing `/_do/snapshot`, `/_do/commands`, `/_do/cells`, `/_do/html`, `/_do/csv`, `/_do/csv.json`, `/_do/md`, `/_do/xlsx`, `/_do/ods`, `/_do/fods`, `/_do/sheet-data`, `/_do/clone`, `/_do/rename`, `/_do/exists`, `/_do/all`, `/_do/log`, `/_do/ws`, … | Single-room; listed because the front-door Worker version and the target DO version can still diverge under a gradual ramp. |
+| **Cron fire** | Worker `scheduled()` (`scheduled.ts:104-114`) | **Worker→DO** | `POST /_do/fire-trigger?cell=…&room=…` | Non-OK skipped (trigger not marked fired). |
+| **`ask.recalc` (client label only)** | Native/legacy WS on the **already-attached** room socket (`room.ts:1547-1550`, `ws-handlers.ts:234+`) | **not cross-DO** | n/a — room field names a formula sheet; state is served from *this* DO’s storage | Not a room-boundary hop; included so operators do not mistake it for DO→DO. |
+
+`doFetch` is always Worker→DO (`lib/do-dispatch.ts:38-57`): it resolves `env.ROOM.idFromName(encodeRoom(room))`, appends `?name=`, strips inbound `X-EC-Uid`, and sets `X-EC-Uid` only from a verified session principal. True DO→DO calls use `env.ROOM.get(…).fetch('https://do.local/…')` directly inside `RoomDO` / `ws-handlers` and therefore pair two room versions with **no** Worker mediator.
+
+##### `/_do/*` protocol delta (`149ebcf` → HEAD)
+
+**Endpoints added on HEAD (absent on Phase 1 `RoomDO`; old code answers `501 Not implemented`):**
+
+| Endpoint | Shape | Who calls it on `main` |
+| :------- | :---- | :--------------------- |
+| `GET /_do/access` | JSON `{ isPrivate, canRead, canWrite }` (`room.ts:353-354`, `503-511`) | Worker HTML/edit/DELETE probes only. Gate-exempt. |
+| `GET /_do/workbook-kind` | JSON `{ kind: "absent"\|"multi"\|"single" }` (`room.ts:385-386`, `843-875`) | Worker default-room / Sandstorm root classifier only (`assets.ts:140-151`). |
+| `POST /_do/init-private` | JSON `{ snapshot, acl, group? }` → private access trio + optional snapshot (`room.ts:465-466`, `#postInitPrivate`) | `POST /_/private` and `POST /_from/:template/private` only. |
+
+**Endpoints removed or renamed:** none. Every `149ebcf` `/_do/*` route still exists on HEAD.
+
+**Same path, changed behaviour (public-room / Phase 2 relevant):**
+
+| Endpoint | `149ebcf` | HEAD | Mixed-version note |
+| :------- | :-------- | :--- | :----------------- |
+| `POST /_do/commands` | Always applies body and returns `202` empty | May return `413 command exceeds sheet limits` when `#appendCommand` rejects (`room.ts:699-703`); also broadcasts `execute` to WS peers after HTTP success (`room.ts:707-714`) | Old DO + new Worker: Worker sees 202 (no new ceiling). New DO + old Worker: old Worker ignored DO status and always echoed HTTP 202 — oversized writes can still be rejected inside the new DO while the old front door lies. New+new: truthful 413 (Phase 2 product behaviour). |
+| `DELETE /_do/all` | Wipes storage; no uid argument | Accepts optional `X-EC-Uid`; may preserve private access tombstone (`room.ts:752-757`, `772-775`) | Irrelevant under Phase 2 (`AUTH=0` ⇒ no private rooms created). |
+| `POST /_do/rename` / `POST /_do/clone` | `to` is non-empty string; rename target id on `149ebcf` used `idFromName(to)` **without** `encodeRoom` | `to` must pass `isValidRoomName`; both refuse `meta:access === 'private'` with `409` (`room.ts:956-965`, `1005-1018`); rename target uses `idFromName(encodeRoom(to))` (`room.ts:976-977`) | Install/clone **body** contracts unchanged. Private `409` is Phase-3-relevant only. `encodeURI` leaves `.` unchanged (`lib/room-name.ts:63-70`), so multi-sheet names like `room.1` / `room.1.bak` are **not** affected; only names `encodeURI` actually rewrites (spaces, non-ASCII, etc.) could expose a target-id mismatch if such a rename ever ran mixed-version. |
+| `POST /_do/install` | `{ snapshot: string, log: string[], audit: string[] }` → fold + replace storage | Same JSON contract; preserves any pre-existing access trio when reinstalling (`room.ts:1252-1290`) | DO→DO payload compatible both directions. |
+| `GET /_do/snapshot` (DO→DO hydration) | Full `res.text()` | `readBoundedResponseText` cap 2 MiB (`room.ts:2200`, `cross-sheet.ts:41`) | Oversize sibling save skipped ⇒ `#NAME?` on the new caller only; old caller still buffers full body. |
+| Gate on almost all `/_do/*` | No ACL gate | `#isAuthorized` unless path is gate-exempt (`room.ts:340-350`); public rooms (`access == null \| 'public'`) still allow all (`lib/authorize.ts:20`) | Under Phase 2 no room is private, so the new gate is a no-op for production data. |
+
+**Unchanged cross-room contracts (safe both directions on public rooms):** `GET/PUT /_do/snapshot`, `POST /_do/commands` success `202` empty body, `POST /_do/install` JSON, `POST /_do/clone`/`rename` public-room happy path for ASCII names, `GET /_do/sheet-data`, `GET /_do/csv.json`, export suite, `DELETE /_do/all` public wipe, `POST /_do/fire-trigger`.
+
+##### Per-path mixed-version verdict (Phase 2 = `main` @ N% with `ETHERCALC_AUTH="0"`, remainder = Phase 1 bundle)
+
+| Path | A=`main`, B=`149ebcf` | A=`149ebcf`, B=`main` | Verdict |
+| :--- | :-------------------- | :-------------------- | :------ |
+| Cross-sheet hydration (DO→DO snapshot) | New A reads old B snapshot; protocol identical; bounds only on A | Old A reads new B snapshot; protocol identical | **SAFE** — failure mode is still `#NAME?` |
+| WS `submitform` → `_formdata` | Commands text to old/new sibling; both accept `POST /_do/commands` | Same | **SAFE** (errors already best-effort) |
+| DELETE → `_formdata` wipe | Old/new sibling both implement `DELETE /_do/all` | Same | **SAFE** |
+| Cascade rename (`/_do/rename` → `/_do/install`) | Install body unchanged; public rooms only in Phase 2 | Same | **SAFE** for public multi-sheet cascade (ASCII/`encodeURI`-stable names) |
+| Template clone | `PUT /_do/snapshot` unchanged | Same | **SAFE** |
+| Legacy sid-host execute forward | `/_do/commands` exists both sides | Same | **SAFE** (best-effort) |
+| Worker multi-export / child `sheet-data` | Endpoints exist on `149ebcf` | Same | **SAFE** |
+| Worker `GET /_do/workbook-kind` | Old B returns **501** → Worker maps to `"unknown"` (`assets.ts:143,151`) | Old Worker never calls this endpoint | **DEGRADED** only where `ETHERCALC_DEFAULT_ROOM` / Sandstorm root classification runs; ethercalc.net production root without that var never calls it (`assets.ts:167-199`) |
+| Worker `GET /_do/access` | Old B returns **501** → `access=null` → HTML/`edit` take public path; DELETE fails closed 403 | Old Worker never calls `/_do/access` | **SAFE under Phase 2** (`AUTH=0` guarantees no private rooms/passkeys). **Unsafe if private rooms already existed** — the public-path fallback would skip ACL UX redirects. |
+| Worker `POST /_do/init-private` | New Worker hits old B → **501** returned **verbatim** to the client (`rooms.ts:232-234`, `692-694`) | Old Worker has no caller | **BROKEN if invoked against a Phase 1 DO** (user-visible create/copy failure). **Dormant in Phase 2** because `ETHERCALC_AUTH="0"` makes `getSessionPrincipal` null and both private routes return `401` before `doFetch` (`rooms.ts:201-202`, `673-675`; executive summary item 3). |
+| Worker `POST /_do/commands` sheet limits | New Worker + old DO: old DO accepts oversize (no 413) | Old Worker + new DO: DO may 413/drop while old Worker still HTTP 202 | **DEGRADED** — enforcement and client-visible 413 only when **both** front door and target room are on `main`. Matches the already-documented product ceiling (§4.6 rows 3–5); ramp merely delays uniform enforcement. |
+
+##### Overall verdict
+
+**DEGRADED (not BROKEN) for the Phase 2 production ramp on public rooms**, with one **hard dependency** on keeping passkeys off until 100%:
+
+1. Every **DO→DO** payload used in production public flows (`/_do/snapshot`, `/_do/commands`, `/_do/install`, `/_do/all`) is forwards- and backwards-compatible between `149ebcf` and `main`.
+2. Soft-fallback new endpoints (`/_do/access`, `/_do/workbook-kind`) map Phase 1 **`501`** to null/`unknown` without throwing; with `ETHERCALC_AUTH="0"` the access-probe public fallback is correct because no private room can exist yet.
+3. `POST /_do/init-private` is **not** soft-fallback: a `main` Worker that reached a still-Phase-1 target DO would surface **501** to the user. Phase 2 keeps those routes unreachable (`401` before dispatch). Enabling `ETHERCALC_AUTH="1"` while any room fraction remains on Phase 1 would make private-room create/copy **BROKEN** for rooms pinned to the old version.
+4. Remaining user-visible asymmetry during a pure Phase 2 ramp is limited to **sheet-limit enforcement** (and the niche default-room workbook classifier), not to cross-sheet reads, formdata siblings, multi-sheet cascade rename, or exports.
+
+**Operational mitigation:**
+
+- **Mandatory:** Do **not** start Phase 3 (`ETHERCALC_AUTH="1"`) until Phase 2 is at **100%** and soaked. Partial-ramp + auth-on would activate `/_do/init-private` and `/_do/access` against mixed DO versions (create/copy **501**; access probe public fallback would be wrong for any private room that did get created on a new DO). This hardens §9 item 9.
+- **Optional (not a Go/No-Go blocker for Phase 2 itself):** After the Phase 2 version-override smoke (`Cloudflare-Workers-Version-Overrides` whoami probe in §4.3) passes, prefer a **short** 10% observation window and then advance 10% → 50% → 100% without multi-hour soaks at partial percentages — or jump 10% → 100% if multi-sheet / large-paste traffic is active and uniform 413 signalling matters more than blast-radius staging. Partial percentages remain acceptable for public-room data integrity: they do not corrupt cross-room state under `AUTH=0`.
+
+
 ---
 
 ### 4.4 Phase 3: Enable Passkeys (`ETHERCALC_AUTH = "1"`)
@@ -1204,7 +1286,7 @@ self-host `uniqueKey` volume check (§7.2.1).
 - [ ] **7. Staging Rehearsal Passed**: Phase 1, Phase 2, and Phase 3 deployed and verified on `https://ethercalc-staging.audreyt.workers.dev` (§§3.1–3.2).
   > **PARTIALLY AUTOMATED** — Every §3.2 behavior has a named local guard, and root test `nightly staging validation bypasses the generated production config` pins the nightly dry-run command. Only the rehearsal proves all three deployed artifacts, staging bindings/RP, existing DO state, and edge behavior together; use the per-item §3.2 deltas rather than treating local green as a substitute.
 - [ ] **8. Phase 1 Deployed & Soaked Before Phase 2 Upload**: Phase 1 (`npx wrangler deploy`) executed and verified stable before uploading the Phase 2 gradual release (§4.2 and §4.3).
-- [ ] **9. Phase 2 Soaked with `ETHERCALC_AUTH="0"` Before Phase 3**: Phase 2 fully rolled out to 100% and soaked before activating passkeys in Phase 3 (§4.3 and §4.4).
+- [ ] **9. Phase 2 at 100% with `ETHERCALC_AUTH="0"` Before Phase 3**: Phase 2 MUST be fully rolled out to **100%** (no residual Phase 1 room pin) and soaked before activating passkeys in Phase 3 (§4.3, §4.3.1, §4.4). Enabling `ETHERCALC_AUTH="1"` while any room fraction remains on Phase 1 makes `POST /_do/init-private` return **501** to private create/copy callers and makes `GET /_do/access` 501 fall back to the public HTML path — both unacceptable once private rooms exist.
 
 ---
 
