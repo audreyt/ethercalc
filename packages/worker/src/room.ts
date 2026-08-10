@@ -768,7 +768,13 @@ export class RoomDO implements DurableObject {
 
     type AllocSheet = { subroom: string; link: string; title: string };
     type AllocResult =
-      | { ok: true; firstIndex: number; sheets: AllocSheet[]; cmdBatches: string[] }
+      | {
+          ok: true;
+          firstIndex: number;
+          sheets: AllocSheet[];
+          cmdBatches: string[];
+          auditRows: Array<{ seq: number; ts: number; body: string }>;
+        }
       | { ok: false; status: number; message: string };
 
     const allocated = await this.#state.blockConcurrencyWhile(async (): Promise<AllocResult> => {
@@ -810,6 +816,7 @@ export class RoomDO implements DurableObject {
       const currentTitles = [...existingTitles];
       const sheets: AllocSheet[] = [];
       const cmdBatches: string[] = [];
+      const auditRows: Array<{ seq: number; ts: number; body: string }> = [];
 
       for (let i = 0; i < titles.length; i++) {
         const nextIdx = firstIndex + i;
@@ -845,17 +852,32 @@ export class RoomDO implements DurableObject {
           };
         }
         cmdBatches.push(commandText);
+        auditRows.push({
+          seq: applied.auditSeq,
+          ts: applied.ts,
+          body: applied.auditBody,
+        });
       }
-      return { ok: true, firstIndex, sheets, cmdBatches };
+      return { ok: true, firstIndex, sheets, cmdBatches, auditRows };
     });
 
     if (!allocated.ok) {
       return plainResponse(allocated.message, allocated.status);
     }
 
-    // Mirror + broadcast outside the lock (same pattern as #postCommands).
-    const lastTs = Date.now();
+    // Mirror rooms index + durable audit_log outside the lock (parity with
+    // #applyCommandAndMirror used by POST /_do/commands).
+    const lastTs =
+      allocated.auditRows.length > 0
+        ? allocated.auditRows[allocated.auditRows.length - 1]!.ts
+        : Date.now();
     await this.#mirrorIndex(room, lastTs);
+    await this.#mirrorAudit(room, allocated.auditRows);
+    for (const row of allocated.auditRows) {
+      if (row.seq >= AUDIT_HISTORY_KEEP) {
+        await this.#state.storage.delete(auditKey(row.seq - AUDIT_HISTORY_KEEP));
+      }
+    }
     await this.#armAlarm();
     for (const cmdstr of allocated.cmdBatches) {
       await this.#broadcastAll({

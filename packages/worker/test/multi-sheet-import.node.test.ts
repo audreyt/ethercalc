@@ -502,3 +502,123 @@ describe('prepareAppendImportPlan', () => {
     );
   });
 });
+
+describe('multi-sheet-import mutation pins', () => {
+  it('mutation pins for getMaxSubsheetIndex multi-digit and non-numeric suffixes', () => {
+    // Multi-digit suffix must beat single-digit (kills /^\d$/ regex mutant).
+    expect(
+      getMaxSubsheetIndex(['/room.9', '/room.10', '/room.2', '/room.not', '/other.99'], 'room'),
+    ).toBe(10);
+    // Non-prefix and empty stay 0.
+    expect(getMaxSubsheetIndex(['/other.5', 'room.3', '/room.'], 'room')).toBe(0);
+    // Equality: equal max is not increased (kills >= mutant).
+    expect(getMaxSubsheetIndex(['/room.5', '/room.5'], 'room')).toBe(5);
+  });
+
+  it('mutation pins for rewriteSheetReferences quoting and empty names', () => {
+    const body = "cell:A1:vtf:n:1:Second!A1+'O''Brien'!B2";
+    expect(rewriteSheetReferences(body, [], 'room', 6)).toBe(body);
+    expect(rewriteSheetReferences(body, ['First', 'Second', "O'Brien"], 'room', 6)).toBe(
+      "cell:A1:vtf:n:1:'room.7'!A1+'room.8'!B2",
+    );
+    // Special-char sheet name must be escaped in the regex (kills empty replace mutants).
+    const weird = rewriteSheetReferences('cell:A1:vtf:n:1:A+B!A1', ['A+B'], 'r', 1);
+    expect(weird).toBe("cell:A1:vtf:n:1:'r.1'!A1");
+  });
+
+  it('mutation pins for upload size boundary and format gates', () => {
+    // Equal to limit is allowed; one over throws (kills >= mutant).
+    expect(() =>
+      prepareAppendImportPlan(
+        new Uint8Array(MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES),
+        'csv',
+        'Edge',
+      ),
+    ).not.toThrow();
+    expect(() =>
+      prepareAppendImportPlan(
+        new Uint8Array(MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES + 1),
+        'csv',
+      ),
+    ).toThrow(ImportArchiveTooLargeError);
+
+    // Exact MAX sheets is allowed; MAX+1 throws (kills >= mutant).
+    const namesOk = Array.from({ length: MAX_MULTI_SHEETS }, (_, i) => `S${i}`);
+    const sheetsOk: Record<string, unknown> = {};
+    for (const name of namesOk) sheetsOk[name] = { '!ref': 'A1', A1: { t: 'n', v: 1 } };
+    const readOk = (() => ({ SheetNames: namesOk, Sheets: sheetsOk })) as unknown as typeof XLSX.read;
+    expect(() => prepareAppendImportPlan(new Uint8Array(), 'xlsx', undefined, readOk)).not.toThrow();
+
+    const namesBad = Array.from({ length: MAX_MULTI_SHEETS + 1 }, (_, i) => `S${i}`);
+    const sheetsBad: Record<string, unknown> = {};
+    for (const name of namesBad) sheetsBad[name] = { '!ref': 'A1', A1: { t: 'n', v: 1 } };
+    const readBad = (() => ({
+      SheetNames: namesBad,
+      Sheets: sheetsBad,
+    })) as unknown as typeof XLSX.read;
+    expect(() => prepareAppendImportPlan(new Uint8Array(), 'xlsx', undefined, readBad)).toThrow(
+      ImportTooManySheetsError,
+    );
+
+    // Format is lower-cased (kills toUpperCase mutant).
+    const upper = prepareAppendImportPlan(new TextEncoder().encode('a'), 'CSV', 'T');
+    expect(upper.count).toBe(1);
+
+    // TSV must convert tabs to commas (kills identity/empty-replace mutants).
+    const tsvSave = prepareAppendImportPlan(
+      new TextEncoder().encode('a\tb'),
+      'tsv',
+      'T',
+    ).materializeSaves('room', 1)[0]!;
+    const csvSave = prepareAppendImportPlan(
+      new TextEncoder().encode('a,b'),
+      'csv',
+      'T',
+    ).materializeSaves('room', 1)[0]!;
+    expect(tsvSave).toBe(csvSave);
+
+    // socialcalc path rewrites; csv path does not look like socialcalc formulas.
+    const sc = prepareAppendImportPlan(
+      new TextEncoder().encode('cell:A1:vtf:n:1:SheetX!A1'),
+      'socialcalc',
+      'SheetX',
+    ).materializeSaves('r', 2)[0]!;
+    expect(sc).toContain("'r.2'!A1");
+    expect(sc).not.toContain('SheetX!');
+  });
+
+  it('mutation pins for buildMultiSheetAppendImport sheet-cap arithmetic', () => {
+    const existing = Array.from({ length: MAX_MULTI_SHEETS - 1 }, (_, i) => `/room.${i + 1}`);
+    const titles = existing.map((_, i) => `T${i}`);
+    // One more sheet fits exactly at the boundary.
+    const one = workbookBytes([{ name: 'Last', aoa: [[1]] }]);
+    expect(() => buildMultiSheetAppendImport(one, 'room', existing, titles)).not.toThrow();
+    // Two more exceeds (kills >= and - arithmetic mutants).
+    const two = workbookBytes([
+      { name: 'A', aoa: [[1]] },
+      { name: 'B', aoa: [[2]] },
+    ]);
+    expect(() => buildMultiSheetAppendImport(two, 'room', existing, titles)).toThrow(
+      ImportTooManySheetsError,
+    );
+    try {
+      buildMultiSheetAppendImport(two, 'room', existing, titles);
+    } catch (err) {
+      expect(err).toBeInstanceOf(ImportTooManySheetsError);
+      expect((err as ImportTooManySheetsError).sheetCount).toBe(MAX_MULTI_SHEETS + 1);
+      expect((err as Error).message).toContain(String(MAX_MULTI_SHEETS + 1));
+    }
+  });
+
+  it('mutation pins unsupported format error name/message', () => {
+    try {
+      prepareAppendImportPlan(new Uint8Array([1]), 'nope');
+      throw new Error("expected throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(ImportUnsupportedFormatError);
+      expect((err as Error).name).toBe('ImportUnsupportedFormatError');
+      expect((err as Error).message).toContain('nope');
+      expect((err as Error).message.length).toBeGreaterThan(0);
+    }
+  });
+});

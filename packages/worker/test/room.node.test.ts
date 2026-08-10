@@ -401,7 +401,7 @@ vi.mock('../src/lib/xlsx-import.ts', () => ({
     if (g.__loadClipboardForceNull) return null;
     if (g.__loadClipboardHuge) return `set A1 text t ${'x'.repeat(200_000)}`;
     const text = new TextDecoder().decode(bytes);
-    return `loadclipboard ${text.length}`;
+    return `loadclipboard ${text}`;
   },
 }));
 
@@ -1902,6 +1902,72 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
     expect(auditCall).toBeDefined();
     expect(auditCall?.params[0]).toBe('beta');
     expect(auditCall?.params[3]).toBe('set A1 value n 1');
+  });
+
+  it('POST /_do/import-append-toc mirrors each TOC paste into durable D1 audit_log', async () => {
+    mockExportCSV.mockReturnValueOnce('#url,#title\n/import-audit.1,First\n');
+    mockSave.mockReturnValueOnce('TOC1').mockReturnValueOnce('TOC2');
+    mockExec.mockClear();
+    try {
+      const res = await room.fetch(
+        new Request('https://do/_do/import-append-toc?name=import-audit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ titles: ['Alpha', 'Beta'] }),
+        }),
+      );
+      expect(res.status).toBe(200);
+
+      const roomsCall = d1Calls.find((c) => c.sql.includes('INSERT INTO rooms'));
+      expect(roomsCall).toBeDefined();
+      expect(roomsCall?.params[0]).toBe('import-audit');
+      expect(typeof roomsCall?.params[1]).toBe('number');
+
+      // Batched multi-row INSERT into audit_log (room,seq,ts,body)×N.
+      // Pin every field so the SeqRow literal can't be blanked to {}.
+      const auditCall = d1Calls.find((c) => c.sql.includes('INSERT INTO audit_log'));
+      expect(auditCall).toBeDefined();
+      expect(auditCall?.sql).toContain('(?, ?, ?, ?), (?, ?, ?, ?)');
+      expect(auditCall?.params).toHaveLength(8);
+      expect(auditCall?.params[0]).toBe('import-audit');
+      expect(auditCall?.params[1]).toBe(0);
+      expect(typeof auditCall?.params[2]).toBe('number');
+      expect(String(auditCall?.params[3])).toContain('paste A3 all');
+      expect(String(auditCall?.params[3])).toContain('/import-audit.2');
+      expect(auditCall?.params[4]).toBe('import-audit');
+      expect(auditCall?.params[5]).toBe(1);
+      expect(typeof auditCall?.params[6]).toBe('number');
+      expect(String(auditCall?.params[7])).toContain('paste A4 all');
+      expect(String(auditCall?.params[7])).toContain('/import-audit.3');
+
+      // Rooms-index timestamp must match the last audit row's ts (not a bare Date.now()).
+      expect(roomsCall?.params[1]).toBe(auditCall?.params[6]);
+    } finally {
+      mockSave.mockReset();
+      mockSave.mockImplementation(() => 'SNAP');
+      mockExportCSV.mockReset();
+      mockExportCSV.mockImplementation(() => 'a,b\n1,2\n');
+    }
+  });
+
+  it('POST /_do/import-append-toc does NOT mirror audit without ?name even when DB is bound', async () => {
+    mockExportCSV.mockReturnValueOnce('#url,#title\n');
+    try {
+      // No name → room-name required 400 before any mirror.
+      const res = await room.fetch(
+        new Request('https://do/_do/import-append-toc', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ titles: ['X'] }),
+        }),
+      );
+      expect(res.status).toBe(400);
+      expect(d1Calls.some((c) => c.sql.includes('INSERT INTO audit_log'))).toBe(false);
+      expect(d1Calls.some((c) => c.sql.includes('INSERT INTO rooms'))).toBe(false);
+    } finally {
+      mockExportCSV.mockReset();
+      mockExportCSV.mockImplementation(() => 'a,b\n1,2\n');
+    }
   });
 
   it('does NOT mirror audit when a command arrives without ?name (DB bound)', async () => {
