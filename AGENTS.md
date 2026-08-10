@@ -118,30 +118,36 @@ spikes/                   Immutable research provenance (not the maintained work
 ## Session log
 
 Per-session history is in `docs/historic/REWRITE_ULTRAPLAN.md` §14 (append-only,
-newest last). Latest: full security audit of `main` against prod
-`ethercalc.net`, with every confirmed finding fixed at its owning boundary —
-stored DOM XSS in the client graph panel, multi-sheet `postMessage`/TOC trust,
-per-message WS/Socket.IO authentication and attachment-room binding (no more
-client-supplied `parsed.room`), protocol-wide frame/chat/cell caps in
-`@ethercalc/shared`, bounded auth + import ingestion (body guard, ZIP/sheet/
-cell caps, bounded cross-sheet hydration), a gated `/_timetrigger` plus a
-scheduler that no longer treats refusals as fires, `__Host-ec_sess` with
-AuthDO-side revocation and per-IP ceremony limits, trusted-proxy correctness
-(`CF-Connecting-IP` only from the edge; nginx replaces forwarding headers),
-≥62-bit room IDs, `no-store` + global security headers, and an export
-sanitizer mirroring the client allowlist. CSP WebSocket authority is anchored
-on `ETHERCALC_ORIGIN` by `lib/csp.ts`, so a spoofed request `Host` cannot
-widen `connect-src`; unconfigured self-hosts retain a request-host fallback.
-Root-page inline scripts moved to five tracked `static/*.js` files, asserted
-by `scripts/build-assets.ts` (`script-src 'unsafe-inline'` is still required
-by SocialCalc's toolbar, so that move is hygiene, not a boundary). Infra:
-compat date 2026-07-21 (capnp in lockstep), `run_worker_first`, pinned base
-image, read-only containers, `automountServiceAccountToken: false`,
-fail-closed Helm passkey anchors.
-Mutation floors re-measured: worker 90.21, shared 99.69, socketio-shim 84.68,
-migrate 90.38, oracle-harness 83.46, client 77.61 — equivalent mutants carry
-written `// Stryker disable` justifications rather than padded tests.
-Prior: merged passkey accounts + private sheets (Phase A) from
-`feat/passkey-permissions` (PR #841) — WebAuthn `AuthDO` relying party,
-RoomDO-enforced `meta:access`/`meta:acl` private rooms, principal-threaded
-routes, dependency-free passkey UI, WS session-expiry enforcement.
+newest last). Latest: operator runbook for upgrading production
+`ethercalc.net` to `main` (`docs/migration/PROD_UPGRADE_PLAN.md` plus
+`DELTA_AUDIT.md`, `SKEW_AND_RECONNECT.md`, `PREFLIGHT_RESULTS.md`,
+`INVENTORY.md`). Read-only probes overturned the assumed
+`0.20260717.0`/`149ebcf` baseline — `GET /_auth/whoami` returns
+`{"uid":null,"enabled":true}`, root HTML serves `./static/passkey/ui.js`,
+and `/static/index-bootstrap.js` is 404 — so production sits in
+`[d2afa90, b7d8840)` with passkeys/`AuthDO`/ACL/private rooms already live
+and the security-audit page-script extraction not. The original Phase-2
+`ETHERCALC_AUTH="0"` soak would have failed `authEnabled()`, nulled every
+session principal, and 403'd every private room; corrected plan is a single
+gradual ramp with `AUTH="1"` throughout (three-phase analysis kept as
+Appendix A). Candidate-range checks that made the simpler plan safe:
+`wrangler.toml` declares only `v1`/`v2`, all three D1 migrations are
+byte-identical, and `lib/authorize.ts` is byte-identical. Exposed
+regression: `ec_sess` → `__Host-ec_sess` with no dual-read (silent logout
+at rollout). Search-indexing policy restored after an accidental
+dual-purpose-commit revert (`ae86756` → `c789249`; only `/` stays
+indexable; robots.txt has no `Disallow` so crawlers can still observe
+`noindex`). Tip `327fa3d`: worker 53/1526 node + 13/197 workers-pool at
+100% coverage (2706/1936/298/2416); mutation ratchet exit 0 in 828s,
+`@ethercalc/worker` +0.03pp, `robots.ts` 100% (9/0). Open: six
+`[OPERATOR-VERIFY]` items (chiefly `CURRENT_PROD_VERSION_ID` via
+`wrangler deployments list`) and the staging rehearsal.
+Prior: full security audit of `main` against prod `ethercalc.net` — stored
+DOM XSS, multi-sheet `postMessage`/TOC trust, per-message WS/Socket.IO auth
+and attachment-room binding, protocol-wide caps, bounded auth/import
+ingestion, gated `/_timetrigger`, `__Host-ec_sess` with AuthDO revocation,
+trusted-proxy correctness, ≥62-bit room IDs, `no-store` + global security
+headers, CSP `connect-src` anchored on `ETHERCALC_ORIGIN`, root scripts
+externalized to tracked `static/*.js`, infra hardening; mutation floors
+re-measured (worker 90.21, shared 99.69, socketio-shim 84.68, migrate 90.38,
+oracle-harness 83.46, client 77.61).
