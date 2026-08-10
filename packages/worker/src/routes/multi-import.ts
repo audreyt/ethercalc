@@ -1,12 +1,19 @@
 /**
  * Multi-sheet workbook IMPORT routes — the inverse of the multi-sheet
- * exports in `routes/exports.ts`. `PUT /=:room.{xlsx,ods,fods}` and
- * `PUT /_/=:room/{xlsx,ods,fods}` parse the uploaded workbook into a TOC
- * sheet + one sub-room per worksheet and fan the saves out to the per-room
- * DOs (sub-rooms first, TOC last, so the TOC never points at a missing
- * sub-room). Returns `201 OK`, matching legacy and the single-sheet
- * `PUT /_/:room`. Like all HTTP endpoints these are unauthenticated by
- * design (§6.4).
+ * exports in `routes/exports.ts`.
+ *
+ *   - `PUT /=:room.{xlsx,ods,fods}` / `PUT /_/=:room/{xlsx,ods,fods}`:
+ *     Full room REPLACE operation (`API.md:24`). Parses the uploaded workbook
+ *     into a TOC sheet + one sub-room per worksheet starting at `.1` and overwrites
+ *     the TOC. Sub-rooms first, TOC last, so the TOC never points at a missing sub-room.
+ *
+ *   - `POST /=:room.{xlsx,ods,fods}` / `POST /_/=:room/{xlsx,ods,fods}`:
+ *     Multi-sheet APPEND operation. Reads the room's current TOC (fails closed
+ *     unless status is 200 or 404), allocates sub-room indices strictly after the
+ *     current maximum, rewrites cross-sheet formula references, PUTs each sub-room
+ *     snapshot, and appends TOC rows via `POST /_do/commands`.
+ *
+ * Returns `201 OK`. Access is gated by parent room write permissions when operating on existing rooms.
  */
 import type { Hono } from 'hono';
 
@@ -45,6 +52,53 @@ async function authVerdict(res: Response): Promise<Response | null> {
   });
 }
 
+
+async function getParentAccessInfo(
+  env: Env,
+  base: string,
+  principal: SessionPrincipal | null,
+): Promise<{ isPrivate?: boolean; errorResponse?: Response }> {
+  const accessRes = await doFetch(env, base, '/_do/access', {}, principal);
+  const denied = await authVerdict(accessRes);
+  if (denied) return { errorResponse: denied };
+  if (accessRes.status >= 300) {
+    return {
+      errorResponse: new Response('import failed', {
+        status: 500,
+        headers: { 'Content-Type': TEXT_CT },
+      }),
+    };
+  }
+  const text = await accessRes.text().catch(() => '');
+  try {
+    const json = JSON.parse(text);
+    if (
+      json &&
+      typeof json === 'object' &&
+      typeof json.canWrite === 'boolean' &&
+      typeof json.isPrivate === 'boolean'
+    ) {
+      if (!json.canWrite) {
+        return {
+          errorResponse: new Response('Forbidden', {
+            status: 403,
+            headers: { 'Content-Type': TEXT_CT },
+          }),
+        };
+      }
+      return { isPrivate: json.isPrivate };
+    }
+  } catch {
+    // ignore
+  }
+  return {
+    errorResponse: new Response('import failed', {
+      status: 500,
+      headers: { 'Content-Type': TEXT_CT },
+    }),
+  };
+}
+
 async function importWorkbook(
   env: Env,
   base: string,
@@ -81,9 +135,6 @@ async function importWorkbook(
     throw err;
   }
 
-  // Fan out sub-sheets first, TOC last, failing on the FIRST non-2xx:
-  // a denial (401/403) propagates verbatim; anything else keeps the
-  // legacy opaque 500. Nothing further is dispatched after a failure.
   for (const { subroom, save } of subSheets) {
     const res = await doFetch(
       env,
@@ -128,6 +179,15 @@ async function appendWorkbook(
   bytes: Uint8Array,
   principal: SessionPrincipal | null,
 ): Promise<Response> {
+  const { isPrivate, errorResponse } = await getParentAccessInfo(env, base, principal);
+  if (errorResponse) return errorResponse;
+
+  if (isPrivate) {
+    return new Response('Private room append is not supported', {
+      status: 403,
+      headers: { 'Content-Type': TEXT_CT },
+    });
+  }
   const tocRes = await doFetch(env, base, '/_do/csv.json', {}, principal);
   const denied = await authVerdict(tocRes);
   if (denied) return denied;
@@ -211,6 +271,7 @@ async function appendWorkbook(
       });
     }
   }
+
   let offset = 0;
   for (const { link, title } of subSheets) {
     const csvBody = `"${link.replace(/"/g, '""')}","${title.replace(/"/g, '""')}"`;

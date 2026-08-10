@@ -2,7 +2,26 @@ import { env } from 'cloudflare:test';
 import * as XLSX from '@e965/xlsx';
 import { describe, expect, it } from 'vite-plus/test';
 import type { Env } from '../src/env.ts';
+import { doFetch } from '../src/lib/do-dispatch.ts';
 import worker from '../src/index.ts';
+const AUTH_UID = 'uid-passkey-1';
+const AUTH_EXP = Number.MAX_SAFE_INTEGER;
+const AUTH_COOKIE = '__Host-ec_sess=tok-valid';
+
+function withAuth(e: Env, uid: string = AUTH_UID): Env {
+  return {
+    ...e,
+    ETHERCALC_AUTH: '1',
+    ETHERCALC_ORIGIN: 'https://example.test',
+    AUTH: {
+      idFromName: () => ({}) as DurableObjectId,
+      get: () =>
+        ({
+          fetch: async () => Response.json({ uid, exp: AUTH_EXP }),
+        }) as unknown as DurableObjectStub,
+    } as unknown as DurableObjectNamespace,
+  };
+}
 
 async function request(method: string, path: string, body?: BodyInit | Uint8Array | null): Promise<Response> {
   const req = new Request(`https://example.test${path}`, { method, body: body as unknown as BodyInit | null });
@@ -13,6 +32,18 @@ async function request(method: string, path: string, body?: BodyInit | Uint8Arra
   return worker.fetch(req, env as unknown as Env, ctx);
 }
 
+async function requestWithAuth(method: string, path: string, body?: BodyInit | Uint8Array | null): Promise<Response> {
+  const req = new Request(`https://example.test${path}`, {
+    method,
+    headers: { Cookie: AUTH_COOKIE },
+    body: body as unknown as BodyInit | null,
+  });
+  const ctx = {
+    waitUntil() {},
+    passThroughOnException() {},
+  } satisfies Partial<ExecutionContext> as unknown as ExecutionContext;
+  return worker.fetch(req, withAuth(env as unknown as Env) as never, ctx);
+}
 /** POST a JSON `{command}` body to the real command route (`POST /_/:room`). */
 async function postCommand(room: string, command: string): Promise<Response> {
   const req = new Request(`https://example.test/_/${room}`, {
@@ -172,7 +203,35 @@ describe('POST multi-sheet append import', () => {
     expect(await res.text()).toContain('exceeds SocialCalc max ZZ');
   });
 });
+  it('rejects append requests on private multi-sheet rooms', async () => {
+    const base = `mpriv-${Math.random().toString(36).slice(2, 8)}`;
+    const initRes = await doFetch(
+      env as unknown as Env,
+      base,
+      '/_do/init-private',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          snapshot: '# SocialCalc\n',
+          acl: { owner: 'uid-passkey-1', readers: [], writers: [] },
+        }),
+      },
+      { uid: 'uid-passkey-1', exp: Number.MAX_SAFE_INTEGER },
+    );
+    expect(initRes.status).toBe(201);
 
+    // Unauthenticated POST append is denied 403 Forbidden
+    const unauthedPost = await request('POST', `/=${base}.xlsx`, twoSheetXlsx());
+    expect(unauthedPost.status).toBe(403);
+    expect(await unauthedPost.text()).toBe('Forbidden');
+    // Authenticated owner POST append is denied 403 ("Private room append is not supported")
+    const postRes = await requestWithAuth('POST', `/=${base}.xlsx`, twoSheetXlsx());
+    expect(postRes.status).toBe(403);
+    expect(await postRes.text()).toContain('Private room append is not supported');
+
+    // Assert zero child subroom snapshots were created on refusal
+    const subRes = await request('GET', `/_/${base}.1`);
+    expect(subRes.status).toBe(404);
 describe('canonical two-sheet workbook: TOC + child contract', () => {
   it('exact TOC rows, exact child values/formula, durable single-child mutation via real command route', async () => {
     const room = `mcanon-${Math.random().toString(36).slice(2, 8)}`;

@@ -687,7 +687,6 @@ export class RoomDO implements DurableObject {
     await this.#armAlarm();
     return plainResponse('OK', 201);
   }
-
   async #getLog(): Promise<Response> {
     const [log, chat] = await Promise.all([
       this.#listPrefix(STORAGE_KEYS.logPrefix),

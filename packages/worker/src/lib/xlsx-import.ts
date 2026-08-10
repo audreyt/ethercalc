@@ -258,7 +258,7 @@ export function enforceSocialCalcColumnLimit(
   const ref = typeof ws['!ref'] === 'string' ? ws['!ref'] : '';
   if (ref) {
     const parts = ref.split(':');
-    const startCoord = parseCoord(parts[0]);
+    const startCoord = parseCoord(parts[0] as string);
     if (startCoord !== null) {
       const endCoord = parts[1] !== undefined ? parseCoord(parts[1]) : startCoord;
       if (endCoord !== null) {
