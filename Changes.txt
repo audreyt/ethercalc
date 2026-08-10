@@ -54,6 +54,10 @@ Tooling
 - Hardened self-host Docker builds against local-state leakage: build context
   excludes dependencies, Vite/Wrangler output, secrets, migration dumps, and
   persistent room data; the smoke gate asserts the resulting image is clean.
+- Fixed `scripts/ratchet-verify.sh` mutation score parsing in `jq` and `node`
+  branches by computing the score from mutant status counts rather than reading
+  a non-existent `mutationScore` property, resolving an unconditional parse
+  error (exit 2) during mutation ratchet audits.
 
 Integration
 - Prepared the headless adapter for the next SocialCalc release: bundle
@@ -67,6 +71,12 @@ Integration
 - Moved the account/access cluster into its in-flow fallback at or below the
   measured 920px cutoff, avoiding overlap with SocialCalc's expanded menu while
   preserving fixed top-right chrome on wider sheets.
+
+Bug fixes
+- Fixed `POST /_/:room` returning `202` on Durable Object command rejections,
+  which silently discarded writes. The route now propagates the DO status and
+  response body (such as `413 command exceeds sheet limits` when a batch exceeds
+  200,000 cells).
 
 ==============================================================================
 0.20260717.0 — 2026-07-17
