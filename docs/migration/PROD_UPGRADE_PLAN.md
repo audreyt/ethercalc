@@ -774,12 +774,7 @@ Mirror **§4.3 Steps 0–5 and the ramp-abort path**, retargeted at staging. Kee
 
 #### Step 0 — Pin staging baseline (blocking)
 
-1. Record `STAGING_PRE_RAMP_VERSION_ID` from staging deployments/versions list:
-   ```bash
-   npx wrangler deployments list --config=packages/worker/wrangler.toml --env=staging
-   npx wrangler versions list --config=packages/worker/wrangler.toml --env=staging
-   ```
-   **`[OPERATOR-VERIFY]`**: confirm these exact flags list the staging Worker (`ethercalc-staging`) on the pinned Wrangler CLI; if the CLI requires different staging-selection flags, record the working form here before rehearsal.
+1. Record `STAGING_PRE_RAMP_VERSION_ID` from staging `wrangler deployments list` / `versions list` before upload (staging analogue of §4.3 Step 0’s `CURRENT_PROD_VERSION_ID` pin). **§4.3 does not publish exact CLI flags for these list commands** (production or staging). **`[OPERATOR-VERIFY]`**: settle and record the working staging-selection form on the pinned Wrangler CLI (must isolate `ethercalc-staging` / `[env.staging]`; carry explicit `--config wrangler.toml` per §3.1 whenever the command accepts it). Do not invent flags here.
 2. Green preflight on the **ship tree** (not a Phase 1 worktree) — §1.
 3. Confirm checked-in `[env.staging.vars]` still has `ETHERCALC_AUTH = "1"` — do not edit it for this rehearsal.
 
