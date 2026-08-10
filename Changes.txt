@@ -34,6 +34,13 @@ Security
 - Made staging deploy validation pass `--config wrangler.toml` explicitly, so
   Vite's generated production-config redirect cannot silently ignore
   `--env staging`.
+- Room URLs stay unlisted by design: every non-landing response now carries
+  `X-Robots-Tag: noindex, nofollow, noarchive`, and only `/` remains
+  indexable. `GET /robots.txt` returns a real robots file (Allow: `/` only)
+  instead of falling through the `/:room` catch-all as app HTML. The robots
+  file deliberately carries no `Disallow` directive — `Disallow` forbids
+  fetching, so a crawler blocked from a URL can never observe its `noindex`
+  header and already-indexed rooms would be stranded permanently.
 
 Tooling
 - Migrated the repository interface to Vite+ 0.2.4: package operations use
