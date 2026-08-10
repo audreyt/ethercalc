@@ -375,14 +375,14 @@ Execute the following verification checklist against `https://ethercalc-staging.
    - Verify that the new client bundle (`boot.ts:384-390`) sends `ask.log` for the main room in addition to `<room>_formdata`, successfully hydrating the sheet grid.
 4. **Large Command Batch & Limit Enforcement**:
    - Submit a command batch exceeding `MAX_SHEET_CELLS = 200_000` (e.g. `POST /_/staging-limit-test` expanding dimensions to A1:Z10000 = 260,000 cells).
-   - Verify the HTTP response is `413` with the exact lowercase body `command exceeds sheet limits` (`packages/worker/src/room.ts:703`), while the WebSocket closes with `1008` and the distinct capitalized reason `Command exceeds sheet limits` (`packages/worker/src/room.ts:1805`).
+   - Verify the HTTP response is `413 Payload Too Large` with `Content-Type: text/plain; charset=utf-8` and the exact lowercase body `command exceeds sheet limits` (`packages/worker/src/room.ts:703`, matching local Worker baseline in §5 Probe 6), while the WebSocket closes with `1008` and the distinct capitalized reason `Command exceeds sheet limits` (`packages/worker/src/room.ts:1805`).
 5. **Legacy `/socket.io/*` Transport Shim**:
    - Request `curl -fsS "https://ethercalc-staging.audreyt.workers.dev/socket.io/1/?t=$(date +%s)"`.
-   - Verify response returns HTTP 200 with session handshake parameters.
+   - Verify response returns HTTP 200, `Content-Type: text/plain; charset=utf-8`, and body matching `<32-hex-session-id>:60:60:websocket,xhr-polling` (matching local Worker baseline in §5 Probe 8).
 6. **XLSX Import and Export**:
-   - Upload a test `.xlsx` file via `POST /_/staging-xlsx-test`.
-   - Export sheet via `GET /_/staging-xlsx-test.xlsx`.
-   - Verify downloaded file parses correctly and preserves cell data.
+   - Upload a test `.xlsx` file via `POST /_/staging-xlsx-test` with header `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` (which decodes binary workbook data into `loadclipboard` + `paste A1 all` commands via the `xlsx-deferred` handler in `packages/worker/src/routes/rooms.ts:745`).
+   - Export sheet via `GET /staging-xlsx-test.xlsx` (or the alternative valid export spelling `GET /_/staging-xlsx-test/xlsx`). Verify response returns `200 OK` with `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`, binary body starting with ZIP signature bytes `PK\x03\x04`, and `Content-Disposition: attachment; filename="staging-xlsx-test.xlsx"`. Confirm downloaded file parses correctly and preserves cell data.
+   - **CRITICAL WARNING**: The `GET /_/staging-xlsx-test.xlsx` spelling is **NOT** an export route. It targets a raw room named `staging-xlsx-test.xlsx` and returns `404 Not Found` with an empty `text/plain` body (matching local Worker baseline in §5 Probe 10a). An operator following the incorrect `/_/<room>.xlsx` spelling during staging rehearsal would see a 404, erroneously conclude XLSX export is broken, and could halt an otherwise healthy cutover.
 7. **Phase 2 Passkey Disabled Check (`ETHERCALC_AUTH="0"`)**:
    - Query `curl -fsS https://ethercalc-staging.audreyt.workers.dev/_auth/whoami`.
    - Verify body returns `{"uid":null,"enabled":false}` and `POST /_/private` returns `401 Unauthorized`.
@@ -394,12 +394,11 @@ Execute the following verification checklist against `https://ethercalc-staging.
    - **CRITICAL NOTE**: Passkeys registered on staging are bound to WebAuthn RP ID `ethercalc-staging.audreyt.workers.dev` (`packages/worker/wrangler.toml:84`). They are **NOT portable** to production (`ethercalc.net`) because WebAuthn RP IDs strictly enforce exact domain matching.
 9. **Asset Purge & Freshness Check**:
    - Request `curl -fsSI https://ethercalc-staging.audreyt.workers.dev/static/player.js`.
-   - Confirm asset loads cleanly with `200 OK` and `Content-Type: text/javascript; charset=utf-8` (matching local Worker baseline in §5 Probe 3).
+   - Confirm asset loads cleanly with `200 OK` and `Content-Type: text/javascript; charset=utf-8` (matching local Worker baseline in §5 Probe 4).
    - **Note**: Production Cloudflare Workers Assets edge may emit `Content-Type: application/javascript` or `text/javascript` depending on global edge MIME tables; operators should treat a MIME subtype mismatch as informational as long as HTTP status is `200 OK`.
 10. **Cross-Room Index Gating (`/_rooms*`)**:
-
-- Request `curl -sS -i https://ethercalc-staging.audreyt.workers.dev/_rooms`.
-- On staging (`ETHERCALC_CORS="1"`), verify endpoint returns `403 Forbidden` (`"_rooms not available with CORS"`).
+   - Request `curl -sS -i https://ethercalc-staging.audreyt.workers.dev/_rooms`.
+   - On staging (`ETHERCALC_CORS="1"`), verify endpoint returns HTTP `403 Forbidden`, `Content-Type: text/plain; charset=utf-8`, and body matching exactly `_rooms not available with CORS` (30 bytes, no trailing newline, matching local Worker baseline in §5 Probe 9).
 
 ---
 
