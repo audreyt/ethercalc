@@ -17,7 +17,7 @@
 | Item | Classification | Blast Radius | Mitigation |
 | :--- | :--- | :--- | :--- |
 | **a) DO Classes & Migrations** | `[NEEDS MIGRATION]` / `[FORWARD-COMPATIBLE]` | High (Worker deploy requires `v2` migration for new `AuthDO` class). Existing `RoomDO` instances unaffected. | Execute `wrangler deploy` to register migration `tag = "v2"`. Rollback leaves `AuthDO` unreferenced. |
-| **b) DO Storage Key Schema** | `[FORWARD-COMPATIBLE]` (Public) / `[BREAKING-ON-ROLLBACK]` (Private) | Critical on Rollback (`meta:access` & `meta:acl` added for private sheets; legacy code ignores them, making private sheets public on rollback). | Backup DO storage / snapshot before cutover. If rolling back, block access to private rooms via edge WAF. |
+| **b) DO Storage Key Schema** | `[FORWARD-COMPATIBLE]` (Public) / `[BREAKING-ON-ROLLBACK]` (Private) | Critical on Rollback (`meta:access` & `meta:acl` added for private sheets; legacy code ignores them, making private sheets public on rollback). | Prefer Phase 3→2 lockout; on deeper rollback use edge WAF deny for the private-room candidate set (runbook §6.2). **Never** strip `meta:access` (missing access = public). No fleet DO backup API — bounded PITR only (§2.4). |
 | **c) D1 Schema & Migrations** | `[FORWARD-COMPATIBLE]` | Low schema delta (no new migrations since tag). D1 holds index + audit/chat tails only — **not** sheet snapshots; ~1.8M-room / 10 GB scale; private rooms excluded from `rooms` index but not from log tails; self-host has no D1. | See body §c / §k; runbook §0.2 / §2 / §7. |
 | **d) KV & R2 Layout** | `[FORWARD-COMPATIBLE]` | None (KV/R2 bindings currently unused in Worker codebase). | None required. |
 | **e) Environment Variables & Secrets** | `[NEEDS MIGRATION]` / `[FORWARD-COMPATIBLE]` | High (Passkeys fail closed if `ETHERCALC_AUTH`, `ETHERCALC_RP_ID`, `ETHERCALC_ORIGIN` are unset). `ETHERCALC_RP_NAME` defaults to `'EtherCalc'`. | Populate WebAuthn trust anchors in production environment before cutover. |
@@ -270,8 +270,9 @@
    * *Irreversibility:* Once a room is initialized as private (`POST /_/private` or `POST /_do/init-private`), keys `meta:access` and `meta:acl` are written to DO storage.
    * *Rollback Risk:* Older worker code (`149ebcf`) does not have `meta:access` or `meta:acl` or `authorize()` logic (`git show 149ebcf:packages/worker/src/lib/authorize.ts` yields `fatal: path does not exist`). On rollback, old code serves the room's `snapshot` to ANY requester, exposing private room contents publicly.
    * *Mitigation:* 
-     - **Pre-cutover Snapshot:** Take a point-in-time snapshot of DO storage prior to cutover.
-     - **Edge Access Gate on Rollback:** If rollback is required, configure Cloudflare Edge WAF rules to block access to rooms created after the upgrade, or strip `meta:access` keys via an emergency script.
+     - **Edge deny / WAF (safe control):** If rollback past the passkey/ACL stack is required while private rooms may exist, block access with Cloudflare Edge WAF rules against the private-room candidate set (path predicates and/or enumerated room URIs) — see runbook §6.2. **Do not** strip `meta:access` / `meta:acl` keys: `authorize()` treats missing access as public (`packages/worker/src/lib/authorize.ts:20`), so deleting those keys would itself expose private rooms on any build that still consults them, and on pre-authorize builds the keys were already ignored.
+     - **Bounded DO PITR only:** There is no fleet-wide DO export. Per-room `POST /_/:room/pitr-restore` (runbook §2.3–§2.4) may rewind a **pre-enumerated, bounded** candidate set inside the ~30-day window; it is not a whole-instance undo at ~1.8M rooms.
+     - **Prefer Phase-2 lockout over deep rollback:** Rolling Phase 3 → Phase 2 (`ETHERCALC_AUTH="0"`) locks private rooms without exposing content (runbook §6.2 Path A).
 2. **Durable Object Class Migration `v2` (`AuthDO`):**
    * *Irreversibility:* Running `wrangler deploy` applies migration `v2`, instantiating the SQLite-backed `AuthDO`.
    * *Rollback Risk:* Rollback leaves `AuthDO` storage orphaned. WebAuthn accounts registered during the new deployment window will not be reachable on old code.

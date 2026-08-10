@@ -34,8 +34,8 @@ Go/No-Go Item 2 requires that preflight gates pass green on `main` before Phase 
 | - | :--- | :---: | :--- | :---: | :---: |
 | 1 | `vp run typecheck` | **PASS** | Clean typecheck across all 11 workspace packages (with `ASTRO_TELEMETRY_DISABLED=1`). | 2.12s | **MATCH** |
 | 2 | `vp lint` | **PASS** | Clean oxlint run (0 errors across workspace) | 1.03s | **MATCH** |
-| 3 | `bun test scripts/build-assets.test.ts scripts/vite-workflow.test.ts && vp run --filter './packages/*' test` | **PASS** | All unit test suites & root tests pass (with `PLAYWRIGHT_BROWSERS_PATH=/tmp/pw-browsers`). 36 root tests + 47 Playwright specs + package unit suites pass. | 27.00s | **DISCREPANCY** (Runbook misattributed Gate 4's counts 52 files/1514 tests to Gate 3) |
-| 4 | `vp run @ethercalc/worker#test:node` & `vp run @ethercalc/worker#test:workers` | **PASS** | Node suite: 52 test files (1520 tests) pass. Workers-pool suite: 13 test files (196 tests) pass. | 6.25s | **MINOR DISCREPANCY** (Expected 195 worker tests; Actual 196 worker tests passed; Node suite +2 tests for rooms.ts status propagation) |
+| 3 | `bun test scripts/build-assets.test.ts scripts/vite-workflow.test.ts && vp run --filter './packages/*' test` | **PASS** | All unit test suites & root tests pass (with `PLAYWRIGHT_BROWSERS_PATH=/tmp/pw-browsers`). 36 root tests + 47 Playwright specs + package unit suites pass. | 27.00s | **MATCH** (current runbook §1 does not pin Gate 3 to worker node counts) |
+| 4 | `vp run @ethercalc/worker#test:node` & `vp run @ethercalc/worker#test:workers` | **PASS** | Node suite: 52 test files (1520 tests) pass. Workers-pool suite: 13 test files (196 tests) pass. | 6.25s | **MATCH** (runbook §1 expects 52/1520 node + 13/196 workers) |
 | 4b | `vp run @ethercalc/worker#test:coverage` | **PASS** | 100% coverage enforced across Statements (2702/2702), Branches (1936/1936), Functions (297/297), and Lines (2412/2412) in `@ethercalc/worker`. | 2.42s | **MATCH** |
 | 5 | `vp run build:assets` && `vp run @ethercalc/e2e#test` | **PASS** | `build:assets` PASS; `e2e#test` PASS (with `PLAYWRIGHT_BROWSERS_PATH=/tmp/pw-browsers`). All 47 Playwright specs pass. | 25.09s | **MATCH** (when run with writeable browser cache path) |
 | 6 | `vp run @ethercalc/worker#build:dry` | **PASS** | Wrangler deploy dry-run succeeds (with `HOME=/tmp XDG_CONFIG_HOME=/tmp/config`). | 0.88s | **MATCH** (when run with writeable config path) |
@@ -118,7 +118,7 @@ vp run: 0/11 cache hit (0%). (Run `vp run --last-details` for full details)
 ---
 vp run: 0/13 cache hit (0%). (Run `vp run --last-details` for full details)
 ```
-- **Runbook Discrepancy Note:** The runbook's expected output line for Gate 3 claimed "52 node test files / 1514 tests", which actually describes Gate 4 (`@ethercalc/worker#test:node`).
+- **Runbook match note:** Current runbook §1 Gate 4 (not Gate 3) pins worker node counts at **52 files / 1520 tests** and workers-pool at **13 files / 196 tests**. An earlier draft of the runbook briefly mis-attributed 1514/195 figures; those draft numbers are obsolete. This preflight’s measured 1520/196 match the corrected runbook.
 
 ---
 
@@ -147,7 +147,7 @@ Part 2 (`test:workers`):
    Start at  14:45:27
    Duration  3.92s (transform 9.18s, setup 0ms, import 32.04s, tests 1.20s, environment 1ms)
 ```
-- **Runbook Discrepancy Note:** For `test:workers`, runbook expected 195 tests; actual result was **196 tests passed**. For `test:node`, 1520 tests passed across 52 files (including +2 tests added for the `rooms.ts` command rejection status propagation fix).
+- **Runbook match note:** Measured **1520** node tests / **196** workers-pool tests match current runbook §1 exactly (including the +2 node tests for `rooms.ts` DO status propagation). Prior companion text that called 196 a “discrepancy vs expected 195” referred to a superseded runbook draft.
 
 ---
 
