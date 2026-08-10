@@ -1098,12 +1098,13 @@ Keep `ETHERCALC_AUTH = "1"` in `packages/worker/wrangler.toml` for every artifac
 | Edge purge confirmation | After each traffic-affecting step that ships HTML/JS | Root HTML + `static/*` layout changes — **not yet**. |
 
 #### Step 0 — Pin and preflight (blocking)
-
 1. Record `CURRENT_PROD_VERSION_ID` — **done 2026-08-10:** `bd76bda5-3161-4576-b159-dbdb97d774c2` @100% (exact git SHA still open; not required for rollback).
 2. Record secret posture (§0.1) — **done:** empty list / no `ETHERCALC_KEY` is status quo; do not introduce KEY mid-ramp. Treat `ETHERCALC_MIGRATE_TOKEN` only if PITR/migrate/`_timetrigger` are in-window.
 3. Capacity + Time Travel gates — **done 2026-08-10:** 0.694 GiB PASS; Time Travel bookmark recorded above; migrations none pending.
-4. Green preflight on the **ship tree** (not the old Phase 1 worktree) — §1. **Still open.**
-5. Staging rehearsal of **this** single-ramp shape — **§3 executed 2026-08-10** (upload → PRE@100%+SHIP@0% → override smoke with robots/X-Robots discriminators → 10/50/100 → rollback control-plane + X-Robots edge proof → restored ship@100%). Remaining production blockers: §1 ship-tree preflight; optional D1 export; operator decision on MIGRATE_TOKEN/PITR in-window; production edge purge plan for sticky robots cache.
+4. Green preflight on the **ship tree** (not the old Phase 1 worktree) — §1. **Worker suites re-verified 2026-08-10 at HEAD** (`test:node` 53/1526, `test:workers` 13/197, coverage 100% 2706/1936/298/2416; `build:dry --config … --env=""` 2853.42 KiB). `packages/`+`scripts/` unchanged since `327fa3d`.
+5. Staging rehearsal of **this** single-ramp shape — **§3 executed 2026-08-10** (upload → PRE@100%+SHIP@0% → override smoke with robots/X-Robots discriminators → 10/50/100 → rollback control-plane PASS + X-Robots edge PASS; robots sticky-cache CONDITIONAL → restored ship@100%). Remaining before prod upload: optional D1 export; MIGRATE_TOKEN/PITR in-window decision; production edge-purge plan for sticky robots.
+
+
 
 
 
@@ -1243,11 +1244,29 @@ Plus operator checks that §5 never fully owned for this delta:
 
 | Direction | Mechanism | Authz / private-room effect | Notes |
 | :-------- | :-------- | :-------------------------- | :---- |
-| Ship → current prod | `npx wrangler versions deploy <CURRENT_PROD_VERSION_ID>@100% --env=""` | **No ACL declassification** — both revisions enforce `meta:access`/`meta:acl` via `authorize.ts` | Primary rollback. Purge edge after. |
+| Ship → current prod | `vp exec wrangler versions deploy <CURRENT_PROD_VERSION_ID>@100% --config=packages/worker/wrangler.toml --env="" --yes` | **No ACL declassification** — both revisions enforce `meta:access`/`meta:acl` via `authorize.ts` | Primary rollback. **Purge edge after.** |
 | Ship → pre-`v2` / `149ebcf` | **Not available** | n/a | Platform irreversible boundary already crossed when prod gained `AuthDO`. Do not build a Phase 1 lifecycle bundle expecting to “undo passkeys”. |
 | Any → `AUTH=0` bundle | **Forbidden for this cutover** | Locks existing private rooms (owner 403) | Not a rollback tool. |
 
 D1 Time Travel / SQL dump restore (§6) remains available for **D1 only** and still does **not** roll back RoomDO/AuthDO SQLite. Whole-fleet DO PITR remains non-viable at ~1.8M rooms (§2.4) — unchanged.
+
+#### Rollback verification (control-plane vs edge) — recorded 2026-08-10
+
+Staging proved that **`versions deploy <OLD>@100%` restores the deployment graph immediately**, but **edge-cached responses may keep serving ship content** for cacheable paths:
+
+- After ship had served `GET /robots.txt` as `text/plain`, rolling staging back to pre-ramp `@100%` left `/robots.txt` returning **plain** (sticky edge cache; no `Vary` on version). An operator watching only robots would **wrongly** conclude rollback failed (or that ship was still live).
+- **Canonical uncached rollback edge probe:** unique room path that never existed before:
+  ```bash
+  ROOM="rollback-probe-$(date +%s%N)"
+  curl -sSI -H 'Cache-Control: no-cache' "https://ethercalc.net/$ROOM" | grep -i x-robots-tag
+  ```
+  - **Ship:** expects `x-robots-tag: noindex, nofollow, noarchive`
+  - **Pre-ship prod (no robots middleware):** header **absent**
+  Staging confirmed both directions under override / after control-plane rollback.
+- **`/robots.txt` is valid for forward verification** (control HTML vs ship plain while 100/0 split is active **before** ship has polluted cache). **Not** sufficient alone for post-rollback verification once ship has served plain robots.
+- **Edge purge** (Dashboard → Caching → Configuration → Purge Everything) is required to restore prior *cached* behavior and belongs in the §4.3 cutover-log “Edge purge confirmation” row after every traffic-affecting rollback as well as after ramp steps.
+- **Preview URLs:** Durable Object Workers do not generate versioned preview URLs (`has_preview: false` on every staging version despite `preview_urls = true`). Do not plan incident response around preview hosts for `ethercalc` / `ethercalc-staging`.
+
 
 ### 4.5 Residual risks for this smaller delta (honest list)
 
@@ -1510,7 +1529,11 @@ curl -sS -D - https://ethercalc.net/robots.txt -o /tmp/ec-robots.txt
 
 ## §6 D1 Database Rollback & Time Travel `[OPERATOR-VERIFY]`
 
-> **Live procedure.** Code/assets rollback for this cutover is **§4.4** (`npx wrangler versions deploy <CURRENT_PROD_VERSION_ID>@100%`). The superseded three-phase rollback graph (old §6.1–§6.3) is preserved only in Appendix A.
+> **Live procedure.** Code/assets rollback for this cutover is **§4.4** (`vp exec wrangler versions deploy <CURRENT_PROD_VERSION_ID>@100% --config=packages/worker/wrangler.toml --env="" --yes`). The superseded three-phase rollback graph (old §6.1–§6.3) is preserved only in Appendix A.
+>
+> **Edge cache is not rolled back by `versions deploy`.** §4.4 records that after ship traffic, cacheable paths such as `/robots.txt` can keep serving ship bodies even when the active deployment is 100% pre-ship. D1 restore (this section) and Worker version rollback (§4.4) are independent of edge HTML/JS/robots caches — always pair version rollback with the §4.4 uncached discriminator (unique-room `X-Robots-Tag`) and an edge purge when prior cached behavior must return.
+
+
 
 
 If D1 database state must be restored to a pre-cutover state, use Cloudflare D1 Time Travel or manual SQL export restore per [Cloudflare D1 Time Travel documentation](https://developers.cloudflare.com/d1/reference/time-travel/) and [Wrangler D1 CLI Reference](https://developers.cloudflare.com/workers/wrangler/commands/d1/):
@@ -2432,17 +2455,17 @@ self-host `uniqueKey` volume check (§7.2.1).
 
 
 - [x] **1. Baseline Capture, Subsystem & Capacity Verification**: **Satisfied 2026-08-10** (account `audreyt@audreyt.org` / `99984e3c707dd2518f73dfa9da3fc887`, Wrangler `4.112.0`). `CURRENT_PROD_VERSION_ID=bd76bda5-3161-4576-b159-dbdb97d774c2` @100%; D1 `database_size=744845312` B (0.694 GiB) **PASS**; Time Travel bookmark `00000160-00046004-000050c3-42996d7280fabdbb493b31f62969888b` (CLI omits `version`; success is authoritative); migrations remote none pending. Details in §4.3 cutover log. Exact git SHA still open (non-blocking for rollback).
-- [ ] **2. Preflight Gates Green Against Final Tree (9/9 Runnable Gates Verified; 2 Docker Smokes Pending CI)**: All 9 locally-runnable preflight gates (`vp run typecheck`, `vp lint`, `vp run test`, worker `test:node` & `test:workers`, worker 100% coverage gate `test:coverage`, `build:assets` + `e2e#test`, `build:dry`, `check-helm-hardening.sh`, and `ratchet-verify.sh`) passed 100% green against the final tree state including the `rooms.ts` command-rejection status propagation fix (§1.2, `docs/migration/PREFLIGHT_RESULTS.md`). The 2 Docker smoke gates (`./scripts/smoke-selfhost.sh`, `./scripts/smoke-proxy.sh`) remain unverified locally due to missing local `docker compose` CLI subcommand and require CI execution before final cutover.
+- [x] **2. Preflight Gates Green Against Final Tree (worker suites re-verified at HEAD `8fd7e91`, 2026-08-10):** `git diff --stat 327fa3d..HEAD -- packages/ scripts/` **empty** (docs-only since Gate 7 tip). Re-ran at HEAD: `test:node` **53 files / 1526 tests PASS**; `test:workers` **13 / 197 PASS**; `test:coverage` **100%** (2706/1936/298/2416). `build:dry` with explicit `--config=packages/worker/wrangler.toml --env=""` succeeds (Total Upload **2853.42 KiB / gzip 550.45 KiB**, assets from repo-root `assets/`). Note: bare `worker#build:dry` without `--config` still hits the §4.0 redirect (`dist/ethercalc/wrangler.json` → prod DB name + `dist/client`) — always pass `--config` for operator dry-runs. Mutation ratchet not re-run (no source change). Broader 9/9 preflight matrix + Docker smokes remain as recorded in `PREFLIGHT_RESULTS.md` / CI.
   > **ALREADY AUTOMATED — inspect gate status rather than re-performing its assertions.** The root/worker/client gates run the named test and coverage commands; CI `test`, `e2e`, and `helm-lint` execute their corresponding suites, while CI `build:selfhost` runs both Docker smokes (`.github/workflows/ci.yml:17-235`). Once those required jobs are green on the final tree, repeating the same local assertions adds no deployment evidence.
 - [x] **3. Secret posture recorded (not "must provision KEY")**: **Satisfied 2026-08-10** per rewritten §0.1. `wrangler secret list` → `[]`; production has **no** `ETHERCALC_KEY` (anonymous/identity HMAC status quo — shipping without it is identical on the KEY axis). `ETHERCALC_MIGRATE_TOKEN` also absent — required only if PITR/migrate/`_timetrigger` HTTP are in-window; not a ramp blocker otherwise. **Do not** `secret put ETHERCALC_KEY` mid-cutover without a separate auth-mode decision.
 - [ ] **4. D1 Database Export & Time Travel Bookmark Recorded**: Time Travel bookmark **captured 2026-08-10** (`00000160-00046004-000050c3-42996d7280fabdbb493b31f62969888b`; see §4.3 log). Optional `npx wrangler d1 export ethercalc_rooms --remote --output=...` **not yet run** (required `--output` flag); at measured **0.694 GiB** this is no longer multi-GB anxiety — still budget wall-clock/disk and treat the artifact as sensitive if taken. Confirm account plan retention (30d Paid / 7d Free). If the `.sql` artifact may exceed the **5 GB** `d1 execute --file` import ceiling, confirm Time Travel is the whole-DB restore path before relying on the dump for rollback.
-
 - [x] **5. Phase 1 Branch (Forward-Fix Artifact) Prepared**: `release/phase1-lifecycle` branch built, typechecks, and dry-runs cleanly (Appendix A.1.2 / A.2.1 (old §4.2/old §6.1), and §8 item 1; verified via `vp run @ethercalc/worker#typecheck` and `vp run @ethercalc/worker#build:dry`).
   > **ALREADY AUTOMATED — this preparation condition adds no live check.** The named worker `typecheck` and Wrangler `build:dry` gates compile and bundle the Phase 1 tree; their recorded green outputs are the condition itself. Deployment and soak are intentionally separate items 8 and 9.
 - [x] **6. PR 4 Command-Rejection Propagation Landed and Verified for Phase 2**: `POST /_/:room` returns the RoomDO status and body for every non-2xx verdict, matching `PUT /_/:room` at `packages/worker/src/routes/rooms.ts:355-369`. Verified via route contract tests `POST /_/:room command mutations propagate a DO 413 sheet-limit verdict` and `POST /_/:room returns 202 command echo on successful DO dispatch` in `packages/worker/test/routes-rooms.node.test.ts` (53 node files / 1526 tests; 13 workers-pool files / 197 tests; §8 item 5; §10 item 3).
   > **ALREADY AUTOMATED — skim after the worker coverage gate.** `routes-rooms.node.test.ts:810-838` asserts exact 413 propagation plus the 202 success path under worker `test:coverage` (CI `test`), while `room.node.test.ts:1110-1122` asserts RoomDO rejection and no write. This checklist line contains no additional live assertion.
-- [ ] **7. Staging Rehearsal Passed**: Phase 1, Phase 2, and Phase 3 deployed and verified on `https://ethercalc-staging.audreyt.workers.dev` (old §§3.1–3.2 → **Appendix A.0**). **Live cutover uses §3 single-ramp staging rehearsal instead — do not treat this item as a live gate.**
-  > **PARTIALLY AUTOMATED** — Every old §3.2 / **Appendix A.0.2** behavior has a named local guard, and root test `nightly staging validation bypasses the generated production config` pins the nightly dry-run command. Only the three-phase rehearsal proved all three deployed artifacts, staging bindings/RP, existing DO state, and edge behavior together. **Live gate is §3**, not this item.
+- [x] **7. Staging Rehearsal Passed (live §3 single-ramp, 2026-08-10):** Not the superseded three-phase Appendix A.0 item. Executed upload → PRE@100%+SHIP@0% → override smoke (robots + X-Robots discriminators) → 10/50/100 → rollback control-plane PASS + X-Robots edge PASS (robots sticky-cache CONDITIONAL) → restored ship@100%. IDs: PRE `80081841-2b8c-4d32-886d-0225f3f91ba4`, SHIP `4b211206-4b6a-49cd-9d92-d114f68263ba`. Production untouched. Details in §3.2 rehearsal record.
+  > **Live gate is §3**, not Appendix A.0 three-phase staging.
+
 - [ ] **8. Phase 1 Deployed & Soaked Before Phase 2 Upload**: Phase 1 (`npx wrangler deploy`) executed and verified stable before uploading the Phase 2 gradual release (Appendix A.1.2–A.1.3 (old §4.2–§4.3)).
 - [ ] **9. Phase 2 at 100% before Phase 3 (`ETHERCALC_AUTH="1"`) — correctness + rollback**: Phase 2 MUST reach **100%** (no residual Phase 1 room pin) and soak before enabling passkeys (Appendix A.1.3–A.1.4 (old §4.3/§4.4)). **Two independent justifications — do not relax on either alone:** (a) **rollback safety** (original): `AUTH=0` ensures no private rooms exist while major code soaks, so Phase 2→Phase 1 rollback stays hazard-free; (b) **mixed-version correctness** (old §4.3.1 / Appendix A.1.3.1): `POST /_do/init-private` is absent on Phase 1 DOs and returns **501** verbatim to create/copy callers (`rooms.ts:232-234`, `692-694`), so enabling auth while any room is still Phase 1-pinned makes private create/copy user-visibly broken for those ids. (`GET /_do/access` 501 is **not** an authz hole — UX redirect hints only; RoomDO remains the sole boundary; DELETE is fail-closed.)
 
