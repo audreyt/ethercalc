@@ -1,5 +1,110 @@
 # Operator Runbook: Production Upgrade Plan (`0.20260717.0` → `main`)
 
+> ## ⛔ STOP — DOCUMENTED BASELINE DISPROVED (2026-08-10). DO NOT EXECUTE THIS RUNBOOK AS WRITTEN.
+>
+> **Live production at `https://ethercalc.net` is NOT git tag `0.20260717.0` / commit `149ebcf16104b01254ca2b796beb701c88bd6ff8`.** Read-only probes against the live site disproved that premise. The three-phase cutover below (§4.2–§4.4), the rollback model (§6), and the Go/No-Go gate (§9) are therefore **SUPERSEDED PENDING RE-BASELINE**. Do **not** delete those sections — the analysis is still useful — but **do not run them**.
+>
+> ### The self-inflicted-outage hazard (fix this first)
+>
+> Phase 2’s central safety measure sets `ETHERCALC_AUTH = "0"`, justified as making it “structurally impossible” for private rooms or passkeys to exist during the rollback-likely window (see Exec Summary item 3, §2.2, §4.3, §6.2). **That rationale is void against real production.**
+>
+> Passkeys and the `AuthDO` / `AUTH` binding are **already live**. Users may already hold registered credentials and private rooms. Setting `ETHERCALC_AUTH="0"` (or deploying a bundle with the flag off / `AUTH` unbound) would:
+>
+> 1. make `authEnabled()` fail closed → passkey ceremonies 404 and `GET /_auth/whoami` report `enabled:false`;
+> 2. make `getSessionPrincipal` return `null` even for valid session cookies;
+> 3. **lock every existing private room** (RoomDO deny-overrides → **403 to its owner**) without declassifying it public;
+> 4. convert the plan’s main safety measure into a **self-inflicted production outage**.
+>
+> **Do not set `ETHERCALC_AUTH="0"` on production as part of any cutover derived from this document until the strategy is re-baselined against the real deployed revision.**
+>
+> ### Live evidence (re-verify in seconds; read-only GETs only)
+>
+> Gathered 2026-08-10 against `https://ethercalc.net`:
+>
+> ```bash
+> # 1. Health — this codebase's hardcoded version stamp (packages/worker/src/handlers/health.ts)
+> curl -fsS https://ethercalc.net/_health
+> # → {"status":"ok","version":"0.0.0","now":"2026-08-10T09:27:15.896Z"}
+> #    Confirms live Worker execution (not a cached static response).
+>
+> # 2. Auth surface — route absent at 149ebcf; enabled:true requires AUTH binding + RP anchors
+> curl -fsS https://ethercalc.net/_auth/whoami
+> # → {"uid":null,"enabled":true}
+> #    registerAuth (packages/worker/src/routes/auth.ts) does not exist at 149ebcf.
+> #    enabled:true requires authEnabled(): ETHERCALC_AUTH truthy, env.AUTH bound,
+> #    and non-empty ETHERCALC_RP_ID / ETHERCALC_ORIGIN (routes/auth.ts).
+>
+> # 3. Root HTML — post-passkey UI, pre-security-audit asset layout
+> curl -fsS https://ethercalc.net/ | head -c 8000
+> # → contains: <script type="module" src="./static/passkey/ui.js">
+> #             <m3e-theme …>, ./static/passkey/ui.css
+> #             inline <script> bootstrap blocks
+> #             <html manifest="manifest.appcache">
+>
+> # 4. Security-audit root scripts are NOT deployed
+> curl -sS -o /dev/null -w '%{http_code}\n' https://ethercalc.net/static/index-bootstrap.js
+> # → 404
+> #    Filename is required by main's scripts/build-assets.ts REQUIRED_PAGE_SCRIPTS
+> #    and was introduced when inline root scripts were externalized.
+>
+> # 5. Room index gate (non-discriminating; consistent with both revisions)
+> curl -sS -o /dev/null -w '%{http_code}\n' https://ethercalc.net/_rooms
+> # → 403
+> ```
+>
+> **Conclusion from probes:** production is **newer than `149ebcf`** — *after* the passkey merge (PR #841) and *before* `main`’s security-audit work that moved inline root scripts into five tracked `static/*.js` files and dropped the appcache manifest.
+>
+> ### Repo-bounded candidate revision range (exact pin still open)
+>
+> | Bound | SHA | Date (author) | Marker |
+> | :---- | :-- | :------------ | :----- |
+> | **Lower (inclusive floor)** | `d2afa9047475d50eb5228db71067a6c8b7e6a186` | 2026-07-18 01:19:58 +0800 | `Merge feat/passkey-permissions (#841)` — introduces `packages/worker/src/routes/auth.ts`, `auth-do.ts`, passkey UI |
+> | **Upper (exclusive ceiling)** | `b7d884087c15d01092584daa8f5f18445284f643` | 2026-08-04 06:49:58 +0800 | `security: harden EtherCalc trust boundaries` — adds `static/index-bootstrap.js` (+ related page scripts) and removes `manifest.appcache` from `index.html` |
+>
+> Production ∈ (`d2afa90` … `b7d8840`). **Pinning the exact revision still requires** (highest-priority `[OPERATOR-VERIFY]` in this document):
+>
+> ```bash
+> npx wrangler deployments list --config=packages/worker/wrangler.toml --env=""
+> npx wrangler versions list --config=packages/worker/wrangler.toml --env=""
+> ```
+>
+> Until that pin exists, treat every SHA-specific procedure (Phase 1 worktree from `149ebcf`, “v2 not yet deployed”, “passkeys not yet live”) as **false**.
+>
+> ### Re-scoped delta (what remains to ship — not a cutover plan)
+>
+> From the exclusive upper bound through current tree tip, `git log --oneline b7d8840^..HEAD -- packages/ scripts/ static/` is dominated by:
+>
+> - the security-audit hardening commit itself (`b7d8840`) and its follow-ups (CSP/`__Host-ec_sess`, WS/frame caps, body limits, export sanitizer, externalized root scripts, infra lockstep);
+> - `fix(worker): propagate RoomDO command rejections from POST /_/:room` (`5d37bd0`);
+> - CI/test/ratchet and SocialCalc **load-compat test** commits (not a SocialCalc engine bump).
+>
+> **Explicitly already in production (do not re-ship as if new):** passkeys / `AuthDO` / private rooms (PR #841). **Explicitly not part of this delta:** SocialCalc `3.1.0` — shipped in release `0.20260716.0` (`Changes.txt`), before even the old assumed baseline `0.20260717.0`.
+>
+> If production sits earlier inside the candidate range, some of `d2afa90..b7d8840^` (multi-sheet entry restore, Vite+ workflow, headless/DOM harden, etc.) may also still be undeployed — only `wrangler deployments list` settles that.
+>
+> ### What still stands vs what must be reworked
+>
+> | Still valid (baseline-independent) | Needs rework after re-baseline |
+> | :--------------------------------- | :----------------------------- |
+> | §0.1 secrets preconditions | Document title / Baseline Release / Target lines (assumed `149ebcf`) |
+> | §0.2 inspection commands (esp. **`wrangler deployments list` — now #1 priority**) | §0.3 baseline decision table (rows keyed off `149ebcf`) |
+> | §0.2.1 D1 Time Travel subsystem GO/NO-GO | Exec Summary item 3 conclusion that `AUTH=0` “eliminates” private-room hazard in prod |
+> | §0.2.2 D1 10 GB capacity gate & scale arithmetic | Critical-path “Sequence and rollback” / Points of no return (three-phase as written) |
+> | §1 preflight matrix on the ship candidate | §2.2 Phase 2/3 narrative that assumes no private data exists pre-Phase-3 |
+> | §2.1 backup matrix, DO non-exportability, SQL dump limits | **§4.2 Phase 1** (lifecycle-only from `149ebcf` — v2/`AuthDO` almost certainly already live) |
+> | §2.3–§2.4 PITR contract & bounded recovery at ~1.8M rooms | **§4.3 Phase 2 `AUTH=0`** (**hazardous** — see above) |
+> | §4.0 deploy config source-of-truth / redirect-banner guard | **§4.4 Phase 3** (passkeys already on; not a green-field enable) |
+> | §4.5–§4.6 skew/reconnect + `SKEW_AND_RECONNECT.md` companion | **§5** Phase-2-expected `enabled:false` probes (Probe 2/3 framing) |
+> | §5 probe *mechanics* and many response contracts (health shape, `/_rooms` 403, XLSX paths, WS upgrade) | **§6** rollback / lockout model predicated on Phase 2 having zero private rooms |
+> | §6.4 D1 restore does not roll back DO SQLite | **§8** Phase 1 bundle status & “passkeys land in Phase 3” framing |
+> | §7 self-host divergence, `uniqueKey`, nginx, passkey anchor defaults | **§9** Go/No-Go items that gate the three-phase sequence / item 9 `AUTH=0` soak |
+> | Companion inventory / platform constraint citations | §10 items that announce passkeys as newly user-visible post-Phase-3 |
+>
+> **Next pass:** pin production via `wrangler deployments list`, rewrite cutover assuming passkeys/`AuthDO`/private rooms already exist, and replace the `AUTH=0` soak with a strategy that cannot lock existing private rooms.
+>
+> ---
+
+
 ## Companion documents
 
 This runbook is the entry point. The other four files in this directory are supporting evidence — read them when the runbook points you there, or when you need the underlying audit:
@@ -8,12 +113,13 @@ This runbook is the entry point. The other four files in this directory are supp
 - **`SKEW_AND_RECONNECT.md`** — what breaks for a browser tab already open across the cutover. Read when planning operator comms or soak checks.
 - **`PREFLIGHT_RESULTS.md`** — recorded results of this runbook's §1 gates against the final tree. Read to confirm preflight already passed (or what failed).
 - **`INVENTORY.md`** — verbatim mechanical inventory of wrangler config, workflows, D1 migrations, and self-host env. Read when a command or binding needs a ground-truth dump.
-
 ## Critical-path quick reference
 
 Use this quick reference for **“what do I do next?”** Use §§0–3 for preparation, §§4–6 for hosted execution and rollback, §7 for self-host, and §§8–10 for preparation status, Go/No-Go, and consequences. Follow the cited section whenever a line below sends you there; this is a map, not a substitute for the procedure. → §§0–10
 
-### Sequence and rollback
+### Sequence and rollback — **SUPERSEDED PENDING RE-BASELINE**
+
+> **SUPERSEDED PENDING RE-BASELINE.** This table encodes the disproved three-phase cutover (Phase 2 = `AUTH=0`). Do not execute. See STOP banner above.
 
 | Step | What ships | Execution command | Rollback target and command |
 | :--- | :--------- | :---------------- | :-------------------------- |
@@ -711,6 +817,8 @@ Execute the following verification checklist against `https://ethercalc-staging.
 
 ## §4 Cutover Execution (Three-Phase Strategy)
 
+> **SUPERSEDED PENDING RE-BASELINE (2026-08-10).** The three-phase sequence below assumes production is pre-passkey `149ebcf`. Live probes show passkeys/`AuthDO` already on and security-audit assets not yet deployed. **Do not execute §4.2–§4.4.** See the STOP banner at the top of this document.
+
 To guarantee 100% safe rollback capabilities during major code changes, cutover MUST follow this Three-Phase strategy.
 
 ### Cutover log — named artifacts (record as you go)
@@ -765,7 +873,9 @@ All database migration scripts (`0001_rooms.sql`, `0002_cron.sql`, `0003_audit_c
 
 ---
 
-### 4.2 Phase 1: Lifecycle-Only Deployment (`npx wrangler deploy`)
+### 4.2 Phase 1: Lifecycle-Only Deployment (`npx wrangler deploy`) — **SUPERSEDED PENDING RE-BASELINE**
+
+> **SUPERSEDED PENDING RE-BASELINE.** Phase 1 exists to land DO migration `v2` / `AuthDO` from a `149ebcf` baseline. Production already serves `/_auth/whoami` with `enabled:true`, so `AuthDO` + `AUTH` are live — re-running a lifecycle-only `149ebcf`+v2 bundle is the wrong operation and may be a no-op or a dangerous downgrade. Confirm with `wrangler deployments list` before any lifecycle deploy.
 
 #### Building the Phase 1 Minimal Branch (PROVEN)
 
@@ -921,7 +1031,9 @@ cd ../..
 
 ---
 
-### 4.3 Phase 2: Main Code & Assets Gradual Rollout (`ETHERCALC_AUTH = "0"`)
+### 4.3 Phase 2: Main Code & Assets Gradual Rollout (`ETHERCALC_AUTH = "0"`) — **SUPERSEDED PENDING RE-BASELINE**
+
+> **⛔ SUPERSEDED PENDING RE-BASELINE — HAZARDOUS AS WRITTEN.** Setting `ETHERCALC_AUTH = "0"` was justified only while production had **no** passkeys or private rooms. Live production has both. Deploying Phase 2 as written would disable passkey logins and **403-lock existing private rooms for their owners**. Do **not** upload or ramp a production version with `ETHERCALC_AUTH="0"` until the cutover is redesigned.
 
 Phase 2 deploys all of `main` (updated `RoomDO`, `command-limits.ts`, `authorize.ts`, assets) with `ETHERCALC_AUTH = "0"` in `packages/worker/wrangler.toml`.
 The Phase 2 artifact is built from `main` after the command-rejection propagation PR (§8 item 5 / §9 item 6) landed. That behavioral fix ships in Phase 2; it MUST NOT be added to the deliberately inert, `149ebcf`-based Phase 1 lifecycle bundle.
@@ -1084,7 +1196,9 @@ Unknown `/_do/*` paths on both trees fall through to **`501 Not implemented`** (
 
 ---
 
-### 4.4 Phase 3: Enable Passkeys (`ETHERCALC_AUTH = "1"`)
+### 4.4 Phase 3: Enable Passkeys (`ETHERCALC_AUTH = "1"`) — **SUPERSEDED PENDING RE-BASELINE**
+
+> **SUPERSEDED PENDING RE-BASELINE.** Passkeys are already enabled in production (`GET /_auth/whoami` → `enabled:true`). Phase 3 as a green-field “turn auth on” step does not apply; any future cutover must treat auth-on as the **steady state** to preserve, not a post-soak flip.
 
 After Phase 2 has soaked and verified stable in production, Phase 3 enables passkey authentication by flipping `ETHERCALC_AUTH = "1"` in `packages/worker/wrangler.toml`:
 
@@ -1277,7 +1391,9 @@ curl -fsSI https://www.ethercalc.net/_auth/register-init
 
 ---
 
-## §6 Rollback Plan, Platform Limits & Point of No Return
+## §6 Rollback Plan, Platform Limits & Point of No Return — **SUPERSEDED PENDING RE-BASELINE**
+
+> **SUPERSEDED PENDING RE-BASELINE (2026-08-10).** Rollback semantics below assume Phase 2 runs with `AUTH=0` and zero private-room population, and that Phase 1 is the first `v2`/`AuthDO` deploy from `149ebcf`. Neither matches live production. Platform facts (no pre-v2 rollback once `v2` is active; D1 restore ≠ DO restore in §6.4) remain useful; the phase graph and “lockout only after Phase 3” story do **not**. **Do not execute rollbacks that set `ETHERCALC_AUTH="0"` against production private rooms.** See top-of-doc STOP banner.
 
 ### 6.1 Rollback Semantics per Deployment Phase
 
@@ -1661,7 +1777,9 @@ The following six items have been evaluated and categorized:
 
 ---
 
-## §9 Go / No-Go Checklist
+## §9 Go / No-Go Checklist — **SUPERSEDED PENDING RE-BASELINE**
+
+> **SUPERSEDED PENDING RE-BASELINE (2026-08-10).** Items that gate or assume the three-phase `149ebcf` → Phase1 → Phase2(`AUTH=0`) → Phase3 sequence are void. **Item 1 is now the single highest-priority action**, with emphasis on `wrangler deployments list` / `versions list` to pin the real production SHA before any cutover redesign. Item 9’s `AUTH=0` soak justification is actively dangerous if applied to current production. See top-of-doc STOP banner.
 
 This checklist has nine conditions and spans the full cutover. Before executing Phase 1 (`npx wrangler deploy --env=""`), items 1–7 MUST be satisfied; items 5 and 6 are already complete and therefore intentionally checked below. Item 8 gates the Phase 2 upload, and item 9 gates Phase 3.
 ### 9.1 Manual-Attention Calibration
