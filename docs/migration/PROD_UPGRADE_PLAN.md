@@ -93,8 +93,8 @@ npx wrangler deployments list --config=packages/worker/wrangler.toml --env=""
 # 2. Query production versions list
 npx wrangler versions list --config=packages/worker/wrangler.toml --env=""
 
-# 3. Check production D1 database status and schema state
-npx wrangler d1 info ethercalc_rooms
+# 3. Check production D1 database status, schema state, and storage subsystem version (INSPECT `version` FIELD)
+npx wrangler d1 info ethercalc_rooms --json
 
 # 4. Capture current D1 Time Travel info and record the current bookmark timestamp
 npx wrangler d1 time-travel info ethercalc_rooms
@@ -106,6 +106,27 @@ curl -fsS -i https://ethercalc.net/_health
 curl -fsSI https://ethercalc.net/
 ```
 
+#### 0.2.1 Precondition: D1 Storage Subsystem Verification `[GO/NO-GO]`
+
+Before proceeding with cutover or relying on Time Travel backups, the operator MUST verify the D1 database storage subsystem version from `npx wrangler d1 info ethercalc_rooms --json`:
+
+1. **Pass Criterion (`version: "production"`)**:
+   The output `version` field MUST be `"production"`. Per [Cloudflare D1 Time Travel documentation](https://developers.cloudflare.com/d1/reference/time-travel/) and [Wrangler D1 CLI Reference](https://developers.cloudflare.com/workers/wrangler/commands/d1/):
+   > *"Databases with `version: production` support the new Time Travel API. Databases with `version: alpha` only support the older, snapshot-based backup API."*
+   > *"To understand which storage subsystem your database uses, run `wrangler d1 info YOUR_DATABASE` and inspect the `version` field."*
+
+2. **Wrangler Version Compatibility**:
+   Cloudflare D1 Time Travel requires Wrangler CLI version `>= v3.4.0` (per [Cloudflare D1 Time Travel documentation](https://developers.cloudflare.com/d1/reference/time-travel/)). In this repository, root `package.json` pins `"wrangler": "^4.112.0"`, satisfying the CLI version requirement.
+
+3. **Decision Branch (`version: "alpha"`) & Degraded Rollback State**:
+   If `wrangler d1 info ethercalc_rooms` returns `version: "alpha"`:
+   - **Time Travel is completely unavailable**: Time Travel commands (`wrangler d1 time-travel info`, `wrangler d1 time-travel restore`) will fail or operate under legacy snapshot behavior.
+   - **Rollback floor collapses**: Section §2's rollback floor collapses strictly to the manual `d1 export` SQL dump (`npx wrangler d1 export ethercalc_rooms --remote --output=...`), materially weakening rollback protection by eliminating continuous point-in-time recovery (PITR).
+
+4. **Operator Go/No-Go Judgment on `version: "alpha"` Blocker Status**:
+   - **Operator Judgment**: `version: "alpha"` **SHOULD block the cutover outright** if continuous D1 point-in-time recovery (PITR) or automated Time Travel restoration is required by the production operational SLA or change management policy.
+   - **Justification**: D1 `ethercalc_rooms` stores room index metadata (`rooms` table mirroring room IDs, title, snapshot, updated_at). If D1 schema migration (`0001_rooms_index.sql`) or database state corruption occurs during cutover, `version: "alpha"` leaves the operator with zero automated PITR options — reverting D1 requires manually dropping/recreating tables and importing a static SQL dump, which risks losing any room index updates created between the export time and cutover failure. If the operator or team explicitly chooses to proceed under `version: "alpha"` anyway (e.g., because primary cell state lives in `RoomDO` Durable Objects and D1 is a mirror index), this MUST be logged as a formal GO/NO-GO risk acceptance: the operator explicitly acknowledges that §2/§6 Time Travel rollback capabilities are disabled and that D1 recovery relies solely on `d1 export`.
+
 ### 0.3 Baseline Decision Table `[OPERATOR-VERIFY]`
 
 | Observed Baseline State             | Variance from `149ebcf16104b01254ca2b796beb701c88bd6ff8`                   | Required Action                                                                                                                                                    |
@@ -114,7 +135,7 @@ curl -fsSI https://ethercalc.net/
 | **Older Version** (< `149ebcf...`)  | Production is behind `0.20260717.0`.                                       | Pause upgrade. Run git diff between deployed version and `149ebcf...` to audit any missing intermediate state before deploying `main`.                             |
 | **Newer Version** (> `149ebcf...`)  | Production is already ahead of `0.20260717.0`.                             | Run `git log 149ebcf..HEAD` to determine exactly which commits are deployed. Check if DO migration `v2` (`AuthDO`) is already present in `wrangler versions list`. |
 | **`v2` Migration Already Deployed** | `AuthDO` migration `v2` is shown as active in `wrangler deployments list`. | Skip Phase 1 (Phase 1 lifecycle deploy has already occurred). Proceed to Phase 2.                                                                                  |
-
+| **D1 Subsystem `version: "alpha"`** | Database uses legacy `alpha` storage subsystem; Time Travel API unsupported. | GO/NO-GO BLOCKER if continuous PITR is required by SLA. If proceeding by explicit sign-off, operator MUST NOT rely on Time Travel and MUST execute manual `d1 export` SQL backups only (§0.2.1, §2.1). |
 ---
 
 ## §1 Preflight on `main`
@@ -203,7 +224,7 @@ Prior to cutover, record explicit backups for every durable store and acknowledg
 
 | Store                                     | Capture Command / Procedure                                                                                                                                                                                                                                                                                                                                                                                           | Backup Artifact Location                                                                    | Recovery Limitation / Reality                                                                                                                      |
 | :---------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------ | :------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **D1 Database** (`ethercalc_rooms`)       | `npx wrangler d1 export ethercalc_rooms --remote --output=./backup_ethercalc_rooms_$(date +%Y%m%d_%H%M%S).sql`<br><br>Also record current Time Travel bookmark:<br>`npx wrangler d1 time-travel info ethercalc_rooms`                                                                                                                                                                                                 | Local SQL file `./backup_ethercalc_rooms_*.sql` and Cloudflare D1 Time Travel snapshot log. | Fully exportable and restorable via D1 SQL import or D1 Time Travel restore.                                                                       |
+| **D1 Database** (`ethercalc_rooms`)       | `npx wrangler d1 export ethercalc_rooms --remote --output=./backup_ethercalc_rooms_$(date +%Y%m%d_%H%M%S).sql`<br><br>Also verify D1 subsystem `version: "production"` (§0.2.1) and record current Time Travel bookmark:<br>`npx wrangler d1 time-travel info ethercalc_rooms` | Local SQL file `./backup_ethercalc_rooms_*.sql` and Cloudflare D1 Time Travel snapshot log. | Fully exportable and restorable via D1 SQL import or D1 Time Travel restore.<br><br>**Command Syntax**: `--output` flag is **REQUIRED** for `wrangler d1 export` (per [Wrangler D1 CLI Reference](https://developers.cloudflare.com/workers/wrangler/commands/d1/#export)).<br><br>**Retention Caveat**: D1 Time Travel retention is plan-dependent per [Cloudflare D1 Time Travel](https://developers.cloudflare.com/d1/reference/time-travel/): *"up to 30 days in the past (Workers Paid plan) or 7 days (Workers Free plan)"*. Operator MUST confirm which plan the account is on before relying on a 30-day retention window.<br><br>**Subsystem Precondition**: Requires `version: "production"` (§0.2.1). If database is `version: "alpha"`, Time Travel is unsupported and recovery relies strictly on `d1 export` SQL dumps.<br><br>**CLI Compatibility**: Requires Wrangler `>= v3.4.0` (satisfied by root `package.json` pinning `"wrangler": "^4.112.0"`). |
 | **Durable Objects** (`RoomDO` / `AuthDO`) | **NO BULK EXPORT API EXISTS** in Cloudflare Workers for Durable Object SQLite storage.<br><br>**Available Safeguards:**<br>1. Per-room PITR snapshot restoration via operator endpoint `POST /_/:room/pitr-restore` (requires `ETHERCALC_MIGRATE_TOKEN`).<br>2. `RoomDO` SocialCalc snapshots are mirrored to D1 (`rooms` table `snapshot` column via `mirrorRoomToD1`, `packages/worker/src/lib/rooms-index.ts:14`). | Per-room D1 snapshot table (`rooms`) and in-DO PITR SQLite history buffers.                 | `AuthDO` credentials (passkeys, session revocation lists) and un-saved in-memory WebSocket operational state CANNOT be exported out of Cloudflare. |
 | **Static Assets**                         | Built from source code via `scripts/build-assets.ts`.                                                                                                                                                                                                                                                                                                                                                                 | Source repository commits (`assets/` directory built during deploy).                        | 100% reproducible; re-deploys instantly from git source.                                                                                           |
 | **Secrets & Environment Variables**       | Verified via `npx wrangler secret list --config=packages/worker/wrangler.toml --env=""`.                                                                                                                                                                                                                                                                                                                              | Cloudflare Workers Secret Manager.                                                          | Secret values CANNOT be retrieved/read back via CLI. Precondition checks in §0.1 ensure secrets are set prior to cutover.                          |
@@ -722,6 +743,52 @@ Private room data exposure occurs **ONLY if code is rolled back past Phase 2 to 
   > **The moment `ETHERCALC_AUTH = "1"` is activated in Phase 3 and the first user creates a private room (`POST /_/private`) OR completes a passkey registration (`POST /_auth/register-complete`).**
   - Past this point, rolling Phase 3 back to Phase 2 causes private room owner lockout (resolved immediately by re-enabling Phase 3), while rolling back to Phase 1 / Forward-Fix bundle causes world-readability unless WAF URL rules block affected room paths.
 
+### 6.4 D1 Database Rollback & Time Travel Procedure `[OPERATOR-VERIFY]`
+
+If D1 database state must be restored to a pre-cutover state, use Cloudflare D1 Time Travel or manual SQL export restore per [Cloudflare D1 Time Travel documentation](https://developers.cloudflare.com/d1/reference/time-travel/) and [Wrangler D1 CLI Reference](https://developers.cloudflare.com/workers/wrangler/commands/d1/):
+
+#### 1. Destructive Nature & Operational Interruption
+- **In-Place Overwrite**: Per Cloudflare docs: *"Restoring a database to a specific point-in-time is a destructive operation, and overwrites the database in place."*
+- **Query Interruption**: *"Queries in flight will be cancelled, and an error returned to the client."* Operators should perform D1 restores during low-traffic windows or communicate potential transient database errors to active users.
+
+#### 2. Mandatory Undo Bookmark Recording
+- When `wrangler d1 time-travel restore` completes, the CLI prints an undo bookmark:
+  ```text
+  ↩️ To undo this operation, you can restore to the previous bookmark: <BOOKMARK>
+  ```
+- **MANDATORY OPERATOR ACTION**: The operator **MUST record and log this undo bookmark immediately** in cutover logs before proceeding. Capturing this bookmark is essential to reverse an accidental or incorrect restore operation forward.
+
+#### 3. Timestamp Fallback & Deterministic Conversion
+- If the pre-cutover bookmark was **never recorded or lost**, a forgotten bookmark is recoverable using:
+  ```bash
+  npx wrangler d1 time-travel info ethercalc_rooms --timestamp="2026-08-10T12:00:00Z"
+  ```
+  Per Cloudflare docs: *"conversion between a specific timestamp and a bookmark is deterministic (stable)"*.
+- Furthermore, `wrangler d1 time-travel restore` accepts `--timestamp` directly, eliminating the need to look up the bookmark beforehand:
+  ```bash
+  npx wrangler d1 time-travel restore ethercalc_rooms --timestamp="2026-08-10T12:00:00Z"
+  ```
+
+#### 4. Execution Commands (Consistent with §2 Capture)
+
+- **Primary Restore (by Pre-Cutover Bookmark)**:
+  ```bash
+  npx wrangler d1 time-travel restore ethercalc_rooms --bookmark=<PRE_CUTOVER_BOOKMARK>
+  ```
+- **Fallback Restore (by Timestamp, if Bookmark Missing)**:
+  ```bash
+  npx wrangler d1 time-travel restore ethercalc_rooms --timestamp="2026-08-10T12:00:00Z"
+  ```
+- **Undo Restore (Reverting to State Prior to Restoration)**:
+  ```bash
+  npx wrangler d1 time-travel restore ethercalc_rooms --bookmark=<UNDO_BOOKMARK_FROM_RESTORE_OUTPUT>
+  ```
+- **SQL Dump Fallback Restore (If `version: "alpha"` or Time Travel Unavailable)**:
+  ```bash
+  npx wrangler d1 execute ethercalc_rooms --remote --file=./backup_ethercalc_rooms_<TIMESTAMP>.sql
+  ```
+  *(Note: `wrangler d1 export` requires `--output=<path>`, whereas `wrangler d1 execute` requires `--file=<path>` per [Wrangler D1 CLI Reference](https://developers.cloudflare.com/workers/wrangler/commands/d1/).)*
+
 ---
 
 ## §7 Self-Host Upgrade Path (Docker / Helm)
@@ -879,10 +946,10 @@ The following five items have been evaluated and categorized:
 
 This checklist has nine conditions and spans the full cutover. Before executing Phase 1 (`npx wrangler deploy --env=""`), items 1–7 MUST be satisfied; items 5 and 6 are already complete and therefore intentionally checked below. Item 8 gates the Phase 2 upload, and item 9 gates Phase 3.
 
-- [ ] **1. Baseline Capture Verified**: `wrangler deployments list`, `wrangler versions list`, and `wrangler d1 info ethercalc_rooms` executed and recorded (§0.2).
+- [ ] **1. Baseline Capture & Subsystem Verification**: `wrangler deployments list`, `wrangler versions list`, and `wrangler d1 info ethercalc_rooms --json` executed and recorded, confirming D1 storage subsystem `version: "production"` for Time Travel availability (§0.2, §0.2.1).
 - [ ] **2. Preflight Gates Green Against Final Tree (9/9 Runnable Gates Verified; 2 Docker Smokes Pending CI)**: All 9 locally-runnable preflight gates (`vp run typecheck`, `vp lint`, `vp run test`, worker `test:node` & `test:workers`, worker 100% coverage gate `test:coverage`, `build:assets` + `e2e#test`, `build:dry`, `check-helm-hardening.sh`, and `ratchet-verify.sh`) passed 100% green against the final tree state including the `rooms.ts` command-rejection status propagation fix (§1.2, `docs/migration/PREFLIGHT_RESULTS.md`). The 2 Docker smoke gates (`./scripts/smoke-selfhost.sh`, `./scripts/smoke-proxy.sh`) remain unverified locally due to missing local `docker compose` CLI subcommand and require CI execution before final cutover.
 - [ ] **3. Secrets Provisioned in Production**: `wrangler secret list` confirms `ETHERCALC_KEY` and `ETHERCALC_MIGRATE_TOKEN` are active in Cloudflare Secrets (§0.1).
-- [ ] **4. D1 Database Export & Time Travel Bookmark Recorded**: `npx wrangler d1 export ethercalc_rooms --remote` executed and Time Travel bookmark timestamp captured (§2.1).
+- [ ] **4. D1 Database Export & Time Travel Bookmark Recorded**: `npx wrangler d1 export ethercalc_rooms --remote --output=...` executed (using required `--output` flag), account plan confirmed (30d Paid / 7d Free retention), and Time Travel bookmark timestamp captured (§2.1, §6.4).
 - [x] **5. Phase 1 Branch (Forward-Fix Artifact) Prepared**: `release/phase1-lifecycle` branch built, typechecks, and dry-runs cleanly (§4.2, §6.1, and §8 item 1; verified via `vp run @ethercalc/worker#typecheck` and `vp run @ethercalc/worker#build:dry`).
 - [x] **6. PR 4 Command-Rejection Propagation Landed and Verified for Phase 2**: `POST /_/:room` returns the RoomDO status and body for every non-2xx verdict, matching `PUT /_/:room` at `packages/worker/src/routes/rooms.ts:355-369`. Verified via route contract tests `POST /_/:room command mutations propagate a DO 413 sheet-limit verdict` and `POST /_/:room returns 202 command echo on successful DO dispatch` in `packages/worker/test/routes-rooms.node.test.ts` (52 node files / 1520 tests; 13 workers-pool files / 196 tests; §8 item 5; §10 item 3).
 - [ ] **7. Staging Rehearsal Passed**: Phase 1, Phase 2, and Phase 3 deployed and verified on `https://ethercalc-staging.audreyt.workers.dev` (§§3.1–3.2).
