@@ -1630,11 +1630,11 @@ Operator-facing summary for this cutover. Each entry states whether it is a **ch
 
 > The still-valid deploy-config guard that used to live here as old §4.0 is now **live §4.0**. Old §4.5–§4.6 skew analysis is now **live §4.8–§4.9**. What remains in this appendix subsection is the disproved Phase 1–3 sequence and its cutover-log/D1 preamble.
 
-> **SUPERSEDED PENDING RE-BASELINE (2026-08-10).** The three-phase sequence below assumes production is pre-passkey `149ebcf`. Live probes show passkeys/`AuthDO` already on and security-audit assets not yet deployed. **Do not execute §4.2–§4.4.** See the STOP banner at the top of this document.
+> **SUPERSEDED PENDING RE-BASELINE (2026-08-10).** The three-phase sequence below assumes production is pre-passkey `149ebcf`. Live probes show passkeys/`AuthDO` already on and security-audit assets not yet deployed. **Do not execute Appendix A.1.2–A.1.4 (old §4.2–§4.4).** See the STOP banner at the top of this document.
 
 To guarantee 100% safe rollback capabilities during major code changes, cutover MUST follow this Three-Phase strategy.
 
-### Cutover log — named artifacts (record as you go)
+### A.1.0 Old cutover log — named artifacts (record as you go)
 
 Keep one operator log (ticket, notepad, or file). Fill each row when the step that produces it completes. Lost stdout is recoverable from the CLI; do not invent IDs.
 
@@ -1642,13 +1642,13 @@ Keep one operator log (ticket, notepad, or file). Fill each row when the step th
 | :------- | :------------- | :-------------- | :----------------- |
 | `PRE_CUTOVER_BOOKMARK` | Before any deploy (§2.1 / §0.2 step 4) | `npx wrangler d1 time-travel info ethercalc_rooms` (save stdout immediately) | **Do not** re-run `time-travel info` after cutover — that returns a *current* bookmark, not the pre-cutover one. Recover only from the saved command output / change log, or from a recorded pre-cutover UTC timestamp via §6.4. If neither exists, treat the bookmark as **indeterminate**. |
 | `PRE_CUTOVER_D1_SIZE` | Before any deploy (§0.2.2) | `database_size` from `npx wrangler d1 info ethercalc_rooms --json` | Re-run §0.2.2 |
-| `PHASE1_VERSION_ID` | Immediately after Phase 1 deploy succeeds (§4.2) | Version ID printed by `wrangler deploy` / CI deploy log | `npx wrangler versions list` / `npx wrangler deployments list` (§0.2) — take the active 100% post–Phase-1 version |
-| `PHASE2_VERSION_ID` | Immediately after `wrangler versions upload` (§4.3) | Upload command stdout | `npx wrangler versions list` (§0.2) — the uploaded Phase 2 version (not necessarily 100% until ramp completes) |
-| `PHASE3_VERSION_ID` | Immediately after Phase 3 deploy succeeds (§4.4) | Version ID printed by `wrangler deploy` / CI deploy log | `npx wrangler versions list` / `npx wrangler deployments list` (§0.2) — active 100% version with auth on |
+| `PHASE1_VERSION_ID` | Immediately after Phase 1 deploy succeeds (Appendix A.1.2 / old §4.2) | Version ID printed by `wrangler deploy` / CI deploy log | `npx wrangler versions list` / `npx wrangler deployments list` (§0.2) — take the active 100% post–Phase-1 version |
+| `PHASE2_VERSION_ID` | Immediately after `wrangler versions upload` (Appendix A.1.3 / old §4.3) | Upload command stdout | `npx wrangler versions list` (§0.2) — the uploaded Phase 2 version (not necessarily 100% until ramp completes) |
+| `PHASE3_VERSION_ID` | Immediately after Phase 3 deploy succeeds (Appendix A.1.4 / old §4.4) | Version ID printed by `wrangler deploy` / CI deploy log | `npx wrangler versions list` / `npx wrangler deployments list` (§0.2) — active 100% version with auth on |
 
-`PHASE1_VERSION_ID` is required for any Phase 2 → Phase 1 rollback. `PHASE2_VERSION_ID` is required for Phase 3 → Phase 2. `PHASE3_VERSION_ID` is required to re-enable auth after a Phase 3 → Phase 2 lockout rollback without rebuilding (§6.2).
+`PHASE1_VERSION_ID` is required for any Phase 2 → Phase 1 rollback. `PHASE2_VERSION_ID` is required for Phase 3 → Phase 2. `PHASE3_VERSION_ID` is required to re-enable auth after a Phase 3 → Phase 2 lockout rollback without rebuilding (old §6.2).
 
-### 4.1 Step 1: Pre-Deploy D1 Database Migrations
+### A.1.1 Old §4.1 — Pre-Deploy D1 Database Migrations
 
 Execute D1 migrations prior to deploying Worker code:
 
@@ -1661,8 +1661,7 @@ All database migration scripts (`0001_rooms.sql`, `0002_cron.sql`, `0003_audit_c
 
 ---
 
-### 4.2 Phase 1: Lifecycle-Only Deployment (`npx wrangler deploy`) — **SUPERSEDED PENDING RE-BASELINE**
-
+### A.1.2 Old §4.2 — Phase 1: Lifecycle-Only Deployment (`npx wrangler deploy`) — **SUPERSEDED PENDING RE-BASELINE**
 > **SUPERSEDED PENDING RE-BASELINE.** Phase 1 exists to land DO migration `v2` / `AuthDO` from a `149ebcf` baseline. Production already serves `/_auth/whoami` with `enabled:true`, so `AuthDO` + `AUTH` are live — re-running a lifecycle-only `149ebcf`+v2 bundle is the wrong operation and may be a no-op or a dangerous downgrade. Confirm with `wrangler deployments list` before any lifecycle deploy.
 
 #### Building the Phase 1 Minimal Branch (PROVEN)
@@ -1791,13 +1790,13 @@ cd ../..
 
 ##### Decision card — Unknown Phase 1 outcome (deploy error / dead terminal)
 
-**Situation:** Phase 1 `wrangler deploy` errored, hung, or the terminal died. You do not know whether migration `v2` is active. Irreversible boundary → §6.3.
+**Situation:** Phase 1 `wrangler deploy` errored, hung, or the terminal died. You do not know whether migration `v2` is active. Irreversible boundary → Appendix A.2.3 (old §6.3).
 
 **Inspect:** run §0.2 steps 1–2 (`deployments list`, `versions list`).
 
 **Interpretation (no sample CLI output claimed):**
 
-- **`v2` active:** live deployment is **100%** on a post–Phase-1 version that carried `AuthDO` / migration `v2` (same criterion as §6.3). Checks: (a) one version at 100%; (b) created time matches this attempt; (c) pre-cutover baseline is not the sole live version. A migration-tag field showing `v2` confirms; **missing field ≠ failure**.
+- **`v2` active:** live deployment is **100%** on a post–Phase-1 version that carried `AuthDO` / migration `v2` (same criterion as Appendix A.2.3 / old §6.3). Checks: (a) one version at 100%; (b) created time matches this attempt; (c) pre-cutover baseline is not the sole live version. A migration-tag field showing `v2` confirms; **missing field ≠ failure**.
 - **`v2` not active:** still 100% on the pre-cutover baseline; no new 100% Phase 1 deployment.
 - **Indeterminate:** lists disagree, traffic split, newest deploy not 100%, or live version unclear.
 
@@ -1806,7 +1805,7 @@ cd ../..
 | Result | Act |
 | :----- | :-- |
 | **`v2` active** | Record live 100% ID as `PHASE1_VERSION_ID` (Cutover log, start of §4). Continue to Phase 2. Never pre-v2. |
-| **`v2` not active** | Fix error; re-run same Phase 1 deploy (§4.2). Pre-v2 rollback still valid until `v2` active. |
+| **`v2` not active** | Fix error; re-run same Phase 1 deploy (Appendix A.1.2 / old §4.2). Pre-v2 rollback still valid until `v2` active. |
 | **Indeterminate** | **STOP.** No Phase 2. No “safe” pre-v2 rollback. Escalate with: deploy/CI log, both §0.2 outputs (`--json` if available), UTC attempt time, any partial version in `versions list`. |
 
 **Retry safety:** Same Phase 1 bundle (`new_sqlite_classes = ["AuthDO"]`, tag `v2`) is the recover path when `v2` is **not** active. Tags apply once; retry must not undo a successful `v2`. **`[OPERATOR-VERIFY]`** on staging: interrupt/re-run Phase 1 and confirm this branch matches Wrangler — not on production.
@@ -1819,8 +1818,7 @@ cd ../..
 
 ---
 
-### 4.3 Phase 2: Main Code & Assets Gradual Rollout (`ETHERCALC_AUTH = "0"`) — **SUPERSEDED PENDING RE-BASELINE**
-
+### A.1.3 Old §4.3 — Phase 2: Main Code & Assets Gradual Rollout (`ETHERCALC_AUTH = "0"`) — **SUPERSEDED PENDING RE-BASELINE**
 > **⛔ SUPERSEDED PENDING RE-BASELINE — HAZARDOUS AS WRITTEN.** Setting `ETHERCALC_AUTH = "0"` was justified only while production had **no** passkeys or private rooms. Live production has both. Deploying Phase 2 as written would disable passkey logins and **403-lock existing private rooms for their owners**. Do **not** upload or ramp a production version with `ETHERCALC_AUTH="0"` until the cutover is redesigned.
 
 Phase 2 deploys all of `main` (updated `RoomDO`, `command-limits.ts`, `authorize.ts`, assets) with `ETHERCALC_AUTH = "0"` in `packages/worker/wrangler.toml`.
@@ -1899,7 +1897,7 @@ If `PHASE1_VERSION_ID` is missing, recover it from the Cutover log (start of §4
 
 **During Phase 2 soak:** if D1 writes begin failing, check `database_size` against the §0.2.2 capacity ceiling **first**. A full D1 capacity-incident procedure is **deliberately out of scope** here — capacity exhaustion is a pre-existing operational condition, not caused by this cutover.
 
-#### 4.3.1 Mixed-Version Cross-Room Interaction During the Phase 2 Ramp
+#### A.1.3.1 Old §4.3.1 — Mixed-Version Cross-Room Interaction During the Phase 2 Ramp
 
 Cloudflare gradual deployments pin **each Durable Object instance to one Worker version** for the life of that deployment, while the front-door Worker isolate that handles an ingress request may be a *different* version than a sibling room it later reaches ([Gradual deployments with Durable Objects](https://developers.cloudflare.com/workers/versions-and-deployments/gradual-deployments/with-durable-objects/)). EtherCalc has **one `RoomDO` per room**, so a 10% / 50% ramp means different rooms can run Phase 1 (`149ebcf` + `AuthDO`) and Phase 2 (`main`, `ETHERCALC_AUTH="0"`) code **at the same time**. Cross-room traffic is therefore the real mixed-version surface — not only the per-room WebSocket restart already covered in §4.5–§4.6.
 
@@ -1978,14 +1976,13 @@ Unknown `/_do/*` paths on both trees fall through to **`501 Not implemented`** (
 
 **Operational mitigation:**
 
-- **Mandatory (correctness + rollback):** Do **not** start Phase 3 (`ETHERCALC_AUTH="1"`) until Phase 2 is at **100%** and soaked. Two independent justifications: (a) rollback safety — no private rooms while major code soaks (§4.3); (b) mixed-version correctness — `POST /_do/init-private` against a Phase 1 DO returns **501** verbatim, so private create/copy is user-visibly broken for any room still pinned old (§4.3.1). A future maintainer MUST NOT relax the 100% gate on either ground alone. This is §9 item 9.
-- **Optional (not a Go/No-Go blocker for Phase 2 itself):** After the Phase 2 version-override smoke (`Cloudflare-Workers-Version-Overrides` whoami probe in §4.3) passes, prefer a **short** 10% observation window and then advance 10% → 50% → 100% without multi-hour soaks at partial percentages — or jump 10% → 100% if multi-sheet / large-paste traffic is active and uniform 413 signalling matters more than blast-radius staging. Partial percentages remain acceptable for public-room data integrity: they do not corrupt cross-room state under `AUTH=0`.
+- **Mandatory (correctness + rollback):** Do **not** start Phase 3 (`ETHERCALC_AUTH="1"`) until Phase 2 is at **100%** and soaked. Two independent justifications: (a) rollback safety — no private rooms while major code soaks (Appendix A.1.3 / old §4.3); (b) mixed-version correctness — `POST /_do/init-private` against a Phase 1 DO returns **501** verbatim, so private create/copy is user-visibly broken for any room still pinned old (old §4.3.1). A future maintainer MUST NOT relax the 100% gate on either ground alone. This is old §9 item 9 (Appendix A.3).
+- **Optional (not a Go/No-Go blocker for Phase 2 itself):** After the Phase 2 version-override smoke (`Cloudflare-Workers-Version-Overrides` whoami probe in Appendix A.1.3 / old §4.3) passes, prefer a **short** 10% observation window and then advance 10% → 50% → 100% without multi-hour soaks at partial percentages — or jump 10% → 100% if multi-sheet / large-paste traffic is active and uniform 413 signalling matters more than blast-radius staging. Partial percentages remain acceptable for public-room data integrity: they do not corrupt cross-room state under `AUTH=0`.
 
 
 ---
 
-### 4.4 Phase 3: Enable Passkeys (`ETHERCALC_AUTH = "1"`) — **SUPERSEDED PENDING RE-BASELINE**
-
+### A.1.4 Old §4.4 — Phase 3: Enable Passkeys (`ETHERCALC_AUTH = "1"`) — **SUPERSEDED PENDING RE-BASELINE**
 > **SUPERSEDED PENDING RE-BASELINE.** Passkeys are already enabled in production (`GET /_auth/whoami` → `enabled:true`). Phase 3 as a green-field “turn auth on” step does not apply; any future cutover must treat auth-on as the **steady state** to preserve, not a post-soak flip.
 
 After Phase 2 has soaked and verified stable in production, Phase 3 enables passkey authentication by flipping `ETHERCALC_AUTH = "1"` in `packages/worker/wrangler.toml`:
@@ -2006,16 +2003,16 @@ npx wrangler deploy --config=wrangler.toml --env=""
 cd ..
 # Capture returned PHASE3_VERSION_ID → Cutover log (start of §4)
 ```
-**ROLLBACK TARGET FOR PHASE 3**: Phase 3 can be rolled back to Phase 2 via `npx wrangler versions deploy <PHASE2_VERSION_ID>@100% --env=""`. The private-room Point of No Return lives HERE in Phase 3, after all major code changes have already soaked cleanly in Phase 2. Record `PHASE3_VERSION_ID` in the Cutover log (start of §4) before soak continues — required for clean re-enable after a lockout rollback (§6.2).
+**ROLLBACK TARGET FOR PHASE 3**: Phase 3 can be rolled back to Phase 2 via `npx wrangler versions deploy <PHASE2_VERSION_ID>@100% --env=""`. The private-room Point of No Return lives HERE in Phase 3, after all major code changes have already soaked cleanly in Phase 2. Record `PHASE3_VERSION_ID` in the Cutover log (start of §4) before soak continues — required for clean re-enable after a lockout rollback (old §6.2).
 
 ---
 
 
-### A.2 Old §6.1–§6.3 — Phase-graph rollback model
+### A.2 Old §6.1–old §6.3 — Phase-graph rollback model
 
 > **SUPERSEDED PENDING RE-BASELINE (2026-08-10).** Rollback semantics below assume Phase 2 runs with `AUTH=0` and zero private-room population, and that Phase 1 is the first `v2`/`AuthDO` deploy from `149ebcf`. Neither matches live production. Platform facts (no pre-v2 rollback once `v2` is active; D1 restore ≠ DO restore in §6.4) remain useful; the phase graph and “lockout only after Phase 3” story do **not**. **Do not execute rollbacks that set `ETHERCALC_AUTH="0"` against production private rooms.** See top-of-doc STOP banner.
 
-### 6.1 Rollback Semantics per Deployment Phase
+### A.2.1 Old §6.1 — Rollback Semantics per Deployment Phase
 
 1. **Rollback During Phase 2 (Main Code & Assets Rollout)**:
    - **100% SAFE & FULLY SUPPORTED**. Roll back Phase 2 to Phase 1 using:
@@ -2031,7 +2028,7 @@ cd ..
 3. **Rollback Past Phase 1 (Pre-v2 Commit `149ebcf...`)**:
    - **BLOCKED BY CLOUDFLARE PLATFORM**. Platform rules reject rollbacks to pre-v2 versions. Recovery from Phase 2 or Phase 3 to pre-passkey code is executed by redeploying the Phase 1 version (`npx wrangler versions deploy <PHASE1_VERSION_ID>@100% --env=""`). The Phase 1 `release/phase1-lifecycle` bundle **is** the forward-fix artifact (`149ebcf` code with `AuthDO` class & `v2` migration retained); no separate forward-fix bundle needs to be built. If Phase 1 itself ever requires a code fix in production, the operator branches from `release/phase1-lifecycle` and forward-fixes from there.
 
-### 6.2 Rollback Hazards: Lockout vs. Exposure
+### A.2.2 Old §6.2 — Rollback Hazards: Lockout vs. Exposure
 
 #### 1. Phase 3 → Phase 2 Rollback Hazard: Temporary Private Room LOCKOUT (Not Exposure)
 
@@ -2063,7 +2060,7 @@ Private room data exposure occurs **ONLY if code is rolled back past Phase 2 to 
 
 ##### Decision card — Private-data rollback (Phase 3 live; private rooms/passkeys may exist)
 
-**Pointers:** hazards → §6.2 items 1–2; room ID → **§2.4**. Idle private rooms + passkey users are **non-enumerable** — no complete affected-user list.
+**Pointers:** hazards → Appendix A.2.2 (old §6.2) items 1–2; room ID → **§2.4**. Idle private rooms + passkey users are **non-enumerable** — no complete affected-user list.
 
 **Path A (prefer): Phase 3 → Phase 2 — lockout, not exposure**
 
@@ -2073,7 +2070,7 @@ Private room data exposure occurs **ONLY if code is rolled back past Phase 2 to 
 4. **Verify:** Probe 2 `enabled:false`; Probe 3 `401` on `POST /_/private`; Probe 11 not enabled; known private `403`; public Probe 5 OK.
 5. Stay on Phase 2 unless Path B is required.
 
-**Re-enable:** `npx wrangler versions deploy <PHASE3_VERSION_ID>@100% --env=""` (§4.4 if missing) → Probe 11 `enabled:true`; owner read OK; Probes 1/5/7 green. Passkeys/`session-secret` persist in AuthDO; cookies valid until expiry/logout. **`[OPERATOR-VERIFY]`** staging: register → 3→2→3 → same credential.
+**Re-enable:** `npx wrangler versions deploy <PHASE3_VERSION_ID>@100% --env=""` (Appendix A.1.4 / old §4.4 if missing) → Probe 11 `enabled:true`; owner read OK; Probes 1/5/7 green. Passkeys/`session-secret` persist in AuthDO; cookies valid until expiry/logout. **`[OPERATOR-VERIFY]`** staging: register → 3→2→3 → same credential.
 
 **Path B (last resort): Phase 1 / forward-fix — exposure**
 
@@ -2092,7 +2089,7 @@ Optional predeclared operator IP only: append `and not ip.src eq x.x.x.x`. Actio
 **Comms (B):** private down; containment is WAF not ACL; public also down; restore forward, then remove WAF.
 
 
-### 6.3 Points of No Return Definition
+### A.2.3 Old §6.3 — Points of No Return Definition
 
 - **PRIMARY POINT OF NO RETURN**:
 
@@ -2109,7 +2106,7 @@ Optional predeclared operator IP only: append `and not ip.src eq x.x.x.x`. Actio
 > **SUPERSEDED PENDING RE-BASELINE (2026-08-10).** Items that gate or assume the three-phase `149ebcf` → Phase1 → Phase2(`AUTH=0`) → Phase3 sequence are void. **Item 1 is now the single highest-priority action**, with emphasis on `wrangler deployments list` / `versions list` to pin the real production SHA before any cutover redesign. Item 9’s `AUTH=0` soak justification is actively dangerous if applied to current production. See top-of-doc STOP banner.
 
 This checklist has nine conditions and spans the full cutover. Before executing Phase 1 (`npx wrangler deploy --env=""`), items 1–7 MUST be satisfied; items 5 and 6 are already complete and therefore intentionally checked below. Item 8 gates the Phase 2 upload, and item 9 gates Phase 3.
-### 9.1 Manual-Attention Calibration
+### A.3.1 Old §9.1 — Manual-Attention Calibration
 
 The audit unit is one `[OPERATOR-VERIFY]` site, numbered §3.2 check, §5 probe
 (`10a` and `10b` counted separately), actionable §7 check, or §9 condition:
@@ -2127,14 +2124,14 @@ self-host `uniqueKey` volume check (§7.2.1).
   > **ALREADY AUTOMATED — inspect gate status rather than re-performing its assertions.** The root/worker/client gates run the named test and coverage commands; CI `test`, `e2e`, and `helm-lint` execute their corresponding suites, while CI `build:selfhost` runs both Docker smokes (`.github/workflows/ci.yml:17-235`). Once those required jobs are green on the final tree, repeating the same local assertions adds no deployment evidence.
 - [ ] **3. Secrets Provisioned in Production**: `wrangler secret list` confirms `ETHERCALC_KEY` and `ETHERCALC_MIGRATE_TOKEN` are active in Cloudflare Secrets (§0.1).
 - [ ] **4. D1 Database Export & Time Travel Bookmark Recorded**: `npx wrangler d1 export ethercalc_rooms --remote --output=...` executed (required `--output` flag), account plan confirmed (30d Paid / 7d Free retention), and Time Travel bookmark timestamp captured (§2.1, §2.1.1, §6.4). **Budget real wall-clock and disk** from the live `database_size` — multi-GB exports are neither instant nor small; **`[OPERATOR-VERIFY]`** actual duration. If the `.sql` artifact may exceed the **5 GB** `d1 execute --file` import ceiling, confirm Time Travel is the whole-DB restore path before relying on the dump for rollback.
-- [x] **5. Phase 1 Branch (Forward-Fix Artifact) Prepared**: `release/phase1-lifecycle` branch built, typechecks, and dry-runs cleanly (§4.2, §6.1, and §8 item 1; verified via `vp run @ethercalc/worker#typecheck` and `vp run @ethercalc/worker#build:dry`).
+- [x] **5. Phase 1 Branch (Forward-Fix Artifact) Prepared**: `release/phase1-lifecycle` branch built, typechecks, and dry-runs cleanly (Appendix A.1.2 / A.2.1 (old §4.2/old §6.1), and §8 item 1; verified via `vp run @ethercalc/worker#typecheck` and `vp run @ethercalc/worker#build:dry`).
   > **ALREADY AUTOMATED — this preparation condition adds no live check.** The named worker `typecheck` and Wrangler `build:dry` gates compile and bundle the Phase 1 tree; their recorded green outputs are the condition itself. Deployment and soak are intentionally separate items 8 and 9.
 - [x] **6. PR 4 Command-Rejection Propagation Landed and Verified for Phase 2**: `POST /_/:room` returns the RoomDO status and body for every non-2xx verdict, matching `PUT /_/:room` at `packages/worker/src/routes/rooms.ts:355-369`. Verified via route contract tests `POST /_/:room command mutations propagate a DO 413 sheet-limit verdict` and `POST /_/:room returns 202 command echo on successful DO dispatch` in `packages/worker/test/routes-rooms.node.test.ts` (52 node files / 1520 tests; 13 workers-pool files / 196 tests; §8 item 5; §10 item 3).
   > **ALREADY AUTOMATED — skim after the worker coverage gate.** `routes-rooms.node.test.ts:810-838` asserts exact 413 propagation plus the 202 success path under worker `test:coverage` (CI `test`), while `room.node.test.ts:1110-1122` asserts RoomDO rejection and no write. This checklist line contains no additional live assertion.
 - [ ] **7. Staging Rehearsal Passed**: Phase 1, Phase 2, and Phase 3 deployed and verified on `https://ethercalc-staging.audreyt.workers.dev` (§§3.1–3.2).
   > **PARTIALLY AUTOMATED** — Every §3.2 behavior has a named local guard, and root test `nightly staging validation bypasses the generated production config` pins the nightly dry-run command. Only the rehearsal proves all three deployed artifacts, staging bindings/RP, existing DO state, and edge behavior together; use the per-item §3.2 deltas rather than treating local green as a substitute.
-- [ ] **8. Phase 1 Deployed & Soaked Before Phase 2 Upload**: Phase 1 (`npx wrangler deploy`) executed and verified stable before uploading the Phase 2 gradual release (§4.2 and §4.3).
-- [ ] **9. Phase 2 at 100% before Phase 3 (`ETHERCALC_AUTH="1"`) — correctness + rollback**: Phase 2 MUST reach **100%** (no residual Phase 1 room pin) and soak before enabling passkeys (§4.3, §4.3.1, §4.4). **Two independent justifications — do not relax on either alone:** (a) **rollback safety** (original): `AUTH=0` ensures no private rooms exist while major code soaks, so Phase 2→Phase 1 rollback stays hazard-free; (b) **mixed-version correctness** (§4.3.1): `POST /_do/init-private` is absent on Phase 1 DOs and returns **501** verbatim to create/copy callers (`rooms.ts:232-234`, `692-694`), so enabling auth while any room is still Phase 1-pinned makes private create/copy user-visibly broken for those ids. (`GET /_do/access` 501 is **not** an authz hole — UX redirect hints only; RoomDO remains the sole boundary; DELETE is fail-closed.)
+- [ ] **8. Phase 1 Deployed & Soaked Before Phase 2 Upload**: Phase 1 (`npx wrangler deploy`) executed and verified stable before uploading the Phase 2 gradual release (Appendix A.1.2–A.1.3 (old §4.2–§4.3)).
+- [ ] **9. Phase 2 at 100% before Phase 3 (`ETHERCALC_AUTH="1"`) — correctness + rollback**: Phase 2 MUST reach **100%** (no residual Phase 1 room pin) and soak before enabling passkeys (Appendix A.1.3–A.1.4 (old §4.3/§4.4)). **Two independent justifications — do not relax on either alone:** (a) **rollback safety** (original): `AUTH=0` ensures no private rooms exist while major code soaks, so Phase 2→Phase 1 rollback stays hazard-free; (b) **mixed-version correctness** (old §4.3.1 / Appendix A.1.3.1): `POST /_do/init-private` is absent on Phase 1 DOs and returns **501** verbatim to create/copy callers (`rooms.ts:232-234`, `692-694`), so enabling auth while any room is still Phase 1-pinned makes private create/copy user-visibly broken for those ids. (`GET /_do/access` 501 is **not** an authz hole — UX redirect hints only; RoomDO remains the sole boundary; DELETE is fail-closed.)
 
 ---
 
