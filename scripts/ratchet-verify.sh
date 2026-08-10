@@ -50,9 +50,27 @@ header() {
 read_score() {
   local json="$1"
   if command -v jq >/dev/null 2>&1; then
-    jq -r '.. | .mutationScore? // empty' "$json" | head -n1
+    jq -r '
+      [.files[]?.mutants[]?] as $m |
+      ($m | map(select(.status == "Killed" or .status == "Timeout")) | length) as $d |
+      ($m | map(select(.status == "Survived" or .status == "NoCoverage")) | length) as $u |
+      if ($d + $u) == 0 then empty else ($d / ($d + $u) * 100) end
+    ' "$json"
   else
-    node -e "const d=require('$json'); const s=d.mutationScore ?? (d.summary && d.summary.mutationScore); process.stdout.write(String(s ?? ''));"
+    node -e '
+      const d = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+      let det = 0, undet = 0;
+      for (const f of Object.values(d.files || {})) {
+        for (const m of f.mutants || []) {
+          if (m.status === "Killed" || m.status === "Timeout") det++;
+          else if (m.status === "Survived" || m.status === "NoCoverage") undet++;
+        }
+      }
+      const tot = det + undet;
+      if (tot > 0) {
+        process.stdout.write(String((det / tot) * 100));
+      }
+    ' "$json"
   fi
 }
 
