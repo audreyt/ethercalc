@@ -2008,7 +2008,7 @@ cd ..
 ---
 
 
-### A.2 Old §6.1–old §6.3 — Phase-graph rollback model
+### A.2 Old §6.1–§6.3 — Phase-graph rollback model
 
 > **SUPERSEDED PENDING RE-BASELINE (2026-08-10).** Rollback semantics below assume Phase 2 runs with `AUTH=0` and zero private-room population, and that Phase 1 is the first `v2`/`AuthDO` deploy from `149ebcf`. Neither matches live production. Platform facts (no pre-v2 rollback once `v2` is active; D1 restore ≠ DO restore in §6.4) remain useful; the phase graph and “lockout only after Phase 3” story do **not**. **Do not execute rollbacks that set `ETHERCALC_AUTH="0"` against production private rooms.** See top-of-doc STOP banner.
 
