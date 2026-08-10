@@ -65,14 +65,13 @@
 > | **Lower (inclusive floor)** | `d2afa9047475d50eb5228db71067a6c8b7e6a186` | 2026-07-18 01:19:58 +0800 | `Merge feat/passkey-permissions (#841)` — introduces `packages/worker/src/routes/auth.ts`, `auth-do.ts`, passkey UI |
 > | **Upper (exclusive ceiling)** | `b7d884087c15d01092584daa8f5f18445284f643` | 2026-08-04 06:49:58 +0800 | `security: harden EtherCalc trust boundaries` — adds `static/index-bootstrap.js` (+ related page scripts) and removes `manifest.appcache` from `index.html` |
 >
-> Production ∈ (`d2afa90` … `b7d8840`). **Pinning the exact revision still requires** (highest-priority `[OPERATOR-VERIFY]` in this document):
+> Production ∈ (`d2afa90` … `b7d8840`). **Rollback floor pinned 2026-08-10** as Worker version **`bd76bda5-3161-4576-b159-dbdb97d774c2`** @100% (see §4.3 cutover log). Exact *git* SHA is still open (no version annotation); artifact evidence (compat date `2024-11-12`, missing `index-bootstrap.js`, live appcache) keeps the exclusive upper bound. Commands that produced the pin:
 >
 > ```bash
-> npx wrangler deployments list --config=packages/worker/wrangler.toml --env=""
-> npx wrangler versions list --config=packages/worker/wrangler.toml --env=""
+> vp exec wrangler deployments list --config=packages/worker/wrangler.toml --env=""
+> vp exec wrangler versions list --config=packages/worker/wrangler.toml --env=""
 > ```
->
-> Until that pin exists, treat every SHA-specific procedure (Phase 1 worktree from `149ebcf`, “v2 not yet deployed”, “passkeys not yet live”) as **false**.
+
 >
 > ### Re-scoped delta (what remains to ship — not a cutover plan)
 >
@@ -90,7 +89,8 @@
 >
 > | Still valid (baseline-independent) | Needs rework after re-baseline |
 > | :--------------------------------- | :----------------------------- |
-> | §0.1 secrets preconditions | Document title / Baseline Release / Target lines (assumed `149ebcf`) |
+> | §0.1 secret **posture** (record; do not change mid-cutover) — rewritten 2026-08-10 | Document title / Baseline Release / Target lines (assumed `149ebcf`) |
+
 > | §0.2 inspection commands (esp. **`wrangler deployments list` — now #1 priority**) | §0.3 baseline decision table (rows keyed off `149ebcf`) |
 > | §0.2.1 D1 Time Travel subsystem GO/NO-GO | Exec Summary item 3 conclusion that `AUTH=0` “eliminates” private-room hazard in prod |
 > | §0.2.2 D1 10 GB capacity gate & scale arithmetic | ~~Critical-path three-phase sequence~~ **done** — critical-path now maps §4 single-ramp |
@@ -104,9 +104,10 @@
 > | §7 self-host divergence, `uniqueKey`, nginx, passkey anchor defaults | **Appendix A / old §9** three-phase Go/No-Go / item 9 `AUTH=0` soak (live gates: §4 Step 0 + still-valid §0/§1/§2 checks) |
 > | Companion inventory / platform constraint citations | ~~§10 passkeys-as-new~~ **done** — item 5 re-baselined in `c94fd3e` (passkeys already live; ship change is `ec_sess` → `__Host-ec_sess`). Item 8 search-indexing added in `c40f11f`. |
 >
-> **Execution status:** the corrected single-ramp strategy is the **live hosted procedure in §4**. Exact production Worker version ID / git SHA is still open — `wrangler deployments list` remains the #1 `[OPERATOR-VERIFY]` before any upload (needed as the rollback-target version ID; ramp safety holds across the whole candidate range — see §4.1).
+> **Execution status:** the corrected single-ramp strategy is the **live hosted procedure in §4**. **`CURRENT_PROD_VERSION_ID` is pinned** (2026-08-10): `bd76bda5-3161-4576-b159-dbdb97d774c2` @100% — see §4.3 cutover log. Exact *git* SHA inside `[d2afa90, b7d8840)` remains open (no version annotation); ramp safety and rollback use the version ID, not a git SHA. Remaining pre-upload gates: ship-tree §1 preflight, §3 single-ramp staging rehearsal, in-window decision on `ETHERCALC_MIGRATE_TOKEN`/PITR.
 >
 > ---
+
 
 ## Companion documents
 
@@ -151,15 +152,17 @@ Use this quick reference for **“what do I do next?”** Use §§0–3 for prep
 
 ### Manual hard gates — do not upload the ship version
 
-- Pin `CURRENT_PROD_VERSION_ID` (and annotation) from `wrangler deployments list` / `versions list`; unresolved pin blocks upload. → §4.3 Step 0; §0.2
-- Complete still-valid baseline / capacity path; any NO-GO or unsigned conditional result blocks the cutover. → §0.2–§0.3
-- Confirm required production secrets are active. → §0.1
+- Pin `CURRENT_PROD_VERSION_ID` (and annotation) from `wrangler deployments list` / `versions list`; unresolved pin blocks upload. → §4.3 Step 0; §0.2. **Satisfied 2026-08-10:** `bd76bda5-3161-4576-b159-dbdb97d774c2` @100% (no git-SHA annotation).
+- Complete still-valid baseline / capacity path; any NO-GO or unsigned conditional result blocks the cutover. → §0.2–§0.3. **Capacity + Time Travel satisfied 2026-08-10** (0.694 GiB PASS; bookmark recorded in §4.3 log).
+- Record production **secret posture** and do not change it mid-cutover (§0.1). Empty `secret list` / absent `ETHERCALC_KEY` is the measured status quo, not an automatic NO-GO. `ETHERCALC_MIGRATE_TOKEN` only if PITR/migrate/`_timetrigger` are in-window.
+
 - Record the D1 Time Travel bookmark (and size-budgeted export if used), and settle restore viability against the live artifact. → §2.1; §6
 - Green preflight on the **ship tree**. → §1
 - Pass real-Cloudflare staging rehearsal of **this single-ramp shape** (upload → override smoke → percentage ramp → rollback to staging pre-ramp version) and PITR sequence as in-scope. → §4.3 Step 0; §2.3; §3 *(§3 text still describes the old three-phase staging shape — rehearse the single-ramp commands from §4.3; full §3 rewrite is a known gap)*
 
 **Target Service:** `ethercalc.net` (Cloudflare Workers + Hono + Durable Objects + D1 + Assets)  
-**Baseline window:** production ∈ `[d2afa90, b7d8840)` — after passkey merge (PR #841), before security-audit hardening; **exact pin `[OPERATOR-VERIFY]`** via `wrangler deployments list` / `versions list`  
+**Baseline window:** production ∈ `[d2afa90, b7d8840)` — after passkey merge (PR #841), before security-audit hardening; **rollback floor pinned 2026-08-10** as Worker version `bd76bda5-3161-4576-b159-dbdb97d774c2` @100% (exact git SHA still open — no version annotation; artifact evidence keeps exclusive upper bound `b7d8840`)  
+
 **Target Release:** Current `main` (security-audit delta + command-rejection propagation + search-indexing policy)  
 **Document Purpose:** Operator runbook for a zero-data-loss single-ramp production upgrade under Cloudflare Workers platform constraints, with the disproved three-phase plan retained only as Appendix A.
 
@@ -211,25 +214,75 @@ All file:line references below have been verified directly against the repositor
 
 Before executing any migration steps, the operator MUST capture and record the exact state of the production environment.
 
-### 0.1 Precondition Secret Checks & Provisioning
+### 0.1 Secret posture (record; do not change mid-cutover)
 
-Cloudflare Worker secrets exist independently of code deploys (unlike `[vars]`). The operator MUST verify required secrets before cutover.
+Cloudflare Worker secrets exist independently of code deploys (unlike
+`[vars]`). Values are write-only. The operator MUST **record** the production
+secret *posture* before cutover and MUST **not** add, remove, or rotate
+secrets as part of the single-ramp ship unless that change is an explicit,
+separately approved auth-mode decision.
 
 ```bash
-# 1. Inspect existing Cloudflare secrets (values are write-only, verify names exist)
-npx wrangler secret list --config=packages/worker/wrangler.toml --env=""
+# Inspect existing Cloudflare secrets (values are write-only; names only)
+# Prefer the repo-pinned CLI: vp exec wrangler …
+vp exec wrangler secret list --config=packages/worker/wrangler.toml --env=""
 ```
 
-**HARD PRECONDITIONS:**
+#### Measured production posture (2026-08-10)
 
-- **`ETHERCALC_KEY`:** If `ETHERCALC_KEY` is absent from `wrangler secret list`, provision it now:
-  ```bash
-  npx wrangler secret put ETHERCALC_KEY --config=packages/worker/wrangler.toml --env=""
-  ```
-- **`ETHERCALC_MIGRATE_TOKEN`:** Section 2 relies on `POST /_/:room/pitr-restore` as an operator recovery tool. If `ETHERCALC_MIGRATE_TOKEN` is absent from `wrangler secret list`, the PITR endpoint returns `404 Not Found`. Provision it BEFORE cutover:
-  ```bash
-  npx wrangler secret put ETHERCALC_MIGRATE_TOKEN --config=packages/worker/wrangler.toml --env=""
-  ```
+Account `audreyt@audreyt.org` / `99984e3c707dd2518f73dfa9da3fc887`, pinned
+Wrangler `4.112.0` via `vp exec wrangler`:
+
+- `wrangler secret list … --env=""` → **`[]`** (empty). Same empty result
+  without `--env` and with `--name ethercalc`.
+- Production version `bd76bda5-3161-4576-b159-dbdb97d774c2` (`versions view`)
+  binds only plain vars (`ETHERCALC_AUTH="1"`, `ETHERCALC_CORS="1"`,
+  `ETHERCALC_ORIGIN`, `ETHERCALC_RP_ID`, `ETHERCALC_RP_NAME`, `BASEPATH=""`)
+  — **no `ETHERCALC_KEY` secret binding**.
+
+#### `ETHERCALC_KEY` — status quo is unset (anonymous / identity HMAC)
+
+`packages/worker/wrangler.toml` documents unset-by-default anonymous mode /
+identity HMAC. Source behavior when the secret is absent:
+
+- `verifyAuth` (`packages/worker/src/lib/auth.ts`): `supplied === '0'` →
+  reject; **`!key` → accept** (any other supplied value, including empty).
+- `computeAuth`: **`!key` → return `room` unchanged** (identity).
+- `buildRoomEntry` (`handlers/room-entry.ts`): **`!opts.key` → always serve**
+  `index.html` / `multi/index.html` — no 302 to `?auth=0`.
+- New-room redirects append `/edit` only when `Boolean(ETHERCALC_KEY)`.
+- Passkeys / private rooms do **not** use this secret: AGENTS.md decision
+  #14 — **`ETHERCALC_KEY` never signs sessions**; RoomDO ACL is the sole
+  authz boundary; legacy `?auth=` is demoted for private rooms.
+
+**Cutover rule:** shipping the new bundle with `ETHERCALC_KEY` still absent
+preserves today's anonymous/identity-HMAC posture exactly on the KEY axis.
+It is **not** a regression versus live production. **Do not** run
+`wrangler secret put ETHERCALC_KEY` during this ramp unless the owner is
+deliberately introducing HMAC-gated public rooms as a separate change —
+that would be a live auth-mode flip (view-only `?auth=0` redirects, HMAC
+required for public destructive paths), not a precondition of the security-
+audit ship.
+
+#### `ETHERCALC_MIGRATE_TOKEN` — in-window only
+
+Gates operator surfaces only (`verifyMigrateToken` → `404` when unset):
+
+- `PUT /_migrate/seed/:room`, `PUT /_migrate/bulk-index`,
+  `PUT /_migrate/snapshot-chunk/:room`
+- `POST /_/:room/pitr-restore`
+- legacy HTTP `GET /_timetrigger` (Cloudflare `scheduled()` cron does **not**
+  need this token)
+
+**Cutover rule (matches §4 Step 0):** required **only if** PITR / migrate
+writes / manual `/_timetrigger` are in-scope for the window. Otherwise
+absence is status quo (those routes already 404 today) and is **not** a
+ramp blocker. If in-scope, provision **before** relying on those routes:
+
+```bash
+vp exec wrangler secret put ETHERCALC_MIGRATE_TOKEN \
+  --config=packages/worker/wrangler.toml --env=""
+```
 
 ### 0.2 Baseline Inspection Commands `[OPERATOR-VERIFY]`
 
@@ -340,8 +393,8 @@ database size**. Wrangler renames the API field `file_size` →
 Authoritative sheet bytes live in RoomDO, **not** in D1 — but the index and
 mirrors still grow with the fleet and with active-room churn.
 
-**Illustrative arithmetic (assumptions stated; live size unknown without
-§0.2 step 3):**
+**Illustrative arithmetic (assumptions stated; superseded as a size forecast
+by the live measurement below):**
 
 Assumptions used below (order-of-magnitude only):
 
@@ -364,12 +417,21 @@ Assumptions used below (order-of-magnitude only):
 | 18 000 (1% of 1.8M) | ≈ 5.7 GiB | ≈ 57% | ≈ 20 GiB | **far over ceiling** |
 | 50 000 | ≈ 16 GiB | **over** | ≈ 55 GiB | **over** |
 
-These rows are **not** a measurement of production. Most of the 1.8M index
-entries are expected to be cold (empty or near-empty audit/chat tails). A
-small hot cohort dominates D1 bytes. The only authoritative number is the
-live `database_size` from `wrangler d1 info`. The table exists so the
-operator treats headroom as a first-class go/no-go input instead of
-discovering the ceiling mid-incident.
+**Measured production (2026-08-10, authoritative):** `wrangler d1 info
+ethercalc_rooms --json` → `database_size` **744 845 312 B** (**745 MB ≈
+0.694 GiB**). Headroom ≈ **9.3 GiB** (~6.9% of the 10 GiB ceiling) →
+§0.2.2 **PASS** (&lt; 5.0 GiB). The plan's earlier "1.8M rooms / near-
+ceiling" anxiety is **measurably wrong as a size forecast**: the live DB
+is well under 1 GiB. Cardinality comments elsewhere (~1.8M index rows for
+PITR loop arithmetic) can still inform *enumeration time*; they must not
+be read as "D1 is almost full." Re-run `d1 info` before the change window
+if weeks have passed; the gate is the live number, not this paragraph.
+
+The illustrative table remains so operators still treat a future hot-cohort
+growth path as first-class input instead of discovering the ceiling mid-
+incident. Most of a large index can be cold (empty or near-empty
+audit/chat tails); a small hot cohort dominates D1 bytes.
+
 
 **Consequence of hitting the 10 GB cap.** D1 writes fail. In this codebase
 that immediately affects:
@@ -950,16 +1012,13 @@ Before running `vp exec wrangler deploy --env=""` or `npx wrangler deploy` in `p
 
 **What D3 does *not* claim:** rollback is free of *all* user impact. Security-audit `main` renames the session cookie `ec_sess` → `__Host-ec_sess` (`packages/worker/src/lib/session.ts`) and does **not** read the old name. Token bytes remain AuthDO HMAC sessions over the same `session-secret` storage key, but browsers holding only `ec_sess` look anonymous on the new Worker until they complete a passkey ceremony again. That is **temporary lockout-until-relogin**, not world-readable declassification. Marked as a first-class residual risk in §4.5.
 
-**Still open (cannot settle from git alone):**
+**Baseline capture status (2026-08-10, account `audreyt@audreyt.org` / `99984e3c707dd2518f73dfa9da3fc887`, pinned Wrangler `4.112.0` via `vp exec wrangler`):**
 
-- Exact production Worker version ID and git SHA — **`[OPERATOR-VERIFY]` #1:**
-  ```bash
-  npx wrangler deployments list --config=packages/worker/wrangler.toml --env=""
-  npx wrangler versions list --config=packages/worker/wrangler.toml --env=""
-  ```
-- Whether every commit in `d2afa90..b7d8840^` is already live (multi-sheet entry restore, Vite+ workflow, headless harden, etc.) — same pin.
-- Live D1 applied-migration set equals the three checked-in SQL files — expected, but confirm with `npx wrangler d1 migrations list ethercalc_rooms --remote --config=packages/worker/wrangler.toml --env=""` **`[OPERATOR-VERIFY]`**.
-- Cloudflare account still allows `versions upload` + percentage `versions deploy` for this Worker (platform/docs assumption; rehearse on staging) **`[OPERATOR-VERIFY]`**.
+- **Satisfied — production Worker version ID (rollback floor):** `CURRENT_PROD_VERSION_ID = bd76bda5-3161-4576-b159-dbdb97d774c2` @**100%** (single version; no split). Created `2026-08-03T22:58:53.918Z`, author `audreyt@audreyt.org`, source Upload, message `Automatic deployment on upload.`, Tag/Message empty (no git-SHA annotation). `versions view`: `compatibility_date 2024-11-12`, flags `[nodejs_compat]`, handlers `fetch`+`scheduled`, bindings `AUTH→AuthDO`, `ROOM→RoomDO`, `DB=bd9247bd-5b50-4c47-8ce6-de3196511684`, `ASSETS`, vars `ETHERCALC_AUTH="1"`, `ETHERCALC_CORS="1"`, `ETHERCALC_ORIGIN=https://ethercalc.net`, `ETHERCALC_RP_ID=ethercalc.net`, `ETHERCALC_RP_NAME=EtherCalc`, `BASEPATH=""`.
+- **Still open — exact git SHA** inside `[d2afa90, b7d8840)`: no version annotation. Artifact evidence (compat `2024-11-12`; live `index-bootstrap.js` 404; root still has `manifest.appcache` + `./static/passkey/ui.js`) keeps the exclusive upper bound. Note: `b7d8840` (`security: harden…`, author `2026-08-03T22:49:58Z`) is the **only** commit that bumps `compatibility_date` to `2026-07-21`; prod still reports `2024-11-12`, so despite deploy clock ~9 min after `b7d8840` author time, production is **not** `b7d8840`. Whether every commit in `d2afa90..b7d8840^` is live remains open without a SHA annotation.
+- **Satisfied — D1 migrations remote:** `wrangler d1 migrations list ethercalc_rooms --remote …` → `No migrations to apply!`
+- **Still open:** Cloudflare account allows `versions upload` + percentage `versions deploy` for this Worker (rehearse on staging) **`[OPERATOR-VERIFY]`**.
+
 
 ### 4.2 Platform consequence (why the three-phase shape collapses)
 
@@ -980,22 +1039,26 @@ Keep `ETHERCALC_AUTH = "1"` in `packages/worker/wrangler.toml` for every artifac
 
 #### Cutover log — capture **before** any upload
 
-| Artifact | When | Why |
+| Artifact | When | Why / measured value (2026-08-10) |
 | :------- | :--- | :-- |
-| **`CURRENT_PROD_VERSION_ID`** | **First** — from `wrangler deployments list` / `versions list` before upload | **Rollback floor** for the entire cutover |
-| `CURRENT_PROD_ANNOTATION` (git SHA / message if present) | Same time | Pins candidate-range position; records what intermediate fixes are already live |
-| D1 Time Travel bookmark + `database_size` | Before any remote change | §0.2.1 / §0.2.2 / §2.1 — unchanged |
-| Optional D1 SQL export | Before any remote change | §2.1 — size-budgeted; not a DO sheet backup |
-| `SHIP_VERSION_ID` | Output of `versions upload` | Ramp + soak target |
-| Edge purge confirmation | After each traffic-affecting step that ships HTML/JS | Root HTML + `static/*` layout changes |
+| **`CURRENT_PROD_VERSION_ID`** | **First** — from `wrangler deployments list` / `versions list` before upload | **Rollback floor.** **Recorded:** `bd76bda5-3161-4576-b159-dbdb97d774c2` @100% (created `2026-08-03T22:58:53.918Z`, author `audreyt@audreyt.org`, source Upload, message `Automatic deployment on upload.`, no Tag/SHA). |
+| `CURRENT_PROD_ANNOTATION` (git SHA / message if present) | Same time | **None present** on the live version. Candidate window remains `[d2afa90, b7d8840)` on artifact evidence (`compatibility_date 2024-11-12`; passkey UI + appcache live; `index-bootstrap.js` 404). |
+| Production version metadata (corroboration) | Same time | `compatibility_date 2024-11-12`; flags `[nodejs_compat]`; handlers `fetch`+`scheduled`; bindings `AUTH→AuthDO`, `ROOM→RoomDO`, `DB=bd9247bd-5b50-4c47-8ce6-de3196511684`, `ASSETS`; vars `ETHERCALC_AUTH="1"`, `ETHERCALC_CORS="1"`, `ETHERCALC_ORIGIN=https://ethercalc.net`, `ETHERCALC_RP_ID=ethercalc.net`, `ETHERCALC_RP_NAME=EtherCalc`, `BASEPATH=""`. |
+| Secret posture | Same time | `wrangler secret list` → `[]`. **No `ETHERCALC_KEY`** (status quo anonymous/identity HMAC — §0.1). **No `ETHERCALC_MIGRATE_TOKEN`** (PITR/migrate/`_timetrigger` HTTP out of scope unless owner opts in). Do not change mid-cutover. |
+| D1 Time Travel bookmark + `database_size` | Before any remote change | **Recorded.** Size `744845312` B (**745 MB ≈ 0.694 GiB**) → §0.2.2 **PASS** (&lt;5 GiB; ~9.3 GiB headroom). Bookmark **`00000160-00046004-000050c3-42996d7280fabdbb493b31f62969888b`** (`d1 time-travel info` success; pinned CLI omits `version` field — do not infer alpha). 5 tables, region APAC. Migrations remote: **none pending**. |
+| Live probes (STOP banner re-check) | Same window | `/_health` → `{"status":"ok","version":"0.0.0",…}`; `/_auth/whoami` → `{"uid":null,"enabled":true}`; `/static/index-bootstrap.js` → **404**; `/robots.txt` → 200 `text/html` (SPA/HTML fallback, still carries `manifest.appcache`). **Matches** 2026-08-10 STOP banner. |
+| Optional D1 SQL export | Before any remote change | §2.1 — size-budgeted; not a DO sheet backup. **Not run** in the 2026-08-10 baseline capture (read-only). At 0.694 GiB this is no longer a multi-GB anxiety. |
+| `SHIP_VERSION_ID` | Output of `versions upload` | Ramp + soak target — **not yet**. |
+| Edge purge confirmation | After each traffic-affecting step that ships HTML/JS | Root HTML + `static/*` layout changes — **not yet**. |
 
 #### Step 0 — Pin and preflight (blocking)
 
-1. Record `CURRENT_PROD_VERSION_ID` (**#1 open item**).
-2. Confirm secrets still present (`ETHERCALC_KEY`, and `ETHERCALC_MIGRATE_TOKEN` only if PITR/migrate routes are in-scope for the window) — §0.1.
-3. Capacity + Time Travel gates — §0.2.1 / §0.2.2.
-4. Green preflight on the **ship tree** (not the old Phase 1 worktree) — §1.
-5. Staging rehearsal of **this** single-ramp shape (upload → version-override smoke → percentage ramp → rollback to the staging pre-ramp version) — **§3** (live single-ramp staging rehearsal). **`[OPERATOR-VERIFY]`**
+1. Record `CURRENT_PROD_VERSION_ID` — **done 2026-08-10:** `bd76bda5-3161-4576-b159-dbdb97d774c2` @100% (exact git SHA still open; not required for rollback).
+2. Record secret posture (§0.1) — **done:** empty list / no `ETHERCALC_KEY` is status quo; do not introduce KEY mid-ramp. Treat `ETHERCALC_MIGRATE_TOKEN` only if PITR/migrate/`_timetrigger` are in-window.
+3. Capacity + Time Travel gates — **done 2026-08-10:** 0.694 GiB PASS; Time Travel bookmark recorded above; migrations none pending.
+4. Green preflight on the **ship tree** (not the old Phase 1 worktree) — §1. **Still open.**
+5. Staging rehearsal of **this** single-ramp shape (upload → version-override smoke → percentage ramp → rollback to the staging pre-ramp version) — **§3**. **`[OPERATOR-VERIFY]` still open.**
+
 
 #### Step 1 — D1 migrations (expected no-op; still run and record)
 
@@ -1126,8 +1189,9 @@ D1 Time Travel / SQL dump restore (§6) remains available for **D1 only** and st
 3. **`POST /_/:room` rejection propagation (`5d37bd0`)** — over-limit commands flip **202 false success → 413** with body `command exceeds sheet limits`. Correctness fix; API clients/scripts may observe new errors. Sheet-limit Probe 6 is load-bearing acceptance.
 4. **Security-audit hardening behavior** — canonical WebSocket parsing plus frame/chat/cell caps, per-socket rates, body limits, export sanitizer tightening, CSP/`connect-src` origin anchoring, `__Host` cookie, AuthDO revoke-on-logout + per-IP ceremony limits, `/_timetrigger` gate, etc. The raw 1 MiB native string-frame threshold already existed at `d2afa90`, but the 1009 close, binary coverage, field caps, and Socket.IO caps are new. Expect more 413/1008/1009/401 responses on abusive or oversized clients; public anonymous write to public rooms remains by design.
 5. **Open-tab WS reconnect without re-hydrate is a standing property** — `d2afa90` and ship source have the same fixed-delay reconnect, outbound queue flush, and `hadSnapshot` guard. The deploy restart exposes the limitation; the migration did not introduce it. Separately, a `d2afa90` form/app-mode tab has a real migration regression: its sole initial `_formdata`-labelled `ask.log` is dropped by the ship Worker's attachment-room gate, so it needs a reload onto the fixed client.
-6. **`compatibility_date` 2024-11-12 → 2026-07-21** (and self-host workerd lockstep on ship tree) — behavior deltas are intended/audited but are still a runtime move; staging rehearsal must use the ship date **`[OPERATOR-VERIFY]`**.
-7. **Candidate-range width (~17 days)** — until `CURRENT_PROD_VERSION_ID` is pinned, undeployed intermediate fixes inside `d2afa90..b7d8840^` are unknown. Strategy shape (single ramp, AUTH stays on) is stable across the range; **changelog/comms and exact probe expectations are not**.
+6. **`compatibility_date` 2024-11-12 → 2026-07-21** (and self-host workerd lockstep on ship tree) — the bump lands in **`b7d8840`** (`security: harden EtherCalc trust boundaries`); parent still has `2024-11-12`. Live prod reports `2024-11-12`, so this runtime move is part of the ship delta. Staging rehearsal must use the ship date **`[OPERATOR-VERIFY]`**.
+7. **Candidate-range width (~17 days)** — version ID is pinned (`bd76bda5…`); exact git SHA inside `[d2afa90, b7d8840)` is still unknown (no annotation). Strategy shape (single ramp, AUTH stays on) is stable across the range; **changelog/comms and exact probe expectations** may still depend on which intermediate fixes are already live.
+
 
 ### 4.6 What carries forward unchanged
 
@@ -2299,11 +2363,12 @@ add a distinct live-artifact, live-binding, edge, or deployment assertion.
 self-host `uniqueKey` volume check (§7.2.1).
 
 
-- [ ] **1. Baseline Capture, Subsystem & Capacity Verification**: `wrangler deployments list`, `wrangler versions list`, and `wrangler d1 info ethercalc_rooms --json` executed and recorded. Confirm (a) D1 Time Travel availability via `version: "production"` when visible, or via successful `wrangler d1 time-travel info` if the pinned Wrangler omits `version` from `d1 info` output (§0.2.1), and (b) `database_size` headroom against the hard 10 GB ceiling per §0.2.2 pass criteria (&lt; 5 GiB pass; 5–&lt;8 GiB conditional sign-off; ≥ 8 GiB or missing = NO-GO).
+- [x] **1. Baseline Capture, Subsystem & Capacity Verification**: **Satisfied 2026-08-10** (account `audreyt@audreyt.org` / `99984e3c707dd2518f73dfa9da3fc887`, Wrangler `4.112.0`). `CURRENT_PROD_VERSION_ID=bd76bda5-3161-4576-b159-dbdb97d774c2` @100%; D1 `database_size=744845312` B (0.694 GiB) **PASS**; Time Travel bookmark `00000160-00046004-000050c3-42996d7280fabdbb493b31f62969888b` (CLI omits `version`; success is authoritative); migrations remote none pending. Details in §4.3 cutover log. Exact git SHA still open (non-blocking for rollback).
 - [ ] **2. Preflight Gates Green Against Final Tree (9/9 Runnable Gates Verified; 2 Docker Smokes Pending CI)**: All 9 locally-runnable preflight gates (`vp run typecheck`, `vp lint`, `vp run test`, worker `test:node` & `test:workers`, worker 100% coverage gate `test:coverage`, `build:assets` + `e2e#test`, `build:dry`, `check-helm-hardening.sh`, and `ratchet-verify.sh`) passed 100% green against the final tree state including the `rooms.ts` command-rejection status propagation fix (§1.2, `docs/migration/PREFLIGHT_RESULTS.md`). The 2 Docker smoke gates (`./scripts/smoke-selfhost.sh`, `./scripts/smoke-proxy.sh`) remain unverified locally due to missing local `docker compose` CLI subcommand and require CI execution before final cutover.
   > **ALREADY AUTOMATED — inspect gate status rather than re-performing its assertions.** The root/worker/client gates run the named test and coverage commands; CI `test`, `e2e`, and `helm-lint` execute their corresponding suites, while CI `build:selfhost` runs both Docker smokes (`.github/workflows/ci.yml:17-235`). Once those required jobs are green on the final tree, repeating the same local assertions adds no deployment evidence.
-- [ ] **3. Secrets Provisioned in Production**: `wrangler secret list` confirms `ETHERCALC_KEY` and `ETHERCALC_MIGRATE_TOKEN` are active in Cloudflare Secrets (§0.1).
-- [ ] **4. D1 Database Export & Time Travel Bookmark Recorded**: `npx wrangler d1 export ethercalc_rooms --remote --output=...` executed (required `--output` flag), account plan confirmed (30d Paid / 7d Free retention), and Time Travel bookmark timestamp captured (§2.1, §2.1.1, live §6). **Budget real wall-clock and disk** from the live `database_size` — multi-GB exports are neither instant nor small; **`[OPERATOR-VERIFY]`** actual duration. If the `.sql` artifact may exceed the **5 GB** `d1 execute --file` import ceiling, confirm Time Travel is the whole-DB restore path before relying on the dump for rollback.
+- [x] **3. Secret posture recorded (not "must provision KEY")**: **Satisfied 2026-08-10** per rewritten §0.1. `wrangler secret list` → `[]`; production has **no** `ETHERCALC_KEY` (anonymous/identity HMAC status quo — shipping without it is identical on the KEY axis). `ETHERCALC_MIGRATE_TOKEN` also absent — required only if PITR/migrate/`_timetrigger` HTTP are in-window; not a ramp blocker otherwise. **Do not** `secret put ETHERCALC_KEY` mid-cutover without a separate auth-mode decision.
+- [ ] **4. D1 Database Export & Time Travel Bookmark Recorded**: Time Travel bookmark **captured 2026-08-10** (`00000160-00046004-000050c3-42996d7280fabdbb493b31f62969888b`; see §4.3 log). Optional `npx wrangler d1 export ethercalc_rooms --remote --output=...` **not yet run** (required `--output` flag); at measured **0.694 GiB** this is no longer multi-GB anxiety — still budget wall-clock/disk and treat the artifact as sensitive if taken. Confirm account plan retention (30d Paid / 7d Free). If the `.sql` artifact may exceed the **5 GB** `d1 execute --file` import ceiling, confirm Time Travel is the whole-DB restore path before relying on the dump for rollback.
+
 - [x] **5. Phase 1 Branch (Forward-Fix Artifact) Prepared**: `release/phase1-lifecycle` branch built, typechecks, and dry-runs cleanly (Appendix A.1.2 / A.2.1 (old §4.2/old §6.1), and §8 item 1; verified via `vp run @ethercalc/worker#typecheck` and `vp run @ethercalc/worker#build:dry`).
   > **ALREADY AUTOMATED — this preparation condition adds no live check.** The named worker `typecheck` and Wrangler `build:dry` gates compile and bundle the Phase 1 tree; their recorded green outputs are the condition itself. Deployment and soak are intentionally separate items 8 and 9.
 - [x] **6. PR 4 Command-Rejection Propagation Landed and Verified for Phase 2**: `POST /_/:room` returns the RoomDO status and body for every non-2xx verdict, matching `PUT /_/:room` at `packages/worker/src/routes/rooms.ts:355-369`. Verified via route contract tests `POST /_/:room command mutations propagate a DO 413 sheet-limit verdict` and `POST /_/:room returns 202 command echo on successful DO dispatch` in `packages/worker/test/routes-rooms.node.test.ts` (53 node files / 1526 tests; 13 workers-pool files / 197 tests; §8 item 5; §10 item 3).
