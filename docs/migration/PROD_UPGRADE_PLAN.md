@@ -85,7 +85,7 @@
 > If production sits earlier inside the candidate range, some of `d2afa90..b7d8840^` (multi-sheet entry restore, Vite+ workflow, headless/DOM harden, etc.) may also still be undeployed — only `wrangler deployments list` settles that.
 >
 > ### What still stands vs what must be reworked
-
+>
 >
 > | Still valid (baseline-independent) | Needs rework after re-baseline |
 > | :--------------------------------- | :----------------------------- |
