@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vite-plus/test';
+import { STORAGE_KEYS } from '@ethercalc/shared/storage-keys';
+import { describe, expect, it } from 'vite-plus/test';
 
 /**
  * Node-env tests for the route glue at src/routes/rooms.ts.
@@ -14,6 +15,7 @@ import { describe, it, expect } from 'vite-plus/test';
 
 import type { Env } from '../src/env.ts';
 import { buildApp } from '../src/index.ts';
+import { RoomDO } from '../src/room.ts';
 
 interface Call {
   url: string;
@@ -90,6 +92,145 @@ function withAuth(env: Env, uid: string = AUTH_UID): Env {
         }) as unknown as DurableObjectStub,
     } as unknown as DurableObjectNamespace,
   };
+}
+
+/**
+ * ROOM namespace whose stub is a real RoomDO with private storage already
+ * seeded (`meta:access='private'` + ACL + snapshot). Used to prove the
+ * ETHERCALC_AUTH kill switch never declassifies an existing private room.
+ */
+function makePrivateRoomDoNamespace(snapshot = 'PRIVATE-SECRET'): {
+  env: Env;
+  calls: Call[];
+  record: { map: Map<string, unknown> };
+} {
+  const calls: Call[] = [];
+  const record = { map: new Map<string, unknown>() };
+  record.map.set(STORAGE_KEYS.metaAccess, 'private');
+  record.map.set(STORAGE_KEYS.metaAcl, {
+    owner: AUTH_UID,
+    readers: [] as string[],
+    writers: [] as string[],
+  });
+  record.map.set(STORAGE_KEYS.snapshot, snapshot);
+
+  // Minimal Map-backed DurableObjectStorage (same shape room.node.test uses).
+  const storage = {
+    async get(key: unknown): Promise<unknown> {
+      if (typeof key === 'string') return record.map.get(key);
+      if (Array.isArray(key)) {
+        const out = new Map<string, unknown>();
+        for (const k of key) {
+          if (typeof k === 'string' && record.map.has(k)) {
+            out.set(k, record.map.get(k));
+          }
+        }
+        return out;
+      }
+      throw new Error('unexpected get argument shape');
+    },
+    async put(key: unknown, value?: unknown): Promise<void> {
+      if (typeof key === 'string') {
+        record.map.set(key, value);
+        return;
+      }
+      if (key !== null && typeof key === 'object') {
+        for (const [k, v] of Object.entries(key)) record.map.set(k, v);
+        return;
+      }
+      throw new Error('unexpected put argument shape');
+    },
+    async delete(key: unknown): Promise<boolean | number> {
+      if (typeof key === 'string') return record.map.delete(key);
+      if (Array.isArray(key)) {
+        let n = 0;
+        for (const k of key) {
+          if (typeof k === 'string' && record.map.delete(k)) n += 1;
+        }
+        return n;
+      }
+      throw new Error('unexpected delete argument shape');
+    },
+    async deleteAll(): Promise<void> {
+      record.map.clear();
+    },
+    async list(opts?: { prefix?: string }): Promise<Map<string, unknown>> {
+      const out = new Map<string, unknown>();
+      const prefix = opts?.prefix ?? '';
+      for (const k of Array.from(record.map.keys())
+        .filter((key) => key.startsWith(prefix))
+        .sort()) {
+        out.set(k, record.map.get(k)!);
+      }
+      return out;
+    },
+    async getAlarm(): Promise<number | null> {
+      return null;
+    },
+    async setAlarm(): Promise<void> {},
+    async deleteAlarm(): Promise<void> {},
+    async transaction<T>(
+      cb: (txn: DurableObjectTransaction) => Promise<T>,
+    ): Promise<T> {
+      return cb(storage as unknown as DurableObjectTransaction);
+    },
+  } as unknown as DurableObjectStorage;
+
+  const state = {
+    id: { toString: () => 'existing-private' } as DurableObjectId,
+    storage,
+    async blockConcurrencyWhile<T>(cb: () => Promise<T>): Promise<T> {
+      return cb();
+    },
+    getWebSockets(): WebSocket[] {
+      return [];
+    },
+    waitUntil(): void {},
+  } as unknown as DurableObjectState;
+
+  const roomEnv: Env = { ROOM: {} as DurableObjectNamespace };
+  const room = new RoomDO(state, roomEnv);
+
+  const stub: FakeStub = {
+    async fetch(input, init) {
+      const url = typeof input === 'string' ? input : input.url;
+      const method =
+        init?.method ?? (typeof input === 'string' ? 'GET' : input.method);
+      const headers = new Headers(
+        init?.headers ??
+          (typeof input === 'string' ? undefined : input.headers),
+      );
+      let bodyText: string | undefined;
+      if (init?.body !== undefined) {
+        bodyText =
+          typeof init.body === 'string'
+            ? init.body
+            : await new Response(init.body as BodyInit).text();
+      }
+      calls.push({
+        url,
+        method,
+        uid: headers.get('X-EC-Uid'),
+        ...(bodyText !== undefined ? { bodyText } : {}),
+      });
+      // Forward the exact Worker→DO request into a real RoomDO instance
+      // whose storage already holds meta:access=private + meta:acl.
+      const forwarded = new Request(url, {
+        method,
+        headers,
+        ...(bodyText !== undefined ? { body: bodyText } : {}),
+      });
+      return room.fetch(forwarded);
+    },
+  };
+
+  const env: Env = {
+    ROOM: {
+      idFromName: (n: string) => ({ n }) as unknown as DurableObjectId,
+      get: () => stub as unknown as DurableObjectStub,
+    } as unknown as DurableObjectNamespace,
+  };
+  return { env, calls, record };
 }
 
 describe('route glue — env.ROOM dispatch shapes', () => {
@@ -666,6 +807,42 @@ describe('route glue — DO auth verdict propagation (Phase A)', () => {
     expect(await create.text()).toBe('snapshot exceeds sheet limits');
   });
 
+  it('POST /_/:room command mutations propagate a DO 413 sheet-limit verdict', async () => {
+    const { env } = makeFakeRoomNamespace(
+      () => new Response('command exceeds sheet limits', { status: 413 }),
+    );
+    const app = buildApp();
+    const res = await app.fetch(
+      new Request('https://t.test/_/oversized', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ command: 'set Z10000 value n 1' }),
+      }),
+      env as never,
+    );
+    expect(res.status).toBe(413);
+    expect(res.headers.get('content-type')).toBe('text/plain; charset=utf-8');
+    expect(await res.text()).toBe('command exceeds sheet limits');
+  });
+
+  it('POST /_/:room returns 202 command echo on successful DO dispatch', async () => {
+    const { env } = makeFakeRoomNamespace(
+      () => new Response('OK', { status: 200 }),
+    );
+    const app = buildApp();
+    const res = await app.fetch(
+      new Request('https://t.test/_/happy', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ command: 'set A1 text t hello' }),
+      }),
+      env as never,
+    );
+    expect(res.status).toBe(202);
+    expect(res.headers.get('content-type')).toBe('application/json; charset=utf-8');
+    expect(await res.json()).toEqual({ command: 'set A1 text t hello' });
+  });
+
   it('POST /_ with an explicit room propagates a DO 403 (occupied private id)', async () => {
     const { env } = makeFakeRoomNamespace(
       () => new Response('Forbidden', { status: 403 }),
@@ -753,6 +930,80 @@ describe('private create/copy routes (P7)', () => {
     expect(res.headers.get('content-type')).toBe('text/plain; charset=utf-8');
     expect(await res.text()).toBe('Unauthorized');
     expect(calls).toHaveLength(0);
+  });
+
+  it('POST /_/private rejects when ETHERCALC_AUTH is off even with a session cookie', async () => {
+    // Kill-switch proof: withAuth wires a verifying AUTH binding and a cookie,
+    // but ETHERCALC_AUTH "0"/null makes getSessionPrincipal null → 401 and no
+    // DO dispatch. Covers the wrangler [vars] kill switch and workerd null.
+    const { env, calls } = makeFakeRoomNamespace(
+      () => new Response('', { status: 201 }),
+    );
+    const app = buildApp();
+    for (const flag of ['0', null] as const) {
+      calls.length = 0;
+      const res = await app.fetch(
+        new Request('https://t.test/_/private', {
+          method: 'POST',
+          headers: { Cookie: AUTH_COOKIE },
+        }),
+        { ...withAuth(env), ETHERCALC_AUTH: flag } as never,
+      );
+      expect(res.status, `flag=${String(flag)}`).toBe(401);
+      expect(res.headers.get('content-type')).toBe('text/plain; charset=utf-8');
+      expect(await res.text()).toBe('Unauthorized');
+      expect(calls).toHaveLength(0);
+    }
+  });
+
+  it('keeps an existing private room locked when ETHERCALC_AUTH is off', async () => {
+    // Kill-switch lockout against a REAL RoomDO whose storage already has
+    // meta:access='private' and meta:acl — not a manufactured 403 responder.
+    // Flag off → getSessionPrincipal null → doFetch stamps no X-EC-Uid →
+    // RoomDO pre-dispatch gate denies → route propagates 403 Forbidden.
+    // Positive control: same cookie+AUTH with flag on yields the snapshot.
+    const { env, calls, record } = makePrivateRoomDoNamespace('PRIVATE-SECRET');
+    expect(record.map.get(STORAGE_KEYS.metaAccess)).toBe('private');
+    expect(record.map.get(STORAGE_KEYS.metaAcl)).toEqual({
+      owner: AUTH_UID,
+      readers: [],
+      writers: [],
+    });
+
+    const app = buildApp();
+
+    const unlocked = await app.fetch(
+      new Request('https://t.test/_/existing-private', {
+        headers: { Cookie: AUTH_COOKIE },
+      }),
+      withAuth(env) as never,
+    );
+    expect(unlocked.status).toBe(200);
+    expect(await unlocked.text()).toBe('PRIVATE-SECRET');
+    expect(calls[0]!.uid).toBe(AUTH_UID);
+
+    for (const flag of ['0', null] as const) {
+      calls.length = 0;
+      const locked = await app.fetch(
+        new Request('https://t.test/_/existing-private', {
+          headers: { Cookie: AUTH_COOKIE },
+        }),
+        { ...withAuth(env), ETHERCALC_AUTH: flag } as never,
+      );
+      expect(locked.status, `flag=${String(flag)}`).toBe(403);
+      expect(locked.headers.get('content-type')).toBe(
+        'text/plain; charset=utf-8',
+      );
+      expect(await locked.text()).toBe('Forbidden');
+      expect(calls).toHaveLength(1);
+      expect(calls[0]!.uid).toBeNull();
+      expect(calls[0]!.url).toBe(
+        'https://do.local/_do/snapshot?name=existing-private',
+      );
+      // Storage is unchanged — kill switch is a lockout, not a wipe/declassify.
+      expect(record.map.get(STORAGE_KEYS.metaAccess)).toBe('private');
+      expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('PRIVATE-SECRET');
+    }
   });
 
   it('POST /_/private creates an owned private room for a verified principal', async () => {

@@ -778,6 +778,9 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
         );
         const denied = await authVerdict(writeRes);
         if (denied) return denied;
+        if (!writeRes.ok) {
+          return sizedResponse(await writeRes.text(), writeRes.status, TEXT_CT);
+        }
       }
       return new Response(JSON.stringify({ command: commands }), {
         status: 202,
@@ -927,40 +930,41 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
     );
     const denied = await authVerdict(writeRes);
     if (denied) return denied;
+    if (!writeRes.ok) {
+      return sizedResponse(await writeRes.text(), writeRes.status, TEXT_CT);
+    }
 
-    if (writeRes.ok) {
-      // Phase 9 — settimetrigger side-effect. The legacy flow posted the
-      // command to a worker-thread which then emitted a `setcrontrigger`
-      // message (src/sc.ls:220); we short-circuit by detecting the verb
-      // here and writing to D1 once the DO has accepted the command. The
-      // DO also records a log entry; the actual scheduling lives in
-      // `cron_triggers`.
-      //
-      // Multi-line dispatches (array command or newline-joined text
-      // block) can carry several settimetrigger lines; we parse each.
-      if (c.env.DB) {
-        for (const line of cmdstr.split('\n')) {
-          const parsed = parseSettimetrigger(line);
-          if (parsed) {
-            await upsertCronTriggers(c.env.DB, room, parsed.cell, parsed.times);
-          }
+    // Phase 9 — settimetrigger side-effect. The legacy flow posted the
+    // command to a worker-thread which then emitted a `setcrontrigger`
+    // message (src/sc.ls:220); we short-circuit by detecting the verb
+    // here and writing to D1 once the DO has accepted the command. The
+    // DO also records a log entry; the actual scheduling lives in
+    // `cron_triggers`.
+    //
+    // Multi-line dispatches (array command or newline-joined text
+    // block) can carry several settimetrigger lines; we parse each.
+    if (c.env.DB) {
+      for (const line of cmdstr.split('\n')) {
+        const parsed = parseSettimetrigger(line);
+        if (parsed) {
+          await upsertCronTriggers(c.env.DB, room, parsed.cell, parsed.times);
         }
       }
-      // Deferred multi-cascade sibling rename (H-4 namespace-guarded
-      // above). Rename failures are swallowed, matching legacy.
-      if (cascadeTarget !== null) {
-        await doFetch(
-          c.env,
-          cascadeTarget,
-          '/_do/rename',
-          {
-            method: 'POST',
-            body: JSON.stringify({ to: `${cascadeTarget}.bak` }),
-            headers: { 'Content-Type': 'application/json' },
-          },
-          principal,
-        );
-      }
+    }
+    // Deferred multi-cascade sibling rename (H-4 namespace-guarded
+    // above). Rename failures are swallowed, matching legacy.
+    if (cascadeTarget !== null) {
+      await doFetch(
+        c.env,
+        cascadeTarget,
+        '/_do/rename',
+        {
+          method: 'POST',
+          body: JSON.stringify({ to: `${cascadeTarget}.bak` }),
+          headers: { 'Content-Type': 'application/json' },
+        },
+        principal,
+      );
     }
 
     // Legacy replies `@response.json 202 {command}` -- `command` is the

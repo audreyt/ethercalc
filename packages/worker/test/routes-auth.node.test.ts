@@ -165,6 +165,11 @@ describe('auth routes', () => {
         ...makeAuthEnv(() => new Response('x')).env,
         ETHERCALC_AUTH: '0',
       } as Env,
+      // workerd delivers unset fromEnvironment bindings as null.
+      {
+        ...makeAuthEnv(() => new Response('x')).env,
+        ETHERCALC_AUTH: null,
+      } as Env,
       {
         ...makeAuthEnv(() => new Response('x')).env,
         ETHERCALC_RP_ID: null,
@@ -222,6 +227,28 @@ describe('auth routes', () => {
     expect(authed.headers.get('Cache-Control')).toBe('private, no-store');
     expect(anon.headers.get('Cache-Control')).toBe('private, no-store');
     expect(disabled.headers.get('Cache-Control')).toBe('private, no-store');
+  });
+
+  it('whoami reports enabled:false when ETHERCALC_AUTH is "0" or null', async () => {
+    // Kill-switch proof: even with AUTH + RP anchors + a session cookie that
+    // would verify under ETHERCALC_AUTH=1, the flag alone forces
+    // {uid:null, enabled:false}. Covers both the explicit wrangler [vars]
+    // value and workerd's null-for-unset binding delivery.
+    const base = makeAuthEnv(() =>
+      Response.json({ uid: 'uid-owner', exp: Number.MAX_SAFE_INTEGER }),
+    ).env;
+    const app = buildApp();
+    for (const flag of ['0', null] as const) {
+      const res = await app.fetch(
+        new Request('https://t.test/_auth/whoami', {
+          headers: { Cookie: '__Host-ec_sess=signed.token' },
+        }),
+        { ...base, ETHERCALC_AUTH: flag } as Env,
+      );
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ uid: null, enabled: false });
+      expect(res.headers.get('Cache-Control')).toBe('private, no-store');
+    }
   });
 
   it('revokes the current session before clearing its cookie', async () => {
