@@ -1610,6 +1610,46 @@ describe('RoomDO (unit, direct construction)', () => {
     const res = await room.fetch(new Request(`https://do${path}`, { method }));
     expect(res.status).toBe(501);
   });
+
+  it('POST /_do/import-append-toc refuses private parents with 409 before mutating TOC', async () => {
+    markPrivate(record);
+    mockExportCSV.mockClear();
+    mockExec.mockClear();
+    const res = await room.fetch(
+      new Request('https://do/_do/import-append-toc?name=private-parent', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-EC-Uid': 'uid-owner',
+        },
+        body: JSON.stringify({ titles: ['Secret'] }),
+      }),
+    );
+    expect(res.status).toBe(409);
+    expect(await res.text()).toContain('unavailable for private rooms');
+    expect(mockExportCSV).not.toHaveBeenCalled();
+    expect(mockExec).not.toHaveBeenCalled();
+  });
+
+  it('POST /_do/import-append-toc rejects empty titles and bad JSON', async () => {
+    const empty = await room.fetch(
+      new Request('https://do/_do/import-append-toc?name=x', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ titles: [] }),
+      }),
+    );
+    expect(empty.status).toBe(400);
+
+    const badJson = await room.fetch(
+      new Request('https://do/_do/import-append-toc?name=x', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{',
+      }),
+    );
+    expect(badJson.status).toBe(400);
+  });
 });
 
 /**

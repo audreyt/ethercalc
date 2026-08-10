@@ -67,6 +67,12 @@ import { parseSendemail } from './lib/email.ts';
 import { formdataSiblingRoom } from './lib/formdata-sibling.ts';
 import { csvToMarkdown } from './lib/md.ts';
 import {
+  getMaxSubsheetIndex,
+  ImportTooManySheetsError,
+} from './lib/multi-sheet-import.ts';
+import { workbookToLoadClipboardCommand } from './lib/xlsx-import.ts';
+import { MAX_MULTI_SHEETS } from '@ethercalc/shared';
+import {
   bookmarkStorage,
   isPitrUnavailableError,
   parsePitrRequest,
@@ -375,6 +381,9 @@ export class RoomDO implements DurableObject {
     }
     if (path === '/_do/commands' && request.method === 'POST') {
       return this.#postCommands(request, roomName);
+    }
+    if (path === '/_do/import-append-toc' && request.method === 'POST') {
+      return this.#postImportAppendToc(request, roomName);
     }
     if (path === '/_do/all' && request.method === 'DELETE') {
       return this.#deleteAll(roomName, request.headers.get('X-EC-Uid'));
@@ -687,6 +696,7 @@ export class RoomDO implements DurableObject {
     await this.#armAlarm();
     return plainResponse('OK', 201);
   }
+
   async #getLog(): Promise<Response> {
     const [log, chat] = await Promise.all([
       this.#listPrefix(STORAGE_KEYS.logPrefix),
@@ -714,6 +724,158 @@ export class RoomDO implements DurableObject {
     }
     return plainResponse('', 202);
   }
+
+  /**
+   * Atomically allocate N multi-sheet TOC rows for an append import.
+   *
+   * Body JSON: `{ "titles": string[] }` — preferred titles (not yet unique).
+   * Under `blockConcurrencyWhile`, reads the live TOC, assigns unique
+   * `room.<max+1..>` child ids, pastes TOC rows via the same loadclipboard
+   * command path as ordinary appends, and returns:
+   *   `{ firstIndex, sheets: [{ subroom, link, title }] }`
+   *
+   * Callers then PUT child snapshots into the returned ids. Concurrent
+   * appends serialize here so two imports never share the same base.N or
+   * paste row.
+   */
+  async #postImportAppendToc(
+    request: Request,
+    roomName: string | null,
+  ): Promise<Response> {
+    const room = roomName ?? this.#ownName;
+    if (!room) {
+      return plainResponse('room name required', 400);
+    }
+
+    let titles: string[];
+    try {
+      const parsed = JSON.parse(await request.text()) as { titles?: unknown };
+      if (!parsed || !Array.isArray(parsed.titles)) {
+        return plainResponse('titles array required', 400);
+      }
+      titles = parsed.titles.map((t) => (typeof t === 'string' ? t : ''));
+    } catch {
+      return plainResponse('invalid JSON body', 400);
+    }
+    if (titles.length === 0) {
+      return plainResponse('titles array required', 400);
+    }
+    if (titles.length > MAX_MULTI_SHEETS) {
+      return plainResponse(
+        `workbook exceeds ${MAX_MULTI_SHEETS} sheets (${titles.length})`,
+        413,
+      );
+    }
+
+    type AllocSheet = { subroom: string; link: string; title: string };
+    type AllocResult =
+      | { ok: true; firstIndex: number; sheets: AllocSheet[]; cmdBatches: string[] }
+      | { ok: false; status: number; message: string };
+
+    const allocated = await this.#state.blockConcurrencyWhile(async (): Promise<AllocResult> => {
+      // Authoritative private check under the same lock as allocation.
+      // The Worker precheck is UX-only; a parent can flip private between
+      // those awaits, and absent ACL on fresh children would publish content.
+      const { access } = await this.#getAccessMeta();
+      if (access === 'private') {
+        return {
+          ok: false,
+          status: 409,
+          message:
+            'Multi-sheet import is unavailable for private rooms because new sub-sheets would be public.',
+        };
+      }
+
+      const ss = await this.#getSpreadsheet();
+      const grid = parseCSV(ss.exportCSV());
+      const existingLinks: string[] = [];
+      const existingTitles: string[] = [];
+      if (grid.length > 1) {
+        for (const row of grid.slice(1)) {
+          if (Array.isArray(row) && typeof row[0] === 'string') {
+            existingLinks.push(row[0]);
+            existingTitles.push(typeof row[1] === 'string' ? row[1] : '');
+          }
+        }
+      }
+      if (existingLinks.length + titles.length > MAX_MULTI_SHEETS) {
+        return {
+          ok: false,
+          status: 413,
+          message: `workbook exceeds ${MAX_MULTI_SHEETS} sheets (${existingLinks.length + titles.length})`,
+        };
+      }
+
+      const startMax = getMaxSubsheetIndex(existingLinks, room);
+      const firstIndex = startMax + 1;
+      const currentTitles = [...existingTitles];
+      const sheets: AllocSheet[] = [];
+      const cmdBatches: string[] = [];
+
+      for (let i = 0; i < titles.length; i++) {
+        const nextIdx = firstIndex + i;
+        const preferred = (titles[i] ?? '').trim() || `Sheet${nextIdx}`;
+        let title = preferred;
+        if (currentTitles.map((t) => t.toLowerCase()).includes(title.toLowerCase())) {
+          title = `${title}_${nextIdx}`;
+        }
+        currentTitles.push(title);
+        const subroom = `${room}.${nextIdx}`;
+        const link = `/${subroom}`;
+        sheets.push({ subroom, link, title });
+
+        const csvBody = `"${link.replace(/"/g, '""')}","${title.replace(/"/g, '""')}"`;
+        const loadcmd = workbookToLoadClipboardCommand(
+          new TextEncoder().encode(csvBody),
+        );
+        if (!loadcmd) {
+          return {
+            ok: false,
+            status: 500,
+            message: 'import failed',
+          };
+        }
+        const pasteRow = existingLinks.length + i + 2;
+        const commandText = `${loadcmd}\npaste A${pasteRow} all`;
+        const applied = await this.#appendCommand(commandText);
+        if (applied === null) {
+          return {
+            ok: false,
+            status: 413,
+            message: 'command exceeds sheet limits',
+          };
+        }
+        cmdBatches.push(commandText);
+      }
+      return { ok: true, firstIndex, sheets, cmdBatches };
+    });
+
+    if (!allocated.ok) {
+      return plainResponse(allocated.message, allocated.status);
+    }
+
+    // Mirror + broadcast outside the lock (same pattern as #postCommands).
+    const lastTs = Date.now();
+    await this.#mirrorIndex(roomName, lastTs);
+    await this.#armAlarm();
+    const broadcastRoom = roomName ?? this.#ownName;
+    if (broadcastRoom) {
+      for (const cmdstr of allocated.cmdBatches) {
+        await this.#broadcastAll({
+          type: 'execute',
+          room: broadcastRoom,
+          user: '',
+          cmdstr,
+        });
+      }
+    }
+
+    return jsonResponse({
+      firstIndex: allocated.firstIndex,
+      sheets: allocated.sheets,
+    });
+  }
+
 
   /**
    * Apply a command batch + mirror to D1. Shared between the HTTP path

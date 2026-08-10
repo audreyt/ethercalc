@@ -199,6 +199,86 @@ export function buildMultiSheetImport(
   return { tocSave: csvToSocialCalc(encodeCSV(tocRows)), subSheets };
 }
 
+/**
+ * Parse an append upload into title preferences + save materializers without
+ * consulting the live TOC. The parent RoomDO allocates concrete subroom indices
+ * atomically; callers then materialize saves with the returned firstIndex.
+ */
+export interface AppendImportPlan {
+  readonly count: number;
+  /** Names used for cross-sheet formula rewrite (workbook sheet names). */
+  readonly referenceNames: readonly string[];
+  /** Preferred display titles before live TOC uniqueness is applied. */
+  readonly preferredTitles: readonly string[];
+  materializeSaves(room: string, firstIndex: number): readonly string[];
+}
+
+export function prepareAppendImportPlan(
+  bytes: Uint8Array,
+  format: string,
+  titleHint?: string,
+  readFn: typeof XLSX.read = XLSX.read,
+): AppendImportPlan {
+  const fmt = format.toLowerCase();
+
+  if (isTextImportFormat(fmt)) {
+    enforceImportUploadBytes(bytes);
+    const preferred =
+      (titleHint && titleHint.trim()) ||
+      (fmt === 'socialcalc' ? 'SocialCalc' : fmt.toUpperCase());
+    const referenceNames = [preferred];
+    return {
+      count: 1,
+      referenceNames,
+      preferredTitles: [preferred],
+      materializeSaves(room: string, firstIndex: number): readonly string[] {
+        if (fmt === 'socialcalc') {
+          const body = new TextDecoder('utf-8').decode(bytes);
+          return [rewriteSheetReferences(body, referenceNames, room, firstIndex)];
+        }
+        const text = new TextDecoder('utf-8').decode(bytes);
+        const csvText = fmt === 'tsv' ? text.replace(/\t/g, ',') : text;
+        return [csvToSocialCalc(csvText)];
+      },
+    };
+  }
+
+  if (!isWorkbookImportFormat(fmt)) {
+    throw new ImportUnsupportedFormatError(fmt);
+  }
+
+  enforceImportArchiveLimit(bytes);
+  const wb = readFn(bytes, { type: 'array', cellFormula: true });
+  const names: string[] = Array.isArray(wb.SheetNames) ? wb.SheetNames : [];
+  const present = names.filter((name) => Boolean(wb.Sheets[name]));
+  if (present.length > MAX_MULTI_SHEETS) {
+    throw new ImportTooManySheetsError(present.length);
+  }
+
+  let totalCells = 0;
+  for (const name of present) {
+    const ws = wb.Sheets[name];
+    if (ws) {
+      enforceSocialCalcColumnLimit(ws);
+      totalCells += countWorksheetCells(ws);
+    }
+  }
+  enforceImportLimit(totalCells);
+
+  return {
+    count: present.length,
+    referenceNames: present,
+    preferredTitles: present.map((name) => name),
+    materializeSaves(room: string, firstIndex: number): readonly string[] {
+      return present.map((name) => {
+        const ws = wb.Sheets[name]!;
+        const save = worksheetToSave(ws);
+        return rewriteSheetReferences(save, present, room, firstIndex);
+      });
+    },
+  };
+}
+
 export function buildMultiSheetAppendImport(
   bytes: Uint8Array,
   room: string,
@@ -212,59 +292,28 @@ export function buildMultiSheetAppendImport(
   const format = (opts.format ?? 'xlsx').toLowerCase();
   const readFn = opts.readFn ?? XLSX.read;
 
-  if (isTextImportFormat(format)) {
-    return buildTextAppendImport(
-      bytes,
-      room,
-      existingLinks,
-      existingTitles,
-      format,
-      opts.titleHint,
-    );
+  const plan = prepareAppendImportPlan(bytes, format, opts.titleHint, readFn);
+  if (existingLinks.length + plan.count > MAX_MULTI_SHEETS) {
+    throw new ImportTooManySheetsError(existingLinks.length + plan.count);
   }
-  if (!isWorkbookImportFormat(format)) {
-    throw new ImportUnsupportedFormatError(format);
-  }
-
-  enforceImportArchiveLimit(bytes);
-  const wb = readFn(bytes, { type: 'array', cellFormula: true });
-  const names: string[] = Array.isArray(wb.SheetNames) ? wb.SheetNames : [];
-
-  if (existingLinks.length + names.length > MAX_MULTI_SHEETS) {
-    throw new ImportTooManySheetsError(existingLinks.length + names.length);
-  }
-
-  let totalCells = 0;
-  for (const name of names) {
-    const ws = wb.Sheets[name];
-    if (ws) {
-      enforceSocialCalcColumnLimit(ws);
-      totalCells += countWorksheetCells(ws);
-    }
-  }
-  enforceImportLimit(totalCells);
 
   const startMax = getMaxSubsheetIndex(existingLinks, room);
   const firstIndex = startMax + 1;
-  const subSheets: MultiSheetAppendSheet[] = [];
+  const saves = plan.materializeSaves(room, firstIndex);
   const currentTitles = [...existingTitles];
+  const subSheets: MultiSheetAppendSheet[] = [];
 
-  let offset = 0;
-  for (const name of names) {
-    const ws = wb.Sheets[name];
-    if (!ws) continue;
-    const nextIdx = firstIndex + offset;
-    offset++;
-
+  for (let i = 0; i < plan.count; i++) {
+    const nextIdx = firstIndex + i;
     const subroom = `${room}.${nextIdx}`;
-    const link = `/${subroom}`;
-    let save = worksheetToSave(ws);
-    save = rewriteSheetReferences(save, names, room, firstIndex);
-
-    const title = uniqueTitle(name, nextIdx, currentTitles);
+    const title = uniqueTitle(plan.preferredTitles[i] ?? `Sheet${nextIdx}`, nextIdx, currentTitles);
     currentTitles.push(title);
-
-    subSheets.push({ subroom, save, link, title });
+    subSheets.push({
+      subroom,
+      save: saves[i] ?? '',
+      link: `/${subroom}`,
+      title,
+    });
   }
 
   return { subSheets };

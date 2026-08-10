@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vite-plus/test';
 import {
   buildMultiSheetImport,
   buildMultiSheetAppendImport,
+  prepareAppendImportPlan,
   getMaxSubsheetIndex,
   rewriteSheetReferences,
   ImportTooManySheetsError,
@@ -451,5 +452,20 @@ describe('getMaxSubsheetIndex & rewriteSheetReferences', () => {
       "cell:A1:vtf:n:1:'room.7'!A1",
     );
     expect(rewriteSheetReferences('body', [], 'room', 6)).toBe('body');
+  });
+});
+
+describe('prepareAppendImportPlan', () => {
+  it('defers concrete subroom ids until materializeSaves is given firstIndex', () => {
+    const plan = prepareAppendImportPlan(
+      new TextEncoder().encode('a,b\n1,2'),
+      'csv',
+      'CSVData',
+    );
+    expect(plan.count).toBe(1);
+    expect(plan.preferredTitles).toEqual(['CSVData']);
+    const saves = plan.materializeSaves('room', 9);
+    expect(saves).toHaveLength(1);
+    expect(saves[0]!.length).toBeGreaterThan(0);
   });
 });

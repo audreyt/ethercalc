@@ -9,10 +9,11 @@
  *
  *   - `POST /=:room.{xlsx,ods,fods,csv,tsv,txt,socialcalc}` /
  *     `POST /_/=:room/{xlsx,ods,fods,csv,tsv,txt,socialcalc}`:
- *     Multi-sheet APPEND operation. Reads the room's current TOC (fails closed
- *     unless status is 200 or 404), allocates sub-room indices strictly after the
- *     current maximum, rewrites cross-sheet formula references, PUTs each sub-room
- *     snapshot, and appends TOC rows via `POST /_do/commands`. Text formats
+ *     Multi-sheet APPEND operation. Parses the upload, then asks the parent
+ *     RoomDO (`POST /_do/import-append-toc`) to atomically allocate unique child
+ *     ids and append TOC rows under `blockConcurrencyWhile`. Child snapshots are
+ *     PUT only after allocation succeeds. Concurrent appends therefore never
+ *     share `base.N` or overwrite each other's TOC rows. Text formats
  *     (csv/tsv/txt/socialcalc) are single-sheet appends through this same door.
  *
  * Returns `201 OK`. Access is gated by parent room write permissions when operating
@@ -35,10 +36,9 @@ import {
   APPEND_IMPORT_FORMATS,
   WORKBOOK_IMPORT_FORMATS,
   buildMultiSheetImport,
-  buildMultiSheetAppendImport,
+  prepareAppendImportPlan,
   ImportTooManySheetsError,
   ImportUnsupportedFormatError,
-  type MultiSheetAppendSheet,
 } from '../lib/multi-sheet-import.ts';
 import {
   ImportArchiveTooLargeError,
@@ -46,7 +46,6 @@ import {
   ImportDimensionsTooLargeError,
   ImportRowOutOfRangeError,
   ImportTooLargeError,
-  workbookToLoadClipboardCommand,
 } from '../lib/xlsx-import.ts';
 
 const TEXT_CT = 'text/plain; charset=utf-8';
@@ -220,61 +219,103 @@ async function appendWorkbook(
     });
   }
 
-  const tocRes = await doFetch(env, base, '/_do/csv.json', {}, principal);
-  const denied = await authVerdict(tocRes);
-  if (denied) return denied;
+  let plan;
+  try {
+    plan = prepareAppendImportPlan(bytes, format, titleHint);
+  } catch (err) {
+    const mapped = mapImportBuildError(err);
+    if (mapped) return mapped;
+    throw err;
+  }
+  if (plan.count === 0) {
+    return new Response('OK', {
+      status: 201,
+      headers: { 'Content-Type': TEXT_CT, 'Content-Length': '2' },
+    });
+  }
 
-  const existingLinks: string[] = [];
-  const existingTitles: string[] = [];
+  // Atomically allocate unique child ids + TOC rows on the parent RoomDO.
+  // Concurrent appends serialize inside the DO so two imports never share
+  // base.N or overwrite each other's paste rows.
+  const allocRes = await doFetch(
+    env,
+    base,
+    '/_do/import-append-toc',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ titles: plan.preferredTitles }),
+    },
+    principal,
+  );
+  const allocDenied = await authVerdict(allocRes);
+  if (allocDenied) return allocDenied;
+  if (allocRes.status === 413) {
+    return new Response(await allocRes.text(), {
+      status: 413,
+      headers: { 'Content-Type': TEXT_CT },
+    });
+  }
+  if (allocRes.status >= 300) {
+    const body = await allocRes.text().catch(() => '');
+    return new Response(body || 'import failed', {
+      status: allocRes.status >= 400 && allocRes.status < 600 ? allocRes.status : 500,
+      headers: { 'Content-Type': TEXT_CT },
+    });
+  }
 
-  if (tocRes.status === 200) {
-    const text = await tocRes.text().catch(() => '');
-    try {
-      const rows = JSON.parse(text);
-      if (!Array.isArray(rows)) {
-        return new Response('import failed', {
-          status: 500,
-          headers: { 'Content-Type': TEXT_CT },
-        });
-      }
-      if (rows.length > 1) {
-        for (const r of rows.slice(1)) {
-          if (Array.isArray(r) && typeof r[0] === 'string') {
-            existingLinks.push(r[0]);
-            existingTitles.push(typeof r[1] === 'string' ? r[1] : '');
-          }
-        }
-      }
-    } catch {
+  let firstIndex: number;
+  let sheets: Array<{ subroom: string; link: string; title: string }>;
+  try {
+    const json = (await allocRes.json()) as {
+      firstIndex?: unknown;
+      sheets?: unknown;
+    };
+    if (
+      typeof json.firstIndex !== 'number' ||
+      !Array.isArray(json.sheets) ||
+      json.sheets.length !== plan.count
+    ) {
       return new Response('import failed', {
         status: 500,
         headers: { 'Content-Type': TEXT_CT },
       });
     }
-  } else if (tocRes.status !== 404) {
+    firstIndex = json.firstIndex;
+    sheets = [];
+    for (const row of json.sheets) {
+      if (
+        !row ||
+        typeof row !== 'object' ||
+        typeof (row as { subroom?: unknown }).subroom !== 'string' ||
+        typeof (row as { link?: unknown }).link !== 'string' ||
+        typeof (row as { title?: unknown }).title !== 'string'
+      ) {
+        return new Response('import failed', {
+          status: 500,
+          headers: { 'Content-Type': TEXT_CT },
+        });
+      }
+      sheets.push({
+        subroom: (row as { subroom: string }).subroom,
+        link: (row as { link: string }).link,
+        title: (row as { title: string }).title,
+      });
+    }
+  } catch {
     return new Response('import failed', {
       status: 500,
       headers: { 'Content-Type': TEXT_CT },
     });
   }
 
-  let subSheets: ReadonlyArray<MultiSheetAppendSheet>;
-  try {
-    const res = buildMultiSheetAppendImport(bytes, base, existingLinks, existingTitles, {
-      format,
-      titleHint,
-    });
-    subSheets = res.subSheets;
-  } catch (err) {
-    const mapped = mapImportBuildError(err);
-    if (mapped) return mapped;
-    throw err;
-  }
-
-  for (const { subroom, save } of subSheets) {
+  const saves = plan.materializeSaves(base, firstIndex);
+  for (let i = 0; i < sheets.length; i++) {
+    const sheet = sheets[i]!;
+    const save = saves[i] ?? '';
     const res = await doFetch(
       env,
-      subroom,
+      sheet.subroom,
       '/_do/snapshot',
       { method: 'PUT', body: save },
       principal,
@@ -282,35 +323,6 @@ async function appendWorkbook(
     const subDenied = await authVerdict(res);
     if (subDenied) return subDenied;
     if (res.status >= 300) {
-      return new Response('import failed', {
-        status: 500,
-        headers: { 'Content-Type': TEXT_CT },
-      });
-    }
-  }
-
-  let offset = 0;
-  for (const { link, title } of subSheets) {
-    const csvBody = `"${link.replace(/"/g, '""')}","${title.replace(/"/g, '""')}"`;
-    const loadcmd = workbookToLoadClipboardCommand(new TextEncoder().encode(csvBody));
-    if (!loadcmd) continue;
-    const pasteRow = existingLinks.length + offset + 2;
-    offset++;
-    const commandText = `${loadcmd}\npaste A${pasteRow} all`;
-    const appendTocRes = await doFetch(
-      env,
-      base,
-      '/_do/commands',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain', Accept: 'application/json' },
-        body: commandText,
-      },
-      principal,
-    );
-    const appendDenied = await authVerdict(appendTocRes);
-    if (appendDenied) return appendDenied;
-    if (appendTocRes.status >= 300) {
       return new Response('import failed', {
         status: 500,
         headers: { 'Content-Type': TEXT_CT },

@@ -44,6 +44,23 @@ async function requestWithAuth(method: string, path: string, body?: BodyInit | U
   } satisfies Partial<ExecutionContext> as unknown as ExecutionContext;
   return worker.fetch(req, withAuth(env as unknown as Env) as never, ctx);
 }
+
+async function requestWithEnv(
+  e: Env,
+  method: string,
+  path: string,
+  body?: BodyInit | Uint8Array | null,
+): Promise<Response> {
+  const req = new Request(`https://example.test${path}`, {
+    method,
+    body: body as unknown as BodyInit | null,
+  });
+  const ctx = {
+    waitUntil() {},
+    passThroughOnException() {},
+  } satisfies Partial<ExecutionContext> as unknown as ExecutionContext;
+  return worker.fetch(req, e as never, ctx);
+}
 /** POST a JSON `{command}` body to the real command route (`POST /_/:room`). */
 async function postCommand(room: string, command: string): Promise<Response> {
   const req = new Request(`https://example.test/_/${room}`, {
@@ -202,6 +219,121 @@ describe('POST multi-sheet append import', () => {
     expect(res.status).toBe(400);
     expect(await res.text()).toContain('exceeds SocialCalc max ZZ');
   });
+
+  it('serializes two simultaneous POST appends so both imports keep distinct sheets and TOC rows', async () => {
+    const room = `mconc-${Math.random().toString(36).slice(2, 8)}`;
+    const seed = await request('PUT', `/=${room}.xlsx`, twoSheetXlsx());
+    expect(seed.status).toBe(201);
+
+    // Distinct one-sheet workbooks so snapshot content proves no overwrite.
+    const mk = (name: string, value: string): Uint8Array => {
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(
+        wb,
+        XLSX.utils.aoa_to_sheet([[value]]),
+        name,
+      );
+      return new Uint8Array(
+        XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer,
+      );
+    };
+    const a = mk('Alpha', 'concurrent-A');
+    const b = mk('Beta', 'concurrent-B');
+
+    // Deterministic overlap: wrap the real ROOM binding and hold both
+    // callers at /_do/import-append-toc until both have arrived, then
+    // forward to the same DO stub. A bare Promise.all is not proof of
+    // overlap; this barrier is.
+    const realRoom = (env as unknown as Env).ROOM;
+    let arrivals = 0;
+    let releaseBarrier!: () => void;
+    const bothArrived = new Promise<void>((resolve) => {
+      releaseBarrier = resolve;
+    });
+    let barrierTimedOut = false;
+    const barrierTimeoutMs = 5_000;
+    const barrierOrTimeout = Promise.race([
+      bothArrived,
+      new Promise<void>((resolve) => {
+        setTimeout(() => {
+          barrierTimedOut = true;
+          resolve();
+        }, barrierTimeoutMs);
+      }),
+    ]);
+
+    const barrierEnv = {
+      ...(env as unknown as Env),
+      ROOM: {
+        idFromName: (name: string) => realRoom.idFromName(name),
+        idFromString: (id: string) =>
+          (realRoom as unknown as { idFromString(id: string): DurableObjectId }).idFromString(id),
+        get: (id: DurableObjectId) => {
+          const stub = realRoom.get(id);
+          return {
+            fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+              const url =
+                typeof input === 'string'
+                  ? input
+                  : input instanceof URL
+                    ? input.toString()
+                    : input.url;
+              if (url.includes('/_do/import-append-toc')) {
+                arrivals += 1;
+                if (arrivals >= 2) releaseBarrier();
+                await barrierOrTimeout;
+              }
+              return stub.fetch(input as Request, init);
+            },
+          } as unknown as DurableObjectStub;
+        },
+      } as unknown as DurableObjectNamespace,
+    } as Env;
+
+    const [resA, resB] = await Promise.all([
+      requestWithEnv(barrierEnv, 'POST', `/=${room}.xlsx`, a),
+      requestWithEnv(barrierEnv, 'POST', `/=${room}.xlsx`, b),
+    ]);
+    expect(barrierTimedOut).toBe(false);
+    expect(arrivals).toBe(2);
+    expect(resA.status).toBe(201);
+    expect(resB.status).toBe(201);
+
+    const tocJson = await request('GET', `/_/${room}/csv.json`);
+    expect(tocJson.status).toBe(200);
+    const tocGrid = (await tocJson.json()) as string[][];
+    // Seeded First/Second plus one row from each concurrent import.
+    expect(tocGrid).toHaveLength(5);
+    expect(tocGrid[0]).toEqual(['#url', '#title']);
+    expect(tocGrid[1]).toEqual([`/${room}.1`, 'First']);
+    expect(tocGrid[2]).toEqual([`/${room}.2`, 'Second']);
+
+    const titles = tocGrid.slice(3).map((row) => row[1]);
+    const links = tocGrid.slice(3).map((row) => row[0]);
+    // Both import titles present (uniqueness may suffix _N, so match by prefix).
+    expect(titles.some((title) => typeof title === 'string' && title.startsWith('Alpha'))).toBe(
+      true,
+    );
+    expect(titles.some((title) => typeof title === 'string' && title.startsWith('Beta'))).toBe(
+      true,
+    );
+    // Distinct child links — the race would have made both point at the same id.
+    expect(new Set(links).size).toBe(2);
+    expect(links).toContain(`/${room}.3`);
+    expect(links).toContain(`/${room}.4`);
+
+    // Both child snapshots survived with their own distinct cell values.
+    const cells3 = (await (
+      await request('GET', `/_/${room}.3/cells`)
+    ).json()) as Record<string, { datavalue?: unknown }>;
+    const cells4 = (await (
+      await request('GET', `/_/${room}.4/cells`)
+    ).json()) as Record<string, { datavalue?: unknown }>;
+    const values = new Set([cells3.A1?.datavalue, cells4.A1?.datavalue]);
+    expect(values.has('concurrent-A')).toBe(true);
+    expect(values.has('concurrent-B')).toBe(true);
+  });
+
   it('rejects append and replace on private multi-sheet rooms for every format', async () => {
     const base = `mpriv-${Math.random().toString(36).slice(2, 8)}`;
     const initRes = await doFetch(
