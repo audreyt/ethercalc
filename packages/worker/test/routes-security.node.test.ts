@@ -295,10 +295,13 @@ describe('exports — verdict propagation + identity threading', () => {
 });
 
 describe('multi-sheet import — write verdict gating', () => {
-  it('PUT /=:room.xlsx propagates the first sub-sheet 403 and dispatches nothing further', async () => {
-    const { env, calls } = makeFakeRoomNamespace(
-      () => new Response('Forbidden', { status: 403 }),
-    );
+  it('PUT /=:room.xlsx fails closed on parent access denial before any snapshot write', async () => {
+    const { env, calls } = makeFakeRoomNamespace((req) => {
+      if (req.url.includes('/_do/access')) {
+        return new Response('Forbidden', { status: 403 });
+      }
+      return new Response('OK', { status: 201 });
+    });
     const app = buildApp();
     const res = await app.fetch(
       new Request('https://t.test/=book.xlsx', {
@@ -310,16 +313,18 @@ describe('multi-sheet import — write verdict gating', () => {
     expect(res.status).toBe(403);
     expect(res.headers.get('content-type')).toBe('text/plain; charset=utf-8');
     expect(await res.text()).toBe('Forbidden');
-    // Fail on FIRST denial: the sub-sheet write was attempted, the TOC
-    // write (and any later sibling) must not be.
+    // Fail on FIRST denial: parent access check only — no sub-sheet/TOC writes.
     expect(calls).toHaveLength(1);
-    expect(calls[0]!.url).toBe('https://do.local/_do/snapshot?name=book.1');
+    expect(calls[0]!.url).toBe('https://do.local/_do/access?name=book');
   });
 
   it('threads the verified principal to every import write', async () => {
-    const { env, calls } = makeFakeRoomNamespace(
-      () => new Response('OK', { status: 201 }),
-    );
+    const { env, calls } = makeFakeRoomNamespace((req) => {
+      if (req.url.includes('/_do/access')) {
+        return Response.json({ isPrivate: false, canRead: true, canWrite: true });
+      }
+      return new Response('OK', { status: 201 });
+    });
     const app = buildApp();
     const res = await app.fetch(
       new Request('https://t.test/=book.xlsx', {
@@ -331,11 +336,33 @@ describe('multi-sheet import — write verdict gating', () => {
     );
     expect(res.status).toBe(201);
     expect(await res.text()).toBe('OK');
-    // One sub-sheet write + the TOC write, both stamped.
-    expect(calls).toHaveLength(2);
+    // Parent access check + sub-sheet write + TOC write, all stamped.
+    expect(calls).toHaveLength(3);
     for (const call of calls) {
       expect(call.uid).toBe(AUTH_UID);
     }
+  });
+
+  it('POST text append refuses a private parent with 409 and writes nothing', async () => {
+    const { env, calls } = makeFakeRoomNamespace((req) => {
+      if (req.url.includes('/_do/access')) {
+        return Response.json({ isPrivate: true, canRead: true, canWrite: true });
+      }
+      return new Response('OK', { status: 201 });
+    });
+    const app = buildApp();
+    const res = await app.fetch(
+      new Request('https://t.test/=book.csv', {
+        method: 'POST',
+        headers: { Cookie: AUTH_COOKIE },
+        body: 'a,b\n1,2',
+      }),
+      withAuth(env) as never,
+    );
+    expect(res.status).toBe(409);
+    expect(await res.text()).toContain('unavailable for private rooms');
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toBe('https://do.local/_do/access?name=book');
   });
 });
 

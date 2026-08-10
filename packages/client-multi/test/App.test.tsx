@@ -5,18 +5,29 @@ import { App } from '../src/App.tsx';
 import { HackFoldr } from '../src/Foldr.ts';
 
 function createMockFoldr(): HackFoldr {
+  let mockRows: string[][] = [
+    ['#url', '#title'],
+    ['/room.1', 'Sheet1'],
+    ['/room.2', 'Sheet2'],
+  ];
+
   const fetchMock = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
-    if (url.endsWith('/csv.json')) {
+    const href = String(url);
+    if (href.includes('/csv.json')) {
       return {
         ok: true,
-        json: async () => [
-          ['#url', '#title'],
-          ['/room.1', 'Sheet1'],
-          ['/room.2', 'Sheet2'],
-        ],
+        json: async () => mockRows,
       };
     }
+    // Guarded multi-sheet append door: POST /_/=room/<fmt>?title=...
+    if (init?.method === 'POST' && /\/_\/=[^/]+\/(xlsx|ods|fods|csv|tsv|txt|socialcalc)/.test(href)) {
+      const m = /[?&]title=([^&]+)/.exec(href);
+      const title = m ? decodeURIComponent(m[1]!) : `Sheet${mockRows.length}`;
+      mockRows.push([`/room.${mockRows.length}`, title]);
+      return new Response('OK', { status: 201 });
+    }
     if (init?.method === 'POST') {
+      // TOC paste / add-sheet command path.
       return {
         ok: true,
         json: async () => ({ command: ['ok', 'paste A2 all'] }),
@@ -177,10 +188,10 @@ describe('<App /> integration', () => {
     expect(foldr.rows).toHaveLength(1);
   });
 
-  it('imports a file and appends it as a new sheet', async () => {
+  it('imports a file via the guarded server append route and refreshes TOC', async () => {
     const foldr = createMockFoldr();
     const alertMock = vi.fn();
-    const importFetch = vi.fn().mockResolvedValue(new Response('OK', { status: 201 }));
+    const importFetch = foldr['fetchImpl'] as typeof fetch;
 
     render(
       <App
@@ -200,27 +211,23 @@ describe('<App /> integration', () => {
     fireEvent.change(fileInput, { target: { files: [file] } });
 
     await waitFor(() => {
+      expect(importFetch).toHaveBeenCalledWith(
+        'http://localhost/_/=room/csv?title=ImportedData',
+        expect.objectContaining({ method: 'POST', body: file }),
+      );
       expect(foldr.rows).toHaveLength(3);
       expect(foldr.rows[2]?.title).toBe('ImportedData');
-      expect(importFetch).toHaveBeenCalledWith(
-        'http://localhost/_/room.3',
-        expect.objectContaining({ method: 'PUT' }),
-      );
     });
+    expect(alertMock).not.toHaveBeenCalled();
   });
 
-
-  it('serializes overlapping imports so each allocates a distinct subroom', async () => {
+  it('serializes overlapping imports so each posts through the server door in order', async () => {
     const serverRows = [
       { link: '/room.1', title: 'Sheet1' },
       { link: '/room.2', title: 'Sheet2' },
     ];
     const tocFetch = vi.fn().mockImplementation(async (_url: string, init?: RequestInit) => {
       if (init?.method === 'POST') {
-        const [link, title] = String(init.body)
-          .split(',')
-          .map((field) => field.replace(/^"|"$/g, ''));
-        serverRows.push({ link: link!, title: title! });
         return {
           ok: true,
           json: async () => ({ command: [0, `paste A${serverRows.length + 1} all`] }),
@@ -239,12 +246,30 @@ describe('<App /> integration', () => {
     foldr.rows = serverRows.map(({ link, title }, offset) => ({ link, title, row: offset + 2 }));
 
     let resolveFirst!: (response: Response) => void;
-    const firstPut = new Promise<Response>((resolve) => {
+    const firstPost = new Promise<Response>((resolve) => {
       resolveFirst = resolve;
     });
-    const importFetch = vi.fn()
-      .mockReturnValueOnce(firstPut)
-      .mockResolvedValueOnce(new Response('OK', { status: 201 }));
+    let importCount = 0;
+    const importFetch = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+      if (typeof url === 'string' && url.includes('/_/=room/csv')) {
+        importCount += 1;
+        if (importCount === 1) return firstPost;
+        serverRows.push({ link: `/room.${serverRows.length + 1}`, title: 'second' });
+        return new Response('OK', { status: 201 });
+      }
+      return tocFetch(url, init);
+    });
+    vi.spyOn(foldr, 'refreshToc').mockImplementation(async () => {
+      if (importCount >= 1 && !serverRows.some((row) => row.title === 'first')) {
+        serverRows.push({ link: '/room.3', title: 'first' });
+      }
+      foldr.rows = serverRows.map(({ link, title }, offset) => ({
+        link,
+        title,
+        row: offset + 2,
+      }));
+      return true;
+    });
 
     render(
       <App
@@ -253,7 +278,7 @@ describe('<App /> integration', () => {
         suffix=""
         index="room"
         isReadOnly={false}
-        fetch={importFetch}
+        fetch={importFetch as typeof fetch}
         alert={vi.fn()}
       />,
     );
@@ -263,11 +288,11 @@ describe('<App /> integration', () => {
     fireEvent.change(input, { target: { files: [new File(['second'], 'second.csv')] } });
 
     await waitFor(() => expect(importFetch).toHaveBeenCalledTimes(1));
-    expect(importFetch.mock.calls[0]?.[0]).toBe('http://localhost/_/room.3');
+    expect(importFetch.mock.calls[0]?.[0]).toBe('http://localhost/_/=room/csv?title=first');
     resolveFirst(new Response('OK', { status: 201 }));
 
     await waitFor(() => expect(importFetch).toHaveBeenCalledTimes(2));
-    expect(importFetch.mock.calls[1]?.[0]).toBe('http://localhost/_/room.4');
+    expect(importFetch.mock.calls[1]?.[0]).toBe('http://localhost/_/=room/csv?title=second');
   });
 
   it('hides buttons and disables rename in read-only mode', async () => {

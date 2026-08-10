@@ -6,11 +6,13 @@ import {
   getMaxSubsheetIndex,
   rewriteSheetReferences,
   ImportTooManySheetsError,
+  ImportUnsupportedFormatError,
 } from '../src/lib/multi-sheet-import.ts';
 import {
   ImportArchiveTooLargeError,
   ImportColumnOutOfRangeError,
   ImportDimensionsTooLargeError,
+  MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES,
   MAX_IMPORT_CELLS,
   worksheetToSave,
 } from '../src/lib/xlsx-import.ts';
@@ -278,6 +280,40 @@ describe('buildMultiSheetAppendImport', () => {
       title: 'Second',
     });
   });
+  it('rejects unsupported import formats', () => {
+    const err = new ImportUnsupportedFormatError('pdf');
+    expect(err.message).toBe('unsupported multi-sheet import format: pdf');
+    expect(() =>
+      buildMultiSheetAppendImport(new Uint8Array(), 'room', [], [], { format: 'pdf' }),
+    ).toThrow(ImportUnsupportedFormatError);
+  });
+
+  it('uses default upper-case and SocialCalc title fallbacks when titleHint is omitted', () => {
+    const txtRes = buildMultiSheetAppendImport(
+      new TextEncoder().encode('hello'),
+      'room',
+      [],
+      [],
+      { format: 'txt' },
+    );
+    expect(txtRes.subSheets[0]?.title).toBe('TXT');
+
+    const scRes = buildMultiSheetAppendImport(
+      new TextEncoder().encode('version:1.5'),
+      'room',
+      [],
+      [],
+      { format: 'socialcalc' },
+    );
+    expect(scRes.subSheets[0]?.title).toBe('SocialCalc');
+  });
+
+  it('rejects single-sheet text append when MAX_MULTI_SHEETS is reached', () => {
+    const existingLinks = Array.from({ length: MAX_MULTI_SHEETS }, (_, i) => `/room.${i + 1}`);
+    expect(() =>
+      buildMultiSheetAppendImport(new Uint8Array(), 'room', existingLinks, [], { format: 'csv' }),
+    ).toThrow(ImportTooManySheetsError);
+  });
 
   it('deduplicates sheet titles against existing titles and skips missing sheets', () => {
     const readFn = ((): unknown => ({
@@ -361,6 +397,46 @@ describe('buildMultiSheetAppendImport', () => {
     expect(() =>
       buildMultiSheetAppendImport(bytes, 'room', existingLinks, []),
     ).toThrow(ImportTooManySheetsError);
+  });
+
+  it('appends csv/tsv/txt/socialcalc as a single text sheet with size bounds', () => {
+    const csv = buildMultiSheetAppendImport(
+      new TextEncoder().encode('a,b\n1,2'),
+      'room',
+      ['/room.1', '/room.5'],
+      ['Sheet1', 'Data'],
+      { format: 'csv', titleHint: 'CSVData' },
+    );
+    expect(csv.subSheets).toHaveLength(1);
+    expect(csv.subSheets[0]).toMatchObject({
+      subroom: 'room.6',
+      link: '/room.6',
+      title: 'CSVData',
+    });
+    expect(csv.subSheets[0]!.save.length).toBeGreaterThan(0);
+
+    const tsv = buildMultiSheetAppendImport(
+      new TextEncoder().encode('a\tb\n1\t2'),
+      'room',
+      ['/room.1'],
+      ['Sheet1'],
+      { format: 'tsv', titleHint: 'TSV' },
+    );
+    expect(tsv.subSheets[0]?.title).toBe('TSV');
+
+    const sc = buildMultiSheetAppendImport(
+      new TextEncoder().encode('cell:A1:vtf:n:1:SheetX!A1\n'),
+      'room',
+      [],
+      [],
+      { format: 'socialcalc', titleHint: 'SheetX' },
+    );
+    expect(sc.subSheets[0]?.save).toContain("'room.1'!A1");
+
+    const tooBig = new Uint8Array(MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES + 1);
+    expect(() =>
+      buildMultiSheetAppendImport(tooBig, 'room', [], [], { format: 'csv' }),
+    ).toThrow(ImportArchiveTooLargeError);
   });
 });
 

@@ -74,6 +74,7 @@ describe('PUT multi-sheet import', () => {
   it('PUT /=:room.xlsx imports a workbook into TOC + sub-rooms and round-trips through export', async () => {
     const room = `mimport-${Math.random().toString(36).slice(2, 8)}`;
     const put = await request('PUT', `/=${room}.xlsx`, twoSheetXlsx());
+    if (put.status !== 201) throw new Error('PUT body=' + await put.text() + ' status=' + put.status);
     expect(put.status).toBe(201);
     expect(await put.text()).toBe('OK');
 
@@ -202,8 +203,7 @@ describe('POST multi-sheet append import', () => {
     expect(res.status).toBe(400);
     expect(await res.text()).toContain('exceeds SocialCalc max ZZ');
   });
-});
-  it('rejects append requests on private multi-sheet rooms', async () => {
+  it('rejects append and replace on private multi-sheet rooms for every format', async () => {
     const base = `mpriv-${Math.random().toString(36).slice(2, 8)}`;
     const initRes = await doFetch(
       env as unknown as Env,
@@ -220,18 +220,116 @@ describe('POST multi-sheet append import', () => {
     );
     expect(initRes.status).toBe(201);
 
-    // Unauthenticated POST append is denied 403 Forbidden
+    const privateMsg =
+      'Multi-sheet import is unavailable for private rooms because new sub-sheets would be public.';
+
+    // Unauthenticated workbook POST is denied before the private-room message.
     const unauthedPost = await request('POST', `/=${base}.xlsx`, twoSheetXlsx());
     expect(unauthedPost.status).toBe(403);
     expect(await unauthedPost.text()).toBe('Forbidden');
-    // Authenticated owner POST append is denied 403 ("Private room append is not supported")
-    const postRes = await requestWithAuth('POST', `/=${base}.xlsx`, twoSheetXlsx());
-    expect(postRes.status).toBe(403);
-    expect(await postRes.text()).toContain('Private room append is not supported');
 
-    // Assert zero child subroom snapshots were created on refusal
+    // Authenticated owner: every append/replace format refuses with 409 and creates no child.
+    // (Fresh sub-rooms have no ACL and would otherwise publish as public — the bypass class.)
+    const cases: Array<{ method: 'POST' | 'PUT'; path: string; body: BodyInit | Uint8Array }> = [
+      { method: 'POST', path: `/=${base}.xlsx`, body: twoSheetXlsx() },
+      { method: 'PUT', path: `/=${base}.xlsx`, body: twoSheetXlsx() },
+      { method: 'POST', path: `/=${base}.csv`, body: 'secret,value\n1,2' },
+      { method: 'POST', path: `/=${base}.tsv`, body: 'secret\tvalue\n1\t2' },
+      { method: 'POST', path: `/=${base}.txt`, body: 'secret,value\n1,2' },
+      {
+        method: 'POST',
+        path: `/=${base}.socialcalc`,
+        body: 'cell:A1:t:leaked\n',
+      },
+      { method: 'POST', path: `/_/=${base}/csv?title=Leak`, body: 'a,b\n1,2' },
+    ];
+
+    for (const c of cases) {
+      const res = await requestWithAuth(c.method, c.path, c.body);
+      expect(res.status).toBe(409);
+      expect(await res.text()).toBe(privateMsg);
+    }
+
+    // No imported subroom exists after refusal. Policy forbids private multi-sheet import
+    // rather than minting ACL-inheriting children, so there is no child that could answer
+    // 401/403 — a regression that published a public child would yield 200 here instead.
     const subRes = await request('GET', `/_/${base}.1`);
     expect(subRes.status).toBe(404);
+    expect(subRes.status).not.toBe(200);
+  });
+
+  it('POST text formats append one sheet on a public parent and keep it world-readable', async () => {
+    const room = `mtext-${Math.random().toString(36).slice(2, 8)}`;
+    const seed = await request('PUT', `/=${room}.xlsx`, twoSheetXlsx());
+    expect(seed.status).toBe(201);
+
+    const csvPost = await request(
+      'POST',
+      `/_/=${room}/csv?title=CSVData`,
+      'name,value\ncafe,42',
+    );
+    expect(csvPost.status).toBe(201);
+
+    const tsvPost = await request('POST', `/=${room}.tsv?title=TSVData`, 'a\tb\n1\t2');
+    expect(tsvPost.status).toBe(201);
+
+    const txtPost = await request('POST', `/=${room}.txt?title=TXTData`, 'x,y\n3,4');
+    expect(txtPost.status).toBe(201);
+
+    const scPost = await request(
+      'POST',
+      `/=${room}.socialcalc?title=SCData`,
+      'cell:A1:t:hello-sc\n',
+    );
+    expect(scPost.status).toBe(201);
+
+    const tocJson = await request('GET', `/_/${room}/csv.json`);
+    expect(tocJson.status).toBe(200);
+    const tocGrid = (await tocJson.json()) as string[][];
+    expect(tocGrid).toEqual([
+      ['#url', '#title'],
+      [`/${room}.1`, 'First'],
+      [`/${room}.2`, 'Second'],
+      [`/${room}.3`, 'CSVData'],
+      [`/${room}.4`, 'TSVData'],
+      [`/${room}.5`, 'TXTData'],
+      [`/${room}.6`, 'SCData'],
+    ]);
+
+    // Unauthenticated direct GET of imported subrooms succeeds on a public parent
+    // (proves the fix is not a blanket deny). Owner path is the same public GET here.
+    const csvGet = await request('GET', `/_/${room}.3`);
+    expect(csvGet.status).toBe(200);
+    expect(await csvGet.text()).toMatch(/cafe|42/);
+
+    const scGet = await request('GET', `/_/${room}.6`);
+    expect(scGet.status).toBe(200);
+    expect(await scGet.text()).toContain('hello-sc');
+
+    const cells = (await (
+      await request('GET', `/_/${room}.3/cells`)
+    ).json()) as Record<string, { datavalue?: unknown }>;
+    // SheetJS/csv path stores values; accept either string cells from SocialCalc save.
+    expect(cells.A1?.datavalue === 'name' || cells.A1?.datavalue === 'cafe' || cells.A2?.datavalue === 'cafe').toBe(
+      true,
+    );
+  });
+
+  it('rejects an oversized text append body before parsing', async () => {
+    const req = new Request('https://example.test/=oversized.csv', {
+      method: 'POST',
+      headers: { 'Content-Length': String(25 * 1024 * 1024 + 1) },
+      body: 'x',
+    });
+    const ctx = {
+      waitUntil() {},
+      passThroughOnException() {},
+    } satisfies Partial<ExecutionContext> as unknown as ExecutionContext;
+    const response = await worker.fetch(req, env as unknown as Env, ctx);
+    expect(response.status).toBe(413);
+  });
+});
+
 describe('canonical two-sheet workbook: TOC + child contract', () => {
   it('exact TOC rows, exact child values/formula, durable single-child mutation via real command route', async () => {
     const room = `mcanon-${Math.random().toString(36).slice(2, 8)}`;
