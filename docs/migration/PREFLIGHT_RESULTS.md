@@ -6,6 +6,14 @@
 **Execution Context:** macOS arm64 (`Apple M5 Max`), Vite+ v0.2.4 (`./node_modules/.bin/vp`), Bun v1.3.14  
 **Governing Runbook:** `docs/migration/PROD_UPGRADE_PLAN.md` (§1 "Preflight on `main`" & §9 "Go / No-Go Checklist")
 
+> **Status:** Recorded results of the runbook’s §1 preflight gates against the
+> final tree on 2026-08-10, including the `POST /_/:room` DO status-propagation
+> fix (+2 node tests). Kept current with gate re-runs during runbook revision.
+> Supporting evidence for `PROD_UPGRADE_PLAN.md` — **the runbook is
+> authoritative** for procedure and expected contracts; this file is the
+> pass/fail ledger only.
+
+
 ---
 
 ## Executive Summary & Overall Verdict

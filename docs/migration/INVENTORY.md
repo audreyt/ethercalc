@@ -2,6 +2,17 @@
 
 Mechanical repository inventory collected on 2026-08-10 from `/Users/au/w/ethercalc`. Source quotations are prefixed with their original 1-based line number; the text after the first colon is verbatim. The collection scope for path/content scans is Git-tracked files plus non-ignored untracked files present in the worktree, excluding this output file itself.
 
+> **Status:** Mechanical verbatim dump of config/workflows/migrations/self-host
+> artifacts collected early on 2026-08-10. Supporting evidence for
+> `PROD_UPGRADE_PLAN.md` — not a procedure. Spot-checked against the primary
+> tree on reconcile: full `packages/worker/wrangler.toml` dump and all three
+> D1 migration SQL dumps still match byte-for-byte; this inventory never
+> dumped `workerd/config.capnp` (self-host bindings are in the runbook §7).
+> **Where interpretive prose elsewhere disagrees with the runbook, the
+> runbook is authoritative.** Do not treat this dump as a substitute for
+> reading live files after further branch edits.
+
+
 ## Summary / absences
 
 - **Wrangler configs:** exactly one: `packages/worker/wrangler.toml`. It defines production custom domains, two SQLite Durable Objects, one D1 database, Workers Assets, vars, cron, one Text rule, and a staging overlay.

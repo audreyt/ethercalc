@@ -9,6 +9,14 @@ Worker deploy (or rollback). Baseline production tag:
 Scope: old client bundle talking to new Worker, and the inverse.
 Evidence quotes are verbatim from the trees named above.
 
+> **Status:** Supporting evidence for `PROD_UPGRADE_PLAN.md` (the operator
+> runbook). Produced early on 2026-08-10 for open-tab behaviour across the
+> cutover, **before** several runbook fact-check revisions (including the
+> front-door `POST /_/:room` 413 propagation fix). Historical observations
+> are retained and marked **Superseded** where the tree later changed.
+> **Where this file and the runbook disagree, the runbook is authoritative.**
+
+
 ---
 
 ## 1. WebSocket protocol diff
@@ -137,7 +145,7 @@ export const MAX_COMMAND_UTF8_BYTES = 120 * 1024;
 | same (parse) | `parseClientMessage` | returns `null` → **silent drop** if somehow reached |
 | `MAX_WS_ROOM/USER/AUTH/CHAT/CELL_CHARS` + cmdstr char cap | `parseClientMessageValue` | `null` → **silent drop** (`if (!parsed \|\| !attachment.room) return`) |
 | `MAX_COMMAND_UTF8_BYTES` via `isStorageSafeCommand` | `#appendCommand` audit path only | Command **still executes**; audit log stores placeholder `"[oversized command omitted: …]"` — **not a user-visible reject** |
-| Sheet/range product limits (`isCommandBatchWithinLimits` in `lib/command-limits.ts`, new since 149ebcf) | `#appendCommand` → `applyCommand` | returns false → WS **`ws.close(1008, 'Command exceeds sheet limits')`**; HTTP POST → `413` `"command exceeds sheet limits"` |
+| Sheet/range product limits (`isCommandBatchWithinLimits` in `lib/command-limits.ts`, new since 149ebcf) | `#appendCommand` → `applyCommand` | returns false → WS **`ws.close(1008, 'Command exceeds sheet limits')`**; RoomDO HTTP `POST /_do/commands` → `413` `"command exceeds sheet limits"`; **front-door** `POST /_/:room` now propagates that non-2xx status/body (runbook §8 PR 4 / §10 item 3; both sites in `routes/rooms.ts`) — see **Superseded** note below for the pre-fix always-202 behaviour |
 | `MAX_WS_MESSAGES_PER_WINDOW = 300` / `MAX_ROOM_WS_MESSAGES_PER_WINDOW = 1500` per 10s | `#rateLimitSocket` | **Close** `1008` `"Message rate exceeded"` / `"Room message rate exceeded"` |
 | `MAX_CONN = 128` | accept paths | upgrade rejected (pre-existing class of cap; still present) |
 
@@ -182,6 +190,24 @@ if (!applied) {
 ```
 
 (`room.ts:1803-1808`)
+
+**Superseded — front-door HTTP command API (audit-time → current tree):**
+
+At the time this skew audit was written, a reader could reasonably infer
+that any HTTP path returning sheet-limit `413` was already user-visible.
+That was true at the **RoomDO** boundary (`POST /_do/commands`) and for
+`PUT /_/:room` snapshot writes, but **not** yet for the public command
+API: `POST /_/:room` still answered `202 {"command":…}` even when the DO
+had rejected the batch (silent write loss for API clients / scripts).
+**Current tree (runbook §8 PR 4):** both Worker dispatch sites propagate
+the DO status and body on non-2xx (e.g. `413 command exceeds sheet limits`)
+and only emit the legacy 202 command echo on success
+(`packages/worker/src/routes/rooms.ts` ~778-784 and ~924-936 / ~972-975;
+tests in `packages/worker/test/routes-rooms.node.test.ts`). Browser tabs
+use native WebSocket `execute` frames for ordinary edits, so the primary
+open-tab paste path remains the **1008 close** above; the HTTP fix matters
+for API clients and for runbook §5 Probe 6.
+
 
 ```ts
 ws.close(
@@ -467,7 +493,22 @@ HTML or `/static/*`.
 
 `serveAsset` (`routes/assets.ts:92-135`) rewrites `Content-Type` when
 needed and **does not set `Cache-Control`**. HTML and `static/player.js`
-therefore inherit **Cloudflare Workers Assets default caching**.
+therefore inherit **Cloudflare Workers Assets default caching** on the
+hosted path.
+
+**MIME split for `/static/player.js`** (runbook §3.2 item 9 / §5 Probe 4;
+`mimeForPath` / `MIME_BY_EXT` in `routes/assets.ts:54-78,122-130`):
+
+- **Hosted Cloudflare Workers Assets** (production/staging / `wrangler dev`):
+  upstream already supplies a real type — empirically
+  `text/javascript; charset=utf-8`. `serveAsset` passes non-
+  `application/octet-stream` types through untouched.
+- **Standalone workerd / Sandstorm `DiskDirectory`:** upstream is
+  `application/octet-stream` for every file; `serveAsset` rewrites `.js`
+  via `mimeForPath` to `application/javascript; charset=utf-8`.
+
+Either JavaScript subtype is fine for `<script type="module">`; treat the
+difference as informational. Fail only on missing/wrong major type.
 
 `static/player.js` is a **fixed unhashed URL** produced by
 `scripts/build-assets.ts` (`playerBundle → static/player.js`). There is
@@ -521,7 +562,8 @@ AGENTS.md decision #4 remains: shim kept indefinitely.
 | scenario | affected feature | outcome | evidence | mitigation |
 | -------- | ---------------- | ------- | -------- | ---------- |
 | old×new | Normal cell edits / chat / cursors on public rooms | **works** | Client envelope room matches attachment (`ws-adapter.ts:169`); types unchanged | None |
-| old×new | Large paste / huge command batch | **degrades → breaks** (1008 close; edit may be only local) | `isCommandBatchWithinLimits` + `room.ts:1803-1808`; absent at 149ebcf | Reload; split paste; or temporarily raise limits before cutover |
+| old×new | Large paste / huge command batch (native WS) | **degrades → breaks** (1008 close; edit may be only local) | `isCommandBatchWithinLimits` + `room.ts:1803-1808`; absent at 149ebcf | Reload; split paste; or temporarily raise limits before cutover |
+| old×new | Large paste via HTTP `POST /_/:room` | **breaks with truthful 413** on current `main` (was **silent 202** at audit time — **Superseded**, runbook §8 PR 4) | `routes/rooms.ts` propagates DO non-2xx; DO `#postCommands` 413 | API clients must handle 413; browser tabs use WS path above |
 | old×new | WS frame > 1 MiB | **breaks** connection (1009) | `room.ts:1522-1528` (old: silent drop) | Rare; user reloads / retries smaller ops |
 | old×new | Cursor `ecell` string | **works** (64-char cap irrelevant to A1 coords) | `MAX_WS_CELL_CHARS` on coord fields only | None |
 | old×new | Audit log fidelity for huge commands | **degrades** (placeholder audit text; command still runs if sheet limits pass) | `room.ts:2090-2093` | Operator-only concern |
@@ -530,7 +572,7 @@ AGENTS.md decision #4 remains: shim kept indefinitely.
 | old×new | Deploy-time DO restart mid-edit | **degrades** — auto-reconnect, **no** state resync; possible lost in-flight executes | `ws-adapter.ts:210-246`; `main.ts:347-348` | Soft banner “reload to refresh”; drain edits before deploy |
 | old×new | Multi-sheet TOC | **works** via HTTP poll (not WS) | `client-multi/src/useTocPoll.ts` | None |
 | old×new | Legacy socket.io embeds | **works** with stricter payload validation | `legacy-socketio.ts:61-108`; `translate.ts` → `parseClientMessageValue` | Watch 413/session caps |
-| old×new | Cached `static/player.js` after deploy | **degrades** (prolonged skew) | unhashed URL; `serveAsset` sets no cache policy; HTML not globally `no-store` | Purge CF cache / add hash or `no-cache` on HTML+player at cutover |
+| old×new | Cached `static/player.js` after deploy | **degrades** (prolonged skew) | unhashed URL; `serveAsset` sets no cache policy; HTML not globally `no-store`; MIME may be `text/javascript` (hosted) or `application/javascript` (self-host rewrite) | Purge CF cache / add hash or `no-cache` on HTML+player at cutover |
 | new×old (rollback) | Normal native WS edits | **works** | Old parser accepts new canonical frames; old worker trusts `parsed.room` (new client sends matching room) | None for public rooms |
 | new×old | Sheet-limit closes / rate-limit closes | **N/A** (old worker lacks them) — large pastes **work again** | `command-limits.ts` absent at 149ebcf | — |
 | new×old | Private room UX in new bundle | **breaks** against old worker without passkey/ACL stack | Phase A landed after tag | Don’t roll UI forward without worker; or hard-reload users to matching tag |

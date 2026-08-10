@@ -3,6 +3,13 @@
 > **Scope:** Comprehensive evidence-backed delta audit covering state, compatibility, and deployment changes between the latest tagged release baseline (`0.20260717.0` / commit `149ebcf`) and current `main` (`d486f33`).
 > **Audit Date:** 2026-08-10
 
+> **Status:** Supporting evidence for `PROD_UPGRADE_PLAN.md` (the operator
+> runbook). Produced early on 2026-08-10 against `main` @ `d486f33`, **before**
+> the runbook’s later fact-check revisions. Historical audit findings are kept
+> and marked **Superseded** where the tree or runbook later corrected them.
+> **Where this file and the runbook disagree, the runbook is authoritative.**
+
+
 ---
 
 ## Executive Summary & Delta Inventory
@@ -11,7 +18,7 @@
 | :--- | :--- | :--- | :--- |
 | **a) DO Classes & Migrations** | `[NEEDS MIGRATION]` / `[FORWARD-COMPATIBLE]` | High (Worker deploy requires `v2` migration for new `AuthDO` class). Existing `RoomDO` instances unaffected. | Execute `wrangler deploy` to register migration `tag = "v2"`. Rollback leaves `AuthDO` unreferenced. |
 | **b) DO Storage Key Schema** | `[FORWARD-COMPATIBLE]` (Public) / `[BREAKING-ON-ROLLBACK]` (Private) | Critical on Rollback (`meta:access` & `meta:acl` added for private sheets; legacy code ignores them, making private sheets public on rollback). | Backup DO storage / snapshot before cutover. If rolling back, block access to private rooms via edge WAF. |
-| **c) D1 Schema & Migrations** | `[FORWARD-COMPATIBLE]` | Low (No new D1 migrations added since `0.20260717.0`; all tables `CREATE TABLE IF NOT EXISTS`). | None required. |
+| **c) D1 Schema & Migrations** | `[FORWARD-COMPATIBLE]` | Low schema delta (no new migrations since tag). D1 holds index + audit/chat tails only — **not** sheet snapshots; ~1.8M-room / 10 GB scale; private rooms excluded from `rooms` index but not from log tails; self-host has no D1. | See body §c / §k; runbook §0.2 / §2 / §7. |
 | **d) KV & R2 Layout** | `[FORWARD-COMPATIBLE]` | None (KV/R2 bindings currently unused in Worker codebase). | None required. |
 | **e) Environment Variables & Secrets** | `[NEEDS MIGRATION]` / `[FORWARD-COMPATIBLE]` | High (Passkeys fail closed if `ETHERCALC_AUTH`, `ETHERCALC_RP_ID`, `ETHERCALC_ORIGIN` are unset). `ETHERCALC_RP_NAME` defaults to `'EtherCalc'`. | Populate WebAuthn trust anchors in production environment before cutover. |
 | **f) Compatibility Date & Capnp** | `[FORWARD-COMPATIBLE]` (Worker) / `[NEEDS MIGRATION]` (Self-host) | Medium (wrangler date updated to `2026-07-21`; self-host `config.capnp` uses `2026-07-14` in lockstep with `workerd`). | Ensure standalone `workerd` binary is updated to match capnp `2026-07-14` date. |
@@ -19,7 +26,7 @@
 | **h) Static Assets & CSP** | `[UNKNOWN]` | Low to Medium (Root inline scripts moved to 5 `static/*.js` files. CSP `connect-src` uses `ETHERCALC_ORIGIN`. Behavior under asset/CSP skew is unproven by diff/test). | Run `scripts/build-assets.ts` prior to deploy (enforced in `deploy-production.yml`). |
 | **i) Auth & Authz (`AuthDO`, ACL, `?auth=`)** | `[FORWARD-COMPATIBLE]` (Public) / `[NEEDS MIGRATION]` (Passkeys) | High (New WebAuthn passkey system + `__Host-ec_sess` cookie). Existing public sheets and `?auth=` links remain fully functional. | Configure passkey secrets/vars. No disruption to existing public sheets. |
 | **j) SocialCalc Upgrade & Serialisation** | `[UNKNOWN]` | Low to Medium (Upgraded to SocialCalc 3.1.0; `version:1.5` format shared, but full parsing compatibility for pre-3.1.0 snapshots is unproven by unit test). | Run canary checks before cutover; oracle replay covers 10/13 scenarios. |
-| **k) Stateful Alarms, D1 Mirror & Scheduler** | `[FORWARD-COMPATIBLE]` | Medium (DO alarm re-arm gated on active connections/TTL; D1 audit/chat mirror idempotent; scheduler retry bug fixed). | None required. |
+| **k) Stateful Alarms, D1 Mirror & Scheduler** | `[FORWARD-COMPATIBLE]` | Medium (DO alarm re-arm gated; D1 index excludes private; audit/chat mirror unfiltered + best-effort; scheduler retry bug fixed). | None required for public path; private recovery uses runbook §2.4. |
 
 ---
 
@@ -113,11 +120,14 @@
 
 ### c) D1 Schema & Migrations
 * **Evidence:** `packages/worker/migrations/`
-  * `0001_rooms.sql`: `CREATE TABLE rooms (room TEXT PRIMARY KEY, updated_at INTEGER NOT NULL, cors_public INTEGER NOT NULL DEFAULT 0);`
+  * `0001_rooms.sql:17-21`: `CREATE TABLE rooms (room TEXT PRIMARY KEY, updated_at INTEGER NOT NULL, cors_public INTEGER NOT NULL DEFAULT 0);` — **no sheet/snapshot content column**.
   * `0002_cron.sql`: `CREATE TABLE cron_triggers (room TEXT NOT NULL, cell TEXT NOT NULL, fire_at INTEGER NOT NULL, PRIMARY KEY (room, cell, fire_at));`
   * `0003_audit_chat.sql`: `CREATE TABLE audit_log (...); CREATE TABLE chat_log (...);`
   * `packages/worker/src/lib/d1-schema.ts:15-18`: `CREATE TABLE IF NOT EXISTS` lazy self-healing.
-* **Analysis:** No D1 migration files were added between `149ebcf` and `d486f33`. All migrations are expand-only (`CREATE TABLE`).
+  * `mirrorRoomToD1` (`packages/worker/src/lib/rooms-index.ts:46-60`) upserts only `(room, updated_at)` — never SocialCalc save strings, cell values, or DO snapshots.
+* **Analysis:** No D1 migration files were added between `149ebcf` and `d486f33`. All migrations are expand-only (`CREATE TABLE`). D1 is the **cross-room index + bounded audit/chat tails + cron schedule**, not a mirror of RoomDO sheet state. Authoritative sheet content lives solely in Durable Object storage (see runbook §0.2.1 / §2.1).
+* **Scale (hosted):** Production cardinality is the migration-seed order of magnitude **~1.8M rooms** (`rooms-index.ts:63-82`), against D1’s hard **10 GB** per-database ceiling (runbook §0.2.2). Operator procedures must not assume a small test fleet.
+* **Self-host:** Standalone `workerd` `config.capnp` binds only `ROOM`, `AUTH`, `ASSETS`, `BASEPATH` + env vars — **no `DB` / D1 binding**, so the room index, audit/chat mirror, and `cron_triggers` path do not exist there (runbook §7).
 * **Classification:** `[FORWARD-COMPATIBLE]`.
 
 ---
@@ -241,10 +251,12 @@
 ---
 
 ### k) Stateful Alarms, D1 Mirror, PITR & Scheduler
-* **Evidence:** `packages/worker/src/room.ts:199, 2424-2480`, `packages/worker/src/handlers/cron.ts`, `packages/worker/src/scheduled.ts`
+* **Evidence:** `packages/worker/src/room.ts:199, 2266-2310, 2424-2480`, `packages/worker/src/handlers/cron.ts`, `packages/worker/src/scheduled.ts`, `packages/worker/src/lib/rooms-index.ts:46-82`
 * **Analysis:**
   * **Alarms (`setAlarm`):** RoomDO housekeeping alarm optimized to gate re-arming on active WebSocket connections or configured `ETHERCALC_EXPIRE` TTL. AuthDO uses alarms to trim expired challenges and session revocations.
-  * **D1 Mirroring:** `audit_log` and `chat_log` tables receive idempotent mirrors (`INSERT OR IGNORE`).
+  * **D1 room index (`rooms`):** `#mirrorIndex` (`room.ts:2266-2273`) early-returns when `access === 'private'`, so private rooms are **excluded** from the public D1 index / `GET /_rooms*`. `mirrorRoomToD1` writes metadata only (`room`, `updated_at`) — **not** sheet snapshots.
+  * **D1 audit/chat tails:** `#mirrorAudit` / `#mirrorChat` route through `#d1()` (`room.ts:2289-2310`) with **no** access check — private-room commands and chat **are** mirrored when the room is active. Idle private rooms (never edited/chatted) do not appear in those tables. `wrangler d1 export` dumps therefore contain private-room command/chat text (runbook §2.1 / §2.4 / §10 item 7).
+  * **Mirroring mechanics:** `audit_log` and `chat_log` receive idempotent mirrors (`INSERT OR IGNORE`); best-effort via `#d1` choke-point.
   * **PITR Restore:** Endpoints (`/_do/pitr-restore`) retain an undo bookmark in DO storage.
   * **Scheduler (`_timetrigger`):** Fixed bug where partial scheduler retries treated failures as success.
 * **Classification:** `[FORWARD-COMPATIBLE]`.
@@ -472,6 +484,22 @@ vp run: 0/2 cache hit (0%).
      }
      ```
      *Behavior on `false`:* Returns `null`. For HTTP POST `/_do/commands`, `#postCommands` returns HTTP `413 Payload Too Large` (`'command exceeds sheet limits'`). For WebSocket `execute` frames (`packages/worker/src/room.ts:1805`), the DO **closes the WebSocket with status code 1008** and reason `'Command exceeds sheet limits'`.
+
+  * **Front-door `POST /_/:room` (historical audit finding, now superseded):**
+    At the time of this audit, the Worker front door could still answer
+    HTTP `202 {"command":…}` even when RoomDO had rejected the batch with
+    `413` on `/_do/commands` (silent acceptance at the public HTTP API).
+    **Superseded:** runbook §8 PR 4 / §10 item 3 landed on this branch —
+    both dispatch sites in `packages/worker/src/routes/rooms.ts`
+    (`xlsx-deferred` ~778-784 and main text-command tail ~924-936 /
+    success echo ~972-975) now propagate the RoomDO non-2xx status and
+    body (e.g. `413` `command exceeds sheet limits`), and only emit the
+    legacy `202` command echo on successful DO dispatch. Tests:
+    `POST /_/:room command mutations propagate a DO 413 sheet-limit verdict`
+    and `POST /_/:room returns 202 command echo on successful DO dispatch`
+    in `packages/worker/test/routes-rooms.node.test.ts`. Keep the original
+    observation: the DO-layer 413 described above was always correct; the
+    missing piece was Worker status propagation.
 
 ### 2. Ingest vs. Wake/Load Path Distinction
 * **Inbound Untrusted Mutations:** Snapshot limit checks apply to direct snapshot overwrites (`PUT /_do/snapshot` or `POST /_/private`).
