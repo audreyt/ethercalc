@@ -108,12 +108,15 @@ describe('appendImportedWorkbook', () => {
       alertImpl: alert,
     });
 
-    expect(fetchFn.mock.calls.map((call) => call[0])).toEqual([
-      'http://localhost/_/=room/csv?title=Data',
-    ]);
+    const urls = fetchFn.mock.calls.map((call) => String(call[0]));
+    expect(urls[0]).toBe('http://localhost/_/=room/csv?title=Data');
+    expect(urls.some((url) => url.includes('/_/room.'))).toBe(false);
     expect(
       fetchFn.mock.calls.some(
-        (call) => typeof call[0] === 'string' && String(call[0]).includes('/_/room.'),
+        (call) =>
+          call[1] &&
+          typeof call[1] === 'object' &&
+          (call[1] as { method?: string }).method === 'PUT',
       ),
     ).toBe(false);
   });

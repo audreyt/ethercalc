@@ -74,7 +74,6 @@ describe('PUT multi-sheet import', () => {
   it('PUT /=:room.xlsx imports a workbook into TOC + sub-rooms and round-trips through export', async () => {
     const room = `mimport-${Math.random().toString(36).slice(2, 8)}`;
     const put = await request('PUT', `/=${room}.xlsx`, twoSheetXlsx());
-    if (put.status !== 201) throw new Error('PUT body=' + await put.text() + ' status=' + put.status);
     expect(put.status).toBe(201);
     expect(await put.text()).toBe('OK');
 
