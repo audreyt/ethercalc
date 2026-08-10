@@ -935,7 +935,25 @@ If D1 database state must be restored to a pre-cutover state, use Cloudflare D1 
 
 ## §7 Self-Host Upgrade Path (Docker / Helm)
 
-For self-hosted deployments running EtherCalc via Docker Compose or Kubernetes/Helm:
+For self-hosted deployments running EtherCalc via Docker Compose or Kubernetes/Helm.
+
+**Self-host is not the hosted Worker on a different runtime.** The standalone workerd path loads `packages/worker/workerd/config.capnp`, which binds only `ROOM` (`RoomDO`), `AUTH` (`AuthDO`), `ASSETS` (DiskDirectory), `BASEPATH`, and a fixed set of `fromEnvironment` env vars (`config.capnp:64-117`). It does **not** bind D1 (`DB`), Cloudflare Cron Triggers, or Cloudflare Email (`send_email` / `EMAIL`). Authoritative per-room sheet state still lives in on-disk Durable Object SQLite under the mounted data directory (§7.2); the hosted-only D1/cron/email surfaces simply do not exist on this track. Read §7.0 before treating any hosted recovery or index procedure as applicable.
+
+### 7.0 Self-host feature divergence from the hosted deployment
+
+Verify these absences against `packages/worker/workerd/config.capnp` before an upgrade. They are structural, not configuration knobs an operator can flip in Compose/Helm alone.
+
+| Capability | Hosted (Cloudflare Workers) | Standalone self-host (workerd) | Evidence |
+| :--------- | :-------------------------- | :----------------------------- | :------- |
+| **Cross-room index (`DB` / D1)** | `[[d1_databases]]` binds `DB` (`packages/worker/wrangler.toml:153-168`). `/_rooms`, `/_roomlinks`, `/_roomtimes` read the D1 `rooms` table. | **No `DB` binding** in `config.capnp`. Directory handlers short-circuit when `!c.env.DB`: `/_rooms` → `[]` (200 JSON), `/_roomlinks` → `[]` (200 HTML), `/_roomtimes` → `{}` (200 JSON) (`packages/worker/src/routes/rooms.ts:118-144`). | `config.capnp:64-117`; `rooms.ts:118-144`; wrangler D1 comment that reads “fall back to empty when the binding is absent” (`wrangler.toml:153-158`). |
+| **Room-index *gate* vs empty index** | Hosted `ETHERCALC_CORS="1"` (and optional `ETHERCALC_DISABLE_ROOM_INDEX`) makes `shouldDisableRoomIndex()` true → **403** with `_rooms not available with CORS` (`room-index-access.ts:40-46`; `rooms.ts:119-120`). | Shipped Docker/Helm/entrypoint **default** `ETHERCALC_DISABLE_ROOM_INDEX=1` (`Dockerfile:90`, `docker-compose.yml:45`, `bin/workerd-entrypoint.sh:38`, `helm/values.yaml:100`) still returns **403** first — the gate is real and is what `smoke-proxy.sh` asserts. If an operator sets `ETHERCALC_DISABLE_ROOM_INDEX=0`, the gate opens but there is **still no index to serve**: directory endpoints return the empty bodies above. `/_exists/:room` is different: once ungated it probes the DO directly and can answer true/false (`rooms.ts:240-262`; README self-host note). **Do not treat `ETHERCALC_DISABLE_ROOM_INDEX` as the thing that empties the directory on self-host — absence of `DB` does.** | `room-index-access.ts:40-46`; `rooms.ts:118-144,240-262`; entrypoint/compose defaults above. |
+| **Audit / chat D1 mirror** | RoomDO best-effort mirrors audit and chat tails into D1 `audit_log` / `chat_log` for all rooms, including private (`room.ts:2302-2309`). §2.4 mass recovery enumerates private rooms via those tables. | `#d1()` returns immediately when `!this.#env.DB` (`room.ts:2289-2294`), so `#mirrorAudit` / `#mirrorChat` never write. **There is no self-host `audit_log`/`chat_log` enumeration aid.** Private-room mass recovery via D1 is hosted-only. Per-room audit/chat history that still lives inside each RoomDO SQLite file remains in the filesystem backup (§7.2). | `room.ts:2289-2309`; §2.2 / §2.4 (hosted recovery). |
+| **`settimetrigger` / `cron_triggers`** | After a successful `POST /_/:room` write, `if (c.env.DB)` upserts into D1 `cron_triggers` (`rooms.ts:946-952`; `handlers/cron.ts:43-48`). | The same `if (c.env.DB)` guard skips the upsert. The command may still be accepted and logged inside the RoomDO (sheet/log semantics), but **no durable schedule row is stored anywhere the scheduler can scan.** There is also no RoomDO-side `upsertCronTriggers` path. | `rooms.ts:937-952`; no matches in `room.ts`. |
+| **Cron pulse (`scheduled()` / `/_timetrigger`)** | `wrangler.toml` `[triggers] crons = ["*/1 * * * *"]` (`wrangler.toml:131-135`) invokes Worker `scheduled()` → `runScheduled` every minute (`scheduled.ts:2-8,130-134`). | **No cron trigger service in workerd.** `scheduled()` never runs unless something external calls it. Legacy `GET /_timetrigger` remains as a bearer-gated HTTP pulse: `verifyMigrateToken` → 404 when `ETHERCALC_MIGRATE_TOKEN` unset, 401 on bad/missing bearer, else `runScheduled` (`routes/timetrigger.ts:30-47`). On self-host `runScheduled` still no-ops without `DB` (`scheduled.ts:67-70` returns empty due/keep/fired). **Operators who need cell email triggers must (1) provide a durable trigger store the code does not ship for workerd today, and (2) wire an external scheduler; with stock config, external cron against `/_timetrigger` only proves the gate — it cannot fire rows that were never persisted.** | `wrangler.toml:131-135`; `timetrigger.ts:30-47`; `scheduled.ts:67-70`. |
+| **Email send path** | Optional Cloudflare `[[send_email]]` / `EMAIL` binding (commented out by default in `wrangler.toml:137-147`). | No `EMAIL` binding in `config.capnp`. `buildEmailSender` selects `DisabledEmailSender` when `!env.EMAIL` (`handlers/cron.ts:83-86`) and reports `EMAIL_DISABLED_MESSAGE` (`lib/email.ts:116,139-143`). | `config.capnp` bindings list; `handlers/cron.ts:83-86`; `lib/email.ts:116,139-143`. |
+| **Durable Object PITR API** | Hosted SQLite-backed RoomDO supports `POST /_/:room/pitr-restore` (bearer-gated) within Cloudflare’s ~30-day change log (§2.3–2.4). | Platform PITR change log is **not** retained locally. Miniflare and standalone workerd return **501** for `/_/:room/pitr-restore` (`API.md:137`; `room` workers-pool test). **Trade-off:** self-host loses API PITR but gains a real filesystem tree (`./ethercalc-data` → `/data/do/...`) that operators can `tar`/snapshot bit-for-bit (§7.2) — often a stronger whole-instance recovery story than hosted bulk-export limits. | `API.md:137`; §2.3 local-dev note; §7.2. |
+
+**Operator takeaway:** do not run §2.4’s D1 private-room enumeration, D1 Time Travel, or hosted PITR drills against a self-host instance and expect parity. Back up and restore the on-disk DO directory (§7.2) and treat `uniqueKey` stability (§7.2.1) as the cutover invariant that keeps those files addressable.
 
 ### 7.1 Container Image Bump & Workerd Compatibility Lockstep
 
@@ -957,11 +975,11 @@ For self-hosted deployments running EtherCalc via Docker Compose or Kubernetes/H
 
 ### 7.2 Durable Object On-Disk Storage Backup
 
-Before restarting containers, back up the local DO storage directory.
+Before restarting containers, back up the local DO storage directory. This filesystem tree is the self-host substitute for the hosted D1 export + per-room PITR floor (§7.0): it is what you have instead of Cloudflare change-log restore.
 
 - **Docker Compose Track (`[SOURCE-VERIFIED]`)**:
   - The shipped compose file mounts DO storage at `./ethercalc-data:/data` (`docker-compose.yml:37`).
-  - Container entrypoint (`bin/workerd-entrypoint.sh:25-27`) writes SQLite files under `$DATA_DIR/do` (`/data/do`), where `workerd serve` stores per-DO SQLite databases under `/data/do/<uniqueKey>/`.
+  - Container entrypoint (`bin/workerd-entrypoint.sh:25-27`) writes SQLite files under `$DATA_DIR/do` (`/data/do`), where `workerd serve` stores per-DO SQLite databases under `/data/do/<uniqueKey>/` (`config.capnp:31-34,137-139`).
   - **Host Backup Command**:
     ```bash
     tar -czvf ethercalc-do-backup-$(date +%Y%m%d_%H%M%S).tar.gz ./ethercalc-data
@@ -974,10 +992,48 @@ Before restarting containers, back up the local DO storage directory.
     kubectl exec deploy/ethercalc -- tar -czf - /data > ethercalc-pv-backup-$(date +%Y%m%d_%H%M%S).tar.gz
     ```
 
+#### 7.2.1 UPGRADE-CRITICAL — DO `uniqueKey` storage addressing anchor `[OPERATOR-VERIFY]`
+
+workerd addresses on-disk Durable Object SQLite as `<uniqueKey>/<objectId>.sqlite` under the `do` disk service (`config.capnp:137-139`). The checked-in standalone config **pins**:
+
+- `RoomDO` → `uniqueKey = "ethercalc-roomdo-v1"` (`config.capnp:119-128`)
+- `AuthDO` → `uniqueKey = "ethercalc-authdo-v1"` (`config.capnp:129-134`)
+
+The adjacent comment is load-bearing: *“Must match wrangler.toml's uniqueKey or legacy grains lose their existing DO storage on upgrade. EtherCalc's wrangler.toml doesn't explicitly set one, so workerd defaults to the class name hashed into a random-looking bytestring. We pin it so the value is stable across rebuilds.”* (`config.capnp:122-126`).
+
+**If either pinned `uniqueKey` string ever changes (image rebuild, custom capnp, packaging fork), every existing self-hosted room is silently orphaned:** the `.sqlite` files remain on the volume, but the new process looks under a different subdirectory and serves empty rooms. There is no automatic migrate/rename.
+
+**Pre-upgrade verification (record output in the change ticket):**
+
+```bash
+# 1. Confirm the image/source you are about to run still pins the expected keys:
+grep -n 'uniqueKey' packages/worker/workerd/config.capnp
+# Expect exactly:
+#   uniqueKey = "ethercalc-roomdo-v1"
+#   uniqueKey = "ethercalc-authdo-v1"
+
+# 2. On the live data volume (Docker host path shown; Helm: kubectl exec … -- ls …):
+ls -la ./ethercalc-data/do/
+# Expect subdirectories named for the pinned keys, e.g.:
+#   ethercalc-roomdo-v1/
+#   ethercalc-authdo-v1/
+# (First boot may create only RoomDO until AuthDO is first touched.)
+
+# 3. Sample that room files actually live under the RoomDO key (names are object ids):
+ls ./ethercalc-data/do/ethercalc-roomdo-v1/ | head
+```
+
+**Go / No-Go:**
+
+- **GO** only if the `config.capnp` pins above are unchanged **and** the on-disk subdirectory names under `…/do/` match those pins (or this is a brand-new empty volume).
+- **NO-GO** if the volume has room data under a *different* directory name than the `uniqueKey` about to boot — stop and restore/align keys before serving traffic; do not “fix it by restarting.”
+- After upgrade, re-run step 2 and confirm the same subdirectory names still hold the pre-upgrade object files (byte counts / file names stable aside from normal runtime writes).
+
 ### 7.3 Mandatory Nginx Reverse Proxy Requirement
 
 Internet-facing self-host installations MUST run the nginx proxy recipe (`deploy/nginx/ethercalc.conf`) for rate-limiting and client IP header sanitization (overwriting client-supplied `CF-Connecting-IP`, `X-Forwarded-For`, and `X-Forwarded-Proto` with `$remote_addr` and `$scheme`). Note: CSP headers are injected directly by the Worker application layer (`packages/worker/src/lib/csp.ts`), not by Nginx. Validate basic proxy syntax, routing, health, room-index gating, and WebSocket upgrades with `./scripts/smoke-proxy.sh`.
 > **PARTIALLY AUTOMATED** — CI `build:selfhost` runs `scripts/smoke-proxy.sh`, which asserts `nginx -t`, proxied health/root success, `/_rooms` 403, and a 101 WebSocket upgrade (`scripts/smoke-proxy.sh:29-85`). A self-host operator still must prove that this proxy is the public ingress; the script does not exercise rate-limit thresholds, header replacement semantics, TLS, or the operator's deployed stack.
+
 ### 7.4 Security Environment Variables & Passkey Anchors
 
 Self-host operators MUST configure passkey environment variables to enable passkey features.
@@ -1060,7 +1116,7 @@ To light up passkey authentication and private rooms, the operator MUST provide 
   > **PARTIALLY AUTOMATED** — `check-helm-hardening.sh:41-61` (CI `helm-lint`) proves these Helm values render all four Worker variables and rejects incomplete anchors. It does not apply the chart to a cluster or validate the chosen RP/origin and secret there.
 
 - **Consequence of Leaving Unset**: `authEnabled()` in `packages/worker/src/routes/auth.ts:34-43` checks `flagEnabled(env.ETHERCALC_AUTH) && env.AUTH !== undefined && env.ETHERCALC_RP_ID && env.ETHERCALC_ORIGIN`. If passkey variables are left unset, `authEnabled()` returns `false` (fails closed), returning HTTP 404 for `/_auth/*` endpoints and HTTP 401 for private room creation.
-- **Room Index Access Fallback**: `shouldDisableRoomIndex()` in `packages/worker/src/lib/room-index-access.ts:40-46` checks `ETHERCALC_DISABLE_ROOM_INDEX` first; if absent, it falls back to legacy `ETHERCALC_CORS`. Defaults to `1` (gated) in self-host manifests.
+- **Room Index Access Fallback (self-host nuance)**: `shouldDisableRoomIndex()` in `packages/worker/src/lib/room-index-access.ts:40-46` still runs first. Shipped Docker/Helm/entrypoint defaults keep `ETHERCALC_DISABLE_ROOM_INDEX=1`, so `/_rooms*` and `/_exists/:room` return **403** (what `smoke-proxy.sh` checks). That gate is only a hide-switch: standalone workerd has **no D1 `DB` binding** (`config.capnp`), so if an operator sets `ETHERCALC_DISABLE_ROOM_INDEX=0`, `/_rooms` / `/_roomlinks` / `/_roomtimes` open but still return empty bodies (`[]` / `[]` / `{}` per `packages/worker/src/routes/rooms.ts:122,133,142`). `/_exists/:room` can answer from the DO once ungated. See §7.0 — do not document self-host as if flipping the env var restores a hosted-style directory.
 - **Validation Commands**:
   ```bash
   bash scripts/check-helm-hardening.sh
@@ -1077,12 +1133,15 @@ To light up passkey authentication and private rooms, the operator MUST provide 
   - Dual workerd dependency mapping in `bun.lock` (hoisted `1.20260714.1` vs nested `vitest-pool-workers` `1.20260701.1`) and test-runtime skew documentation.
   - Entrypoint workerd binary targeting (`bin/workerd-entrypoint.sh:48-55` picking wrangler's hoisted dependency over older nested copies).
   - Volume mount target `./ethercalc-data:/data` mapping to DO SQLite storage path `/data/do` (`docker-compose.yml:37`, `bin/workerd-entrypoint.sh:25-27`, `Dockerfile:63-72`).
-  - Security env defaults (`ETHERCALC_DISABLE_ROOM_INDEX=1` default ON in `Dockerfile:90`, `docker-compose.yml:46`, `helm/values.yaml:98`).
+  - Security env defaults (`ETHERCALC_DISABLE_ROOM_INDEX=1` default ON in `Dockerfile:90`, `docker-compose.yml:45`, `helm/values.yaml:100`).
   - Nginx reverse proxy configuration (`deploy/nginx/ethercalc.conf`, which applies `limit_req`/`limit_conn` and replaces `CF-Connecting-IP`/`X-Forwarded-*` headers) and validator script (`scripts/smoke-proxy.sh`).
+  - Standalone binding surface and hosted divergence (§7.0): no `DB` / cron / `EMAIL` in `config.capnp:64-117`; room-directory empty fallbacks at `rooms.ts:122,133,142`; `#d1` no-op at `room.ts:2289-2294`; `settimetrigger` D1 upsert gated at `rooms.ts:946-952`; `/_timetrigger` migrate-token gate at `timetrigger.ts:30-47`; PITR `501` on workerd per `API.md:137`.
+  - DO `uniqueKey` pins `ethercalc-roomdo-v1` / `ethercalc-authdo-v1` (`config.capnp:119-135`) and on-disk layout `<uniqueKey>/<objectId>.sqlite` (`config.capnp:137-139`) — upgrade-critical check in §7.2.1.
 - **Unexercised / Scope Limits**:
   - Docker smoke scripts (`./scripts/smoke-selfhost.sh` and `./scripts/smoke-proxy.sh`) could NOT be executed in this local environment due to missing `docker compose` CLI subcommand.
   - `./scripts/smoke-proxy.sh` validates `nginx -t` syntax, `/_health`, `GET /`, `/_rooms` HTTP 403, and `/_ws/` HTTP 101 WebSocket upgrade forwarding; it does not exercise rate-limiting thresholds or IP header substitution details.
   - End-to-end container boot, workerd execution, and reverse proxy routing for the self-host path remain unexercised locally and rely on CI execution (`.github/workflows/ci.yml` `build:selfhost` job).
+  - §7.0 / §7.2.1 are documentation of structural platform gaps; CI does not simulate a `uniqueKey` rename or prove operator volume layout on a live cluster.
 ---
 
 ## §8 Pre-Cutover PRs & Preparation Bundles
@@ -1113,7 +1172,7 @@ The following five items have been evaluated and categorized:
 
 6. **Bulk PITR Automation and Private Room Inventory Tooling Gap**
    - **Specification**: Build operator CLI tooling (e.g. under `packages/cli/` or `scripts/`) to automate mass PITR iteration over candidate rooms from D1, and maintain an authenticated audit stream of private room creations (`POST /_/private`) to enable private room discovery.
-   - **Cutover Blocker Decision**: **NON-BLOCKING FOLLOW-UP GAP**. Single-room PITR endpoint (`POST /_/:room/pitr-restore`) is fully functional. Operators facing mass incidents on public rooms can execute manual loops or write one-off scripts using `npx wrangler d1 execute` and `curl`. Active private room enumeration during an incident is supported via D1 queries (`SELECT DISTINCT room FROM audit_log UNION SELECT DISTINCT room FROM chat_log`), while zero-activity private rooms rely on edge access logs.
+   - **Cutover Blocker Decision**: **NON-BLOCKING FOLLOW-UP GAP** (hosted track). Single-room PITR endpoint (`POST /_/:room/pitr-restore`) is fully functional on Cloudflare. Operators facing mass incidents on public rooms can execute manual loops or write one-off scripts using `npx wrangler d1 execute` and `curl`. Active private room enumeration during an incident is supported via D1 queries (`SELECT DISTINCT room FROM audit_log UNION SELECT DISTINCT room FROM chat_log`), while zero-activity private rooms rely on edge access logs. **Self-host:** this entire D1+PITR recovery aid does not exist — use filesystem backup/restore of `./ethercalc-data` (§7.0, §7.2) instead.
 
 ---
 
@@ -1124,12 +1183,13 @@ This checklist has nine conditions and spans the full cutover. Before executing 
 
 The audit unit is one `[OPERATOR-VERIFY]` site, numbered §3.2 check, §5 probe
 (`10a` and `10b` counted separately), actionable §7 check, or §9 condition:
-**47 checks total — 5 ALREADY AUTOMATED, 28 PARTIALLY AUTOMATED, and 14
-GENUINELY MANUAL**. Thus **33/47 are automation-backed**, but 28 of those still
+**48 checks total — 5 ALREADY AUTOMATED, 28 PARTIALLY AUTOMATED, and 15
+GENUINELY MANUAL**. Thus **33/48 are automation-backed**, but 28 of those still
 add a distinct live-artifact, live-binding, edge, or deployment assertion.
 `ALREADY AUTOMATED` items may be skimmed after their named gate is green;
 `PARTIALLY AUTOMATED` items must retain the stated live delta; the remaining
-14 demand credentials, backups, operational judgment, or soak observation.
+15 demand credentials, backups, operational judgment, soak observation, or the
+self-host `uniqueKey` volume check (§7.2.1).
 
 
 - [ ] **1. Baseline Capture & Subsystem Verification**: `wrangler deployments list`, `wrangler versions list`, and `wrangler d1 info ethercalc_rooms --json` executed and recorded, confirming D1 storage subsystem `version: "production"` for Time Travel availability (§0.2, §0.2.1).
