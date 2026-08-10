@@ -505,14 +505,18 @@ describe('prepareAppendImportPlan', () => {
 
 describe('multi-sheet-import mutation pins', () => {
   it('mutation pins for getMaxSubsheetIndex multi-digit and non-numeric suffixes', () => {
-    // Multi-digit suffix must beat single-digit (kills /^\d$/ regex mutant).
+    // Multi-digit suffix must beat single-digit (kills /^\d$/ and /^\d+/ without $ mutants).
     expect(
-      getMaxSubsheetIndex(['/room.9', '/room.10', '/room.2', '/room.not', '/other.99'], 'room'),
+      getMaxSubsheetIndex(['/room.9', '/room.10', '/room.2', '/room.10a', '/room.not', '/other.99'], 'room'),
     ).toBe(10);
-    // Non-prefix and empty stay 0.
-    expect(getMaxSubsheetIndex(['/other.5', 'room.3', '/room.'], 'room')).toBe(0);
+    // Prefix gate: foreign rooms never contribute even with large numeric suffixes.
+    expect(getMaxSubsheetIndex(['/other.999', '/roomX.8', 'room.7'], 'room')).toBe(0);
+    // Non-numeric / empty suffix ignored.
+    expect(getMaxSubsheetIndex(['/room.', '/room.abc', '/room.1b2'], 'room')).toBe(0);
     // Equality: equal max is not increased (kills >= mutant).
-    expect(getMaxSubsheetIndex(['/room.5', '/room.5'], 'room')).toBe(5);
+    expect(getMaxSubsheetIndex(['/room.5', '/room.5', '/room.4'], 'room')).toBe(5);
+    // Leading-zero multi-digit still numeric.
+    expect(getMaxSubsheetIndex(['/room.09', '/room.9'], 'room')).toBe(9);
   });
 
   it('mutation pins for rewriteSheetReferences quoting and empty names', () => {
@@ -620,5 +624,70 @@ describe('multi-sheet-import mutation pins', () => {
       expect((err as Error).message).toContain('nope');
       expect((err as Error).message.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('multi-sheet-import mutation pins (workbook read + cells)', () => {
+  it('mutation pins for worksheet cell counting and read options', () => {
+    const readFn = vi.fn().mockReturnValue({
+      SheetNames: ['A', 'B'],
+      Sheets: {
+        A: { '!ref': 'A1', A1: { t: 'n', v: 1 }, B1: { t: 'n', v: 2 } },
+        B: { '!ref': 'A1', A1: { t: 'n', v: 3 } },
+      },
+    });
+    const plan = prepareAppendImportPlan(new Uint8Array([1, 2, 3]), 'xlsx', undefined, readFn as any);
+    expect(readFn).toHaveBeenCalledWith(expect.any(Uint8Array), {
+      type: 'array',
+      cellFormula: true,
+    });
+    // materialize walks every present sheet (kills empty for-loop / map body mutants)
+    const saves = plan.materializeSaves('room', 1);
+    expect(saves).toHaveLength(2);
+    expect(saves[0]!.length).toBeGreaterThan(0);
+    expect(saves[1]!.length).toBeGreaterThan(0);
+    // total cell counting uses += not -= (would undercount and fail limit with many cells)
+    const bigNames = ['S0'];
+    const bigSheet: Record<string, unknown> = { '!ref': 'A1:Z100' };
+    for (let r = 1; r <= 100; r++) {
+      for (let c = 0; c < 26; c++) {
+        const col = String.fromCharCode(65 + c);
+        bigSheet[`${col}${r}`] = { t: 'n', v: 1 };
+      }
+    }
+    // 2600 cells — still under MAX_IMPORT_CELLS; if counting subtracted, enforceImportLimit might not see growth consistently
+    const readBig = vi.fn().mockReturnValue({
+      SheetNames: bigNames,
+      Sheets: { S0: bigSheet },
+    });
+    const planBig = prepareAppendImportPlan(new Uint8Array(), 'xlsx', undefined, readBig as any);
+    expect(planBig.count).toBe(1);
+    expect(planBig.materializeSaves('r', 1)[0]!.length).toBeGreaterThan(100);
+  });
+
+  it('mutation pins titleHint trim gate vs raw titleHint', () => {
+    // Whitespace-only hint must fall back (kills `titleHint && titleHint.trim()` → titleHint).
+    const plan = prepareAppendImportPlan(new TextEncoder().encode('a'), 'csv', '   ');
+    expect(plan.preferredTitles[0]).toBe('CSV');
+    const named = prepareAppendImportPlan(new TextEncoder().encode('a'), 'csv', ' Named ');
+    expect(named.preferredTitles[0]).toBe('Named');
+  });
+
+  it('mutation pins CSV vs TSV delimiter handling exactly', () => {
+    const tabOnly = prepareAppendImportPlan(
+      new TextEncoder().encode('x\ty'),
+      'tsv',
+    ).materializeSaves('r', 1)[0]!;
+    const commaOnly = prepareAppendImportPlan(
+      new TextEncoder().encode('x,y'),
+      'csv',
+    ).materializeSaves('r', 1)[0]!;
+    expect(tabOnly).toBe(commaOnly);
+    // If TSV path skipped tab→comma, saves differ from comma CSV.
+    const literalTabAsCsv = prepareAppendImportPlan(
+      new TextEncoder().encode('x\ty'),
+      'csv',
+    ).materializeSaves('r', 1)[0]!;
+    expect(literalTabAsCsv).not.toBe(tabOnly);
   });
 });

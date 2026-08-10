@@ -1707,6 +1707,7 @@ it('POST /_do/import-append-toc rejects over-cap title counts and missing room n
       }),
     );
     expect(noName.status).toBe(400);
+    expect(await noName.text()).toBe('room name required');
   });
 
   it('POST /_do/import-append-toc returns 500 when clipboard conversion fails', async () => {
@@ -1758,6 +1759,7 @@ it('POST /_do/import-append-toc rejects over-cap title counts and missing room n
       }),
     );
     expect(empty.status).toBe(400);
+    expect(await empty.text()).toBe('titles array required');
 
     const notArray = await room.fetch(
       new Request('https://do/_do/import-append-toc?name=x', {
@@ -1767,6 +1769,7 @@ it('POST /_do/import-append-toc rejects over-cap title counts and missing room n
       }),
     );
     expect(notArray.status).toBe(400);
+    expect(await notArray.text()).toBe('titles array required');
 
     const nullBody = await room.fetch(
       new Request('https://do/_do/import-append-toc?name=x', {
@@ -1776,6 +1779,7 @@ it('POST /_do/import-append-toc rejects over-cap title counts and missing room n
       }),
     );
     expect(nullBody.status).toBe(400);
+    expect(await nullBody.text()).toBe('titles array required');
 
     const badJson = await room.fetch(
       new Request('https://do/_do/import-append-toc?name=x', {
@@ -1785,6 +1789,38 @@ it('POST /_do/import-append-toc rejects over-cap title counts and missing room n
       }),
     );
     expect(badJson.status).toBe(400);
+    expect(await badJson.text()).toBe('invalid JSON body');
+  });
+
+  it('POST /_do/import-append-toc header-only TOC does not invent links', async () => {
+    // grid.length === 1 (header only): must NOT enter the row loop (kills >= 1).
+    mockExportCSV.mockReturnValueOnce('#url,#title\n');
+    mockSave.mockReturnValueOnce('TOC');
+    try {
+      const res = await room.fetch(
+        new Request('https://do/_do/import-append-toc?name=header-only', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ titles: ['Only'] }),
+        }),
+      );
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as {
+        firstIndex: number;
+        sheets: Array<{ subroom: string; link: string }>;
+      };
+      expect(json.firstIndex).toBe(1);
+      expect(json.sheets[0]).toEqual({
+        subroom: 'header-only.1',
+        link: '/header-only.1',
+        title: 'Only',
+      });
+    } finally {
+      mockSave.mockReset();
+      mockSave.mockImplementation(() => 'SNAP');
+      mockExportCSV.mockReset();
+      mockExportCSV.mockImplementation(() => 'a,b\n1,2\n');
+    }
   });
 
   it('POST /_do/import-append-toc tolerates single-column existing TOC rows', async () => {
