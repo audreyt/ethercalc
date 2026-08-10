@@ -86,6 +86,46 @@ describe('<TabBar />', () => {
     await userEvent.click(screen.getByRole('tab', { name: 'B' }));
     expect(onChange).toHaveBeenCalledWith(1);
   });
+  it('calls onChange and onRename when a tab trigger is double-clicked', async () => {
+    const onChange = vi.fn();
+    const onRename = vi.fn();
+    render(
+      <TabBar
+        rows={sampleRows}
+        activeIndex={0}
+        basePath="."
+        suffix=""
+        index="room"
+        rowsRev={0}
+        onChange={onChange}
+        onRename={onRename}
+        firstFocusUsed={false}
+        onFirstFocus={() => {}}
+      />,
+    );
+    await userEvent.dblClick(screen.getByRole('tab', { name: 'B' }));
+    expect(onChange).toHaveBeenCalledWith(1);
+    expect(onRename).toHaveBeenCalledWith(1);
+  });
+
+  it('calls onChange without crashing when double-clicked without onRename handler', async () => {
+    const onChange = vi.fn();
+    render(
+      <TabBar
+        rows={sampleRows}
+        activeIndex={0}
+        basePath="."
+        suffix=""
+        index="room"
+        rowsRev={0}
+        onChange={onChange}
+        firstFocusUsed={false}
+        onFirstFocus={() => {}}
+      />,
+    );
+    await userEvent.dblClick(screen.getByRole('tab', { name: 'B' }));
+    expect(onChange).toHaveBeenCalledWith(1);
+  });
 
   it('clamps activeIndex above the max to the last row', () => {
     const { container } = render(

@@ -59,14 +59,18 @@ export const App: FC<AppProps> = ({
     dispatch({ type: 'bumpRev+setActive', index: foldr.lastIndex() });
   };
 
-  const handleRename = async (): Promise<void> => {
-    const current = foldr.at(clampedIndex);
+  const handleRename = async (targetIndex?: number): Promise<void> => {
+    const idx = typeof targetIndex === 'number' ? targetIndex : clampedIndex;
+    if (idx !== clampedIndex) {
+      handleChange(idx);
+    }
+    const current = foldr.at(idx);
     const seed = current.title ?? '';
     const promptFn = promptImpl ?? ((m, s) => window.prompt(m, s));
     const title = promptFn('Rename Sheet', seed);
     if (!title) return;
-    if (titleTaken(foldr.titles(), title, clampedIndex)) return;
-    await foldr.setAt(clampedIndex, { title });
+    if (titleTaken(foldr.titles(), title, idx)) return;
+    await foldr.setAt(idx, { title });
     dispatch({ type: 'bumpRev' });
   };
 
@@ -94,6 +98,7 @@ export const App: FC<AppProps> = ({
         suffix={suffix}
         index={index}
         onChange={handleChange}
+        onRename={isReadOnly ? undefined : handleRename}
         firstFocusUsed={firstFocusUsed.current}
         onFirstFocus={onFirstFocus}
       />
