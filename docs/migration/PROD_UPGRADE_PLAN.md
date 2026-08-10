@@ -108,11 +108,11 @@
 >
 > ---
 
-## §C Corrected cutover strategy (post-baseline disprove) — DRAFT
+## §4 Hosted cutover (single gradual ramp)
 
-> **Status (2026-08-10):** drafted from repo evidence against the live-probe bounds in the STOP banner. **Not executable until** `CURRENT_PROD_VERSION_ID` is recorded from `wrangler deployments list` / `versions list` and staging has rehearsed this single-ramp shape. Supersedes §4.2–§4.4 and the critical-path “Sequence and rollback” table for hosted cutover planning. Does **not** delete those sections.
+> **Status (2026-08-10):** **live hosted cutover procedure.** Derived from repo evidence against the live-probe bounds in the STOP banner. **Blocking before upload:** record `CURRENT_PROD_VERSION_ID` from `wrangler deployments list` / `versions list`, and rehearse this single-ramp shape on staging. This section supersedes the three-phase sequence preserved in Appendix A (old §4.2–§4.4 / old rollback graph / old three-phase Go/No-Go). Appendix A is retained for analysis only — do **not** execute it.
 
-### C.1 Derivation checks (repo-verified)
+### 4.1 Derivation checks (repo-verified)
 
 | # | Claim | Verdict | Evidence |
 | - | :---- | :------ | :------- |
@@ -120,7 +120,7 @@
 | **D2** | Do not manipulate `ETHERCALC_AUTH`; leave production at `"1"` | **Holds** | Checked-in `[vars]` keep `ETHERCALC_AUTH = "1"` at `d2afa90` through `HEAD` (prod + staging overlays). Live `GET /_auth/whoami` → `enabled:true`. `verifyAuthSession` / `authEnabled` fail closed when the flag is off (`packages/worker/src/lib/auth-session.ts`, `routes/auth.ts`); RoomDO private ACL then 403s owners. The old Phase 2 `AUTH=0` soak is therefore an outage vector, not a safety measure. |
 | **D3** | Rolling `main` back to current production does **not** declassify private rooms (both sides enforce ACL) | **Holds** for authz data path | At `d2afa90` (PR #841 merge): `packages/worker/src/lib/authorize.ts` implements deny-overrides private ACL; `room.ts` imports it and gates via `#isAuthorized` / `meta:access`+`meta:acl` before dispatch — same model AGENTS.md decision #14 describes. `git diff d2afa90 HEAD -- packages/worker/src/lib/authorize.ts` is **empty**. Exposure analysis in old §6.2 that assumed rollback to pre-ACL / `AUTH=0` code is **inapplicable** to prod↔`main` rollback. |
 
-**What D3 does *not* claim:** rollback is free of *all* user impact. Security-audit `main` renames the session cookie `ec_sess` → `__Host-ec_sess` (`packages/worker/src/lib/session.ts`) and does **not** read the old name. Token bytes remain AuthDO HMAC sessions over the same `session-secret` storage key, but browsers holding only `ec_sess` look anonymous on the new Worker until they complete a passkey ceremony again. That is **temporary lockout-until-relogin**, not world-readable declassification. Marked as a first-class residual risk in §C.5.
+**What D3 does *not* claim:** rollback is free of *all* user impact. Security-audit `main` renames the session cookie `ec_sess` → `__Host-ec_sess` (`packages/worker/src/lib/session.ts`) and does **not** read the old name. Token bytes remain AuthDO HMAC sessions over the same `session-secret` storage key, but browsers holding only `ec_sess` look anonymous on the new Worker until they complete a passkey ceremony again. That is **temporary lockout-until-relogin**, not world-readable declassification. Marked as a first-class residual risk in §4.5.
 
 **Still open (cannot settle from git alone):**
 
@@ -133,7 +133,7 @@
 - Live D1 applied-migration set equals the three checked-in SQL files — expected, but confirm with `npx wrangler d1 migrations list ethercalc_rooms --remote --config=packages/worker/wrangler.toml --env=""` **`[OPERATOR-VERIFY]`**.
 - Cloudflare account still allows `versions upload` + percentage `versions deploy` for this Worker (platform/docs assumption; rehearse on staging) **`[OPERATOR-VERIFY]`**.
 
-### C.2 Platform consequence (why the three-phase shape collapses)
+### 4.2 Platform consequence (why the three-phase shape collapses)
 
 Cloudflare refuses **upload** of a Worker version that *changes* Durable Object class lifecycle, and forbids rollback to any version from before the lifecycle-changing deploy ([Gradual deployments with Durable Objects](https://developers.cloudflare.com/workers/versions-and-deployments/gradual-deployments/with-durable-objects/)).
 
@@ -146,7 +146,7 @@ Relative to real production (post-`v2`):
 
 This does **not** restore pre-`v2` / pre-passkey code as a rollback target (platform still forbids that). It means the rollback floor for *this* upgrade is **the currently serving production version**, not a freshly built Phase 1 lifecycle bundle and not `149ebcf`.
 
-### C.3 Corrected hosted sequence (single gradual ramp)
+### 4.3 Corrected hosted sequence (single gradual ramp)
 
 Keep `ETHERCALC_AUTH = "1"` in `packages/worker/wrangler.toml` for every artifact in this sequence. **Never** deploy an `AUTH=0` / auth-unbound bundle to production as a soak step.
 
@@ -239,7 +239,7 @@ Optional but strongly recommended under override before ramp (**`[OPERATOR-VERIF
 ```bash
 cd packages/worker
 npx wrangler versions deploy <SHIP_VERSION_ID>@10% --env=""
-# Dwell; watch error/latency analytics; spot-check Step 5 / §C.5 probes on default traffic
+# Dwell; watch error/latency analytics; spot-check Step 5 / §4.5 probes on default traffic
 npx wrangler versions deploy <SHIP_VERSION_ID>@50% --env=""
 # Dwell again
 npx wrangler versions deploy <SHIP_VERSION_ID>@100% --env=""
@@ -252,7 +252,7 @@ After the first percentage step that serves new HTML/JS to real clients, and aga
 Cloudflare Dashboard → Caching → Configuration → Purge Everything
 ```
 
-(A cached production root normally still boots against the ship Worker because its old asset references remain served; it prolongs hybrid old-HTML/new-Worker skew. The broken mixed-version direction is ship HTML routed to pre-`b7d8840` assets, where the extracted `static/*.js` files 404. Browsers that still honor AppCache can additionally pin the old master HTML because `manifest.appcache` remains byte-identical — §C.5.)
+(A cached production root normally still boots against the ship Worker because its old asset references remain served; it prolongs hybrid old-HTML/new-Worker skew. The broken mixed-version direction is ship HTML routed to pre-`b7d8840` assets, where the extracted `static/*.js` files 404. Browsers that still honor AppCache can additionally pin the old master HTML because `manifest.appcache` remains byte-identical — §4.5.)
 
 **Ramp abort:** return 100% to the pre-cutover version immediately:
 
@@ -277,11 +277,11 @@ Reuse §5 probe *mechanics* with corrected auth expectations:
 
 Plus operator checks that §5 never fully owned for this delta:
 
-- logged-in private room owner path after possible cookie rename (§C.5);
+- logged-in private room owner path after possible cookie rename (§4.5);
 - security-header / CSP smoke on a room page **`[OPERATOR-VERIFY]`**;
-- API client that previously relied on over-limit `POST /_/:room` → 202 must see 413 (§C.5).
+- API client that previously relied on over-limit `POST /_/:room` → 202 must see 413 (§4.5).
 
-### C.4 Rollback (corrected)
+### 4.4 Rollback (corrected)
 
 | Direction | Mechanism | Authz / private-room effect | Notes |
 | :-------- | :-------- | :-------------------------- | :---- |
@@ -291,7 +291,7 @@ Plus operator checks that §5 never fully owned for this delta:
 
 D1 Time Travel / SQL dump restore (§6.4) remains available for **D1 only** and still does **not** roll back RoomDO/AuthDO SQLite. Whole-fleet DO PITR remains non-viable at ~1.8M rooms (§2.4) — unchanged.
 
-### C.5 Residual risks for this smaller delta (honest list)
+### 4.5 Residual risks for this smaller delta (honest list)
 
 1. **Session cookie rename (`ec_sess` → `__Host-ec_sess`)** — security-audit change in `packages/worker/src/lib/session.ts`. New Worker ignores the old cookie name with no legacy fallback; users with only `ec_sess` appear signed out until they passkey-login again (new cookie issued), and an open private-room tab can fail to reconnect after the deploy drops its socket. During percentage ramp, clients may alternate versions and see intermittent whoami/uid. **Mitigations:** prefer low-traffic window; communicate “sign in again if private sheets 403”; consider staging a dual-read compatibility window in code only if operator rejects re-login (**not** in-repo today — would be a pre-cutover PR). Rollback to `CURRENT_PROD_VERSION_ID` restores old cookie-name behavior for browsers that still hold `ec_sess`.
 2. **Root asset layout skew** — production root has inline bootstraps + `<html manifest="manifest.appcache">`; ship root requires five extracted `static/*.js` files and drops the manifest attribute (`b7d8840`). Cached old HTML normally still boots on the ship Worker because its references remain served, but prolongs hybrid skew. Ship HTML routed to pre-`b7d8840` assets can 404; AppCache-capable browsers can keep the old master root because the unchanged manifest still returns 200. **Mitigations:** mandatory edge purge at first traffic shift and at 100%; probe root plus all five extracted scripts; advise hard reload. Edge purge cannot clear a client-side Application Cache.
@@ -301,15 +301,15 @@ D1 Time Travel / SQL dump restore (§6.4) remains available for **D1 only** and 
 6. **`compatibility_date` 2024-11-12 → 2026-07-21** (and self-host workerd lockstep on ship tree) — behavior deltas are intended/audited but are still a runtime move; staging rehearsal must use the ship date **`[OPERATOR-VERIFY]`**.
 7. **Candidate-range width (~17 days)** — until `CURRENT_PROD_VERSION_ID` is pinned, undeployed intermediate fixes inside `d2afa90..b7d8840^` are unknown. Strategy shape (single ramp, AUTH stays on) is stable across the range; **changelog/comms and exact probe expectations are not**.
 
-### C.6 What carries forward unchanged
+### 4.6 What carries forward unchanged
 
 - §4.0 deploy config redirect-banner guard  
 - §4.5–§4.6 corrected skew / reconnect analysis (+ companion `SKEW_AND_RECONNECT.md`; `d2afa90` conservative floor)
-- §5 probe mechanics and non-auth response contracts (re-auth expectations per §C.3 Step 5)  
+- §5 probe mechanics and non-auth response contracts (re-auth expectations per §4.3 Step 5)  
 - §0.2.2 capacity gate, §2 backup/PITR reality, §6.4 D1≠DO restore, §7 self-host divergence  
-- Version-override header smoke pattern (reused in §C.3 Step 3)
+- Version-override header smoke pattern (reused in §4.3 Step 3)
 
-### C.7 Explicitly retired for hosted prod cutover
+### 4.7 Explicitly retired for hosted prod cutover
 
 - Phase 1 lifecycle-only deploy from `149ebcf` / `.worktrees/phase1-lifecycle` as a prerequisite to shipping `main`  
 - Phase 2 `ETHERCALC_AUTH="0"` soak  
@@ -331,42 +331,49 @@ This runbook is the entry point. The other four files in this directory are supp
 
 ## Critical-path quick reference
 
-Use this quick reference for **“what do I do next?”** Use §§0–3 for preparation, §§4–6 for hosted execution and rollback, §7 for self-host, and §§8–10 for preparation status, Go/No-Go, and consequences. Follow the cited section whenever a line below sends you there; this is a map, not a substitute for the procedure. → §§0–10
+Use this quick reference for **“what do I do next?”** Use §§0–3 for preparation, **§4 for hosted execution and rollback**, §5 for post-ramp probes, §6.4 for D1-only restore, §7 for self-host, and §§8/10 for preparation bundles and user-visible consequences. Follow the cited section whenever a line below sends you there; this is a map, not a substitute for the procedure.
 
-### Sequence and rollback — **SUPERSEDED PENDING RE-BASELINE**
+> The disproved three-phase sequence is **not** on the critical path. It lives only in **Appendix A** (analysis / incident history).
 
-> **SUPERSEDED PENDING RE-BASELINE.** This table encodes the disproved three-phase cutover (Phase 2 = `AUTH=0`). Do not execute. See STOP banner above.
+### Sequence and rollback (live — single gradual ramp)
 
 | Step | What ships | Execution command | Rollback target and command |
 | :--- | :--------- | :---------------- | :-------------------------- |
-| **Pre-deploy D1** | D1 migrations | `npx wrangler d1 migrations apply ethercalc_rooms --remote --config=packages/worker/wrangler.toml --env=""` | Primary target: pre-cutover D1 bookmark; use `npx wrangler d1 time-travel restore ethercalc_rooms --bookmark=<PRE_CUTOVER_BOOKMARK>` or the applicable fallback → §4.1, §6.4 |
-| **Phase 1** | Lifecycle-only bundle | From `.worktrees/phase1-lifecycle/packages/worker`: `npx wrangler deploy --config=wrangler.toml --env=""` | Phase 1 itself: `npx wrangler versions deploy <PHASE1_VERSION_ID>@100% --env=""` — never pre-v2 → §4.2, §6.1 |
-| **Phase 2** | `main` code and assets with passkeys off | `npx wrangler versions upload --config=wrangler.toml --env=""`; then follow the override, ramp, and purge sequence | Phase 1: `npx wrangler versions deploy <PHASE1_VERSION_ID>@100% --env=""` → §4.3, §6.1 |
-| **Phase 3** | Passkeys on | From `packages/worker`: `npx wrangler deploy --config=wrangler.toml --env=""` | Phase 2: `npx wrangler versions deploy <PHASE2_VERSION_ID>@100% --env=""` → §4.4, §6.1 |
+| **Preflight / pin** | Record rollback floor | `npx wrangler deployments list` / `versions list` → `CURRENT_PROD_VERSION_ID`; secrets; capacity; ship-tree preflight; staging single-ramp rehearsal | n/a — blocking gate → §4.3 Step 0, §0.1, §0.2.1–§0.2.2, §1 |
+| **Pre-deploy D1** | D1 migrations (expected no-op in candidate range) | `npx wrangler d1 migrations list` then `apply` on `ethercalc_rooms` with `--remote --config=packages/worker/wrangler.toml --env=""` | D1 bookmark / Time Travel only (does **not** roll back DO SQLite) → §4.3 Step 1, §6.4 |
+| **Upload @0%** | Ship bundle, auth stays `"1"` | `vp run build:assets`; `npx wrangler versions upload --config=wrangler.toml --env=""` from `packages/worker`; record `SHIP_VERSION_ID` | No default traffic yet → §4.3 Step 2, §4.0 |
+| **Override smoke** | Exercise ship version without ramp | `Cloudflare-Workers-Version-Overrides: ethercalc="<SHIP_VERSION_ID>"` probes (`whoami` **`enabled:true`**, health, root scripts, public sheet) | Do not ramp on failure → §4.3 Step 3 |
+| **Ramp** | Gradual default traffic | `npx wrangler versions deploy <SHIP_VERSION_ID>@10%` → `@50%` → `@100%` with dwells; purge edge after first HTML/JS-serving step and at 100% | `npx wrangler versions deploy <CURRENT_PROD_VERSION_ID>@100% --env=""` + edge purge → §4.3 Step 4, §4.4 |
+| **Verify** | Post-ramp acceptance | §5 probe mechanics with §4.3 Step 5 auth/asset expectations (`enabled:true`; `index-bootstrap.js`; sheet-limit 413) | Same ramp abort command if acceptance fails → §4.3 Step 5, §5, §4.4 |
 
-### Points of no return
+### Points of no return (live baseline)
 
-- **Platform point of no return:** Cloudflare reports the Phase 1 deployment successful with migration `v2` active; pre-v2 versions can no longer be selected. → §6.3
-- **Private-data rollback boundary:** the first Phase 3 private-room creation or completed passkey registration activates the lockout/exposure hazards of deeper rollback. → §6.2–§6.3
+- **Platform point of no return (already behind production):** `v2` / `AuthDO` is already live in the candidate range. This cutover does **not** cross a new DO lifecycle boundary; pre-`v2` / `149ebcf` is **not** a rollback target. → §4.2, §4.4
+- **Do not create a new authz hazard:** never deploy `ETHERCALC_AUTH="0"` / auth-unbound bundles to production as a soak or rollback tool — that 403-locks existing private rooms for their owners. → STOP banner, §4.3, §4.4
+- **Residual user impact on ship (not ACL declassification):** session cookie rename `ec_sess` → `__Host-ec_sess` signs users out until passkey re-login; communicate re-auth. → §4.5
 
-### Abort — stop and roll back the current phase
+### Abort — stop and roll back to `CURRENT_PROD_VERSION_ID`
 
-- The phase flag/private-creation probes do not return their required Phase 2 or Phase 3 contracts. → §5 Probes 2–3, 11; §6.1
-- Health, public-sheet read/write, or WebSocket upgrade misses its required response contract. → §5 Probes 1, 5, 7; §6.1
-- The sheet-limit probe reports false success or the rejected mutation creates a snapshot. → §5 Probe 6; §6.1
-- After the required purge, the client asset is missing or non-JavaScript; or the socket.io, room-index gate, XLSX export, or `www` redirect probe misses its required contract. → §5 Probes 4, 8–10, 12; §6.1
+- Override smoke fails (`enabled` ≠ `true`, health fail, ship static assets 404). → §4.3 Step 3
+- Ramp error/latency or spot-check failure during `@10%` / `@50%` / `@100%`. → §4.3 Step 4, §4.4
+- Health, public-sheet read/write, or WebSocket upgrade misses its required response contract. → §5 Probes 1, 5, 7; §4.4
+- Sheet-limit probe reports false success (202) or the rejected mutation creates a snapshot. → §5 Probe 6; §4.4
+- After the required purge, client assets are missing or non-JavaScript; or socket.io, room-index gate, XLSX export, `www` redirect, or search-indexing probes miss contract. → §5 Probes 4, 8–10, 12, 13a–13c; §4.4
+- Private-room owner path broken beyond expected re-login after cookie rename. → §4.5, §4.3 Step 5
 
-### Manual hard gates — do not start Phase 1
+### Manual hard gates — do not upload the ship version
 
-- Complete the live baseline decision path; any unresolved variance, NO-GO result, or unsigned conditional result blocks the cutover. → §0.2–§0.3; §9 item 1
-- Confirm both required production secrets are active. → §0.1; §9 item 3
-- Record the D1 export and Time Travel bookmark, and settle restore viability against the live artifact. → §2.1; §6.4; §9 item 4
-- Pass the real-Cloudflare staging rehearsal for all phases and the PITR sequence. → §2.3; §3; §9 item 7
+- Pin `CURRENT_PROD_VERSION_ID` (and annotation) from `wrangler deployments list` / `versions list`; unresolved pin blocks upload. → §4.3 Step 0; §0.2
+- Complete still-valid baseline / capacity path; any NO-GO or unsigned conditional result blocks the cutover. → §0.2–§0.3
+- Confirm required production secrets are active. → §0.1
+- Record the D1 Time Travel bookmark (and size-budgeted export if used), and settle restore viability against the live artifact. → §2.1; §6.4
+- Green preflight on the **ship tree**. → §1
+- Pass real-Cloudflare staging rehearsal of **this single-ramp shape** (upload → override smoke → percentage ramp → rollback to staging pre-ramp version) and PITR sequence as in-scope. → §4.3 Step 0; §2.3; §3 *(§3 text still describes the old three-phase staging shape — rehearse the single-ramp commands from §4.3; full §3 rewrite is a known gap)*
 
 **Target Service:** `ethercalc.net` (Cloudflare Workers + Hono + Durable Objects + D1 + Assets)  
-**Baseline Release:** Git Tag `0.20260717.0` (Commit `149ebcf16104b01254ca2b796beb701c88bd6ff8`)  
-**Target Release:** Current `main`  
-**Document Purpose:** Complete operator runbook to execute a zero-data-loss, three-phase production migration and verify post-upgrade stability under Cloudflare Workers platform constraints.
+**Baseline window:** production ∈ `[d2afa90, b7d8840)` — after passkey merge (PR #841), before security-audit hardening; **exact pin `[OPERATOR-VERIFY]`** via `wrangler deployments list` / `versions list`  
+**Target Release:** Current `main` (security-audit delta + command-rejection propagation + search-indexing policy)  
+**Document Purpose:** Operator runbook for a zero-data-loss single-ramp production upgrade under Cloudflare Workers platform constraints, with the disproved three-phase plan retained only as Appendix A.
 
 ---
 
@@ -2099,7 +2106,7 @@ Operator-facing summary for this cutover. Each entry states whether it is a **ch
 2. **Large Paste Rejection at the Room Boundary**: Command batches expanding a sheet beyond 200,000 declared cells are rejected by RoomDO with HTTP 413 (`packages/worker/src/room.ts:699-703`); native WebSocket writes close with `1008 'Command exceeds sheet limits'` (`packages/worker/src/room.ts:1803-1808`). Snapshot writes through `PUT /_/:room` propagate the DO's 413 (`packages/worker/src/routes/rooms.ts:355-369`).
 3. **HTTP Command API Rejection Signaling**: `POST /_/:room` now propagates RoomDO's non-2xx status and body (e.g., HTTP 413 with body `command exceeds sheet limits` for batches exceeding `MAX_SHEET_CELLS = 200_000`), matching `PUT /_/:room` at `packages/worker/src/routes/rooms.ts:355-369`. Native WebSocket writes close with 1008 (`Command exceeds sheet limits`). _Behavioral Shift_: An API client or script that previously received HTTP 202 for an over-limit write under legacy EtherCalc (which had no sheet limits) now receives HTTP 413. This correctly eliminates the silent write-loss defect while surfacing explicit error signaling.
 4. **Form/App-Mode Tab Hydration**: Browser tabs in form/app mode open across cutover must perform a page reload (`packages/client/src/boot.ts:384-390`).
-5. **Passkey session cookie rename (not a green-field passkey enable)**: Passkey accounts, `AuthDO`, and private sheets are **already live** in production (baseline window `[d2afa90, b7d8840)`; live `GET /_auth/whoami` → `{"uid":null,"enabled":true}` and root HTML already serves `./static/passkey/ui.js` — see STOP banner). This ship does **not** introduce them and must **not** be announced as a Phase 3 enable. What *does* change for those users is the session cookie rename `ec_sess` → `__Host-ec_sess` in `packages/worker/src/lib/session.ts:2`: `parseSessionCookie` (line 30) matches only `SESSION_COOKIE_NAME` with **no** legacy `ec_sess` fallback, so every currently signed-in passkey user is silently signed out at rollout and must re-authenticate. AuthDO-stored credentials and `session-secret` tokens survive; only the browser cookie name is orphaned. **Sharper consequence:** an open tab on a **private** room can fail to reconnect, because its WebSocket still presents a cookie the new Worker will not authenticate and RoomDO's deny-overrides ACL then returns 403 to the owner. Same residual risk as §C.5 item 1 / §C.1 D3 — temporary lockout-until-relogin, not declassification. Comms should say "sign in again if private sheets 403," not "passkeys are now available."
+5. **Passkey session cookie rename (not a green-field passkey enable)**: Passkey accounts, `AuthDO`, and private sheets are **already live** in production (baseline window `[d2afa90, b7d8840)`; live `GET /_auth/whoami` → `{"uid":null,"enabled":true}` and root HTML already serves `./static/passkey/ui.js` — see STOP banner). This ship does **not** introduce them and must **not** be announced as a Phase 3 enable. What *does* change for those users is the session cookie rename `ec_sess` → `__Host-ec_sess` in `packages/worker/src/lib/session.ts:2`: `parseSessionCookie` (line 30) matches only `SESSION_COOKIE_NAME` with **no** legacy `ec_sess` fallback, so every currently signed-in passkey user is silently signed out at rollout and must re-authenticate. AuthDO-stored credentials and `session-secret` tokens survive; only the browser cookie name is orphaned. **Sharper consequence:** an open tab on a **private** room can fail to reconnect, because its WebSocket still presents a cookie the new Worker will not authenticate and RoomDO's deny-overrides ACL then returns 403 to the owner. Same residual risk as §4.5 item 1 / §4.1 D3 — temporary lockout-until-relogin, not declassification. Comms should say "sign in again if private sheets 403," not "passkeys are now available."
 6. **WebSocket Message Rate Limits**: Exceeding 1500 messages per 10-second window closes the WebSocket with 1008 (`packages/worker/src/room.ts:1887-1890`).
 7. **Private Room D1 Asymmetry & Recovery Mechanics**: Private rooms (`meta:access === 'private'`) are write-time excluded from the public D1 `rooms` index (`packages/worker/src/room.ts:2270-2271`). They are invisible to `GET /_rooms`, `GET /_roomtimes`, and `SELECT room FROM rooms`. Audit/chat mirrors remain unfiltered (`packages/worker/src/room.ts:2303-2309`), so **active** private rooms may appear in D1 tails — but fleet-scale discovery must use the **paged** form in §2.4.2 (`[OPERATOR-VERIFY]`); the one-shot `SELECT DISTINCT … UNION …` is likely to hit D1's 30s limit on large tables. Whole-instance DO PITR is not an operator procedure at ~1.8M rooms (§2.4.1). `wrangler d1 export` SQL backups still contain private-room SocialCalc commands and chat and MUST be handled as sensitive. Zero-activity private rooms require out-of-band inventory.
 
