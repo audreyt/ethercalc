@@ -1,8 +1,12 @@
-# Operator Runbook: Production Upgrade Plan (`0.20260717.0` → `main`)
+# Operator Runbook: Production Upgrade Plan (`[d2afa90, b7d8840)` → `main`; exact pin `[OPERATOR-VERIFY]`)
 
-> ## ⛔ STOP — DOCUMENTED BASELINE DISPROVED (2026-08-10). DO NOT EXECUTE THIS RUNBOOK AS WRITTEN.
+> ## ⛔ STOP — DOCUMENTED BASELINE DISPROVED (2026-08-10). DO NOT EXECUTE THE SUPERSEDED THREE-PHASE PLAN.
 >
-> **Live production at `https://ethercalc.net` is NOT git tag `0.20260717.0` / commit `149ebcf16104b01254ca2b796beb701c88bd6ff8`.** Read-only probes against the live site disproved that premise. The three-phase cutover below (§4.2–§4.4), the rollback model (§6), and the Go/No-Go gate (§9) are therefore **SUPERSEDED PENDING RE-BASELINE**. Do **not** delete those sections — the analysis is still useful — but **do not run them**.
+> **Live production at `https://ethercalc.net` is NOT git tag `0.20260717.0` / commit `149ebcf16104b01254ca2b796beb701c88bd6ff8`.** Read-only probes against the live site disproved that premise.
+>
+> **Execute this runbook via the corrected single-ramp procedure** in **§4 Hosted cutover (single gradual ramp)** after §§0–3 preparation. The critical-path quick reference maps the live sequence.
+>
+> The disproved three-phase cutover, its phase-graph rollback model, and its three-phase Go/No-Go checklist are preserved only as **Appendix A: Superseded Three-Phase Plan (baseline disproved 2026-08-10)**. That appendix keeps its SUPERSEDED banners and is **analysis / incident history — not a live procedure**. Do **not** run Appendix A; do **not** set `ETHERCALC_AUTH="0"` on production as a soak step.
 >
 > ### The self-inflicted-outage hazard (fix this first)
 >
@@ -15,7 +19,7 @@
 > 3. **lock every existing private room** (RoomDO deny-overrides → **403 to its owner**) without declassifying it public;
 > 4. convert the plan’s main safety measure into a **self-inflicted production outage**.
 >
-> **Do not set `ETHERCALC_AUTH="0"` on production as part of any cutover derived from this document until the strategy is re-baselined against the real deployed revision.**
+> **Do not set `ETHERCALC_AUTH="0"` on production as part of any cutover derived from this document.** The corrected procedure (§4) leaves auth enabled for the entire ramp.
 >
 > ### Live evidence (re-verify in seconds; read-only GETs only)
 >
@@ -89,18 +93,18 @@
 > | §0.1 secrets preconditions | Document title / Baseline Release / Target lines (assumed `149ebcf`) |
 > | §0.2 inspection commands (esp. **`wrangler deployments list` — now #1 priority**) | §0.3 baseline decision table (rows keyed off `149ebcf`) |
 > | §0.2.1 D1 Time Travel subsystem GO/NO-GO | Exec Summary item 3 conclusion that `AUTH=0` “eliminates” private-room hazard in prod |
-> | §0.2.2 D1 10 GB capacity gate & scale arithmetic | Critical-path “Sequence and rollback” / Points of no return (three-phase as written) |
-> | §1 preflight matrix on the ship candidate | §2.2 Phase 2/3 narrative that assumes no private data exists pre-Phase-3 |
-> | §2.1 backup matrix, DO non-exportability, SQL dump limits | **§4.2 Phase 1** (lifecycle-only from `149ebcf` — v2/`AuthDO` almost certainly already live) |
-> | §2.3–§2.4 PITR contract & bounded recovery at ~1.8M rooms | **§4.3 Phase 2 `AUTH=0`** (**hazardous** — see above) |
-> | §4.0 deploy config source-of-truth / redirect-banner guard | **§4.4 Phase 3** (passkeys already on; not a green-field enable) |
-> | §4.5–§4.6 skew/reconnect + `SKEW_AND_RECONNECT.md` companion | **§5** Probe 2/3 still framed for Phase-2 `enabled:false` / `AUTH=0`; Probes 13a–13c (search-indexing) **added** in `c40f11f` |
-> | §5 probe *mechanics* and many response contracts (health shape, `/_rooms` 403, XLSX paths, WS upgrade) | **§6** rollback / lockout model predicated on Phase 2 having zero private rooms |
-> | §6.4 D1 restore does not roll back DO SQLite | **§8** still needs rework on Phase 1 bundle / three-phase placement framing; search-indexing ship requirement **added** as item 7 (`c40f11f`) |
-> | §7 self-host divergence, `uniqueKey`, nginx, passkey anchor defaults | **§9** Go/No-Go items that gate the three-phase sequence / item 9 `AUTH=0` soak |
+> | §0.2.2 D1 10 GB capacity gate & scale arithmetic | ~~Critical-path three-phase sequence~~ **done** — critical-path now maps §4 single-ramp |
+> | §1 preflight matrix on the ship candidate | §2.2 Phase 2/3 narrative (Appendix A; assumes no private data pre-Phase-3) |
+> | §2.1 backup matrix, DO non-exportability, SQL dump limits | **Appendix A / old Phase 1** (lifecycle-only from `149ebcf` — v2/`AuthDO` already live) |
+> | §2.3–§2.4 PITR contract & bounded recovery at ~1.8M rooms | **Appendix A / old Phase 2 `AUTH=0`** (**hazardous** — see above) |
+> | §4.0 deploy config source-of-truth / redirect-banner guard (now under live §4) | **Appendix A / old Phase 3** (passkeys already on; not a green-field enable) |
+> | §4.5–§4.6 skew/reconnect + `SKEW_AND_RECONNECT.md` companion (live; see §4 carry-forward) | **§5** Probe 2/3 text still mentions Phase-2 `enabled:false` / `AUTH=0` historically; live cutover uses §4 Step 5 expectations (`enabled:true`). Probes 13a–13c (search-indexing) **added** in `c40f11f` |
+> | §5 probe *mechanics* and many response contracts (health shape, `/_rooms` 403, XLSX paths, WS upgrade) | **Appendix A / old §6** phase-graph rollback predicated on Phase 2 having zero private rooms (live rollback is §4.4; D1≠DO restore remains §6.4) |
+> | §6.4 D1 restore does not roll back DO SQLite | **§8** still carries Phase 1 bundle / three-phase placement framing in places; search-indexing ship requirement **added** as item 7 (`c40f11f`) |
+> | §7 self-host divergence, `uniqueKey`, nginx, passkey anchor defaults | **Appendix A / old §9** three-phase Go/No-Go / item 9 `AUTH=0` soak (live gates: §4 Step 0 + still-valid §0/§1/§2 checks) |
 > | Companion inventory / platform constraint citations | ~~§10 passkeys-as-new~~ **done** — item 5 re-baselined in `c94fd3e` (passkeys already live; ship change is `ec_sess` → `__Host-ec_sess`). Item 8 search-indexing added in `c40f11f`. |
 >
-> **Next pass status:** corrected single-ramp strategy is drafted below as **§C (Corrected cutover strategy)**. Exact production SHA is still open — `wrangler deployments list` remains the #1 `[OPERATOR-VERIFY]` before any upload.
+> **Execution status:** the corrected single-ramp strategy is the **live hosted procedure in §4**. Exact production Worker version ID / git SHA is still open — `wrangler deployments list` remains the #1 `[OPERATOR-VERIFY]` before any upload (needed as the rollback-target version ID; ramp safety holds across the whole candidate range — see §4.1).
 >
 > ---
 
