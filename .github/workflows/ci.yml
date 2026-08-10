@@ -237,13 +237,24 @@ jobs:
   mutation-gate:
     name: mutation-gate — changed packages only
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Budget (2026-08-10): local full six-package ratchet exits 0 in ~828s
+    # (~13m48s) on M-series; this job mutates only packages with `src/`
+    # changes vs origin/main (this branch: worker only — robots + rooms).
+    # Worker alone dominates wall-clock. CI ubuntu runners are slower than
+    # local, and run 31388973185 cancelled the Stryker step at
+    # timeout-minutes:20 with zero score output — a cancelled gate is
+    # indistinguishable from green at a glance and trains people to ignore
+    # it. 45m ≈ ~2.5× the local full-matrix baseline, deliberate headroom
+    # so the gate can finish and report a real score rather than timing out.
+    # Do NOT lower Stryker break thresholds to "fit" a short budget.
+    timeout-minutes: 45
     needs: test
     # Fast PR-gate mutation check. Runs Stryker only on packages whose
     # `src/` changed in the PR, so docs/test/config-only PRs skip it and
-    # single-package PRs stay under ~2 minutes. The full matrix lives in
-    # nightly.yml; see AGENTS.md §5.3 + docs/MUTATION_REPORT.md for the
+    # single-package PRs stay under the budget above. The full matrix lives
+    # in nightly.yml; see AGENTS.md §5.3 + docs/MUTATION_REPORT.md for the
     # ratchet workflow.
+
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
