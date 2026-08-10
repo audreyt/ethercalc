@@ -94,11 +94,11 @@
 > | §2.1 backup matrix, DO non-exportability, SQL dump limits | **§4.2 Phase 1** (lifecycle-only from `149ebcf` — v2/`AuthDO` almost certainly already live) |
 > | §2.3–§2.4 PITR contract & bounded recovery at ~1.8M rooms | **§4.3 Phase 2 `AUTH=0`** (**hazardous** — see above) |
 > | §4.0 deploy config source-of-truth / redirect-banner guard | **§4.4 Phase 3** (passkeys already on; not a green-field enable) |
-> | §4.5–§4.6 skew/reconnect + `SKEW_AND_RECONNECT.md` companion | **§5** Phase-2-expected `enabled:false` probes (Probe 2/3 framing) |
+> | §4.5–§4.6 skew/reconnect + `SKEW_AND_RECONNECT.md` companion | **§5** Probe 2/3 still framed for Phase-2 `enabled:false` / `AUTH=0`; Probes 13a–13c (search-indexing) **added** in `c40f11f` |
 > | §5 probe *mechanics* and many response contracts (health shape, `/_rooms` 403, XLSX paths, WS upgrade) | **§6** rollback / lockout model predicated on Phase 2 having zero private rooms |
-> | §6.4 D1 restore does not roll back DO SQLite | **§8** Phase 1 bundle status & “passkeys land in Phase 3” framing |
+> | §6.4 D1 restore does not roll back DO SQLite | **§8** still needs rework on Phase 1 bundle / three-phase placement framing; search-indexing ship requirement **added** as item 7 (`c40f11f`) |
 > | §7 self-host divergence, `uniqueKey`, nginx, passkey anchor defaults | **§9** Go/No-Go items that gate the three-phase sequence / item 9 `AUTH=0` soak |
-> | Companion inventory / platform constraint citations | §10 items that announce passkeys as newly user-visible post-Phase-3 |
+> | Companion inventory / platform constraint citations | ~~§10 passkeys-as-new~~ **done** — item 5 re-baselined in `c94fd3e` (passkeys already live; ship change is `ec_sess` → `__Host-ec_sess`). Item 8 search-indexing added in `c40f11f`. |
 >
 > **Next pass status:** corrected single-ramp strategy is drafted below as **§C (Corrected cutover strategy)**. Exact production SHA is still open — `wrangler deployments list` remains the #1 `[OPERATOR-VERIFY]` before any upload.
 >
@@ -2089,7 +2089,7 @@ self-host `uniqueKey` volume check (§7.2.1).
 
 ## §10 User-Visible Behavior Changes Summary
 
-The following user-visible behavior changes take effect upon completing the upgrade:
+Operator-facing summary for this cutover. Each entry states whether it is a **change this ship introduces** or an **already-live mechanic** recorded here because operators still need it during cutover — do not announce already-live behavior as new.
 
 1. **Sheet Dimension Ceiling**: Max declared area is capped at 200,000 cells (`packages/worker/src/lib/command-limits.ts:17`). _Nuance_: Existing sheets already exceeding 200k cells keep full read and edit access to cells inside their current bounds; they only lose the ability to add new rows or columns (`packages/worker/test/room.test.ts:356-395`).
 2. **Large Paste Rejection at the Room Boundary**: Command batches expanding a sheet beyond 200,000 declared cells are rejected by RoomDO with HTTP 413 (`packages/worker/src/room.ts:699-703`); native WebSocket writes close with `1008 'Command exceeds sheet limits'` (`packages/worker/src/room.ts:1803-1808`). Snapshot writes through `PUT /_/:room` propagate the DO's 413 (`packages/worker/src/routes/rooms.ts:355-369`).
