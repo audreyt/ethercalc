@@ -603,6 +603,78 @@ describe('global response hardening', () => {
     expect(response.headers.get('X-Frame-Options')).toBeNull();
   });
 
+  it('marks non-landing responses noindex and leaves the homepage indexable', async () => {
+    const { env } = makeFakeRoomNamespace(() => new Response('ok'));
+    const app = buildApp();
+    const room = await app.fetch(
+      new Request('https://t.test/abcdef012345'),
+      env as never,
+    );
+    const exportCsv = await app.fetch(
+      new Request('https://t.test/abcdef012345.csv'),
+      env as never,
+    );
+    const health = await app.fetch(
+      new Request('https://t.test/_health'),
+      env as never,
+    );
+    const robots = await app.fetch(
+      new Request('https://t.test/robots.txt'),
+      env as never,
+    );
+    // Landing pages are served from ASSETS; when the binding is absent
+    // the route still runs through the same header middleware, so we
+    // assert the *absence* of the noindex tag on `/` via a path that
+    // is on the allowlist even without ASSETS (`isIndexablePath`).
+    // `/_health` is deliberately NOT allowlisted — operators probe it,
+    // crawlers must not index it.
+    expect(room.headers.get('X-Robots-Tag')).toBe('noindex, nofollow, noarchive');
+    expect(exportCsv.headers.get('X-Robots-Tag')).toBe(
+      'noindex, nofollow, noarchive',
+    );
+    expect(health.headers.get('X-Robots-Tag')).toBe(
+      'noindex, nofollow, noarchive',
+    );
+    expect(robots.headers.get('X-Robots-Tag')).toBe(
+      'noindex, nofollow, noarchive',
+    );
+    const robotsBody = await robots.text();
+    expect(robotsBody).toMatch(/^User-agent: \*/);
+    expect(robotsBody).not.toMatch(/^\s*Disallow\s*:/im);
+  });
+
+  it('does not noindex the public landing path', async () => {
+    // `/` goes through ASSETS; without the binding it 500s/404s, but the
+    // global middleware still stamps headers on whatever status comes
+    // back. We only care that the allowlist skipped X-Robots-Tag.
+    const { env } = makeFakeRoomNamespace(() => new Response());
+    // Provide a minimal ASSETS fetcher so `/` returns 200 rather than
+    // falling through a missing-binding path.
+    const envWithAssets = {
+      ...env,
+      ASSETS: {
+        fetch: async () =>
+          new Response('<html></html>', {
+            headers: { 'Content-Type': 'text/html' },
+          }),
+      },
+    };
+    const app = buildApp();
+    const root = await app.fetch(
+      new Request('https://t.test/'),
+      envWithAssets as never,
+    );
+    const start = await app.fetch(
+      new Request('https://t.test/_start'),
+      envWithAssets as never,
+    );
+    expect(root.headers.get('X-Robots-Tag')).toBeNull();
+    // Secondary start page is user navigation chrome, not marketing.
+    expect(start.headers.get('X-Robots-Tag')).toBe(
+      'noindex, nofollow, noarchive',
+    );
+  });
+
   it('allows only the request host for local plaintext WebSockets', async () => {
     const { env } = makeFakeRoomNamespace(() => new Response());
     const response = await buildApp().fetch(
