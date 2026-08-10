@@ -68,10 +68,10 @@
 > Production ∈ (`d2afa90` … `b7d8840`) under the **working premise** that the live upload used source `wrangler.toml` (not the §4.0 generated-config redirect). **Rollback floor pinned 2026-08-10** as Worker version **`bd76bda5-3161-4576-b159-dbdb97d774c2`** @100% (see §4.3 cutover log). Exact *git* SHA is still open (no version annotation). Live markers (compat `2024-11-12`, missing `index-bootstrap.js`, appcache present) are **consistent with** pre-`b7d8840` source config, but §4.0 documents that `dist/ethercalc/wrangler.json` **forces `compatibility_date` back to `2024-11-12`** and points assets at a tree **lacking the five extracted scripts** — so those markers alone do **not** unconditionally rule out a `b7d8840` (or later) upload that went through the redirect. Commands that produced the version-ID pin:
 >
 > ```bash
-
 > vp exec wrangler deployments list --config=packages/worker/wrangler.toml --env=""
 > vp exec wrangler versions list --config=packages/worker/wrangler.toml --env=""
 > ```
+
 >
 > ### Re-scoped delta (what remains to ship — not a cutover plan)
 >
