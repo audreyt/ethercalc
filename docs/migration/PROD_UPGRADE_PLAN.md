@@ -962,7 +962,7 @@ npx wrangler versions deploy <PHASE2_VERSION_ID>@100% --env=""
 ```
 > **PARTIALLY AUTOMATED** — The root nightly-config test (`scripts/vite-workflow.test.ts:458-469`; root `vp run test`) protects the checked-in staging dry run, worker auth tests (`routes-auth.node.test.ts:232-251`) protect the disabled response, and `build:assets` is a preflight gate. They do not upload this version, prove the flag/config selected by Wrangler, ramp live traffic, observe analytics, or purge the edge cache; those operator actions remain load-bearing.
 
-**ROLLBACK TARGET FOR PHASE 2**: Phase 2 contains ZERO DO lifecycle changes. **Phase 2 can be rolled back to Phase 1 instantly at any time via `npx wrangler versions deploy <PHASE1_VERSION_ID>@100% --env=""`**. Because `ETHERCALC_AUTH = "0"`, no private rooms or passkeys can be created during Phase 2, making rollback completely safe and hazard-free.
+**ROLLBACK TARGET FOR PHASE 2**: Phase 2 contains ZERO DO lifecycle changes. **Phase 2 can be rolled back to Phase 1 instantly at any time via `npx wrangler versions deploy <PHASE1_VERSION_ID>@100% --env=""`**. Because `ETHERCALC_AUTH = "0"`, no private rooms or passkeys can be created during Phase 2, making rollback completely safe and hazard-free on the private-data axis. **Snapshot serialisation:** rooms edited under Phase 2 may be re-saved with the expanded multipart envelope (`part:edit` / `part:audit`, `socialcalc:version:1.0`). That is **not** a Phase 2→1 hazard here: Phase 1 (`149ebcf` / `.worktrees/phase1-lifecycle`) already ships the **same** SocialCalc 3.1.0 `socialcalc.bundled.ts` as `main` (byte-identical). Independently, genuine SocialCalc 3.0.8 also parses those 3.1.0-written saves with cell data preserved (`packages/socialcalc-headless/test/legacy-snapshot-reverse.node.test.ts`) — defense-in-depth if an older operator artifact is ever used.
 
 
 ##### Decision card — Phase 2 ramp abort (e.g. at 50%, errors climbing)
@@ -1289,6 +1289,7 @@ curl -fsSI https://www.ethercalc.net/_auth/register-init
      cd ..
      ```
    - **Zero Data Exposure Hazard**: Because `ETHERCALC_AUTH = "0"` was set during Phase 2, no user could register a passkey or create a private room. Rolling Phase 2 back to Phase 1 carries **zero risk** of private room data exposure.
+   - **Snapshot / SocialCalc compatibility on Phase 2→1**: Phase 1 already runs SocialCalc **3.1.0** (same bundled runtime as Phase 2 / `main`; upgrade landed in `303d348`, ancestor of `149ebcf`). Rooms re-saved during the Phase 2 soak therefore rehydrate on Phase 1 without a 3.1.0→3.0.8 engine downgrade. Bidirectional save-string proof (legacy oracle → 3.1.0, and 3.1.0-written → genuine 3.0.8) is in `docs/migration/DELTA_AUDIT.md` item **j** and `packages/socialcalc-headless/test/legacy-snapshot-{compat,reverse*}.test.ts`.
 2. **Rollback During Phase 3 (Passkey Enablement)**:
    - Roll back Phase 3 to Phase 2 using `npx wrangler versions deploy <PHASE2_VERSION_ID>@100% --env=""`.
 3. **Rollback Past Phase 1 (Pre-v2 Commit `149ebcf...`)**:
