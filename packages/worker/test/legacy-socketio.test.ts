@@ -38,12 +38,14 @@ describe('legacy socket.io shim — routes', () => {
     expect(res.headers.get('content-type')).toMatch(/text\/plain/);
     const body = await res.text();
     // `<sid>:<hbTimeoutSec>:<closeTimeoutSec>:<transports>`
+    // Defaults from createSocketIoShim (60/60) + DEFAULT_TRANSPORTS.
+    // Socket.IO 0.x clients parse these fields positionally — pin exact shape.
     const parts = body.split(':');
     expect(parts).toHaveLength(4);
-    expect(parts[0]!.length).toBe(32); // 32-char hex sid
-    expect(Number(parts[1])).toBeGreaterThan(0);
-    expect(Number(parts[2])).toBeGreaterThan(0);
-    expect(parts[3]!).toContain('websocket');
+    expect(parts[0]).toMatch(/^[0-9a-f]{32}$/);
+    expect(parts[1]).toBe('60');
+    expect(parts[2]).toBe('60');
+    expect(parts[3]).toBe('websocket,xhr-polling');
   });
 
   it('GET /socket.io/1 (no trailing slash) also handshakes', async () => {

@@ -111,7 +111,7 @@ function buildFullStub(): {
     ["/manifest.json", { body: "{}", contentType: "application/json" }],
     ["/manifest.appcache", { body: "CACHE MANIFEST\n", contentType: "text/cache-manifest" }],
     ["/static/socialcalc.js", { body: "/* SocialCalc */", contentType: "application/javascript" }],
-    ["/static/player.js", { body: "/* player */", contentType: "application/javascript" }],
+    ["/static/player.js", { body: "/* player */", contentType: "application/octet-stream" }],
     ["/formbuilder.js", { body: "/* form builder */", contentType: "application/javascript" }],
     ["/l10n/en.json", { body: '{"lang":"en"}', contentType: "application/json" }],
     ["/l10n/de.json", { body: '{"lang":"de"}', contentType: "application/json" }],
@@ -360,6 +360,9 @@ describe("GET /static/player.js", () => {
     const stub = buildFullStub();
     const res = await call("/static/player.js", { ASSETS: stub.ASSETS });
     expect(res.status).toBe(200);
+    // DiskDirectory/standalone workerd emits octet-stream; serveAsset/mimeForPath
+    // rewrites .js to application/javascript so module-script MIME checks pass.
+    expect(res.headers.get("Content-Type")).toBe("application/javascript; charset=utf-8");
     expect(await res.text()).toBe("/* player */");
     expect(stub.calls.at(-1)?.pathname).toBe("/static/player.js");
   });
