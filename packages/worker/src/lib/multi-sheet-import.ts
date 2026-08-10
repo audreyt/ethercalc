@@ -126,44 +126,6 @@ function uniqueTitle(
   return title;
 }
 
-function buildTextAppendImport(
-  bytes: Uint8Array,
-  room: string,
-  existingLinks: readonly string[],
-  existingTitles: readonly string[],
-  format: TextImportFormat,
-  titleHint: string | undefined,
-): MultiSheetAppendImport {
-  enforceImportUploadBytes(bytes);
-  if (existingLinks.length + 1 > MAX_MULTI_SHEETS) {
-    throw new ImportTooManySheetsError(existingLinks.length + 1);
-  }
-
-  const startMax = getMaxSubsheetIndex(existingLinks, room);
-  const nextIdx = startMax + 1;
-  const subroom = `${room}.${nextIdx}`;
-  const link = `/${subroom}`;
-  const preferred =
-    (titleHint && titleHint.trim()) ||
-    (format === 'socialcalc' ? 'SocialCalc' : format.toUpperCase());
-  const title = uniqueTitle(preferred, nextIdx, existingTitles);
-
-  let save: string;
-  if (format === 'socialcalc') {
-    const body = new TextDecoder('utf-8').decode(bytes);
-    save = rewriteSheetReferences(body, [title], room, nextIdx);
-  } else {
-    // CSV / TSV / TXT → one SocialCalc snapshot via the same ConvertOtherFormat path
-    // used by single-sheet room PUT.
-    const text = new TextDecoder('utf-8').decode(bytes);
-    const csvText = format === 'tsv' ? text.replace(/\t/g, ',') : text;
-    save = csvToSocialCalc(csvText);
-  }
-
-  return {
-    subSheets: [{ subroom, save, link, title }],
-  };
-}
 
 export function buildMultiSheetImport(
   bytes: Uint8Array,
@@ -257,11 +219,9 @@ export function prepareAppendImportPlan(
 
   let totalCells = 0;
   for (const name of present) {
-    const ws = wb.Sheets[name];
-    if (ws) {
-      enforceSocialCalcColumnLimit(ws);
-      totalCells += countWorksheetCells(ws);
-    }
+    const ws = wb.Sheets[name]!;
+    enforceSocialCalcColumnLimit(ws);
+    totalCells += countWorksheetCells(ws);
   }
   enforceImportLimit(totalCells);
 
@@ -306,11 +266,11 @@ export function buildMultiSheetAppendImport(
   for (let i = 0; i < plan.count; i++) {
     const nextIdx = firstIndex + i;
     const subroom = `${room}.${nextIdx}`;
-    const title = uniqueTitle(plan.preferredTitles[i] ?? `Sheet${nextIdx}`, nextIdx, currentTitles);
+    const title = uniqueTitle(plan.preferredTitles[i]!, nextIdx, currentTitles);
     currentTitles.push(title);
     subSheets.push({
       subroom,
-      save: saves[i] ?? '',
+      save: saves[i]!,
       link: `/${subroom}`,
       title,
     });

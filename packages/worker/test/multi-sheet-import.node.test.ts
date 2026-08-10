@@ -468,4 +468,37 @@ describe('prepareAppendImportPlan', () => {
     expect(saves).toHaveLength(1);
     expect(saves[0]!.length).toBeGreaterThan(0);
   });
+
+  it('rejects workbook plans with too many present sheets', () => {
+    const names = Array.from({ length: MAX_MULTI_SHEETS + 1 }, (_, i) => `S${i}`);
+    const sheets: Record<string, unknown> = {};
+    for (const name of names) sheets[name] = { '!ref': 'A1', A1: { t: 'n', v: 1 } };
+    const readFn = (() => ({ SheetNames: names, Sheets: sheets })) as unknown as typeof XLSX.read;
+    expect(() => prepareAppendImportPlan(new Uint8Array(), 'xlsx', undefined, readFn)).toThrow(
+      ImportTooManySheetsError,
+    );
+  });
+
+  it('covers tsv/socialcalc materializers and rejects oversized text uploads', () => {
+    const tsv = prepareAppendImportPlan(
+      new TextEncoder().encode('a\tb\n1\t2'),
+      'tsv',
+      'TSV',
+    );
+    expect(tsv.count).toBe(1);
+    expect(tsv.materializeSaves('room', 1)[0]!.length).toBeGreaterThan(0);
+
+    const sc = prepareAppendImportPlan(
+      new TextEncoder().encode('cell:A1:vtf:n:1:SheetX!A1\n'),
+      'socialcalc',
+      'SheetX',
+    );
+    expect(sc.materializeSaves('room', 3)[0]).toContain("'room.3'!A1");
+
+    const tooBig = new Uint8Array(MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES + 1);
+    expect(() => prepareAppendImportPlan(tooBig, 'csv')).toThrow(ImportArchiveTooLargeError);
+    expect(() => prepareAppendImportPlan(new Uint8Array([1]), 'nope')).toThrow(
+      ImportUnsupportedFormatError,
+    );
+  });
 });

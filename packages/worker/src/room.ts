@@ -66,10 +66,7 @@ import { parseCSV } from './lib/csv-parse.ts';
 import { parseSendemail } from './lib/email.ts';
 import { formdataSiblingRoom } from './lib/formdata-sibling.ts';
 import { csvToMarkdown } from './lib/md.ts';
-import {
-  getMaxSubsheetIndex,
-  ImportTooManySheetsError,
-} from './lib/multi-sheet-import.ts';
+import { getMaxSubsheetIndex } from './lib/multi-sheet-import.ts';
 import { workbookToLoadClipboardCommand } from './lib/xlsx-import.ts';
 import { MAX_MULTI_SHEETS } from '@ethercalc/shared';
 import {
@@ -742,7 +739,9 @@ export class RoomDO implements DurableObject {
     request: Request,
     roomName: string | null,
   ): Promise<Response> {
-    const room = roomName ?? this.#ownName;
+    // Require ?name= explicitly so a sticky #ownName from an earlier call
+    // on the same isolate cannot silently authorize allocation.
+    const room = roomName;
     if (!room) {
       return plainResponse('room name required', 400);
     }
@@ -792,10 +791,10 @@ export class RoomDO implements DurableObject {
       const existingTitles: string[] = [];
       if (grid.length > 1) {
         for (const row of grid.slice(1)) {
-          if (Array.isArray(row) && typeof row[0] === 'string') {
-            existingLinks.push(row[0]);
-            existingTitles.push(typeof row[1] === 'string' ? row[1] : '');
-          }
+          const link = row[0];
+          if (!link) continue;
+          existingLinks.push(link);
+          existingTitles.push(row[1] ?? '');
         }
       }
       if (existingLinks.length + titles.length > MAX_MULTI_SHEETS) {
@@ -814,7 +813,7 @@ export class RoomDO implements DurableObject {
 
       for (let i = 0; i < titles.length; i++) {
         const nextIdx = firstIndex + i;
-        const preferred = (titles[i] ?? '').trim() || `Sheet${nextIdx}`;
+        const preferred = titles[i]!.trim() || `Sheet${nextIdx}`;
         let title = preferred;
         if (currentTitles.map((t) => t.toLowerCase()).includes(title.toLowerCase())) {
           title = `${title}_${nextIdx}`;
@@ -856,18 +855,15 @@ export class RoomDO implements DurableObject {
 
     // Mirror + broadcast outside the lock (same pattern as #postCommands).
     const lastTs = Date.now();
-    await this.#mirrorIndex(roomName, lastTs);
+    await this.#mirrorIndex(room, lastTs);
     await this.#armAlarm();
-    const broadcastRoom = roomName ?? this.#ownName;
-    if (broadcastRoom) {
-      for (const cmdstr of allocated.cmdBatches) {
-        await this.#broadcastAll({
-          type: 'execute',
-          room: broadcastRoom,
-          user: '',
-          cmdstr,
-        });
-      }
+    for (const cmdstr of allocated.cmdBatches) {
+      await this.#broadcastAll({
+        type: 'execute',
+        room,
+        user: '',
+        cmdstr,
+      });
     }
 
     return jsonResponse({
