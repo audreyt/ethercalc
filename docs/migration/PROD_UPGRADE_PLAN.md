@@ -907,8 +907,11 @@ For self-hosted deployments running EtherCalc via Docker Compose or Kubernetes/H
    - `packages/worker/wrangler.toml:3` specifies `compatibility_date = "2026-07-21"`.
    - `packages/worker/workerd/config.capnp:61` specifies `compatibilityDate = "2026-07-14"`.
    - Standalone `workerd` binary releases enforce that `compatibilityDate` must be `<= workerd release date`.
-   - **Lockfile & Binary Resolution Verification**: `bun.lock` resolves root/wrangler dependency `workerd@1.20260714.1` (and platform binaries `@cloudflare/workerd-*-*@1.20260714.1`) via `wrangler@4.112.0`. The version string `1.20260714.1` decodes to release date `2026-07-14`, which matches `compatibilityDate = "2026-07-14"` exactly.
-   - **Entrypoint Binary Resolution**: `bin/workerd-entrypoint.sh:48-55` explicitly targets wrangler's pinned dependency `$APP_ROOT/node_modules/wrangler/../workerd/bin/workerd` (`1.20260714.1`) to ensure runtime execution does not pick up older nested copies (such as `@cloudflare/vitest-pool-workers`'s `1.20260701.1`). Operator host `workerd` binary MUST be dated `>= 2026-07-14` (pinned release: `1.20260714.1`).
+   - **Lockfile & Dual Workerd Package Version Resolution**: `bun.lock` resolves two distinct version sets for `workerd` and platform binaries (`@cloudflare/workerd-darwin-64`, `-darwin-arm64`, `-linux-64`, `-linux-arm64`, `-windows-64`):
+     - **Hoisted / Production Dependency (`wrangler@4.112.0`)**: `workerd@1.20260714.1` (and all 5 platform packages at `1.20260714.1`), which decodes to release date `2026-07-14`.
+     - **Nested Test Dependency (`@cloudflare/vitest-pool-workers@0.18.0`)**: `workerd@1.20260701.1` under `miniflare/workerd` and `wrangler/workerd` (and all 5 platform packages at `1.20260701.1`), which decodes to release date `2026-07-01` (`2026-07-01 < 2026-07-14`).
+   - **Zero-Margin Lockstep Invariant Callout**: The lockstep condition `2026-07-14 <= 2026-07-14` holds with **zero margin of slack**. Bumping `config.capnp`'s `compatibilityDate` by even a single day without simultaneously updating the pinned `workerd` dependency breaks standalone self-host (`workerd serve` hard-rejects configs whose date exceeds its build date). Conversely, updating `workerd` alone is safe (widens the margin). Note the critical deployment asymmetry: `wrangler.toml`'s `compatibility_date = "2026-07-21"` is 7 days ahead and safe because Wrangler clamps with a warning; syncing `config.capnp` to `"2026-07-21"` without a workerd bump would break self-host containers while Cloudflare edge deploys continue passing cleanly.
+   - **Entrypoint Binary Targeting & Test-Runtime Skew**: `bin/workerd-entrypoint.sh:48-55` explicitly targets wrangler's pinned dependency `$APP_ROOT/node_modules/wrangler/../workerd/bin/workerd` (`1.20260714.1`) to ensure runtime execution does not pick up the older nested `1.20260701.1` binary (which would refuse the config and crash-loop). Additionally, note that `@cloudflare/vitest-pool-workers` executes unit/workers-pool tests against the older `1.20260701.1` binary (a 13-day skew from the `1.20260714.1` deployment runtime); while `config.capnp` is not loaded in vitest, test behavior depending on workerd engine changes between 2026-07-01 and 2026-07-14 is not exercised by workers-pool tests. Operator host `workerd` binary MUST be dated `>= 2026-07-14` (pinned release: `1.20260714.1`).
 
 ### 7.2 Durable Object On-Disk Storage Backup
 
@@ -1023,8 +1026,9 @@ To light up passkey authentication and private rooms, the operator MUST provide 
 - **Source-Verified Claims**:
   - Dockerfile base image (`oven/bun:1.3.14` at `Dockerfile:22`).
   - Standalone ES module bundle creation (`scripts/build-workerd-bundle.sh` producing `packages/worker/workerd/worker/index.js`).
-  - Capnp compatibility date lockstep (`compatibilityDate = "2026-07-14"` in `config.capnp:61` satisfied by resolved `workerd@1.20260714.1` in `bun.lock`).
-  - Entrypoint workerd binary targeting (`bin/workerd-entrypoint.sh:48-55` picking wrangler's pinned dependency).
+  - Capnp compatibility date lockstep (`compatibilityDate = "2026-07-14"` in `config.capnp:61` satisfied with zero margin by hoisted `workerd@1.20260714.1` in `bun.lock`).
+  - Dual workerd dependency mapping in `bun.lock` (hoisted `1.20260714.1` vs nested `vitest-pool-workers` `1.20260701.1`) and test-runtime skew documentation.
+  - Entrypoint workerd binary targeting (`bin/workerd-entrypoint.sh:48-55` picking wrangler's hoisted dependency over older nested copies).
   - Volume mount target `./ethercalc-data:/data` mapping to DO SQLite storage path `/data/do` (`docker-compose.yml:37`, `bin/workerd-entrypoint.sh:25-27`, `Dockerfile:63-72`).
   - Security env defaults (`ETHERCALC_DISABLE_ROOM_INDEX=1` default ON in `Dockerfile:90`, `docker-compose.yml:46`, `helm/values.yaml:98`).
   - Nginx reverse proxy configuration (`deploy/nginx/ethercalc.conf`, which applies `limit_req`/`limit_conn` and replaces `CF-Connecting-IP`/`X-Forwarded-*` headers) and validator script (`scripts/smoke-proxy.sh`).
