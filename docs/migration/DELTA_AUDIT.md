@@ -1,13 +1,33 @@
-# Delta Audit Report: Tagged Baseline (`0.20260717.0`) vs. `main` (`d486f33`)
+# Delta Audit Report: production candidate range → current `main`
 
-> **Scope:** Comprehensive evidence-backed delta audit covering state, compatibility, and deployment changes between the latest tagged release baseline (`0.20260717.0` / commit `149ebcf`) and current `main` (`d486f33`).
-> **Audit Date:** 2026-08-10
-
-> **Status:** Supporting evidence for `PROD_UPGRADE_PLAN.md` (the operator
-> runbook). Produced early on 2026-08-10 against `main` @ `d486f33`, **before**
-> the runbook’s later fact-check revisions. Historical audit findings are kept
-> and marked **Superseded** where the tree or runbook later corrected them.
-> **Where this file and the runbook disagree, the runbook is authoritative.**
+> **Status / scope — corrected 2026-08-10.** The original analysis used
+> `0.20260717.0` / `149ebcf` as production and audited `149ebcf..d486f33`.
+> Read-only production evidence in `PROD_UPGRADE_PLAN.md` disproves that
+> premise and bounds the deployed source to **`[d2afa90, b7d8840)`**:
+> passkeys and the `AuthDO` stack are present (`GET /_auth/whoami` →
+> `enabled:true`; root serves `./static/passkey/ui.js`), but the
+> security-audit page-script extraction at `b7d8840` is not
+> (`GET /static/index-bootstrap.js` → 404; root still has inline scripts
+> and `manifest.appcache`).
+>
+> This document therefore re-classifies every item against
+> **`d2afa90` → `HEAD`**. `d2afa90` (`Merge feat/passkey-permissions
+> (#841)`, 2026-07-18) is the earliest possible production revision, so
+> this is the conservative **upper bound** on remaining delta. If the
+> operator later pins production to a later commit in the candidate
+> range, the real delta can only be smaller — only `wrangler deployments
+> list` settles the exact SHA. The inspected target source at correction
+> time is `35e3f71` (branch tip); the correction itself is
+> documentation-only.
+>
+> Historical audit findings written against `149ebcf` are **kept** and
+> marked **Superseded** where the real baseline changes the verdict.
+> **Where this file and the runbook disagree, `PROD_UPGRADE_PLAN.md` is
+> authoritative.**
+>
+> **Original scope (superseded baseline):** state/compatibility/deploy
+> delta from tag `0.20260717.0` / `149ebcf` to `main` @ `d486f33`,
+> audited 2026-08-10 before the runbook’s fact-check revisions.
 
 
 ---
