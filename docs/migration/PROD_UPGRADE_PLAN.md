@@ -58,7 +58,7 @@
 >
 > **Conclusion from probes:** production is **newer than `149ebcf`** — *after* the passkey merge (PR #841) and *before* `main`’s security-audit work that moved inline root scripts into five tracked `static/*.js` files and dropped the appcache manifest.
 >
-> ### Repo-bounded candidate revision range (exact pin still open)
+> ### Repo-bounded candidate revision range (Worker version pinned; exact git SHA still open)
 >
 > | Bound | SHA | Date (author) | Marker |
 > | :---- | :-- | :------------ | :----- |
@@ -71,7 +71,6 @@
 > vp exec wrangler deployments list --config=packages/worker/wrangler.toml --env=""
 > vp exec wrangler versions list --config=packages/worker/wrangler.toml --env=""
 > ```
-
 >
 > ### Re-scoped delta (what remains to ship — not a cutover plan)
 >
@@ -90,7 +89,6 @@
 > | Still valid (baseline-independent) | Needs rework after re-baseline |
 > | :--------------------------------- | :----------------------------- |
 > | §0.1 secret **posture** (record; do not change mid-cutover) — rewritten 2026-08-10 | Document title / Baseline Release / Target lines (assumed `149ebcf`) |
-
 > | §0.2 inspection commands (esp. **`wrangler deployments list` — now #1 priority**) | §0.3 baseline decision table (rows keyed off `149ebcf`) |
 > | §0.2.1 D1 Time Travel subsystem GO/NO-GO | Exec Summary item 3 conclusion that `AUTH=0` “eliminates” private-room hazard in prod |
 > | §0.2.2 D1 10 GB capacity gate & scale arithmetic | ~~Critical-path three-phase sequence~~ **done** — critical-path now maps §4 single-ramp |
