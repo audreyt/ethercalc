@@ -2,9 +2,8 @@ import { defineConfig } from 'vite-plus';
 import react from '@vitejs/plugin-react';
 
 // jsdom env so React Testing Library can mount components.
-// Coverage gate: 100% on Foldr, state, and all non-pure-layout components.
-// App.tsx and main.tsx are excluded — both are integration glue that require
-// full DOM+window bootstrapping (see FINDINGS.md for rationale).
+// Coverage gate: 100% on App, Foldr, state, import logic, and components.
+// main.tsx remains browser boot glue covered by the built application smoke.
 export default defineConfig({
   plugins: [react()],
   test: {
@@ -15,7 +14,6 @@ export default defineConfig({
       provider: 'istanbul',
       include: ['src/**/*.{ts,tsx}'],
       exclude: [
-        'src/App.tsx',
         'src/main.tsx',
         'src/index.ts',
       ],

@@ -44,14 +44,14 @@ Recorded while porting `multi/` (React 0.12 + LiveScript + Stylus) to
 
 ## Coverage gate exclusions
 
-`vitest.config.ts` excludes:
+`vitest.config.ts` excludes only the browser boot entry:
 
-| File                  | Reason                                                                     |
-| --------------------- | -------------------------------------------------------------------------- |
-| `src/App.tsx`         | Integration glue. Coordinates `Foldr` + reducer + components; all its logic branches are already covered in `state.ts`, `Foldr.ts`, or component tests. Direct UI testing of App would need a full router + mocked `window.prompt`/`confirm` + iframe polyfill, which duplicates coverage without new signal. Exercised via Playwright in Phase 11 (deferred; see E below). |
-| `src/main.tsx`        | `document.getElementById('root')` + `createRoot` boot code. Requires a real browser (iframe contentDocument can't be faked). Covered by Phase-11 Playwright smoke. |
+| File           | Reason |
+| -------------- | ------ |
+| `src/main.tsx` | `document.getElementById('root')` + `createRoot` boot code. Covered by the built-application browser smoke. |
 
-All other files hit 100% across lines / branches / functions / statements.
+`App.tsx`, import orchestration, and all components are included in the 100%
+line / branch / function / statement gate.
 
 ## Deliberate legacy-bug preservation
 
@@ -105,6 +105,8 @@ All other files hit 100% across lines / branches / functions / statements.
 | `test/Buttons.test.tsx`             | `<Buttons />` — enable/disable, click handlers.               |
 | `test/SheetFrame.test.tsx`          | `<SheetFrame />` — postMessage timing, focus, mount/unmount. |
 | `test/TabBar.test.tsx`              | `<TabBar />` — Radix integration, src composition, clamping. |
+| `test/App.test.tsx`                 | `<App />` integration — inactive-tab rename targeting, import serialization, polling, browser dialogs, and read-only chrome. |
+| `test/importWorkbook.test.ts`       | Browser SheetJS loading, SocialCalc/formula conversion, max-index allocation, append-only PUT/TOC flow, caps, and rejection paths. |
 
 ## Dependencies added
 

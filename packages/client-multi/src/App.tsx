@@ -1,11 +1,6 @@
-/* istanbul ignore file — integration glue; exercised via Vite dev / Playwright
- * (see FINDINGS.md for rationale). All branching logic that matters for
- * correctness lives in `./state.ts`, `./Foldr.ts`, and `./components/*`,
- * each of which is covered to 100%.
- */
-
 import { useCallback, useReducer, useRef, type FC } from 'react';
 import { HackFoldr } from './Foldr.ts';
+import { appendImportedWorkbook } from './importWorkbook.ts';
 import { Buttons } from './components/Buttons.tsx';
 import { TabBar } from './components/TabBar.tsx';
 import {
@@ -23,9 +18,11 @@ export interface AppProps {
   readonly suffix: string;
   readonly index: string;
   readonly isReadOnly: boolean;
-  /** Test seam — lets unit tests inject a deterministic prompt/confirm. */
-  readonly prompt?: (message: string, seed: string) => string | null;
-  readonly confirm?: (message: string) => boolean;
+  /** Test seams for browser dialogs and same-origin requests. */
+  readonly prompt?: ((message: string, seed: string) => string | null) | undefined;
+  readonly confirm?: ((message: string) => boolean) | undefined;
+  readonly alert?: ((message: string) => void) | undefined;
+  readonly fetch?: typeof fetch | undefined;
 }
 
 export const App: FC<AppProps> = ({
@@ -36,9 +33,12 @@ export const App: FC<AppProps> = ({
   isReadOnly,
   prompt: promptImpl,
   confirm: confirmImpl,
+  alert: alertImpl,
+  fetch: fetchImpl,
 }) => {
   const [state, dispatch] = useReducer(reducer, foldr, createInitialState);
   const firstFocusUsed = useRef(false);
+  const importQueue = useRef<Promise<void>>(Promise.resolve());
   const onFirstFocus = useCallback(() => {
     firstFocusUsed.current = true;
   }, []);
@@ -64,8 +64,8 @@ export const App: FC<AppProps> = ({
     if (idx !== clampedIndex) {
       handleChange(idx);
     }
-    const current = foldr.at(idx);
-    const seed = current.title ?? '';
+    const current = foldr.rows[idx]!;
+    const seed = current.title;
     const promptFn = promptImpl ?? ((m, s) => window.prompt(m, s));
     const title = promptFn('Rename Sheet', seed);
     if (!title) return;
@@ -75,12 +75,26 @@ export const App: FC<AppProps> = ({
   };
 
   const handleDelete = async (): Promise<void> => {
-    const current = foldr.at(clampedIndex);
-    const title = current.title ?? '';
+    const current = foldr.rows[clampedIndex]!;
+    const title = current.title;
     const confirmFn = confirmImpl ?? ((m) => window.confirm(m));
     if (!confirmFn(`Really delete?\n${title}`)) return;
     await foldr.deleteAt(clampedIndex);
     dispatch({ type: 'bumpRev' });
+  };
+  const handleImport = (file: File): void => {
+    importQueue.current = importQueue.current.then(async () => {
+      await foldr.refreshToc();
+      const ok = await appendImportedWorkbook({
+        foldr,
+        index,
+        basePath,
+        file,
+        fetchImpl: fetchImpl ?? fetch.bind(globalThis),
+        alertImpl: alertImpl ?? ((message) => window.alert(message)),
+      });
+      if (ok) dispatch({ type: 'bumpRev+setActive', index: foldr.lastIndex() });
+    });
   };
 
   const canDelete = foldr.size() > 1;
@@ -106,6 +120,7 @@ export const App: FC<AppProps> = ({
         <Buttons
           canDelete={canDelete}
           onAdd={handleAdd}
+          onImport={handleImport}
           onRename={handleRename}
           onDelete={handleDelete}
         />

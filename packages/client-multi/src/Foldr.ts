@@ -135,12 +135,31 @@ export class HackFoldr {
     }
   }
 
-  /** Append a new row (writes to server, then pushes locally). */
+  /** Append a new row, preserving the legacy local-first error semantics. */
   async push(row: FoldrRow): Promise<this> {
     if (!isSafeMultiSheetLink(row.link)) return this;
     row.title = row.title.slice(0, MAX_MULTI_SHEET_TITLE_LENGTH);
     await this.initIfNeeded(row);
     const res = await this.postCsv(row.link, row.title);
+    this.finishPush(row, res);
+    return this;
+  }
+
+  /**
+   * Append a TOC row only when the server accepts it. Import uses this checked
+   * variant so a rejected TOC POST cannot be reported as a successful import.
+   */
+  async pushChecked(row: FoldrRow): Promise<boolean> {
+    if (!isSafeMultiSheetLink(row.link)) return false;
+    row.title = row.title.slice(0, MAX_MULTI_SHEET_TITLE_LENGTH);
+    await this.initIfNeeded(row);
+    const res = await this.postCsv(row.link, row.title);
+    if (res === null) return false;
+    this.finishPush(row, res);
+    return true;
+  }
+
+  private finishPush(row: FoldrRow, res: FoldrPushResponse | null): void {
     const command = extractCommand(res);
     if (typeof command === 'string') {
       const m = /paste A(\d+) all/.exec(command);
@@ -149,7 +168,6 @@ export class HackFoldr {
       }
     }
     this.rows.push(row);
-    return this;
   }
 
   /**
