@@ -1603,40 +1603,6 @@ The following seven items have been evaluated and categorized:
 
 ---
 
-## §9 Go / No-Go Checklist — **SUPERSEDED PENDING RE-BASELINE**
-
-> **SUPERSEDED PENDING RE-BASELINE (2026-08-10).** Items that gate or assume the three-phase `149ebcf` → Phase1 → Phase2(`AUTH=0`) → Phase3 sequence are void. **Item 1 is now the single highest-priority action**, with emphasis on `wrangler deployments list` / `versions list` to pin the real production SHA before any cutover redesign. Item 9’s `AUTH=0` soak justification is actively dangerous if applied to current production. See top-of-doc STOP banner.
-
-This checklist has nine conditions and spans the full cutover. Before executing Phase 1 (`npx wrangler deploy --env=""`), items 1–7 MUST be satisfied; items 5 and 6 are already complete and therefore intentionally checked below. Item 8 gates the Phase 2 upload, and item 9 gates Phase 3.
-### 9.1 Manual-Attention Calibration
-
-The audit unit is one `[OPERATOR-VERIFY]` site, numbered §3.2 check, §5 probe
-(`10a` and `10b` counted separately), actionable §7 check, or §9 condition:
-**47 checks total — 5 ALREADY AUTOMATED, 28 PARTIALLY AUTOMATED, and 14
-GENUINELY MANUAL**. Thus **33/47 are automation-backed**, but 28 of those still
-add a distinct live-artifact, live-binding, edge, or deployment assertion.
-`ALREADY AUTOMATED` items may be skimmed after their named gate is green;
-`PARTIALLY AUTOMATED` items must retain the stated live delta; the remaining
-14 demand credentials, backups, operational judgment, soak observation, or the
-self-host `uniqueKey` volume check (§7.2.1).
-
-
-- [ ] **1. Baseline Capture, Subsystem & Capacity Verification**: `wrangler deployments list`, `wrangler versions list`, and `wrangler d1 info ethercalc_rooms --json` executed and recorded. Confirm (a) D1 Time Travel availability via `version: "production"` when visible, or via successful `wrangler d1 time-travel info` if the pinned Wrangler omits `version` from `d1 info` output (§0.2.1), and (b) `database_size` headroom against the hard 10 GB ceiling per §0.2.2 pass criteria (&lt; 5 GiB pass; 5–&lt;8 GiB conditional sign-off; ≥ 8 GiB or missing = NO-GO).
-- [ ] **2. Preflight Gates Green Against Final Tree (9/9 Runnable Gates Verified; 2 Docker Smokes Pending CI)**: All 9 locally-runnable preflight gates (`vp run typecheck`, `vp lint`, `vp run test`, worker `test:node` & `test:workers`, worker 100% coverage gate `test:coverage`, `build:assets` + `e2e#test`, `build:dry`, `check-helm-hardening.sh`, and `ratchet-verify.sh`) passed 100% green against the final tree state including the `rooms.ts` command-rejection status propagation fix (§1.2, `docs/migration/PREFLIGHT_RESULTS.md`). The 2 Docker smoke gates (`./scripts/smoke-selfhost.sh`, `./scripts/smoke-proxy.sh`) remain unverified locally due to missing local `docker compose` CLI subcommand and require CI execution before final cutover.
-  > **ALREADY AUTOMATED — inspect gate status rather than re-performing its assertions.** The root/worker/client gates run the named test and coverage commands; CI `test`, `e2e`, and `helm-lint` execute their corresponding suites, while CI `build:selfhost` runs both Docker smokes (`.github/workflows/ci.yml:17-235`). Once those required jobs are green on the final tree, repeating the same local assertions adds no deployment evidence.
-- [ ] **3. Secrets Provisioned in Production**: `wrangler secret list` confirms `ETHERCALC_KEY` and `ETHERCALC_MIGRATE_TOKEN` are active in Cloudflare Secrets (§0.1).
-- [ ] **4. D1 Database Export & Time Travel Bookmark Recorded**: `npx wrangler d1 export ethercalc_rooms --remote --output=...` executed (required `--output` flag), account plan confirmed (30d Paid / 7d Free retention), and Time Travel bookmark timestamp captured (§2.1, §2.1.1, §6.4). **Budget real wall-clock and disk** from the live `database_size` — multi-GB exports are neither instant nor small; **`[OPERATOR-VERIFY]`** actual duration. If the `.sql` artifact may exceed the **5 GB** `d1 execute --file` import ceiling, confirm Time Travel is the whole-DB restore path before relying on the dump for rollback.
-- [x] **5. Phase 1 Branch (Forward-Fix Artifact) Prepared**: `release/phase1-lifecycle` branch built, typechecks, and dry-runs cleanly (§4.2, §6.1, and §8 item 1; verified via `vp run @ethercalc/worker#typecheck` and `vp run @ethercalc/worker#build:dry`).
-  > **ALREADY AUTOMATED — this preparation condition adds no live check.** The named worker `typecheck` and Wrangler `build:dry` gates compile and bundle the Phase 1 tree; their recorded green outputs are the condition itself. Deployment and soak are intentionally separate items 8 and 9.
-- [x] **6. PR 4 Command-Rejection Propagation Landed and Verified for Phase 2**: `POST /_/:room` returns the RoomDO status and body for every non-2xx verdict, matching `PUT /_/:room` at `packages/worker/src/routes/rooms.ts:355-369`. Verified via route contract tests `POST /_/:room command mutations propagate a DO 413 sheet-limit verdict` and `POST /_/:room returns 202 command echo on successful DO dispatch` in `packages/worker/test/routes-rooms.node.test.ts` (52 node files / 1520 tests; 13 workers-pool files / 196 tests; §8 item 5; §10 item 3).
-  > **ALREADY AUTOMATED — skim after the worker coverage gate.** `routes-rooms.node.test.ts:810-838` asserts exact 413 propagation plus the 202 success path under worker `test:coverage` (CI `test`), while `room.node.test.ts:1110-1122` asserts RoomDO rejection and no write. This checklist line contains no additional live assertion.
-- [ ] **7. Staging Rehearsal Passed**: Phase 1, Phase 2, and Phase 3 deployed and verified on `https://ethercalc-staging.audreyt.workers.dev` (§§3.1–3.2).
-  > **PARTIALLY AUTOMATED** — Every §3.2 behavior has a named local guard, and root test `nightly staging validation bypasses the generated production config` pins the nightly dry-run command. Only the rehearsal proves all three deployed artifacts, staging bindings/RP, existing DO state, and edge behavior together; use the per-item §3.2 deltas rather than treating local green as a substitute.
-- [ ] **8. Phase 1 Deployed & Soaked Before Phase 2 Upload**: Phase 1 (`npx wrangler deploy`) executed and verified stable before uploading the Phase 2 gradual release (§4.2 and §4.3).
-- [ ] **9. Phase 2 at 100% before Phase 3 (`ETHERCALC_AUTH="1"`) — correctness + rollback**: Phase 2 MUST reach **100%** (no residual Phase 1 room pin) and soak before enabling passkeys (§4.3, §4.3.1, §4.4). **Two independent justifications — do not relax on either alone:** (a) **rollback safety** (original): `AUTH=0` ensures no private rooms exist while major code soaks, so Phase 2→Phase 1 rollback stays hazard-free; (b) **mixed-version correctness** (§4.3.1): `POST /_do/init-private` is absent on Phase 1 DOs and returns **501** verbatim to create/copy callers (`rooms.ts:232-234`, `692-694`), so enabling auth while any room is still Phase 1-pinned makes private create/copy user-visibly broken for those ids. (`GET /_do/access` 501 is **not** an authz hole — UX redirect hints only; RoomDO remains the sole boundary; DELETE is fail-closed.)
-
----
-
 ## §10 User-Visible Behavior Changes Summary
 
 Operator-facing summary for this cutover. Each entry states whether it is a **change this ship introduces** or an **already-live mechanic** recorded here because operators still need it during cutover — do not announce already-live behavior as new.
@@ -2130,4 +2096,39 @@ Optional predeclared operator IP only: append `and not ip.src eq x.x.x.x`. Actio
 - **SECONDARY POINT OF NO RETURN**:
   > **The moment `ETHERCALC_AUTH = "1"` is activated in Phase 3 and the first user creates a private room (`POST /_/private`) OR completes a passkey registration (`POST /_auth/register-complete`).**
   - Past this point, rolling Phase 3 back to Phase 2 causes private room owner lockout (resolved immediately by re-enabling Phase 3), while rolling back to Phase 1 / Forward-Fix bundle causes world-readability unless WAF URL rules block affected room paths.
+
+
+### A.3 Old §9 — Three-phase Go/No-Go checklist
+
+> **SUPERSEDED PENDING RE-BASELINE (2026-08-10).** Items that gate or assume the three-phase `149ebcf` → Phase1 → Phase2(`AUTH=0`) → Phase3 sequence are void. **Item 1 is now the single highest-priority action**, with emphasis on `wrangler deployments list` / `versions list` to pin the real production SHA before any cutover redesign. Item 9’s `AUTH=0` soak justification is actively dangerous if applied to current production. See top-of-doc STOP banner.
+
+This checklist has nine conditions and spans the full cutover. Before executing Phase 1 (`npx wrangler deploy --env=""`), items 1–7 MUST be satisfied; items 5 and 6 are already complete and therefore intentionally checked below. Item 8 gates the Phase 2 upload, and item 9 gates Phase 3.
+### 9.1 Manual-Attention Calibration
+
+The audit unit is one `[OPERATOR-VERIFY]` site, numbered §3.2 check, §5 probe
+(`10a` and `10b` counted separately), actionable §7 check, or §9 condition:
+**47 checks total — 5 ALREADY AUTOMATED, 28 PARTIALLY AUTOMATED, and 14
+GENUINELY MANUAL**. Thus **33/47 are automation-backed**, but 28 of those still
+add a distinct live-artifact, live-binding, edge, or deployment assertion.
+`ALREADY AUTOMATED` items may be skimmed after their named gate is green;
+`PARTIALLY AUTOMATED` items must retain the stated live delta; the remaining
+14 demand credentials, backups, operational judgment, soak observation, or the
+self-host `uniqueKey` volume check (§7.2.1).
+
+
+- [ ] **1. Baseline Capture, Subsystem & Capacity Verification**: `wrangler deployments list`, `wrangler versions list`, and `wrangler d1 info ethercalc_rooms --json` executed and recorded. Confirm (a) D1 Time Travel availability via `version: "production"` when visible, or via successful `wrangler d1 time-travel info` if the pinned Wrangler omits `version` from `d1 info` output (§0.2.1), and (b) `database_size` headroom against the hard 10 GB ceiling per §0.2.2 pass criteria (&lt; 5 GiB pass; 5–&lt;8 GiB conditional sign-off; ≥ 8 GiB or missing = NO-GO).
+- [ ] **2. Preflight Gates Green Against Final Tree (9/9 Runnable Gates Verified; 2 Docker Smokes Pending CI)**: All 9 locally-runnable preflight gates (`vp run typecheck`, `vp lint`, `vp run test`, worker `test:node` & `test:workers`, worker 100% coverage gate `test:coverage`, `build:assets` + `e2e#test`, `build:dry`, `check-helm-hardening.sh`, and `ratchet-verify.sh`) passed 100% green against the final tree state including the `rooms.ts` command-rejection status propagation fix (§1.2, `docs/migration/PREFLIGHT_RESULTS.md`). The 2 Docker smoke gates (`./scripts/smoke-selfhost.sh`, `./scripts/smoke-proxy.sh`) remain unverified locally due to missing local `docker compose` CLI subcommand and require CI execution before final cutover.
+  > **ALREADY AUTOMATED — inspect gate status rather than re-performing its assertions.** The root/worker/client gates run the named test and coverage commands; CI `test`, `e2e`, and `helm-lint` execute their corresponding suites, while CI `build:selfhost` runs both Docker smokes (`.github/workflows/ci.yml:17-235`). Once those required jobs are green on the final tree, repeating the same local assertions adds no deployment evidence.
+- [ ] **3. Secrets Provisioned in Production**: `wrangler secret list` confirms `ETHERCALC_KEY` and `ETHERCALC_MIGRATE_TOKEN` are active in Cloudflare Secrets (§0.1).
+- [ ] **4. D1 Database Export & Time Travel Bookmark Recorded**: `npx wrangler d1 export ethercalc_rooms --remote --output=...` executed (required `--output` flag), account plan confirmed (30d Paid / 7d Free retention), and Time Travel bookmark timestamp captured (§2.1, §2.1.1, §6.4). **Budget real wall-clock and disk** from the live `database_size` — multi-GB exports are neither instant nor small; **`[OPERATOR-VERIFY]`** actual duration. If the `.sql` artifact may exceed the **5 GB** `d1 execute --file` import ceiling, confirm Time Travel is the whole-DB restore path before relying on the dump for rollback.
+- [x] **5. Phase 1 Branch (Forward-Fix Artifact) Prepared**: `release/phase1-lifecycle` branch built, typechecks, and dry-runs cleanly (§4.2, §6.1, and §8 item 1; verified via `vp run @ethercalc/worker#typecheck` and `vp run @ethercalc/worker#build:dry`).
+  > **ALREADY AUTOMATED — this preparation condition adds no live check.** The named worker `typecheck` and Wrangler `build:dry` gates compile and bundle the Phase 1 tree; their recorded green outputs are the condition itself. Deployment and soak are intentionally separate items 8 and 9.
+- [x] **6. PR 4 Command-Rejection Propagation Landed and Verified for Phase 2**: `POST /_/:room` returns the RoomDO status and body for every non-2xx verdict, matching `PUT /_/:room` at `packages/worker/src/routes/rooms.ts:355-369`. Verified via route contract tests `POST /_/:room command mutations propagate a DO 413 sheet-limit verdict` and `POST /_/:room returns 202 command echo on successful DO dispatch` in `packages/worker/test/routes-rooms.node.test.ts` (52 node files / 1520 tests; 13 workers-pool files / 196 tests; §8 item 5; §10 item 3).
+  > **ALREADY AUTOMATED — skim after the worker coverage gate.** `routes-rooms.node.test.ts:810-838` asserts exact 413 propagation plus the 202 success path under worker `test:coverage` (CI `test`), while `room.node.test.ts:1110-1122` asserts RoomDO rejection and no write. This checklist line contains no additional live assertion.
+- [ ] **7. Staging Rehearsal Passed**: Phase 1, Phase 2, and Phase 3 deployed and verified on `https://ethercalc-staging.audreyt.workers.dev` (§§3.1–3.2).
+  > **PARTIALLY AUTOMATED** — Every §3.2 behavior has a named local guard, and root test `nightly staging validation bypasses the generated production config` pins the nightly dry-run command. Only the rehearsal proves all three deployed artifacts, staging bindings/RP, existing DO state, and edge behavior together; use the per-item §3.2 deltas rather than treating local green as a substitute.
+- [ ] **8. Phase 1 Deployed & Soaked Before Phase 2 Upload**: Phase 1 (`npx wrangler deploy`) executed and verified stable before uploading the Phase 2 gradual release (§4.2 and §4.3).
+- [ ] **9. Phase 2 at 100% before Phase 3 (`ETHERCALC_AUTH="1"`) — correctness + rollback**: Phase 2 MUST reach **100%** (no residual Phase 1 room pin) and soak before enabling passkeys (§4.3, §4.3.1, §4.4). **Two independent justifications — do not relax on either alone:** (a) **rollback safety** (original): `AUTH=0` ensures no private rooms exist while major code soaks, so Phase 2→Phase 1 rollback stays hazard-free; (b) **mixed-version correctness** (§4.3.1): `POST /_do/init-private` is absent on Phase 1 DOs and returns **501** verbatim to create/copy callers (`rooms.ts:232-234`, `692-694`), so enabling auth while any room is still Phase 1-pinned makes private create/copy user-visibly broken for those ids. (`GET /_do/access` 501 is **not** an authz hole — UX redirect hints only; RoomDO remains the sole boundary; DELETE is fail-closed.)
+
+---
 
