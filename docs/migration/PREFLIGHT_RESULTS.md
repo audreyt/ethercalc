@@ -12,8 +12,9 @@
 > Runbook §1.2 pinned expectations updated to match. Supporting evidence for
 > `PROD_UPGRADE_PLAN.md` — **the runbook is authoritative** for procedure and
 > expected contracts; this file is the pass/fail ledger only. Mutation-ratchet
-> (Gate 7) figures were **not** re-run in this pass (~13 min); prior end-to-end
-> PASS retained pending a dedicated re-measure if floors must be refreshed.
+> (Gate 7) was re-measured end-to-end on 2026-08-10 at tip `327fa3d`
+> (`scripts/ratchet-verify.sh`, exit 0, 828s / ~13m48s); worker remains the
+> narrowest pass at 90.03% (+0.03 above the 90% floor).
 
 
 ---
@@ -28,7 +29,7 @@ Live cutover requires preflight gates pass green on the ship tree before the **�
 - **NOT RUNNABLE HERE (Environmental / CI-Only Tool Missing):** 2 / 11 gates (Self-Host & Proxy Docker Smokes due to missing `docker compose` CLI subcommand in execution environment context; covered by CI)
 
 **Verdict Statement:**
-**All locally-runnable gates pass cleanly against the measured tip.** Re-verification of Gate 4 (worker `test:node` 1526 tests & `test:workers` 197 tests) and Gate 4b (worker 100% coverage gate `test:coverage`) at tip `b18847e` confirms 100% pass status with the updated counts. Prior green status for Gate 3 (root test script + all package test suites + Playwright e2e), Gate 5 (`build:assets` + Playwright e2e), Gate 1 (typecheck), Gate 2 (lint), Gate 6 (`build:dry`), Gate 7 (mutation ratchet — not re-run this pass), and Gate 10 (`check-helm-hardening.sh`) is retained. Docker smokes remain environmental CI-only gates.
+**All locally-runnable gates pass cleanly against the measured tip.** Re-verification of Gate 4 (worker `test:node` 1526 tests & `test:workers` 197 tests) and Gate 4b (worker 100% coverage gate `test:coverage`) at tip `b18847e` confirms 100% pass status with the updated counts. Prior green status for Gate 3 (root test script + all package test suites + Playwright e2e), Gate 5 (`build:assets` + Playwright e2e), Gate 1 (typecheck), Gate 2 (lint), Gate 6 (`build:dry`), and Gate 10 (`check-helm-hardening.sh`) is retained. Gate 7 (mutation ratchet) was freshly re-measured at tip `327fa3d` on 2026-08-10 (exit 0; worker 90.03% / +0.03 vs 90% floor). Docker smokes remain environmental CI-only gates.
 
 ## Summary Matrix
 
@@ -41,7 +42,7 @@ Live cutover requires preflight gates pass green on the ship tree before the **�
 | 4b | `vp run @ethercalc/worker#test:coverage` | **PASS** | 100% coverage enforced across Statements (2706/2706), Branches (1936/1936), Functions (298/298), and Lines (2416/2416) in `@ethercalc/worker`. | ~3.2s | **MATCH** (runbook §1.2 pins these four totals; drift on add is re-verify, not auto NO-GO) |
 | 5 | `vp run build:assets` && `vp run @ethercalc/e2e#test` | **PASS** | `build:assets` PASS; `e2e#test` PASS (with `PLAYWRIGHT_BROWSERS_PATH=/tmp/pw-browsers`). All 47 Playwright specs pass. | 25.09s | **MATCH** (when run with writeable browser cache path) |
 | 6 | `vp run @ethercalc/worker#build:dry` | **PASS** | Wrangler deploy dry-run succeeds (with `HOME=/tmp XDG_CONFIG_HOME=/tmp/config`). | 0.88s | **MATCH** (when run with writeable config path) |
-| 7 | `scripts/ratchet-verify.sh` | **PASS** (prior full run; **not re-run this pass**) | End-to-end Stryker runs completed for all six audited packages. All meet their `break` floors; script exit code 0. Worker narrowest pass at 90.02% vs 90%. Re-run needed if mutation floors must reflect post-`c789249` tests (~13 min). | 812.15s (~13m32s) prior | **MATCH** (floors unchanged; scores not re-measured at this tip) |
+| 7 | `scripts/ratchet-verify.sh` | **PASS** (fresh 2026-08-10 @ `327fa3d`) | End-to-end Stryker for all six audited packages (`shared`, `socketio-shim`, `migrate`, `oracle-harness`, `client`, `worker`). Exit 0. Scores: shared 99.69% / 99 (+0.69); socketio-shim 84.68% / 84 (+0.68); migrate 90.38% / 90 (+0.38); oracle-harness 83.46% / 83 (+0.46); client 77.61% / 77 (+0.61); **worker 90.03% / 90 (+0.03, narrowest)**. All six packages sit <1pp above their break floors. `robots.ts` 100% (9 killed). | 828s (~13m48s) | **MATCH** (floors unchanged; scores re-measured post-`c789249` at tip `327fa3d`) |
 | 8 | `./scripts/smoke-selfhost.sh` | **NOT RUNNABLE HERE** | Environmental (`docker: unknown command: docker compose` + EPERM on `~/.docker/config.json`). | 0.42s | **DISCREPANCY** (Expected `[smoke] OK`; Actual `docker compose` CLI missing) |
 | 9 | `./scripts/smoke-proxy.sh` | **NOT RUNNABLE HERE** | Environmental (`unknown shorthand flag: 'f' in -f` via missing `docker compose` + EPERM on `~/.docker/config.json`). | 0.50s | **DISCREPANCY** (Expected `[smoke-proxy] OK`; Actual `docker compose` CLI missing) |
 | 10 | `bash scripts/check-helm-hardening.sh` | **PASS** | `[helm-hardening] OK` (helm CLI present at `/opt/homebrew/bin/helm`) | 0.31s | **MATCH** |
@@ -231,57 +232,12 @@ env.ETHERCALC_ORIGIN ("https://ethercalc.net")       Environment Variable
 
 ---
 ### Gate 7: Mutation Ratchet Verification — End-to-End Result
-- **Command Executed:** `PATH="$PWD/node_modules/.bin:$PATH" scripts/ratchet-verify.sh` from detached disposable worktree `.worktrees/ratchet-run`
+- **Command Executed:** `PATH="$PWD/node_modules/.bin:$PATH" scripts/ratchet-verify.sh` on ship-tree tip `327fa3da24415ae0505f7b4e92f8564702d94537` (branch `feat/prod-upgrade-runbook`)
 - **Status:** **PASS**
-- **Wall-Clock Duration:** 812.15s (~13m32s)
+- **Wall-Clock Duration:** 828s (~13m48s)
+- **Date / Tip:** 2026-08-10 · `327fa3d` (`327fa3da24415ae0505f7b4e92f8564702d94537`)
 - **Classification:** **FRESH END-TO-END MEASUREMENT; SCRIPT EXIT CODE 0**.
-- **Exact Root Cause:**  
-  In `scripts/ratchet-verify.sh`, `read_score()` originally attempted to extract the mutation score using `jq -r '.. | .mutationScore? // empty' "$json"`.
-  Stryker v8 JSON reports (`schemaVersion: "2"`) do **not** store a top-level `.mutationScore` or `.summary` property. Instead, `mutation.json` maps file paths under `.files` to an array of mutant objects:
-  ```json
-  {
-    "schemaVersion": "2",
-    "thresholds": { "high": 80, "low": 70, "break": 90 },
-    "files": {
-      "src/room.ts": {
-        "language": "typescript",
-        "source": "...",
-        "mutants": [
-          { "id": "0", "mutatorName": "BlockStatement", "status": "Killed", ... }
-        ]
-      }
-    }
-  }
-  ```
-  Because `.mutationScore` does not exist anywhere in the report schema, `jq` evaluated to an empty string. `scripts/ratchet-verify.sh` checked `[ -z "$score" ]` and reported `parse error` for every package, exiting with status code 2.
-
-- **Corrected `read_score()` Implementation (JQ and Node):**
-  ```bash
-  # JQ Branch
-  jq -r '
-    [.files[]?.mutants[]?] as $m |
-    ($m | map(select(.status == "Killed" or .status == "Timeout")) | length) as $d |
-    ($m | map(select(.status == "Survived" or .status == "NoCoverage")) | length) as $u |
-    if ($d + $u) == 0 then empty else ($d / ($d + $u) * 100) end
-  ' "$json"
-
-  # Node Fallback Branch
-  node -e '
-    const d = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
-    let det = 0, undet = 0;
-    for (const f of Object.values(d.files || {})) {
-      for (const m of f.mutants || []) {
-        if (m.status === "Killed" || m.status === "Timeout") det++;
-        else if (m.status === "Survived" || m.status === "NoCoverage") undet++;
-      }
-    }
-    const tot = det + undet;
-    if (tot > 0) {
-      process.stdout.write(String((det / tot) * 100));
-    }
-  ' "$json"
-  ```
-
+- **Packages audited** (script default `PACKAGES` list): `shared`, `socketio-shim`, `migrate`, `oracle-harness`, `client`, `worker`.
 - **Fresh Per-Package Measured vs. Break Floor Audit:**
 
 | Package | Measured Score (Raw) | Displayed / Formatted | Break Floor | Delta | Status |
@@ -291,18 +247,18 @@ env.ETHERCALC_ORIGIN ("https://ethercalc.net")       Environment Variable
 | `migrate` | 90.38054968287527% | 90.38% | 90% | +0.38 | PASS |
 | `oracle-harness` | 83.45771144278606% | 83.46% | 83% | +0.46 | PASS |
 | `client` | 77.6056338028169% | 77.61% | 77% | +0.61 | PASS |
-| `worker` | 90.01956947162427% | 90.02% | 90% | +0.02 | PASS |
+| `worker` | 90.03419638495359% | 90.03% | 90% | **+0.03** | PASS |
 
 All 6 audited packages meet or exceed their `stryker.conf.json` `thresholds.break` floors. Zero packages dropped below floor. The script exited 0.
 
+- **Headroom flag (every package <1pp above floor):** shared +0.69, socketio-shim +0.68, migrate +0.38, oracle-harness +0.46, client +0.61, **worker +0.03 (narrowest)**. Any non-trivial untested mutant surface in these packages can flip the gate; worker remains the production risk edge.
+- **Post-`c789249` robots surface:** `packages/worker/src/lib/robots.ts` measured **100.00%** (9 killed / 0 survived / 0 no-cov). The worker package score moved only +0.01pp vs the prior 90.02% measurement (90.019… → 90.034…); margin above the 90% floor is still only **+0.03** percentage points.
 - **Impact on CI (`.github/workflows/ci.yml` & `nightly.yml`):**  
   **CI IS UNAFFECTED.** `scripts/ratchet-verify.sh` is a local operator audit script. CI workflows run `vp run --filter "./packages/$pkg" mutation` directly. Stryker CLI enforces `thresholds.break` natively during execution and returns exit status 1 if a score drops below threshold.
-
 - **Live-gate status:**  
-  Gate 7 was previously exercised end to end and passed (exit 0; all six packages above break floors). **Not re-run in this ledger re-baseline** (~13 min wall-clock); figures above remain the last full measurement. If worker tests added since that run could move the mutation score, re-run `scripts/ratchet-verify.sh` before treating Gate 7 as freshly proven. Live cutover still requires §1 preflight green before the §4 single gradual ramp (superseded three-phase “Go/No-Go item 2” lives only in Appendix A.3).
-
+  Gate 7 re-measured end-to-end at tip `327fa3d` on 2026-08-10 (exit 0; 828s). All six packages above break floors; worker remains the narrowest pass at **90.03% (+0.03 above 90%)**. Live cutover still requires §1 preflight green before the §4 single gradual ramp (superseded three-phase “Go/No-Go item 2” lives only in Appendix A.3).
 - **Comparison With Previously Cached Measurements:**  
-  Every freshly measured score rounds to the same two-decimal value as the cached report: shared 99.69%, socketio-shim 84.68%, migrate 90.38%, oracle-harness 83.46%, client 77.61%, and worker 90.02%. There is no material score difference. In particular, the recent worker tests did **not** move the rounded worker score upward: it remains 90.02%, only +0.02 above the 90% floor. The older 90.21% value in `AGENTS.md` remains stale relative to both the cached and fresh runs.
+  shared 99.69%, socketio-shim 84.68%, migrate 90.38%, oracle-harness 83.46%, and client 77.61% are unchanged at two-decimal rounding versus the prior full run. Worker edged from 90.02% → 90.03% (raw 90.019… → 90.034…), still only +0.03 above the 90% floor after the `c789249` robots restoration. The older 90.21% value in `AGENTS.md` remains stale relative to both measurements.
 ---
 
 ### Gate 8: Self-Host Docker Smoke Test
