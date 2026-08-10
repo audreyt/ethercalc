@@ -900,23 +900,28 @@ For self-hosted deployments running EtherCalc via Docker Compose or Kubernetes/H
 ### 7.1 Container Image Bump & Workerd Compatibility Lockstep
 
 1. Update image tag from `ethercalc:0.20260717.0` to `ethercalc:main` (or newest tag).
-2. **Compatibility Date Lockstep Check**:
+2. **Base Image & Workerd Bundle Verification (`[SOURCE-VERIFIED]`)**:
+   - `Dockerfile:22` pins base image `FROM oven/bun:1.3.14`.
+   - `Dockerfile:60` builds the standalone ES module bundle via `scripts/build-workerd-bundle.sh`, which runs `bunx wrangler deploy --dry-run --outdir=packages/worker/workerd/worker/` to produce `packages/worker/workerd/worker/index.js` alongside checked-in `packages/worker/workerd/config.capnp`.
+3. **Compatibility Date Lockstep & Pinned Version Check (`[SOURCE-VERIFIED]`)**:
    - `packages/worker/wrangler.toml:3` specifies `compatibility_date = "2026-07-21"`.
    - `packages/worker/workerd/config.capnp:61` specifies `compatibilityDate = "2026-07-14"`.
-   - Standalone `workerd` binary releases enforce that `compatibilityDate` must be `<= workerd release date`. Operator MUST verify host `workerd` binary version is dated `>= 2026-07-14`.
+   - Standalone `workerd` binary releases enforce that `compatibilityDate` must be `<= workerd release date`.
+   - **Lockfile & Binary Resolution Verification**: `bun.lock` resolves root/wrangler dependency `workerd@1.20260714.1` (and platform binaries `@cloudflare/workerd-*-*@1.20260714.1`) via `wrangler@4.112.0`. The version string `1.20260714.1` decodes to release date `2026-07-14`, which matches `compatibilityDate = "2026-07-14"` exactly.
+   - **Entrypoint Binary Resolution**: `bin/workerd-entrypoint.sh:48-55` explicitly targets wrangler's pinned dependency `$APP_ROOT/node_modules/wrangler/../workerd/bin/workerd` (`1.20260714.1`) to ensure runtime execution does not pick up older nested copies (such as `@cloudflare/vitest-pool-workers`'s `1.20260701.1`). Operator host `workerd` binary MUST be dated `>= 2026-07-14` (pinned release: `1.20260714.1`).
 
 ### 7.2 Durable Object On-Disk Storage Backup
 
 Before restarting containers, back up the local DO storage directory.
 
-- **Docker Compose Track**:
+- **Docker Compose Track (`[SOURCE-VERIFIED]`)**:
   - The shipped compose file mounts DO storage at `./ethercalc-data:/data` (`docker-compose.yml:37`).
-  - Container entrypoint (`bin/workerd-entrypoint.sh:25-27`) writes SQLite files under `$DATA_DIR/do` (`/data/do`).
+  - Container entrypoint (`bin/workerd-entrypoint.sh:25-27`) writes SQLite files under `$DATA_DIR/do` (`/data/do`), where `workerd serve` stores per-DO SQLite databases under `/data/do/<uniqueKey>/`.
   - **Host Backup Command**:
     ```bash
     tar -czvf ethercalc-do-backup-$(date +%Y%m%d_%H%M%S).tar.gz ./ethercalc-data
     ```
-- **Kubernetes / Helm Track**:
+- **Kubernetes / Helm Track (`[SOURCE-VERIFIED]`)**:
   - `helm/values.yaml:80-90` configures `persistence.enabled: true` (`accessMode: ReadWriteOnce`, `size: 10Gi`).
   - `helm/templates/deployment.yaml:117-129` binds the PVC `persistentVolumeClaim: claimName: {{ include "ethercalc.pvcName" . }}` to `mountPath: /data`.
   - **Cluster Backup Procedure**: Take a volume snapshot of the backing PersistentVolumeClaim (`ethercalc-data`), or stream an archive out via `kubectl exec`:
@@ -926,8 +931,7 @@ Before restarting containers, back up the local DO storage directory.
 
 ### 7.3 Mandatory Nginx Reverse Proxy Requirement
 
-Internet-facing self-host installations MUST run the nginx proxy recipe (`deploy/nginx/ethercalc.conf`) for rate-limiting, CSP header injection, and client IP header sanitization (`CF-Connecting-IP` stripping). Validate with `./scripts/smoke-proxy.sh`.
-
+Internet-facing self-host installations MUST run the nginx proxy recipe (`deploy/nginx/ethercalc.conf`) for rate-limiting and client IP header sanitization (overwriting client-supplied `CF-Connecting-IP`, `X-Forwarded-For`, and `X-Forwarded-Proto` with `$remote_addr` and `$scheme`). Note: CSP headers are injected directly by the Worker application layer (`packages/worker/src/lib/csp.ts`), not by Nginx. Validate basic proxy syntax, routing, health, room-index gating, and WebSocket upgrades with `./scripts/smoke-proxy.sh`.
 ### 7.4 Security Environment Variables & Passkey Anchors
 
 Self-host operators MUST configure passkey environment variables to enable passkey features.
@@ -1014,6 +1018,20 @@ To light up passkey authentication and private rooms, the operator MUST provide 
   ./scripts/smoke-selfhost.sh
   ```
 
+### 7.5 Verification Status & Local Execution Gate Note
+
+- **Source-Verified Claims**:
+  - Dockerfile base image (`oven/bun:1.3.14` at `Dockerfile:22`).
+  - Standalone ES module bundle creation (`scripts/build-workerd-bundle.sh` producing `packages/worker/workerd/worker/index.js`).
+  - Capnp compatibility date lockstep (`compatibilityDate = "2026-07-14"` in `config.capnp:61` satisfied by resolved `workerd@1.20260714.1` in `bun.lock`).
+  - Entrypoint workerd binary targeting (`bin/workerd-entrypoint.sh:48-55` picking wrangler's pinned dependency).
+  - Volume mount target `./ethercalc-data:/data` mapping to DO SQLite storage path `/data/do` (`docker-compose.yml:37`, `bin/workerd-entrypoint.sh:25-27`, `Dockerfile:63-72`).
+  - Security env defaults (`ETHERCALC_DISABLE_ROOM_INDEX=1` default ON in `Dockerfile:90`, `docker-compose.yml:46`, `helm/values.yaml:98`).
+  - Nginx reverse proxy configuration (`deploy/nginx/ethercalc.conf`, which applies `limit_req`/`limit_conn` and replaces `CF-Connecting-IP`/`X-Forwarded-*` headers) and validator script (`scripts/smoke-proxy.sh`).
+- **Unexercised / Scope Limits**:
+  - Docker smoke scripts (`./scripts/smoke-selfhost.sh` and `./scripts/smoke-proxy.sh`) could NOT be executed in this local environment due to missing `docker compose` CLI subcommand.
+  - `./scripts/smoke-proxy.sh` validates `nginx -t` syntax, `/_health`, `GET /`, `/_rooms` HTTP 403, and `/_ws/` HTTP 101 WebSocket upgrade forwarding; it does not exercise rate-limiting thresholds or IP header substitution details.
+  - End-to-end container boot, workerd execution, and reverse proxy routing for the self-host path remain unexercised locally and rely on CI execution (`.github/workflows/ci.yml` `build:selfhost` job).
 ---
 
 ## §8 Pre-Cutover PRs & Preparation Bundles
