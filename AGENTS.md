@@ -19,6 +19,7 @@ line/branch/function/statement coverage on gated packages in CI.
 | User guide + FAQ | [docs.ethercalc.net](https://docs.ethercalc.net) · `packages/docs/` |
 | HTTP API | `API.md` |
 | Self-host hardening | `docs/SELFHOST_HARDENING.md` |
+| Prod upgrade runbook | `docs/migration/PROD_UPGRADE_PLAN.md` |
 | Oracle replay | `tests/oracle/README.md` · `packages/oracle-harness/` |
 | Mutation baselines | `docs/MUTATION_REPORT.md` |
 | Sandstorm `.spk` | `SANDSTORM.md` (manual `spk pack` — app owner signs) |
