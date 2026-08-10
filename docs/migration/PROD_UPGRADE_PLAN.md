@@ -9,6 +9,38 @@ This runbook is the entry point. The other four files in this directory are supp
 - **`PREFLIGHT_RESULTS.md`** — recorded results of this runbook's §1 gates against the final tree. Read to confirm preflight already passed (or what failed).
 - **`INVENTORY.md`** — verbatim mechanical inventory of wrangler config, workflows, D1 migrations, and self-host env. Read when a command or binding needs a ground-truth dump.
 
+## Critical-path quick reference
+
+Use this quick reference for **“what do I do next?”** Use §§0–3 for preparation, §§4–6 for hosted execution and rollback, §7 for self-host, and §§8–10 for preparation status, Go/No-Go, and consequences. Follow the cited section whenever a line below sends you there; this is a map, not a substitute for the procedure. → §§0–10
+
+### Sequence and rollback
+
+| Step | What ships | Execution command | Rollback target and command |
+| :--- | :--------- | :---------------- | :-------------------------- |
+| **Pre-deploy D1** | D1 migrations | `npx wrangler d1 migrations apply ethercalc_rooms --remote --config=packages/worker/wrangler.toml --env=""` | Primary target: pre-cutover D1 bookmark; use `npx wrangler d1 time-travel restore ethercalc_rooms --bookmark=<PRE_CUTOVER_BOOKMARK>` or the applicable fallback → §4.1, §6.4 |
+| **Phase 1** | Lifecycle-only bundle | From `.worktrees/phase1-lifecycle/packages/worker`: `npx wrangler deploy --config=wrangler.toml --env=""` | Phase 1 itself: `npx wrangler versions deploy <PHASE1_VERSION_ID>@100% --env=""` — never pre-v2 → §4.2, §6.1 |
+| **Phase 2** | `main` code and assets with passkeys off | `npx wrangler versions upload --config=wrangler.toml --env=""`; then follow the override, ramp, and purge sequence | Phase 1: `npx wrangler versions deploy <PHASE1_VERSION_ID>@100% --env=""` → §4.3, §6.1 |
+| **Phase 3** | Passkeys on | From `packages/worker`: `npx wrangler deploy --config=wrangler.toml --env=""` | Phase 2: `npx wrangler versions deploy <PHASE2_VERSION_ID>@100% --env=""` → §4.4, §6.1 |
+
+### Points of no return
+
+- **Platform point of no return:** Cloudflare reports the Phase 1 deployment successful with migration `v2` active; pre-v2 versions can no longer be selected. → §6.3
+- **Private-data rollback boundary:** the first Phase 3 private-room creation or completed passkey registration activates the lockout/exposure hazards of deeper rollback. → §6.2–§6.3
+
+### Abort — stop and roll back the current phase
+
+- The phase flag/private-creation probes do not return their required Phase 2 or Phase 3 contracts. → §5 Probes 2–3, 11; §6.1
+- Health, public-sheet read/write, or WebSocket upgrade misses its required response contract. → §5 Probes 1, 5, 7; §6.1
+- The sheet-limit probe reports false success or the rejected mutation creates a snapshot. → §5 Probe 6; §6.1
+- After the required purge, the client asset is missing or non-JavaScript; or the socket.io, room-index gate, XLSX export, or `www` redirect probe misses its required contract. → §5 Probes 4, 8–10, 12; §6.1
+
+### Manual hard gates — do not start Phase 1
+
+- Complete the live baseline decision path; any unresolved variance, NO-GO result, or unsigned conditional result blocks the cutover. → §0.2–§0.3; §9 item 1
+- Confirm both required production secrets are active. → §0.1; §9 item 3
+- Record the D1 export and Time Travel bookmark, and settle restore viability against the live artifact. → §2.1; §6.4; §9 item 4
+- Pass the real-Cloudflare staging rehearsal for all phases and the PITR sequence. → §2.3; §3; §9 item 7
+
 **Target Service:** `ethercalc.net` (Cloudflare Workers + Hono + Durable Objects + D1 + Assets)  
 **Baseline Release:** Git Tag `0.20260717.0` (Commit `149ebcf16104b01254ca2b796beb701c88bd6ff8`)  
 **Target Release:** Current `main`  
@@ -175,8 +207,8 @@ database size**. Wrangler renames the API field `file_size` →
 | Reading | Judgment |
 | :------ | :------- |
 | **&lt; 5.0 GiB** (&lt; 50% of ceiling) | **PASS** — comfortable margin for soak growth, export overhead, and audit/chat tail accumulation during the window. |
-| **5.0–8.0 GiB** (50–80%) | **CONDITIONAL** — proceed only with an explicit owner sign-off, a recorded plan for what happens if D1 writes start failing mid-soak, and no discretionary bulk D1 rewrites during cutover. |
-| **&gt; 8.0 GiB** (&gt; 80%) | **NO-GO** until size is reduced or the change window is redesigned. Crossing the hard 10 GB ceiling is an availability incident, not a soft warning. |
+| **5.0–&lt;8.0 GiB** (50–&lt;80%) | **CONDITIONAL** — proceed only with an explicit owner sign-off, a recorded plan for what happens if D1 writes start failing mid-soak, and no discretionary bulk D1 rewrites during cutover. |
+| **≥ 8.0 GiB** (≥ 80%) | **NO-GO** until size is reduced or the change window is redesigned. Crossing the hard 10 GB ceiling is an availability incident, not a soft warning. |
 | **Field missing / command fails** | **NO-GO** until size is observed. Do not guess. |
 
 **Why this is not optional.** D1 here holds:
@@ -247,7 +279,7 @@ traffic without looking at this number first.
 | **Newer Version** (> `149ebcf...`)  | Production is already ahead of `0.20260717.0`.                             | Run `git log 149ebcf..HEAD` to determine exactly which commits are deployed. Check if DO migration `v2` (`AuthDO`) is already present in `wrangler versions list`. |
 | **`v2` Migration Already Deployed** | `AuthDO` migration `v2` is shown as active in `wrangler deployments list`. | Skip Phase 1 (Phase 1 lifecycle deploy has already occurred). Proceed to Phase 2.                                                                                  |
 | **D1 Subsystem `version: "alpha"`** | Database uses legacy `alpha` storage subsystem; Time Travel API unsupported. | GO/NO-GO BLOCKER if continuous PITR is required by SLA. If proceeding by explicit sign-off, operator MUST NOT rely on Time Travel and MUST execute manual `d1 export` SQL backups only (§0.2.1, §2.1). |
-| **D1 `database_size` ≥ 8.0 GiB** (or missing) | Live size is ≥ 80% of the hard 10 GB ceiling, or size was not recorded. | **NO-GO** until size is observed and headroom is restored (§0.2.2). At 5.0–8.0 GiB require explicit owner sign-off. |
+| **D1 `database_size` ≥ 8.0 GiB** (or missing) | Live size is ≥ 80% of the hard 10 GB ceiling, or size was not recorded. | **NO-GO** until size is observed and headroom is restored (§0.2.2). At 5.0–&lt;8.0 GiB require explicit owner sign-off. |
 ---
 
 ## §1 Preflight on `main`
@@ -1219,7 +1251,7 @@ Private room data exposure occurs **ONLY if code is rolled back past Phase 2 to 
 
 - **PRIMARY POINT OF NO RETURN**:
 
-  > **The moment `npx wrangler deploy` is executed in Phase 1 (applying `v2` migration).**
+  > **The moment Cloudflare reports the Phase 1 deployment successful with migration `v2` active in `wrangler deployments list`.**
   - Past this point, Cloudflare platform rules permanently prevent reverting to pre-v2 code (`149ebcf...`). Recovery can only occur forward via Phase 1 or a Forward-Fix Bundle.
 
 - **SECONDARY POINT OF NO RETURN**:
@@ -1490,7 +1522,7 @@ To light up passkey authentication and private rooms, the operator MUST provide 
 
 ## §8 Pre-Cutover PRs & Preparation Bundles
 
-The following five items have been evaluated and categorized:
+The following six items have been evaluated and categorized:
 
 1. **Phase 1 Minimal Branch (Forward-Fix Artifact) Preparation**:
    - **Specification**: Build and validate `release/phase1-lifecycle` branch (`149ebcf...` + `AuthDO` + `v2` migration).
@@ -1527,16 +1559,16 @@ This checklist has nine conditions and spans the full cutover. Before executing 
 
 The audit unit is one `[OPERATOR-VERIFY]` site, numbered §3.2 check, §5 probe
 (`10a` and `10b` counted separately), actionable §7 check, or §9 condition:
-**48 checks total — 5 ALREADY AUTOMATED, 28 PARTIALLY AUTOMATED, and 15
-GENUINELY MANUAL**. Thus **33/48 are automation-backed**, but 28 of those still
+**47 checks total — 5 ALREADY AUTOMATED, 28 PARTIALLY AUTOMATED, and 14
+GENUINELY MANUAL**. Thus **33/47 are automation-backed**, but 28 of those still
 add a distinct live-artifact, live-binding, edge, or deployment assertion.
 `ALREADY AUTOMATED` items may be skimmed after their named gate is green;
 `PARTIALLY AUTOMATED` items must retain the stated live delta; the remaining
-15 demand credentials, backups, operational judgment, soak observation, or the
+14 demand credentials, backups, operational judgment, soak observation, or the
 self-host `uniqueKey` volume check (§7.2.1).
 
 
-- [ ] **1. Baseline Capture, Subsystem & Capacity Verification**: `wrangler deployments list`, `wrangler versions list`, and `wrangler d1 info ethercalc_rooms --json` executed and recorded. Confirm (a) D1 Time Travel availability via `version: "production"` when visible, or via successful `wrangler d1 time-travel info` if the pinned Wrangler omits `version` from `d1 info` output (§0.2.1), and (b) `database_size` headroom against the hard 10 GB ceiling per §0.2.2 pass criteria (&lt; 5 GiB pass; 5–8 GiB conditional sign-off; ≥ 8 GiB or missing = NO-GO).
+- [ ] **1. Baseline Capture, Subsystem & Capacity Verification**: `wrangler deployments list`, `wrangler versions list`, and `wrangler d1 info ethercalc_rooms --json` executed and recorded. Confirm (a) D1 Time Travel availability via `version: "production"` when visible, or via successful `wrangler d1 time-travel info` if the pinned Wrangler omits `version` from `d1 info` output (§0.2.1), and (b) `database_size` headroom against the hard 10 GB ceiling per §0.2.2 pass criteria (&lt; 5 GiB pass; 5–&lt;8 GiB conditional sign-off; ≥ 8 GiB or missing = NO-GO).
 - [ ] **2. Preflight Gates Green Against Final Tree (9/9 Runnable Gates Verified; 2 Docker Smokes Pending CI)**: All 9 locally-runnable preflight gates (`vp run typecheck`, `vp lint`, `vp run test`, worker `test:node` & `test:workers`, worker 100% coverage gate `test:coverage`, `build:assets` + `e2e#test`, `build:dry`, `check-helm-hardening.sh`, and `ratchet-verify.sh`) passed 100% green against the final tree state including the `rooms.ts` command-rejection status propagation fix (§1.2, `docs/migration/PREFLIGHT_RESULTS.md`). The 2 Docker smoke gates (`./scripts/smoke-selfhost.sh`, `./scripts/smoke-proxy.sh`) remain unverified locally due to missing local `docker compose` CLI subcommand and require CI execution before final cutover.
   > **ALREADY AUTOMATED — inspect gate status rather than re-performing its assertions.** The root/worker/client gates run the named test and coverage commands; CI `test`, `e2e`, and `helm-lint` execute their corresponding suites, while CI `build:selfhost` runs both Docker smokes (`.github/workflows/ci.yml:17-235`). Once those required jobs are green on the final tree, repeating the same local assertions adds no deployment evidence.
 - [ ] **3. Secrets Provisioned in Production**: `wrangler secret list` confirms `ETHERCALC_KEY` and `ETHERCALC_MIGRATE_TOKEN` are active in Cloudflare Secrets (§0.1).
@@ -1558,7 +1590,7 @@ The following user-visible behavior changes take effect upon completing the upgr
 
 1. **Sheet Dimension Ceiling**: Max declared area is capped at 200,000 cells (`packages/worker/src/lib/command-limits.ts:17`). _Nuance_: Existing sheets already exceeding 200k cells keep full read and edit access to cells inside their current bounds; they only lose the ability to add new rows or columns (`packages/worker/test/room.test.ts:356-395`).
 2. **Large Paste Rejection at the Room Boundary**: Command batches expanding a sheet beyond 200,000 declared cells are rejected by RoomDO with HTTP 413 (`packages/worker/src/room.ts:699-703`); native WebSocket writes close with `1008 'Command exceeds sheet limits'` (`packages/worker/src/room.ts:1803-1808`). Snapshot writes through `PUT /_/:room` propagate the DO's 413 (`packages/worker/src/routes/rooms.ts:355-369`).
-3. **HTTP Command API Rejection Signaling**: `POST /_/:room` now propagates RoomDO's non-2xx status and body (e.g., HTTP 413 with body `command exceeds sheet limits` for batches exceeding `MAX_SHEET_CELLS = 200_000`), matching `PUT /_/:room` at `packages/worker/src/routes/rooms.ts:355-369`. Native WebSocket writes close with 1008 (`command exceeds sheet limits`). _Behavioral Shift_: An API client or script that previously received HTTP 202 for an over-limit write under legacy EtherCalc (which had no sheet limits) now receives HTTP 413. This correctly eliminates the silent write-loss defect while surfacing explicit error signaling.
+3. **HTTP Command API Rejection Signaling**: `POST /_/:room` now propagates RoomDO's non-2xx status and body (e.g., HTTP 413 with body `command exceeds sheet limits` for batches exceeding `MAX_SHEET_CELLS = 200_000`), matching `PUT /_/:room` at `packages/worker/src/routes/rooms.ts:355-369`. Native WebSocket writes close with 1008 (`Command exceeds sheet limits`). _Behavioral Shift_: An API client or script that previously received HTTP 202 for an over-limit write under legacy EtherCalc (which had no sheet limits) now receives HTTP 413. This correctly eliminates the silent write-loss defect while surfacing explicit error signaling.
 4. **Form/App-Mode Tab Hydration**: Browser tabs in form/app mode open across cutover must perform a page reload (`packages/client/src/boot.ts:384-390`).
 5. **Passkey Accounts & Private Sheets**: Passkeys and private room creation become available after Phase 3 (`packages/worker/src/routes/auth.ts:133-137`).
 6. **WebSocket Message Rate Limits**: Exceeding 1500 messages per 10-second window closes the WebSocket with 1008 (`packages/worker/src/room.ts:1887-1890`).
