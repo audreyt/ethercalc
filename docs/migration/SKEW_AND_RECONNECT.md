@@ -1,602 +1,399 @@
-# Skew & reconnect: `0.20260717.0` (149ebcf) ↔ current `main`
+# Skew & reconnect: production candidate range → current `main`
 
-Read-only cutover audit for **browser tabs already open** across a
-Worker deploy (or rollback). Baseline production tag:
+> **Status / scope — corrected 2026-08-10.** The original analysis used
+> `0.20260717.0` / `149ebcf` as production. Read-only production evidence in
+> `PROD_UPGRADE_PLAN.md` disproves that premise and bounds the deployed source
+> to **`[d2afa90, b7d8840)`**: passkeys and the `AuthDO` stack are present, but
+> the security-audit page-script extraction at `b7d8840` is not.
+>
+> This document therefore compares **`d2afa90` → `HEAD`**. `d2afa90` is the
+> earliest possible production revision, so this is the conservative **upper
+> bound** on browser/Worker skew. If the operator later pins production to a
+> later commit in the candidate range, the real delta and skew can only be
+> smaller. The inspected target source was `76ce06a`; the correction itself is
+> documentation-only.
+>
+> Scope: a browser tab already open across a Worker deploy or rollback, plus
+> HTTP and Socket.IO clients whose behavior is directly coupled to the same
+> limits. Where this file and the runbook disagree, the runbook is
+> authoritative.
 
-- tag `0.20260717.0` = commit `149ebcf16104b01254ca2b796beb701c88bd6ff8`
-- head of this audit = current `main` (`HEAD`)
+Evidence was re-derived with read-only repository commands:
 
-Scope: old client bundle talking to new Worker, and the inverse.
-Evidence quotes are verbatim from the trees named above.
-
-> **Status:** Supporting evidence for `PROD_UPGRADE_PLAN.md` (the operator
-> runbook). Produced early on 2026-08-10 for open-tab behaviour across the
-> cutover, **before** several runbook fact-check revisions (including the
-> front-door `POST /_/:room` 413 propagation fix). Historical observations
-> are retained and marked **Superseded** where the tree later changed.
-> **Where this file and the runbook disagree, the runbook is authoritative.**
-
+```bash
+git show d2afa90:packages/client/src/boot.ts
+git diff d2afa90..HEAD -- packages/shared/src packages/socketio-shim/src
+git show d2afa90:packages/worker/src/room.ts
+git diff d2afa90..HEAD -- packages/client/src/ws-adapter.ts \
+  packages/client/src/main.ts
+git show d2afa90:packages/worker/src/lib/session.ts
+git diff d2afa90..HEAD -- index.html manifest.appcache \
+  packages/worker/src/lib/session.ts
+```
 
 ---
 
-## 1. WebSocket protocol diff
+## 1. Corrected finding ledger
+
+| Finding | Corrected verdict | Consequence for this migration |
+| :------ | :---------------- | :----------------------------- |
+| `formDataViewer` initial hydrate | **Still applies.** `d2afa90` has the same old-client quirk as `149ebcf`; the fix landed later in `2acd1d0`. | An already-open `d2afa90` form/app tab can fail to hydrate the main sheet after reconnecting to the new Worker. A full reload obtains the fixed client. |
+| WebSocket canonical parser and field caps | **Still applies; genuinely new relative to `d2afa90`.** | Stock frames remain compatible. Malformed or over-limit native/Socket.IO frames are rejected. The raw 1 MiB native string-frame ceiling itself was already present, but its close behavior and the field-level limits are new. |
+| Sheet/range command limits | **Still applies.** `packages/worker/src/lib/command-limits.ts` is absent at `d2afa90` and was introduced by `b7d8840`. | Large pastes or dimension-expanding commands that production may accept can be rejected by the target Worker. |
+| Reconnect plus `hadSnapshot` | **Standing property, not a migration regression.** | `d2afa90` and `HEAD` have the same fixed-delay reconnect, queue flush, one-shot hydrate, and `hadSnapshot` guard. Deploy-induced DO restart exposes the pre-existing limitation, but the target did not introduce it. Communicate “reload after the deploy,” not “the upgrade changed reconnect semantics.” |
+| Root asset/cache layout | **Newly corrected and broader than the old analysis.** | Cached old HTML still references assets the new Worker serves, so it normally boots rather than 404ing. It prolongs old-HTML/new-Worker skew; AppCache-capable browsers can pin the old master HTML because the unchanged manifest is still served. |
+| Session cookie name | **New finding missed by the old-baseline analysis.** | `ec_sess` becomes `__Host-ec_sess`, with no legacy read fallback. Every passkey user holding only the production cookie appears signed out on the new Worker until re-authentication; private-room reconnects fail until then. |
+| Passkeys/private ACLs described as newly arriving | **Already deployed; superseded.** | Passkey UI, `AuthDO`, private-room ACLs, and the old `ec_sess` cookie exist at `d2afa90`. Do not communicate private rooms as a new feature. The migration-specific event is the cookie rename, not ACL introduction. |
+| HTTP command rejection propagation | **New target behavior, separate from the sheet-limit introduction.** | `5d37bd0` makes public `POST /_/:room` return the RoomDO's truthful non-2xx response instead of a false 202. API clients may newly observe 413. |
+
+### Superseded statements retained from the original audit
+
+The following statements explain older runbook wording but are no longer valid
+against real production:
+
+1. **Superseded baseline:** production is not `149ebcf`; all “feature new since
+   tag” conclusions must be tested again from `d2afa90`.
+2. **Superseded passkey conclusion:** anonymous old tabs do not break because
+   passkeys/ACLs are newly introduced. They are already deployed. Logged-in
+   tabs can instead lose identity because `ec_sess` is renamed.
+3. **Superseded classification:** reconnect without re-hydration is not a
+   target-code regression. It is unchanged behavior that a Worker restart
+   makes operationally visible.
+4. **Superseded asset framing:** the risk is not only an unhashed
+   `static/player.js`. Production HTML itself still contains inline bootstrap
+   scripts and declares `manifest.appcache`, while the target extracts page
+   logic to five `static/*.js` files and removes the manifest attribute.
+5. **Superseded HTTP note:** the first audit recorded public command POSTs
+   falsely returning 202 after a RoomDO 413. Commit `5d37bd0` fixed that path;
+   current `main` propagates the non-2xx status and body.
+
+The original `formDataViewer`, protocol-cap, and command-limit findings are
+**not** superseded: each remains present in `d2afa90..HEAD`, with the
+qualifications below.
+
+---
+
+## 2. WebSocket protocol delta from `d2afa90`
 
 Command:
 
 ```bash
-git diff 149ebcf..HEAD -- packages/shared/src packages/socketio-shim/src
+git diff d2afa90..HEAD -- packages/shared/src packages/socketio-shim/src
 ```
 
-Touched files: `messages.ts` (+limits +strict parse), `multi.ts` (new TOC
-limits; HTTP multi-sheet only), `storage-keys.ts` (access/ACL meta; not WS
-frames), `socketio-shim` adapter/translate (same parser + transport caps).
+The client→server and server→client discriminator sets are unchanged. No wire
+field was renamed and no new message type is required for stock clients. The
+new Worker is a stricter acceptor.
 
-### 1.1 Discriminator / shape inventory
+### 2.1 Genuinely new shared parser rules
 
-**Client → server type set is unchanged** at both ends:
+At `d2afa90`, `parseClientMessage` only parses JSON and checks that `type` is in
+`CLIENT_MESSAGE_TYPES`. At `HEAD`, `parseClientMessageValue` validates each
+shape and returns a fresh canonical object, dropping unknown properties.
 
-`chat | ask.ecells | my.ecell | execute | ask.log | ask.recalc | stopHuddle | ecell | ask.ecell`
+| Rule at `HEAD` | Status at `d2afa90` | Open-tab effect |
+| :------------- | :------------------- | :-------------- |
+| Non-empty `room` ≤ 2,048 chars | **New** | Stock adapter supplies the handshake room and passes. Empty/huge third-party frames are silently dropped. |
+| `user` ≤ 256 chars | **New** | Stock random usernames pass. |
+| `auth` ≤ 512 chars | **New** | Normal legacy HMAC/query values pass. |
+| `chat.msg` ≤ 16 KiB | **New** | Normal chat passes; oversized chat is dropped. |
+| `ecell` / `original` ≤ 64 chars | **New** | These are cursor coordinates, not cell contents; normal A1 coordinates pass. |
+| `execute.cmdstr` ≤ 1 MiB chars | **New field validation** | The entire native frame is also bounded, so this mainly makes validation canonical and applies equally to decoded Socket.IO values. |
+| Required fields by discriminator | **New** | Stock `ws-adapter` envelopes remain valid; malformed third-party frames formerly accepted by the type-only parser are dropped. |
+| Unknown object keys removed | **New canonicalization** | Stock handlers do not rely on extras. |
+| `MAX_COMMAND_UTF8_BYTES = 120 KiB` | **New** | This redacts an oversized command from the audit copy; it does not itself reject execution. |
 
-**Server → client type set is unchanged**:
+`packages/shared/src/multi.ts` is also new and caps multi-sheet TOC rows (256
+sheets, 256-char titles, 2,048-char links), but that is an HTTP/TOC boundary,
+not the single-sheet WebSocket reconnect path.
 
-`log | recalc | snapshot | ecells | execute | chat | confirmemailsent | ignore | stopHuddle | ecell | my.ecell | ask.ecell`
+### 2.2 The 1 MiB frame ceiling: threshold old, failure mode new
 
-No field was renamed. No new required wire field was added to the
-discriminated unions themselves. The breaking change is **validation
-depth and room binding**, not the schema vocabulary.
+`d2afa90` already defines `MAX_FRAME = 1024 * 1024` in `room.ts` and silently
+returns for an oversized **string** frame. `HEAD` shares the same numeric
+ceiling as `MAX_WS_FRAME_CHARS`, measures string or binary input before parse,
+and closes the socket with `1009 "Message too large"`.
 
-### 1.2 `parseClientMessage` — old vs new
+Therefore “a 1 MiB ceiling is newly imposed” is false. The migration changes a
+silent drop into an explicit connection close, covers binary frames, and adds
+per-field validation under that ceiling.
 
-**Old (149ebcf)** — type-only gate; extra/missing fields not stripped or
-checked beyond `type ∈ CLIENT_MESSAGE_TYPES`:
+### 2.3 Socket.IO caps genuinely new from `d2afa90`
 
-```ts
-export function parseClientMessage(raw: string): ClientMessage | null {
-  return parseTypedMessage<ClientMessage>(raw, CLIENT_MESSAGE_TYPES);
-}
-```
+`packages/socketio-shim/src/translate.ts` now delegates decoded payloads to the
+same `parseClientMessageValue` canonical parser. The adapter also newly adds:
 
-(`packages/shared/src/messages.ts` at 149ebcf)
+- `MAX_SOCKET_IO_SESSIONS = 1,024` → excess handshake returns 503;
+- `MAX_XHR_POLL_BYTES = 1 MiB` → oversized poll POST returns 413;
+- `MAX_XHR_POLL_FRAMES = 64` → oversized batch returns 413;
+- `MAX_XHR_POLL_QUEUE = 128` → queue overflow closes the session;
+- idle-session pruning and rejection of a second concurrent pending poll.
 
-**New (HEAD)** — frame size gate + per-field required/optional/bounds,
-returning a **canonicalized** object (unknown keys dropped):
+Ordinary legacy handshakes, WebSocket upgrades, and single-frame XHR polls stay
+compatible. Abuse, unbounded backlogs, and malformed payloads fail closed.
 
-```ts
-export const MAX_WS_FRAME_CHARS = 1024 * 1024;
-// ...
-export function parseClientMessage(raw: string): ClientMessage | null {
-  if (raw.length > MAX_WS_FRAME_CHARS) return null;
-  return parseClientMessageValue(safeJsonParse(raw));
-}
-```
+### 2.4 Attachment-room and identity binding
 
-(`packages/shared/src/messages.ts:117-252`)
+`d2afa90` builds the message context from client-supplied `parsed.room` and uses
+an empty per-message auth fallback. `HEAD`:
 
-Canonical rules (`parseClientMessageValue`, HEAD `messages.ts:256-363`):
+- requires `attachment.room`;
+- drops every non-`ask.recalc` frame whose parsed room differs from the
+  accepted socket room;
+- replaces message `user` with the handshake identity;
+- falls back to handshake `attachment.auth` when a message omits `auth`;
+- uses `attachment.room` for storage and mirror side effects.
 
-| type | required fields | optional | bounds / notes |
-| ---- | --------------- | -------- | -------------- |
-| all | `type`, non-empty `room` | — | `room` ≤ `MAX_WS_ROOM_CHARS` (2048); empty room rejected |
-| `chat` | `user`, `msg` | — | user ≤ 256; msg ≤ 16 KiB |
-| `ask.ecells`, `ask.recalc` | `room` only | — | |
-| `my.ecell` | `user`, `ecell` | — | ecell ≤ **64 chars** |
-| `execute` | `user`, `cmdstr` | `auth` | cmdstr ≤ 1 MiB chars; auth ≤ 512 |
-| `ask.log`, `ask.ecell` | `user` | — | user ≤ 256 |
-| `stopHuddle` | `room` | `auth` | auth ≤ 512 |
-| `ecell` | `user`, `ecell` | `original`, `auth`, `to` | ecell/original ≤ 64; to/user ≤ 256; auth ≤ 512 |
-
-Non-object / array / unknown `type` → `null` (silent drop at DO).
-
-### 1.3 Socket.IO translate path
-
-**Old:** only checked `args[0].type ∈ CLIENT_MESSAGE_TYPES`.
-
-**New:** delegates to the same `parseClientMessageValue`:
-
-```ts
-return parseClientMessageValue(parsed.args[0]);
-```
-
-(`packages/socketio-shim/src/translate.ts` HEAD)
-
-So legacy `/socket.io/*` embeds now fail closed on the same field/limit
-rules as native `/_ws/:room`.
-
-### 1.4 Per-change acceptance matrix
-
-| Change | OLD client → NEW worker | NEW client → OLD worker |
-| ------ | ----------------------- | ----------------------- |
-| Stricter required fields (`user`/`cmdstr`/`ecell`/non-empty `room`) | **Accepted** for the stock 149ebcf `ws-adapter` envelope (always injects `type`, `user`, `room`, optional `auth`). Malformed third-party frames that 149ebcf accepted may now be **dropped** (`parseClientMessage` → `null` → `webSocketMessage` returns). | **Accepted** — old parser only checks `type`. Canonical new frames are a subset. |
-| Field bounds (`MAX_WS_*`) | **Degrades/breaks** only when a field exceeds the new cap (see §2). Over-limit frame → parse `null` → **silent drop** (or 1009 if raw length > 1 MiB). | **Accepted** — old parser has no bounds. |
-| Unknown extra JSON keys | **Accepted** (stripped on canonicalize). | **Accepted** (old cast keeps them; handlers ignore). |
-| Server message shapes | N/A (client parse) | **Accepted** — `parseServerMessage` / type set unchanged; old client still understands every server type. |
-| `attachment.room` binding (see §3) | **Works** when `parsed.room ===` handshake room (normal edits). **Breaks** when old client deliberately overrides `room` (formdata `ask.log` — see §3/§4). | **Works** — old worker used `parsed.room` as the context room. |
-| Socket.IO session/poll caps (shim only) | **Degrades** under extreme poll backlog / session flood (close / 413 / 503). Normal single-tab embeds unaffected. | N/A if rolling back worker only while new embeds still use native WS. |
-
-**Bottom line (protocol):** the JSON vocabulary is backward compatible.
-The new worker is a **stricter acceptor**. A vanilla 149ebcf single-sheet
-tab keeps speaking a legal dialect. Pathological or formdata-room-override
-frames are the real skew surface.
+The stock envelope sets `room` to the adapter room unless a caller deliberately
+overrides it, so normal edits, chat, and cursors remain compatible. The known
+stock override is the old formdata bootstrap below.
 
 ---
 
-## 2. New server-side limits
+## 3. `formDataViewer`: still a real old-client → new-Worker break
 
-### 2.1 Every `MAX_*` in `packages/shared/src/messages.ts` (HEAD)
-
-```ts
-export const MAX_WS_FRAME_CHARS = 1024 * 1024;
-export const MAX_WS_ROOM_CHARS = 2_048;
-export const MAX_WS_USER_CHARS = 256;
-export const MAX_WS_AUTH_CHARS = 512;
-export const MAX_WS_CHAT_CHARS = 16 * 1024;
-export const MAX_WS_CELL_CHARS = 64;
-/** Durable Object values must stay below 128 KiB including key overhead. */
-export const MAX_COMMAND_UTF8_BYTES = 120 * 1024;
-```
-
-(`messages.ts:117-124`)
-
-### 2.2 Enforcement sites in `packages/worker/src/room.ts` (and parse)
-
-| Limit | Enforcement | On exceed |
-| ----- | ----------- | --------- |
-| `MAX_WS_FRAME_CHARS` | `webSocketMessage` **before** parse | **Close socket** `1009` `"Message too large"` |
-| same (parse) | `parseClientMessage` | returns `null` → **silent drop** if somehow reached |
-| `MAX_WS_ROOM/USER/AUTH/CHAT/CELL_CHARS` + cmdstr char cap | `parseClientMessageValue` | `null` → **silent drop** (`if (!parsed \|\| !attachment.room) return`) |
-| `MAX_COMMAND_UTF8_BYTES` via `isStorageSafeCommand` | `#appendCommand` audit path only | Command **still executes**; audit log stores placeholder `"[oversized command omitted: …]"` — **not a user-visible reject** |
-| Sheet/range product limits (`isCommandBatchWithinLimits` in `lib/command-limits.ts`, new since 149ebcf) | `#appendCommand` → `applyCommand` | returns false → WS **`ws.close(1008, 'Command exceeds sheet limits')`**; RoomDO HTTP `POST /_do/commands` → `413` `"command exceeds sheet limits"`; **front-door** `POST /_/:room` now propagates that non-2xx status/body (runbook §8 PR 4 / §10 item 3; both sites in `routes/rooms.ts`) — see **Superseded** note below for the pre-fix always-202 behaviour |
-| `MAX_WS_MESSAGES_PER_WINDOW = 300` / `MAX_ROOM_WS_MESSAGES_PER_WINDOW = 1500` per 10s | `#rateLimitSocket` | **Close** `1008` `"Message rate exceeded"` / `"Room message rate exceeded"` |
-| `MAX_CONN = 128` | accept paths | upgrade rejected (pre-existing class of cap; still present) |
-
-Verbatim close paths:
-
-```ts
-if (messageSize > MAX_WS_FRAME_CHARS) {
-  try {
-    ws.close(1009, 'Message too large');
-  } catch {
-    // The peer may already be gone.
-  }
-  return;
-}
-```
-
-(`room.ts:1522-1528`)
-
-```ts
-if (!parsed || !attachment.room) return;
-```
-
-(`room.ts:1545-1546`)
-
-```ts
-const auditBody = isStorageSafeCommand(body)
-  ? body
-  : `[oversized command omitted: ${body.length} UTF-16 code units]`;
-ss.executeCommand(body);
-```
-
-(`room.ts:2090-2093`)
-
-```ts
-if (!applied) {
-  try {
-    ws.close(1008, 'Command exceeds sheet limits');
-  } catch {
-    // The peer may already be gone.
-  }
-}
-```
-
-(`room.ts:1803-1808`)
-
-**Superseded — front-door HTTP command API (audit-time → current tree):**
-
-At the time this skew audit was written, a reader could reasonably infer
-that any HTTP path returning sheet-limit `413` was already user-visible.
-That was true at the **RoomDO** boundary (`POST /_do/commands`) and for
-`PUT /_/:room` snapshot writes, but **not** yet for the public command
-API: `POST /_/:room` still answered `202 {"command":…}` even when the DO
-had rejected the batch (silent write loss for API clients / scripts).
-**Current tree (runbook §8 PR 4):** both Worker dispatch sites propagate
-the DO status and body on non-2xx (e.g. `413 command exceeds sheet limits`)
-and only emit the legacy 202 command echo on success
-(`packages/worker/src/routes/rooms.ts` ~778-784 and ~924-936 / ~972-975;
-tests in `packages/worker/test/routes-rooms.node.test.ts`). Browser tabs
-use native WebSocket `execute` frames for ordinary edits, so the primary
-open-tab paste path remains the **1008 close** above; the HTTP fix matters
-for API clients and for runbook §5 Probe 6.
-
-
-```ts
-ws.close(
-  1008,
-  roomExceeded ? 'Room message rate exceeded' : 'Message rate exceeded',
-);
-```
-
-(`room.ts:1652-1655`)
-
-### 2.3 Can a normal old-client action trip these?
-
-**`MAX_WS_CELL_CHARS = 64` — NOT cell content.**  
-It bounds **cursor coordinates** (`ecell` / `original` on `my.ecell` /
-`ecell` frames), e.g. `A1`, `BCZ999`. A legitimate SocialCalc A1-style
-coord cannot approach 64 characters. **Normal navigation cannot trip
-this.** A paste does **not** ride this field.
-
-**Large paste / long formula — the real path is `execute.cmdstr`:**
-
-1. **Wire frame:** `cmdstr` may be up to `MAX_WS_FRAME_CHARS` (1 MiB
-   chars) at parse; raw WebSocket payload over 1 MiB → **1009 close**.
-   Old worker already had `MAX_FRAME = 1024 * 1024` but **silently
-   dropped** (`if (message.length > MAX_FRAME) return;` at 149ebcf
-   `room.ts`) instead of closing.
-2. **Sheet limits (NEW since 149ebcf):** `isCommandBatchWithinLimits`
-   did not exist at 149ebcf (`command-limits.ts` absent). A paste that
-   previously applied can now fail closed with **1008** and the client
-   reconnects with **no error toast** (adapter only sees `close`).
-3. **`MAX_COMMAND_UTF8_BYTES` (120 KiB):** does **not** reject the
-   paste. It only redacts the audit copy. **A legitimate big paste is
-   not rejected by this constant alone.**
-
-**Chat:** messages > 16 KiB chars → silent drop (old accepted any
-string). Normal chat lines are fine.
-
-**Username / auth query on upgrade:** `routes/ws.ts` also rejects
-handshake if `user`/`auth` exceed the shared caps (400). Stock client
-usernames are short random strings.
-
-**Verdict on paste:**
-
-> A **legitimate large paste can now be rejected** where it previously
-> succeeded, but the deciding code is **`isCommandBatchWithinLimits` /
-> `#appendCommand` → `ws.close(1008, 'Command exceeds sheet limits')`**,
-> **not** `MAX_WS_CELL_CHARS` and **not** `MAX_COMMAND_UTF8_BYTES`.
-> `MAX_WS_CELL_CHARS` is a cursor-coord cap and is irrelevant to paste
-> body size. Pastes that inflate the WebSocket frame past 1 MiB now
-> hard-close (1009) instead of silent-drop.
-
----
-
-## 3. Authentication per-message & attachment-room binding
-
-### 3.1 What changed
-
-**Old worker (149ebcf `webSocketMessage`):**
-
-```ts
-const parsed = parseClientMessage(message);
-if (!parsed) return;
-const perMessageAuth =
-  'auth' in parsed && typeof parsed.auth === 'string' ? parsed.auth : '';
-const ctx = this.#buildWsContext(ws, attachment, parsed.room, perMessageAuth);
-await dispatchWsMessage(ctx, parsed);
-```
-
-Client-supplied `parsed.room` selected the logical room context.
-Handshake `attachment.auth` was **not** used as fallback (`''` default).
-
-**New worker (HEAD):**
-
-```ts
-const parsed = parseClientMessage(message);
-if (!parsed || !attachment.room) return;
-// Every room-labelled frame stays on its accepted socket. `ask.recalc`
-// is the one legacy exception: its room names a cross-sheet reference,
-// while this DO supplies the current cached snapshot.
-if (parsed.type !== 'ask.recalc' && parsed.room !== attachment.room) return;
-// The handshake defines the cosmetic user identity for this socket.
-if ('user' in parsed) parsed.user = attachment.user;
-const perMessageAuth =
-  'auth' in parsed && typeof parsed.auth === 'string'
-    ? parsed.auth
-    : attachment.auth;
-const ctx = this.#buildWsContext(
-  ws,
-  attachment,
-  attachment.room,
-  perMessageAuth,
-);
-await dispatchWsMessage(ctx, parsed);
-```
-
-(`room.ts:1545-1565`)
-
-And `applyCommand` always mirrors **`attachment.room`**, never the frame:
-
-```ts
-// Mirror the DO's own room (from the WS handshake attachment),
-// not the per-frame `room` field, because the append lands in
-// *this* DO's storage regardless of what room the frame names.
-const applied = await this.#applyCommandAndMirror(
-  attachment.room,
-  cmdstr,
-);
-```
-
-(`room.ts:1795-1801`)
-
-Upgrade path still stamps identity only from the verified Worker session
-(`routes/ws.ts` builds `X-EC-Uid` / `X-EC-Session-Exp` from
-`getSessionPrincipal`; inbound `X-EC-*` is never copied).
-
-### 3.2 Does an OLD client that still sends `parsed.room` work?
-
-**Yes for the normal single-sheet path.** The 149ebcf (and HEAD) client
-envelope always sets `room` to the adapter’s handshake room:
-
-```ts
-if (out.room === undefined) out.room = opts.room;
-```
-
-(`packages/client/src/ws-adapter.ts:169`, unchanged in spirit since 149ebcf)
-
-So `parsed.room === attachment.room` and the new equality gate passes.
-The field is no longer **trusted** for storage/index side effects, but it
-is still **required** by the parser and must **match**.
-
-**No for the 149ebcf formdata hydrate quirk.** Old boot did:
+At `d2afa90`, `boot.ts` does this when a formdata viewer exists:
 
 ```ts
 if (!SocialCalc._view && ss.formDataViewer) {
   const room = `${SocialCalc._room ?? ''}_formdata`;
-  // ...
+  ss.formDataViewer.sheet._room = room;
+  ss.formDataViewer._room = room;
   SocialCalc.Callbacks.broadcast?.('ask.log', { room });
 } else {
   SocialCalc.Callbacks.broadcast?.('ask.log');
 }
 ```
 
-(149ebcf `packages/client/src/boot.ts`)
+The initial frame is sent on the **main room socket** but labels itself
+`<room>_formdata`. The `d2afa90` Worker trusts that label when constructing the
+message context. Its `ask.log` reply is therefore labelled as formdata even
+though the request is handled by the main RoomDO. The client routes that reply
+to `applyFormDataLog`, which then broadcasts an unqualified main-room
+`ask.log`; that follow-up hydrates the main grid.
 
-That overrides `room` to `<room>_formdata` on the **main-room** socket.
-HEAD worker drops it (`parsed.room !== attachment.room`). HEAD client
-fixed this by **always** also broadcasting main-room `ask.log`
-(`boot.ts:384-390`). An old tab in form/app mode with `formDataViewer`
-therefore **fails to hydrate the main sheet** against a new Worker until
-reload picks up the new bundle.
+The `HEAD` attachment-room equality gate drops the old client's initial
+mismatched frame before any reply can trigger the follow-up. Result: an already
+open `d2afa90` form/app tab reconnecting to the new Worker can remain on its
+loader/stale model.
 
-### 3.3 Per-message auth fallback
-
-Old: missing `auth` on execute → `''` → view-only reject when KEY set.  
-New: missing `auth` → **`attachment.auth`** from the query string on
-upgrade. That is **more permissive for old clients** that relied on the
-handshake `?auth=` and omitted per-frame auth (stock envelope still
-copies `opts.auth` onto every frame when present).
-
-Private rooms (passkeys) additionally require `attachment.uid` and ACL
-membership; anonymous old tabs simply cannot write private sheets (by
-design, new feature surface).
-
----
-
-## 4. Reconnect behavior
-
-### 4.1 Client logic (single-sheet) — quote
-
-`packages/client/src/ws-adapter.ts` (same control flow at 149ebcf and HEAD):
+The client fix landed after the floor in `2acd1d0`. `HEAD` retains the sibling
+request but also always sends a main-room request:
 
 ```ts
-const delay = opts.reconnectDelayMs ?? 500;
-const maxAttempts = opts.maxReconnectAttempts ?? 1800;
-// ...
-function onOpen(): void {
-  reconnectAttempts = 0;
-  notifyStatus({ type: 'open' });
-  flushQueue();
+if (!SocialCalc._view && ss.formDataViewer) {
+  // ...
+  SocialCalc.Callbacks.broadcast?.('ask.log', { room });
 }
-function onClose(ev: { code?: number | undefined; reason?: string | undefined }): void {
-  notifyStatus({ type: 'close', code: ev.code, reason: ev.reason });
-  socket = null;
-  scheduleReconnect();
-}
-function scheduleReconnect(): void {
-  if (closed) return;
-  if (reconnectAttempts >= maxAttempts) {
-    notifyStatus({ type: 'reconnect_failed' });
-    return;
-  }
-  reconnectAttempts++;
-  notifyStatus({ type: 'reconnecting', attempt: reconnectAttempts });
-  pendingTimer = setTimeoutFn(() => {
-    pendingTimer = null;
-    connect();
-  }, delay);
-}
-```
-
-(`ws-adapter.ts:175-246`)
-
-- **Backoff:** fixed **500 ms** delay, **not** exponential.
-- **Budget:** 1800 attempts ≈ 15 minutes of retries, then `reconnect_failed`.
-- **On open:** only `flushQueue()` of frames buffered while offline.
-- **No** `ask.log` / snapshot refetch is issued from the adapter on
-  reconnect.
-- **No** reset of `SocialCalc.hadSnapshot`.
-
-Initial hydrate is a one-shot from boot:
-
-```ts
 SocialCalc.Callbacks.broadcast?.('ask.log');
 ```
 
-(`boot.ts:390`)
+The mismatched sibling-labelled frame may still be dropped, but it is no longer
+the sole hydrate request. **Mitigation: full page reload onto the target
+client bundle.** This finding therefore still applies to the real migration;
+it is not removed or re-scoped away.
 
-And `applyLog` intentionally no-ops after the first snapshot:
+---
+
+## 4. Sheet limits: still a migration delta
+
+`git cat-file -e d2afa90:packages/worker/src/lib/command-limits.ts` fails because
+the path does not exist in that tree. `git log --diff-filter=A` identifies
+`b7d8840` as its introduction.
+
+At the target:
+
+- a native WebSocket `execute` that exceeds sheet/range limits closes with
+  `1008 "Command exceeds sheet limits"`;
+- RoomDO command/snapshot HTTP paths return 413;
+- current public `POST /_/:room` propagates the RoomDO's non-2xx response after
+  `5d37bd0`, rather than falsely returning 202;
+- `MAX_WS_CELL_CHARS` is only a cursor-coordinate cap and is unrelated to
+  pasted cell contents;
+- `MAX_COMMAND_UTF8_BYTES` only substitutes an audit-log placeholder and is
+  not the rejection mechanism.
+
+Therefore the original “large paste can now be rejected” warning **still
+applies** from the corrected floor. It must not be labeled already deployed.
+Existing sheets above 200,000 declared cells remain readable and editable
+within their current bounds but cannot expand rows/columns past the target
+limits.
+
+---
+
+## 5. Reconnect: standing property, not target regression
+
+`packages/client/src/main.ts` has identical `applyLog` / `hadSnapshot` behavior
+at `d2afa90` and `HEAD`:
 
 ```ts
 if (SocialCalc.hadSnapshot) return;
 SocialCalc.hadSnapshot = true;
 ```
 
-(`main.ts:347-348`)
+`ws-adapter.ts` is not byte-identical: `HEAD` resolves relative WebSocket URLs
+against `location.href` for older-browser compatibility. However, the
+reconnect state machine is unchanged:
 
-`hadSnapshot` can flip false only via the CryptoJS editor-settings hash
-callback when a loaded settings line matches the live sheet
-(`socialcalc-callbacks.ts:114-120`) — not on transport reconnect.
+- fixed 500 ms delay by default, not exponential;
+- up to 1,800 attempts (about 15 minutes);
+- `close` schedules reconnect;
+- `open` resets the attempt count and flushes queued outbound frames;
+- no `ask.log` / snapshot refetch;
+- no reset of `SocialCalc.hadSnapshot`.
 
-### 4.2 Multi-sheet client
+Consequences across any Worker deploy that restarts the room DO:
 
-`packages/client-multi` does **not** own a WebSocket. Each sheet iframe
-runs the single-sheet client above. TOC freshness is HTTP polling
-(`useTocPoll.ts`), not WS resume.
+- the tab usually reconnects automatically;
+- frames queued while offline flush after reopen;
+- frames already handed to the dying socket have no ack/replay guarantee;
+- edits made by peers during the gap are not fetched;
+- peers can retain divergent optimistic models until a full reload.
 
-### 4.3 Durable Object restart (every Worker deploy)
+This is operationally important but must be communicated as a **standing
+client limitation exposed by the restart**, not as behavior introduced by the
+production→target migration.
 
-| Question | Answer |
-| -------- | ------ |
-| Does an open tab automatically reconnect? | **Yes** — `close` → `scheduleReconnect` → new `/_ws/:room`. |
-| Does it resync sheet state without manual reload? | **No.** No snapshot/`ask.log` on reconnect; `hadSnapshot` blocks a late `log` even if one were pushed. |
-| Are unsaved local edits preserved? | **Locally yes** (optimistic SocialCalc model). **On the server:** frames still in the offline `queue` flush on open; frames already handed to a dying socket with no ack are **at risk of loss**. There is no delivery receipt / replay log. |
-| Multiplayer after deploy | Peers may each keep divergent local models until a full page reload forces `ask.log`. |
+`packages/client-multi` still delegates each sheet to a single-sheet iframe;
+its TOC freshness is HTTP polling and does not repair iframe sheet state.
 
 ---
 
-## 5. Asset / bundle skew
+## 6. Root HTML, normal cache, and AppCache skew
 
-### 5.1 `manifest.appcache`
+### 6.1 Actual layout delta
 
-- Repo root + curated `assets/manifest.appcache` still ship a **2016**
-  CACHE MANIFEST listing **legacy** paths (`static/ethercalc.js`,
-  `player/main.js`, …) — **not** `static/player.js`.
-- `NETWORK: *` is present (network fallback).
-- Current `assets/index.html` has **no** `<html manifest=…>` and no
-  appcache link; it loads:
+At `d2afa90`, `index.html`:
 
-```html
-<script type="module" src="./static/player.js"></script>
-```
+- declares `<html manifest="manifest.appcache">`;
+- contains inline room/bootstrap, localization, resize, and chat-submit logic;
+- loads the already-deployed passkey UI and `static/player.js`.
 
-(`assets/index.html:27`)
+At `HEAD`, the manifest attribute is gone and page logic is extracted to five
+tracked files introduced at `b7d8840`:
 
-- DevMode can serve a dynamic always-dirty stub
-  (`routes/assets.ts` `/manifest.appcache`); production serves the static
-  file via ASSETS.
+- `static/index-bootstrap.js`;
+- `static/index-l10n.js`;
+- `static/panels.js`;
+- `static/start-bootstrap.js`;
+- `static/start-page.js`.
 
-**Modern Chromium has removed AppCache.** This file does **not** force
-old tabs to reload in current browsers. It is not a cutover control plane.
+The target still ships `manifest.appcache` and all assets referenced by the old
+root. The manifest blob itself is unchanged from `d2afa90`.
 
-### 5.2 Cache headers
+### 6.2 Cached old root HTML against the new Worker
 
-Global middleware (`packages/worker/src/index.ts:115-117`):
+A cached `d2afa90` root normally **does not fail with asset 404s** against the
+new Worker. Its inline bootstraps need no extracted files, and the target still
+serves `jquery.js`, `socialcalc.js`, passkey assets, `player.js`, localization,
+styles, and images. Instead it prolongs a hybrid window:
+
+- the DOM/page bootstrap remains old;
+- unhashed external files may be old or new depending on browser/edge cache;
+- the old `player.js` can continue speaking to the new stricter Worker;
+- a reload is not proof that every cached resource changed unless cache is
+  purged or bypassed.
+
+The inverse direction is sharper during gradual rollout or rollback: target
+HTML requires the extracted `static/*.js`; a request routed to a Worker/assets
+version before `b7d8840` can return 404 for those files. Version-coherent asset
+routing and the runbook's root/asset probes are therefore load-bearing.
+
+### 6.3 Browsers that still honor Application Cache
+
+Modern browsers that removed AppCache ignore the manifest attribute; normal
+HTTP/browser/edge caching remains the risk. In a browser that still honors it,
+the old root is a **master entry** and the manifest's explicit CACHE entries
+stay pinned. `NETWORK: *` permits non-cached URLs to use the network, but does
+not evict the cached master document or explicit entries.
+
+Because the target continues serving a byte-identical `manifest.appcache`, such
+a browser sees no manifest update. It can keep serving the cached old root and
+listed legacy assets, never observing that the network's new root removed the
+manifest attribute. Purging Cloudflare's edge cache alone cannot clear a
+client-side Application Cache. The user must clear site data/application cache
+or use a browser that no longer supports AppCache; changing/retiring the
+manifest response would require a separate source decision and is not part of
+this documentation change.
+
+---
+
+## 7. Session-cookie rename: user-visible rollout event
+
+At `d2afa90`:
 
 ```ts
-if (hasSession || isAuthRoute || hasAuthorization || isOperatorRoute) {
-  c.header('Cache-Control', 'private, no-store');
-}
+export const SESSION_COOKIE_NAME = 'ec_sess';
 ```
 
-That is **only** for session/auth/operator traffic — **not** anonymous
-HTML or `/static/*`.
-
-`serveAsset` (`routes/assets.ts:92-135`) rewrites `Content-Type` when
-needed and **does not set `Cache-Control`**. HTML and `static/player.js`
-therefore inherit **Cloudflare Workers Assets default caching** on the
-hosted path.
-
-**MIME split for `/static/player.js`** (runbook §3.2 item 9 / §5 Probe 4;
-`mimeForPath` / `MIME_BY_EXT` in `routes/assets.ts:54-78,122-130`):
-
-- **Hosted Cloudflare Workers Assets** (production/staging / `wrangler dev`):
-  upstream already supplies a real type — empirically
-  `text/javascript; charset=utf-8`. `serveAsset` passes non-
-  `application/octet-stream` types through untouched.
-- **Standalone workerd / Sandstorm `DiskDirectory`:** upstream is
-  `application/octet-stream` for every file; `serveAsset` rewrites `.js`
-  via `mimeForPath` to `application/javascript; charset=utf-8`.
-
-Either JavaScript subtype is fine for `<script type="module">`; treat the
-difference as informational. Fail only on missing/wrong major type.
-
-`static/player.js` is a **fixed unhashed URL** produced by
-`scripts/build-assets.ts` (`playerBundle → static/player.js`). There is
-**no content hash** in the filename.
-
-**Explicit skew hazard:**
-
-> HTML is **not** universally `no-store`. `/static/player.js` is a
-> long-lived, unhashed URL with **no** Worker-set short cache TTL. An
-> open tab keeps its already-parsed JS forever; a new visit may still
-> receive a cached `player.js` from the edge/browser until that cache
-> entry expires or is purged. **This is a real old-bundle×new-worker
-> skew window after cutover (and the inverse after rollback).**
-
----
-
-## 6. `/socket.io/*` legacy shim
-
-Still registered early in the Worker:
+At `HEAD`:
 
 ```ts
-registerWs(app);
-registerLegacySocketIo(app);
+export const SESSION_COOKIE_NAME = '__Host-ec_sess';
 ```
 
-(`packages/worker/src/index.ts:258-259`)
+The rest of `packages/worker/src/lib/session.ts` is unchanged by this diff.
+`parseSessionCookie` compares each cookie name only to
+`SESSION_COOKIE_NAME`; there is no `ec_sess` fallback. Login and logout also
+set/clear only the active constant.
 
-Routes (`packages/worker/src/routes/legacy-socketio.ts:61-108`):
+Consequences:
 
-```ts
-app.get('/socket.io/socket.io.js', () => { /* … Cache-Control: public, max-age=3600 */ });
-app.get('/socket.io/1/', (c) => shim.handleHandshake(/* … */));
-app.get('/socket.io/1', (c) => shim.handleHandshake(/* … */));
-app.get('/socket.io/1/websocket/:sid', async (c) => { /* → RoomDO /_do/legacy-ws */ });
-app.on(['GET', 'POST'], '/socket.io/1/xhr-polling/:sid', async (c) => shim.handleXhrPoll(/* … */));
-app.all('/socket.io/*', (c) => c.text('Not Found', 404));
-```
+1. every logged-in production passkey user whose browser has only `ec_sess`
+   appears anonymous when routed to the target Worker;
+2. an open private-room tab loses its verified principal when the deploy drops
+   its socket, so reconnect can be denied until the user re-authenticates;
+3. public rooms remain usable anonymously, but passkey UI/whoami state flips to
+   signed out;
+4. during a percentage ramp, the same browser can appear signed in on the old
+   version and signed out on the new version;
+5. passkey login against the target issues `__Host-ec_sess`; the old and new
+   names can coexist because the target does not migrate or delete `ec_sess`.
 
-**Legacy handshake is still accepted.** New caps on the in-Worker XHR
-adapter (`MAX_SOCKET_IO_SESSIONS`, poll body/frame/queue limits) can
-413/503/close abusive pollers; ordinary handshake+websocket upgrades
-still complete. Inbound event payloads now run through
-`parseClientMessageValue` (stricter than 149ebcf).
-
-AGENTS.md decision #4 remains: shim kept indefinitely.
+Frame this plainly in user communications: **“You may be signed out during the
+upgrade; sign in again to reopen private sheets.”** This is temporary
+lockout-until-relogin, not ACL declassification.
 
 ---
 
-## Scenario matrix
+## 8. Corrected scenario matrix
 
-| scenario | affected feature | outcome | evidence | mitigation |
-| -------- | ---------------- | ------- | -------- | ---------- |
-| old×new | Normal cell edits / chat / cursors on public rooms | **works** | Client envelope room matches attachment (`ws-adapter.ts:169`); types unchanged | None |
-| old×new | Large paste / huge command batch (native WS) | **degrades → breaks** (1008 close; edit may be only local) | `isCommandBatchWithinLimits` + `room.ts:1803-1808`; absent at 149ebcf | Reload; split paste; or temporarily raise limits before cutover |
-| old×new | Large paste via HTTP `POST /_/:room` | **breaks with truthful 413** on current `main` (was **silent 202** at audit time — **Superseded**, runbook §8 PR 4) | `routes/rooms.ts` propagates DO non-2xx; DO `#postCommands` 413 | API clients must handle 413; browser tabs use WS path above |
-| old×new | WS frame > 1 MiB | **breaks** connection (1009) | `room.ts:1522-1528` (old: silent drop) | Rare; user reloads / retries smaller ops |
-| old×new | Cursor `ecell` string | **works** (64-char cap irrelevant to A1 coords) | `MAX_WS_CELL_CHARS` on coord fields only | None |
-| old×new | Audit log fidelity for huge commands | **degrades** (placeholder audit text; command still runs if sheet limits pass) | `room.ts:2090-2093` | Operator-only concern |
-| old×new | Form/app `formDataViewer` initial hydrate | **breaks** without reload | 149ebcf boot only `ask.log`s `_formdata` room; HEAD drops mismatched room (`room.ts:1550`) | Full page reload to HEAD `player.js` (always main `ask.log`) |
-| old×new | Private/passkey rooms | **breaks** for anonymous old tabs (feature new since tag) | ACL + `attachment.uid` (`room.ts:1829-1841`) | Expected; sign-in + new bundle |
-| old×new | Deploy-time DO restart mid-edit | **degrades** — auto-reconnect, **no** state resync; possible lost in-flight executes | `ws-adapter.ts:210-246`; `main.ts:347-348` | Soft banner “reload to refresh”; drain edits before deploy |
-| old×new | Multi-sheet TOC | **works** via HTTP poll (not WS) | `client-multi/src/useTocPoll.ts` | None |
-| old×new | Legacy socket.io embeds | **works** with stricter payload validation | `legacy-socketio.ts:61-108`; `translate.ts` → `parseClientMessageValue` | Watch 413/session caps |
-| old×new | Cached `static/player.js` after deploy | **degrades** (prolonged skew) | unhashed URL; `serveAsset` sets no cache policy; HTML not globally `no-store`; MIME may be `text/javascript` (hosted) or `application/javascript` (self-host rewrite) | Purge CF cache / add hash or `no-cache` on HTML+player at cutover |
-| new×old (rollback) | Normal native WS edits | **works** | Old parser accepts new canonical frames; old worker trusts `parsed.room` (new client sends matching room) | None for public rooms |
-| new×old | Sheet-limit closes / rate-limit closes | **N/A** (old worker lacks them) — large pastes **work again** | `command-limits.ts` absent at 149ebcf | — |
-| new×old | Private room UX in new bundle | **breaks** against old worker without passkey/ACL stack | Phase A landed after tag | Don’t roll UI forward without worker; or hard-reload users to matching tag |
-| new×old | Formdata boot fix (always main `ask.log`) | **works better** on old worker than old client did | HEAD `boot.ts:384-390` | — |
-| new×old | Strict client still sends bounded frames | **works** | Subset of what old accepts | None |
+| Direction / scenario | Corrected outcome | Classification | Operator mitigation |
+| :------------------- | :---------------- | :------------- | :------------------ |
+| old open tab → new Worker: normal public edits/chat/cursors | **Works.** Stock room-labelled frames satisfy the canonical parser and attachment-room gate. | Compatible | None beyond general deploy notice. |
+| old open tab → new Worker: DO restart/reconnect | Socket reopens and queued frames flush, but no snapshot is fetched; in-flight unacked edits and peer-gap edits can be lost/diverge. | **Standing property**, not migration regression | Lowest-traffic window; tell active users to reload after deploy. |
+| old open form/app tab → new Worker | Initial `_formdata`-labelled `ask.log` is dropped; its main-room follow-up never occurs. | **Still-applicable regression** | Full reload onto target client, which always sends main-room `ask.log`. |
+| old logged-in private tab → new Worker | Old `ec_sess` is ignored; reconnect/HTTP access appears anonymous and can be denied. | **Newly identified regression** | Warn users; reload and complete passkey login again. |
+| old/new client → new Worker: over-limit paste/batch | Native WS closes 1008; public command HTTP now truthfully returns 413. | **Still-applicable regression/product ceiling** | Split paste; API callers handle 413; do not blame the 64-char cursor cap. |
+| client → new Worker: native frame >1 MiB | New Worker closes 1009 instead of the old silent drop. | Changed failure mode; numeric ceiling already deployed | Retry smaller operation; reload after close if needed. |
+| legacy Socket.IO client → new Worker | Normal traffic works; malformed/oversized payloads, excess sessions, huge poll batches, or queue overflow fail closed. | Stricter but compatible for normal use | Monitor 413/503/session closes for legacy embeds. |
+| cached old root → new Worker | Normally boots because old references remain served, but HTML/bootstrap and unhashed resources can remain skewed. | **Degraded/prolonged skew** | Purge edge cache; advise hard reload; probe root and target assets. |
+| AppCache-held old root → new Worker | AppCache-capable browser may keep the old master root indefinitely because the manifest is still served unchanged. | **Pinned stale client** | Clear client site/application cache or use non-AppCache browser; edge purge alone is insufficient. |
+| target HTML → pre-`b7d8840` Worker/assets during ramp or rollback | Extracted page scripts can 404. | **Broken mixed-version asset path** | Version-coherent asset rollout; probe all five scripts; purge after ramp/rollback. |
+| new client → old Worker (rollback): normal public WS | Old parser accepts canonical frames; normal edits work. | Compatible | Reload to version-coherent assets. |
+| new client → old Worker: private auth after target login | Old Worker reads `ec_sess`, not `__Host-ec_sess`; a browser with only the new cookie appears signed out there. | Reverse cookie skew | Rollback communication must also ask users to sign in again if required. |
+| new client → old Worker: large batches | Old Worker lacks sheet/range command limits, so formerly rejected batches may apply again. | Behavior reverts | Do not use rollback as a data-limit workaround. |
+| multi-sheet TOC | TOC polls over HTTP; sheet iframes retain the single-sheet reconnect limitation. | Compatible TOC, standing iframe risk | Reload affected sheet iframe/page. |
 
 ---
 
-## Verdict
+## 9. Cutover verdict
 
-**A forced client reload is not strictly required for the common public
-single-sheet editing path** — the 149ebcf native client already speaks a
-room-labelled JSON dialect the new Worker accepts, automatically
-reopens `/_ws/:room` after the deploy drops Durable Object sockets, and
-keeps optimistic local edits in memory. **However, a forced or
-strongly-prompted reload is required for a clean cutover in production**
-because (1) reconnect does **not** resnapshot, so multiplayer and
-in-flight executes can diverge silently across the DO restart, (2) the
-old form/app `formDataViewer` hydrate path is hard-broken by
-attachment-room binding, (3) new sheet/command limits can close sockets
-on pastes that used to succeed, and (4) unhashed `/static/player.js`
-plus non-`no-store` HTML mean skew can persist long after the Worker
-flips unless cache is purged or users reload. Treat cutover as
-**Worker-compatible with old tabs for basic edits, operationally
-requiring client refresh** (banner, cache purge, or hashed assets) before
-calling the rollout done; the same reload discipline applies in reverse
-on rollback if private-room UI has already been adopted.
+A forced reload is not required for basic public single-sheet protocol
+compatibility. It remains operationally necessary for a clean cutover because:
+
+1. deploy-time reconnect has no state re-hydration (a standing limitation);
+2. an old form/app tab has a real hydrate break against the room-bound Worker;
+3. the session-cookie rename signs existing passkey users out and blocks
+   private-room reconnect until re-login;
+4. new command limits can reject edits that the candidate production floor
+   accepts;
+5. old inline/AppCache HTML and new extracted-script HTML create a broader
+   cache/version-coherence surface than the original `player.js`-only warning.
+
+Plan the window and communications around **reload plus possible passkey
+re-authentication**, not around newly introducing passkeys or changing the
+reconnect algorithm. If production is later pinned above `d2afa90`, re-run the
+same diffs from that exact SHA and remove only findings whose introducing
+commit is already deployed; the conservative analysis above cannot understate
+the skew within the current candidate range.
