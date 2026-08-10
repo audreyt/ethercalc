@@ -268,6 +268,15 @@ body and marked superseded where the real baseline changes the verdict.
   ```
 * **Analysis:** `compatibility_date` in `wrangler.toml` moved from `"2024-11-12"` to `"2026-07-21"`. `config.capnp` uses `"2026-07-14"`. The capnp lockstep constraint requires that the standalone `workerd` binary release date is >= `2026-07-14`.
 * **Classification:** `[FORWARD-COMPATIBLE]` (Cloudflare Wrangler) / `[NEEDS MIGRATION]` (Self-host workerd binary).
+* **Rescope (`d2afa90..HEAD`) — STILL IN DELTA:** Confirmed against the
+  real floor, not only the old tag. `git diff d2afa90..HEAD --
+  packages/worker/wrangler.toml` moves `compatibility_date` from
+  `"2024-11-12"` → `"2026-07-21"` and adds `run_worker_first = true` on
+  both default and staging `[assets]`. `config.capnp` moves
+  `compatibilityDate` from `"2025-04-01"` → `"2026-07-14"`. Hosted
+  Wrangler still clamps; self-host must ship a workerd binary whose
+  release date is ≥ the capnp pin. Staging rehearsal must use the ship
+  tree’s dates (runbook §C).
 
 ---
 
@@ -288,6 +297,18 @@ body and marked superseded where the real baseline changes the verdict.
   * **New Client -> Old Worker:** Old worker parses standard JSON frames without strict bounds checks.
   * **Legacy `/socket.io/*` Shim:** Kept intact and bound to room attachment.
 * **Classification:** `[FORWARD-COMPATIBLE]`.
+* **Rescope (`d2afa90..HEAD`) — STILL IN DELTA:** Genuinely new relative
+  to production floor. At `d2afa90`, `parseClientMessage` is type-only;
+  `MAX_WS_*` field caps, canonical `parseClientMessageValue`,
+  `packages/shared/src/multi.ts`, Socket.IO session/poll caps, and
+  attachment-room equality binding land later (primarily `b7d8840`).
+  `command-limits.ts` is **absent** at `d2afa90` (`git cat-file -e`
+  fails) and is introduced by `b7d8840`. Qualification vs original
+  text: the raw **1 MiB** native string-frame ceiling already exists at
+  `d2afa90` as `MAX_FRAME` in `room.ts` (silent drop); `HEAD` keeps the
+  same threshold as `MAX_WS_FRAME_CHARS` but closes with `1009` and
+  covers binary + per-field limits. Stock frames still pass; oversized
+  / malformed fail closed. See `SKEW_AND_RECONNECT.md` §§2–4.
 
 ---
 
@@ -301,6 +322,20 @@ body and marked superseded where the real baseline changes the verdict.
 * **Analysis:** HTML inline scripts were moved to five tracked static files (`static/index-bootstrap.js`, `static/index-110n.js`, `static/panels.js`, `static/start-bootstrap.js`, `static/start.js`). CSP `connect-src` uses `ETHERCALC_ORIGIN` for WebSocket authority.
 * **Uncertainty Note:** Behavior under stale cached HTML + new CSP or vice versa is **UNKNOWN** (no automated integration test covers asset-vs-CSP version skew).
 * **Classification:** `[UNKNOWN]`.
+* **Rescope (`d2afa90..HEAD`) — STILL IN DELTA (no longer UNKNOWN):**
+  Live prod root still has inline bootstraps +
+  `<html manifest="manifest.appcache">` and
+  `GET /static/index-bootstrap.js` → 404, so page-script extraction has
+  **not** shipped. `b7d8840` adds `static/index-bootstrap.js`,
+  `index-l10n.js`, `panels.js`, `start-bootstrap.js`, `start-page.js`,
+  drops the manifest attribute from `index.html`, and introduces
+  `packages/worker/src/lib/csp.ts` (`connect-src` anchored on
+  `ETHERCALC_ORIGIN`). Passkey static assets were already on the
+  `d2afa90` root — do not re-announce them. Skew behavior is documented
+  in `SKEW_AND_RECONNECT.md` §6 (cached old HTML usually boots on the
+  new Worker; ship HTML against pre-`b7d8840` assets 404s; AppCache can
+  pin old master HTML because the manifest blob is unchanged). Original
+  `[UNKNOWN]` classification is **superseded** by that analysis.
 
 ---
 
@@ -366,6 +401,21 @@ body and marked superseded where the real baseline changes the verdict.
   * **PITR Restore:** Endpoints (`/_do/pitr-restore`) retain an undo bookmark in DO storage.
   * **Scheduler (`_timetrigger`):** Fixed bug where partial scheduler retries treated failures as success.
 * **Classification:** `[FORWARD-COMPATIBLE]`.
+* **Rescope (`d2afa90..HEAD`) — PARTIALLY IN DELTA:**
+  * **Already at `d2afa90`:** RoomDO `#mirrorIndex` early-return when
+    `access === 'private'`; basic `setAlarm` housekeeping; audit/chat
+    D1 mirror paths; PITR bookmark endpoints. Private-index exclusion
+    is not newly arriving.
+  * **Still in delta:** `scheduled.ts` / `routes/timetrigger.ts` /
+    `handlers/cron.ts` / `lib/cron.ts` harden across the range
+    (~85/+69 lines combined) — gated `/_timetrigger` (Bearer migrate
+    token), scheduler refusal handling (no longer treats refusals as
+    fires), email sender structuring. AuthDO alarm expiry boundary
+    work and large `room.ts` integration with command-limits /
+    attachment binding / mirror apply paths also ship here. Public
+    sheet path needs no special alarm migration step; treat scheduler
+    and AuthDO alarm trim as part of security-audit hardening, not as
+    a green-field cron introduction.
 
 ---
 
