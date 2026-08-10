@@ -356,15 +356,35 @@ describe("GET /static/socialcalc.js", () => {
 });
 
 describe("GET /static/player.js", () => {
-  it("serves the built client bundle through ASSETS", async () => {
+  it("rewrites standalone-workerd octet-stream to application/javascript", async () => {
+    // Self-host / Sandstorm DiskDirectory returns application/octet-stream for
+    // every file. serveAsset only rewrites that opaque type (or a missing CT)
+    // via mimeForPath; this is NOT the hosted Cloudflare Assets path.
     const stub = buildFullStub();
     const res = await call("/static/player.js", { ASSETS: stub.ASSETS });
     expect(res.status).toBe(200);
-    // DiskDirectory/standalone workerd emits octet-stream; serveAsset/mimeForPath
-    // rewrites .js to application/javascript so module-script MIME checks pass.
     expect(res.headers.get("Content-Type")).toBe("application/javascript; charset=utf-8");
     expect(await res.text()).toBe("/* player */");
     expect(stub.calls.at(-1)?.pathname).toBe("/static/player.js");
+  });
+
+  it("passes through a non-opaque Content-Type from the assets binding", async () => {
+    // Hosted Cloudflare Workers Assets (and wrangler dev) already supply a
+    // real JS MIME. serveAsset must leave it untouched — not overwrite with
+    // MIME_BY_EXT — because module-script loads depend on the edge type.
+    const { fetcher, calls } = makeStubFetcher(
+      new Map([
+        [
+          "/static/player.js",
+          { body: "/* player */", contentType: "text/javascript; charset=utf-8" },
+        ],
+      ]),
+    );
+    const res = await call("/static/player.js", { ASSETS: fetcher });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("text/javascript; charset=utf-8");
+    expect(await res.text()).toBe("/* player */");
+    expect(calls.at(-1)?.pathname).toBe("/static/player.js");
   });
 });
 

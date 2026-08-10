@@ -384,7 +384,7 @@ Execute the following verification checklist against `https://ethercalc-staging.
 5. **Legacy `/socket.io/*` Transport Shim**:
    - Request `curl -fsS "https://ethercalc-staging.audreyt.workers.dev/socket.io/1/?t=$(date +%s)"`.
    - Verify response returns HTTP 200, `Content-Type: text/plain; charset=utf-8`, and body matching `<32-hex-session-id>:60:60:websocket,xhr-polling` (matching local Worker baseline in §5 Probe 8).
-   > **PARTIALLY AUTOMATED** — `GET /socket.io/1/ returns a colon-delimited handshake body` (`packages/worker/test/legacy-socketio.test.ts:35-46`; worker `test:workers`, CI `test`) asserts 200, text/plain, a 32-hex SID, and WebSocket transport. It only requires positive timeout fields, not the runbook's exact `60:60`, and does not exercise staging routing.
+   > **PARTIALLY AUTOMATED** — `GET /socket.io/1/ returns a colon-delimited handshake body` (`packages/worker/test/legacy-socketio.test.ts`; worker `test:workers`, CI `test`) asserts 200, text/plain, a `/^[0-9a-f]{32}$/` SID, exact `60:60` timeouts, and transports `websocket,xhr-polling`. It does not exercise staging routing.
 6. **XLSX Import and Export**:
    - Upload a test `.xlsx` file via `POST /_/staging-xlsx-test` with header `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` (which decodes binary workbook data into `loadclipboard` + `paste A1 all` commands via the `xlsx-deferred` handler in `packages/worker/src/routes/rooms.ts:745`).
    - Export sheet via `GET /staging-xlsx-test.xlsx` (or the alternative valid export spelling `GET /_/staging-xlsx-test/xlsx`). Verify response returns `200 OK` with `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`, binary body starting with ZIP signature bytes `PK\x03\x04`, and `Content-Disposition: attachment; filename="staging-xlsx-test.xlsx"`. Confirm downloaded file parses correctly and preserves cell data.
@@ -403,9 +403,12 @@ Execute the following verification checklist against `https://ethercalc-staging.
    > **PARTIALLY AUTOMATED** — `whoami reports the verified principal, anonymity, and availability` (`routes-auth.node.test.ts:201-229`; worker `test:coverage`) covers the enabled response, while `packages/e2e/tests/passkey-webauthn-real.spec.ts:194-407` (CI `e2e`) completes real virtual-authenticator registration and private-room authorization against a localhost RP. The manual ceremony proves the staging RP/origin and deployed credentials, which those local gates cannot.
 9. **Asset Purge & Freshness Check**:
    - Request `curl -fsSI https://ethercalc-staging.audreyt.workers.dev/static/player.js`.
-   - Confirm asset loads cleanly with `200 OK` and `Content-Type: text/javascript; charset=utf-8` (matching local Worker baseline in §5 Probe 4).
-   - **Note**: Production Cloudflare Workers Assets edge may emit `Content-Type: application/javascript` or `text/javascript` depending on global edge MIME tables; operators should treat a MIME subtype mismatch as informational as long as HTTP status is `200 OK`.
-   > **PARTIALLY AUTOMATED** — `packages/worker/test/assets.test.ts:358-365` (worker `test:workers`, CI `test`) asserts that `/static/player.js` is served with 200, and `packages/e2e/tests/client-single-smoke.spec.ts:37-125` (CI `e2e`) proves the bundle boots and persists an edit. Neither checks staging edge-cache freshness or pins the MIME subtype.
+   - Confirm asset loads cleanly with `200 OK` and a JavaScript `Content-Type` that browsers accept for `<script type="module">`.
+   - **MIME split** (`packages/worker/src/routes/assets.ts` `serveAsset` / `mimeForPath`):
+     - **Hosted Cloudflare Workers Assets** (staging/production, and `wrangler dev`) already supply a real type — empirically `text/javascript; charset=utf-8`. `serveAsset` passes non-`application/octet-stream` types through untouched.
+     - **Standalone workerd self-host / Sandstorm `DiskDirectory`** returns `application/octet-stream` for every file; `serveAsset` then rewrites `.js` via `MIME_BY_EXT` to `application/javascript; charset=utf-8`.
+   - Either subtype is acceptable for module-script loads; treat a `text/javascript` ↔ `application/javascript` difference as informational as long as status is `200 OK`. Fail on missing/wrong major type (e.g. `application/octet-stream` or `text/plain`).
+   > **PARTIALLY AUTOMATED** — `packages/worker/test/assets.test.ts` pins both branches of `serveAsset` for `/static/player.js`: standalone-workerd rewrite to `application/javascript; charset=utf-8`, and pass-through of a non-opaque `text/javascript; charset=utf-8` from the assets binding (worker `test:workers`, CI `test`). `packages/e2e/tests/client-single-smoke.spec.ts:37-125` (CI `e2e`) proves the bundle boots and persists an edit. Neither checks staging edge-cache freshness.
 10. **Cross-Room Index Gating (`/_rooms*`)**:
    - Request `curl -sS -i https://ethercalc-staging.audreyt.workers.dev/_rooms`.
    - On staging (`ETHERCALC_CORS="1"`), verify endpoint returns HTTP `403 Forbidden`, `Content-Type: text/plain; charset=utf-8`, and body matching exactly `_rooms not available with CORS` (30 bytes, no trailing newline, matching local Worker baseline in §5 Probe 9).
@@ -713,11 +716,24 @@ curl -sS -i -X POST https://ethercalc.net/_/private
 
 # Probe 4: Fresh Client Asset Probe (Verifies Cache Purge)
 curl -fsSI https://ethercalc.net/static/player.js
-# Expected [VERIFIED LOCALLY]: HTTP 200 with
-# `Content-Type: text/javascript; charset=utf-8`. The local Workers Assets
-# binding also returned `Cache-Control: public, max-age=0, must-revalidate`;
-# production edge-cache freshness must still be checked after the purge.
-# **PARTIALLY AUTOMATED** — `assets.test.ts:358-365` asserts a 200 asset response (worker `test:workers`, CI `test`), and Playwright `client-single-smoke.spec.ts:37-125` proves the shipped asset set boots locally (CI `e2e`). Only this live check can validate the post-purge production edge cache and its MIME table.
+# Expected [VERIFIED LOCALLY]: HTTP 200 with a JS Content-Type.
+# Hosted Cloudflare Workers Assets path (this probe): empirically
+# `Content-Type: text/javascript; charset=utf-8` — `serveAsset` passes it
+# through because it is not application/octet-stream
+# (`packages/worker/src/routes/assets.ts`). Standalone workerd self-host
+# instead hits the mimeForPath fallback and serves
+# `application/javascript; charset=utf-8`. Either subtype is fine for
+# `<script type="module">`; reject only non-JS types.
+# The local Workers Assets binding also returned
+# `Cache-Control: public, max-age=0, must-revalidate`; production
+# edge-cache freshness must still be checked after the purge.
+# **PARTIALLY AUTOMATED** — `assets.test.ts` pins both the hosted
+# pass-through (`text/javascript; charset=utf-8`) and the self-host
+# rewrite (`application/javascript; charset=utf-8`) branches for
+# `/static/player.js` (worker `test:workers`, CI `test`). Playwright
+# `client-single-smoke.spec.ts:37-125` proves the shipped asset set
+# boots locally (CI `e2e`). Only this live check can validate the
+# post-purge production edge cache.
 
 # Probe 5: Public Sheet Read/Write Probe
 curl -fsS -i https://ethercalc.net/testprodcutover
@@ -764,7 +780,7 @@ curl --http1.1 --max-time 2 -sS -D - -o /dev/null \
 curl -fsS -i "https://ethercalc.net/socket.io/1/?t=$(date +%s)"
 # Expected [VERIFIED LOCALLY]: HTTP 200, Content-Type: text/plain; charset=utf-8,
 # body `<32-hex-session-id>:60:60:websocket,xhr-polling`
-# **PARTIALLY AUTOMATED** — `legacy-socketio.test.ts:35-46` asserts 200, text/plain, 32-hex SID, and WebSocket transport (worker `test:workers`, CI `test`), but only checks that both timeout fields are positive rather than exactly `60:60`. Production routing and the stricter response remain live checks.
+# **PARTIALLY AUTOMATED** — `legacy-socketio.test.ts` asserts 200, text/plain, `/^[0-9a-f]{32}$/` SID, exact `60:60` timeouts, and transports `websocket,xhr-polling` (worker `test:workers`, CI `test`). Production routing remains a live check.
 
 # Probe 9: Cross-Room Index Gate
 curl -sS -i https://ethercalc.net/_rooms
