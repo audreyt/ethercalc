@@ -114,6 +114,19 @@ body and marked superseded where the real baseline changes the verdict.
   ```
 * **Analysis:** A new Durable Object class `AuthDO` (`AUTH` binding) was added along with migration `tag = "v2"` specifying `new_sqlite_classes = ["AuthDO"]`. Both `RoomDO` and `AuthDO` use SQLite-backed DO storage (`new_sqlite_classes`). No classes were renamed or deleted.
 * **Classification:** `[NEEDS MIGRATION]` (wrangler deploy executes `v2` migration) / `[FORWARD-COMPATIBLE]` (existing `RoomDO` instances are untouched).
+* **Rescope (`d2afa90..HEAD`) — ALREADY DEPLOYED:** The original
+  `[NEEDS MIGRATION]` verdict assumed production was pre-`v2`. Both
+  `d2afa90` and `HEAD` declare the same `[[migrations]]` block
+  (`tag=v1` RoomDO, `tag=v2` AuthDO) and the same `ROOM`/`AUTH`
+  bindings (`git diff d2afa90..HEAD -- packages/worker/wrangler.toml`
+  changes only `compatibility_date`, asset `run_worker_first`, cron
+  comments, and email-binding comments — **not** migrations/classes).
+  Live `GET /_auth/whoami` → `{"uid":null,"enabled":true}` requires
+  `env.AUTH` bound and `authEnabled`, so migration `v2` is already
+  applied in production. **Superseded:** “execute wrangler deploy to
+  register v2” / “rollback leaves AuthDO unreferenced” as cutover
+  steps — there is no DO lifecycle change left in this delta, which is
+  what makes a normal gradual rollout possible.
 
 ---
 
@@ -139,6 +152,18 @@ body and marked superseded where the real baseline changes the verdict.
   * **Private Rooms:** Created via `POST /_/private` or `POST /_do/init-private`, setting `meta:access = 'private'` and `meta:acl`.
   * **Rollback Behavior:** Older worker code (`149ebcf`) does NOT check `meta:access` or `meta:acl`. If rolled back, an old worker waking on a private room will serve `snapshot` and process commands without checking access control (exposing private sheets publicly).
 * **Classification:** `[FORWARD-COMPATIBLE]` (for public rooms) / `[BREAKING-ON-ROLLBACK]` (for private rooms created post-upgrade).
+* **Rescope (`d2afa90..HEAD`) — ALREADY DEPLOYED (keys + authorize):**
+  At `d2afa90`, `packages/shared/src/storage-keys.ts` already defines
+  `metaAccess` / `metaAcl` / `metaGroup`, and
+  `packages/worker/src/lib/authorize.ts` already implements
+  deny-overrides private ACL. Both files are **byte-identical** across
+  `d2afa90..HEAD` (`git diff` empty). **Superseded rollback hazard:**
+  “rollback makes private sheets public” was premised on rolling back
+  to pre-ACL `149ebcf` (where `authorize.ts` did not exist). A rollback
+  *inside* the real production candidate range keeps ACL enforcement;
+  it does **not** declassify. Residual authz-adjacent risk is session
+  **lockout** from the cookie rename in **i**, not world-readable
+  private sheets. Still never strip `meta:access` (missing = public).
 
 ---
 
@@ -153,6 +178,14 @@ body and marked superseded where the real baseline changes the verdict.
 * **Scale (hosted):** Production cardinality is the migration-seed order of magnitude **~1.8M rooms** (`rooms-index.ts:63-82`), against D1’s hard **10 GB** per-database ceiling (runbook §0.2.2). Operator procedures must not assume a small test fleet.
 * **Self-host:** Standalone `workerd` `config.capnp` binds only `ROOM`, `AUTH`, `ASSETS`, `BASEPATH` + env vars — **no `DB` / D1 binding**, so the room index, audit/chat mirror, and `cron_triggers` path do not exist there (runbook §7).
 * **Classification:** `[FORWARD-COMPATIBLE]`.
+* **Rescope (`d2afa90..HEAD`) — ALREADY DEPLOYED (schema):**
+  `git diff d2afa90..HEAD -- packages/worker/migrations` is empty; the
+  three SQL migrations are unchanged. D1 role (index + audit/chat
+  tails, not snapshots; private rooms excluded from `rooms` index) is
+  already the production shape at the passkey merge. No schema
+  migration step remains for this cutover. (A one-line
+  `Object.create(null)` tweak in `rooms-index.ts` is not a schema
+  change.)
 
 ---
 
@@ -160,6 +193,9 @@ body and marked superseded where the real baseline changes the verdict.
 * **Evidence:** `packages/worker/src/env.ts:13-183`, `packages/worker/wrangler.toml:149-152`
 * **Analysis:** KV namespaces and R2 buckets are scaffolding placeholders in `wrangler.toml` and are not bound or read in `packages/worker/src`.
 * **Classification:** `[FORWARD-COMPATIBLE]`.
+* **Rescope (`d2afa90..HEAD`) — ALREADY DEPLOYED (still unused):**
+  KV/R2 remain unbound scaffolding at both ends of the real delta.
+  Nothing to ship.
 
 ---
 
@@ -200,6 +236,18 @@ body and marked superseded where the real baseline changes the verdict.
   6. `ETHERCALC_KEY`: Default when unset = `undefined` (anonymous identity HMAC, `hmac(room) = room`).
   7. `EMAIL` (`send_email` binding): Default when unset = `undefined`. Handled gracefully by `buildEmailSender` returning `DisabledEmailSender` ("E-mail disabled: no send_email binding configured").
 * **Classification:** `[NEEDS MIGRATION]` (for auth environment configuration) / `[FORWARD-COMPATIBLE]`.
+* **Rescope (`d2afa90..HEAD`) — ALREADY DEPLOYED (passkey anchors) /
+  STILL IN DELTA (minor comments only):** `d2afa90` already sets
+  `ETHERCALC_AUTH = "1"`, `ETHERCALC_RP_ID`, `ETHERCALC_RP_NAME`, and
+  `ETHERCALC_ORIGIN` in `wrangler.toml` `[vars]`. Live whoami
+  `enabled:true` proves those anchors plus the `AUTH` binding are
+  configured in production. **Superseded:** “populate WebAuthn trust
+  anchors before cutover” / green-field passkey enable as a migration
+  step. **Do not** turn `ETHERCALC_AUTH` off (self-inflicted private-
+  room outage — runbook STOP banner). Remaining env-adjacent delta is
+  documentary (www-redirect note, email `allowed_*` comment examples)
+  plus operator re-verification of secrets (`ETHERCALC_KEY`, migrate
+  token) — not a new fail-closed enablement.
 
 ---
 
@@ -263,6 +311,23 @@ body and marked superseded where the real baseline changes the verdict.
   * **Legacy `?auth=` Links:** Preserved verbatim for HMAC validation when `ETHERCALC_KEY` is set; `auth=0` continues to enforce view-only access.
   * **Session Cookie:** Passkey login sets `__Host-ec_sess` cookie; Worker verifies session with `AuthDO` and threads `X-EC-Uid` internally (inbound `X-EC-Uid` headers from clients are stripped by `doFetch`).
 * **Classification:** `[FORWARD-COMPATIBLE]` (Existing rooms/links) / `[NEEDS MIGRATION]` (Passkey activation).
+* **Rescope (`d2afa90..HEAD`) — PARTIALLY IN DELTA:**
+  * **Already deployed:** WebAuthn passkey UI (`static/passkey/ui.js`
+    on live root), `AuthDO` / `/_auth/*` (whoami route absent at
+    `149ebcf`, present and enabled in prod), private rooms + RoomDO
+    `meta:access`/`meta:acl`, principal threading, legacy `?auth=`
+    demotion. Passkey activation is **not** a green-field cutover
+    feature.
+  * **Still in delta (security-audit hardening on top of live auth):**
+    session cookie rename `ec_sess` → `__Host-ec_sess` with **no**
+    legacy read fallback (`git diff d2afa90..HEAD --
+    packages/worker/src/lib/session.ts`); AuthDO ceremony Origin /
+    Content-Type guards, client-IP forwarding, logout revocation
+    (`routes/auth.ts` + `auth-do.ts`); www→naked origin redirect before
+    ceremonies. Users holding only `ec_sess` appear signed out until
+    re-login — temporary **lockout**, not declassification.
+  * **Superseded:** classifying the whole auth stack as
+    `[NEEDS MIGRATION]` for passkey activation against real production.
 
 ---
 
@@ -276,6 +341,18 @@ body and marked superseded where the real baseline changes the verdict.
 * **`tvf:undefined` determination:** **(a) fixture dangling-index artifact, not a general 3.1.0 write bug.** The oracle `MINIMAL_SCSAVE` declares `sheet:…:tvf:1` without a matching `valueformat:1:…` line, so parse sets `defaulttextvalueformat=1` while `valueformats[1]` is missing; both 3.0.8 and 3.1.0 then stringify that hole as the literal `undefined`. Native 3.1.0 creates and realistic sheets that set a real `nontextvalueformat` (e.g. `#,##0.00`) do **not** emit `undefined`. Not a cutover blocker; not filed as a SocialCalc fix here.
 * **Note on stale "10/13" wording:** `packages/worker/test/oracle-replay.test.ts` loads **all** recorded JSON fixtures via `import.meta.glob('…/recorded/**/*.json')` (lines 70–73; ~45 files on disk today). It does **not** filter a 13-scenario set and does **not** mark three scenarios failed or skipped. Individually it asserts only the 9 names in `PHASE5_EXPECTED_PASS` (lines 195–207, 215–231). A separate test checks `static/socialcalc.js` for a sanitiser mechanism rather than byte-equality with the oracle fixture (lines 234–255). The describe title `10/13 green` and the meta-check `pass >= 10` over *every* loaded scenario (lines 257–271) are a **historical floor**; comments name favicon/start/root-index as intentional product divergences (§13 Q1 / glassmorphic UI / player.js), not as a current exact 3-failure count. That suite is unrelated to raw snapshot parse compatibility — proved separately by the legacy-snapshot tests above.
 * **Classification:** `[FORWARD-COMPATIBLE]` (bidirectional for the oracle + realistic save shapes). Residual risk is limited to untested exotic historical save variants beyond that corpus.
+* **Rescope (`d2afa90..HEAD`) — ALREADY DEPLOYED (engine):**
+  SocialCalc `^3.1.0` shipped in release `0.20260716.0`
+  (`Changes.txt:100-108`), **before** both the old assumed baseline
+  `149ebcf` and the real floor `d2afa90`.
+  `packages/socialcalc-headless/package.json` depends on
+  `socialcalc: ^3.1.0` at both `d2afa90` and `HEAD`. This item is
+  **not in the production→main delta at all** as an engine upgrade.
+  Commits under `packages/socialcalc-headless/` in `d2afa90..HEAD` are
+  headless DOM/bundle hardening plus load-compat **tests**
+  (`legacy-snapshot-compat`, reverse 3.0.8 proof) — defense-in-depth,
+  not a serialisation cutover. Original bidirectional compat proofs
+  remain valid background; they do not describe work left to ship.
 
 ---
 
