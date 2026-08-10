@@ -71,9 +71,9 @@
 > vp exec wrangler deployments list --config=packages/worker/wrangler.toml --env=""
 > vp exec wrangler versions list --config=packages/worker/wrangler.toml --env=""
 > ```
-
 >
 > ### Re-scoped delta (what remains to ship — not a cutover plan)
+
 >
 > From the exclusive upper bound through current tree tip, `git log --oneline b7d8840^..HEAD -- packages/ scripts/ static/` is dominated by:
 >
