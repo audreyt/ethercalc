@@ -2,12 +2,14 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   transformSocialCalcSource,
   wrapSocialCalcSource,
 } from '../scripts/build.js';
 import { createSpreadsheet } from '../src/index.js';
+
 
 /**
  * Genuine pre-3.1.0 oracle save (same bytes as MINIMAL_SCSAVE /
@@ -66,25 +68,42 @@ type SocialCalcNs = {
 type Factory = () => SocialCalcNs;
 
 /**
- * Locate the on-disk SocialCalc 3.0.8 UMD. Bun keeps versioned stores under
- * `node_modules/.bun/socialcalc@3.0.8/…` even when the workspace resolves
- * `socialcalc` to 3.1.0 — that is the genuine pre-upgrade runtime.
+ * Resolve the genuine pre-3.1.0 SocialCalc UMD via the declared
+ * `socialcalc-308` package alias (`npm:socialcalc@3.0.8` devDependency).
+ * Do not probe `node_modules/.bun/socialcalc@3.0.8/…` — that path is an
+ * orphaned local store and is absent on clean CI installs.
  */
 function resolveSocialCalc308Source(): string {
-  const candidates = [
-    path.join(
-      REPO_ROOT,
-      'node_modules/.bun/socialcalc@3.0.8/node_modules/socialcalc/dist/SocialCalc.js',
-    ),
-  ];
-  for (const c of candidates) {
-    if (fs.existsSync(c)) return c;
-  }
-  throw new Error(
-    'socialcalc@3.0.8 dist/SocialCalc.js not found under node_modules/.bun; ' +
-      'cannot prove reverse snapshot compatibility without the old runtime',
+  const requireFromPkg = createRequire(
+    path.resolve(HERE, '../package.json'),
   );
+  try {
+    const pkgJson = requireFromPkg.resolve('socialcalc-308/package.json');
+    const rawPkg: unknown = JSON.parse(fs.readFileSync(pkgJson, 'utf8'));
+    const version =
+      rawPkg &&
+      typeof rawPkg === 'object' &&
+      'version' in rawPkg &&
+      typeof rawPkg.version === 'string'
+        ? rawPkg.version
+        : undefined;
+    if (version !== '3.0.8') {
+      throw new Error(
+        `socialcalc-308 resolved version ${version ?? 'unknown'}, expected 3.0.8`,
+      );
+    }
+    return requireFromPkg.resolve('socialcalc-308/dist/SocialCalc.js');
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e);
+    throw new Error(
+      'socialcalc-308 (npm:socialcalc@3.0.8) is not resolvable; ' +
+        'install package devDependencies so reverse snapshot compatibility ' +
+        `can load the genuine 3.0.8 runtime. Underlying error: ${detail}`,
+    );
+  }
 }
+
+
 
 function hydrate(factory: Factory, snapshot: string): {
   err: string | null;

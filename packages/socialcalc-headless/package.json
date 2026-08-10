@@ -23,6 +23,7 @@
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.18.0",
     "@cloudflare/workers-types": "^4.20260702.1",
+    "socialcalc-308": "npm:socialcalc@3.0.8",
     "vite": "catalog:",
     "vitest": "catalog:",
     "wrangler": "^4.107.0"
