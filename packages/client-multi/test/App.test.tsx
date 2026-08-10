@@ -5,7 +5,7 @@ import { App } from '../src/App.tsx';
 import { HackFoldr } from '../src/Foldr.ts';
 
 function createMockFoldr(): HackFoldr {
-  let mockRows: string[][] = [
+  const mockRows: string[][] = [
     ['#url', '#title'],
     ['/room.1', 'Sheet1'],
     ['/room.2', 'Sheet2'],
