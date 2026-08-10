@@ -73,11 +73,11 @@
 > ```
 >
 > ### Re-scoped delta (what remains to ship — not a cutover plan)
-
 >
 > From the exclusive upper bound through current tree tip, `git log --oneline b7d8840^..HEAD -- packages/ scripts/ static/` is dominated by:
 >
 > - the security-audit hardening commit itself (`b7d8840`) and its follow-ups (CSP/`__Host-ec_sess`, WS/frame caps, body limits, export sanitizer, externalized root scripts, infra lockstep);
+
 > - `fix(worker): propagate RoomDO command rejections from POST /_/:room` (`5d37bd0`);
 > - CI/test/ratchet and SocialCalc **load-compat test** commits (not a SocialCalc engine bump).
 >
@@ -159,12 +159,11 @@ Use this quick reference for **“what do I do next?”** Use §§0–3 for prep
 - Green preflight on the **ship tree**. → §1
 - Pass real-Cloudflare staging rehearsal of **this single-ramp shape** (upload → override smoke → percentage ramp → rollback to staging pre-ramp version) and PITR sequence as in-scope. → §4.3 Step 0; §2.3; §3 *(§3 text still describes the old three-phase staging shape — rehearse the single-ramp commands from §4.3; full §3 rewrite is a known gap)*
 
-**Target Service:** `ethercalc.net` (Cloudflare Workers + Hono + Durable Objects + D1 + Assets)  
-**Baseline window:** production ∈ `[d2afa90, b7d8840)` under the working premise that the live upload used source `wrangler.toml` (see §4.0 redirect caveat); **rollback floor pinned 2026-08-10** as Worker version `bd76bda5-3161-4576-b159-dbdb97d774c2` @100% (exact git SHA still open — no version annotation; live compat/asset markers are consistent with pre-`b7d8840` *source* config but are not exclusive under a redirected upload)  
-
-
-**Target Release:** Current `main` (security-audit delta + command-rejection propagation + search-indexing policy)  
+**Target Service:** `ethercalc.net` (Cloudflare Workers + Hono + Durable Objects + D1 + Assets)
+**Baseline window:** production ∈ `[d2afa90, b7d8840)` under the working premise that the live upload used source `wrangler.toml` (see §4.0 redirect caveat); **rollback floor pinned 2026-08-10** as Worker version `bd76bda5-3161-4576-b159-dbdb97d774c2` @100% (exact git SHA still open — no version annotation; live compat/asset markers are consistent with pre-`b7d8840` *source* config but are not exclusive under a redirected upload)
+**Target Release:** Current `main` (security-audit delta + command-rejection propagation + search-indexing policy)
 **Document Purpose:** Operator runbook for a zero-data-loss single-ramp production upgrade under Cloudflare Workers platform constraints, with the disproved three-phase plan retained only as Appendix A.
+
 
 ---
 
