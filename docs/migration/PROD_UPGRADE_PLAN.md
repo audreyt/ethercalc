@@ -79,9 +79,9 @@
 > - the security-audit hardening commit itself (`b7d8840`) and its follow-ups (CSP/`__Host-ec_sess`, WS/frame caps, body limits, export sanitizer, externalized root scripts, infra lockstep);
 > - `fix(worker): propagate RoomDO command rejections from POST /_/:room` (`5d37bd0`);
 > - CI/test/ratchet and SocialCalc **load-compat test** commits (not a SocialCalc engine bump).
-
 >
 > **Explicitly already in production (do not re-ship as if new):** passkeys / `AuthDO` / private rooms (PR #841). **Explicitly not part of this delta:** SocialCalc `3.1.0` — shipped in release `0.20260716.0` (`Changes.txt`), before even the old assumed baseline `0.20260717.0`.
+
 >
 > If production sits earlier inside the candidate range, some of `d2afa90..b7d8840^` (multi-sheet entry restore, Vite+ workflow, headless/DOM harden, etc.) may also still be undeployed — only `wrangler deployments list` settles that.
 >
