@@ -1047,10 +1047,10 @@ D1 Time Travel / SQL dump restore (§6.4) remains available for **D1 only** and 
 
 ### 4.6 What carries forward unchanged
 
-- §4.0 deploy config redirect-banner guard  
-- §4.5–§4.6 corrected skew / reconnect analysis (+ companion `SKEW_AND_RECONNECT.md`; `d2afa90` conservative floor)
-- §5 probe mechanics and non-auth response contracts (re-auth expectations per §4.3 Step 5)  
-- §0.2.2 capacity gate, §2 backup/PITR reality, §6.4 D1≠DO restore, §7 self-host divergence  
+- §4.0 deploy config redirect-banner guard (included above in this §4)
+- §4.8–§4.9 corrected skew / reconnect analysis (+ companion `SKEW_AND_RECONNECT.md`; `d2afa90` conservative floor)
+- §5 probe mechanics and non-auth response contracts (re-auth expectations per §4.3 Step 5)
+- §0.2.2 capacity gate, §2 backup/PITR reality, §6.4 D1≠DO restore, §7 self-host divergence
 - Version-override header smoke pattern (reused in §4.3 Step 3)
 
 ### 4.7 Explicitly retired for hosted prod cutover
@@ -1060,6 +1060,29 @@ D1 Time Travel / SQL dump restore (§6.4) remains available for **D1 only** and 
 - Phase 3 green-field “enable passkeys” flip  
 - Rollback narratives that treat “first private room / first passkey” as still in the future for ethercalc.net  
 - Go/No-Go item 9’s `AUTH=0` justification (old §9)
+
+---
+
+
+### 4.8 Quantified Downtime Budget & Reconnect Behavior Analysis
+
+> Zero HTTP downtime. Every open WebSocket drops when its corresponding Durable Object restarts. Under a gradual deployment, DO restarts are staged across percentage tranches. The client auto-reconnects at a FIXED 500 ms interval (`ws-adapter.ts`, `reconnectDelayMs ?? 500`, up to 1800 attempts) and flushes its outbound queue, so the socket usually returns in about a second. **But the client does NOT re-hydrate**: `hadSnapshot` in `main.ts` blocks later `log`/snapshot application, so a tab that stays open can miss edits made by other users during the gap. Frames already handed to the dying socket without an ack can be lost; there is no delivery receipt or replay log. **Corrected classification:** `git diff d2afa90..HEAD` shows this reconnect/`hadSnapshot` control flow is unchanged. It is a standing client limitation exposed by the restart, not a migration regression. Communicate “reload after deploy,” not “the upgrade changed reconnect.”
+
+### 4.9 Open-Tab Regressions and Their Mitigations
+
+The following matrix was re-derived in `docs/migration/SKEW_AND_RECONNECT.md` from **`d2afa90` → `HEAD`**. `d2afa90` is the earliest possible production revision and therefore the conservative upper bound; pinning production to a later candidate-range commit can only remove already-deployed deltas.
+
+| Scenario / skew vector | Corrected impact / outcome | Classification / evidence | Operator mitigation |
+| :--------------------- | :------------------------- | :------------------------ | :------------------ |
+| **1. No state resync on reconnect** | Socket reconnects and flushes its local queue, but remote edits made during the restart gap are not fetched; unacknowledged in-flight frames can be lost. | **Standing property, not migration regression.** `main.ts` has the same `hadSnapshot` guard at `d2afa90` and `HEAD`; `ws-adapter.ts` reconnect state machine is unchanged (its source diff only fixes relative-URL construction). | Deploy in the lowest-traffic window; announce maintenance; advise active users to reload after deploy. |
+| **2. Form/app-mode hydrate** | The `d2afa90` client sends only an `_formdata`-labelled `ask.log` on the main socket. The ship Worker drops it at the attachment-room equality gate before the reply can trigger the client's main-room follow-up. | **Still-applicable migration regression.** `git show d2afa90:packages/client/src/boot.ts`; `packages/worker/src/room.ts` room gate. The client fix landed later in `2acd1d0`. | Full reload onto the ship client, which retains the formdata request but also unconditionally sends the main-room `ask.log`. |
+| **3. Existing passkey session / private-room reconnect** | Production issues `ec_sess`; ship parses only `__Host-ec_sess`. A logged-in user appears anonymous on ship traffic, and an open private-room tab can fail to reconnect until re-authentication. | **Newly identified migration regression.** `git diff d2afa90..HEAD -- packages/worker/src/lib/session.ts`; `parseSessionCookie` has no fallback. | Communicate “you may be signed out; sign in again to reopen private sheets.” During ramp, expect old/new versions to disagree on login state. |
+| **4. Canonical WebSocket/Socket.IO parsing and caps** | Stock public edits/chat/cursors remain valid. Malformed or over-limit fields are dropped; oversized native frames close 1009; Socket.IO can return 413/503 or close overflowing sessions. | **Still applies.** All field caps and Socket.IO session/poll/queue caps are new from `d2afa90`. The native 1 MiB string-frame threshold was already deployed, but it silently dropped rather than closing and did not cover binary frames. | Watch 1009/413/503 telemetry and legacy embeds; normal users need no action. |
+| **5. Large pastes / command batches** | Commands exceeding target sheet/range limits fail: native WS closes 1008; RoomDO HTTP returns 413. `MAX_WS_CELL_CHARS` is only a cursor-coordinate cap and is not the paste limit. | **Still-applicable migration regression.** `command-limits.ts` is absent at `d2afa90` and introduced by `b7d8840`. | Advise users to split large pastes; API callers must handle 413. |
+| **6. HTTP command rejection signalling** | `POST /_/:room` now propagates RoomDO non-2xx responses (for example 413) instead of returning false-success 202 after a rejected write. | **New target behavior / correctness fix.** Commit `5d37bd0`; current `routes/rooms.ts` checks `writeRes.ok`. | Treat Probe 6 as load-bearing; notify API/script owners that truthful 413 is expected. |
+| **7. Legacy oversized sheets (>200k cells)** | Existing sheets load and allow edits inside current bounds, but cannot expand declared rows/columns past target limits. | **Still-applicable product ceiling.** `command-limits.ts` absent at `d2afa90`. | Identify only from user reports or explicit room inspection; D1 room index has no dimensions. |
+| **8. Root HTML / normal cache / AppCache** | Cached old HTML normally boots because ship still serves its referenced assets, but prolongs hybrid skew. Ship HTML routed to pre-`b7d8840` assets can 404 on extracted scripts. AppCache-capable browsers can pin the old master HTML because the manifest stays byte-identical. | **Corrected broader asset regression.** `git diff d2afa90..HEAD -- index.html manifest.appcache`; five `static/*.js` files introduced at `b7d8840`. | Purge edge cache, probe all target scripts, and advise hard reload. Client-side Application Cache requires site-data/appcache clearing; edge purge alone is insufficient. |
+| **9. Passkeys/private ACL described as newly arriving** | Passkey UI, `AuthDO`, and private ACL enforcement already exist at `d2afa90`; they are not newly shipped by this cutover. | **Already deployed; prior `149ebcf` row superseded.** | Do not announce passkeys as new. Announce only the possible cookie-driven re-login event. |
 
 ---
 
@@ -1443,28 +1466,6 @@ cd ..
 # Capture returned PHASE3_VERSION_ID → Cutover log (start of §4)
 ```
 **ROLLBACK TARGET FOR PHASE 3**: Phase 3 can be rolled back to Phase 2 via `npx wrangler versions deploy <PHASE2_VERSION_ID>@100% --env=""`. The private-room Point of No Return lives HERE in Phase 3, after all major code changes have already soaked cleanly in Phase 2. Record `PHASE3_VERSION_ID` in the Cutover log (start of §4) before soak continues — required for clean re-enable after a lockout rollback (§6.2).
-
----
-
-### 4.5 Quantified Downtime Budget & Reconnect Behavior Analysis
-
-> Zero HTTP downtime. Every open WebSocket drops when its corresponding Durable Object restarts. Under a gradual deployment, DO restarts are staged across percentage tranches. The client auto-reconnects at a FIXED 500 ms interval (`ws-adapter.ts`, `reconnectDelayMs ?? 500`, up to 1800 attempts) and flushes its outbound queue, so the socket usually returns in about a second. **But the client does NOT re-hydrate**: `hadSnapshot` in `main.ts` blocks later `log`/snapshot application, so a tab that stays open can miss edits made by other users during the gap. Frames already handed to the dying socket without an ack can be lost; there is no delivery receipt or replay log. **Corrected classification:** `git diff d2afa90..HEAD` shows this reconnect/`hadSnapshot` control flow is unchanged. It is a standing client limitation exposed by the restart, not a migration regression. Communicate “reload after deploy,” not “the upgrade changed reconnect.”
-
-### 4.6 Open-Tab Regressions and Their Mitigations
-
-The following matrix was re-derived in `docs/migration/SKEW_AND_RECONNECT.md` from **`d2afa90` → `HEAD`**. `d2afa90` is the earliest possible production revision and therefore the conservative upper bound; pinning production to a later candidate-range commit can only remove already-deployed deltas.
-
-| Scenario / skew vector | Corrected impact / outcome | Classification / evidence | Operator mitigation |
-| :--------------------- | :------------------------- | :------------------------ | :------------------ |
-| **1. No state resync on reconnect** | Socket reconnects and flushes its local queue, but remote edits made during the restart gap are not fetched; unacknowledged in-flight frames can be lost. | **Standing property, not migration regression.** `main.ts` has the same `hadSnapshot` guard at `d2afa90` and `HEAD`; `ws-adapter.ts` reconnect state machine is unchanged (its source diff only fixes relative-URL construction). | Deploy in the lowest-traffic window; announce maintenance; advise active users to reload after deploy. |
-| **2. Form/app-mode hydrate** | The `d2afa90` client sends only an `_formdata`-labelled `ask.log` on the main socket. The ship Worker drops it at the attachment-room equality gate before the reply can trigger the client's main-room follow-up. | **Still-applicable migration regression.** `git show d2afa90:packages/client/src/boot.ts`; `packages/worker/src/room.ts` room gate. The client fix landed later in `2acd1d0`. | Full reload onto the ship client, which retains the formdata request but also unconditionally sends the main-room `ask.log`. |
-| **3. Existing passkey session / private-room reconnect** | Production issues `ec_sess`; ship parses only `__Host-ec_sess`. A logged-in user appears anonymous on ship traffic, and an open private-room tab can fail to reconnect until re-authentication. | **Newly identified migration regression.** `git diff d2afa90..HEAD -- packages/worker/src/lib/session.ts`; `parseSessionCookie` has no fallback. | Communicate “you may be signed out; sign in again to reopen private sheets.” During ramp, expect old/new versions to disagree on login state. |
-| **4. Canonical WebSocket/Socket.IO parsing and caps** | Stock public edits/chat/cursors remain valid. Malformed or over-limit fields are dropped; oversized native frames close 1009; Socket.IO can return 413/503 or close overflowing sessions. | **Still applies.** All field caps and Socket.IO session/poll/queue caps are new from `d2afa90`. The native 1 MiB string-frame threshold was already deployed, but it silently dropped rather than closing and did not cover binary frames. | Watch 1009/413/503 telemetry and legacy embeds; normal users need no action. |
-| **5. Large pastes / command batches** | Commands exceeding target sheet/range limits fail: native WS closes 1008; RoomDO HTTP returns 413. `MAX_WS_CELL_CHARS` is only a cursor-coordinate cap and is not the paste limit. | **Still-applicable migration regression.** `command-limits.ts` is absent at `d2afa90` and introduced by `b7d8840`. | Advise users to split large pastes; API callers must handle 413. |
-| **6. HTTP command rejection signalling** | `POST /_/:room` now propagates RoomDO non-2xx responses (for example 413) instead of returning false-success 202 after a rejected write. | **New target behavior / correctness fix.** Commit `5d37bd0`; current `routes/rooms.ts` checks `writeRes.ok`. | Treat Probe 6 as load-bearing; notify API/script owners that truthful 413 is expected. |
-| **7. Legacy oversized sheets (>200k cells)** | Existing sheets load and allow edits inside current bounds, but cannot expand declared rows/columns past target limits. | **Still-applicable product ceiling.** `command-limits.ts` absent at `d2afa90`. | Identify only from user reports or explicit room inspection; D1 room index has no dimensions. |
-| **8. Root HTML / normal cache / AppCache** | Cached old HTML normally boots because ship still serves its referenced assets, but prolongs hybrid skew. Ship HTML routed to pre-`b7d8840` assets can 404 on extracted scripts. AppCache-capable browsers can pin the old master HTML because the manifest stays byte-identical. | **Corrected broader asset regression.** `git diff d2afa90..HEAD -- index.html manifest.appcache`; five `static/*.js` files introduced at `b7d8840`. | Purge edge cache, probe all target scripts, and advise hard reload. Client-side Application Cache requires site-data/appcache clearing; edge purge alone is insufficient. |
-| **9. Passkeys/private ACL described as newly arriving** | Passkey UI, `AuthDO`, and private ACL enforcement already exist at `d2afa90`; they are not newly shipped by this cutover. | **Already deployed; prior `149ebcf` row superseded.** | Do not announce passkeys as new. Announce only the possible cookie-driven re-login event. |
 
 ---
 
