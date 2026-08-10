@@ -11,14 +11,23 @@
 > and `manifest.appcache`).
 >
 > This document therefore re-classifies every item against
-> **`d2afa90` → `HEAD`**. `d2afa90` (`Merge feat/passkey-permissions
-> (#841)`, 2026-07-18) is the earliest possible production revision, so
-> this is the conservative **upper bound** on remaining delta. If the
-> operator later pins production to a later commit in the candidate
-> range, the real delta can only be smaller — only `wrangler deployments
-> list` settles the exact SHA. The inspected target source at correction
-> time is `35e3f71` (branch tip); the correction itself is
-> documentation-only.
+> **`d2afa90` → classification target `35e3f71`**. `d2afa90` (`Merge
+> feat/passkey-permissions (#841)`, 2026-07-18) is the earliest possible
+> production revision, so this is the conservative **upper bound** on
+> remaining delta. If the operator later pins production to a later
+> commit in the candidate range, the real delta can only be smaller —
+> only `wrangler deployments list` settles the exact SHA. Item
+> classifications (Executive Summary **a)**–**k)** and matching Step 2
+> Rescope blocks) were verified against tree **`35e3f71`** (the branch
+> tip when the 2026-08-10 correction landed). Current branch tip is
+> **`a4b5acf`**; `git diff --stat 35e3f71..HEAD -- packages/` is
+> **not** empty (search-indexing `robots.ts` restore + tests only —
+> `c789249` / related). That packages delta does **not** change the
+> **a)**–**k)** already-deployed / still-in-delta verdicts below; it is
+> an additional still-in-delta ship item recorded in the runbook, not a
+> re-open of passkey/`AuthDO`/ACL/SocialCalc engine scope. Later
+> commits after `35e3f71` are otherwise documentation-only on this
+> branch except that robots restore.
 >
 > Historical audit findings written against `149ebcf` are **kept** and
 > marked **Superseded** where the real baseline changes the verdict.
@@ -34,9 +43,10 @@
 
 ## Executive Summary & Delta Inventory
 
-Corrected against `d2afa90..HEAD` (conservative production floor → branch
-tip). Original classifications from the `149ebcf` audit are retained in the
-body and marked superseded where the real baseline changes the verdict.
+Corrected against `d2afa90..35e3f71` (conservative production floor →
+classification target; see Status header). Original classifications from
+the `149ebcf` audit are retained in the body and marked superseded where
+the real baseline changes the verdict.
 
 | Item | Rescope (`d2afa90..HEAD`) | Original class (`149ebcf` audit) | Blast radius now | Mitigation now |
 | :--- | :--- | :--- | :--- | :--- |
