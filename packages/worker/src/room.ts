@@ -867,10 +867,7 @@ export class RoomDO implements DurableObject {
 
     // Mirror rooms index + durable audit_log outside the lock (parity with
     // #applyCommandAndMirror used by POST /_do/commands).
-    const lastTs =
-      allocated.auditRows.length > 0
-        ? allocated.auditRows[allocated.auditRows.length - 1]!.ts
-        : Date.now();
+    const lastTs = allocated.auditRows[allocated.auditRows.length - 1]!.ts;
     await this.#mirrorIndex(room, lastTs);
     await this.#mirrorAudit(room, allocated.auditRows);
     for (const row of allocated.auditRows) {

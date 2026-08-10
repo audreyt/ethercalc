@@ -10,7 +10,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { Env } from '../src/env.ts';
 import { computeAuth } from '../src/lib/auth.ts';
-import { CHAT_HISTORY_KEEP } from '../src/lib/seq-store.ts';
+import { AUDIT_HISTORY_KEEP, CHAT_HISTORY_KEEP } from '../src/lib/seq-store.ts';
 import { SNAPSHOT_CHUNK_BYTES } from '../src/lib/snapshot-storage.ts';
 import { RoomDO } from '../src/room.ts';
 
@@ -1824,6 +1824,32 @@ it('POST /_do/import-append-toc rejects over-cap title counts and missing room n
       expect(res.status).toBe(200);
       const json = (await res.json()) as { sheets: Array<{ title: string }> };
       expect(json.sheets.map((s) => s.title)).toEqual(['Sheet1', 'Sheet2']);
+    } finally {
+      mockSave.mockReset();
+      mockSave.mockImplementation(() => 'SNAP');
+      mockExportCSV.mockReset();
+      mockExportCSV.mockImplementation(() => 'a,b\n1,2\n');
+    }
+  });
+
+  it('POST /_do/import-append-toc trims aged DO audit keys once seq reaches the keep window', async () => {
+    // Seed a high audit/log index so the next append is at AUDIT_HISTORY_KEEP.
+    record.map.set(auditKey(AUDIT_HISTORY_KEEP - 1), 'aged-audit');
+    record.map.set(logKey(AUDIT_HISTORY_KEEP - 1), 'aged-log');
+    mockExportCSV.mockReturnValueOnce('#url,#title\n');
+    mockSave.mockReturnValueOnce('TOC');
+    try {
+      const res = await room.fetch(
+        new Request('https://do/_do/import-append-toc?name=trim-audit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ titles: ['X'] }),
+        }),
+      );
+      expect(res.status).toBe(200);
+      // New audit at seq KEEP; old seq 0 key is deleted (KEEP - KEEP).
+      expect(record.map.has(auditKey(AUDIT_HISTORY_KEEP))).toBe(true);
+      expect(record.map.has(auditKey(0))).toBe(false);
     } finally {
       mockSave.mockReset();
       mockSave.mockImplementation(() => 'SNAP');
