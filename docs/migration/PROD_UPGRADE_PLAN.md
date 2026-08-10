@@ -129,10 +129,11 @@ Use this quick reference for **“what do I do next?”** Use §§0–3 for prep
 | :--- | :--------- | :---------------- | :-------------------------- |
 | **Preflight / pin** | Record rollback floor | `npx wrangler deployments list` / `versions list` → `CURRENT_PROD_VERSION_ID`; secrets; capacity; ship-tree preflight; staging single-ramp rehearsal | n/a — blocking gate → §4.3 Step 0, §0.1, §0.2.1–§0.2.2, §1 |
 | **Pre-deploy D1** | D1 migrations (expected no-op in candidate range) | `npx wrangler d1 migrations list` then `apply` on `ethercalc_rooms` with `--remote --config=packages/worker/wrangler.toml --env=""` | D1 bookmark / Time Travel only (does **not** roll back DO SQLite) → §4.3 Step 1, §6 |
-| **Upload @0%** | Ship bundle, auth stays `"1"` | `vp run build:assets`; `npx wrangler versions upload --config=wrangler.toml --env=""` from `packages/worker`; record `SHIP_VERSION_ID` | No default traffic yet → §4.3 Step 2, §4.0 |
-| **Override smoke** | Exercise ship version without ramp | `Cloudflare-Workers-Version-Overrides: ethercalc="<SHIP_VERSION_ID>"` probes (`whoami` **`enabled:true`**, health, root scripts, public sheet) | Do not ramp on failure → §4.3 Step 3 |
-| **Ramp** | Gradual default traffic | `npx wrangler versions deploy <SHIP_VERSION_ID>@10%` → `@50%` → `@100%` with dwells; purge edge after first HTML/JS-serving step and at 100% | `npx wrangler versions deploy <CURRENT_PROD_VERSION_ID>@100% --env=""` + edge purge → §4.3 Step 4, §4.4 |
+| **Upload** | Ship bundle, auth stays `"1"` | `vp run build:assets`; `vp exec wrangler versions upload --config=…` (staging `--env=staging`; prod `--env=""`); record `SHIP_VERSION_ID` | Not yet in any deployment → §4.3 Step 2 |
+| **Place @0% + override smoke** | Put ship into **active deployment** at 0% beside current@100%, verify split, then override-header smoke | `vp exec wrangler versions deploy <CURRENT>@100% <SHIP>@0% --config=… --yes` → `deployments list` shows 100/0 → `Cloudflare-Workers-Version-Overrides` probes | `versions deploy <CURRENT>@100%` → §4.3 Step 3 |
+| **Ramp** | Gradual default traffic | `versions deploy <SHIP>@10% <CURRENT>@90%` → `@50/@50` → `<SHIP>@100%`; purge edge after first HTML/JS-serving step and at 100% | `versions deploy <CURRENT_PROD_VERSION_ID>@100%` + edge purge → §4.3 Step 4, §4.4 |
 | **Verify** | Post-ramp acceptance | §5 probe mechanics with §4.3 Step 5 auth/asset expectations (`enabled:true`; `index-bootstrap.js`; sheet-limit 413) | Same ramp abort command if acceptance fails → §4.3 Step 5, §5, §4.4 |
+
 
 ### Points of no return (live baseline)
 
@@ -157,7 +158,8 @@ Use this quick reference for **“what do I do next?”** Use §§0–3 for prep
 
 - Record the D1 Time Travel bookmark (and size-budgeted export if used), and settle restore viability against the live artifact. → §2.1; §6
 - Green preflight on the **ship tree**. → §1
-- Pass real-Cloudflare staging rehearsal of **this single-ramp shape** (upload → override smoke → percentage ramp → rollback to staging pre-ramp version) and PITR sequence as in-scope. → §4.3 Step 0; §2.3; §3 *(§3 text still describes the old three-phase staging shape — rehearse the single-ramp commands from §4.3; full §3 rewrite is a known gap)*
+- Pass real-Cloudflare staging rehearsal of **this** single-ramp shape (upload → **old@100%+ship@0% split** → override smoke → percentage ramp → rollback) and PITR as in-scope. → §3 / §4.3. **Staging rehearsal executed 2026-08-10** (record in §3.2); production still has remaining gates.
+
 
 **Target Service:** `ethercalc.net` (Cloudflare Workers + Hono + Durable Objects + D1 + Assets)
 **Baseline window:** production ∈ `[d2afa90, b7d8840)` under the working premise that the live upload used source `wrangler.toml` (see §4.0 redirect caveat); **rollback floor pinned 2026-08-10** as Worker version `bd76bda5-3161-4576-b159-dbdb97d774c2` @100% (exact git SHA still open — no version annotation; live compat/asset markers are consistent with pre-`b7d8840` *source* config but are not exclusive under a redirected upload)
@@ -805,7 +807,8 @@ none.
 
 ## §3 Staging Rehearsal (single gradual ramp)
 
-> **Live staging dress rehearsal for the §4 cutover.** Rehearse the **§4.3 single-ramp** sequence against `[env.staging]` (`ethercalc-staging`) with `ETHERCALC_AUTH` left at `"1"` throughout: upload → version-override smoke → `@10%` / `@50%` / `@100%` → rollback to the pre-ramp staging version. Do **not** rehearse Phase 1 lifecycle worktrees, a `release/phase2-rollout` branch, or any `ETHERCALC_AUTH="0"` / `enabled:false` acceptance path. That superseded three-phase staging material is preserved only in **Appendix A.0** (analysis / incident history — not a live procedure).
+> **Live staging dress rehearsal for the §4 cutover.** Rehearse the **§4.3 single-ramp** sequence against `[env.staging]` (`ethercalc-staging`) with `ETHERCALC_AUTH` left at `"1"` throughout: upload → **`versions deploy` pre-ramp@100% + ship@0%** (required before override can select the ship version) → verify split → version-override smoke → `@10%` / `@50%` / `@100%` → rollback to the pre-ramp staging version. Do **not** rehearse Phase 1 lifecycle worktrees, a `release/phase2-rollout` branch, or any `ETHERCALC_AUTH="0"` / `enabled:false` acceptance path. That superseded three-phase staging material is preserved only in **Appendix A.0** (analysis / incident history — not a live procedure).
+
 
 Rehearse end-to-end acceptance on `https://ethercalc-staging.audreyt.workers.dev` so the production §4.3 sequence is practiced before any production upload.
 
@@ -850,92 +853,134 @@ npx wrangler d1 migrations apply ethercalc_rooms_staging --remote \
 
 If `list` shows unexpected pending migrations, **STOP** and reconcile before uploading. **`[OPERATOR-VERIFY]`**
 
-#### Step 2 — Build and upload ship version to staging at 0% traffic
+#### Step 2 — Build and upload ship version (not yet in any deployment)
 
 Follow §4.0 (config source-of-truth / no generated-config redirect banner) and §3.1 (`--config wrangler.toml --env=staging`).
 
 ```bash
 # MANDATORY: §4.0 verification (no wrangler redirect banner; explicit --config)
 vp run build:assets
-cd packages/worker
-npx wrangler versions upload --config=wrangler.toml --env=staging
+vp exec wrangler versions upload \
+  --config=packages/worker/wrangler.toml --env=staging
 # Record STAGING_SHIP_VERSION_ID from CLI output → staging rehearsal log
-cd ../..
 ```
 
 `ETHERCALC_AUTH` must remain `"1"` in the uploaded staging config. Do not pass a `--var ETHERCALC_AUTH:0` override.
 
-#### Step 3 — Version-override smoke at 0% on staging
+**Upload alone does not place the version in the active deployment.** Override headers cannot select it until Step 3a.
 
-Exercise the ship bundle on the staging hostname **without** shifting default staging traffic ([Version Overrides](https://developers.cloudflare.com/workers/versions-and-deployments/version-overrides/)):
+
+#### Step 3a — Place ship in active deployment at 0% (**required** before override smoke)
+
+**Why (empirically verified 2026-08-10 on this account/CLI):** `Cloudflare-Workers-Version-Overrides` can only select a version that is **already part of the current deployment**. After `versions upload` alone, override probes silently exercise the **old** default version and look green — false confidence. Versioned Preview URLs are also unavailable for this Worker (Durable Objects → every version reports `has_preview: false` despite staging `preview_urls = true`).
+
+Working form (pinned Wrangler `4.112.0` via `vp exec wrangler`):
+
+```bash
+vp exec wrangler versions deploy \
+  <STAGING_PRE_RAMP_VERSION_ID>@100% \
+  <STAGING_SHIP_VERSION_ID>@0% \
+  --config=packages/worker/wrangler.toml \
+  --env=staging \
+  --yes
+```
+
+**Verify the split before smoking** (do not proceed on assumption):
+
+```bash
+vp exec wrangler deployments list \
+  --config=packages/worker/wrangler.toml --env=staging
+# Current deployment MUST show:
+#   (100%) <STAGING_PRE_RAMP_VERSION_ID>
+#   (0%)   <STAGING_SHIP_VERSION_ID>
+```
+
+#### Step 3b — Version-override smoke at 0% on staging
+
+With the 100/0 split active, exercise the ship bundle via the override header ([Version Overrides](https://developers.cloudflare.com/workers/versions-and-deployments/version-overrides/)):
 
 ```bash
 HDR='Cloudflare-Workers-Version-Overrides: ethercalc-staging="<STAGING_SHIP_VERSION_ID>"'
+BASE='https://ethercalc-staging.audreyt.workers.dev'
 
-# Auth steady-state MUST stay enabled
-curl -fsS -H "$HDR" https://ethercalc-staging.audreyt.workers.dev/_auth/whoami
-# Expected: {"uid":null,"enabled":true}
+curl -fsS -H "$HDR" "$BASE/_auth/whoami"   # {"uid":null,"enabled":true}
+curl -fsS -H "$HDR" "$BASE/_health"        # {"status":"ok","version":"0.0.0",...}
 
-curl -fsS -H "$HDR" https://ethercalc-staging.audreyt.workers.dev/_health
-# Expected: {"status":"ok","version":"0.0.0","now":"<ISO-8601>"}
+# DISCRIMINATOR — control (no header) is pre-ramp @100%; override must select ship.
+curl -sS -D - -o /tmp/robots-ctl.txt "$BASE/robots.txt?ctl=$(date +%s%N)" | grep -i content-type
+curl -sS -D - -o /tmp/robots-ov.txt -H "$HDR" "$BASE/robots.txt?ov=$(date +%s%N)" | grep -i content-type
+# Ship override expected: content-type: text/plain; charset=utf-8
+# Body: starts with "User-agent: *", has "Allow: /", no "Disallow:" directive
+# Control vs override content-types MUST differ when pre-ramp lacks the robots route
+# (pre-c789249 catch-all serves text/html SPA for /robots.txt).
 
-# Root HTML should reference externalized page scripts once ship assets are served
-curl -fsS -H "$HDR" https://ethercalc-staging.audreyt.workers.dev/ | head -c 8000
-# Expect: static/index-bootstrap.js (and related page scripts); no manifest.appcache
-
-curl -fsS -H "$HDR" -o /dev/null -w '%{http_code}\n' \
-  https://ethercalc-staging.audreyt.workers.dev/static/index-bootstrap.js
-# Expected: 200
-
-# Public sheet read still works under override
-curl -fsS -H "$HDR" -o /dev/null -w '%{http_code}\n' \
-  https://ethercalc-staging.audreyt.workers.dev/testprodcutover
-# Expected: 200
+ROOM="no-such-$(date +%s%N)"
+curl -sSI -H "$HDR" -H 'Cache-Control: no-cache' "$BASE/$ROOM" | grep -i x-robots-tag
+# Expected ship: x-robots-tag: noindex, nofollow, noarchive
+curl -sSI -H "$HDR" -H 'Cache-Control: no-cache' "$BASE/?t=$(date +%s%N)" | grep -i x-robots-tag \
+  || echo 'OK: no X-Robots-Tag on /'
 ```
 
-**`[OPERATOR-VERIFY]`**: §4.3 uses Worker name `ethercalc` in the version-overrides header. Staging Worker name is `ethercalc-staging` (`packages/worker/wrangler.toml` `[env.staging] name`). Confirm the header key above is accepted on staging; if Cloudflare expects a different worker-name key, record the working header before treating smoke as green.
+**Header key verified:** `ethercalc-staging` (Worker `[env.staging] name`).
 
-**Abort** if `enabled` is not `true`, if health fails, or if ship-required static assets 404 under the override. Do not ramp.
+**Discriminators vs current staging (2026-08-10):** pre-ramp already has `compatibility_date 2026-07-21` and serves `index-bootstrap.js` 200. Therefore **`/_health` and `/static/index-bootstrap.js` are NOT valid ship discriminators** here. **`/robots.txt`** (plain vs HTML) and **unique-room `X-Robots-Tag`** (present on ship, absent on pre-ramp) are.
 
-Optional but strongly recommended under override before ramp (**`[OPERATOR-VERIFY]`**, needs a throwaway staging private room + test passkey — staging passkeys are bound to RP ID `ethercalc-staging.audreyt.workers.dev` and are **not** portable to production):
+**Cache risk:** edge may cache `robots.txt` **without** varying on `Cloudflare-Workers-Version-Overrides`. After ship has served plain robots, later default/old probes can keep returning plain even when control-plane traffic is old@100%. Prefer unique query strings; treat unique-room `X-Robots-Tag` as the rollback edge proof if robots stays sticky. Document any sticky cache in the rehearsal log.
 
-- complete a discoverable login;
-- confirm owner can `GET`/`POST` an owned private room;
-- confirm anonymous `GET` on that private room is 403;
-- confirm `POST /_/:room` over-limit command returns **413** (rejection propagation), not 202.
+**Abort** if override cannot prove ship selection (robots and/or X-Robots discriminator), if `enabled` ≠ `true`, or if health fails. Do not ramp.
+
+Optional under override before ramp (**`[OPERATOR-VERIFY]`**, throwaway staging passkey — RP is staging-only): discoverable login; owner private room R/W; anonymous private 403; over-limit `POST /_/:room` → **413**.
 
 #### Step 4 — Gradual ramp on staging
 
 ```bash
-cd packages/worker
-npx wrangler versions deploy <STAGING_SHIP_VERSION_ID>@10% --config=wrangler.toml --env=staging
-# Dwell; watch error/latency analytics; spot-check Step 5 / §5-style probes on default staging traffic
-npx wrangler versions deploy <STAGING_SHIP_VERSION_ID>@50% --config=wrangler.toml --env=staging
-# Dwell again
-npx wrangler versions deploy <STAGING_SHIP_VERSION_ID>@100% --config=wrangler.toml --env=staging
-cd ../..
+vp exec wrangler versions deploy \
+  <STAGING_SHIP_VERSION_ID>@10% <STAGING_PRE_RAMP_VERSION_ID>@90% \
+  --config=packages/worker/wrangler.toml --env=staging --yes
+# Dwell; sample default /robots.txt (expect mix of plain/HTML near 10%)
+vp exec wrangler versions deploy \
+  <STAGING_SHIP_VERSION_ID>@50% <STAGING_PRE_RAMP_VERSION_ID>@50% \
+  --config=packages/worker/wrangler.toml --env=staging --yes
+vp exec wrangler versions deploy \
+  <STAGING_SHIP_VERSION_ID>@100% \
+  --config=packages/worker/wrangler.toml --env=staging --yes
 ```
 
-**`[OPERATOR-VERIFY]`**: §4.3 production ramp uses `--env=""` (and explicit `--config` on upload). Confirm `versions deploy … --config=wrangler.toml --env=staging` selects the staging Worker on the pinned CLI; if not, record the working form (still with explicit `--config=wrangler.toml` per §3.1 / §4.0).
+Working form settled 2026-08-10: `--config=packages/worker/wrangler.toml --env=staging --yes` selects `ethercalc-staging`.
 
-After the first percentage step that serves new HTML/JS to real staging clients, and again at 100%, purge edge cache **if** staging is fronted by a cached hostname — same Dashboard path as §4.3:
-
-```text
-Cloudflare Dashboard → Caching → Configuration → Purge Everything
-```
-
-**`[OPERATOR-VERIFY]`** whether `ethercalc-staging.audreyt.workers.dev` requires this purge for the rehearsal to be valid; do not skip a needed purge, and do not invent a different purge API here.
-
-**Ramp abort (must rehearse):** return 100% staging traffic to the pre-ramp version:
+**Ramp abort (must rehearse):**
 
 ```bash
-cd packages/worker
-npx wrangler versions deploy <STAGING_PRE_RAMP_VERSION_ID>@100% --config=wrangler.toml --env=staging
-cd ../..
-# Purge edge again if Step 4 required purge, so clients drop ship HTML that points at new static/* files
+vp exec wrangler versions deploy \
+  <STAGING_PRE_RAMP_VERSION_ID>@100% \
+  --config=packages/worker/wrangler.toml --env=staging --yes
+# Control-plane: deployments list shows PRE @100%.
+# Edge proof: unique room path under default (or explicit PRE override while
+# PRE is in the deployment) must LACK X-Robots-Tag if PRE predates it.
+# robots.txt may remain plain due to edge cache — do not treat sticky plain
+# robots alone as rollback failure if X-Robots discriminator confirms PRE.
 ```
 
-Rehearsal is incomplete until this rollback path has been executed successfully at least once on staging.
+Rehearsal is incomplete until rollback has been executed at least once on staging.
+
+#### Staging rehearsal record (2026-08-10)
+
+| Artifact | Value |
+| :------- | :---- |
+| CLI | `vp exec wrangler` **4.112.0**; every mutating command `--config=packages/worker/wrangler.toml --env=staging` |
+| `STAGING_PRE_RAMP_VERSION_ID` | `80081841-2b8c-4d32-886d-0225f3f91ba4` |
+| `STAGING_SHIP_VERSION_ID` | `4b211206-4b6a-49cd-9d92-d114f68263ba` |
+| D1 | `ethercalc_rooms_staging` / `273b1db3-…`; migrations none pending; isolated from prod |
+| 100/0 split | `versions deploy PRE@100% SHIP@0% … --yes` → SUCCESS; `deployments list` showed both |
+| Override after split | robots **control `text/html` vs override `text/plain; charset=utf-8` `User-agent: *`** — selection proven |
+| X-Robots | ship override unique room: `noindex, nofollow, noarchive`; pre-ramp unique room: header absent |
+| Ramp | 10/90 → 50/50 → ship@100% SUCCESS; whoami `enabled:true` throughout |
+| Rollback control-plane | `versions deploy PRE@100%` SUCCESS |
+| Rollback edge | unique-room X-Robots absent on PRE (PASS); robots.txt can stick plain after ship served it (cache risk — CONDITIONAL if relying on robots alone) |
+| Final staging | restored **ship `4b211206…` @100%** |
+| Production | **untouched** `bd76bda5…` @100% |
+| Preview URLs | unavailable for DO Worker (`has_preview: false`) |
+
 
 #### Step 5 — Post-ramp verification on staging
 
@@ -974,7 +1019,6 @@ On pass, proceed to production **§4**. On fail, **do not** upload a production 
 
 ## §4 Hosted cutover (single gradual ramp)
 
-> **Status (2026-08-10):** **live hosted cutover procedure.** Derived from repo evidence against the live-probe bounds in the STOP banner. **Blocking before upload:** record `CURRENT_PROD_VERSION_ID` from `wrangler deployments list` / `versions list`, and rehearse this single-ramp shape on staging. This section supersedes the three-phase sequence preserved in Appendix A (old §4.2–§4.4 / old rollback graph / old three-phase Go/No-Go). Appendix A is retained for analysis only — do **not** execute it.
 
 ### 4.0 Deploy-Configuration Source of Truth & Operator Verification Guard
 
@@ -1017,7 +1061,8 @@ Before running `vp exec wrangler deploy --env=""` or `npx wrangler deploy` in `p
 - **Still open — exact git SHA** inside the candidate window: no version annotation. `b7d8840` (`security: harden…`, author `2026-08-03T22:49:58Z`) is the **only** commit that introduces `compatibility_date = "2026-07-21"` in source `wrangler.toml` (parent still `2024-11-12`). Live `versions view` reports `2024-11-12`, and probes still show missing `index-bootstrap.js` + appcache — **consistent with** a pre-`b7d8840` source upload. **§4.0 caveat:** the generated `dist/ethercalc/wrangler.json` redirect **rewrites** `compatibility_date` to `2024-11-12` and serves assets from `dist/client` **without** the five extracted page scripts. Therefore those live markers do **not** unconditionally prove production ≠ `b7d8840` if that revision (or later) was uploaded through the redirect without `--config wrangler.toml`. Exact SHA remains unresolved unless upload path is established; deploy clock is ~9 min after `b7d8840` author time either way. Whether every commit in `d2afa90..b7d8840^` is live is likewise open.
 
 - **Satisfied — D1 migrations remote:** `wrangler d1 migrations list ethercalc_rooms --remote …` → `No migrations to apply!`
-- **Still open:** Cloudflare account allows `versions upload` + percentage `versions deploy` for this Worker (rehearse on staging) **`[OPERATOR-VERIFY]`**.
+- **Settled on staging 2026-08-10:** account allows `versions upload` + percentage `versions deploy` including **100/0 split** and rollback (`4b211206…` / `80081841…`). Production must use the same sequence with `--env=""` — never skip the 100/0 precondition before override smoke.
+
 
 
 ### 4.2 Platform consequence (why the three-phase shape collapses)
@@ -1058,7 +1103,8 @@ Keep `ETHERCALC_AUTH = "1"` in `packages/worker/wrangler.toml` for every artifac
 2. Record secret posture (§0.1) — **done:** empty list / no `ETHERCALC_KEY` is status quo; do not introduce KEY mid-ramp. Treat `ETHERCALC_MIGRATE_TOKEN` only if PITR/migrate/`_timetrigger` are in-window.
 3. Capacity + Time Travel gates — **done 2026-08-10:** 0.694 GiB PASS; Time Travel bookmark recorded above; migrations none pending.
 4. Green preflight on the **ship tree** (not the old Phase 1 worktree) — §1. **Still open.**
-5. Staging rehearsal of **this** single-ramp shape (upload → version-override smoke → percentage ramp → rollback to the staging pre-ramp version) — **§3**. **`[OPERATOR-VERIFY]` still open.**
+5. Staging rehearsal of **this** single-ramp shape — **§3 executed 2026-08-10** (upload → PRE@100%+SHIP@0% → override smoke with robots/X-Robots discriminators → 10/50/100 → rollback control-plane + X-Robots edge proof → restored ship@100%). Remaining production blockers: §1 ship-tree preflight; optional D1 export; operator decision on MIGRATE_TOKEN/PITR in-window; production edge purge plan for sticky robots cache.
+
 
 
 #### Step 1 — D1 migrations (expected no-op; still run and record)
@@ -1089,53 +1135,72 @@ cd ../..
 
 `ETHERCALC_AUTH` must remain `"1"` in the uploaded config. Do not pass a `--var ETHERCALC_AUTH:0` override.
 
-#### Step 3 — Version-override smoke at 0% (survives from old §4.3)
+**Upload alone does not place the version in the active deployment.** `Cloudflare-Workers-Version-Overrides` cannot select a version outside the current deployment (empirically verified on staging 2026-08-10). Proceed to Step 3a.
 
-Exercise the ship bundle on production hostname **without** shifting default traffic ([Version Overrides](https://developers.cloudflare.com/workers/versions-and-deployments/version-overrides/)):
+#### Step 3a — Place ship in active deployment at 0% (**required** before override smoke)
+
+```bash
+# From repo root; pinned CLI. Prod uses --env="" and Worker name ethercalc.
+vp exec wrangler versions deploy \
+  <CURRENT_PROD_VERSION_ID>@100% \
+  <SHIP_VERSION_ID>@0% \
+  --config=packages/worker/wrangler.toml \
+  --env="" \
+  --yes
+
+vp exec wrangler deployments list \
+  --config=packages/worker/wrangler.toml --env=""
+# Current deployment MUST show CURRENT @100% and SHIP @0% before smoking.
+```
+
+Skipping this split makes override smoke a no-op against the old version — false confidence. Do not ramp without a green Step 3b under a verified 100/0 deployment.
+
+#### Step 3b — Version-override smoke at 0%
 
 ```bash
 HDR='Cloudflare-Workers-Version-Overrides: ethercalc="<SHIP_VERSION_ID>"'
 
-# Auth steady-state MUST stay enabled (corrected expectation vs old Phase 2 probes)
 curl -fsS -H "$HDR" https://ethercalc.net/_auth/whoami
 # Expected: {"uid":null,"enabled":true}
 
 curl -fsS -H "$HDR" https://ethercalc.net/_health
 # Expected: {"status":"ok","version":"0.0.0","now":"<ISO-8601>"}
 
-# Root HTML should reference externalized page scripts once ship assets are served
-curl -fsS -H "$HDR" https://ethercalc.net/ | head -c 8000
-# Expect: static/index-bootstrap.js (and related page scripts); no manifest.appcache
+# DISCRIMINATOR vs live prod (pre-ship serves HTML catch-all for /robots.txt):
+curl -sS -D - -o /tmp/robots-ctl.txt "https://ethercalc.net/robots.txt?ctl=$(date +%s%N)" | grep -i content-type
+# Control expected today: text/html (SPA)
+curl -sS -D - -o /tmp/robots-ov.txt -H "$HDR" "https://ethercalc.net/robots.txt?ov=$(date +%s%N)" | grep -i content-type
+# Override expected: text/plain; charset=utf-8 ; body starts User-agent: * ; Allow: / ; no Disallow:
+# Control vs override MUST differ.
+
+ROOM="no-such-$(date +%s%N)"
+curl -sSI -H "$HDR" -H 'Cache-Control: no-cache' "https://ethercalc.net/$ROOM" | grep -i x-robots-tag
+# Expected: x-robots-tag: noindex, nofollow, noarchive
 
 curl -fsS -H "$HDR" -o /dev/null -w '%{http_code}\n' \
   https://ethercalc.net/static/index-bootstrap.js
-# Expected: 200
-
-# Public sheet read still works under override
-curl -fsS -H "$HDR" -o /dev/null -w '%{http_code}\n' \
-  https://ethercalc.net/testprodcutover
-# Expected: 200
+# Expected: 200 (also note: if a future baseline already has this asset, pair with robots discriminator)
 ```
 
-**Abort** if `enabled` is not `true`, if health fails, or if ship-required static assets 404 under the override. Do not ramp.
+**Abort** if selection is unproven, `enabled` ≠ `true`, health fails, or ship-required static assets 404 under the override. Do not ramp.
 
-Optional but strongly recommended under override before ramp (**`[OPERATOR-VERIFY]`**, needs a throwaway or operator-owned private room + test passkey — do not use customer data):
+**Cache note:** edge may cache `robots.txt` without varying on the override header. Use unique query strings; keep unique-room `X-Robots-Tag` as a second discriminator for rollback proof.
 
-- complete a discoverable login;
-- confirm owner can `GET`/`POST` an owned private room;
-- confirm anonymous `GET` on that private room is 403;
-- confirm `POST /_/:room` over-limit command returns **413** (rejection propagation), not 202.
+Optional but strongly recommended under override before ramp (**`[OPERATOR-VERIFY]`**, throwaway/operator-owned private room + test passkey — no customer data): discoverable login; owner private R/W; anonymous private 403; over-limit `POST /_/:room` → **413**.
 
 #### Step 4 — Gradual ramp
 
 ```bash
-cd packages/worker
-npx wrangler versions deploy <SHIP_VERSION_ID>@10% --env=""
-# Dwell; watch error/latency analytics; spot-check Step 5 / §5 probes on default traffic
-npx wrangler versions deploy <SHIP_VERSION_ID>@50% --env=""
-# Dwell again
-npx wrangler versions deploy <SHIP_VERSION_ID>@100% --env=""
-cd ../..
+vp exec wrangler versions deploy \
+  <SHIP_VERSION_ID>@10% <CURRENT_PROD_VERSION_ID>@90% \
+  --config=packages/worker/wrangler.toml --env="" --yes
+# Dwell; watch error/latency; spot-check Step 5 / §5 probes on default traffic
+vp exec wrangler versions deploy \
+  <SHIP_VERSION_ID>@50% <CURRENT_PROD_VERSION_ID>@50% \
+  --config=packages/worker/wrangler.toml --env="" --yes
+vp exec wrangler versions deploy \
+  <SHIP_VERSION_ID>@100% \
+  --config=packages/worker/wrangler.toml --env="" --yes
 ```
 
 After the first percentage step that serves new HTML/JS to real clients, and again at 100%:
@@ -1144,16 +1209,17 @@ After the first percentage step that serves new HTML/JS to real clients, and aga
 Cloudflare Dashboard → Caching → Configuration → Purge Everything
 ```
 
-(A cached production root normally still boots against the ship Worker because its old asset references remain served; it prolongs hybrid old-HTML/new-Worker skew. The broken mixed-version direction is ship HTML routed to pre-`b7d8840` assets, where the extracted `static/*.js` files 404. Browsers that still honor AppCache can additionally pin the old master HTML because `manifest.appcache` remains byte-identical — §4.5.)
+(A cached production root normally still boots against the ship Worker because its old asset references remain served; it prolongs hybrid old-HTML/new-Worker skew. The broken mixed-version direction is ship HTML routed to pre-`b7d8840` assets, where the extracted `static/*.js` files 404. Browsers that still honor AppCache can additionally pin the old master HTML because `manifest.appcache` remains byte-identical — §4.5. **Purge is also the primary mitigator for sticky `robots.txt` cache after rollback.**)
 
 **Ramp abort:** return 100% to the pre-cutover version immediately:
 
 ```bash
-cd packages/worker
-npx wrangler versions deploy <CURRENT_PROD_VERSION_ID>@100% --env=""
-cd ../..
-# Purge edge again so clients drop ship HTML that points at new static/* files
+vp exec wrangler versions deploy \
+  <CURRENT_PROD_VERSION_ID>@100% \
+  --config=packages/worker/wrangler.toml --env="" --yes
+# Purge edge again so clients drop ship HTML / sticky robots
 ```
+
 
 #### Step 5 — Post-ramp verification
 
