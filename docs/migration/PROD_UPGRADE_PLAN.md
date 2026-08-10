@@ -719,7 +719,7 @@ Keep one operator log (ticket, notepad, or file). Fill each row when the step th
 
 | Artifact | When to record | Primary capture | If stdout was lost |
 | :------- | :------------- | :-------------- | :----------------- |
-| `PRE_CUTOVER_BOOKMARK` | Before any deploy (§2.1 / §0.2 step 4) | `npx wrangler d1 time-travel info ethercalc_rooms` | Re-run the same command; or recover by timestamp → §6.4 |
+| `PRE_CUTOVER_BOOKMARK` | Before any deploy (§2.1 / §0.2 step 4) | `npx wrangler d1 time-travel info ethercalc_rooms` (save stdout immediately) | **Do not** re-run `time-travel info` after cutover — that returns a *current* bookmark, not the pre-cutover one. Recover only from the saved command output / change log, or from a recorded pre-cutover UTC timestamp via §6.4. If neither exists, treat the bookmark as **indeterminate**. |
 | `PRE_CUTOVER_D1_SIZE` | Before any deploy (§0.2.2) | `database_size` from `npx wrangler d1 info ethercalc_rooms --json` | Re-run §0.2.2 |
 | `PHASE1_VERSION_ID` | Immediately after Phase 1 deploy succeeds (§4.2) | Version ID printed by `wrangler deploy` / CI deploy log | `npx wrangler versions list` / `npx wrangler deployments list` (§0.2) — take the active 100% post–Phase-1 version |
 | `PHASE2_VERSION_ID` | Immediately after `wrangler versions upload` (§4.3) | Upload command stdout | `npx wrangler versions list` (§0.2) — the uploaded Phase 2 version (not necessarily 100% until ramp completes) |
