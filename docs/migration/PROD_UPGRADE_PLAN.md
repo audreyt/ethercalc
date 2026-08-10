@@ -1292,104 +1292,15 @@ curl -sS -D - https://ethercalc.net/robots.txt -o /tmp/ec-robots.txt
 
 ---
 
-## §6 Rollback Plan, Platform Limits & Point of No Return — **SUPERSEDED PENDING RE-BASELINE**
+## §6 D1 Database Rollback & Time Travel `[OPERATOR-VERIFY]`
 
-> **SUPERSEDED PENDING RE-BASELINE (2026-08-10).** Rollback semantics below assume Phase 2 runs with `AUTH=0` and zero private-room population, and that Phase 1 is the first `v2`/`AuthDO` deploy from `149ebcf`. Neither matches live production. Platform facts (no pre-v2 rollback once `v2` is active; D1 restore ≠ DO restore in §6.4) remain useful; the phase graph and “lockout only after Phase 3” story do **not**. **Do not execute rollbacks that set `ETHERCALC_AUTH="0"` against production private rooms.** See top-of-doc STOP banner.
+> **Live procedure.** Code/assets rollback for this cutover is **§4.4** (`npx wrangler versions deploy <CURRENT_PROD_VERSION_ID>@100%`). The superseded three-phase rollback graph (old §6.1–§6.3) is preserved only in Appendix A.
 
-### 6.1 Rollback Semantics per Deployment Phase
-
-1. **Rollback During Phase 2 (Main Code & Assets Rollout)**:
-   - **100% SAFE & FULLY SUPPORTED**. Roll back Phase 2 to Phase 1 using:
-     ```bash
-     cd packages/worker
-     npx wrangler versions deploy <PHASE1_VERSION_ID>@100% --env=""
-     cd ..
-     ```
-   - **Zero Data Exposure Hazard**: Because `ETHERCALC_AUTH = "0"` was set during Phase 2, no user could register a passkey or create a private room. Rolling Phase 2 back to Phase 1 carries **zero risk** of private room data exposure.
-   - **Snapshot / SocialCalc compatibility on Phase 2→1**: Phase 1 already runs SocialCalc **3.1.0** (same bundled runtime as Phase 2 / `main`; upgrade landed in `303d348`, ancestor of `149ebcf`). Rooms re-saved during the Phase 2 soak therefore rehydrate on Phase 1 without a 3.1.0→3.0.8 engine downgrade. Bidirectional save-string proof (legacy oracle → 3.1.0, and 3.1.0-written → genuine 3.0.8) is in `docs/migration/DELTA_AUDIT.md` item **j** and `packages/socialcalc-headless/test/legacy-snapshot-{compat,reverse*}.test.ts`.
-2. **Rollback During Phase 3 (Passkey Enablement)**:
-   - Roll back Phase 3 to Phase 2 using `npx wrangler versions deploy <PHASE2_VERSION_ID>@100% --env=""`.
-3. **Rollback Past Phase 1 (Pre-v2 Commit `149ebcf...`)**:
-   - **BLOCKED BY CLOUDFLARE PLATFORM**. Platform rules reject rollbacks to pre-v2 versions. Recovery from Phase 2 or Phase 3 to pre-passkey code is executed by redeploying the Phase 1 version (`npx wrangler versions deploy <PHASE1_VERSION_ID>@100% --env=""`). The Phase 1 `release/phase1-lifecycle` bundle **is** the forward-fix artifact (`149ebcf` code with `AuthDO` class & `v2` migration retained); no separate forward-fix bundle needs to be built. If Phase 1 itself ever requires a code fix in production, the operator branches from `release/phase1-lifecycle` and forward-fixes from there.
-
-### 6.2 Rollback Hazards: Lockout vs. Exposure
-
-#### 1. Phase 3 → Phase 2 Rollback Hazard: Temporary Private Room LOCKOUT (Not Exposure)
-
-When Phase 3 is rolled back to Phase 2 (`ETHERCALC_AUTH="0"`):
-
-- `packages/worker/src/lib/authorize.ts:20-28` is present in Phase 2 code:
-  ```ts
-  if (access == null || access === "public") return true;
-  if (access !== "private") return false;
-  if (!principal || typeof principal.uid !== "string" || principal.uid.length === 0) {
-    return false;
-  }
-  ```
-- Because `ETHERCALC_AUTH="0"`, `verifyAuthSession` (`packages/worker/src/lib/auth-session.ts:16`) returns `null`, so `getSessionPrincipal` yields `null`.
-- For any private room (`access === 'private'`), `authorize()` sees `principal == null` and returns `false`.
-- **Consequence**: Rolling Phase 3 back to Phase 2 causes a temporary **LOCKOUT** of private rooms (returning `403 Forbidden` to everyone, including room owners). Private sheet content remains **100% intact and unexposed** in DO storage.
-- **Operator Response**: Recovery is forward and immediate by re-enabling `ETHERCALC_AUTH="1"` / re-deploying Phase 3.
-
-#### 2. Phase 1 / Forward-Fix Rollback Hazard: Private Room EXPOSURE
-
-Private room data exposure occurs **ONLY if code is rolled back past Phase 2 to Phase 1 or the Forward-Fix Bundle**, whose code is `149ebcf`-based and has no `authorize.ts` module at all:
-
-- In `149ebcf` code, `meta:access` in DO storage is ignored, causing private rooms to be served publicly to anonymous requests.
-- **Operator WAF Mitigation**: If the system must be rolled back to Phase 1 / Forward-Fix bundle while private rooms exist, the operator MUST deploy Cloudflare Zone WAF rules expressed in edge-evaluable URL predicates:
-  - Block requests matching path `/private` or `/_from/*/private`
-  - Block specific enumerated room URIs (e.g. `/_/private-room-id` or `/_ws/private-room-id`)
-  - Or block all room API paths `/_/*` wholesale until data isolation is verified.
-
-
-##### Decision card — Private-data rollback (Phase 3 live; private rooms/passkeys may exist)
-
-**Pointers:** hazards → §6.2 items 1–2; room ID → **§2.4**. Idle private rooms + passkey users are **non-enumerable** — no complete affected-user list.
-
-**Path A (prefer): Phase 3 → Phase 2 — lockout, not exposure**
-
-1. Owner authorizes temporary private lockout.
-2. **Comms first/with step 3:** private rooms temporarily unavailable (owners included); content intact, not exposed; public unaffected; restore when auth on + §5 Probe 11 passes.
-3. `cd packages/worker && npx wrangler versions deploy <PHASE2_VERSION_ID>@100% --env="" && cd ..` — ID from Cutover log (start of §4) / §0.2.
-4. **Verify:** Probe 2 `enabled:false`; Probe 3 `401` on `POST /_/private`; Probe 11 not enabled; known private `403`; public Probe 5 OK.
-5. Stay on Phase 2 unless Path B is required.
-
-**Re-enable:** `npx wrangler versions deploy <PHASE3_VERSION_ID>@100% --env=""` (§4.4 if missing) → Probe 11 `enabled:true`; owner read OK; Probes 1/5/7 green. Passkeys/`session-secret` persist in AuthDO; cookies valid until expiry/logout. **`[OPERATOR-VERIFY]`** staging: register → 3→2→3 → same credential.
-
-**Path B (last resort): Phase 1 / forward-fix — exposure**
-
-**Order:** **WAF install+verify BEFORE Phase 1 traffic** (reverse = exposure). Then `npx wrangler versions deploy <PHASE1_VERSION_ID>@100% --env=""`. Re-check WAF.
-
-**Fail-closed WAF** ([Custom rules](https://developers.cloudflare.com/waf/custom-rules/create-dashboard/) → Block). Deny **all** traffic on both hosts — path allowlists cannot cover idle privates; public outage is accepted.
-
-```txt
-http.host eq "ethercalc.net" or http.host eq "www.ethercalc.net"
-```
-
-Optional predeclared operator IP only: append `and not ip.src eq x.x.x.x`. Action Block (403). **No path exceptions in the default.**
-
-**Verify BEFORE Phase 1** (non-exempt client → WAF 403 each): `/_/some-room`, `/_ws/some-room`, `/some-room`, `/some-room.xlsx`. Drop WAF only after Phase 2/3 recovery + private checks.
-
-**Comms (B):** private down; containment is WAF not ACL; public also down; restore forward, then remove WAF.
-
-
-### 6.3 Points of No Return Definition
-
-- **PRIMARY POINT OF NO RETURN**:
-
-  > **The moment Cloudflare reports the Phase 1 deployment successful with migration `v2` active in `wrangler deployments list`.**
-  - Past this point, Cloudflare platform rules permanently prevent reverting to pre-v2 code (`149ebcf...`). Recovery can only occur forward via Phase 1 or a Forward-Fix Bundle.
-
-- **SECONDARY POINT OF NO RETURN**:
-  > **The moment `ETHERCALC_AUTH = "1"` is activated in Phase 3 and the first user creates a private room (`POST /_/private`) OR completes a passkey registration (`POST /_auth/register-complete`).**
-  - Past this point, rolling Phase 3 back to Phase 2 causes private room owner lockout (resolved immediately by re-enabling Phase 3), while rolling back to Phase 1 / Forward-Fix bundle causes world-readability unless WAF URL rules block affected room paths.
-
-### 6.4 D1 Database Rollback & Time Travel Procedure `[OPERATOR-VERIFY]`
 
 If D1 database state must be restored to a pre-cutover state, use Cloudflare D1 Time Travel or manual SQL export restore per [Cloudflare D1 Time Travel documentation](https://developers.cloudflare.com/d1/reference/time-travel/) and [Wrangler D1 CLI Reference](https://developers.cloudflare.com/workers/wrangler/commands/d1/):
 
 
-> **CRITICAL OPERATOR NOTICE**: Restoring D1 via Time Travel or SQL dump restores D1 tables — the cross-room index plus bounded audit/chat tails — but it **DOES NOT** roll back or restore Durable Object SQLite storage (`RoomDO` sheet cell data, authoritative SocialCalc snapshots, or command logs). The index schema is `packages/worker/migrations/0001_rooms.sql:17-21`; D1 audit/chat tables and retention bounds are documented in `packages/worker/migrations/0003_audit_chat.sql:22-38` and `packages/worker/src/lib/seq-store.ts:39-41`. Because DO sheet content has **no operator bulk export API** and **no whole-instance restore path at ~1.8M-room scale** (§2.4.1), cutover safety relies on the three-phase rollout sequence (§4) and **bounded** per-room PITR (§2.4) — not on a fleet-wide DO rewind. Multi-GB SQL dump import is further capped at 5 GB per [D1 limits](https://developers.cloudflare.com/d1/platform/limits/); prefer Time Travel for whole-D1 rollback when `version`/Time Travel is available (§0.2.1, §2.1.1).
+> **CRITICAL OPERATOR NOTICE**: Restoring D1 via Time Travel or SQL dump restores D1 tables — the cross-room index plus bounded audit/chat tails — but it **DOES NOT** roll back or restore Durable Object SQLite storage (`RoomDO` sheet cell data, authoritative SocialCalc snapshots, or command logs). The index schema is `packages/worker/migrations/0001_rooms.sql:17-21`; D1 audit/chat tables and retention bounds are documented in `packages/worker/migrations/0003_audit_chat.sql:22-38` and `packages/worker/src/lib/seq-store.ts:39-41`. Because DO sheet content has **no operator bulk export API** and **no whole-instance restore path at ~1.8M-room scale** (§2.4.1), cutover safety relies on the single-ramp sequence (§4) and **bounded** per-room PITR (§2.4) — not on a fleet-wide DO rewind. Multi-GB SQL dump import is further capped at 5 GB per [D1 limits](https://developers.cloudflare.com/d1/platform/limits/); prefer Time Travel for whole-D1 rollback when `version`/Time Travel is available (§0.2.1, §2.1.1).
 
 #### 1. Destructive Nature & Operational Interruption
 - **In-Place Overwrite**: Per Cloudflare docs: *"Restoring a database to a specific point-in-time is a destructive operation, and overwrites the database in place."*
@@ -2126,4 +2037,97 @@ cd ..
 **ROLLBACK TARGET FOR PHASE 3**: Phase 3 can be rolled back to Phase 2 via `npx wrangler versions deploy <PHASE2_VERSION_ID>@100% --env=""`. The private-room Point of No Return lives HERE in Phase 3, after all major code changes have already soaked cleanly in Phase 2. Record `PHASE3_VERSION_ID` in the Cutover log (start of §4) before soak continues — required for clean re-enable after a lockout rollback (§6.2).
 
 ---
+
+
+### A.2 Old §6.1–§6.3 — Phase-graph rollback model
+
+> **SUPERSEDED PENDING RE-BASELINE (2026-08-10).** Rollback semantics below assume Phase 2 runs with `AUTH=0` and zero private-room population, and that Phase 1 is the first `v2`/`AuthDO` deploy from `149ebcf`. Neither matches live production. Platform facts (no pre-v2 rollback once `v2` is active; D1 restore ≠ DO restore in §6.4) remain useful; the phase graph and “lockout only after Phase 3” story do **not**. **Do not execute rollbacks that set `ETHERCALC_AUTH="0"` against production private rooms.** See top-of-doc STOP banner.
+
+### 6.1 Rollback Semantics per Deployment Phase
+
+1. **Rollback During Phase 2 (Main Code & Assets Rollout)**:
+   - **100% SAFE & FULLY SUPPORTED**. Roll back Phase 2 to Phase 1 using:
+     ```bash
+     cd packages/worker
+     npx wrangler versions deploy <PHASE1_VERSION_ID>@100% --env=""
+     cd ..
+     ```
+   - **Zero Data Exposure Hazard**: Because `ETHERCALC_AUTH = "0"` was set during Phase 2, no user could register a passkey or create a private room. Rolling Phase 2 back to Phase 1 carries **zero risk** of private room data exposure.
+   - **Snapshot / SocialCalc compatibility on Phase 2→1**: Phase 1 already runs SocialCalc **3.1.0** (same bundled runtime as Phase 2 / `main`; upgrade landed in `303d348`, ancestor of `149ebcf`). Rooms re-saved during the Phase 2 soak therefore rehydrate on Phase 1 without a 3.1.0→3.0.8 engine downgrade. Bidirectional save-string proof (legacy oracle → 3.1.0, and 3.1.0-written → genuine 3.0.8) is in `docs/migration/DELTA_AUDIT.md` item **j** and `packages/socialcalc-headless/test/legacy-snapshot-{compat,reverse*}.test.ts`.
+2. **Rollback During Phase 3 (Passkey Enablement)**:
+   - Roll back Phase 3 to Phase 2 using `npx wrangler versions deploy <PHASE2_VERSION_ID>@100% --env=""`.
+3. **Rollback Past Phase 1 (Pre-v2 Commit `149ebcf...`)**:
+   - **BLOCKED BY CLOUDFLARE PLATFORM**. Platform rules reject rollbacks to pre-v2 versions. Recovery from Phase 2 or Phase 3 to pre-passkey code is executed by redeploying the Phase 1 version (`npx wrangler versions deploy <PHASE1_VERSION_ID>@100% --env=""`). The Phase 1 `release/phase1-lifecycle` bundle **is** the forward-fix artifact (`149ebcf` code with `AuthDO` class & `v2` migration retained); no separate forward-fix bundle needs to be built. If Phase 1 itself ever requires a code fix in production, the operator branches from `release/phase1-lifecycle` and forward-fixes from there.
+
+### 6.2 Rollback Hazards: Lockout vs. Exposure
+
+#### 1. Phase 3 → Phase 2 Rollback Hazard: Temporary Private Room LOCKOUT (Not Exposure)
+
+When Phase 3 is rolled back to Phase 2 (`ETHERCALC_AUTH="0"`):
+
+- `packages/worker/src/lib/authorize.ts:20-28` is present in Phase 2 code:
+  ```ts
+  if (access == null || access === "public") return true;
+  if (access !== "private") return false;
+  if (!principal || typeof principal.uid !== "string" || principal.uid.length === 0) {
+    return false;
+  }
+  ```
+- Because `ETHERCALC_AUTH="0"`, `verifyAuthSession` (`packages/worker/src/lib/auth-session.ts:16`) returns `null`, so `getSessionPrincipal` yields `null`.
+- For any private room (`access === 'private'`), `authorize()` sees `principal == null` and returns `false`.
+- **Consequence**: Rolling Phase 3 back to Phase 2 causes a temporary **LOCKOUT** of private rooms (returning `403 Forbidden` to everyone, including room owners). Private sheet content remains **100% intact and unexposed** in DO storage.
+- **Operator Response**: Recovery is forward and immediate by re-enabling `ETHERCALC_AUTH="1"` / re-deploying Phase 3.
+
+#### 2. Phase 1 / Forward-Fix Rollback Hazard: Private Room EXPOSURE
+
+Private room data exposure occurs **ONLY if code is rolled back past Phase 2 to Phase 1 or the Forward-Fix Bundle**, whose code is `149ebcf`-based and has no `authorize.ts` module at all:
+
+- In `149ebcf` code, `meta:access` in DO storage is ignored, causing private rooms to be served publicly to anonymous requests.
+- **Operator WAF Mitigation**: If the system must be rolled back to Phase 1 / Forward-Fix bundle while private rooms exist, the operator MUST deploy Cloudflare Zone WAF rules expressed in edge-evaluable URL predicates:
+  - Block requests matching path `/private` or `/_from/*/private`
+  - Block specific enumerated room URIs (e.g. `/_/private-room-id` or `/_ws/private-room-id`)
+  - Or block all room API paths `/_/*` wholesale until data isolation is verified.
+
+
+##### Decision card — Private-data rollback (Phase 3 live; private rooms/passkeys may exist)
+
+**Pointers:** hazards → §6.2 items 1–2; room ID → **§2.4**. Idle private rooms + passkey users are **non-enumerable** — no complete affected-user list.
+
+**Path A (prefer): Phase 3 → Phase 2 — lockout, not exposure**
+
+1. Owner authorizes temporary private lockout.
+2. **Comms first/with step 3:** private rooms temporarily unavailable (owners included); content intact, not exposed; public unaffected; restore when auth on + §5 Probe 11 passes.
+3. `cd packages/worker && npx wrangler versions deploy <PHASE2_VERSION_ID>@100% --env="" && cd ..` — ID from Cutover log (start of §4) / §0.2.
+4. **Verify:** Probe 2 `enabled:false`; Probe 3 `401` on `POST /_/private`; Probe 11 not enabled; known private `403`; public Probe 5 OK.
+5. Stay on Phase 2 unless Path B is required.
+
+**Re-enable:** `npx wrangler versions deploy <PHASE3_VERSION_ID>@100% --env=""` (§4.4 if missing) → Probe 11 `enabled:true`; owner read OK; Probes 1/5/7 green. Passkeys/`session-secret` persist in AuthDO; cookies valid until expiry/logout. **`[OPERATOR-VERIFY]`** staging: register → 3→2→3 → same credential.
+
+**Path B (last resort): Phase 1 / forward-fix — exposure**
+
+**Order:** **WAF install+verify BEFORE Phase 1 traffic** (reverse = exposure). Then `npx wrangler versions deploy <PHASE1_VERSION_ID>@100% --env=""`. Re-check WAF.
+
+**Fail-closed WAF** ([Custom rules](https://developers.cloudflare.com/waf/custom-rules/create-dashboard/) → Block). Deny **all** traffic on both hosts — path allowlists cannot cover idle privates; public outage is accepted.
+
+```txt
+http.host eq "ethercalc.net" or http.host eq "www.ethercalc.net"
+```
+
+Optional predeclared operator IP only: append `and not ip.src eq x.x.x.x`. Action Block (403). **No path exceptions in the default.**
+
+**Verify BEFORE Phase 1** (non-exempt client → WAF 403 each): `/_/some-room`, `/_ws/some-room`, `/some-room`, `/some-room.xlsx`. Drop WAF only after Phase 2/3 recovery + private checks.
+
+**Comms (B):** private down; containment is WAF not ACL; public also down; restore forward, then remove WAF.
+
+
+### 6.3 Points of No Return Definition
+
+- **PRIMARY POINT OF NO RETURN**:
+
+  > **The moment Cloudflare reports the Phase 1 deployment successful with migration `v2` active in `wrangler deployments list`.**
+  - Past this point, Cloudflare platform rules permanently prevent reverting to pre-v2 code (`149ebcf...`). Recovery can only occur forward via Phase 1 or a Forward-Fix Bundle.
+
+- **SECONDARY POINT OF NO RETURN**:
+  > **The moment `ETHERCALC_AUTH = "1"` is activated in Phase 3 and the first user creates a private room (`POST /_/private`) OR completes a passkey registration (`POST /_auth/register-complete`).**
+  - Past this point, rolling Phase 3 back to Phase 2 causes private room owner lockout (resolved immediately by re-enabling Phase 3), while rolling back to Phase 1 / Forward-Fix bundle causes world-readability unless WAF URL rules block affected room paths.
 
