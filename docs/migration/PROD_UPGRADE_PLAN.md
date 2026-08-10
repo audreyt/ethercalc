@@ -1643,7 +1643,7 @@ To light up passkey authentication and private rooms, the operator MUST provide 
 
 ## §8 Pre-Cutover PRs & Preparation Bundles
 
-The following seven items have been evaluated and categorized:
+The following eight items have been evaluated and categorized:
 
 1. **Phase 1 Minimal Branch (Forward-Fix Artifact) Preparation** — **SUPERSEDED for live hosted cutover / not a live step** (v2/`AuthDO` already live; see STOP banner). Retained only as historical prep / **Appendix A** context. **Do not** build, push, or deploy `release/phase1-lifecycle` or `.worktrees/phase1-lifecycle` for the §4 single-ramp procedure.
    - **Historical specification** (Appendix A only): Build and validate `release/phase1-lifecycle` branch (`149ebcf...` + `AuthDO` + `v2` migration).
@@ -1684,6 +1684,21 @@ The following seven items have been evaluated and categorized:
    - **Stale root `robots.txt`**: Repo-root `robots.txt` is a 26-byte file containing `User-agent: *\nDisallow: /\n` — the **opposite** policy. `scripts/build-assets.ts` `staticCopies` / `directoryCopies` do **not** copy it into `assets/` (plan covers root HTML, icons, `manifest.appcache`, locales, `player.js`, m3e NOTICE, and the `images/`, `static/`, passkey, multi directories only). Live `assets/` has no `robots.txt`. With `run_worker_first = true` the Worker route wins regardless, so the file is currently **dead weight, not a live conflict**. **Do not delete it in this cutover** — owner call whether to remove or rewrite later.
    - **Cutover Blocker Decision**: **BLOCKING SHIP REQUIREMENT**. The policy MUST be present in the shipped Worker artifact. Absence reverts production to today's behaviour where `GET /robots.txt` falls through `/:room` and returns the HTML shell. Verify with §5 Probes 13a–13c after ramp.
    - **Phase Placement**: Ships with the main behavioral bundle (same track as other `main` Worker changes). Not a Phase 1 lifecycle-only concern.
+
+8. **Mutation-ratchet fragility during the cutover window** (all six audited packages)
+   - **Measured margins** at tip `327fa3d` (`scripts/ratchet-verify.sh`, exit 0, ~828s wall clock, 2026-08-10):
+
+     | Package | Score | Floor | Margin (pp) |
+     | :--- | ---: | ---: | ---: |
+     | `@ethercalc/shared` | 99.69% | 99 | +0.69 |
+     | `@ethercalc/socketio-shim` | 84.68% | 84 | +0.68 |
+     | `@ethercalc/client` | 77.61% | 77 | +0.61 |
+     | `@ethercalc/oracle-harness` | 83.46% | 83 | +0.46 |
+     | `@ethercalc/migrate` | 90.38% | 90 | +0.38 |
+     | `@ethercalc/worker` | **90.03%** | 90 | **+0.03** |
+
+   - **Operational consequence**: Every audited package sits within one percentage point of its Stryker `thresholds.break` floor, and `@ethercalc/worker` has three hundredths. A single surviving mutant fails CI's conditional `mutation-gate`. A pre-cutover PR that touches these packages — **especially `@ethercalc/worker` at +0.03pp** — can therefore trip `mutation-gate` even when every functional test passes. Contributors should run `scripts/ratchet-verify.sh` locally *before* pushing rather than discovering the failure in CI.
+   - **Remedy constraint** (from `AGENTS.md`): an equivalent mutant is handled with a written `// Stryker disable` justification — **not** a padded test, and **not** by lowering a floor.
 
 ---
 
