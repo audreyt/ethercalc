@@ -1,5 +1,6 @@
 import { env, runInDurableObject } from 'cloudflare:test';
 import { logKey } from '@ethercalc/shared/storage-keys';
+import { createSpreadsheet } from '@ethercalc/socialcalc-headless';
 import { describe, expect, it } from 'vite-plus/test';
 import type { Env } from '../src/env.ts';
 import { RoomDO } from '../src/room.ts';
@@ -252,5 +253,144 @@ describe('RoomDO (integration via DO namespace)', () => {
     expect(((await a1.json()) as { datavalue?: number } | null)?.datavalue).toBe(1);
     const b2 = await stub.fetch('https://do/_do/cells/B2');
     expect(((await b2.json()) as { datavalue?: number } | null)?.datavalue).toBe(99);
+  });
+
+  it('legacy room without meta:access or meta:acl storage keys remains fully accessible to anonymous users', async () => {
+    const { stub } = getStub('legacy-unprotected-room');
+
+    // Seed the room snapshot (empty body) so it exists
+    const seedPut = await stub.fetch('https://do/_do/snapshot', {
+      method: 'PUT',
+      body: '',
+    });
+    expect(seedPut.status).toBe(201);
+
+    // Verify that DO storage has neither meta:access nor meta:acl keys
+    await runInDurableObject(stub, async (_instance: RoomDO, state) => {
+      const storedAccess = await state.storage.get('meta:access');
+      const storedAcl = await state.storage.get('meta:acl');
+      expect(storedAccess).toBeUndefined();
+      expect(storedAcl).toBeUndefined();
+    });
+
+    // (a) Anonymous HTTP GET succeeds (returns 200)
+    const getRes = await stub.fetch('https://do/_do/snapshot');
+    expect(getRes.status).toBe(200);
+
+    // (b) Anonymous WebSocket connect + a cell edit succeeds
+    const upgradeRes = await stub.fetch(
+      'https://do/_do/ws?user=anon&auth=anon&room=legacy-unprotected-room',
+      { headers: { Upgrade: 'websocket' } },
+    );
+    expect(upgradeRes.status).toBe(101);
+    const client = upgradeRes.webSocket!;
+    client.accept();
+    client.send(
+      JSON.stringify({
+        type: 'execute',
+        room: 'legacy-unprotected-room',
+        user: 'anon',
+        auth: 'anon',
+        cmdstr: 'set A1 value n 999',
+      }),
+    );
+
+    // Query back until the edit is reflected in the DO state
+    let a1Value: number | undefined;
+    for (let i = 0; i < 20; i++) {
+      const cellRes = await stub.fetch('https://do/_do/cells/A1');
+      const json = (await cellRes.json()) as { datavalue?: number } | null;
+      if (json?.datavalue === 999) {
+        a1Value = 999;
+        break;
+      }
+      const { promise, resolve } = Promise.withResolvers<void>();
+      queueMicrotask(resolve);
+      await promise;
+    }
+    client.close();
+    expect(a1Value).toBe(999);
+
+    // (c) Legacy ?auth= query path: auth=0 is view-only (rejects edits), unconfigured auth works
+    const viewOnlyRes = await stub.fetch(
+      'https://do/_do/ws?user=anon&auth=0&room=legacy-unprotected-room',
+      { headers: { Upgrade: 'websocket' } },
+    );
+    expect(viewOnlyRes.status).toBe(101);
+    const viewClient = viewOnlyRes.webSocket!;
+    viewClient.accept();
+    viewClient.send(
+      JSON.stringify({
+        type: 'execute',
+        room: 'legacy-unprotected-room',
+        user: 'anon',
+        auth: '0',
+        cmdstr: 'set A1 value n 111',
+      }),
+    );
+
+    // Send a follow-up ask.log to ensure the prior message was processed by the DO
+    const { promise: logPromise, resolve: logResolve } = Promise.withResolvers<string>();
+    viewClient.addEventListener(
+      'message',
+      (event) => {
+        if (typeof event.data === 'string') logResolve(event.data);
+      },
+      { once: true },
+    );
+    viewClient.send(
+      JSON.stringify({
+        type: 'ask.log',
+        room: 'legacy-unprotected-room',
+        user: 'anon',
+      }),
+    );
+    await logPromise;
+    viewClient.close();
+
+    // A1 value remains 999 because auth=0 edit was rejected
+    const cellResAfterViewOnly = await stub.fetch('https://do/_do/cells/A1');
+    expect(((await cellResAfterViewOnly.json()) as { datavalue?: number } | null)?.datavalue).toBe(999);
+  });
+
+  it('legacy oversized sheet (>200k cells) loads, allows non-growing edits, and rejects area-expanding edits', async () => {
+    const { stub } = getStub('oversized-legacy-room');
+
+    // Build a valid SocialCalc save string with cell SF500 set (column SF = 500, row = 500 -> 250,000 cells > 200,000)
+    const ss = createSpreadsheet();
+    ss.executeCommand('set SF500 value n 10');
+    const snapshot = ss.createSpreadsheetSave();
+
+    // Seed an oversized legacy sheet via migration seed
+    const seedRes = await stub.fetch('https://do/_do/seed?name=oversized-legacy-room', {
+      method: 'POST',
+      body: JSON.stringify({
+        snapshot,
+      }),
+    });
+    expect(seedRes.status).toBe(201);
+
+    // 1. Verify DO loads and serves the oversized room without error
+    const cellRes = await stub.fetch('https://do/_do/cells/SF500');
+    expect(cellRes.status).toBe(200);
+    expect(((await cellRes.json()) as { datavalue?: number } | null)?.datavalue).toBe(10);
+
+    // 2. Non-growing edit within existing 500x500 dimensions (e.g. set SF500 value n 42) SUCCEEDS
+    const editRes = await stub.fetch('https://do/_do/commands', {
+      method: 'POST',
+      body: 'set SF500 value n 42',
+    });
+    expect(editRes.status).toBe(202);
+
+    const updatedCellRes = await stub.fetch('https://do/_do/cells/SF500');
+    expect(((await updatedCellRes.json()) as { datavalue?: number } | null)?.datavalue).toBe(42);
+
+    // 3. Area-expanding edit beyond existing 500x500 dimensions (e.g. set SF501 value n 1) is REJECTED
+    const expandRes = await stub.fetch('https://do/_do/commands', {
+      method: 'POST',
+      body: 'set SF501 value n 1',
+    });
+    expect(expandRes.status).toBe(413);
+    expect(await expandRes.text()).toBe('command exceeds sheet limits');
   });
 });

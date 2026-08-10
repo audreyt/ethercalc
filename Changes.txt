@@ -34,6 +34,13 @@ Security
 - Made staging deploy validation pass `--config wrangler.toml` explicitly, so
   Vite's generated production-config redirect cannot silently ignore
   `--env staging`.
+- Room URLs stay unlisted by design: every non-landing response now carries
+  `X-Robots-Tag: noindex, nofollow, noarchive`, and only `/` remains
+  indexable. `GET /robots.txt` returns a real robots file (Allow: `/` only)
+  instead of falling through the `/:room` catch-all as app HTML. The robots
+  file deliberately carries no `Disallow` directive — `Disallow` forbids
+  fetching, so a crawler blocked from a URL can never observe its `noindex`
+  header and already-indexed rooms would be stranded permanently.
 
 Tooling
 - Migrated the repository interface to Vite+ 0.2.4: package operations use
@@ -54,6 +61,10 @@ Tooling
 - Hardened self-host Docker builds against local-state leakage: build context
   excludes dependencies, Vite/Wrangler output, secrets, migration dumps, and
   persistent room data; the smoke gate asserts the resulting image is clean.
+- Fixed `scripts/ratchet-verify.sh` mutation score parsing in `jq` and `node`
+  branches by computing the score from mutant status counts rather than reading
+  a non-existent `mutationScore` property, resolving an unconditional parse
+  error (exit 2) during mutation ratchet audits.
 
 Integration
 - Prepared the headless adapter for the next SocialCalc release: bundle
@@ -67,6 +78,12 @@ Integration
 - Moved the account/access cluster into its in-flow fallback at or below the
   measured 920px cutoff, avoiding overlap with SocialCalc's expanded menu while
   preserving fixed top-right chrome on wider sheets.
+
+Bug fixes
+- Fixed `POST /_/:room` returning `202` on Durable Object command rejections,
+  which silently discarded writes. The route now propagates the DO status and
+  response body (such as `413 command exceeds sheet limits` when a batch exceeds
+  200,000 cells).
 
 ==============================================================================
 0.20260717.0 — 2026-07-17

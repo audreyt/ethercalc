@@ -100,11 +100,19 @@ To find out which command corresponds to which spreadsheet actions,
 perform the actions on the web interface and check the _Audit_ tab
 for the recorded commands.
 
+Command batches that would push the sheet's declared area past the 200,000-cell limit are rejected with `413`. The same limit applies over WebSocket, where the connection closes with code `1008` and reason `Command exceeds sheet limits`.
+
 + Request (application/json)
 + Response 202
 
     ```json
     {"command": "..."}
+    ```
+
++ Response 413 (text/plain)
+
+    ```text
+    command exceeds sheet limits
     ```
 
 ## Append Rows [POST]

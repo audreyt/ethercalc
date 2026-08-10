@@ -13,7 +13,7 @@ interface AuthCall {
 
 function makeEnv(
   responder: (request: Request) => Response | Promise<Response>,
-  enabled = '1',
+  enabled: string | null | undefined = '1',
 ): { env: Env; calls: AuthCall[] } {
   const calls: AuthCall[] = [];
   let name = '';
@@ -71,9 +71,12 @@ describe('verifyAuthSession', () => {
     ]);
   });
 
-  it.each(['', '0', 'false', 'no', 'off'])(
+  it.each(['', '0', 'false', 'no', 'off', null] as const)(
     'does not contact AuthDO when auth flag is %j',
     async (flag) => {
+      // `null` is the workerd-unset binding shape (see room-index-access.ts).
+      // `undefined` is covered by flagEnabled unit tests; makeEnv's default
+      // param would collapse an omitted/undefined arg back to '1'.
       const { env, calls } = makeEnv(
         () => Response.json({ uid: 'unexpected' }),
         flag,
