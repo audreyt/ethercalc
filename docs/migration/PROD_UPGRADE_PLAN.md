@@ -93,9 +93,10 @@ npx wrangler deployments list --config=packages/worker/wrangler.toml --env=""
 # 2. Query production versions list
 npx wrangler versions list --config=packages/worker/wrangler.toml --env=""
 
-# 3. Check production D1 database status, schema state, and storage subsystem version (INSPECT `version` FIELD)
+# 3. Check production D1 database status, size, and storage subsystem
+#    INSPECT: `database_size` (bytes; human table form pretty-prints it) AND
+#    `version` when present (Time Travel subsystem — see §0.2.1 / §0.2.2)
 npx wrangler d1 info ethercalc_rooms --json
-
 # 4. Capture current D1 Time Travel info and record the current bookmark timestamp
 npx wrangler d1 time-travel info ethercalc_rooms
 
@@ -111,9 +112,15 @@ curl -fsSI https://ethercalc.net/
 Before proceeding with cutover or relying on Time Travel backups, the operator MUST verify the D1 database storage subsystem version from `npx wrangler d1 info ethercalc_rooms --json`:
 
 1. **Pass Criterion (`version: "production"`)**:
-   The output `version` field MUST be `"production"`. Per [Cloudflare D1 Time Travel documentation](https://developers.cloudflare.com/d1/reference/time-travel/) and [Wrangler D1 CLI Reference](https://developers.cloudflare.com/workers/wrangler/commands/d1/):
+   When present, the output `version` field MUST be `"production"`. Per [Cloudflare D1 Time Travel documentation](https://developers.cloudflare.com/d1/reference/time-travel/) and [Wrangler D1 CLI Reference](https://developers.cloudflare.com/workers/wrangler/commands/d1/):
    > *"Databases with `version: production` support the new Time Travel API. Databases with `version: alpha` only support the older, snapshot-based backup API."*
    > *"To understand which storage subsystem your database uses, run `wrangler d1 info YOUR_DATABASE` and inspect the `version` field."*
+
+   **Pinned-Wrangler caveat:** the repository's Wrangler build fetches `version` from the D1 API but **strips it** from both table and `--json` `d1 info` output before printing (it keeps `database_size`, metrics, etc.). If `version` is absent from the CLI output, do **not** treat that as `alpha`. Instead confirm Time Travel with:
+   ```bash
+   npx wrangler d1 time-travel info ethercalc_rooms
+   ```
+   Success ⇒ production subsystem usable for §2/§6. Failure with an alpha/unsupported error ⇒ apply the `version: "alpha"` branch below.
 
 2. **Wrangler Version Compatibility**:
    Cloudflare D1 Time Travel requires Wrangler CLI version `>= v3.4.0` (per [Cloudflare D1 Time Travel documentation](https://developers.cloudflare.com/d1/reference/time-travel/)). In this repository, root `package.json` pins `"wrangler": "^4.112.0"`, satisfying the CLI version requirement.
@@ -127,6 +134,110 @@ Before proceeding with cutover or relying on Time Travel backups, the operator M
    - **Operator Judgment**: `version: "alpha"` **SHOULD block the cutover outright** if continuous D1 point-in-time recovery (PITR) or automated Time Travel restoration is required by the production operational SLA or change management policy.
    - **Justification**: D1 `ethercalc_rooms` stores the room index (`rooms` table mirroring room names, updated_at timestamps, and cors_public flags per `packages/worker/migrations/0001_rooms.sql:17-21` and `packages/worker/src/lib/rooms-index.ts:46-49`) plus bounded per-room audit and chat log tails (`audit_log` and `chat_log` tables per `packages/worker/migrations/0003_audit_chat.sql:22-38` and `packages/worker/src/lib/seq-store.ts:39-41`). Authoritative sheet content, cell values, SocialCalc command logs, and snapshots are stored solely inside Durable Objects (`RoomDO`). If D1 schema migration (`packages/worker/migrations/0001_rooms.sql`) or database state corruption occurs during cutover, `version: "alpha"` leaves the operator with zero automated PITR options — reverting D1 requires manually dropping/recreating tables and importing a static SQL dump, which risks losing any room index or log updates created between the export time and cutover failure. If the operator or team explicitly chooses to proceed under `version: "alpha"` anyway (e.g., because primary cell state lives in `RoomDO` Durable Objects and D1 is a mirror index/log store), this MUST be logged as a formal GO/NO-GO risk acceptance: the operator explicitly acknowledges that §2/§6 Time Travel rollback capabilities are disabled and that D1 recovery relies solely on `d1 export`.
 
+#### 0.2.2 Precondition: D1 Capacity Headroom Against the 10 GB Ceiling `[GO/NO-GO]`
+
+Production is **not** a small-room fleet. `bulkMirrorRoomsToD1` documents that
+migration seeds **~1.8M rooms** through `PUT /_migrate/seed/:room` with a
+subsequent bulk index flush, and that a naive per-row D1 write path is
+D1-bound for on the order of **~5 h at 100 rps**
+(`packages/worker/src/lib/rooms-index.ts:63-82`). The same comment records
+D1's prepared-statement parameter cap of **100** (not SQLite's 999); over-
+batching produced a generic 500 during the 2026-04-21 migration work (see
+the rooms-index comment and the rewrite session log). Operator backup and
+recovery procedures MUST be planned against that order of magnitude, not
+against a mental model of hundreds of rooms.
+
+`npx wrangler d1 info ethercalc_rooms` (and `--json`) reports **current
+database size**. Wrangler renames the API field `file_size` →
+`database_size` before printing (`wrangler` D1 info handler). Per
+[Cloudflare D1 limits](https://developers.cloudflare.com/d1/platform/limits/):
+
+- **Maximum database size: 10 GB (Workers Paid) / 500 MB (Free).**
+- Cloudflare states plainly: *"Note that the 10 GB limit of a D1 database
+  cannot be further increased."*
+- Maximum SQL query duration: **30 seconds**
+- Maximum Time Travel restore operations: **10 per 10 minutes per database**
+- Maximum bound parameters per query: **100**
+- Each D1 database is **single-threaded** and processes queries one at a time
+- Large multi-million-row modifications must be batched; a single statement
+  that touches hundreds of thousands of rows will exceed execution limits
+
+**Operator action (record in the cutover log):**
+
+1. Run `npx wrangler d1 info ethercalc_rooms --json` and record
+   `database_size` (integer bytes). In table mode the same value is shown
+   as a human-readable size.
+2. Convert to GiB: `database_size / 1024^3`.
+3. Compute headroom: `10 GiB - size` and used fraction `size / 10 GiB`.
+
+**Pass criteria (cutover go/no-go):**
+
+| Reading | Judgment |
+| :------ | :------- |
+| **&lt; 5.0 GiB** (&lt; 50% of ceiling) | **PASS** — comfortable margin for soak growth, export overhead, and audit/chat tail accumulation during the window. |
+| **5.0–8.0 GiB** (50–80%) | **CONDITIONAL** — proceed only with an explicit owner sign-off, a recorded plan for what happens if D1 writes start failing mid-soak, and no discretionary bulk D1 rewrites during cutover. |
+| **&gt; 8.0 GiB** (&gt; 80%) | **NO-GO** until size is reduced or the change window is redesigned. Crossing the hard 10 GB ceiling is an availability incident, not a soft warning. |
+| **Field missing / command fails** | **NO-GO** until size is observed. Do not guess. |
+
+**Why this is not optional.** D1 here holds:
+
+- the public room index (`rooms`: `room`, `updated_at`, `cors_public` —
+  `packages/worker/migrations/0001_rooms.sql:17-21`), and
+- bounded per-room tails `audit_log` / `chat_log` with
+  `AUDIT_HISTORY_KEEP = 1024` and `CHAT_HISTORY_KEEP = 500`
+  (`packages/worker/src/lib/seq-store.ts:40-41`), each row carrying a
+  `body` (SocialCalc command text or chat message).
+
+Authoritative sheet bytes live in RoomDO, **not** in D1 — but the index and
+mirrors still grow with the fleet and with active-room churn.
+
+**Illustrative arithmetic (assumptions stated; live size unknown without
+§0.2 step 3):**
+
+Assumptions used below (order-of-magnitude only):
+
+- Indexed public rooms on the order of the migration seed: **N_index ≈ 1.8×10^6**.
+- Average `rooms` row + SQLite/leaf overhead ≈ **100 bytes** →
+  `1.8e6 × 100 B ≈ 180 MB ≈ 0.17 GiB ≈ 1.7% of the 10 GiB cap` for the
+  index alone, before any audit/chat tails.
+- A "full-tail active" room is one that has filled the keep limits:
+  `1024` audit rows + `500` chat rows.
+- **Case M (modest bodies):** audit row ≈ 250 B, chat row ≈ 150 B
+  (short commands / short messages + row overhead) →
+  `1024×250 + 500×150 = 331 000 B ≈ 0.32 MiB` per full-tail room.
+- **Case H (heavier bodies):** audit row ≈ 1050 B, chat row ≈ 200 B →
+  `1024×1050 + 500×200 ≈ 1.15 MiB` per full-tail room.
+
+| Full-tail active rooms | Case M total (index + tails) | Fraction of 10 GiB | Case H total | Fraction of 10 GiB |
+| --------------------: | ---------------------------: | -----------------: | -----------: | -----------------: |
+| 1 000 | ≈ 0.48 GiB | ≈ 5% | ≈ 1.3 GiB | ≈ 13% |
+| 10 000 | ≈ 3.3 GiB | ≈ 33% | ≈ 11 GiB | **&gt; 100% (over ceiling)** |
+| 18 000 (1% of 1.8M) | ≈ 5.7 GiB | ≈ 57% | ≈ 20 GiB | **far over ceiling** |
+| 50 000 | ≈ 16 GiB | **over** | ≈ 55 GiB | **over** |
+
+These rows are **not** a measurement of production. Most of the 1.8M index
+entries are expected to be cold (empty or near-empty audit/chat tails). A
+small hot cohort dominates D1 bytes. The only authoritative number is the
+live `database_size` from `wrangler d1 info`. The table exists so the
+operator treats headroom as a first-class go/no-go input instead of
+discovering the ceiling mid-incident.
+
+**Consequence of hitting the 10 GB cap.** D1 writes fail. In this codebase
+that immediately affects:
+
+1. **Room index mirrors** (`mirrorRoomToD1` / `bulkMirrorRoomsToD1`) — 
+   `GET /_rooms`, `GET /_roomtimes`, and any recovery procedure that
+   enumerates `rooms` drift from RoomDO reality.
+2. **Audit/chat mirrors** (`appendAuditRows` / `appendChatRows`) — the
+   long-term D1 record stops accepting new tails (RoomDO remains
+   authoritative for live sheet state; the mirror is best-effort, but a
+   full disk turns "best-effort" into "sustained loss of the recovery aid").
+
+D1 is single-threaded: a database at or near the size ceiling is also more
+likely to queue or overload under concurrent operator export + live traffic.
+Do not schedule bulk `d1 export`, mass `d1 execute` scans, and peak write
+traffic without looking at this number first.
+
 ### 0.3 Baseline Decision Table `[OPERATOR-VERIFY]`
 
 | Observed Baseline State             | Variance from `149ebcf16104b01254ca2b796beb701c88bd6ff8`                   | Required Action                                                                                                                                                    |
@@ -136,6 +247,7 @@ Before proceeding with cutover or relying on Time Travel backups, the operator M
 | **Newer Version** (> `149ebcf...`)  | Production is already ahead of `0.20260717.0`.                             | Run `git log 149ebcf..HEAD` to determine exactly which commits are deployed. Check if DO migration `v2` (`AuthDO`) is already present in `wrangler versions list`. |
 | **`v2` Migration Already Deployed** | `AuthDO` migration `v2` is shown as active in `wrangler deployments list`. | Skip Phase 1 (Phase 1 lifecycle deploy has already occurred). Proceed to Phase 2.                                                                                  |
 | **D1 Subsystem `version: "alpha"`** | Database uses legacy `alpha` storage subsystem; Time Travel API unsupported. | GO/NO-GO BLOCKER if continuous PITR is required by SLA. If proceeding by explicit sign-off, operator MUST NOT rely on Time Travel and MUST execute manual `d1 export` SQL backups only (§0.2.1, §2.1). |
+| **D1 `database_size` ≥ 8.0 GiB** (or missing) | Live size is ≥ 80% of the hard 10 GB ceiling, or size was not recorded. | **NO-GO** until size is observed and headroom is restored (§0.2.2). At 5.0–8.0 GiB require explicit owner sign-off. |
 ---
 
 ## §1 Preflight on `main`
@@ -218,16 +330,28 @@ bash scripts/check-helm-hardening.sh
 
 ## §2 Backups & Rollback Floor
 
-Prior to cutover, record explicit backups for every durable store and acknowledge the physical limitations of Cloudflare Workers backup APIs.
+Prior to cutover, record explicit backups for every durable store and acknowledge the physical limitations of Cloudflare Workers backup APIs. **Plan these procedures against production scale (~1.8M indexed rooms per `packages/worker/src/lib/rooms-index.ts:63-82`), not against a small test fleet.** See §0.2.2 for the D1 10 GB ceiling check that MUST precede export and any mass query work.
 
 ### 2.1 Durable Store Backup Matrix
 
-| Store                                     | Capture Command / Procedure                                                                                                                                                                                                                                                                                                                                                                                           | Backup Artifact Location                                                                    | Recovery Limitation / Reality                                                                                                                      |
-| :---------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------ | :------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **D1 Database** (`ethercalc_rooms`)       | `npx wrangler d1 export ethercalc_rooms --remote --output=./backup_ethercalc_rooms_$(date +%Y%m%d_%H%M%S).sql`<br><br>Also verify D1 subsystem `version: "production"` (§0.2.1) and record current Time Travel bookmark:<br>`npx wrangler d1 time-travel info ethercalc_rooms` | Local SQL file `./backup_ethercalc_rooms_*.sql` and Cloudflare D1 Time Travel snapshot log. | Fully exportable and restorable via D1 SQL import or D1 Time Travel restore.<br><br>**Command Syntax**: `--output` flag is **REQUIRED** for `wrangler d1 export` (per [Wrangler D1 CLI Reference](https://developers.cloudflare.com/workers/wrangler/commands/d1/#export)).<br><br>**Retention Caveat**: D1 Time Travel retention is plan-dependent per [Cloudflare D1 Time Travel documentation](https://developers.cloudflare.com/d1/reference/time-travel/).<br><br>**Sensitive Material Handling**: Exported `.sql` files contain unfiltered audit commands (SocialCalc code) and user chat messages from both public and private rooms (see §2.2) and MUST be handled as sensitive, access-restricted material. |
-| **Durable Objects** (`RoomDO` / `AuthDO`) | **NO BULK EXPORT API EXISTS** in Cloudflare Workers for Durable Object SQLite storage.<br><br>**D1 Mirror Scope & Reality**: D1 `ethercalc_rooms` holds the public cross-room index (`room`, `updated_at`, `cors_public` per `packages/worker/migrations/0001_rooms.sql:17-21` and `packages/worker/src/lib/rooms-index.ts:46-49`) plus bounded per-room audit and chat log tails for **all** rooms (including private rooms; `audit_log` and `chat_log` per `packages/worker/migrations/0003_audit_chat.sql:22-38` and `packages/worker/src/lib/seq-store.ts:39-41`). **NO authoritative SocialCalc sheet snapshots, cell state, or full command logs are stored in D1.**<br><br>**Available Safeguards:**<br>1. Per-room PITR snapshot restoration via operator endpoint `POST /_/:room/pitr-restore` (`API.md:133-197`).<br>2. Active private room discovery via `SELECT DISTINCT room FROM audit_log UNION SELECT DISTINCT room FROM chat_log` (§2.4). |
-| **Static Assets**                         | Built from source code via `scripts/build-assets.ts`.                                                                                                                                                                                                                                                                                                                                                                 | Source repository commits (`assets/` directory built during deploy).                        | 100% reproducible; re-deploys instantly from git source.                                                                                           |
-| **Secrets & Environment Variables**       | Verified via `npx wrangler secret list --config=packages/worker/wrangler.toml --env=""`.                                                                                                                                                                                                                                                                                                                              | Cloudflare Workers Secret Manager.                                                          | Secret values CANNOT be retrieved/read back via CLI. Precondition checks in §0.1 ensure secrets are set prior to cutover.                          |
+| Store | Capture Command / Procedure | Backup Artifact Location | Recovery Limitation / Reality |
+| :---- | :-------------------------- | :----------------------- | :---------------------------- |
+| **D1 Database** (`ethercalc_rooms`) | 1. Record live size + subsystem (§0.2.2 / §0.2.1): `npx wrangler d1 info ethercalc_rooms --json` (inspect `database_size`, and `version` when present).<br>2. Record Time Travel bookmark: `npx wrangler d1 time-travel info ethercalc_rooms`.<br>3. Export SQL dump: `npx wrangler d1 export ethercalc_rooms --remote --output=./backup_ethercalc_rooms_$(date +%Y%m%d_%H%M%S).sql` | Local SQL file `./backup_ethercalc_rooms_*.sql` plus Cloudflare D1 Time Travel history. | Exportable/restorable via SQL import or Time Travel, **subject to size and rate limits** (below). `--output` is **REQUIRED** ([Wrangler D1 CLI](https://developers.cloudflare.com/workers/wrangler/commands/d1/#export)). Time Travel retention is plan-dependent (30d Paid / 7d Free). **Time Travel restore cap: 10 restores / 10 minutes / database** ([D1 limits](https://developers.cloudflare.com/d1/platform/limits/)). |
+| **Durable Objects** (`RoomDO` / `AuthDO`) | **NO BULK EXPORT API** for Durable Object SQLite. D1 holds only the public index + bounded audit/chat tails (including private-room log tails; not sheet bytes). Safeguards: (1) per-room `POST /_/:room/pitr-restore` for a **bounded** candidate set (§2.4); (2) D1 Time Travel for the index/mirrors only. | None at fleet scale. Per-room PITR bookmarks exist inside Cloudflare's DO storage layer for ~30 days. | **Whole-instance RoomDO recovery has no operator-side mechanism at ~1.8M-room scale.** Mass PITR is viable only for a bounded, pre-enumerated subset (§2.4). AuthDO has no checked-in restore route. |
+| **Static Assets** | Built from source via `scripts/build-assets.ts`. | Git source / `assets/`. | Fully reproducible. |
+| **Secrets & Environment Variables** | `npx wrangler secret list --config=packages/worker/wrangler.toml --env=""`. | Cloudflare Secrets Manager. | Values are write-only; §0.1 only verifies names exist. |
+
+#### 2.1.1 `wrangler d1 export` practicality at multi-GB scale `[OPERATOR-VERIFY]`
+
+A production `ethercalc_rooms` dump is **neither instant nor small** once `database_size` is multi-GB (§0.2.2). Before cutover:
+
+1. Budget wall-clock for the export from the live size (expect minutes to tens of minutes on multi-GB databases; do not assume a quick local-dev-sized dump). **`[OPERATOR-VERIFY]`** the actual duration against production — only a live run settles it.
+2. Budget local disk for the `.sql` artifact (often comparable to, or larger than, `database_size` because SQL text is less compact than the live DB pages) and treat the file as **sensitive** (private-room commands/chat appear unfiltered in `audit_log` / `chat_log`).
+3. Run the export **before** the change window tightens, on a machine that can hold the file, and verify the output path is non-empty when the command exits 0.
+4. Remember D1 is **single-threaded**: a long export competes with live room-index and audit/chat mirror writes. Prefer a low-traffic window.
+5. §9 item 4 is not a checkbox that can be ticked in seconds — schedule it explicitly in the cutover timeline.
+
+SQL dump restore (`wrangler d1 execute --remote --file=...`) is likewise size-bound. Cloudflare documents a **5 GB maximum file import** size for `d1 execute` ([D1 limits](https://developers.cloudflare.com/d1/platform/limits/)). If the export exceeds that, Time Travel (when `version: "production"`) is the practical whole-DB restore path; do not discover this during the incident.
 
 ### 2.2 Rollback Floor Definition & DO Content Non-Exportability
 
@@ -235,19 +359,20 @@ Because Cloudflare Workers provides no operator-side bulk export API for Durable
 
 1. **What `wrangler d1 export` Backs Up**:
    - Backs up the `rooms` index table (`room`, `updated_at`, `cors_public`), `audit_log`, `chat_log`, and `cron_triggers` tables across all rooms (including private rooms, since `#mirrorAudit` and `#mirrorChat` in `packages/worker/src/room.ts:2303-2309` do not filter on `access === 'private'`).
-   - Allows restoring the list of public room names, last-modified timestamps, bounded audit/chat log tails, and enumerating active private rooms (`SELECT DISTINCT room FROM audit_log UNION SELECT DISTINCT room FROM chat_log`).
+   - Allows restoring the list of public room names, last-modified timestamps, and bounded audit/chat log tails. Private-room *discovery* from those tails is a separate, scale-sensitive query problem (§2.4.2) — do not treat a successful export as proof that `SELECT DISTINCT room FROM audit_log UNION …` will complete inside D1's 30s ceiling.
    - **DOES NOT** back up or restore sheet cell data, authoritative SocialCalc command logs, or sheet snapshots. A D1 export cannot reconstruct RoomDO cell state.
-   - **Sensitive Material Handling**: Because `audit_log` and `chat_log` contain raw SocialCalc commands and chat messages from private rooms without write-time access filtering, `wrangler d1 export` SQL dumps contain private room data. Backup `.sql` artifacts MUST be handled as sensitive, access-restricted material.
+   - **Scale / artifact handling**: At ~1.8M index rows plus audit/chat tails, the dump is a multi-GB sensitive artifact (§2.1.1). Handle `.sql` files as access-restricted material (private-room commands and chat are present without write-time access filtering).
 
 2. **What Cloudflare D1 Time Travel Restores**:
    - Restores D1 tables (`rooms`, `audit_log`, `chat_log`, `cron_triggers`) to a prior point-in-time (§6.4).
    - **DOES NOT** roll back or restore Durable Object SQLite storage (`RoomDO` / `AuthDO`).
+   - Restore rate is capped at **10 operations / 10 minutes / database** — irrelevant for a single pre-cutover undo, but material if an operator is iteratively hunting a good bookmark.
 
 3. **Implications for Cutover Strategy & Phase Ordering**:
-   - Because DO sheet content cannot be bulk-exported, **preventing data corruption during cutover is paramount**.
-   - This non-exportability strongly reinforces the mandatory **Three-Phase Upgrade Strategy** (§4):
+   - Because DO sheet content cannot be bulk-exported **and** cannot be bulk-restored at fleet scale (§2.4), **preventing data corruption during cutover is paramount**.
+   - This non-exportability **strengthens** the mandatory **Three-Phase Upgrade Strategy** (§4):
      - **Phase 1** applies the `v2` migration (`AuthDO` class addition) in a behaviorally inert bundle (`149ebcf` code).
-     - **Phase 2** deploys `main` with `ETHERCALC_AUTH = "0"`. Setting `ETHERCALC_AUTH = "0"` **structurally guarantees** that no passkey registration or private room creation can occur while major code changes soak. If Phase 2 encounters bugs, rolling Phase 2 back to Phase 1 carries **zero risk** of private room data exposure or lockout.
+     - **Phase 2** deploys `main` with `ETHERCALC_AUTH = "0"`. Setting `ETHERCALC_AUTH = "0"` **structurally guarantees** that no passkey registration or private room creation can occur while major code changes soak. If Phase 2 encounters bugs, rolling Phase 2 back to Phase 1 carries **zero risk** of private room data exposure or lockout — and avoids creating a private-room population that mass DO recovery cannot reach in an incident window.
      - **Phase 3** enables `ETHERCALC_AUTH = "1"` only after Phase 2 has soaked and proven stable.
 
 ### 2.3 Durable Object PITR Contract and Eligibility
@@ -268,66 +393,202 @@ Cloudflare also states: “The PITR API is not supported in local development be
 
 PITR is scoped to one Durable Object instance, not a namespace. EtherCalc has one `RoomDO` per room (`packages/worker/wrangler.toml:28-33`), so there is no “restore all rooms” platform operation. `AuthDO` is different only in cardinality: the application addresses the singleton as `idFromName('auth')` (`packages/worker/src/routes/auth.ts:52-56`), so AuthDO recovery is a single-object operation rather than a room iteration. Although `AuthDO` is PITR-eligible, the checked-in operator endpoint currently dispatches only to `RoomDO`; the repository has no AuthDO restore command.
 
-### 2.4 Mass RoomDO Recovery Procedure
+### 2.4 Bounded RoomDO Recovery (Not Whole-Instance Mass Restore)
 
- D1 and Durable Object PITR supply complementary halves of broad recovery: the D1 `rooms` table supplies indexed public room names and their last-write times, while `audit_log` and `chat_log` provide enumeration of active private rooms. Per-room PITR restores the content of each corresponding `RoomDO`. `GET /_rooms` and `GET /_roomtimes` expose the public index, but direct D1 SQL queries are safer for an operator procedure because they return exact fields in captured results.
- 
- 1. **Freeze the recovery inputs.** Record the incident start and end in UTC and select one restore timestamp immediately before the first bad write. It MUST be within Cloudflare's 30-day Durable Object PITR window. Do not derive a different timestamp for each room unless the incident analysis explicitly requires it.
- 2. **Capture the candidate list before restoring anything.** `updated_at` is a JavaScript millisecond epoch (`Date.now()`), so query with millisecond boundaries. Replace the example values with the incident window and save the complete output:
- 
-    ```bash
-    # 2a. Public indexed rooms (with last update timestamps):
-    npx wrangler d1 execute ethercalc_rooms \
-      --remote \
-      --config=packages/worker/wrangler.toml \
-      --env="" \
-      --command="SELECT room, updated_at FROM rooms WHERE updated_at BETWEEN 1786363200000 AND 1786366800000 ORDER BY updated_at ASC;"
- 
-    # 2b. Private active rooms (enumerated via unfiltered D1 audit and chat logs):
-    npx wrangler d1 execute ethercalc_rooms \
-      --remote \
-      --config=packages/worker/wrangler.toml \
-      --env="" \
-      --command="SELECT DISTINCT room FROM audit_log UNION SELECT DISTINCT room FROM chat_log;"
-    ```
- 
-    The equivalent HTTP sources for public rooms are `GET /_rooms` for names and `GET /_roomtimes` for timestamps. Prefer the D1 queries when filtering an incident window.
- 3. **Dry-run every candidate sequentially.** For each D1 candidate room (from public `rooms` or private `audit_log`/`chat_log`), URL-encode the room as one path segment and resolve the common pre-incident timestamp without scheduling a restore:
- 
-    ```bash
-    curl -sS --fail-with-body -w '\nHTTP %{http_code}\n' -X POST "https://ethercalc.net/_/<URL_ENCODED_ROOM>/pitr-restore" \
-      -H "Authorization: Bearer $ETHERCALC_MIGRATE_TOKEN" \
-      -H "Content-Type: application/json" \
-      --data '{"at":"2026-08-10T11:59:59.000Z","dryRun":true}'
-    ```
- 
-    Record the room, D1 `updated_at` (or `[private-log]`), requested timestamp, resolved `bookmark`, HTTP status, and response. Stop on any non-200 response; do not silently skip a room.
- 4. **Apply and verify one room at a time.** Submit the dry-run bookmark, retain the returned `undoBookmark`, then verify the room's snapshot/content before advancing:
- 
-    ```bash
-    curl -sS --fail-with-body -w '\nHTTP %{http_code}\n' -X POST "https://ethercalc.net/_/<URL_ENCODED_ROOM>/pitr-restore" \
-      -H "Authorization: Bearer $ETHERCALC_MIGRATE_TOKEN" \
-      -H "Content-Type: application/json" \
-      --data '{"bookmark":"<BOOKMARK_FROM_DRY_RUN>"}'
-    ```
- 
-    A successful response reports `restored: true`; `exists: false` means the target predates creation of that room. If verification fails, submit the recorded `undoBookmark` as `bookmark` before investigating. Preserve the full candidate list and per-room responses as the recovery audit record.
- 
- This is intentionally a **sequential, per-room** procedure. Its throughput and request rate are limited by the delay, retry, and concurrency controls the operator puts into an incident script; EtherCalc supplies none. PITR rewinds the entire RoomDO SQLite database to the selected timestamp, including later key-value state, so it cannot selectively remove one bad SocialCalc command while retaining later good commands.
- 
- **Headline Enumeration Structure & Asymmetry:**
- 
- 1. **Private Room Index Exclusion**: Tracing `POST /_/private` -> `/_do/init-private` (`packages/worker/src/room.ts:1310-1386`) shows that private room creation sets `STORAGE_KEYS.metaAccess = 'private'` directly in DO storage without calling `#mirrorIndex`. Furthermore, every subsequent write routes through `RoomDO.#mirrorIndex` (`packages/worker/src/room.ts:2266-2273`), which explicitly checks `const { access } = await this.#getAccessMeta(); if (access === 'private') return;` (lines 2270-2271) and returns before calling `mirrorRoomToD1`. In addition, `#postTouch` (`packages/worker/src/room.ts:620-622`) checks `access === 'private'` and calls `#deleteIndex` (`DELETE FROM rooms WHERE room = ?1`). Private rooms are **structurally excluded from the public D1 `rooms` index at write time**. They are invisible to `GET /_rooms`, `GET /_roomtimes`, and `SELECT room FROM rooms`.
- 2. **Unfiltered D1 Audit/Chat Mirroring**: In contrast to `#mirrorIndex`, tracing `#applyCommandAndMirror` (`packages/worker/src/room.ts:726-750`) and `appendChat` (`packages/worker/src/room.ts:2330-2348`) reveals that audit entries (`#mirrorAudit` -> `appendAuditRows` at lines 2303-2304) and chat messages (`#mirrorChat` -> `appendChatRows` at lines 2308-2309) contain **no access check whatsoever**. When a command or chat message is executed in a private room, its audit row (containing the raw SocialCalc command) or chat row (containing user text) is mirrored to D1 `audit_log` or `chat_log`.
- 3. **Form-Data Sibling Exclusion**: Rooms ending in `_formdata` (internal submitform storage) are filtered out of public listings by `isPublicRoomIndexEntry` (`packages/worker/src/lib/formdata-sibling.ts:18-19`).
- 
- **Consequence for Incident Recovery & Data Handling**:
- 
- - **Recovery Upside**: `SELECT DISTINCT room FROM audit_log UNION SELECT DISTINCT room FROM chat_log` acts as a platform-native D1 enumeration source for private rooms, materially softening the "no mass-recovery path" gap for private rooms.
- - **Enumeration Caveats & Limits**: The D1 audit/chat query only discovers private rooms that have had at least one command or chat message mirrored. Completely idle/empty private rooms (created with no edits or chat) or rooms whose D1 records were explicitly deleted via `DELETE /_do/all` (`#deleteAuditChatFromD1` at lines 2313-2318) will not appear in D1. In addition, D1 log tails are bounded (`AUDIT_HISTORY_KEEP = 1024`, `CHAT_HISTORY_KEEP = 500` per `packages/worker/src/lib/seq-store.ts:40-41`). D1 log queries serve as an **enumeration aid**, NOT a complete content backup. For zero-activity private rooms, edge access logs or application audit trails remain necessary.
- - **Privacy & Artifact Handling**: While the design intentionally keeps private room IDs out of the public `rooms` index (`/_rooms` and `/_roomtimes`), private room names, SocialCalc commands, and chat messages sit unfiltered in D1 `audit_log` and `chat_log`. D1 is an internal store and treated as sensitive, but operators MUST recognize that `wrangler d1 export` SQL dumps contain private-room material and handle exported `.sql` files as sensitive, access-restricted data.
- 
- **Tooling Gap Summary**: No bulk-PITR script or CLI exists under `packages/cli/`, `scripts/`, or `bin/`; only the single-room HTTP endpoint exists. An operator facing a broad incident must write and peer-review the enumeration/restore driver under pressure unless one is prepared in advance. The D1 `audit_log`/`chat_log` distinct-room query provides native enumeration for active private rooms, restricting the out-of-band edge log search requirement to zero-activity private rooms only.
+#### 2.4.1 Scale reality — mass PITR is not a human incident procedure
+
+D1 and Durable Object PITR supply complementary halves of recovery for a
+**bounded** set of rooms: D1 names candidates; per-room
+`POST /_/:room/pitr-restore` rewinds that room's RoomDO. There is **no**
+"restore all rooms" platform operation (`packages/worker/wrangler.toml:28-33`
+— one RoomDO per room; PITR is per object).
+
+Production cardinality is the migration-seed order of magnitude:
+**~1.8M rooms** (`packages/worker/src/lib/rooms-index.ts:63-82`). Quantify
+before writing any loop:
+
+| Candidate set | At 1 room/s sequential (dry-run **or** restore) | Dry-run + restore @ 1/s each | Notes |
+| ------------: | ----------------------------------------------: | ---------------------------: | :---- |
+| 100 rooms | ~2 minutes | ~3 minutes | Plausible interactive incident work. |
+| 1 000 rooms | ~17 minutes | ~33 minutes | Scripted; still a single shift. |
+| 18 000 rooms (1% of 1.8M) | **~5 hours** | **~10 hours** | Not a page-and-fix loop. Needs a reviewed driver, progress log, and staffing. |
+| 1.8M rooms (whole index) | **~500 hours (~21 days)** | **~1000 hours** | **Not an incident procedure.** |
+
+Even optimistic automation (e.g. 5 concurrent restores) only divides the
+table by a small constant; it does not create a whole-fleet button. EtherCalc
+ships **no** bulk-PITR CLI under `packages/cli/`, `scripts/`, or `bin/` —
+only the single-room HTTP endpoint (`API.md` PITR section).
+
+**Reframe (normative):**
+
+- **In scope for §2.4:** a **bounded, pre-enumerated** candidate set —
+  typically public rooms whose `rooms.updated_at` falls inside a known
+  incident window, plus any private rooms discovered by a *successful*
+  scale-safe enumeration (§2.4.2) or out-of-band inventory.
+- **Out of scope:** whole-instance RoomDO recovery. **Say this plainly:
+  there is no operator-side mechanism to rewind every Durable Object at
+  this scale.** That fact is why the phased rollout and the
+  `ETHERCALC_AUTH="0"` soak window exist — they reduce the chance of needing
+  a fleet-wide DO restore, and they prevent a private-room population from
+  appearing before the new code is trusted.
+
+#### 2.4.2 Candidate enumeration (public window + private discovery)
+
+1. **Freeze the recovery inputs.** Record incident start/end in UTC and pick
+   **one** restore timestamp immediately before the first bad write, inside
+   Cloudflare's ~30-day DO PITR window. Do not invent per-room timestamps
+   unless analysis requires it.
+2. **Prefer windowed public-index queries** — this is the primary,
+   scale-appropriate path. `updated_at` is a JS millisecond epoch; replace
+   the example bounds; **page if the window is wide**:
+
+   ```bash
+   # 2a. Public rooms touched in the incident window (primary candidate source).
+   #     rooms_updated_at index: packages/worker/migrations/0001_rooms.sql:23
+   npx wrangler d1 execute ethercalc_rooms \
+     --remote \
+     --config=packages/worker/wrangler.toml \
+     --env="" \
+     --command="SELECT room, updated_at FROM rooms WHERE updated_at BETWEEN 1786363200000 AND 1786366800000 ORDER BY updated_at ASC LIMIT 1000;"
+
+   # Continue paging with updated_at / room keyset when the window returns
+   # LIMIT rows (D1 max query duration = 30s; single-threaded DB):
+   # SELECT room, updated_at FROM rooms
+   #  WHERE updated_at BETWEEN … AND …
+   #    AND (updated_at > :last_ts OR (updated_at = :last_ts AND room > :last_room))
+   #  ORDER BY updated_at ASC, room ASC
+   #  LIMIT 1000;
+   ```
+
+   Equivalent HTTP sources for an unfiltered public list are `GET /_rooms`
+   and `GET /_roomtimes` — prefer D1 when filtering by incident window.
+   **Do not** `SELECT room FROM rooms` without a window if the goal is
+   incident recovery; pulling ~1.8M names to restore "everything" is the
+   whole-instance anti-pattern from §2.4.1.
+
+3. **Private-room discovery is best-effort and may not be runnable as a
+   single query at scale.** `[OPERATOR-VERIFY]`
+
+   Schema facts:
+   - Private rooms are write-time **excluded** from `rooms`
+     (`RoomDO.#mirrorIndex` returns early when `access === 'private'`;
+     `#postTouch` deletes any index row — `packages/worker/src/room.ts`).
+   - Audit/chat mirrors are **not** access-filtered
+     (`#mirrorAudit` / `#mirrorChat`), so active private rooms *can* appear
+     in `audit_log` / `chat_log`.
+   - Secondary indexes `audit_log_room` and `chat_log_room` exist on
+     `room` (`packages/worker/migrations/0003_audit_chat.sql:29,38`) — they
+     help **per-room** delete/history, **not** a full-table distinct scan.
+
+   The historically documented one-shot form:
+
+   ```sql
+   SELECT DISTINCT room FROM audit_log
+   UNION
+   SELECT DISTINCT room FROM chat_log;
+   ```
+
+   is **likely to exceed D1's 30-second SQL duration limit** once those
+   tables hold on the order of `active_rooms × keep` rows (e.g. thousands of
+   full-tail rooms × ~1.5k rows each → multi-million to hundreds-of-millions
+   of rows) on a **single-threaded** database
+   ([D1 limits](https://developers.cloudflare.com/d1/platform/limits/)). An
+   index on `room` does not make `DISTINCT` across the whole table free.
+
+   **Workable batched form (still `[OPERATOR-VERIFY]` on production):**
+   page each table by `room` keyset, merge distinct names out-of-band, and
+   optionally restrict by `ts` when the incident window is known:
+
+   ```bash
+   # 2b-i. Page distinct rooms from audit_log (repeat until < LIMIT rows).
+   # Start with :after_room = '' (empty string sorts before names).
+   npx wrangler d1 execute ethercalc_rooms \
+     --remote \
+     --config=packages/worker/wrangler.toml \
+     --env="" \
+     --command="SELECT room, MAX(ts) AS last_ts FROM audit_log WHERE room > '' GROUP BY room ORDER BY room ASC LIMIT 500;"
+
+   # Next page: replace '' with the last `room` value from the prior page:
+   # SELECT room, MAX(ts) AS last_ts FROM audit_log
+   #  WHERE room > '<LAST_ROOM>'
+   #  GROUP BY room ORDER BY room ASC LIMIT 500;
+
+   # 2b-ii. Same pattern on chat_log.
+   # 2b-iii. Optional incident filter while paging:
+   # SELECT room, MAX(ts) AS last_ts FROM audit_log
+   #  WHERE room > '<LAST_ROOM>' AND ts BETWEEN <start_ms> AND <end_ms>
+   #  GROUP BY room ORDER BY room ASC LIMIT 500;
+   ```
+
+   If even the paged `GROUP BY room` form times out or overloads D1 under
+   live traffic, **stop** — fall back to edge/access logs, application
+   audit trails, or a pre-maintained private-room inventory. Do not burn
+   the incident clock on a full-table scan that the platform will not
+   finish.
+
+   Idle private rooms (created, never edited/chatted) and rooms wiped via
+   `DELETE /_do/all` (which clears D1 tails) **never** appear in these
+   tables. Tails are also bounded
+   (`AUDIT_HISTORY_KEEP = 1024`, `CHAT_HISTORY_KEEP = 500`), so D1 is an
+   enumeration aid, not a content backup.
+
+#### 2.4.3 Per-room dry-run / restore loop (bounded set only)
+
+Run only after §2.4.2 has produced a **finite** candidate file whose size
+matches the wall-clock budget in §2.4.1.
+
+1. **Dry-run every candidate sequentially** (or with modest, reviewed
+   concurrency). URL-encode the room as one path segment:
+
+   ```bash
+   curl -sS --fail-with-body -w '\nHTTP %{http_code}\n' -X POST "https://ethercalc.net/_/<URL_ENCODED_ROOM>/pitr-restore" \
+     -H "Authorization: Bearer $ETHERCALC_MIGRATE_TOKEN" \
+     -H "Content-Type: application/json" \
+     --data '{"at":"2026-08-10T11:59:59.000Z","dryRun":true}'
+   ```
+
+   Record room, source (`rooms.updated_at` or `[private-log]`), requested
+   timestamp, resolved `bookmark`, HTTP status, and body. Stop on any
+   non-200; do not silently skip.
+
+2. **Apply and verify one room at a time.** Submit the dry-run bookmark,
+   retain `undoBookmark`, verify snapshot/content, then advance:
+
+   ```bash
+   curl -sS --fail-with-body -w '\nHTTP %{http_code}\n' -X POST "https://ethercalc.net/_/<URL_ENCODED_ROOM>/pitr-restore" \
+     -H "Authorization: Bearer $ETHERCALC_MIGRATE_TOKEN" \
+     -H "Content-Type: application/json" \
+     --data '{"bookmark":"<BOOKMARK_FROM_DRY_RUN>"}'
+   ```
+
+   Success reports `restored: true`; `exists: false` means the target
+   predates room creation. On verification failure, submit `undoBookmark`
+   as `bookmark` before investigating. Keep the candidate list and
+   per-room responses as the recovery audit record.
+
+PITR rewinds the **entire** RoomDO SQLite database (including later
+key-value state). It cannot surgically drop one bad SocialCalc command
+while keeping later good ones. Throughput is whatever delay/retry/
+concurrency the operator's reviewed script enforces — EtherCalc supplies
+none.
+
+#### 2.4.4 Enumeration asymmetry & privacy (unchanged facts, scale-aware reading)
+
+1. **Private Room Index Exclusion**: `POST /_/private` → `/_do/init-private`
+   sets `meta:access = 'private'` without `#mirrorIndex`; subsequent writes
+   hit `RoomDO.#mirrorIndex` which returns early on private access; `#postTouch`
+   deletes any `rooms` row for private rooms. Private names never appear in
+   `GET /_rooms` / `GET /_roomtimes` / `SELECT room FROM rooms`.
+2. **Unfiltered audit/chat mirroring**: `#mirrorAudit` / `#mirrorChat` perform
+   no access check — private commands and chat land in D1 tails.
+3. **`_formdata` siblings**: filtered from the public index by
+   `isPublicRoomIndexEntry`.
+4. **Privacy**: `wrangler d1 export` artifacts contain private-room material;
+   handle as sensitive.
+5. **Tooling gap**: no bulk-PITR driver ships in-repo. At this scale that gap
+   is not "write a quick for-loop during the incident" for anything beyond a
+   small bounded set — prepare and peer-review any driver **before** cutover
+   if the change-management plan assumes scripted multi-room restore.
 
 ---
 
@@ -970,7 +1231,7 @@ Private room data exposure occurs **ONLY if code is rolled back past Phase 2 to 
 If D1 database state must be restored to a pre-cutover state, use Cloudflare D1 Time Travel or manual SQL export restore per [Cloudflare D1 Time Travel documentation](https://developers.cloudflare.com/d1/reference/time-travel/) and [Wrangler D1 CLI Reference](https://developers.cloudflare.com/workers/wrangler/commands/d1/):
 
 
-> **CRITICAL OPERATOR NOTICE**: Restoring D1 via Time Travel or SQL dump restores D1 tables — the cross-room index plus bounded audit/chat tails — but it **DOES NOT** roll back or restore Durable Object SQLite storage (`RoomDO` sheet cell data, authoritative SocialCalc snapshots, or command logs). The index schema is `packages/worker/migrations/0001_rooms.sql:17-21`; D1 audit/chat tables and retention bounds are documented in `packages/worker/migrations/0003_audit_chat.sql:22-38` and `packages/worker/src/lib/seq-store.ts:39-41`. Because DO sheet content has no operator bulk export API, cutover safety relies on the three-phase rollout sequence (§4) and per-room PITR recovery.
+> **CRITICAL OPERATOR NOTICE**: Restoring D1 via Time Travel or SQL dump restores D1 tables — the cross-room index plus bounded audit/chat tails — but it **DOES NOT** roll back or restore Durable Object SQLite storage (`RoomDO` sheet cell data, authoritative SocialCalc snapshots, or command logs). The index schema is `packages/worker/migrations/0001_rooms.sql:17-21`; D1 audit/chat tables and retention bounds are documented in `packages/worker/migrations/0003_audit_chat.sql:22-38` and `packages/worker/src/lib/seq-store.ts:39-41`. Because DO sheet content has **no operator bulk export API** and **no whole-instance restore path at ~1.8M-room scale** (§2.4.1), cutover safety relies on the three-phase rollout sequence (§4) and **bounded** per-room PITR (§2.4) — not on a fleet-wide DO rewind. Multi-GB SQL dump import is further capped at 5 GB per [D1 limits](https://developers.cloudflare.com/d1/platform/limits/); prefer Time Travel for whole-D1 rollback when `version`/Time Travel is available (§0.2.1, §2.1.1).
 
 #### 1. Destructive Nature & Operational Interruption
 - **In-Place Overwrite**: Per Cloudflare docs: *"Restoring a database to a specific point-in-time is a destructive operation, and overwrites the database in place."*
@@ -1254,8 +1515,8 @@ The following five items have been evaluated and categorized:
    - **Phase Placement**: Landed on `main` and ships in the Phase 2 bundle. It MUST NOT be folded into Phase 1: §4.2 defines Phase 1 as the behaviorally inert lifecycle-only bundle based on `149ebcf`, while §4.3 is the rollout of `main` and its behavioral changes.
 
 6. **Bulk PITR Automation and Private Room Inventory Tooling Gap**
-   - **Specification**: Build operator CLI tooling (e.g. under `packages/cli/` or `scripts/`) to automate mass PITR iteration over candidate rooms from D1, and maintain an authenticated audit stream of private room creations (`POST /_/private`) to enable private room discovery.
-   - **Cutover Blocker Decision**: **NON-BLOCKING FOLLOW-UP GAP** (hosted track). Single-room PITR endpoint (`POST /_/:room/pitr-restore`) is fully functional on Cloudflare. Operators facing mass incidents on public rooms can execute manual loops or write one-off scripts using `npx wrangler d1 execute` and `curl`. Active private room enumeration during an incident is supported via D1 queries (`SELECT DISTINCT room FROM audit_log UNION SELECT DISTINCT room FROM chat_log`), while zero-activity private rooms rely on edge access logs. **Self-host:** this entire D1+PITR recovery aid does not exist — use filesystem backup/restore of `./ethercalc-data` (§7.0, §7.2) instead.
+   - **Specification**: Build operator CLI tooling (e.g. under `packages/cli/` or `scripts/`) to automate **bounded** PITR iteration over windowed D1 candidate sets, with paged private-room discovery and a retained private-room creation audit stream (`POST /_/private`) for inventories that D1 tails cannot reconstruct.
+   - **Cutover Blocker Decision**: **NON-BLOCKING FOLLOW-UP GAP** (hosted track) — but **do not misread this as "manual mass restore is fine."** Single-room `POST /_/:room/pitr-restore` works on Cloudflare. At production scale (~1.8M rooms), whole-instance iteration is **not** an incident procedure (~500 h at 1 room/s; §2.4.1). Operators may script only a **bounded** candidate set (e.g. `rooms.updated_at` incident window). The one-shot `SELECT DISTINCT room FROM audit_log UNION SELECT DISTINCT room FROM chat_log` is **not** assumed runnable under D1's 30s/single-thread limits — use the paged form in §2.4.2 and mark live success `[OPERATOR-VERIFY]`. Zero-activity private rooms still need edge/access logs. **Self-host:** this entire D1+PITR recovery aid does not exist — use filesystem backup/restore of `./ethercalc-data` (§7.0, §7.2) instead.
 
 ---
 
@@ -1275,11 +1536,11 @@ add a distinct live-artifact, live-binding, edge, or deployment assertion.
 self-host `uniqueKey` volume check (§7.2.1).
 
 
-- [ ] **1. Baseline Capture & Subsystem Verification**: `wrangler deployments list`, `wrangler versions list`, and `wrangler d1 info ethercalc_rooms --json` executed and recorded, confirming D1 storage subsystem `version: "production"` for Time Travel availability (§0.2, §0.2.1).
+- [ ] **1. Baseline Capture, Subsystem & Capacity Verification**: `wrangler deployments list`, `wrangler versions list`, and `wrangler d1 info ethercalc_rooms --json` executed and recorded. Confirm (a) D1 Time Travel availability via `version: "production"` when visible, or via successful `wrangler d1 time-travel info` if the pinned Wrangler omits `version` from `d1 info` output (§0.2.1), and (b) `database_size` headroom against the hard 10 GB ceiling per §0.2.2 pass criteria (&lt; 5 GiB pass; 5–8 GiB conditional sign-off; ≥ 8 GiB or missing = NO-GO).
 - [ ] **2. Preflight Gates Green Against Final Tree (9/9 Runnable Gates Verified; 2 Docker Smokes Pending CI)**: All 9 locally-runnable preflight gates (`vp run typecheck`, `vp lint`, `vp run test`, worker `test:node` & `test:workers`, worker 100% coverage gate `test:coverage`, `build:assets` + `e2e#test`, `build:dry`, `check-helm-hardening.sh`, and `ratchet-verify.sh`) passed 100% green against the final tree state including the `rooms.ts` command-rejection status propagation fix (§1.2, `docs/migration/PREFLIGHT_RESULTS.md`). The 2 Docker smoke gates (`./scripts/smoke-selfhost.sh`, `./scripts/smoke-proxy.sh`) remain unverified locally due to missing local `docker compose` CLI subcommand and require CI execution before final cutover.
   > **ALREADY AUTOMATED — inspect gate status rather than re-performing its assertions.** The root/worker/client gates run the named test and coverage commands; CI `test`, `e2e`, and `helm-lint` execute their corresponding suites, while CI `build:selfhost` runs both Docker smokes (`.github/workflows/ci.yml:17-235`). Once those required jobs are green on the final tree, repeating the same local assertions adds no deployment evidence.
 - [ ] **3. Secrets Provisioned in Production**: `wrangler secret list` confirms `ETHERCALC_KEY` and `ETHERCALC_MIGRATE_TOKEN` are active in Cloudflare Secrets (§0.1).
-- [ ] **4. D1 Database Export & Time Travel Bookmark Recorded**: `npx wrangler d1 export ethercalc_rooms --remote --output=...` executed (using required `--output` flag), account plan confirmed (30d Paid / 7d Free retention), and Time Travel bookmark timestamp captured (§2.1, §6.4).
+- [ ] **4. D1 Database Export & Time Travel Bookmark Recorded**: `npx wrangler d1 export ethercalc_rooms --remote --output=...` executed (required `--output` flag), account plan confirmed (30d Paid / 7d Free retention), and Time Travel bookmark timestamp captured (§2.1, §2.1.1, §6.4). **Budget real wall-clock and disk** from the live `database_size` — multi-GB exports are neither instant nor small; **`[OPERATOR-VERIFY]`** actual duration. If the `.sql` artifact may exceed the **5 GB** `d1 execute --file` import ceiling, confirm Time Travel is the whole-DB restore path before relying on the dump for rollback.
 - [x] **5. Phase 1 Branch (Forward-Fix Artifact) Prepared**: `release/phase1-lifecycle` branch built, typechecks, and dry-runs cleanly (§4.2, §6.1, and §8 item 1; verified via `vp run @ethercalc/worker#typecheck` and `vp run @ethercalc/worker#build:dry`).
   > **ALREADY AUTOMATED — this preparation condition adds no live check.** The named worker `typecheck` and Wrangler `build:dry` gates compile and bundle the Phase 1 tree; their recorded green outputs are the condition itself. Deployment and soak are intentionally separate items 8 and 9.
 - [x] **6. PR 4 Command-Rejection Propagation Landed and Verified for Phase 2**: `POST /_/:room` returns the RoomDO status and body for every non-2xx verdict, matching `PUT /_/:room` at `packages/worker/src/routes/rooms.ts:355-369`. Verified via route contract tests `POST /_/:room command mutations propagate a DO 413 sheet-limit verdict` and `POST /_/:room returns 202 command echo on successful DO dispatch` in `packages/worker/test/routes-rooms.node.test.ts` (52 node files / 1520 tests; 13 workers-pool files / 196 tests; §8 item 5; §10 item 3).
@@ -1301,4 +1562,4 @@ The following user-visible behavior changes take effect upon completing the upgr
 4. **Form/App-Mode Tab Hydration**: Browser tabs in form/app mode open across cutover must perform a page reload (`packages/client/src/boot.ts:384-390`).
 5. **Passkey Accounts & Private Sheets**: Passkeys and private room creation become available after Phase 3 (`packages/worker/src/routes/auth.ts:133-137`).
 6. **WebSocket Message Rate Limits**: Exceeding 1500 messages per 10-second window closes the WebSocket with 1008 (`packages/worker/src/room.ts:1887-1890`).
-7. **Private Room D1 Asymmetry & Recovery Mechanics**: Private rooms (`meta:access === 'private'`) are write-time excluded from the public D1 `rooms` index (`packages/worker/src/room.ts:2270-2271`). They are invisible to `GET /_rooms`, `GET /_roomtimes`, and direct D1 queries (`SELECT room FROM rooms`). However, `#applyCommandAndMirror` and `appendChat` mirror command audit entries and chat messages to D1 `audit_log` and `chat_log` without access checks (`packages/worker/src/room.ts:2303-2309`). Consequently: (1) `SELECT DISTINCT room FROM audit_log UNION SELECT DISTINCT room FROM chat_log` provides a platform-native D1 enumeration source for active private rooms during mass PITR recovery; (2) `wrangler d1 export` SQL backups contain private-room SocialCalc commands and chat messages, requiring exported `.sql` files to be handled as sensitive, access-restricted material.
+7. **Private Room D1 Asymmetry & Recovery Mechanics**: Private rooms (`meta:access === 'private'`) are write-time excluded from the public D1 `rooms` index (`packages/worker/src/room.ts:2270-2271`). They are invisible to `GET /_rooms`, `GET /_roomtimes`, and `SELECT room FROM rooms`. Audit/chat mirrors remain unfiltered (`packages/worker/src/room.ts:2303-2309`), so **active** private rooms may appear in D1 tails — but fleet-scale discovery must use the **paged** form in §2.4.2 (`[OPERATOR-VERIFY]`); the one-shot `SELECT DISTINCT … UNION …` is likely to hit D1's 30s limit on large tables. Whole-instance DO PITR is not an operator procedure at ~1.8M rooms (§2.4.1). `wrangler d1 export` SQL backups still contain private-room SocialCalc commands and chat and MUST be handled as sensitive. Zero-activity private rooms require out-of-band inventory.
