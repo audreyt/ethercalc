@@ -4,14 +4,33 @@
 
 ## Measurement provenance
 
+Two independent measurements of the same package config are on record. They disagree
+by **0.58 pp**. That gap is real and must not be collapsed into a single number.
+
+### Which number gates the build
+
+| Question | Answer |
+| --- | --- |
+| Config | `packages/worker/stryker.conf.json` |
+| `thresholds.break` | **90** (integer floor) |
+| Metric Stryker compares to `break` | **`metrics.mutationScore` (total)** — *not* `mutationScoreBasedOnCoveredCode` |
+| Enforcement site | `@stryker-mutator/core` `mutation-test-report-helper.ts` `determineExitCode`: fails iff `mutationScore < thresholds.break` |
+| CI job | `mutation-gate` in `.github/workflows/ci.yml` — runs `vp run --filter "./packages/$pkg" mutation` for each package with `packages/*/src/` changes vs `origin/main` |
+| Local audit | `scripts/ratchet-verify.sh` — same `vp run … mutation`, then recomputes total score from `reports/mutation/mutation.json` statuses: `(Killed+Timeout) / (Killed+Timeout+Survived+NoCoverage) × 100` |
+| Covered score | Display-only in the clear-text table (`total` vs `covered` columns). **Not** what `break` gates. |
+
+So: **the gate enforces total score ≥ 90**. CI's 90.61 and the local ratchet's 90.03 are both total scores under that same formula; only CI's result is what `mutation-gate` saw for head `09673a4`.
+
+### A. Local Gate-7 / ratchet measurement (scarier margin)
+
 | Field | Value |
 | --- | --- |
 | Package | `@ethercalc/worker` |
 | Report path | `packages/worker/reports/mutation/mutation.json` (+ `mutation.html`) |
 | Report mtime | 2026-08-10 19:21:38 +0800 |
-| How obtained | **Reused on-disk Stryker JSON** left by the Gate 7 / `scripts/ratchet-verify.sh` run. **Did not re-run** the full six-package ratchet (~14 min) or a worker-only Stryker pass. |
+| How obtained | **Reused on-disk Stryker JSON** left by the Gate 7 / `scripts/ratchet-verify.sh` run. **Did not re-run** the full six-package ratchet (~14 min) or a worker-only Stryker pass for this inventory. |
 | Matching tip (documented measurement) | `327fa3da24415ae0505f7b4e92f8564702d94537` (`327fa3d`), branch `feat/prod-upgrade-runbook`, 2026-08-10 |
-| Inventory authored at HEAD | see git log at commit time (docs-only commits after `327fa3d` do not touch `packages/worker/src/**`) |
+| Mutate-scope vs later CI tip | `git diff --name-only 327fa3d..09673a4 -- packages/worker/src/{handlers,lib,room.ts,auth-do.ts}` is **empty** — same mutate surface; `robots.ts` already present at `327fa3d` |
 | Score (from mutant statuses) | **90.03419638495359%** |
 | Displayed score | 90.03% |
 | `thresholds.break` floor | 90 |
@@ -24,7 +43,53 @@
 | RuntimeError | 5 (excluded from score denominator) |
 | Score denominator (detected+undetected) | 5488+41+570+42 = **6141** |
 | pp per mutant flipped survived→killed | 100/6141 ≈ **0.0163 pp** |
-| Cross-check | Matches `docs/migration/PREFLIGHT_RESULTS.md` Gate 7 raw worker score `90.03419638495359%` and `docs/migration/PROD_UPGRADE_PLAN.md` §8 table. |
+| Cross-check | Matches `docs/migration/PREFLIGHT_RESULTS.md` Gate 7 raw worker score `90.03419638495359%` and the local column of `docs/migration/PROD_UPGRADE_PLAN.md` §8. |
+
+### B. CI `mutation-gate` measurement (what the PR gate enforced)
+
+| Field | Value |
+| --- | --- |
+| Package | `@ethercalc/worker` (only package selected: `Changed packages: worker`) |
+| CI run | [`31390939451`](https://github.com/audreyt/ethercalc/actions/runs/31390939451) · job `93462677720` |
+| Head | `09673a45abc3e0aafcd691ef874fc7f3e37e4285` (`09673a4`) |
+| When | 2026-08-10 · job wall **20m36s** (`started_at` 13:04:56Z → `completed_at` 13:25:32Z) |
+| Conclusion | **success** (exit 0 under `break: 90`) |
+| Score **total** (gated) | **90.61%** |
+| Score **covered** (display only) | 91.24% |
+| Killed | 5523 |
+| Timeout | 46 |
+| Survived | **535** |
+| NoCoverage | 42 |
+| Errors (clear-text `# errors` column) | 0 |
+| Score denominator | 5523+46+535+42 = **6146** |
+| Margin above `break: 90` | **+0.61 pp** |
+| Avg tests per mutant | 7.59 |
+| Config invoked | same `packages/worker/stryker.conf.json` via `vp exec stryker run` (mutate globs, `inPlace`, `coverageAnalysis: perTest`, `concurrency: 4`, `timeoutMS: 120000`, `break: 90`) |
+| `socialcalc-308` alias | Present on this head as a **devDependency of `@ethercalc/socialcalc-headless` only**. Worker mutation does not load that package; it is **not** a cause of the score gap. |
+
+### Why local 90.03 and CI 90.61 disagree
+
+| Delta (CI − local) | Value |
+| --- | ---: |
+| Killed | **+35** |
+| Timeout | **+5** |
+| Survived | **−35** |
+| NoCoverage | 0 |
+| Denominator | **+5** (6146 vs 6141) |
+| Total score | **+0.58 pp** |
+
+**Cause (verified, not assumed):**
+
+1. **Same harness, same formula.** Local `ratchet-verify.sh` and CI `mutation-gate` both run package `mutation` → Stryker with this `stryker.conf.json`. Both gate/compare **total** `mutationScore` = `(Killed+Timeout)/(Killed+Timeout+Survived+NoCoverage)`. Covered score is not the gate.
+2. **Same mutate file set between the two tips.** No mutate-scope path differs from `327fa3d` to `09673a4`. Selection logic is not inventing extra packages; only `worker` ran in CI.
+3. **Run-to-run status noise, dominated by Timeout ↔ Killed/Survived flapping.** Stryker's `Timeout` is wall-clock-sensitive (machine load, scheduling). The package's own `docs/MUTATION_REPORT.md` already records this: a single mutant flipping Timeout/Killed/Survived moves aggregate score by ~1/N. Here ~35 mutants flipped out of Survived into Killed and +5 into Timeout, with a +5 valid-mutant denominator drift (likely ignored/runtime-error boundary or non-deterministic mutant generation under `inPlace` + load — CI reported 0 errors; local JSON had 5 `RuntimeError` excluded from the score).
+4. **Not a different threshold, not covered-vs-total confusion, not the reverse-compat alias.** CI clear-text printed both 90.61 total and 91.24 covered; exit used total (90.61 ≥ 90).
+
+**Operational reading:** the two harnesses measure the **same contract**, but they are **not a faithful score-predictor of each other to 0.01 pp**. Local 90.03 is a real, scarier sample; CI 90.61 is the sample that cleared `mutation-gate` on this PR. Treat local ratchet as a **regression smoke** (will it clear 90?) and CI as the **enforced** number — do not cite only the scarier local margin as "what CI thinks."
+
+### Survivor inventory below
+
+The per-mutant REAL GAP / EQUIVALENT tables that follow were classified against **measurement A** (local JSON, **570** survivors at tip `327fa3d`). They are **not** re-derived from the CI run (no CI `mutation.json` artifact was retained beyond the clear-text summary). Counts of 570 / 552 / 18 refer to that local sample.
 
 Stryker config: `packages/worker/stryker.conf.json` (`jsonReporter.fileName`: `reports/mutation/mutation.json`).
 

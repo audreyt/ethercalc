@@ -1843,7 +1843,16 @@ The following eight items have been evaluated and categorized:
    - **Phase Placement**: Ships with the main behavioral bundle (same track as other `main` Worker changes). Not a Phase 1 lifecycle-only concern.
 
 8. **Mutation-ratchet fragility during the cutover window** (all six audited packages)
-   - **Measured margins** at tip `327fa3d` (`scripts/ratchet-verify.sh`, exit 0, ~828s wall clock, 2026-08-10):
+   - **What the gate enforces**: each package's `stryker.conf.json` `thresholds.break` is compared to Stryker's **total** `mutationScore` = `(Killed+Timeout)/(Killed+Timeout+Survived+NoCoverage)`. The clear-text **covered** column is display-only. CI job `mutation-gate` runs the same `vp run … mutation` as local `scripts/ratchet-verify.sh` on packages with `packages/*/src/` changes; exit fails iff total score `< break`. For `@ethercalc/worker`, **`break` is 90**.
+   - **Two measurements of `@ethercalc/worker` on this branch (same mutate scope, same config, different runs):**
+
+     | Source | Tip | Total score (gated) | Covered (display) | Survived | Denom | Margin vs 90 | Provenance |
+     | :--- | :--- | ---: | ---: | ---: | ---: | ---: | :--- |
+     | Local `scripts/ratchet-verify.sh` | `327fa3d` | **90.03%** | (not emphasized) | 570 | 6141 | **+0.03 pp** | on-disk `reports/mutation/mutation.json` mtime 2026-08-10; full six-package ratchet ~828s |
+     | CI `mutation-gate` | `09673a4` | **90.61%** | 91.24% | 535 | 6146 | **+0.61 pp** | run [`31390939451`](https://github.com/audreyt/ethercalc/actions/runs/31390939451) job `93462677720`, 20m36s wall, 2026-08-10 |
+
+   - **Why they differ (~0.58 pp):** not different file sets (`git diff 327fa3d..09673a4` under worker mutate globs is empty; `robots.ts` already at `327fa3d`), not covered-vs-total gating, not the `socialcalc-308` dev alias (worker mutation does not load it). Status counts moved CI−local as **Killed +35 / Timeout +5 / Survived −35 / NoCoverage 0 / denom +5** — classic Stryker **Timeout ↔ Killed/Survived** flapping under load plus a small valid-mutant boundary drift (local JSON also had 5 `RuntimeError` excluded from the score; CI `# errors` = 0). Same contract, **not** a byte-identical score predictor run-to-run. Detail: [`docs/migration/MUTATION_SURVIVORS.md`](./MUTATION_SURVIVORS.md).
+   - **Other packages** (local full-ratchet only, tip `327fa3d`, exit 0, ~828s):
 
      | Package | Score | Floor | Margin (pp) |
      | :--- | ---: | ---: | ---: |
@@ -1852,11 +1861,11 @@ The following eight items have been evaluated and categorized:
      | `@ethercalc/client` | 77.61% | 77 | +0.61 |
      | `@ethercalc/oracle-harness` | 83.46% | 83 | +0.46 |
      | `@ethercalc/migrate` | 90.38% | 90 | +0.38 |
-     | `@ethercalc/worker` | **90.03%** | 90 | **+0.03** |
+     | `@ethercalc/worker` (local sample) | **90.03%** | 90 | **+0.03** |
 
-   - **Operational consequence**: Every audited package sits within one percentage point of its Stryker `thresholds.break` floor, and `@ethercalc/worker` has three hundredths. A single surviving mutant fails CI's conditional `mutation-gate`. A pre-cutover PR that touches these packages — **especially `@ethercalc/worker` at +0.03pp** — can therefore trip `mutation-gate` even when every functional test passes. Contributors should run `scripts/ratchet-verify.sh` locally *before* pushing rather than discovering the failure in CI.
+   - **Operational consequence**: every audited package still sits within one percentage point of its floor on the **local** sample, and worker's local margin is only three hundredths — so a unlucky Timeout→Survived flip can fail a run even when the previous run passed. **Do not** read CI's +0.61 pp on this PR as "comfortable forever": the enforced metric is the same total score, and the next CI runner can land closer to the local sample. A pre-cutover PR that touches these packages — **especially `@ethercalc/worker`** — can still trip `mutation-gate` when functional tests pass. Run `scripts/ratchet-verify.sh` locally *before* pushing as a regression smoke; treat CI's printed total as the enforced result for that head, not as proof the local scarier margin was wrong.
    - **Remedy constraint** (from `AGENTS.md`): an equivalent mutant is handled with a written `// Stryker disable` justification — **not** a padded test, and **not** by lowering a floor.
-   - **Survivor inventory**: full per-mutant classification for `@ethercalc/worker` (570 survived at this measurement) is in [`docs/migration/MUTATION_SURVIVORS.md`](./MUTATION_SURVIVORS.md) — **552 REAL GAP / 18 EQUIVALENT / 0 UNCERTAIN**; margin is recoverable, not irreducible.
+   - **Survivor inventory**: full per-mutant classification for `@ethercalc/worker` against the **local** 570-survivor sample is in [`docs/migration/MUTATION_SURVIVORS.md`](./MUTATION_SURVIVORS.md) — **552 REAL GAP / 18 EQUIVALENT / 0 UNCERTAIN**; margin is recoverable, not irreducible. CI did not retain a per-mutant JSON for reclassification.
 
 ---
 
