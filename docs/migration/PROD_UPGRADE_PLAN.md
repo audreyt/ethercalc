@@ -1602,6 +1602,53 @@ curl -fsSI https://www.ethercalc.net/_auth/register-init
 # to 127.0.0.1 with `Host: www.ethercalc.net` returned HTTP 404 with an empty
 # body because it reached the Worker directly; that is not evidence for or
 # against the production edge redirect.
+# Probe 13: Search-indexing policy (X-Robots-Tag + robots.txt)
+# Source of truth: packages/worker/src/lib/robots.ts + index.ts middleware
+# (isIndexablePath allowlist is exactly {'/': true}; ROBOTS_NOINDEX =
+# 'noindex, nofollow, noarchive'; GET /robots.txt serves ROBOTS_TXT as
+# text/plain; charset=utf-8). Room slugs are the only privacy boundary for
+# public rooms — indexing turns "unguessable URL" into "first search result".
+#
+# Probe 13a: Landing page stays indexable (sole allowlisted path)
+curl -sSI https://ethercalc.net/
+# Expected: HTTP 200. Response MUST NOT carry an `X-Robots-Tag` header.
+# **PARTIALLY AUTOMATED** — `routes-security.node.test.ts` "does not noindex
+# the public landing path" asserts `X-Robots-Tag` is null on `/` (worker
+# `test:coverage`, CI `test`). Live probe confirms the deployed middleware
+# still skips the landing surface.
+#
+# Probe 13b: Non-landing responses are noindex
+curl -sSI https://ethercalc.net/testprodcutover
+# Expected: HTTP 200 (or any non-error room response) with
+# `X-Robots-Tag: noindex, nofollow, noarchive`.
+# Any other non-`/` path (exports, `/_health`, `/robots.txt` itself) must
+# carry the same tag — `isIndexablePath` is an exact allowlist of `/` only.
+# **PARTIALLY AUTOMATED** — `routes-security.node.test.ts` "marks non-landing
+# responses noindex…" asserts the exact header on room/export/health/robots
+# paths (worker `test:coverage`, CI `test`). Live probe proves the header
+# reached production edge responses.
+#
+# Probe 13c: robots.txt is a real robots file (LOAD-BEARING)
+curl -sS -D - https://ethercalc.net/robots.txt -o /tmp/ec-robots.txt
+# Expected:
+#   - HTTP 200
+#   - `Content-Type: text/plain; charset=utf-8`
+#   - body begins `User-agent: *` and contains a directive line `Allow: /`
+#   - body MUST NOT contain any directive line matching `^\s*Disallow\s*:`
+#     (comments may mention the word; only a Disallow *directive* is a fail)
+#   - body is NOT the HTML app shell (pre-ship production fell through the
+#     `/:room` catch-all and rendered a "room" named `robots.txt`)
+# LOAD-BEARING: a `Disallow` here forbids *fetching*, so crawlers can never
+# observe `X-Robots-Tag: noindex` and already-indexed rooms freeze in the
+# index permanently (see module comment in `lib/robots.ts`). Treat any
+# Disallow directive as a ship-blocking regression.
+# **PARTIALLY AUTOMATED** — `lib-robots.node.test.ts` pins `Allow: /` and
+# forbids Disallow/Sitemap directive lines; `routes-security.node.test.ts`
+# asserts the route body and Content-Type (worker `test:coverage`, CI
+# `test`). Only this live check proves the Worker route beat both the
+# `/:room` catch-all and any static asset (requires `run_worker_first =
+# true` and registration before `registerRoomCatchAll`).
+#
 ```
 
 ---
@@ -1962,7 +2009,7 @@ To light up passkey authentication and private rooms, the operator MUST provide 
 
 ## §8 Pre-Cutover PRs & Preparation Bundles
 
-The following six items have been evaluated and categorized:
+The following seven items have been evaluated and categorized:
 
 1. **Phase 1 Minimal Branch (Forward-Fix Artifact) Preparation**:
    - **Specification**: Build and validate `release/phase1-lifecycle` branch (`149ebcf...` + `AuthDO` + `v2` migration).
@@ -1989,6 +2036,20 @@ The following six items have been evaluated and categorized:
 6. **Bulk PITR Automation and Private Room Inventory Tooling Gap**
    - **Specification**: Build operator CLI tooling (e.g. under `packages/cli/` or `scripts/`) to automate **bounded** PITR iteration over windowed D1 candidate sets, with paged private-room discovery and a retained private-room creation audit stream (`POST /_/private`) for inventories that D1 tails cannot reconstruct.
    - **Cutover Blocker Decision**: **NON-BLOCKING FOLLOW-UP GAP** (hosted track) — but **do not misread this as "manual mass restore is fine."** Single-room `POST /_/:room/pitr-restore` works on Cloudflare. At production scale (~1.8M rooms), whole-instance iteration is **not** an incident procedure (~500 h at 1 room/s; §2.4.1). Operators may script only a **bounded** candidate set (e.g. `rooms.updated_at` incident window). The one-shot `SELECT DISTINCT room FROM audit_log UNION SELECT DISTINCT room FROM chat_log` is **not** assumed runnable under D1's 30s/single-thread limits — use the paged form in §2.4.2 and mark live success `[OPERATOR-VERIFY]`. Zero-activity private rooms still need edge/access logs. **Self-host:** this entire D1+PITR recovery aid does not exist — use filesystem backup/restore of `./ethercalc-data` (§7.0, §7.2) instead.
+
+7. **Search-indexing policy MUST ship** (`packages/worker/src/lib/robots.ts`, `packages/worker/src/index.ts` X-Robots-Tag middleware + `GET /robots.txt`, tests `lib-robots.node.test.ts` / `routes-security.node.test.ts`)
+   - **Specification**: Exact-match allowlist `isIndexablePath` (`{'/': true}` only). Every non-landing response carries `X-Robots-Tag: noindex, nofollow, noarchive`. `GET /robots.txt` returns `ROBOTS_TXT` as `text/plain; charset=utf-8` with `Allow: /` and deliberately **no** `Disallow` directive (crawlers must stay able to fetch rooms so they can observe `noindex`; a Disallow freezes already-indexed rooms permanently — see module comment). Route is registered before `registerRoomCatchAll`; `run_worker_first = true` so the Worker beats static assets.
+   - **Origin & restore**: Authored in `b7d4039` (subject `docs(migration): rescope DELTA_AUDIT f/g/h/k still-in-delta items` — dual-purpose docs+code commit). Stripped by `ae86756` (`revert: drop accidental robots changes from docs commit`) because the subject looked documentation-only. Restored forward by `c789249` (`fix(worker): restore search-indexing robots policy`) exactly as in `b7d4039`. **This code is required in the production ship.**
+   - **Trap**: Any squash, rebase, cherry-pick, or subject-based triage that treats `b7d4039` as docs-only can silently drop production code again. Do not re-classify the robots paths as accidental.
+   - **Pre-deploy check (ship tree)**: confirm `packages/worker/src/lib/robots.ts` exists and `app.get('/robots.txt'` is registered in `packages/worker/src/index.ts` **before** the `registerRoomCatchAll(app)` call (imports/comments also mention the symbol — match the call site):
+     ```bash
+     test -f packages/worker/src/lib/robots.ts \
+       && test "$(grep -n "app.get('/robots.txt'" packages/worker/src/index.ts | head -1 | cut -d: -f1)" -lt \
+               "$(grep -n 'registerRoomCatchAll(app)' packages/worker/src/index.ts | head -1 | cut -d: -f1)"
+     ```
+   - **Stale root `robots.txt`**: Repo-root `robots.txt` is a 26-byte file containing `User-agent: *\nDisallow: /\n` — the **opposite** policy. `scripts/build-assets.ts` `staticCopies` / `directoryCopies` do **not** copy it into `assets/` (plan covers root HTML, icons, `manifest.appcache`, locales, `player.js`, m3e NOTICE, and the `images/`, `static/`, passkey, multi directories only). Live `assets/` has no `robots.txt`. With `run_worker_first = true` the Worker route wins regardless, so the file is currently **dead weight, not a live conflict**. **Do not delete it in this cutover** — owner call whether to remove or rewrite later.
+   - **Cutover Blocker Decision**: **BLOCKING SHIP REQUIREMENT**. The policy MUST be present in the shipped Worker artifact. Absence reverts production to today's behaviour where `GET /robots.txt` falls through `/:room` and returns the HTML shell. Verify with §5 Probes 13a–13c after ramp.
+   - **Phase Placement**: Ships with the main behavioral bundle (same track as other `main` Worker changes). Not a Phase 1 lifecycle-only concern.
 
 ---
 
@@ -2037,3 +2098,5 @@ The following user-visible behavior changes take effect upon completing the upgr
 5. **Passkey Accounts & Private Sheets**: Passkeys and private room creation become available after Phase 3 (`packages/worker/src/routes/auth.ts:133-137`).
 6. **WebSocket Message Rate Limits**: Exceeding 1500 messages per 10-second window closes the WebSocket with 1008 (`packages/worker/src/room.ts:1887-1890`).
 7. **Private Room D1 Asymmetry & Recovery Mechanics**: Private rooms (`meta:access === 'private'`) are write-time excluded from the public D1 `rooms` index (`packages/worker/src/room.ts:2270-2271`). They are invisible to `GET /_rooms`, `GET /_roomtimes`, and `SELECT room FROM rooms`. Audit/chat mirrors remain unfiltered (`packages/worker/src/room.ts:2303-2309`), so **active** private rooms may appear in D1 tails — but fleet-scale discovery must use the **paged** form in §2.4.2 (`[OPERATOR-VERIFY]`); the one-shot `SELECT DISTINCT … UNION …` is likely to hit D1's 30s limit on large tables. Whole-instance DO PITR is not an operator procedure at ~1.8M rooms (§2.4.1). `wrangler d1 export` SQL backups still contain private-room SocialCalc commands and chat and MUST be handled as sensitive. Zero-activity private rooms require out-of-band inventory.
+
+8. **Search-indexing policy (`X-Robots-Tag` + real `/robots.txt`)**: After this ship, every non-landing response carries `X-Robots-Tag: noindex, nofollow, noarchive` (`packages/worker/src/lib/robots.ts` `ROBOTS_NOINDEX`; middleware in `packages/worker/src/index.ts`), and only `/` remains indexable (`isIndexablePath` exact allowlist). `GET /robots.txt` becomes a real robots file (`Content-Type: text/plain; charset=utf-8`, body with `Allow: /` and no `Disallow` directive) instead of falling through the `/:room` catch-all. **Pre-ship production behaviour:** `GET https://ethercalc.net/robots.txt` returns the app HTML shell because the path is treated as a room named `robots.txt` — crawlers receive a page, not directives. **Intent:** room slugs are the only thing keeping public rooms private; indexing them turns "unguessable URL" into "first search result," and a linked sheet can drag neighbours into the index with it. **Do not "fix" this by adding `Disallow`:** forbidding fetch hides the `noindex` header and permanently freezes already-indexed rooms as bare-title results (module comment in `lib/robots.ts`). See §5 Probes 13a–13c and §8 item 7.
