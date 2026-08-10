@@ -6,12 +6,32 @@
 > to **`[d2afa90, b7d8840)`**: passkeys and the `AuthDO` stack are present, but
 > the security-audit page-script extraction at `b7d8840` is not.
 >
-> This document therefore compares **`d2afa90` → `HEAD`**. `d2afa90` is the
-> earliest possible production revision, so this is the conservative **upper
-> bound** on browser/Worker skew. If the operator later pins production to a
-> later commit in the candidate range, the real delta and skew can only be
-> smaller. The inspected target source was `76ce06a`; the correction itself is
-> documentation-only.
+> This document therefore compares **`d2afa90` → classification target
+> `76ce06a`**. `d2afa90` is the earliest possible production revision, so
+> this is the conservative **upper bound** on browser/Worker skew. If the
+> operator later pins production to a later commit in the candidate range,
+> the real delta and skew can only be smaller. Finding-ledger
+> classifications were verified against tree **`76ce06a`** (the branch tip
+> when the original 2026-08-10 correction landed). Post-classification
+> packages tip used for the spot-check is **`c789249`**:
+> `git diff --stat 76ce06a..HEAD -- packages/` is **not** empty —
+>
+> ```
+>  packages/worker/src/index.ts                      | 18 ++++++
+>  packages/worker/src/lib/robots.ts                 | 51 +++++++
+>  packages/worker/test/lib-robots.node.test.ts      | 62 +++++++++
+>  packages/worker/test/routes-security.node.test.ts | 72 ++++++++++
+>  4 files changed, 203 insertions(+)
+> ```
+>
+> (search-indexing `robots.ts` restore + tests only — `c789249` /
+> related). That packages delta does **not** change the skew verdicts
+> below: an added `X-Robots-Tag` response header and a new
+> `GET /robots.txt` route are inert for an already-open browser tab and
+> for Socket.IO clients, since neither is part of any client-held
+> contract. Commits after `c789249` on this branch are
+> documentation-only; do not re-pin the Status block to each successive
+> docs commit SHA.
 >
 > Scope: a browser tab already open across a Worker deploy or rollback, plus
 > HTTP and Socket.IO clients whose behavior is directly coupled to the same
