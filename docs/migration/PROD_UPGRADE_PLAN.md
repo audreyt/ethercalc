@@ -438,13 +438,13 @@ bun test scripts/build-assets.test.ts scripts/vite-workflow.test.ts && PLAYWRIGH
 vp run --filter './packages/*' test:coverage
 # Or individually for worker:
 ./node_modules/.bin/vp run @ethercalc/worker#test:coverage
-# Expected output: 100% coverage across Statements, Branches, Functions, and Lines in @ethercalc/worker, and 100% pass across all 8 gated packages.
+# Expected output: 100% coverage across Statements (2706/2706), Branches (1936/1936), Functions (298/298), and Lines (2416/2416) in @ethercalc/worker, and 100% pass across all 8 gated packages. (Pinned to the ship-tree measurement that last re-baselined this matrix — counts drift when tests or covered lines are added; a mismatch is drift to re-verify, not an automatic gate failure.)
 # Critical Note: Plain `vp run @ethercalc/worker#test:node` and `vp run --filter './packages/*' test` do NOT pass `--coverage` or enforce vitest threshold configs (`thresholds: { lines: 100, functions: 100, branches: 100, statements: 100 }`). An operator running only `test` or `test:node` skips this mandatory CI gate — plain `test:node` verifies correctness but does NOT enforce coverage. Gated packages with 100% coverage enforcement in their vitest configs are `@ethercalc/worker`, `@ethercalc/cli`, `@ethercalc/client`, `@ethercalc/client-multi`, `@ethercalc/migrate`, `@ethercalc/oracle-harness`, `@ethercalc/shared`, and `@ethercalc/socketio-shim`.
 
 # 5. Run Worker unit & integration test suites (packages/worker/package.json)
 vp run @ethercalc/worker#test:node
 vp run @ethercalc/worker#test:workers
-# Expected output: 52 node test files (1520 tests) pass in vitest.node environment; 13 workers-pool integration test files (196 tests) pass in vitest-pool-workers environment.
+# Expected output: 53 node test files (1526 tests) pass in vitest.node environment; 13 workers-pool integration test files (197 tests) pass in vitest-pool-workers environment. (Pinned to the ship-tree measurement that last re-baselined this matrix — counts drift when tests are added; a mismatch is drift to re-verify, not an automatic gate failure.)
 
 # 6. Build client assets and run Playwright end-to-end suite (packages/e2e/package.json)
 vp run build:assets
