@@ -576,10 +576,11 @@ only the single-room HTTP endpoint (`API.md` PITR section).
   scale-safe enumeration (§2.4.2) or out-of-band inventory.
 - **Out of scope:** whole-instance RoomDO recovery. **Say this plainly:
   there is no operator-side mechanism to rewind every Durable Object at
-  this scale.** That fact is why the phased rollout and the
-  `ETHERCALC_AUTH="0"` soak window exist — they reduce the chance of needing
-  a fleet-wide DO restore, and they prevent a private-room population from
-  appearing before the new code is trusted.
+  this scale.** Because private rooms are already live on ethercalc.net
+  (STOP banner), that recovery exposure exists from the first moment of
+  the cutover — it is not deferred by any soak. The mitigations that
+  actually apply are the §4 gradual ramp with its rollback floor
+  (`CURRENT_PROD_VERSION_ID`) and the §2 backup artifacts.
 
 #### 2.4.2 Candidate enumeration (public window + private discovery)
 
