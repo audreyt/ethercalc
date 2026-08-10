@@ -25,7 +25,7 @@
 | **g) Wire Protocol & Version Skew** | `[FORWARD-COMPATIBLE]` | Medium (Strict resource caps added: 1 MiB frame, 16 KiB chat, 120 KiB command). Standard client frames pass. | Standard browser clients pass cleanly. Stale tabs sending oversized payloads are dropped. |
 | **h) Static Assets & CSP** | `[UNKNOWN]` | Low to Medium (Root inline scripts moved to 5 `static/*.js` files. CSP `connect-src` uses `ETHERCALC_ORIGIN`. Behavior under asset/CSP skew is unproven by diff/test). | Run `scripts/build-assets.ts` prior to deploy (enforced in `deploy-production.yml`). |
 | **i) Auth & Authz (`AuthDO`, ACL, `?auth=`)** | `[FORWARD-COMPATIBLE]` (Public) / `[NEEDS MIGRATION]` (Passkeys) | High (New WebAuthn passkey system + `__Host-ec_sess` cookie). Existing public sheets and `?auth=` links remain fully functional. | Configure passkey secrets/vars. No disruption to existing public sheets. |
-| **j) SocialCalc Upgrade & Serialisation** | `[UNKNOWN]` | Low to Medium (Upgraded to SocialCalc 3.1.0; `version:1.5` format shared, but full parsing compatibility for pre-3.1.0 snapshots is unproven by unit test). | Run canary checks before cutover; oracle replay covers 10/13 scenarios. |
+| **j) SocialCalc Upgrade & Serialisation** | `[FORWARD-COMPATIBLE]` | Low (Upgraded to SocialCalc 3.1.0; genuine legacy oracle `version:1.5` saves parse via `createSocialCalcFactory()` / `createSpreadsheet({snapshot})`. First re-save is **semantically** equivalent, not byte-identical.) | Covered by `packages/socialcalc-headless/test/legacy-snapshot-compat.test.ts`. Canary still useful for multi-cell prod rooms. |
 | **k) Stateful Alarms, D1 Mirror & Scheduler** | `[FORWARD-COMPATIBLE]` | Medium (DO alarm re-arm gated; D1 index excludes private; audit/chat mirror unfiltered + best-effort; scheduler retry bug fixed). | None required for public path; private recovery uses runbook §2.4. |
 
 ---
@@ -243,10 +243,11 @@
 ---
 
 ### j) SocialCalc Upgrade & Serialization
-* **Evidence:** `packages/socialcalc-headless/src/socialcalc.bundled.ts:5, 1473`
-* **Analysis:** Upgraded from SocialCalc 3.0.8 to 3.1.0 with build-time `createSocialCalcFactory()`. The underlying save-string format (`version:1.5`) remains shared.
-* **Uncertainty Note:** Whether `createSocialCalcFactory()` parses every legacy pre-3.1.0 snapshot string without issue is **UNKNOWN** from unit test coverage alone (no unit test explicitly loads a raw 3.0.x snapshot into `createSocialCalcFactory()`, though `oracle-replay.test.ts` passes 10/13 recorded scenario replays).
-* **Classification:** `[UNKNOWN]`.
+* **Evidence:** `packages/socialcalc-headless/src/socialcalc.bundled.ts` (`createSocialCalcFactory`), `packages/socialcalc-headless/src/index.ts` (`createSpreadsheet` / `loadSocialCalc`), `packages/socialcalc-headless/test/legacy-snapshot-compat.test.ts`, `tests/oracle/recorded/exports/get-snapshot.json`, `packages/oracle-harness/src/scenarios/fixtures.ts` (`MINIMAL_SCSAVE`).
+* **Analysis:** Upgraded from SocialCalc 3.0.8 to 3.1.0 with build-time `createSocialCalcFactory()`. The sheet body still uses `version:1.5`. A genuine pre-3.1.0 multipart save recorded from the legacy oracle (A1 text `oracle`) loads through the production path without throw, exposes `datavalue === 'oracle'`, and round-trips cell data after `createSpreadsheetSave()`.
+* **Round-trip finding:** Re-serialisation is **not byte-identical**. Observed first-save rewrite under 3.1.0: envelope `socialcalc:version:1.5` → `1.0`; adds empty `part:edit` + `part:audit` sections; sheet `tvf:1` may become `tvf:undefined` with `valueformat:1:undefined`. Cell payload (`cell:A1:t:oracle`) is preserved; CSV remains `oracle\n`.
+* **Note on "10/13":** `packages/worker/test/oracle-replay.test.ts` does **not** fail 3 scenarios. It asserts a **Phase 4/5 subset** of 9 named HTTP fixtures in `PHASE5_EXPECTED_PASS`, plus a dedicated non-byte-identical `static/socialcalc.js` sanitiser check (10 assertions). The floor comment and meta-check (`pass >= 10`) treat the three static assets (`get-favicon`, `get-start`, `get-root-index`) as **intentionally divergent by design** (§13 Q1 / glassmorphic UI / player.js), not as silent parse failures. Most recorded fixtures (exports, room-crud, ws, …) are simply outside that subset.
+* **Classification:** `[FORWARD-COMPATIBLE]` for the minimal legacy save shape that production rooms use. Residual risk is limited to untested exotic historical save variants beyond the oracle `MINIMAL_SCSAVE` corpus (not observed in the recorded fixtures).
 
 ---
 
@@ -295,8 +296,8 @@
    * *Verification Check:* Run `wrangler secret list --env=""` to verify if an HMAC secret is set in production.
 4. **Behavior under Static Asset & CSP Version Skew:**
    * *Reason:* No automated test exercises stale cached HTML paired with new CSP or new HTML with stale CSP.
-5. **Raw Snapshot Parsing Compatibility for Old SocialCalc 3.0.x Saves:**
-   * *Reason:* No unit test explicitly feeds an un-migrated raw pre-3.1.0 snapshot into `createSocialCalcFactory()` directly (though `oracle-replay.test.ts` passes 10/13 recorded scenario replays).
+5. **~~Raw Snapshot Parsing Compatibility for Old SocialCalc 3.0.x Saves~~ (resolved 2026-08-10):**
+   * *Resolution:* `packages/socialcalc-headless/test/legacy-snapshot-compat.test.ts` feeds the genuine legacy oracle save (`tests/oracle/recorded/exports/get-snapshot.json` / `MINIMAL_SCSAVE`) through `createSocialCalcFactory()` via `createSpreadsheet({ snapshot })`. Parse succeeds; A1=`oracle`; round-trip preserves cell data. Re-serialisation is semantic, not byte-identical (envelope/version/edit+audit rewrite). Item **j** reclassified `[FORWARD-COMPATIBLE]`.
 
 ---
 
