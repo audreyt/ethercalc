@@ -891,35 +891,33 @@ cd ../..
 # Capture returned PHASE1_VERSION_ID → cutover log (table above / this section)
 ```
 
-**PLATFORM EFFECT & ROLLBACK TARGET**: Executing `npx wrangler deploy` in Phase 1 completes the DO lifecycle schema change (`v2`). Cloudflare platform rules permanently prevent rollbacks to pre-v2 versions (`149ebcf...`). However, because Phase 1 code is behaviorally inert, Phase 1 has zero user impact. **Rollback Target for Phase 1**: The Phase 1 deployment itself (`release/phase1-lifecycle` IS the forward-fix artifact retaining `149ebcf` code + `AuthDO` + `v2` migration).
-
-
 ##### Decision card — Unknown Phase 1 outcome (deploy error / dead terminal)
 
-**Situation:** Phase 1 `wrangler deploy` errored, hung, or the terminal died. You do not know whether migration `v2` is active. This is the irreversible boundary (§6.3).
+**Situation:** Phase 1 `wrangler deploy` errored, hung, or the terminal died. You do not know whether migration `v2` is active. Irreversible boundary → §6.3.
 
-**Inspect** (commands in §0.2 — do not retype ad hoc variants):
+**Inspect:** run §0.2 steps 1–2 (`deployments list`, `versions list`).
 
-1. `npx wrangler deployments list --config=packages/worker/wrangler.toml --env=""`
-2. `npx wrangler versions list --config=packages/worker/wrangler.toml --env=""`
+**Interpretation (no sample CLI output claimed):**
 
-**Interpretation rule (no sample CLI output claimed here):**
-
-- Treat **`v2` active** only when the live deployment is 100% on a post–Phase-1 version **and** that deployment is the one that carried the `AuthDO` / migration `v2` lifecycle change (same criterion as §6.3). Practical checks: (a) current deployment traffic is 100% on one version ID; (b) that version’s created time matches the Phase 1 attempt; (c) a pre-v2-only baseline version is **not** what is serving 100%. If the CLI/UI surfaces an applied migration / migration tag field, `v2` present there is confirming evidence — but **absence of a familiar field is not proof `v2` failed**; rely on which version is live plus whether a known pre-v2 version is still the sole deployment.
-- Treat **`v2` not active** when production remains 100% on the pre-cutover baseline version (the version that was live before the Phase 1 attempt) with no new 100% deployment from the Phase 1 bundle.
-- Treat **indeterminate** when lists disagree, traffic is split, the newest deployment is not 100%, or you cannot tell which version is live.
+- **`v2` active:** live deployment is **100%** on a post–Phase-1 version that carried `AuthDO` / migration `v2` (same criterion as §6.3). Checks: (a) one version at 100%; (b) created time matches this attempt; (c) pre-cutover baseline is not the sole live version. A migration-tag field showing `v2` confirms; **missing field ≠ failure**.
+- **`v2` not active:** still 100% on the pre-cutover baseline; no new 100% Phase 1 deployment.
+- **Indeterminate:** lists disagree, traffic split, newest deploy not 100%, or live version unclear.
 
 **Branch:**
 
 | Result | Act |
 | :----- | :-- |
-| **`v2` active** | Record `PHASE1_VERSION_ID` from the live 100% version into the Cutover log (start of §4). Confirm deployment is 100% on that ID. Continue to Phase 2. Do **not** roll back to pre-v2. |
-| **`v2` not active** | Phase 1 did not take. Re-run the same Phase 1 deploy (§4.2 Option A or B) after fixing the deploy error. Pre-v2 rollback targets remain valid until `v2` is active. |
-| **Indeterminate** | **STOP.** Do not start Phase 2. Do not attempt pre-v2 rollback “to be safe.” Escalate with evidence: full deploy stdout/stderr or CI log, both §0.2 list outputs (save `--json` if available), UTC timestamps of the attempt, and whether any partial version appeared in `versions list`. |
+| **`v2` active** | Record live 100% ID as `PHASE1_VERSION_ID` (Cutover log, start of §4). Continue to Phase 2. Never pre-v2. |
+| **`v2` not active** | Fix error; re-run same Phase 1 deploy (§4.2). Pre-v2 rollback still valid until `v2` active. |
+| **Indeterminate** | **STOP.** No Phase 2. No “safe” pre-v2 rollback. Escalate with: deploy/CI log, both §0.2 outputs (`--json` if available), UTC attempt time, any partial version in `versions list`. |
 
-**Retry safety:** Re-running the **same** Phase 1 bundle (`new_sqlite_classes = ["AuthDO"]`, tag `v2`) after a failed or interrupted attempt is the documented recover path when `v2` is **not** active. Cloudflare applies each migration tag once; a successful prior apply of `v2` must not be “undone” by retry, and a retry while `v2` is already active should not re-create the class. **`[OPERATOR-VERIFY]`** on staging before cutover: intentionally interrupt or re-run Phase 1 against `ethercalc-staging` and confirm the inspect→branch rules above match what Wrangler prints — do not learn this on production.
+**Retry safety:** Same Phase 1 bundle (`new_sqlite_classes = ["AuthDO"]`, tag `v2`) is the recover path when `v2` is **not** active. Tags apply once; retry must not undo a successful `v2`. **`[OPERATOR-VERIFY]`** on staging: interrupt/re-run Phase 1 and confirm this branch matches Wrangler — not on production.
 
-**Version ID:** Always write `PHASE1_VERSION_ID` into the Cutover log (start of §4) before leaving Phase 1. If deploy stdout was lost but `v2` is active, recover the ID via §0.2 `versions list` / `deployments list` as in the table above.
+**Version ID:** Write `PHASE1_VERSION_ID` to the Cutover log before leaving Phase 1; if stdout lost but `v2` active, recover via §0.2 lists (Cutover log table).
+
+**PLATFORM EFFECT & ROLLBACK TARGET**: Executing `npx wrangler deploy` in Phase 1 completes the DO lifecycle schema change (`v2`). Cloudflare platform rules permanently prevent rollbacks to pre-v2 versions (`149ebcf...`). However, because Phase 1 code is behaviorally inert, Phase 1 has zero user impact. **Rollback Target for Phase 1**: The Phase 1 deployment itself (`release/phase1-lifecycle` IS the forward-fix artifact retaining `149ebcf` code + `AuthDO` + `v2` migration).
+
+
 
 ---
 
@@ -1326,79 +1324,35 @@ Private room data exposure occurs **ONLY if code is rolled back past Phase 2 to 
   - Or block all room API paths `/_/*` wholesale until data isolation is verified.
 
 
-##### Decision card — Private-data rollback (Phase 3 live, private rooms or passkeys exist)
+##### Decision card — Private-data rollback (Phase 3 live; private rooms/passkeys may exist)
 
-**Situation:** Auth is on. At least one private room or completed passkey registration may exist. You must roll back without turning lockout into exposure.
+**Pointers:** hazards → §6.2 items 1–2; room ID → **§2.4**. Idle private rooms + passkey users are **non-enumerable** — no complete affected-user list.
 
-**Inventory honesty (before any step):** Affected-room identification procedures live in **§2.4** (bounded D1/`audit_log`/`chat_log` discovery). **Idle private rooms and passkey-only users are non-enumerable** — they never appear in `rooms`, and idle rooms never appear in D1 tails (§2.4.2, §2.4.4). **A complete affected-user list cannot be produced.** Do not imply one can. Communicate to known reporters and public channels; do not wait on a full inventory.
+**Path A (prefer): Phase 3 → Phase 2 — lockout, not exposure**
 
----
+1. Owner authorizes temporary private lockout.
+2. **Comms first/with step 3:** private rooms temporarily unavailable (owners included); content intact, not exposed; public unaffected; restore when auth on + §5 Probe 11 passes.
+3. `cd packages/worker && npx wrangler versions deploy <PHASE2_VERSION_ID>@100% --env="" && cd ..` — ID from Cutover log (start of §4) / §0.2.
+4. **Verify:** Probe 2 `enabled:false`; Probe 3 `401` on `POST /_/private`; Probe 11 not enabled; known private `403`; public Probe 5 OK.
+5. Stay on Phase 2 unless Path B is required.
 
-**Path A — Phase 3 → Phase 2 (lockout, not exposure). Prefer this.**
+**Re-enable:** `npx wrangler versions deploy <PHASE3_VERSION_ID>@100% --env=""` (§4.4 if missing) → Probe 11 `enabled:true`; owner read OK; Probes 1/5/7 green. Passkeys/`session-secret` persist in AuthDO; cookies valid until expiry/logout. **`[OPERATOR-VERIFY]`** staging: register → 3→2→3 → same credential.
 
-Ordered sequence:
+**Path B (last resort): Phase 1 / forward-fix — exposure**
 
-1. **Contain / decide** — Owner authorizes temporary private-room lockout. Public rooms stay on Phase 2 code.
-2. **User communication (before or simultaneous with step 3, not after):** state at minimum:
-   - Private rooms are **temporarily unavailable** (owners included).
-   - **Content is intact and not exposed** (still private in RoomDO storage).
-   - **Public rooms are unaffected.**
-   - Restoration will be confirmed when auth is re-enabled and §5 Probe 11 passes (give a time window if known).
-3. **Roll back traffic to Phase 2:**
-   ```bash
-   cd packages/worker
-   npx wrangler versions deploy <PHASE2_VERSION_ID>@100% --env=""
-   cd ..
-   ```
-   Recover `PHASE2_VERSION_ID` from Cutover log (start of §4) / §0.2 if needed.
-4. **Verify containment:** §5 Probe 2 → `{"uid":null,"enabled":false}`; Probe 3 → `401 Unauthorized` on `POST /_/private`; Probe 11 must **not** show `enabled:true`. Spot-check a known private room URL → `403` (lockout). Spot-check a public room → Probe 5 still OK.
-5. **Stabilize** on Phase 2 until ready to re-enable. Do **not** jump to Phase 1 while private data may exist unless Path B is explicitly required.
+**Order:** **WAF install+verify BEFORE Phase 1 traffic** (reverse = exposure). Then `npx wrangler versions deploy <PHASE1_VERSION_ID>@100% --env=""`. Re-check WAF.
 
-**Re-enable (exit lockout):**
+**Fail-closed WAF** ([Custom rules](https://developers.cloudflare.com/waf/custom-rules/create-dashboard/) → Block). Deny **all** traffic on both hosts — path allowlists cannot cover idle privates; public outage is accepted.
 
-```bash
-cd packages/worker
-npx wrangler versions deploy <PHASE3_VERSION_ID>@100% --env=""
-# If PHASE3_VERSION_ID was never recorded: recover from §0.2 lists, or redeploy Phase 3 (§4.4) and record the new ID in Cutover log (start of §4).
-cd ..
+```txt
+http.host eq "ethercalc.net" or http.host eq "www.ethercalc.net"
 ```
 
-Then §5 Probe 11 → `enabled:true`; known private room owner can read again; Probe 1/5/7 green.
+Optional predeclared operator IP only: append `and not ip.src eq x.x.x.x`. Action Block (403). **No path exceptions in the default.**
 
-**Passkeys / sessions across disable→enable:** AuthDO stores `cred:*` and `session-secret` in its own SQLite; `ETHERCALC_AUTH="0"` only stops Worker verification/ceremonies — it does not clear AuthDO storage (kill-switch tests: `routes-auth.node.test.ts`, `routes-rooms.node.test.ts`). After re-enable, **registered passkeys remain**; **HMAC session cookies remain cryptographically valid** until expiry or logout revocation. **`[OPERATOR-VERIFY]`** on staging with a real passkey: register → Phase 3→2→3 traffic flip → confirm login with the same credential and that an unrevoked session cookie still verifies (or re-login once if the client dropped the cookie).
+**Verify BEFORE Phase 1** (non-exempt client → WAF 403 each): `/_/some-room`, `/_ws/some-room`, `/some-room`, `/some-room.xlsx`. Drop WAF only after Phase 2/3 recovery + private checks.
 
----
-
-**Path B — Deeper rollback to Phase 1 / forward-fix (EXPOSURE hazard). Last resort.**
-
-In `149ebcf`-based Phase 1 code, `meta:access` is ignored — private rooms become world-readable unless the edge blocks them first (§6.2 item 2).
-
-**Ordering (unambiguous):**
-
-1. **Install and verify the WAF rule BEFORE deploying Phase 1.** The reverse order creates the exposure this section warns about.
-2. Only then `npx wrangler versions deploy <PHASE1_VERSION_ID>@100% --env=""`.
-3. Re-verify WAF still blocks; run public-room §5 probes that still apply.
-
-**Fail-closed default WAF custom rule** (zone `ethercalc.net` → [Security rules → Custom rules](https://developers.cloudflare.com/waf/custom-rules/create-dashboard/) → Block). Enumerated-room predicates **cannot** cover undiscoverable idle private rooms — and private **HTML** is served at `/{room}`, not only under `/_/` — so the default must be broad enough that unknown private rooms are not world-readable. **Public sheet access is collateral damage under this rule;** that is the containment tradeoff until you return to Phase 2/3.
-
-- **Rule name:** `ethercalc-phase1-private-data-containment`
-- **Expression (copy-ready)** — allow only health + static assets; block everything else on the apex and `www`:
-
-  ```txt
-  (http.host eq "ethercalc.net" or http.host eq "www.ethercalc.net")
-  and not starts_with(http.request.uri.path, "/static/")
-  and http.request.uri.path ne "/_health"
-  ```
-
-- **Action:** Block (403). Optionally add a **higher-priority allow** rule for operator source IPs if you must run PITR or targeted curls during containment.
-- **Verify BEFORE any Phase 1 traffic deploy:**
-  - `curl -sS -o /dev/null -w '%{http_code}\n' https://ethercalc.net/_/some-room` → `403`
-  - `curl -sS -o /dev/null -w '%{http_code}\n' https://ethercalc.net/some-room` → `403` (HTML path — required)
-  - `curl -sS -o /dev/null -w '%{http_code}\n' https://ethercalc.net/_health` → `200`
-  - `curl -sS -o /dev/null -w '%{http_code}\n' https://ethercalc.net/static/player.js` → `200`
-- **Narrowing later:** only after a §2.4 best-effort inventory (still incomplete for idle privates), you may replace this rule with tighter path allowlists — **never** deploy Phase 1 first and invent the WAF later.
-
-**User communication (Path B):** private rooms unavailable; access is **containment-via-WAF**, not app ACL; **public rooms are also blocked** while the broad rule is on; restoration is forward to Phase 2/3, then remove or relax the WAF rule only after Probe 11 / private-room checks pass.
+**Comms (B):** private down; containment is WAF not ACL; public also down; restore forward, then remove WAF.
 
 
 ### 6.3 Points of No Return Definition
