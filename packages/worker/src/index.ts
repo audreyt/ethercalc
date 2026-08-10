@@ -12,11 +12,6 @@ import { bodyLimit } from 'hono/body-limit';
 import { cors } from 'hono/cors';
 
 import { websocketAuthority } from './lib/csp.ts';
-import {
-  isIndexablePath,
-  ROBOTS_NOINDEX,
-  ROBOTS_TXT,
-} from './lib/robots.ts';
 import { buildHealthBody } from './handlers/health.ts';
 import {
   clientIpFromHeaders,
@@ -125,12 +120,6 @@ export function buildApp(): Hono<EtherCalcHonoEnv> {
     }
     if (hasAuthorization || isOperatorRoute) {
       c.header('Vary', 'Authorization', { append: true });
-    }
-    // Room URLs are unlisted by design. Keep the response fetchable so
-    // crawlers can observe this header; do NOT add a robots.txt Disallow
-    // for the same paths (that freezes already-indexed rooms forever).
-    if (!isIndexablePath(c.req.path)) {
-      c.header('X-Robots-Tag', ROBOTS_NOINDEX);
     }
   });
   // Redirect only the configured relying-party host's `www` alias. Never
@@ -263,13 +252,6 @@ export function buildApp(): Hono<EtherCalcHonoEnv> {
   app.use('/_auth/*', bodyLimit({ maxSize: MAX_AUTH_BODY_BYTES }));
   app.use('/socket.io/*', bodyLimit({ maxSize: MAX_LEGACY_BODY_BYTES }));
   app.get('/_health', (c) => c.json(buildHealthBody()));
-  // Fetchable on purpose: crawlers must reach this file AND the
-  // X-Robots-Tag on room responses. See lib/robots.ts.
-  app.get('/robots.txt', (c) =>
-    c.text(ROBOTS_TXT, 200, {
-      'Content-Type': 'text/plain; charset=utf-8',
-    }),
-  );
   // Phase 7: native WS + legacy socket.io shim. Register early so their
   // literal prefixes win against the `/:room` catch-all. `/_ws/:room` is
   // the native transport; `/socket.io/*` covers the old embeds.
