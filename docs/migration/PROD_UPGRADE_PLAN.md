@@ -234,12 +234,12 @@ Prior to cutover, record explicit backups for every durable store and acknowledg
 Because Cloudflare Workers provides no operator-side bulk export API for Durable Object SQLite storage, the operator MUST understand what each backup artifact covers:
 
 1. **What `wrangler d1 export` Backs Up**:
-   - Backs up the `rooms` index table (`room`, `updated_at`, `cors_public`), `audit_log`, `chat_log`, and `cron` tables.
+   - Backs up the `rooms` index table (`room`, `updated_at`, `cors_public`), `audit_log`, `chat_log`, and `cron_triggers` tables.
    - Allows restoring the list of room names, last-modified timestamps, and bounded audit/chat log tails.
    - **DOES NOT** back up or restore sheet cell data, authoritative SocialCalc command logs, or sheet snapshots. A D1 export cannot reconstruct RoomDO cell state.
 
 2. **What Cloudflare D1 Time Travel Restores**:
-   - Restores D1 tables (`rooms`, `audit_log`, `chat_log`, `cron`) to a prior point-in-time (§6.4).
+   - Restores D1 tables (`rooms`, `audit_log`, `chat_log`, `cron_triggers`) to a prior point-in-time (§6.4).
    - **DOES NOT** roll back or restore Durable Object SQLite storage (`RoomDO` / `AuthDO`).
 
 3. **Implications for Cutover Strategy & Phase Ordering**:
