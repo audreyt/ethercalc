@@ -1087,388 +1087,6 @@ The following matrix was re-derived in `docs/migration/SKEW_AND_RECONNECT.md` fr
 ---
 
 
-## §4 Cutover Execution (Three-Phase Strategy)
-
-> **SUPERSEDED PENDING RE-BASELINE (2026-08-10).** The three-phase sequence below assumes production is pre-passkey `149ebcf`. Live probes show passkeys/`AuthDO` already on and security-audit assets not yet deployed. **Do not execute §4.2–§4.4.** See the STOP banner at the top of this document.
-
-To guarantee 100% safe rollback capabilities during major code changes, cutover MUST follow this Three-Phase strategy.
-
-### Cutover log — named artifacts (record as you go)
-
-Keep one operator log (ticket, notepad, or file). Fill each row when the step that produces it completes. Lost stdout is recoverable from the CLI; do not invent IDs.
-
-| Artifact | When to record | Primary capture | If stdout was lost |
-| :------- | :------------- | :-------------- | :----------------- |
-| `PRE_CUTOVER_BOOKMARK` | Before any deploy (§2.1 / §0.2 step 4) | `npx wrangler d1 time-travel info ethercalc_rooms` (save stdout immediately) | **Do not** re-run `time-travel info` after cutover — that returns a *current* bookmark, not the pre-cutover one. Recover only from the saved command output / change log, or from a recorded pre-cutover UTC timestamp via §6.4. If neither exists, treat the bookmark as **indeterminate**. |
-| `PRE_CUTOVER_D1_SIZE` | Before any deploy (§0.2.2) | `database_size` from `npx wrangler d1 info ethercalc_rooms --json` | Re-run §0.2.2 |
-| `PHASE1_VERSION_ID` | Immediately after Phase 1 deploy succeeds (§4.2) | Version ID printed by `wrangler deploy` / CI deploy log | `npx wrangler versions list` / `npx wrangler deployments list` (§0.2) — take the active 100% post–Phase-1 version |
-| `PHASE2_VERSION_ID` | Immediately after `wrangler versions upload` (§4.3) | Upload command stdout | `npx wrangler versions list` (§0.2) — the uploaded Phase 2 version (not necessarily 100% until ramp completes) |
-| `PHASE3_VERSION_ID` | Immediately after Phase 3 deploy succeeds (§4.4) | Version ID printed by `wrangler deploy` / CI deploy log | `npx wrangler versions list` / `npx wrangler deployments list` (§0.2) — active 100% version with auth on |
-
-`PHASE1_VERSION_ID` is required for any Phase 2 → Phase 1 rollback. `PHASE2_VERSION_ID` is required for Phase 3 → Phase 2. `PHASE3_VERSION_ID` is required to re-enable auth after a Phase 3 → Phase 2 lockout rollback without rebuilding (§6.2).
-
-### 4.1 Step 1: Pre-Deploy D1 Database Migrations
-
-Execute D1 migrations prior to deploying Worker code:
-
-```bash
-npx wrangler d1 migrations apply ethercalc_rooms --remote --config=packages/worker/wrangler.toml --env=""
-```
-
-**Reasoning for Order:**  
-All database migration scripts (`0001_rooms.sql`, `0002_cron.sql`, `0003_audit_chat.sql`) are strictly **expand-only** using `CREATE TABLE IF NOT EXISTS`. Old worker code (commit `149ebcf...`) ignores these new tables, making D1 migration execution 100% safe to run before code deployment.
-
----
-
-### 4.2 Phase 1: Lifecycle-Only Deployment (`npx wrangler deploy`) — **SUPERSEDED PENDING RE-BASELINE**
-
-> **SUPERSEDED PENDING RE-BASELINE.** Phase 1 exists to land DO migration `v2` / `AuthDO` from a `149ebcf` baseline. Production already serves `/_auth/whoami` with `enabled:true`, so `AuthDO` + `AUTH` are live — re-running a lifecycle-only `149ebcf`+v2 bundle is the wrong operation and may be a no-op or a dangerous downgrade. Confirm with `wrangler deployments list` before any lifecycle deploy.
-
-#### Building the Phase 1 Minimal Branch (PROVEN)
-
-To isolate the DO lifecycle migration `v2`, a minimal branch `release/phase1-lifecycle` was created from `149ebcf16104b01254ca2b796beb701c88bd6ff8` in git worktree `.worktrees/phase1-lifecycle`.
-
-The exact 8-file change set (`git diff --stat 149ebcf..HEAD`) is:
-
-```text
- bun.lock                                 |  53 +++
- packages/worker/package.json             |   3 +-
- packages/worker/src/auth-do.ts           | 633 +++++++++++++++++++++++++++++++
- packages/worker/src/index.ts             |   1 +
- packages/worker/src/lib/rate-limit.ts    |   6 +-
- packages/worker/src/lib/storage-batch.ts |  61 +++
- packages/worker/src/lib/webauthn-ops.ts  |  52 +++
- packages/worker/wrangler.toml            |  12 +
- 8 files changed, 819 insertions(+), 2 deletions(-)
-```
-
-**Proven Step-by-Step Recipe**:
-
-1. **New Files Added from `main`**:
-   - `packages/worker/src/auth-do.ts`
-   - `packages/worker/src/lib/webauthn-ops.ts`
-   - `packages/worker/src/lib/storage-batch.ts`
-2. **Dependency Addition**: Add `"@simplewebauthn/server": "^13"` to `packages/worker/package.json` dependencies (updates `packages/worker/package.json` and locks transitive packages in `bun.lock`).
-3. **`rate-limit.ts` Signature Reconciliation**:
-   - At `149ebcf`, `packages/worker/src/lib/rate-limit.ts` exported `createRateLimitStore()` taking zero parameters (no `MAX_BUCKETS` constant, no bucket map eviction).
-   - `auth-do.ts` imports `createRateLimitStore` and calls `createRateLimitStore(2_048)`.
-   - **Reconciliation**: Change signature to `export function createRateLimitStore(maxBuckets?: number): RateLimitStore` and evict `buckets.keys().next().value` only when `maxBuckets !== undefined`.
-   - **Inertness Rationale**: Defaulting `maxBuckets` to `10_000` for 0-argument callers would alter existing rate-limiter behavior in a bundle whose sole purpose is behavioral inertness. The optional parameter leaves all pre-existing rate limiters unmodified while allowing `AuthDO`'s explicit `2_048` capacity bound to compile and function. (Note: `main` defaults `maxBuckets = 10_000`; Phase 2 brings that default when full worker logic rolls out).
-4. **Class Export (`packages/worker/src/index.ts`)**: Export `AuthDO` alongside `RoomDO`:
-   ```ts
-   export { RoomDO } from "./room.ts";
-   export { AuthDO } from "./auth-do.ts";
-   export { scheduled } from "./scheduled.ts";
-   ```
-5. **Wrangler Config (`packages/worker/wrangler.toml`)**: Add the `AUTH` Durable Object binding (both top-level and in `[env.staging]`) and the `v2` migration stanza:
-
-   ```toml
-   [[durable_objects.bindings]]
-   name = "AUTH"
-   class_name = "AuthDO"
-
-   [[env.staging.durable_objects.bindings]]
-   name = "AUTH"
-   class_name = "AuthDO"
-
-   [[migrations]]
-   tag = "v2"
-   new_sqlite_classes = ["AuthDO"]
-   ```
-
-#### Phase 1 Build Verification (PROVEN)
-
-Both verification gates pass cleanly on `release/phase1-lifecycle`:
-
-- **Gate 1 (`vp run @ethercalc/worker#typecheck`)**:
-
-  ```text
-  ~/packages/worker$ tsc --noEmit ⊘ cache disabled
-  ```
-
-- **Gate 2 (`vp run @ethercalc/worker#build:dry`)**:
-
-  ```text
-  ~/packages/worker$ wrangler deploy --dry-run ⊘ cache disabled
-
-   ⛅️ wrangler 4.107.0 (update available 4.120.0)
-  ───────────────────────────────────────────────
-  ▲ [WARNING] Multiple environments are defined in the Wrangler configuration file, but no target environment was specified for the deploy command.
-
-    To avoid unintentional changes to the wrong environment, it is recommended to explicitly specify the target environment using the `-e|--env` flag or CLOUDFLARE_ENV env variable.
-    If your intention is to use the top-level environment of your configuration simply pass an empty string to the flag to target such environment. For example `--env=""`.
-
-
-  ✨ Read 163 files from the assets directory /Users/au/w/ethercalc/.worktrees/phase1-lifecycle/assets
-  Total Upload: 2869.17 KiB / gzip: 537.35 KiB
-  Your Worker has access to the following bindings:
-  Binding                                   Resource
-  env.ROOM (RoomDO)                         Durable Object
-  env.AUTH (AuthDO)                         Durable Object
-  env.DB (ethercalc_rooms)                  D1 Database
-  env.ASSETS                                Assets
-  env.BASEPATH ("")                         Environment Variable
-  env.ETHERCALC_CORS ("1")                  Environment Variable
-
-  --dry-run: exiting now.
-  ```
-
-  And on staging (`wrangler deploy --dry-run --env=staging`), the verified staging dry-run binding table is:
-
-```text
-Binding                                           Resource
-env.ROOM (RoomDO)                                 Durable Object
-env.AUTH (AuthDO)                                 Durable Object
-env.DB (ethercalc_rooms_staging)                  D1 Database
-env.ASSETS                                        Assets
-env.BASEPATH ("")                                 Environment Variable
-env.ETHERCALC_CORS ("1")                          Environment Variable
-```
-
-_Verification Artifact Analysis_: The dry-run binding table confirms `env.AUTH (AuthDO)` is registered alongside `env.ROOM (RoomDO)`, and that no passkey environment variables (`ETHERCALC_AUTH`, `ETHERCALC_RP_ID`, `ETHERCALC_ORIGIN`) are included in Phase 1. Combined with the absence of `packages/worker/src/routes/auth.ts` (no `/_auth/*` HTTP routes registered), Phase 1 is behaviorally inert.
-
-> **Caveat on Verification**: Successful `typecheck` and `build:dry` prove that the minimal Phase 1 bundle **compiles and bundles** without type errors or missing imports. They do not substitute for testing live runtime behavior on Cloudflare infrastructure. The staging rehearsal in §3 remains mandatory before Phase 1 is deployed to production.
-
-#### Phase 1 Execution Procedure
-
-##### Option A (Preferred / Production Path): GitHub Actions CI Workflow
-
-1. Push `release/phase1-lifecycle` branch (or merge to target release branch).
-2. Go to **GitHub Actions → Deploy Production → Run workflow**.
-3. Type `"deploy"` to confirm execution.
-*Why Option A is preferred*: GitHub Actions executes on a clean runner (fresh git checkout). Because `.wrangler/` and `dist/` are gitignored and never created by CI asset build steps (`client#build`, `client-multi#build`, `scripts/build-assets.ts`), CI is **structurally immune** to the configuration redirect artifact.
-
-##### Option B (Secondary / Emergency Local CLI Fallback Path)
-
-```bash
-# MANDATORY PRECONDITION: Perform §4.0 verification check (confirm no redirect banner).
-cd .worktrees/phase1-lifecycle/packages/worker
-npx wrangler deploy --config=wrangler.toml --env=""
-cd ../..
-# Capture returned PHASE1_VERSION_ID → cutover log (table above / this section)
-```
-
-##### Decision card — Unknown Phase 1 outcome (deploy error / dead terminal)
-
-**Situation:** Phase 1 `wrangler deploy` errored, hung, or the terminal died. You do not know whether migration `v2` is active. Irreversible boundary → §6.3.
-
-**Inspect:** run §0.2 steps 1–2 (`deployments list`, `versions list`).
-
-**Interpretation (no sample CLI output claimed):**
-
-- **`v2` active:** live deployment is **100%** on a post–Phase-1 version that carried `AuthDO` / migration `v2` (same criterion as §6.3). Checks: (a) one version at 100%; (b) created time matches this attempt; (c) pre-cutover baseline is not the sole live version. A migration-tag field showing `v2` confirms; **missing field ≠ failure**.
-- **`v2` not active:** still 100% on the pre-cutover baseline; no new 100% Phase 1 deployment.
-- **Indeterminate:** lists disagree, traffic split, newest deploy not 100%, or live version unclear.
-
-**Branch:**
-
-| Result | Act |
-| :----- | :-- |
-| **`v2` active** | Record live 100% ID as `PHASE1_VERSION_ID` (Cutover log, start of §4). Continue to Phase 2. Never pre-v2. |
-| **`v2` not active** | Fix error; re-run same Phase 1 deploy (§4.2). Pre-v2 rollback still valid until `v2` active. |
-| **Indeterminate** | **STOP.** No Phase 2. No “safe” pre-v2 rollback. Escalate with: deploy/CI log, both §0.2 outputs (`--json` if available), UTC attempt time, any partial version in `versions list`. |
-
-**Retry safety:** Same Phase 1 bundle (`new_sqlite_classes = ["AuthDO"]`, tag `v2`) is the recover path when `v2` is **not** active. Tags apply once; retry must not undo a successful `v2`. **`[OPERATOR-VERIFY]`** on staging: interrupt/re-run Phase 1 and confirm this branch matches Wrangler — not on production.
-
-**Version ID:** Write `PHASE1_VERSION_ID` to the Cutover log before leaving Phase 1; if stdout lost but `v2` active, recover via §0.2 lists (Cutover log table).
-
-**PLATFORM EFFECT & ROLLBACK TARGET**: Executing `npx wrangler deploy` in Phase 1 completes the DO lifecycle schema change (`v2`). Cloudflare platform rules permanently prevent rollbacks to pre-v2 versions (`149ebcf...`). However, because Phase 1 code is behaviorally inert, Phase 1 has zero user impact. **Rollback Target for Phase 1**: The Phase 1 deployment itself (`release/phase1-lifecycle` IS the forward-fix artifact retaining `149ebcf` code + `AuthDO` + `v2` migration).
-
-
-
----
-
-### 4.3 Phase 2: Main Code & Assets Gradual Rollout (`ETHERCALC_AUTH = "0"`) — **SUPERSEDED PENDING RE-BASELINE**
-
-> **⛔ SUPERSEDED PENDING RE-BASELINE — HAZARDOUS AS WRITTEN.** Setting `ETHERCALC_AUTH = "0"` was justified only while production had **no** passkeys or private rooms. Live production has both. Deploying Phase 2 as written would disable passkey logins and **403-lock existing private rooms for their owners**. Do **not** upload or ramp a production version with `ETHERCALC_AUTH="0"` until the cutover is redesigned.
-
-Phase 2 deploys all of `main` (updated `RoomDO`, `command-limits.ts`, `authorize.ts`, assets) with `ETHERCALC_AUTH = "0"` in `packages/worker/wrangler.toml`.
-The Phase 2 artifact is built from `main` after the command-rejection propagation PR (§8 item 5 / §9 item 6) landed. That behavioral fix ships in Phase 2; it MUST NOT be added to the deliberately inert, `149ebcf`-based Phase 1 lifecycle bundle.
-
-#### Execution Procedure & Version Preview Override (`[OPERATOR-VERIFY]`)
-
-##### Option A (Preferred / Production Path): GitHub Actions CI Workflow
-
-1. Ensure `packages/worker/wrangler.toml` `[vars]` specifies `ETHERCALC_AUTH = "0"`.
-2. Push commit to `main` (or release branch).
-3. Go to **GitHub Actions → Deploy Production → Run workflow** and type `"deploy"`.
-*Why Option A is preferred*: CI runs on a clean runner, eliminating the local `.wrangler/deploy/config.json` redirect trap entirely.
-
-##### Option B (Secondary / Emergency Local CLI Fallback Path)
-
-```bash
-# 1. MANDATORY PRECONDITION: Perform §4.0 verification check. Ensure wrangler.toml [vars] specifies ETHERCALC_AUTH = "0"
-# 2. Build production client assets
-vp run build:assets
-
-# 3. Upload Phase 2 Worker version WITHOUT deploying to production traffic (using explicit --config to bypass local redirect)
-cd packages/worker
-npx wrangler versions upload --config=wrangler.toml --env=""
-# Capture the output PHASE2_VERSION_ID (e.g. "dc8dcd28-0123-4567-89ab-cdef01234567")
-
-# 4. Smoke-test Phase 2 in production at 0% traffic using official Cloudflare header override:
-curl -fsS -H 'Cloudflare-Workers-Version-Overrides: ethercalc="<PHASE2_VERSION_ID>"' https://ethercalc.net/_auth/whoami
-# Expected: HTTP 200 OK {"uid":null,"enabled":false}
-
-# 5. Ramp traffic gradually (staged 10% -> 50% -> 100%):
-npx wrangler versions deploy <PHASE2_VERSION_ID>@10% --env=""
-# Dwell + abort: follow Decision card — Phase 2 ramp abort (immediately below), not this comment alone.
-npx wrangler versions deploy <PHASE2_VERSION_ID>@50% --env=""
-npx wrangler versions deploy <PHASE2_VERSION_ID>@100% --env=""
-
-# 6. MANDATORY EDGE CACHE PURGE:
-# Cloudflare Dashboard -> Caching -> Configuration -> Purge Everything
-```
-> **PARTIALLY AUTOMATED** — The root nightly-config test (`scripts/vite-workflow.test.ts:458-469`; root `vp run test`) protects the checked-in staging dry run, worker auth tests (`routes-auth.node.test.ts:232-251`) protect the disabled response, and `build:assets` is a preflight gate. They do not upload this version, prove the flag/config selected by Wrangler, ramp live traffic, observe analytics, or purge the edge cache; those operator actions remain load-bearing.
-
-**ROLLBACK TARGET FOR PHASE 2**: Phase 2 contains ZERO DO lifecycle changes. **Phase 2 can be rolled back to Phase 1 instantly at any time via `npx wrangler versions deploy <PHASE1_VERSION_ID>@100% --env=""`**. Because `ETHERCALC_AUTH = "0"`, no private rooms or passkeys can be created during Phase 2, making rollback completely safe and hazard-free on the private-data axis. **Snapshot serialisation:** rooms edited under Phase 2 may be re-saved with the expanded multipart envelope (`part:edit` / `part:audit`, `socialcalc:version:1.0`). That is **not** a Phase 2→1 hazard here: Phase 1 (`149ebcf` / `.worktrees/phase1-lifecycle`) already ships the **same** SocialCalc 3.1.0 `socialcalc.bundled.ts` as `main` (byte-identical). Independently, genuine SocialCalc 3.0.8 also parses those 3.1.0-written saves with cell data preserved (`packages/socialcalc-headless/test/legacy-snapshot-reverse.node.test.ts`) — defense-in-depth if an older operator artifact is ever used.
-
-
-##### Decision card — Phase 2 ramp abort (e.g. at 50%, errors climbing)
-
-**Situation:** Phase 2 is partially ramped (10% or 50%). Error rate or probe failures are climbing. Minutes to decide.
-
-**Cost of abort (read once):** Rolling a Phase-2-pinned Durable Object back to Phase 1 causes a **second** DO restart for that object — the same dropped-WebSocket and stale-tab / no-rehydrate consequences as the forward ramp (§4.5–§4.6). The abort is not free; still prefer abort over soaking a bad version.
-
-**Per-room cohort observability:** Each RoomDO is pinned to one Worker version for the life of a gradual deployment ([DO gradual deployments](https://developers.cloudflare.com/workers/versions-and-deployments/gradual-deployments/with-durable-objects/)), but **which version serves a given room id is not operator-observable** in this deployment (no `version_metadata` binding, no configured Workers Logpush `ScriptVersion` pipeline, no room→version admin API). **Do not spend incident time trying to attribute one room to 10% vs 90%.** Decide from fleet signals and §5 probes only.
-
-**Inspect → dwell → abort rule:**
-
-| Ramp step | Dwell before next step | Abort if any of these hold during dwell |
-| :-------- | :--------------------- | :-------------------------------------- |
-| `@10%` | **10 minutes** | §5 Probe 1 (`/_health`) or Probe 5 (public read/write) fails its contract on normal traffic; or version-override Probe 2 (`whoami` → `enabled:false`) fails against `PHASE2_VERSION_ID`; or Cloudflare Workers analytics shows a clear, sustained 5xx/error-rate climb on the deployment that is not explained by the known restart blip at step start |
-| `@50%` | **10 minutes** | Same abort rule |
-| `@100%` | Begin Phase 2 soak (not a short dwell); run full §5 Phase 2 probe set | Same abort rule, or any §5 Phase 2 probe hard-fail |
-
-There is **no** numbered §5.1 metric watch-list with numeric thresholds in this runbook. The minimum viable abort signal is: **hard probe failure (§5 contracts above) OR a sustained analytics error-rate climb you would not accept at 100%.** If analytics are noisy and probes are green, prefer extend-dwell over guesswork — then escalate.
-
-**Reduce 50%→10% vs all-or-nothing:** Cloudflare documents rollback from a split deployment as replacing both sides with **one** version at **100%** ([Rollbacks](https://developers.cloudflare.com/workers/versions-and-deployments/rollbacks/)). DO gradual rules guarantee monotonic **increase** of a version’s percentage without reassigning objects already on that version — not a safe “dial down” ([DO gradual deployments](https://developers.cloudflare.com/workers/versions-and-deployments/gradual-deployments/with-durable-objects/)). **Do not abort by reducing percentage (50→10).** Abort = pin Phase 1 at 100%:
-
-```bash
-cd packages/worker
-npx wrangler versions deploy <PHASE1_VERSION_ID>@100% --env=""
-cd ..
-```
-
-If `PHASE1_VERSION_ID` is missing, recover it from the Cutover log (start of §4) or §0.2 lists.
-
-**`[OPERATOR-VERIFY]`:** Before cutover, confirm on staging that `wrangler versions deploy` rejects or unsafely handles a percentage decrease if you are tempted to rely on dial-down; production abort path remains Phase 1 @ 100% only.
-
-**Post-rollback verification:** Re-run §5 Phase 2 probes **1, 4, 5, 7** against production (health, `player.js`, public read/write, WebSocket). Expect Probe 2 (`whoami`) to reflect whatever code Phase 1 serves (Phase 1 is inert / pre-auth routes — do not require Phase 2’s `enabled:false` shape). Confirm `deployments list` shows `PHASE1_VERSION_ID` @ 100%. Then stop the ramp; schedule a forward retry only after root cause.
-
-**During Phase 2 soak:** if D1 writes begin failing, check `database_size` against the §0.2.2 capacity ceiling **first**. A full D1 capacity-incident procedure is **deliberately out of scope** here — capacity exhaustion is a pre-existing operational condition, not caused by this cutover.
-
-#### 4.3.1 Mixed-Version Cross-Room Interaction During the Phase 2 Ramp
-
-Cloudflare gradual deployments pin **each Durable Object instance to one Worker version** for the life of that deployment, while the front-door Worker isolate that handles an ingress request may be a *different* version than a sibling room it later reaches ([Gradual deployments with Durable Objects](https://developers.cloudflare.com/workers/versions-and-deployments/gradual-deployments/with-durable-objects/)). EtherCalc has **one `RoomDO` per room**, so a 10% / 50% ramp means different rooms can run Phase 1 (`149ebcf` + `AuthDO`) and Phase 2 (`main`, `ETHERCALC_AUTH="0"`) code **at the same time**. Cross-room traffic is therefore the real mixed-version surface — not only the per-room WebSocket restart already covered in §4.5–§4.6.
-
-Unknown `/_do/*` paths on both trees fall through to **`501 Not implemented`** (baseline router end at the `149ebcf` `room.ts` fetch handler; HEAD `packages/worker/src/room.ts:489`) — not 404.
-
-##### Cross-room path map (verified against `packages/worker/src`)
-
-| Path | Initiator | Hop | Target `/_do/*` | Request / response contract |
-| :--- | :-------- | :-- | :-------------- | :-------------------------- |
-| **Cross-sheet formula hydration** | `RoomDO.#getSpreadsheet` → `#hydrateCrossSheetRefs` (`room.ts:2179`, `room.ts:2204-2208`; pure orchestration in `lib/cross-sheet.ts:87-126`) | **DO→DO** | sibling `GET /_do/snapshot` via `#fetchSibling` (`room.ts:2194-2201`) — no `?name=`, no `X-EC-Uid` | Body: raw SocialCalc save text. Non-200 or empty → `null`; caller skips the ref and formulas degrade to `#NAME?` (`room.ts:2157-2159`). HEAD also bounds body size via `readBoundedResponseText` (`cross-sheet.ts:45-74`, `room.ts:2200`). |
-| **WS `submitform` → `_formdata` sibling** | `handleExecute` in the source room (`lib/ws-handlers.ts:177-198`) through `ctx.siblingDo` (`room.ts:1853-1866`) | **DO→DO** | `POST /_do/commands?name=<room>_formdata` with plaintext command body | Failures swallowed (`ws-handlers.ts:193-195`). HEAD additionally gates private rooms with `allowSubmitForm` (`room.ts:1849-1851`) and may thread `X-EC-Uid`. |
-| **DELETE room → wipe `_formdata` sibling** | `RoomDO.#deleteFormdataSibling` (`room.ts:809-828`) from `#deleteAllAndUnindex` | **DO→DO** | `DELETE /_do/all?name=<sibling>` | Best-effort; errors swallowed (`room.ts:826-827`). HEAD may forward `X-EC-Uid`. |
-| **Multi-cascade rename install leg** | Source `RoomDO.#postRename` after Worker `POST /_do/rename` (`room.ts:953-995`) | **DO→DO** | target `POST /_do/install` with JSON `{ snapshot, log, audit }` (`room.ts:979-982`) | Source expects 2xx or returns `502 install failed` (`room.ts:984-985`); on success source `deleteAll`s itself and returns `201`. Install body shape is unchanged from `149ebcf`. |
-| **Template clone** | Source `RoomDO.#postClone` after Worker `POST /_do/clone` (`room.ts:1002-1030`; Worker glue `routes/assets.ts` template form) | **DO→DO** | target `PUT /_do/snapshot?name=<to>` with raw snapshot body | `201` / `502 clone failed`. |
-| **Legacy socket.io sid-host `execute` forward** | Sid-keyed `RoomDO.#handleLegacyFrame` when `attachment.room` is empty (`room.ts:1693-1709`) | **DO→DO** | real room `POST /_do/commands?name=<room>` | Best-effort; errors swallowed. |
-| **Multi-cascade rename (Worker leg)** | `POST /_/:room` when command matches multi-cascade (`routes/rooms.ts:870-967`) | **Worker→DO** then DO→DO above | (1) `GET /_do/snapshot` on TOC room; (2) after authorizing write, `POST /_do/rename` `{ to: "<subsheet>.bak" }` on namespace-guarded `<room>.<n>` | Rename failures swallowed (`rooms.ts:954-955`). HEAD defers rename until the TOC write returns 2xx; `149ebcf` issued rename *before* the write. |
-| **Multi-sheet workbook entry / export** | Worker `getWorkbookKind` (`routes/assets.ts:140-151`); multi export walks TOC (`routes/exports.ts:100-138`) | **Worker→DO** (fan-out across child rooms) | `GET /_do/workbook-kind` → `{ kind: "absent"\|"multi"\|"single" }`; multi export uses `GET /_do/csv.json` then per-child `GET /_do/sheet-data` | `workbook-kind` non-OK → `"unknown"` (no throw). Missing child sheet-data → `continue` (skip sheet). |
-| **Page / edit access probes** | `registerRoomCatchAll`, `/:room/edit`, `DELETE /_/:room` (`routes/assets.ts:349-350`, `routes/stateless.ts:82-85`, `routes/rooms.ts:638-650`) | **Worker→DO** | `GET /_do/access` → `{ isPrivate, canRead, canWrite }` | Non-OK / malformed JSON → `access = null`. **Not an authz decision:** HTML/`edit` only skip optional UX redirects (`assets.ts:351-378`, `stateless.ts:86-96`); DELETE is **fail-closed** (`access === null` → `403`, `rooms.ts:642-650`). RoomDO remains the sole authz boundary on subsequent content/command fetches (AGENTS.md decision #14). |
-| **Private room init** | `POST /_/private` and `POST /_from/:template/private` (`routes/rooms.ts:218-234`, `678-694`) | **Worker→DO** | `POST /_do/init-private` with JSON `{ snapshot, acl, group? }` | Caller requires `201`; any other status (including old DO **`501 Not implemented`**) is returned **verbatim** to the client (`rooms.ts:232-234`, `692-694`) — user-visible failure, not a soft fallback. |
-| **Ordinary room CRUD / commands / exports** | Worker route handlers via `doFetch` (`lib/do-dispatch.ts:38-57`) | **Worker→DO** | pre-existing `/_do/snapshot`, `/_do/commands`, `/_do/cells`, `/_do/html`, `/_do/csv`, `/_do/csv.json`, `/_do/md`, `/_do/xlsx`, `/_do/ods`, `/_do/fods`, `/_do/sheet-data`, `/_do/clone`, `/_do/rename`, `/_do/exists`, `/_do/all`, `/_do/log`, `/_do/ws`, … | Single-room; listed because the front-door Worker version and the target DO version can still diverge under a gradual ramp. |
-| **Cron fire** | Worker `scheduled()` (`scheduled.ts:104-114`) | **Worker→DO** | `POST /_do/fire-trigger?cell=…&room=…` | Non-OK skipped (trigger not marked fired). |
-| **`ask.recalc` (client label only)** | Native/legacy WS on the **already-attached** room socket (`room.ts:1547-1550`, `ws-handlers.ts:234+`) | **not cross-DO** | n/a — room field names a formula sheet; state is served from *this* DO’s storage | Not a room-boundary hop; included so operators do not mistake it for DO→DO. |
-
-`doFetch` is always Worker→DO (`lib/do-dispatch.ts:38-57`): it resolves `env.ROOM.idFromName(encodeRoom(room))`, appends `?name=`, strips inbound `X-EC-Uid`, and sets `X-EC-Uid` only from a verified session principal. True DO→DO calls use `env.ROOM.get(…).fetch('https://do.local/…')` directly inside `RoomDO` / `ws-handlers` and therefore pair two room versions with **no** Worker mediator.
-
-##### `/_do/*` protocol delta (`149ebcf` → HEAD)
-
-**Endpoints added on HEAD (absent on Phase 1 `RoomDO`; old code answers `501 Not implemented`):**
-
-| Endpoint | Shape | Who calls it on `main` |
-| :------- | :---- | :--------------------- |
-| `GET /_do/access` | JSON `{ isPrivate, canRead, canWrite }` (`room.ts:353-354`, `503-511`) | Worker HTML/edit/DELETE probes only. Gate-exempt. |
-| `GET /_do/workbook-kind` | JSON `{ kind: "absent"\|"multi"\|"single" }` (`room.ts:385-386`, `843-875`) | Worker default-room / Sandstorm root classifier only (`assets.ts:140-151`). |
-| `POST /_do/init-private` | JSON `{ snapshot, acl, group? }` → private access trio + optional snapshot (`room.ts:465-466`, `#postInitPrivate`) | `POST /_/private` and `POST /_from/:template/private` only. |
-
-**Endpoints removed or renamed:** none. Every `149ebcf` `/_do/*` route still exists on HEAD.
-
-**Same path, changed behaviour (public-room / Phase 2 relevant):**
-
-| Endpoint | `149ebcf` | HEAD | Mixed-version note |
-| :------- | :-------- | :--- | :----------------- |
-| `POST /_do/commands` | Always applies body and returns `202` empty | May return `413 command exceeds sheet limits` when `#appendCommand` rejects (`room.ts:699-703`); also broadcasts `execute` to WS peers after HTTP success (`room.ts:707-714`) | Old DO + new Worker: Worker sees 202 (no new ceiling). New DO + old Worker: old Worker ignored DO status and always echoed HTTP 202 — oversized writes can still be rejected inside the new DO while the old front door lies. New+new: truthful 413 (Phase 2 product behaviour). |
-| `DELETE /_do/all` | Wipes storage; no uid argument | Accepts optional `X-EC-Uid`; may preserve private access tombstone (`room.ts:752-757`, `772-775`) | Irrelevant under Phase 2 (`AUTH=0` ⇒ no private rooms created). |
-| `POST /_do/rename` / `POST /_do/clone` | `to` is non-empty string; rename target id on `149ebcf` used `idFromName(to)` **without** `encodeRoom` | `to` must pass `isValidRoomName`; both refuse `meta:access === 'private'` with `409` (`room.ts:956-965`, `1005-1018`); rename target uses `idFromName(encodeRoom(to))` (`room.ts:976-977`) | Install/clone **body** contracts unchanged. Private `409` is Phase-3-relevant only. `encodeURI` leaves `.` unchanged (`lib/room-name.ts:63-70`), so multi-sheet names like `room.1` / `room.1.bak` are **not** affected; only names `encodeURI` actually rewrites (spaces, non-ASCII, etc.) could expose a target-id mismatch if such a rename ever ran mixed-version. |
-| `POST /_do/install` | `{ snapshot: string, log: string[], audit: string[] }` → fold + replace storage | Same JSON contract; preserves any pre-existing access trio when reinstalling (`room.ts:1252-1290`) | DO→DO payload compatible both directions. |
-| `GET /_do/snapshot` (DO→DO hydration) | Full `res.text()` | `readBoundedResponseText` cap 2 MiB (`room.ts:2200`, `cross-sheet.ts:41`) | Oversize sibling save skipped ⇒ `#NAME?` on the new caller only; old caller still buffers full body. |
-| Gate on almost all `/_do/*` | No ACL gate | `#isAuthorized` unless path is gate-exempt (`room.ts:340-350`); public rooms (`access == null \| 'public'`) still allow all (`lib/authorize.ts:20`) | Under Phase 2 no room is private, so the new gate is a no-op for production data. |
-
-**Unchanged cross-room contracts (safe both directions on public rooms):** `GET/PUT /_do/snapshot`, `POST /_do/commands` success `202` empty body, `POST /_do/install` JSON, `POST /_do/clone`/`rename` public-room happy path for ASCII names, `GET /_do/sheet-data`, `GET /_do/csv.json`, export suite, `DELETE /_do/all` public wipe, `POST /_do/fire-trigger`.
-
-##### Per-path mixed-version verdict (Phase 2 = `main` @ N% with `ETHERCALC_AUTH="0"`, remainder = Phase 1 bundle)
-
-| Path | A=`main`, B=`149ebcf` | A=`149ebcf`, B=`main` | Verdict |
-| :--- | :-------------------- | :-------------------- | :------ |
-| Cross-sheet hydration (DO→DO snapshot) | New A reads old B snapshot; protocol identical; bounds only on A | Old A reads new B snapshot; protocol identical | **SAFE** — failure mode is still `#NAME?` |
-| WS `submitform` → `_formdata` | Commands text to old/new sibling; both accept `POST /_do/commands` | Same | **SAFE** (errors already best-effort) |
-| DELETE → `_formdata` wipe | Old/new sibling both implement `DELETE /_do/all` | Same | **SAFE** |
-| Cascade rename (`/_do/rename` → `/_do/install`) | Install body unchanged; public rooms only in Phase 2 | Same | **SAFE** for public multi-sheet cascade (ASCII/`encodeURI`-stable names) |
-| Template clone | `PUT /_do/snapshot` unchanged | Same | **SAFE** |
-| Legacy sid-host execute forward | `/_do/commands` exists both sides | Same | **SAFE** (best-effort) |
-| Worker multi-export / child `sheet-data` | Endpoints exist on `149ebcf` | Same | **SAFE** |
-| Worker `GET /_do/workbook-kind` | Old B returns **501** → `getWorkbookKind` returns `"unknown"` (`assets.ts:143,151`) | Old Worker never calls this endpoint | **DEGRADED (niche entry UX only).** Called only when `ETHERCALC_DEFAULT_ROOM` is set (`assets.ts:172-180`); ethercalc.net production root without that var never hits it. `"unknown"` makes `multi = false` (`assets.ts:180`), so `/` redirects to `/${room}` (single-sheet client) instead of `/=${room}`. No data path; wrong client shell at worst. Sandstorm `sheet1` fallback also skips because it keys only on `kind === "absent"` (`assets.ts:185`). |
-| Worker `GET /_do/access` | Old B returns **501** → `access = null` | Old Worker never calls `/_do/access` | **SAFE — not a security hazard.** (1) HTML/`edit` probes only omit redirect *hints* when `access` is null; they do not grant content. RoomDO still enforces ACL on `/_do/snapshot` and commands. (2) DELETE treats null as **403** (fail-closed). (3) Structurally, a Phase 1 DO cannot host `meta:access=private` at all (no `/_do/init-private`), so a 501 from this probe implies a public room by construction. Worst case is cosmetic: a private room that *did* land on a `main` DO might not get the edit/view redirect polish if some other probe failed — still not declassification. |
-| Worker `POST /_do/init-private` | New Worker hits old B → **501** returned **verbatim** to the client (`rooms.ts:232-234`, `692-694`) | Old Worker has no caller | **BROKEN if invoked against a Phase 1 DO** (user-visible create/copy failure). **Dormant in Phase 2** because `ETHERCALC_AUTH="0"` makes `getSessionPrincipal` null and both private routes return `401` before `doFetch` (`rooms.ts:201-202`, `673-675`; executive summary item 3). |
-| Worker `POST /_do/commands` sheet limits | New Worker + old DO: old DO accepts oversize (no 413) | Old Worker + new DO: DO may 413/drop while old Worker still HTTP 202 | **DEGRADED** — enforcement and client-visible 413 only when **both** front door and target room are on `main`. Matches the already-documented product ceiling (§4.6 rows 3–5); ramp merely delays uniform enforcement. |
-
-##### Overall verdict
-
-**DEGRADED (not BROKEN) for the Phase 2 production ramp on public rooms.** Phase 2→Phase 3 ordering is a **correctness requirement**, not only soak/rollback discipline:
-
-1. Every **DO→DO** payload used in production public flows (`/_do/snapshot`, `/_do/commands`, `/_do/install`, `/_do/all`) is forwards- and backwards-compatible between `149ebcf` and `main`.
-2. `GET /_do/access` **501** during a split is **not** a security hazard: callers either skip UX redirects only (`assets.ts:351-378`, `stateless.ts:86-96`) or fail closed (`rooms.ts:642-650`), and RoomDO remains the sole authz boundary. A Phase 1 DO also cannot be private (no `init-private`), so the 501 case is public-by-construction.
-3. `GET /_do/workbook-kind` **501** soft-falls to `"unknown"` and, only on hosts with `ETHERCALC_DEFAULT_ROOM`, may open the single-sheet client for a multi TOC — entry UX only (`assets.ts:143,180`).
-4. `POST /_do/init-private` is **not** soft-fallback: a `main` Worker that reached a still-Phase-1 target DO would surface **501** to the user (`rooms.ts:232-234`, `692-694`). Phase 2 keeps those routes unreachable (`401` before dispatch under `AUTH=0`). Enabling `ETHERCALC_AUTH="1"` while any room fraction remains on Phase 1 makes private-room **create/copy BROKEN** for ids pinned to the old version. That is an independent correctness reason to hold Phase 3 until Phase 2 is at 100%, stacked on the original rollback-safety reason (no private rooms during the major-code soak).
-5. Remaining user-visible asymmetry during a pure Phase 2 ramp is limited to **sheet-limit enforcement** (and the niche default-room workbook classifier), not to cross-sheet reads, formdata siblings, multi-sheet cascade rename, exports, or authorization.
-
-**Operational mitigation:**
-
-- **Mandatory (correctness + rollback):** Do **not** start Phase 3 (`ETHERCALC_AUTH="1"`) until Phase 2 is at **100%** and soaked. Two independent justifications: (a) rollback safety — no private rooms while major code soaks (§4.3); (b) mixed-version correctness — `POST /_do/init-private` against a Phase 1 DO returns **501** verbatim, so private create/copy is user-visibly broken for any room still pinned old (§4.3.1). A future maintainer MUST NOT relax the 100% gate on either ground alone. This is §9 item 9.
-- **Optional (not a Go/No-Go blocker for Phase 2 itself):** After the Phase 2 version-override smoke (`Cloudflare-Workers-Version-Overrides` whoami probe in §4.3) passes, prefer a **short** 10% observation window and then advance 10% → 50% → 100% without multi-hour soaks at partial percentages — or jump 10% → 100% if multi-sheet / large-paste traffic is active and uniform 413 signalling matters more than blast-radius staging. Partial percentages remain acceptable for public-room data integrity: they do not corrupt cross-room state under `AUTH=0`.
-
-
----
-
-### 4.4 Phase 3: Enable Passkeys (`ETHERCALC_AUTH = "1"`) — **SUPERSEDED PENDING RE-BASELINE**
-
-> **SUPERSEDED PENDING RE-BASELINE.** Passkeys are already enabled in production (`GET /_auth/whoami` → `enabled:true`). Phase 3 as a green-field “turn auth on” step does not apply; any future cutover must treat auth-on as the **steady state** to preserve, not a post-soak flip.
-
-After Phase 2 has soaked and verified stable in production, Phase 3 enables passkey authentication by flipping `ETHERCALC_AUTH = "1"` in `packages/worker/wrangler.toml`:
-
-##### Option A (Preferred / Production Path): GitHub Actions CI Workflow
-
-1. Flip `ETHERCALC_AUTH = "1"` in `packages/worker/wrangler.toml` `[vars]`.
-2. Commit and push to `main`.
-3. Run **GitHub Actions → Deploy Production → Run workflow**.
-
-##### Option B (Secondary / Emergency Local CLI Fallback Path)
-
-```bash
-# 1. Set ETHERCALC_AUTH = "1" in wrangler.toml [vars]
-# 2. Deploy Phase 3 to 100% traffic using explicit --config to bypass local redirect
-cd packages/worker
-npx wrangler deploy --config=wrangler.toml --env=""
-cd ..
-# Capture returned PHASE3_VERSION_ID → Cutover log (start of §4)
-```
-**ROLLBACK TARGET FOR PHASE 3**: Phase 3 can be rolled back to Phase 2 via `npx wrangler versions deploy <PHASE2_VERSION_ID>@100% --env=""`. The private-room Point of No Return lives HERE in Phase 3, after all major code changes have already soaked cleanly in Phase 2. Record `PHASE3_VERSION_ID` in the Cutover log (start of §4) before soak continues — required for clean re-enable after a lockout rollback (§6.2).
-
----
-
 ## §5 Post-Cutover Verification
 
 Execute this numbered probe checklist immediately after the **§4 single-ramp** reaches `@100%` and the required edge purge. **Live auth contract:** `ETHERCALC_AUTH` stays `"1"` for the entire cutover — accept `GET /_auth/whoami` → `{"uid":null,"enabled":true}` (see §4.3 Step 5). Do **not** expect `enabled:false`; that contract belonged to the superseded Phase 2 `AUTH=0` soak (Appendix A only).
@@ -2121,3 +1739,391 @@ Operator-facing summary for this cutover. Each entry states whether it is a **ch
 7. **Private Room D1 Asymmetry & Recovery Mechanics**: Private rooms (`meta:access === 'private'`) are write-time excluded from the public D1 `rooms` index (`packages/worker/src/room.ts:2270-2271`). They are invisible to `GET /_rooms`, `GET /_roomtimes`, and `SELECT room FROM rooms`. Audit/chat mirrors remain unfiltered (`packages/worker/src/room.ts:2303-2309`), so **active** private rooms may appear in D1 tails — but fleet-scale discovery must use the **paged** form in §2.4.2 (`[OPERATOR-VERIFY]`); the one-shot `SELECT DISTINCT … UNION …` is likely to hit D1's 30s limit on large tables. Whole-instance DO PITR is not an operator procedure at ~1.8M rooms (§2.4.1). `wrangler d1 export` SQL backups still contain private-room SocialCalc commands and chat and MUST be handled as sensitive. Zero-activity private rooms require out-of-band inventory.
 
 8. **Search-indexing policy (`X-Robots-Tag` + real `/robots.txt`)**: After this ship, every non-landing response carries `X-Robots-Tag: noindex, nofollow, noarchive` (`packages/worker/src/lib/robots.ts` `ROBOTS_NOINDEX`; middleware in `packages/worker/src/index.ts`), and only `/` remains indexable (`isIndexablePath` exact allowlist). `GET /robots.txt` becomes a real robots file (`Content-Type: text/plain; charset=utf-8`, body with `Allow: /` and no `Disallow` directive) instead of falling through the `/:room` catch-all. **Pre-ship production behaviour:** `GET https://ethercalc.net/robots.txt` returns the app HTML shell because the path is treated as a room named `robots.txt` — crawlers receive a page, not directives. **Intent:** room slugs are the only thing keeping public rooms private; indexing them turns "unguessable URL" into "first search result," and a linked sheet can drag neighbours into the index with it. **Do not "fix" this by adding `Disallow`:** forbidding fetch hides the `noindex` header and permanently freezes already-indexed rooms as bare-title results (module comment in `lib/robots.ts`). See §5 Probes 13a–13c and §8 item 7.
+
+
+## Appendix A: Superseded Three-Phase Plan (baseline disproved 2026-08-10)
+
+> **SUPERSEDED — DO NOT EXECUTE.** Preserved because the analysis and failure mode are instructive. Live production is in `[d2afa90, b7d8840)` with passkeys/`AuthDO` already on; the corrected procedure is **§4 Hosted cutover (single gradual ramp)**. Setting `ETHERCALC_AUTH="0"` against current production is a self-inflicted outage (STOP banner).
+
+### A.1 Old three-phase cutover execution
+
+> **SUPERSEDED PENDING RE-BASELINE (2026-08-10).** The three-phase sequence below assumes production is pre-passkey `149ebcf`. Live probes show passkeys/`AuthDO` already on and security-audit assets not yet deployed. **Do not execute §4.2–§4.4.** See the STOP banner at the top of this document.
+
+To guarantee 100% safe rollback capabilities during major code changes, cutover MUST follow this Three-Phase strategy.
+
+### Cutover log — named artifacts (record as you go)
+
+Keep one operator log (ticket, notepad, or file). Fill each row when the step that produces it completes. Lost stdout is recoverable from the CLI; do not invent IDs.
+
+| Artifact | When to record | Primary capture | If stdout was lost |
+| :------- | :------------- | :-------------- | :----------------- |
+| `PRE_CUTOVER_BOOKMARK` | Before any deploy (§2.1 / §0.2 step 4) | `npx wrangler d1 time-travel info ethercalc_rooms` (save stdout immediately) | **Do not** re-run `time-travel info` after cutover — that returns a *current* bookmark, not the pre-cutover one. Recover only from the saved command output / change log, or from a recorded pre-cutover UTC timestamp via §6.4. If neither exists, treat the bookmark as **indeterminate**. |
+| `PRE_CUTOVER_D1_SIZE` | Before any deploy (§0.2.2) | `database_size` from `npx wrangler d1 info ethercalc_rooms --json` | Re-run §0.2.2 |
+| `PHASE1_VERSION_ID` | Immediately after Phase 1 deploy succeeds (§4.2) | Version ID printed by `wrangler deploy` / CI deploy log | `npx wrangler versions list` / `npx wrangler deployments list` (§0.2) — take the active 100% post–Phase-1 version |
+| `PHASE2_VERSION_ID` | Immediately after `wrangler versions upload` (§4.3) | Upload command stdout | `npx wrangler versions list` (§0.2) — the uploaded Phase 2 version (not necessarily 100% until ramp completes) |
+| `PHASE3_VERSION_ID` | Immediately after Phase 3 deploy succeeds (§4.4) | Version ID printed by `wrangler deploy` / CI deploy log | `npx wrangler versions list` / `npx wrangler deployments list` (§0.2) — active 100% version with auth on |
+
+`PHASE1_VERSION_ID` is required for any Phase 2 → Phase 1 rollback. `PHASE2_VERSION_ID` is required for Phase 3 → Phase 2. `PHASE3_VERSION_ID` is required to re-enable auth after a Phase 3 → Phase 2 lockout rollback without rebuilding (§6.2).
+
+### 4.1 Step 1: Pre-Deploy D1 Database Migrations
+
+Execute D1 migrations prior to deploying Worker code:
+
+```bash
+npx wrangler d1 migrations apply ethercalc_rooms --remote --config=packages/worker/wrangler.toml --env=""
+```
+
+**Reasoning for Order:**  
+All database migration scripts (`0001_rooms.sql`, `0002_cron.sql`, `0003_audit_chat.sql`) are strictly **expand-only** using `CREATE TABLE IF NOT EXISTS`. Old worker code (commit `149ebcf...`) ignores these new tables, making D1 migration execution 100% safe to run before code deployment.
+
+---
+
+### 4.2 Phase 1: Lifecycle-Only Deployment (`npx wrangler deploy`) — **SUPERSEDED PENDING RE-BASELINE**
+
+> **SUPERSEDED PENDING RE-BASELINE.** Phase 1 exists to land DO migration `v2` / `AuthDO` from a `149ebcf` baseline. Production already serves `/_auth/whoami` with `enabled:true`, so `AuthDO` + `AUTH` are live — re-running a lifecycle-only `149ebcf`+v2 bundle is the wrong operation and may be a no-op or a dangerous downgrade. Confirm with `wrangler deployments list` before any lifecycle deploy.
+
+#### Building the Phase 1 Minimal Branch (PROVEN)
+
+To isolate the DO lifecycle migration `v2`, a minimal branch `release/phase1-lifecycle` was created from `149ebcf16104b01254ca2b796beb701c88bd6ff8` in git worktree `.worktrees/phase1-lifecycle`.
+
+The exact 8-file change set (`git diff --stat 149ebcf..HEAD`) is:
+
+```text
+ bun.lock                                 |  53 +++
+ packages/worker/package.json             |   3 +-
+ packages/worker/src/auth-do.ts           | 633 +++++++++++++++++++++++++++++++
+ packages/worker/src/index.ts             |   1 +
+ packages/worker/src/lib/rate-limit.ts    |   6 +-
+ packages/worker/src/lib/storage-batch.ts |  61 +++
+ packages/worker/src/lib/webauthn-ops.ts  |  52 +++
+ packages/worker/wrangler.toml            |  12 +
+ 8 files changed, 819 insertions(+), 2 deletions(-)
+```
+
+**Proven Step-by-Step Recipe**:
+
+1. **New Files Added from `main`**:
+   - `packages/worker/src/auth-do.ts`
+   - `packages/worker/src/lib/webauthn-ops.ts`
+   - `packages/worker/src/lib/storage-batch.ts`
+2. **Dependency Addition**: Add `"@simplewebauthn/server": "^13"` to `packages/worker/package.json` dependencies (updates `packages/worker/package.json` and locks transitive packages in `bun.lock`).
+3. **`rate-limit.ts` Signature Reconciliation**:
+   - At `149ebcf`, `packages/worker/src/lib/rate-limit.ts` exported `createRateLimitStore()` taking zero parameters (no `MAX_BUCKETS` constant, no bucket map eviction).
+   - `auth-do.ts` imports `createRateLimitStore` and calls `createRateLimitStore(2_048)`.
+   - **Reconciliation**: Change signature to `export function createRateLimitStore(maxBuckets?: number): RateLimitStore` and evict `buckets.keys().next().value` only when `maxBuckets !== undefined`.
+   - **Inertness Rationale**: Defaulting `maxBuckets` to `10_000` for 0-argument callers would alter existing rate-limiter behavior in a bundle whose sole purpose is behavioral inertness. The optional parameter leaves all pre-existing rate limiters unmodified while allowing `AuthDO`'s explicit `2_048` capacity bound to compile and function. (Note: `main` defaults `maxBuckets = 10_000`; Phase 2 brings that default when full worker logic rolls out).
+4. **Class Export (`packages/worker/src/index.ts`)**: Export `AuthDO` alongside `RoomDO`:
+   ```ts
+   export { RoomDO } from "./room.ts";
+   export { AuthDO } from "./auth-do.ts";
+   export { scheduled } from "./scheduled.ts";
+   ```
+5. **Wrangler Config (`packages/worker/wrangler.toml`)**: Add the `AUTH` Durable Object binding (both top-level and in `[env.staging]`) and the `v2` migration stanza:
+
+   ```toml
+   [[durable_objects.bindings]]
+   name = "AUTH"
+   class_name = "AuthDO"
+
+   [[env.staging.durable_objects.bindings]]
+   name = "AUTH"
+   class_name = "AuthDO"
+
+   [[migrations]]
+   tag = "v2"
+   new_sqlite_classes = ["AuthDO"]
+   ```
+
+#### Phase 1 Build Verification (PROVEN)
+
+Both verification gates pass cleanly on `release/phase1-lifecycle`:
+
+- **Gate 1 (`vp run @ethercalc/worker#typecheck`)**:
+
+  ```text
+  ~/packages/worker$ tsc --noEmit ⊘ cache disabled
+  ```
+
+- **Gate 2 (`vp run @ethercalc/worker#build:dry`)**:
+
+  ```text
+  ~/packages/worker$ wrangler deploy --dry-run ⊘ cache disabled
+
+   ⛅️ wrangler 4.107.0 (update available 4.120.0)
+  ───────────────────────────────────────────────
+  ▲ [WARNING] Multiple environments are defined in the Wrangler configuration file, but no target environment was specified for the deploy command.
+
+    To avoid unintentional changes to the wrong environment, it is recommended to explicitly specify the target environment using the `-e|--env` flag or CLOUDFLARE_ENV env variable.
+    If your intention is to use the top-level environment of your configuration simply pass an empty string to the flag to target such environment. For example `--env=""`.
+
+
+  ✨ Read 163 files from the assets directory /Users/au/w/ethercalc/.worktrees/phase1-lifecycle/assets
+  Total Upload: 2869.17 KiB / gzip: 537.35 KiB
+  Your Worker has access to the following bindings:
+  Binding                                   Resource
+  env.ROOM (RoomDO)                         Durable Object
+  env.AUTH (AuthDO)                         Durable Object
+  env.DB (ethercalc_rooms)                  D1 Database
+  env.ASSETS                                Assets
+  env.BASEPATH ("")                         Environment Variable
+  env.ETHERCALC_CORS ("1")                  Environment Variable
+
+  --dry-run: exiting now.
+  ```
+
+  And on staging (`wrangler deploy --dry-run --env=staging`), the verified staging dry-run binding table is:
+
+```text
+Binding                                           Resource
+env.ROOM (RoomDO)                                 Durable Object
+env.AUTH (AuthDO)                                 Durable Object
+env.DB (ethercalc_rooms_staging)                  D1 Database
+env.ASSETS                                        Assets
+env.BASEPATH ("")                                 Environment Variable
+env.ETHERCALC_CORS ("1")                          Environment Variable
+```
+
+_Verification Artifact Analysis_: The dry-run binding table confirms `env.AUTH (AuthDO)` is registered alongside `env.ROOM (RoomDO)`, and that no passkey environment variables (`ETHERCALC_AUTH`, `ETHERCALC_RP_ID`, `ETHERCALC_ORIGIN`) are included in Phase 1. Combined with the absence of `packages/worker/src/routes/auth.ts` (no `/_auth/*` HTTP routes registered), Phase 1 is behaviorally inert.
+
+> **Caveat on Verification**: Successful `typecheck` and `build:dry` prove that the minimal Phase 1 bundle **compiles and bundles** without type errors or missing imports. They do not substitute for testing live runtime behavior on Cloudflare infrastructure. The staging rehearsal in §3 remains mandatory before Phase 1 is deployed to production.
+
+#### Phase 1 Execution Procedure
+
+##### Option A (Preferred / Production Path): GitHub Actions CI Workflow
+
+1. Push `release/phase1-lifecycle` branch (or merge to target release branch).
+2. Go to **GitHub Actions → Deploy Production → Run workflow**.
+3. Type `"deploy"` to confirm execution.
+*Why Option A is preferred*: GitHub Actions executes on a clean runner (fresh git checkout). Because `.wrangler/` and `dist/` are gitignored and never created by CI asset build steps (`client#build`, `client-multi#build`, `scripts/build-assets.ts`), CI is **structurally immune** to the configuration redirect artifact.
+
+##### Option B (Secondary / Emergency Local CLI Fallback Path)
+
+```bash
+# MANDATORY PRECONDITION: Perform §4.0 verification check (confirm no redirect banner).
+cd .worktrees/phase1-lifecycle/packages/worker
+npx wrangler deploy --config=wrangler.toml --env=""
+cd ../..
+# Capture returned PHASE1_VERSION_ID → cutover log (table above / this section)
+```
+
+##### Decision card — Unknown Phase 1 outcome (deploy error / dead terminal)
+
+**Situation:** Phase 1 `wrangler deploy` errored, hung, or the terminal died. You do not know whether migration `v2` is active. Irreversible boundary → §6.3.
+
+**Inspect:** run §0.2 steps 1–2 (`deployments list`, `versions list`).
+
+**Interpretation (no sample CLI output claimed):**
+
+- **`v2` active:** live deployment is **100%** on a post–Phase-1 version that carried `AuthDO` / migration `v2` (same criterion as §6.3). Checks: (a) one version at 100%; (b) created time matches this attempt; (c) pre-cutover baseline is not the sole live version. A migration-tag field showing `v2` confirms; **missing field ≠ failure**.
+- **`v2` not active:** still 100% on the pre-cutover baseline; no new 100% Phase 1 deployment.
+- **Indeterminate:** lists disagree, traffic split, newest deploy not 100%, or live version unclear.
+
+**Branch:**
+
+| Result | Act |
+| :----- | :-- |
+| **`v2` active** | Record live 100% ID as `PHASE1_VERSION_ID` (Cutover log, start of §4). Continue to Phase 2. Never pre-v2. |
+| **`v2` not active** | Fix error; re-run same Phase 1 deploy (§4.2). Pre-v2 rollback still valid until `v2` active. |
+| **Indeterminate** | **STOP.** No Phase 2. No “safe” pre-v2 rollback. Escalate with: deploy/CI log, both §0.2 outputs (`--json` if available), UTC attempt time, any partial version in `versions list`. |
+
+**Retry safety:** Same Phase 1 bundle (`new_sqlite_classes = ["AuthDO"]`, tag `v2`) is the recover path when `v2` is **not** active. Tags apply once; retry must not undo a successful `v2`. **`[OPERATOR-VERIFY]`** on staging: interrupt/re-run Phase 1 and confirm this branch matches Wrangler — not on production.
+
+**Version ID:** Write `PHASE1_VERSION_ID` to the Cutover log before leaving Phase 1; if stdout lost but `v2` active, recover via §0.2 lists (Cutover log table).
+
+**PLATFORM EFFECT & ROLLBACK TARGET**: Executing `npx wrangler deploy` in Phase 1 completes the DO lifecycle schema change (`v2`). Cloudflare platform rules permanently prevent rollbacks to pre-v2 versions (`149ebcf...`). However, because Phase 1 code is behaviorally inert, Phase 1 has zero user impact. **Rollback Target for Phase 1**: The Phase 1 deployment itself (`release/phase1-lifecycle` IS the forward-fix artifact retaining `149ebcf` code + `AuthDO` + `v2` migration).
+
+
+
+---
+
+### 4.3 Phase 2: Main Code & Assets Gradual Rollout (`ETHERCALC_AUTH = "0"`) — **SUPERSEDED PENDING RE-BASELINE**
+
+> **⛔ SUPERSEDED PENDING RE-BASELINE — HAZARDOUS AS WRITTEN.** Setting `ETHERCALC_AUTH = "0"` was justified only while production had **no** passkeys or private rooms. Live production has both. Deploying Phase 2 as written would disable passkey logins and **403-lock existing private rooms for their owners**. Do **not** upload or ramp a production version with `ETHERCALC_AUTH="0"` until the cutover is redesigned.
+
+Phase 2 deploys all of `main` (updated `RoomDO`, `command-limits.ts`, `authorize.ts`, assets) with `ETHERCALC_AUTH = "0"` in `packages/worker/wrangler.toml`.
+The Phase 2 artifact is built from `main` after the command-rejection propagation PR (§8 item 5 / §9 item 6) landed. That behavioral fix ships in Phase 2; it MUST NOT be added to the deliberately inert, `149ebcf`-based Phase 1 lifecycle bundle.
+
+#### Execution Procedure & Version Preview Override (`[OPERATOR-VERIFY]`)
+
+##### Option A (Preferred / Production Path): GitHub Actions CI Workflow
+
+1. Ensure `packages/worker/wrangler.toml` `[vars]` specifies `ETHERCALC_AUTH = "0"`.
+2. Push commit to `main` (or release branch).
+3. Go to **GitHub Actions → Deploy Production → Run workflow** and type `"deploy"`.
+*Why Option A is preferred*: CI runs on a clean runner, eliminating the local `.wrangler/deploy/config.json` redirect trap entirely.
+
+##### Option B (Secondary / Emergency Local CLI Fallback Path)
+
+```bash
+# 1. MANDATORY PRECONDITION: Perform §4.0 verification check. Ensure wrangler.toml [vars] specifies ETHERCALC_AUTH = "0"
+# 2. Build production client assets
+vp run build:assets
+
+# 3. Upload Phase 2 Worker version WITHOUT deploying to production traffic (using explicit --config to bypass local redirect)
+cd packages/worker
+npx wrangler versions upload --config=wrangler.toml --env=""
+# Capture the output PHASE2_VERSION_ID (e.g. "dc8dcd28-0123-4567-89ab-cdef01234567")
+
+# 4. Smoke-test Phase 2 in production at 0% traffic using official Cloudflare header override:
+curl -fsS -H 'Cloudflare-Workers-Version-Overrides: ethercalc="<PHASE2_VERSION_ID>"' https://ethercalc.net/_auth/whoami
+# Expected: HTTP 200 OK {"uid":null,"enabled":false}
+
+# 5. Ramp traffic gradually (staged 10% -> 50% -> 100%):
+npx wrangler versions deploy <PHASE2_VERSION_ID>@10% --env=""
+# Dwell + abort: follow Decision card — Phase 2 ramp abort (immediately below), not this comment alone.
+npx wrangler versions deploy <PHASE2_VERSION_ID>@50% --env=""
+npx wrangler versions deploy <PHASE2_VERSION_ID>@100% --env=""
+
+# 6. MANDATORY EDGE CACHE PURGE:
+# Cloudflare Dashboard -> Caching -> Configuration -> Purge Everything
+```
+> **PARTIALLY AUTOMATED** — The root nightly-config test (`scripts/vite-workflow.test.ts:458-469`; root `vp run test`) protects the checked-in staging dry run, worker auth tests (`routes-auth.node.test.ts:232-251`) protect the disabled response, and `build:assets` is a preflight gate. They do not upload this version, prove the flag/config selected by Wrangler, ramp live traffic, observe analytics, or purge the edge cache; those operator actions remain load-bearing.
+
+**ROLLBACK TARGET FOR PHASE 2**: Phase 2 contains ZERO DO lifecycle changes. **Phase 2 can be rolled back to Phase 1 instantly at any time via `npx wrangler versions deploy <PHASE1_VERSION_ID>@100% --env=""`**. Because `ETHERCALC_AUTH = "0"`, no private rooms or passkeys can be created during Phase 2, making rollback completely safe and hazard-free on the private-data axis. **Snapshot serialisation:** rooms edited under Phase 2 may be re-saved with the expanded multipart envelope (`part:edit` / `part:audit`, `socialcalc:version:1.0`). That is **not** a Phase 2→1 hazard here: Phase 1 (`149ebcf` / `.worktrees/phase1-lifecycle`) already ships the **same** SocialCalc 3.1.0 `socialcalc.bundled.ts` as `main` (byte-identical). Independently, genuine SocialCalc 3.0.8 also parses those 3.1.0-written saves with cell data preserved (`packages/socialcalc-headless/test/legacy-snapshot-reverse.node.test.ts`) — defense-in-depth if an older operator artifact is ever used.
+
+
+##### Decision card — Phase 2 ramp abort (e.g. at 50%, errors climbing)
+
+**Situation:** Phase 2 is partially ramped (10% or 50%). Error rate or probe failures are climbing. Minutes to decide.
+
+**Cost of abort (read once):** Rolling a Phase-2-pinned Durable Object back to Phase 1 causes a **second** DO restart for that object — the same dropped-WebSocket and stale-tab / no-rehydrate consequences as the forward ramp (§4.5–§4.6). The abort is not free; still prefer abort over soaking a bad version.
+
+**Per-room cohort observability:** Each RoomDO is pinned to one Worker version for the life of a gradual deployment ([DO gradual deployments](https://developers.cloudflare.com/workers/versions-and-deployments/gradual-deployments/with-durable-objects/)), but **which version serves a given room id is not operator-observable** in this deployment (no `version_metadata` binding, no configured Workers Logpush `ScriptVersion` pipeline, no room→version admin API). **Do not spend incident time trying to attribute one room to 10% vs 90%.** Decide from fleet signals and §5 probes only.
+
+**Inspect → dwell → abort rule:**
+
+| Ramp step | Dwell before next step | Abort if any of these hold during dwell |
+| :-------- | :--------------------- | :-------------------------------------- |
+| `@10%` | **10 minutes** | §5 Probe 1 (`/_health`) or Probe 5 (public read/write) fails its contract on normal traffic; or version-override Probe 2 (`whoami` → `enabled:false`) fails against `PHASE2_VERSION_ID`; or Cloudflare Workers analytics shows a clear, sustained 5xx/error-rate climb on the deployment that is not explained by the known restart blip at step start |
+| `@50%` | **10 minutes** | Same abort rule |
+| `@100%` | Begin Phase 2 soak (not a short dwell); run full §5 Phase 2 probe set | Same abort rule, or any §5 Phase 2 probe hard-fail |
+
+There is **no** numbered §5.1 metric watch-list with numeric thresholds in this runbook. The minimum viable abort signal is: **hard probe failure (§5 contracts above) OR a sustained analytics error-rate climb you would not accept at 100%.** If analytics are noisy and probes are green, prefer extend-dwell over guesswork — then escalate.
+
+**Reduce 50%→10% vs all-or-nothing:** Cloudflare documents rollback from a split deployment as replacing both sides with **one** version at **100%** ([Rollbacks](https://developers.cloudflare.com/workers/versions-and-deployments/rollbacks/)). DO gradual rules guarantee monotonic **increase** of a version’s percentage without reassigning objects already on that version — not a safe “dial down” ([DO gradual deployments](https://developers.cloudflare.com/workers/versions-and-deployments/gradual-deployments/with-durable-objects/)). **Do not abort by reducing percentage (50→10).** Abort = pin Phase 1 at 100%:
+
+```bash
+cd packages/worker
+npx wrangler versions deploy <PHASE1_VERSION_ID>@100% --env=""
+cd ..
+```
+
+If `PHASE1_VERSION_ID` is missing, recover it from the Cutover log (start of §4) or §0.2 lists.
+
+**`[OPERATOR-VERIFY]`:** Before cutover, confirm on staging that `wrangler versions deploy` rejects or unsafely handles a percentage decrease if you are tempted to rely on dial-down; production abort path remains Phase 1 @ 100% only.
+
+**Post-rollback verification:** Re-run §5 Phase 2 probes **1, 4, 5, 7** against production (health, `player.js`, public read/write, WebSocket). Expect Probe 2 (`whoami`) to reflect whatever code Phase 1 serves (Phase 1 is inert / pre-auth routes — do not require Phase 2’s `enabled:false` shape). Confirm `deployments list` shows `PHASE1_VERSION_ID` @ 100%. Then stop the ramp; schedule a forward retry only after root cause.
+
+**During Phase 2 soak:** if D1 writes begin failing, check `database_size` against the §0.2.2 capacity ceiling **first**. A full D1 capacity-incident procedure is **deliberately out of scope** here — capacity exhaustion is a pre-existing operational condition, not caused by this cutover.
+
+#### 4.3.1 Mixed-Version Cross-Room Interaction During the Phase 2 Ramp
+
+Cloudflare gradual deployments pin **each Durable Object instance to one Worker version** for the life of that deployment, while the front-door Worker isolate that handles an ingress request may be a *different* version than a sibling room it later reaches ([Gradual deployments with Durable Objects](https://developers.cloudflare.com/workers/versions-and-deployments/gradual-deployments/with-durable-objects/)). EtherCalc has **one `RoomDO` per room**, so a 10% / 50% ramp means different rooms can run Phase 1 (`149ebcf` + `AuthDO`) and Phase 2 (`main`, `ETHERCALC_AUTH="0"`) code **at the same time**. Cross-room traffic is therefore the real mixed-version surface — not only the per-room WebSocket restart already covered in §4.5–§4.6.
+
+Unknown `/_do/*` paths on both trees fall through to **`501 Not implemented`** (baseline router end at the `149ebcf` `room.ts` fetch handler; HEAD `packages/worker/src/room.ts:489`) — not 404.
+
+##### Cross-room path map (verified against `packages/worker/src`)
+
+| Path | Initiator | Hop | Target `/_do/*` | Request / response contract |
+| :--- | :-------- | :-- | :-------------- | :-------------------------- |
+| **Cross-sheet formula hydration** | `RoomDO.#getSpreadsheet` → `#hydrateCrossSheetRefs` (`room.ts:2179`, `room.ts:2204-2208`; pure orchestration in `lib/cross-sheet.ts:87-126`) | **DO→DO** | sibling `GET /_do/snapshot` via `#fetchSibling` (`room.ts:2194-2201`) — no `?name=`, no `X-EC-Uid` | Body: raw SocialCalc save text. Non-200 or empty → `null`; caller skips the ref and formulas degrade to `#NAME?` (`room.ts:2157-2159`). HEAD also bounds body size via `readBoundedResponseText` (`cross-sheet.ts:45-74`, `room.ts:2200`). |
+| **WS `submitform` → `_formdata` sibling** | `handleExecute` in the source room (`lib/ws-handlers.ts:177-198`) through `ctx.siblingDo` (`room.ts:1853-1866`) | **DO→DO** | `POST /_do/commands?name=<room>_formdata` with plaintext command body | Failures swallowed (`ws-handlers.ts:193-195`). HEAD additionally gates private rooms with `allowSubmitForm` (`room.ts:1849-1851`) and may thread `X-EC-Uid`. |
+| **DELETE room → wipe `_formdata` sibling** | `RoomDO.#deleteFormdataSibling` (`room.ts:809-828`) from `#deleteAllAndUnindex` | **DO→DO** | `DELETE /_do/all?name=<sibling>` | Best-effort; errors swallowed (`room.ts:826-827`). HEAD may forward `X-EC-Uid`. |
+| **Multi-cascade rename install leg** | Source `RoomDO.#postRename` after Worker `POST /_do/rename` (`room.ts:953-995`) | **DO→DO** | target `POST /_do/install` with JSON `{ snapshot, log, audit }` (`room.ts:979-982`) | Source expects 2xx or returns `502 install failed` (`room.ts:984-985`); on success source `deleteAll`s itself and returns `201`. Install body shape is unchanged from `149ebcf`. |
+| **Template clone** | Source `RoomDO.#postClone` after Worker `POST /_do/clone` (`room.ts:1002-1030`; Worker glue `routes/assets.ts` template form) | **DO→DO** | target `PUT /_do/snapshot?name=<to>` with raw snapshot body | `201` / `502 clone failed`. |
+| **Legacy socket.io sid-host `execute` forward** | Sid-keyed `RoomDO.#handleLegacyFrame` when `attachment.room` is empty (`room.ts:1693-1709`) | **DO→DO** | real room `POST /_do/commands?name=<room>` | Best-effort; errors swallowed. |
+| **Multi-cascade rename (Worker leg)** | `POST /_/:room` when command matches multi-cascade (`routes/rooms.ts:870-967`) | **Worker→DO** then DO→DO above | (1) `GET /_do/snapshot` on TOC room; (2) after authorizing write, `POST /_do/rename` `{ to: "<subsheet>.bak" }` on namespace-guarded `<room>.<n>` | Rename failures swallowed (`rooms.ts:954-955`). HEAD defers rename until the TOC write returns 2xx; `149ebcf` issued rename *before* the write. |
+| **Multi-sheet workbook entry / export** | Worker `getWorkbookKind` (`routes/assets.ts:140-151`); multi export walks TOC (`routes/exports.ts:100-138`) | **Worker→DO** (fan-out across child rooms) | `GET /_do/workbook-kind` → `{ kind: "absent"\|"multi"\|"single" }`; multi export uses `GET /_do/csv.json` then per-child `GET /_do/sheet-data` | `workbook-kind` non-OK → `"unknown"` (no throw). Missing child sheet-data → `continue` (skip sheet). |
+| **Page / edit access probes** | `registerRoomCatchAll`, `/:room/edit`, `DELETE /_/:room` (`routes/assets.ts:349-350`, `routes/stateless.ts:82-85`, `routes/rooms.ts:638-650`) | **Worker→DO** | `GET /_do/access` → `{ isPrivate, canRead, canWrite }` | Non-OK / malformed JSON → `access = null`. **Not an authz decision:** HTML/`edit` only skip optional UX redirects (`assets.ts:351-378`, `stateless.ts:86-96`); DELETE is **fail-closed** (`access === null` → `403`, `rooms.ts:642-650`). RoomDO remains the sole authz boundary on subsequent content/command fetches (AGENTS.md decision #14). |
+| **Private room init** | `POST /_/private` and `POST /_from/:template/private` (`routes/rooms.ts:218-234`, `678-694`) | **Worker→DO** | `POST /_do/init-private` with JSON `{ snapshot, acl, group? }` | Caller requires `201`; any other status (including old DO **`501 Not implemented`**) is returned **verbatim** to the client (`rooms.ts:232-234`, `692-694`) — user-visible failure, not a soft fallback. |
+| **Ordinary room CRUD / commands / exports** | Worker route handlers via `doFetch` (`lib/do-dispatch.ts:38-57`) | **Worker→DO** | pre-existing `/_do/snapshot`, `/_do/commands`, `/_do/cells`, `/_do/html`, `/_do/csv`, `/_do/csv.json`, `/_do/md`, `/_do/xlsx`, `/_do/ods`, `/_do/fods`, `/_do/sheet-data`, `/_do/clone`, `/_do/rename`, `/_do/exists`, `/_do/all`, `/_do/log`, `/_do/ws`, … | Single-room; listed because the front-door Worker version and the target DO version can still diverge under a gradual ramp. |
+| **Cron fire** | Worker `scheduled()` (`scheduled.ts:104-114`) | **Worker→DO** | `POST /_do/fire-trigger?cell=…&room=…` | Non-OK skipped (trigger not marked fired). |
+| **`ask.recalc` (client label only)** | Native/legacy WS on the **already-attached** room socket (`room.ts:1547-1550`, `ws-handlers.ts:234+`) | **not cross-DO** | n/a — room field names a formula sheet; state is served from *this* DO’s storage | Not a room-boundary hop; included so operators do not mistake it for DO→DO. |
+
+`doFetch` is always Worker→DO (`lib/do-dispatch.ts:38-57`): it resolves `env.ROOM.idFromName(encodeRoom(room))`, appends `?name=`, strips inbound `X-EC-Uid`, and sets `X-EC-Uid` only from a verified session principal. True DO→DO calls use `env.ROOM.get(…).fetch('https://do.local/…')` directly inside `RoomDO` / `ws-handlers` and therefore pair two room versions with **no** Worker mediator.
+
+##### `/_do/*` protocol delta (`149ebcf` → HEAD)
+
+**Endpoints added on HEAD (absent on Phase 1 `RoomDO`; old code answers `501 Not implemented`):**
+
+| Endpoint | Shape | Who calls it on `main` |
+| :------- | :---- | :--------------------- |
+| `GET /_do/access` | JSON `{ isPrivate, canRead, canWrite }` (`room.ts:353-354`, `503-511`) | Worker HTML/edit/DELETE probes only. Gate-exempt. |
+| `GET /_do/workbook-kind` | JSON `{ kind: "absent"\|"multi"\|"single" }` (`room.ts:385-386`, `843-875`) | Worker default-room / Sandstorm root classifier only (`assets.ts:140-151`). |
+| `POST /_do/init-private` | JSON `{ snapshot, acl, group? }` → private access trio + optional snapshot (`room.ts:465-466`, `#postInitPrivate`) | `POST /_/private` and `POST /_from/:template/private` only. |
+
+**Endpoints removed or renamed:** none. Every `149ebcf` `/_do/*` route still exists on HEAD.
+
+**Same path, changed behaviour (public-room / Phase 2 relevant):**
+
+| Endpoint | `149ebcf` | HEAD | Mixed-version note |
+| :------- | :-------- | :--- | :----------------- |
+| `POST /_do/commands` | Always applies body and returns `202` empty | May return `413 command exceeds sheet limits` when `#appendCommand` rejects (`room.ts:699-703`); also broadcasts `execute` to WS peers after HTTP success (`room.ts:707-714`) | Old DO + new Worker: Worker sees 202 (no new ceiling). New DO + old Worker: old Worker ignored DO status and always echoed HTTP 202 — oversized writes can still be rejected inside the new DO while the old front door lies. New+new: truthful 413 (Phase 2 product behaviour). |
+| `DELETE /_do/all` | Wipes storage; no uid argument | Accepts optional `X-EC-Uid`; may preserve private access tombstone (`room.ts:752-757`, `772-775`) | Irrelevant under Phase 2 (`AUTH=0` ⇒ no private rooms created). |
+| `POST /_do/rename` / `POST /_do/clone` | `to` is non-empty string; rename target id on `149ebcf` used `idFromName(to)` **without** `encodeRoom` | `to` must pass `isValidRoomName`; both refuse `meta:access === 'private'` with `409` (`room.ts:956-965`, `1005-1018`); rename target uses `idFromName(encodeRoom(to))` (`room.ts:976-977`) | Install/clone **body** contracts unchanged. Private `409` is Phase-3-relevant only. `encodeURI` leaves `.` unchanged (`lib/room-name.ts:63-70`), so multi-sheet names like `room.1` / `room.1.bak` are **not** affected; only names `encodeURI` actually rewrites (spaces, non-ASCII, etc.) could expose a target-id mismatch if such a rename ever ran mixed-version. |
+| `POST /_do/install` | `{ snapshot: string, log: string[], audit: string[] }` → fold + replace storage | Same JSON contract; preserves any pre-existing access trio when reinstalling (`room.ts:1252-1290`) | DO→DO payload compatible both directions. |
+| `GET /_do/snapshot` (DO→DO hydration) | Full `res.text()` | `readBoundedResponseText` cap 2 MiB (`room.ts:2200`, `cross-sheet.ts:41`) | Oversize sibling save skipped ⇒ `#NAME?` on the new caller only; old caller still buffers full body. |
+| Gate on almost all `/_do/*` | No ACL gate | `#isAuthorized` unless path is gate-exempt (`room.ts:340-350`); public rooms (`access == null \| 'public'`) still allow all (`lib/authorize.ts:20`) | Under Phase 2 no room is private, so the new gate is a no-op for production data. |
+
+**Unchanged cross-room contracts (safe both directions on public rooms):** `GET/PUT /_do/snapshot`, `POST /_do/commands` success `202` empty body, `POST /_do/install` JSON, `POST /_do/clone`/`rename` public-room happy path for ASCII names, `GET /_do/sheet-data`, `GET /_do/csv.json`, export suite, `DELETE /_do/all` public wipe, `POST /_do/fire-trigger`.
+
+##### Per-path mixed-version verdict (Phase 2 = `main` @ N% with `ETHERCALC_AUTH="0"`, remainder = Phase 1 bundle)
+
+| Path | A=`main`, B=`149ebcf` | A=`149ebcf`, B=`main` | Verdict |
+| :--- | :-------------------- | :-------------------- | :------ |
+| Cross-sheet hydration (DO→DO snapshot) | New A reads old B snapshot; protocol identical; bounds only on A | Old A reads new B snapshot; protocol identical | **SAFE** — failure mode is still `#NAME?` |
+| WS `submitform` → `_formdata` | Commands text to old/new sibling; both accept `POST /_do/commands` | Same | **SAFE** (errors already best-effort) |
+| DELETE → `_formdata` wipe | Old/new sibling both implement `DELETE /_do/all` | Same | **SAFE** |
+| Cascade rename (`/_do/rename` → `/_do/install`) | Install body unchanged; public rooms only in Phase 2 | Same | **SAFE** for public multi-sheet cascade (ASCII/`encodeURI`-stable names) |
+| Template clone | `PUT /_do/snapshot` unchanged | Same | **SAFE** |
+| Legacy sid-host execute forward | `/_do/commands` exists both sides | Same | **SAFE** (best-effort) |
+| Worker multi-export / child `sheet-data` | Endpoints exist on `149ebcf` | Same | **SAFE** |
+| Worker `GET /_do/workbook-kind` | Old B returns **501** → `getWorkbookKind` returns `"unknown"` (`assets.ts:143,151`) | Old Worker never calls this endpoint | **DEGRADED (niche entry UX only).** Called only when `ETHERCALC_DEFAULT_ROOM` is set (`assets.ts:172-180`); ethercalc.net production root without that var never hits it. `"unknown"` makes `multi = false` (`assets.ts:180`), so `/` redirects to `/${room}` (single-sheet client) instead of `/=${room}`. No data path; wrong client shell at worst. Sandstorm `sheet1` fallback also skips because it keys only on `kind === "absent"` (`assets.ts:185`). |
+| Worker `GET /_do/access` | Old B returns **501** → `access = null` | Old Worker never calls `/_do/access` | **SAFE — not a security hazard.** (1) HTML/`edit` probes only omit redirect *hints* when `access` is null; they do not grant content. RoomDO still enforces ACL on `/_do/snapshot` and commands. (2) DELETE treats null as **403** (fail-closed). (3) Structurally, a Phase 1 DO cannot host `meta:access=private` at all (no `/_do/init-private`), so a 501 from this probe implies a public room by construction. Worst case is cosmetic: a private room that *did* land on a `main` DO might not get the edit/view redirect polish if some other probe failed — still not declassification. |
+| Worker `POST /_do/init-private` | New Worker hits old B → **501** returned **verbatim** to the client (`rooms.ts:232-234`, `692-694`) | Old Worker has no caller | **BROKEN if invoked against a Phase 1 DO** (user-visible create/copy failure). **Dormant in Phase 2** because `ETHERCALC_AUTH="0"` makes `getSessionPrincipal` null and both private routes return `401` before `doFetch` (`rooms.ts:201-202`, `673-675`; executive summary item 3). |
+| Worker `POST /_do/commands` sheet limits | New Worker + old DO: old DO accepts oversize (no 413) | Old Worker + new DO: DO may 413/drop while old Worker still HTTP 202 | **DEGRADED** — enforcement and client-visible 413 only when **both** front door and target room are on `main`. Matches the already-documented product ceiling (§4.6 rows 3–5); ramp merely delays uniform enforcement. |
+
+##### Overall verdict
+
+**DEGRADED (not BROKEN) for the Phase 2 production ramp on public rooms.** Phase 2→Phase 3 ordering is a **correctness requirement**, not only soak/rollback discipline:
+
+1. Every **DO→DO** payload used in production public flows (`/_do/snapshot`, `/_do/commands`, `/_do/install`, `/_do/all`) is forwards- and backwards-compatible between `149ebcf` and `main`.
+2. `GET /_do/access` **501** during a split is **not** a security hazard: callers either skip UX redirects only (`assets.ts:351-378`, `stateless.ts:86-96`) or fail closed (`rooms.ts:642-650`), and RoomDO remains the sole authz boundary. A Phase 1 DO also cannot be private (no `init-private`), so the 501 case is public-by-construction.
+3. `GET /_do/workbook-kind` **501** soft-falls to `"unknown"` and, only on hosts with `ETHERCALC_DEFAULT_ROOM`, may open the single-sheet client for a multi TOC — entry UX only (`assets.ts:143,180`).
+4. `POST /_do/init-private` is **not** soft-fallback: a `main` Worker that reached a still-Phase-1 target DO would surface **501** to the user (`rooms.ts:232-234`, `692-694`). Phase 2 keeps those routes unreachable (`401` before dispatch under `AUTH=0`). Enabling `ETHERCALC_AUTH="1"` while any room fraction remains on Phase 1 makes private-room **create/copy BROKEN** for ids pinned to the old version. That is an independent correctness reason to hold Phase 3 until Phase 2 is at 100%, stacked on the original rollback-safety reason (no private rooms during the major-code soak).
+5. Remaining user-visible asymmetry during a pure Phase 2 ramp is limited to **sheet-limit enforcement** (and the niche default-room workbook classifier), not to cross-sheet reads, formdata siblings, multi-sheet cascade rename, exports, or authorization.
+
+**Operational mitigation:**
+
+- **Mandatory (correctness + rollback):** Do **not** start Phase 3 (`ETHERCALC_AUTH="1"`) until Phase 2 is at **100%** and soaked. Two independent justifications: (a) rollback safety — no private rooms while major code soaks (§4.3); (b) mixed-version correctness — `POST /_do/init-private` against a Phase 1 DO returns **501** verbatim, so private create/copy is user-visibly broken for any room still pinned old (§4.3.1). A future maintainer MUST NOT relax the 100% gate on either ground alone. This is §9 item 9.
+- **Optional (not a Go/No-Go blocker for Phase 2 itself):** After the Phase 2 version-override smoke (`Cloudflare-Workers-Version-Overrides` whoami probe in §4.3) passes, prefer a **short** 10% observation window and then advance 10% → 50% → 100% without multi-hour soaks at partial percentages — or jump 10% → 100% if multi-sheet / large-paste traffic is active and uniform 413 signalling matters more than blast-radius staging. Partial percentages remain acceptable for public-room data integrity: they do not corrupt cross-room state under `AUTH=0`.
+
+
+---
+
+### 4.4 Phase 3: Enable Passkeys (`ETHERCALC_AUTH = "1"`) — **SUPERSEDED PENDING RE-BASELINE**
+
+> **SUPERSEDED PENDING RE-BASELINE.** Passkeys are already enabled in production (`GET /_auth/whoami` → `enabled:true`). Phase 3 as a green-field “turn auth on” step does not apply; any future cutover must treat auth-on as the **steady state** to preserve, not a post-soak flip.
+
+After Phase 2 has soaked and verified stable in production, Phase 3 enables passkey authentication by flipping `ETHERCALC_AUTH = "1"` in `packages/worker/wrangler.toml`:
+
+##### Option A (Preferred / Production Path): GitHub Actions CI Workflow
+
+1. Flip `ETHERCALC_AUTH = "1"` in `packages/worker/wrangler.toml` `[vars]`.
+2. Commit and push to `main`.
+3. Run **GitHub Actions → Deploy Production → Run workflow**.
+
+##### Option B (Secondary / Emergency Local CLI Fallback Path)
+
+```bash
+# 1. Set ETHERCALC_AUTH = "1" in wrangler.toml [vars]
+# 2. Deploy Phase 3 to 100% traffic using explicit --config to bypass local redirect
+cd packages/worker
+npx wrangler deploy --config=wrangler.toml --env=""
+cd ..
+# Capture returned PHASE3_VERSION_ID → Cutover log (start of §4)
+```
+**ROLLBACK TARGET FOR PHASE 3**: Phase 3 can be rolled back to Phase 2 via `npx wrangler versions deploy <PHASE2_VERSION_ID>@100% --env=""`. The private-room Point of No Return lives HERE in Phase 3, after all major code changes have already soaked cleanly in Phase 2. Record `PHASE3_VERSION_ID` in the Cutover log (start of §4) before soak continues — required for clean re-enable after a lockout rollback (§6.2).
+
+---
+
