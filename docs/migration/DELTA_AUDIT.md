@@ -19,15 +19,16 @@
 > only `wrangler deployments list` settles the exact SHA. Item
 > classifications (Executive Summary **a)**–**k)** and matching Step 2
 > Rescope blocks) were verified against tree **`35e3f71`** (the branch
-> tip when the 2026-08-10 correction landed). Current branch tip is
-> **`a4b5acf`**; `git diff --stat 35e3f71..HEAD -- packages/` is
-> **not** empty (search-indexing `robots.ts` restore + tests only —
-> `c789249` / related). That packages delta does **not** change the
-> **a)**–**k)** already-deployed / still-in-delta verdicts below; it is
-> an additional still-in-delta ship item recorded in the runbook, not a
-> re-open of passkey/`AuthDO`/ACL/SocialCalc engine scope. Later
-> commits after `35e3f71` are otherwise documentation-only on this
-> branch except that robots restore.
+> tip when the 2026-08-10 correction landed). Pre-edit source tip used
+> for the packages spot-check is **`a4b5acf`**:
+> `git diff --stat 35e3f71..a4b5acf -- packages/` is **not** empty
+> (search-indexing `robots.ts` restore + tests only — `c789249` /
+> related). That packages delta does **not** change the **a)**–**k)**
+> already-deployed / still-in-delta verdicts below; it is an additional
+> still-in-delta ship item recorded in the runbook, not a re-open of
+> passkey/`AuthDO`/ACL/SocialCalc engine scope. Commits after `a4b5acf`
+> on this branch are documentation-only (this file and the runbook);
+> do not re-pin the Status block to each successive docs commit SHA.
 >
 > Historical audit findings written against `149ebcf` are **kept** and
 > marked **Superseded** where the real baseline changes the verdict.
@@ -660,6 +661,13 @@ vp run: 0/2 cache hit (0%).
   ```
   `packages/worker/src/lib/authorize.ts` did not exist at tag `149ebcf`. Old `RoomDO` code at `149ebcf` read only `snapshot`, `log:`, `chat:`, and `audit:` keys from DO storage (`git show 149ebcf:packages/worker/src/room.ts`), without checking `meta:access` or `meta:acl`. Thus, rolling back to `149ebcf` strips access control on private rooms, rendering them publicly readable and writable.
 
+  **Superseded for this cutover (historical audit finding):** the live
+  production floor is `d2afa90`, which already has `authorize.ts` and
+  ACL enforcement; supported rollback is to `CURRENT_PROD_VERSION_ID`
+  inside `[d2afa90, b7d8840)`, **not** to `149ebcf`. Deep pre-passkey
+  rollback remains theoretically hazardous but is outside this upgrade’s
+  supported floor — see Executive Summary **b)** and §3.2.
+
 ---
 
 ## Oversized legacy sheet exposure
@@ -832,20 +840,25 @@ We added an integration test to `packages/worker/test/room.test.ts` (lines 356�
 
 ---
 
-## What remains to ship (`d2afa90..HEAD`)
+## What remains to ship (`d2afa90` → classification target `35e3f71`)
 
-Operator-facing inventory of the **real** remaining delta. Commands
-(documentation-time, branch tip `35e3f71` / correction commits on top):
+Operator-facing inventory of the **real** remaining delta as classified
+against tree **`35e3f71`** (see Status header). Inventory commands
+(documentation-time; re-run against current tip if needed):
 
 ```bash
-git log --oneline d2afa90..HEAD -- packages/ scripts/ static/
-git diff --stat d2afa90..HEAD -- packages/ scripts/ static/
+git log --oneline d2afa90..35e3f71 -- packages/ scripts/ static/
+git diff --stat d2afa90..35e3f71 -- packages/ scripts/ static/
 ```
 
 **Caveat:** `d2afa90` is the conservative floor (earliest possible
 production revision). If production is later pinned to a commit after
 `d2afa90` inside `[d2afa90, b7d8840)`, some rows below are already live.
-Only `wrangler deployments list` settles the exact SHA.
+Only `wrangler deployments list` settles the exact SHA. **Post-`35e3f71`
+packages note:** through pre-edit tip `a4b5acf`, `c789249` restored
+search-indexing `robots.ts` (+ tests); that is an additional
+still-in-delta ship item per `PROD_UPGRADE_PLAN.md` (§8 / §10), not a
+change to **a)**–**k)** already-deployed verdicts.
 
 ### Totals
 
