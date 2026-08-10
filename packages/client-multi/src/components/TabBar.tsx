@@ -13,7 +13,7 @@ export interface TabBarProps {
   readonly suffix: string;
   readonly index: string;
   readonly onChange: (idx: number) => void;
-  readonly onRename?: (idx: number) => void;
+  readonly onRename?: ((idx: number) => void) | undefined;
   readonly firstFocusUsed: boolean;
   readonly onFirstFocus: () => void;
 }

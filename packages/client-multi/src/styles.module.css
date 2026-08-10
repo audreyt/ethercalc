@@ -156,3 +156,31 @@
   color: inherit;
   cursor: pointer;
 }
+/* Responsive adjustments for narrow viewports / Sandstorm iframe grains (issue #843 item 1) */
+@media (max-width: 680px) {
+  .tabList {
+    right: 150px;
+  }
+  .buttons {
+    width: 150px;
+  }
+  .buttons button {
+    font-size: 12px;
+    padding: 0 4px;
+    margin-left: 1px;
+  }
+}
+
+@media (max-width: 400px) {
+  .tabList {
+    right: 110px;
+  }
+  .buttons {
+    width: 110px;
+  }
+  .buttons button {
+    font-size: 11px;
+    padding: 0 2px;
+    margin-left: 1px;
+  }
+}
