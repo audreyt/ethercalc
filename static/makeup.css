@@ -350,3 +350,50 @@ SocialCalc-clipboardtext {
 .te_download tr:nth-child(2) td:nth-child(1):hover {
     border: none;
 }
+
+/* ---- Responsive editor (issue #843 item 1) ----------------------------
+   Landing already has @media rules (static/start.css); the SocialCalc
+   editor theme did not. Keep selectors unchanged — only override fixed
+   values that overflow narrow viewports / Sandstorm grain iframes. */
+@media (max-width: 680px) {
+    /* Desktop left gutter wastes scarce width in grains / phones. */
+    #tableeditor {
+        margin: 0 0 10px 0;
+    }
+
+    /* Fixed 40px toolbar height clips when icon rows wrap. */
+    #tableeditor > div:nth-child(1) > div:nth-child(1) > div:nth-child(2):not(.ec-socialcalc-tabbar),
+    #tableeditor > div:nth-child(1) > div:nth-child(1) > .ec-socialcalc-toolbar {
+        height: auto !important;
+        min-height: 40px;
+    }
+
+    /* Formula bar was hard-coded to 500px and overflowed <~520px viewports. */
+    #tableeditor > div:nth-child(1) > div:nth-child(2) {
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+
+    #tableeditor > div:nth-child(1) > div:nth-child(2) > input {
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+}
+
+@media (max-width: 400px) {
+    /* Further tighten horizontal chrome on very small grains. */
+    #tableeditor {
+        margin: 0 0 8px 0;
+    }
+
+    #tableeditor > div:nth-child(1) > div:nth-child(1) > div:nth-child(2):not(.ec-socialcalc-tabbar),
+    #tableeditor > div:nth-child(1) > div:nth-child(1) > .ec-socialcalc-toolbar {
+        padding: 6px 0 !important;
+    }
+
+    #SocialCalc-edittools {
+        margin: 0 0 4px 0;
+    }
+}
+

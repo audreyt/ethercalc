@@ -225,7 +225,17 @@ function get_id(file, checked) {
 		// to ./_/ (no id). Both fall back to a random name.
 		if (id !== null) {
 			id = id.trim().toLowerCase().replace(/\s/g, "_");
-			if (id) return id;
+			if (id) {
+				// Named import can wipe an existing room: PUT /_/:room is a
+				// destructive replace (API.md). Confirm before any putSheet.
+				// Do not probe GET /_exists/:room — it is gated by
+				// shouldDisableRoomIndex and 403s on default self-host.
+				// Cancel aborts this file only (no silent random id).
+				if (!confirm('A spreadsheet named "' + id + '" will be completely replaced if it already exists. Continue?')) {
+					return null;
+				}
+				return id;
+			}
 		}
 	}
 	return newId(10, 36).toLowerCase();
@@ -237,11 +247,15 @@ function importFiles(files) {
 	if (!files || !files.length) return;
 	dropRegion.classList.remove('ec-drop--error');
 	setBusy(true);
+	var started = 0;
 	for (let i = 0; i != files.length; ++i) {
 		const f = files[i];
 		const reader = new FileReader();
 		const name = f.name;
 		const id = get_id(name, renameSheetCheckbox.checked);
+		// null = user cancelled the named-import overwrite confirm.
+		if (id === null) continue;
+		started++;
 		reader.onload = function(e) {
 			// rABS path yields a binary string; the fallback yields an
 			// ArrayBuffer. ZIP workbooks go directly to SheetJS: decoding a
@@ -271,6 +285,7 @@ function importFiles(files) {
 			reader.readAsArrayBuffer(f);
 		}
 	}
+	if (!started) setBusy(false);
 }
 
 function handleDrop(e) {
