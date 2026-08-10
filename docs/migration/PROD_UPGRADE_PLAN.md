@@ -306,7 +306,14 @@ D1 and Durable Object PITR supply complementary halves of broad recovery: the D1
 
 This is intentionally a **sequential, per-room** procedure. Its throughput and request rate are limited by the delay, retry, and concurrency controls the operator puts into an incident script; EtherCalc supplies none. PITR rewinds the entire RoomDO SQLite database to the selected timestamp, including later key-value state, so it cannot selectively remove one bad SocialCalc command while retaining later good commands.
 
-**Enumeration limitations and tooling gap:** No bulk-PITR script or CLI exists under `packages/cli/`, `scripts/`, or `bin/`; only the single-room HTTP endpoint exists. An operator facing a broad incident must write and peer-review the enumeration/restore driver under pressure unless one is prepared in advance. In addition, the D1 `rooms` table is not a complete namespace inventory: private rooms are deliberately omitted (`packages/worker/src/room.ts:2266-2272`), and `_formdata` sibling rooms are filtered from the public index (`packages/worker/src/lib/formdata-sibling.ts:13-19`). The D1-driven procedure therefore covers indexed rooms only. Known private or form-data room names require a separately maintained inventory and the same per-room restore call; Cloudflare provides no API to enumerate every Durable Object instance.
+**Headline Enumeration Gap & Operational Severity:** The D1 `rooms` index is **NOT** a complete namespace inventory:
+
+1. **Private Room Write-Time Exclusion**: Tracing `POST /_/private` -> `/_do/init-private` (`packages/worker/src/room.ts:1310-1386`) shows that private room creation sets `STORAGE_KEYS.metaAccess = 'private'` directly in DO storage without calling `#mirrorIndex`. Furthermore, every subsequent write routes through `RoomDO.#mirrorIndex` (`packages/worker/src/room.ts:2266-2273`), which explicitly checks `const { access } = await this.#getAccessMeta(); if (access === 'private') return;` and returns before calling `mirrorRoomToD1`. In addition, `#postTouch` (`packages/worker/src/room.ts:620-622`) checks `access === 'private'` and calls `#deleteIndex` (`DELETE FROM rooms WHERE room = ?1`). Private rooms are **structurally excluded from D1 at write time**. They do NOT exist in the `rooms` table, nor in `GET /_rooms` or `GET /_roomtimes`.
+2. **Form-Data Sibling Exclusion**: Rooms ending in `_formdata` (internal submitform storage) are filtered out of public listings by `isPublicRoomIndexEntry` (`packages/worker/src/lib/formdata-sibling.ts:18-19`).
+
+**Consequence for Incident Recovery**: The D1-driven mass recovery procedure above discovers and restores **only public indexed rooms**. Content in private rooms (which hold sensitive user-authenticated data) has **no platform enumeration source in D1**. If a broad incident corrupts private rooms, D1 query iteration will NOT find them. Restoring private rooms requires an out-of-band inventory of private room names (e.g. from edge access logs or application audit trails) and submitting per-room `POST /_/:room/pitr-restore` calls for each known private room name. Cloudflare provides no namespace-wide API to iterate Durable Object instances.
+
+**Tooling Gap Summary**: No bulk-PITR script or CLI exists under `packages/cli/`, `scripts/`, or `bin/`; only the single-room HTTP endpoint exists. An operator facing a broad incident must write and peer-review the enumeration/restore driver under pressure unless one is prepared in advance.
 
 ---
 
@@ -1022,6 +1029,10 @@ The following five items have been evaluated and categorized:
    - **Cutover Blocker Decision**: **LANDED & VERIFIED (BLOCKING PRE-CUTOVER FIX)**. The rejection is a no-op rather than data corruption, which limits the damage, but this upgrade changes an over-limit request from an applied write with a truthful 202 into a rejected write with a false 202. API clients have no error signal and may record work as accepted. The correction is localized and already has a route precedent, so accepting that brand-new silent-failure contract to avoid a small pre-cutover PR was not justified. Implemented and verified in `main` so API callers receive explicit rejection signaling (e.g. 413 with `command exceeds sheet limits`).
    - **Phase Placement**: Landed on `main` and ships in the Phase 2 bundle. It MUST NOT be folded into Phase 1: §4.2 defines Phase 1 as the behaviorally inert lifecycle-only bundle based on `149ebcf`, while §4.3 is the rollout of `main` and its behavioral changes.
 
+6. **Bulk PITR Automation and Private Room Inventory Tooling Gap**
+   - **Specification**: Build operator CLI tooling (e.g. under `packages/cli/` or `scripts/`) to automate mass PITR iteration over candidate rooms from D1, and maintain an authenticated audit stream of private room creations (`POST /_/private`) to enable private room discovery.
+   - **Cutover Blocker Decision**: **NON-BLOCKING FOLLOW-UP GAP**. Single-room PITR endpoint (`POST /_/:room/pitr-restore`) is fully functional. Operators facing mass incidents on public rooms can execute manual loops or write one-off scripts using `npx wrangler d1 execute` and `curl`. Private room recovery during an incident relies on edge access/audit log recovery of room names.
+
 ---
 
 ## §9 Go / No-Go Checklist
@@ -1050,3 +1061,4 @@ The following user-visible behavior changes take effect upon completing the upgr
 4. **Form/App-Mode Tab Hydration**: Browser tabs in form/app mode open across cutover must perform a page reload (`packages/client/src/boot.ts:384-390`).
 5. **Passkey Accounts & Private Sheets**: Passkeys and private room creation become available after Phase 3 (`packages/worker/src/routes/auth.ts:133-137`).
 6. **WebSocket Message Rate Limits**: Exceeding 1500 messages per 10-second window closes the WebSocket with 1008 (`packages/worker/src/room.ts:1887-1890`).
+7. **Private Room Exclusion from D1 & Operational Recovery Limit**: Private rooms (`meta:access === 'private'`) are write-time excluded from the D1 `rooms` index (`packages/worker/src/room.ts:2270-2271`). They are invisible to `GET /_rooms`, `GET /_roomtimes`, and direct D1 SQL queries (`SELECT room FROM rooms`). In the event of a broad incident, D1-driven mass PITR recovery covers only public indexed rooms; recovering corrupted private rooms requires an out-of-band inventory of private room names (e.g. from edge access or audit logs).
