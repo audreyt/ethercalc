@@ -831,6 +831,31 @@ Execute the following verification checklist against `https://ethercalc-staging.
 
 > **Status (2026-08-10):** **live hosted cutover procedure.** Derived from repo evidence against the live-probe bounds in the STOP banner. **Blocking before upload:** record `CURRENT_PROD_VERSION_ID` from `wrangler deployments list` / `versions list`, and rehearse this single-ramp shape on staging. This section supersedes the three-phase sequence preserved in Appendix A (old §4.2–§4.4 / old rollback graph / old three-phase Go/No-Go). Appendix A is retained for analysis only — do **not** execute it.
 
+### 4.0 Deploy-Configuration Source of Truth & Operator Verification Guard
+
+**Configuration Source of Truth:**  
+In production CI (`.github/workflows/deploy-production.yml`), deploys execute on a fresh checkout where `.wrangler/` and `dist/` are gitignored and absent. Wrangler reads `packages/worker/wrangler.toml` directly and uploads curated static assets from repo-root `assets/`.
+
+**Local Operator Workspace Artifact Risk:**  
+If an operator runs root `vp build` (or Vite `build` targeting `vite.config.mts`) locally prior to deployment, Vite's `@cloudflare/vite-plugin` generates `packages/worker/dist/ethercalc/wrangler.json` and writes a Wrangler redirect file at `packages/worker/.wrangler/deploy/config.json`.
+- When `.wrangler/deploy/config.json` exists, Wrangler redirects configuration lookup to `dist/ethercalc/wrangler.json` instead of `wrangler.toml`.
+- **Field-by-Field Discrepancies in Generated `dist/ethercalc/wrangler.json`:**
+  1. **`compatibility_date`**: `wrangler.toml` specifies `2026-07-21`; `wrangler.json` changes this to `2024-11-12`.
+  2. **`rules`**: `wrangler.toml` defines a `Text` rule for `**/SocialCalc.js`; `wrangler.json` replaces it with an `ESModule` rule for `**/*.js`, `**/*.mjs`.
+  3. **`main`**: `wrangler.toml` points to `"src/index.ts"`; `wrangler.json` points to pre-bundled `"index.js"`.
+  4. **`assets.run_worker_first`**: `wrangler.toml` sets `run_worker_first = true`; `wrangler.json` **omits `run_worker_first` entirely**, altering route precedence.
+  5. **`assets.directory`**: `wrangler.toml` points to `../../assets` (repo-root curated assets); `wrangler.json` points to `../client` (`packages/worker/dist/client`), which lacks 5 static JS files (`static/index-bootstrap.js`, `static/index-l10n.js`, `static/panels.js`, `static/start-bootstrap.js`, `static/start-page.js`) and contains stale asset hashes.
+  6. **`[env.staging]` Overlay**: `wrangler.toml` defines the staging environment (`ethercalc_rooms_staging`, `ethercalc-staging.audreyt.workers.dev`); `wrangler.json` **drops `[env.staging]` entirely**, causing `wrangler deploy --env staging` to target production database and RP ID if run under the redirect.
+  7. **Stale `[vars]` Risk**: Edits made to `packages/worker/wrangler.toml` during Phase 2/3 (such as toggling `ETHERCALC_AUTH = "0"`) will NOT take effect if Wrangler reads a stale `dist/ethercalc/wrangler.json` generated prior to the edit.
+
+**Operator Positive Verification Step (Before Every Deploy):**  
+Before running `vp exec wrangler deploy --env=""` or `npx wrangler deploy` in `packages/worker`, the operator MUST verify configuration resolution:
+1. Confirm that `wrangler deploy --dry-run` output does **NOT** display the line:  
+   `Using redirected Wrangler configuration.`
+2. If a redirect exists locally, ALWAYS pass `--config wrangler.toml` explicitly (e.g. `npx wrangler deploy --config wrangler.toml --env=""`) to force Wrangler to read `wrangler.toml` directly and upload from `assets/`.
+3. For staging deploys, ALWAYS pass `--config wrangler.toml --env staging` (e.g. `npx wrangler deploy --config wrangler.toml --env staging`) so Wrangler reads `wrangler.toml` directly and applies `[env.staging]` overlay bindings.
+> **PARTIALLY AUTOMATED** — Root test `nightly staging validation bypasses the generated production config` (`scripts/vite-workflow.test.ts:458-469`; root `vp run test`) guarantees the checked-in nightly staging gate uses explicit source config. It does not inspect an operator workspace, production workflow command, or ad hoc deploy, so the redirect-banner check above still protects the artifact actually being uploaded.
+
 ### 4.1 Derivation checks (repo-verified)
 
 | # | Claim | Verdict | Evidence |
@@ -1058,31 +1083,6 @@ Keep one operator log (ticket, notepad, or file). Fill each row when the step th
 | `PHASE3_VERSION_ID` | Immediately after Phase 3 deploy succeeds (§4.4) | Version ID printed by `wrangler deploy` / CI deploy log | `npx wrangler versions list` / `npx wrangler deployments list` (§0.2) — active 100% version with auth on |
 
 `PHASE1_VERSION_ID` is required for any Phase 2 → Phase 1 rollback. `PHASE2_VERSION_ID` is required for Phase 3 → Phase 2. `PHASE3_VERSION_ID` is required to re-enable auth after a Phase 3 → Phase 2 lockout rollback without rebuilding (§6.2).
-
-### 4.0 Deploy-Configuration Source of Truth & Operator Verification Guard
-
-**Configuration Source of Truth:**  
-In production CI (`.github/workflows/deploy-production.yml`), deploys execute on a fresh checkout where `.wrangler/` and `dist/` are gitignored and absent. Wrangler reads `packages/worker/wrangler.toml` directly and uploads curated static assets from repo-root `assets/`.
-
-**Local Operator Workspace Artifact Risk:**  
-If an operator runs root `vp build` (or Vite `build` targeting `vite.config.mts`) locally prior to deployment, Vite's `@cloudflare/vite-plugin` generates `packages/worker/dist/ethercalc/wrangler.json` and writes a Wrangler redirect file at `packages/worker/.wrangler/deploy/config.json`.
-- When `.wrangler/deploy/config.json` exists, Wrangler redirects configuration lookup to `dist/ethercalc/wrangler.json` instead of `wrangler.toml`.
-- **Field-by-Field Discrepancies in Generated `dist/ethercalc/wrangler.json`:**
-  1. **`compatibility_date`**: `wrangler.toml` specifies `2026-07-21`; `wrangler.json` changes this to `2024-11-12`.
-  2. **`rules`**: `wrangler.toml` defines a `Text` rule for `**/SocialCalc.js`; `wrangler.json` replaces it with an `ESModule` rule for `**/*.js`, `**/*.mjs`.
-  3. **`main`**: `wrangler.toml` points to `"src/index.ts"`; `wrangler.json` points to pre-bundled `"index.js"`.
-  4. **`assets.run_worker_first`**: `wrangler.toml` sets `run_worker_first = true`; `wrangler.json` **omits `run_worker_first` entirely**, altering route precedence.
-  5. **`assets.directory`**: `wrangler.toml` points to `../../assets` (repo-root curated assets); `wrangler.json` points to `../client` (`packages/worker/dist/client`), which lacks 5 static JS files (`static/index-bootstrap.js`, `static/index-l10n.js`, `static/panels.js`, `static/start-bootstrap.js`, `static/start-page.js`) and contains stale asset hashes.
-  6. **`[env.staging]` Overlay**: `wrangler.toml` defines the staging environment (`ethercalc_rooms_staging`, `ethercalc-staging.audreyt.workers.dev`); `wrangler.json` **drops `[env.staging]` entirely**, causing `wrangler deploy --env staging` to target production database and RP ID if run under the redirect.
-  7. **Stale `[vars]` Risk**: Edits made to `packages/worker/wrangler.toml` during Phase 2/3 (such as toggling `ETHERCALC_AUTH = "0"`) will NOT take effect if Wrangler reads a stale `dist/ethercalc/wrangler.json` generated prior to the edit.
-
-**Operator Positive Verification Step (Before Every Deploy):**  
-Before running `vp exec wrangler deploy --env=""` or `npx wrangler deploy` in `packages/worker`, the operator MUST verify configuration resolution:
-1. Confirm that `wrangler deploy --dry-run` output does **NOT** display the line:  
-   `Using redirected Wrangler configuration.`
-2. If a redirect exists locally, ALWAYS pass `--config wrangler.toml` explicitly (e.g. `npx wrangler deploy --config wrangler.toml --env=""`) to force Wrangler to read `wrangler.toml` directly and upload from `assets/`.
-3. For staging deploys, ALWAYS pass `--config wrangler.toml --env staging` (e.g. `npx wrangler deploy --config wrangler.toml --env staging`) so Wrangler reads `wrangler.toml` directly and applies `[env.staging]` overlay bindings.
-> **PARTIALLY AUTOMATED** — Root test `nightly staging validation bypasses the generated production config` (`scripts/vite-workflow.test.ts:458-469`; root `vp run test`) guarantees the checked-in nightly staging gate uses explicit source config. It does not inspect an operator workspace, production workflow command, or ad hoc deploy, so the redirect-banner check above still protects the artifact actually being uploaded.
 
 ### 4.1 Step 1: Pre-Deploy D1 Database Migrations
 
