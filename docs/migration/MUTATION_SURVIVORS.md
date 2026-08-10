@@ -65,7 +65,7 @@ So: **the gate enforces total score ≥ 90**. CI's 90.61 and the local ratchet's
 | Margin above `break: 90` | **+0.61 pp** |
 | Avg tests per mutant | 7.59 |
 | Config invoked | same `packages/worker/stryker.conf.json` via `vp exec stryker run` (mutate globs, `inPlace`, `coverageAnalysis: perTest`, `concurrency: 4`, `timeoutMS: 120000`, `break: 90`) |
-| `socialcalc-308` alias | Present on this head as a **devDependency of `@ethercalc/socialcalc-headless` only**. Worker mutation does not load that package; it is **not** a cause of the score gap. |
+| `socialcalc-308` alias | Declared only as a **devDependency of `@ethercalc/socialcalc-headless`**, and referenced only from `packages/socialcalc-headless/test/legacy-snapshot-reverse.node.test.ts`. Worker **does** depend on and load `@ethercalc/socialcalc-headless` (e.g. `src/lib/xlsx-import.ts`, `src/room.ts`, and `test/xlsx-import.node.test.ts` under worker's `test/**/*.node.test.ts` selection), but production headless code uses the checked-in `src/socialcalc.bundled.ts` built from primary `socialcalc@3.1.0`. Worker mutation never selects the headless reverse-compat test that resolves `socialcalc-308`, so the alias is **not** a cause of the score gap. |
 
 ### Why local 90.03 and CI 90.61 disagree
 
@@ -77,13 +77,17 @@ So: **the gate enforces total score ≥ 90**. CI's 90.61 and the local ratchet's
 | NoCoverage | 0 |
 | Denominator | **+5** (6146 vs 6141) |
 | Total score | **+0.58 pp** |
+| Local `RuntimeError` (excluded from score) | 5 |
+| CI clear-text `# errors` | 0 |
 
-**Cause (verified, not assumed):**
+**What is verified:**
 
 1. **Same harness, same formula.** Local `ratchet-verify.sh` and CI `mutation-gate` both run package `mutation` → Stryker with this `stryker.conf.json`. Both gate/compare **total** `mutationScore` = `(Killed+Timeout)/(Killed+Timeout+Survived+NoCoverage)`. Covered score is not the gate.
 2. **Same mutate file set between the two tips.** No mutate-scope path differs from `327fa3d` to `09673a4`. Selection logic is not inventing extra packages; only `worker` ran in CI.
-3. **Run-to-run status noise, dominated by Timeout ↔ Killed/Survived flapping.** Stryker's `Timeout` is wall-clock-sensitive (machine load, scheduling). The package's own `docs/MUTATION_REPORT.md` already records this: a single mutant flipping Timeout/Killed/Survived moves aggregate score by ~1/N. Here ~35 mutants flipped out of Survived into Killed and +5 into Timeout, with a +5 valid-mutant denominator drift (likely ignored/runtime-error boundary or non-deterministic mutant generation under `inPlace` + load — CI reported 0 errors; local JSON had 5 `RuntimeError` excluded from the score).
-4. **Not a different threshold, not covered-vs-total confusion, not the reverse-compat alias.** CI clear-text printed both 90.61 total and 91.24 covered; exit used total (90.61 ≥ 90).
+3. **Aggregate status counts differ; per-mutant transitions are not recoverable.** Without a retained CI `mutation.json`, individual mutant ID transitions (which survivors became kills, which became timeouts, what absorbed the +5 denominator) cannot be proven. The retained evidence is only the two aggregate tables above plus local's 5 `RuntimeError` vs CI's 0 errors.
+4. **Not a different threshold, not covered-vs-total confusion, not the `socialcalc-308` reverse-compat alias** (see table row above). CI clear-text printed both 90.61 total and 91.24 covered; exit used total (90.61 ≥ 90).
+
+**Limit of the evidence:** the honest cause label is **environment-dependent mutant status classification** between the two runs (local M-series vs CI ubuntu, load, scheduling, Stryker `Timeout` wall-clock). That is enough to explain why the same contract produced two totals 0.58 pp apart; it is **not** enough to claim a specific flapping mechanism or non-deterministic mutant generation. `docs/MUTATION_REPORT.md` already notes that Timeout-class outcomes are machine-sensitive at ~1/N pp per mutant — useful context, not a reconstruction of this delta.
 
 **Operational reading:** the two harnesses measure the **same contract**, but they are **not a faithful score-predictor of each other to 0.01 pp**. Local 90.03 is a real, scarier sample; CI 90.61 is the sample that cleared `mutation-gate` on this PR. Treat local ratchet as a **regression smoke** (will it clear 90?) and CI as the **enforced** number — do not cite only the scarier local margin as "what CI thinks."
 
