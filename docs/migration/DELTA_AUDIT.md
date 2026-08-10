@@ -79,6 +79,24 @@ body and marked superseded where the real baseline changes the verdict.
   1. `wrangler deployments list --env=""` via Cloudflare API.
   2. Querying `https://ethercalc.net/_health` (currently returns `{"status":"ok","version":"0.0.0"}` because `version` is hardcoded `'0.0.0'` in `packages/worker/src/handlers/health.ts:15`, so HTTP probes cannot settle the SHA).
 
+### 1.4 Corrected production baseline (2026-08-10)
+
+Sections 1.1–1.3 record the **original** audit premise (latest git tag =
+production). That premise is **false** for live `ethercalc.net`.
+
+* **Corrected candidate range:** `[d2afa90, b7d8840)` —
+  `d2afa90` = `Merge feat/passkey-permissions (#841)` (2026-07-18);
+  `b7d8840` = `security: harden EtherCalc trust boundaries` (2026-08-04),
+  exclusive upper bound because extracted page scripts are not live.
+* **Conservative comparison used below:** `d2afa90..HEAD` (upper bound
+  on remaining work).
+* **Live evidence (read-only):** whoami `enabled:true`; root serves
+  passkey UI + inline scripts + `manifest.appcache`;
+  `/static/index-bootstrap.js` → 404. Full probe log: runbook STOP
+  banner / live-evidence section.
+* **Still UNKNOWN until operator runs it:** exact production Worker
+  version ID / git SHA via `wrangler deployments list`.
+
 ---
 
 ## Step 2: Detailed Delta Enumeration
@@ -437,6 +455,30 @@ body and marked superseded where the real baseline changes the verdict.
    * *Irreversibility:* Passkey credentials bound to `ETHERCALC_RP_ID` ("ethercalc.net") cannot be used under a different RP ID.
    * *Mitigation:* Ensure `ETHERCALC_RP_ID` and `ETHERCALC_ORIGIN` are pinned in `wrangler.toml` `[vars]` prior to initial deploy.
 
+### 3.2 Rescope note on irreversibility (2026-08-10)
+
+The three bullets above retain the original `149ebcf`-baseline analysis
+so the runbook’s older wording stays explainable. Against **real**
+production they change as follows:
+
+1. **Private-room declassify on rollback — superseded for this cutover.**
+   Production already runs ACL-aware code (`authorize.ts` present at
+   `d2afa90` and unchanged through `HEAD`). Rolling back to the current
+   production version (or any revision in `[d2afa90, b7d8840)`) does
+   **not** strip access checks. The deep pre-passkey rollback path
+   remains theoretically hazardous but is **outside** the supported
+   rollback floor for this upgrade (runbook §C.4). Prefer version
+   rollback + edge purge; do not use `ETHERCALC_AUTH=0` as a soak.
+2. **`v2` / AuthDO class migration — already applied.** No new DO class
+   registration remains in `d2afa90..HEAD`. Orphan-AuthDO language
+   applies only to a rollback *past* `v2`, which platform gradual
+   deploy will not do for this ship bundle.
+3. **RP anchors — already pinned in production vars.** Keep them stable;
+   do not re-bind RP ID as part of cutover.
+4. **New first-class residual:** session cookie rename
+   (`ec_sess` → `__Host-ec_sess`) causes temporary lockout-until-relogin
+   for passkey users, not content exposure.
+
 ---
 
 ## Summary of UNKNOWN Items & Verification Steps
@@ -449,8 +491,13 @@ body and marked superseded where the real baseline changes the verdict.
 3. **Production `ETHERCALC_KEY` Secret Status:**
    * *Reason:* `ETHERCALC_KEY` is marked as `unset by default` in `wrangler.toml` and injected via `wrangler secret put`.
    * *Verification Check:* Run `wrangler secret list --env=""` to verify if an HMAC secret is set in production.
-4. **Behavior under Static Asset & CSP Version Skew:**
-   * *Reason:* No automated test exercises stale cached HTML paired with new CSP or new HTML with stale CSP.
+4. **~~Behavior under Static Asset & CSP Version Skew~~ (re-scoped 2026-08-10):**
+   * *Update:* No longer a blank UNKNOWN. `SKEW_AND_RECONNECT.md` §6
+     documents cached-old-HTML vs ship-Worker (usually boots; prolongs
+     hybrid skew; AppCache can pin old master HTML) and the sharp
+     inverse (ship HTML needs extracted `static/*.js`). Automated
+     integration coverage is still thin; operator probes + edge purge
+     remain load-bearing. Item **h** is **STILL IN DELTA**.
 5. **~~Raw Snapshot Parsing Compatibility for Old SocialCalc 3.0.x Saves~~ (resolved 2026-08-10):**
    * *Resolution:* Forward — `legacy-snapshot-compat.test.ts` feeds the genuine legacy oracle save through 3.1.0 `createSocialCalcFactory()` / `createSpreadsheet({ snapshot })`; A1=`oracle`; semantic round-trip. Reverse — `legacy-snapshot-reverse.node.test.ts` builds a factory from real npm `socialcalc@3.0.8` and loads 3.1.0-written saves (expanded envelope + realistic multi-cell); cell data preserved. Phase 1/`149ebcf` already ships the same 3.1.0 bundle as `main`, so Phase 2→1 is not a SocialCalc downgrade. `tvf:undefined` is a dangling-index artifact of the oracle fixture (also reproduced under 3.0.8), not a general 3.1.0 write bug. Item **j** remains `[FORWARD-COMPATIBLE]` (now bidirectional).
 
@@ -772,3 +819,151 @@ We added an integration test to `packages/worker/test/room.test.ts` (lines 356�
 ### 7. Verdict
 **Verdict:** **NON-ISSUE** (with a minor monitored risk for users attempting structural edits or area expansions on oversized sheets).
 *Pre-existing oversized sheets migrate seamlessly, wake without error, and allow cell edits within their existing declared bounds; structural operations (`insertrow`, `insertcol`, `deleterow`, `deletecol`, `moveinsert`) and commands expanding declared bounds beyond both 200,000 cells and their current area are capped.*
+
+---
+
+## What remains to ship (`d2afa90..HEAD`)
+
+Operator-facing inventory of the **real** remaining delta. Commands
+(documentation-time, branch tip `35e3f71` / correction commits on top):
+
+```bash
+git log --oneline d2afa90..HEAD -- packages/ scripts/ static/
+git diff --stat d2afa90..HEAD -- packages/ scripts/ static/
+```
+
+**Caveat:** `d2afa90` is the conservative floor (earliest possible
+production revision). If production is later pinned to a commit after
+`d2afa90` inside `[d2afa90, b7d8840)`, some rows below are already live.
+Only `wrangler deployments list` settles the exact SHA.
+
+### Totals
+
+- **27 commits** touching `packages/|scripts/|static/` after `d2afa90`.
+- **164 files**, **+13692 / −1724** in that path filter.
+- Dominant single commit: `b7d8840` `security: harden EtherCalc trust
+  boundaries`, plus follow-ups (`5d37bd0` POST rejection propagation,
+  `2acd1d0` formdata hydrate, CI/test pins, headless harden).
+
+### Commit list (newest first)
+
+```
+290dcc7 test(socialcalc-headless): prove 3.1.0 saves load on genuine 3.0.8
+91a6d29 test(socialcalc-headless): prove legacy 3.0.x snapshots load on 3.1.0
+1824aa4 test(worker): pin both serveAsset MIME branches for player.js
+b71874d test(worker): pin player.js MIME and socket.io handshake wire shape
+7543317 fix(scripts): compute mutation score from mutant statuses in ratchet-verify
+5d37bd0 fix(worker): propagate RoomDO command rejections from POST /_/:room
+d486f33 fix(ci): repair nightly mutation and oracle replay
+2acd1d0 fix(e2e): pin wrangler source and restore main-room hydrate
+1648284 fix(worker): accept bare sheet: lines in snapshot limits
+20c14ac fix(worker): freeze AuthDO alarm expiry boundary test
+c1433b7 fix(worker): O(n) snapshot chunker for CI timeout
+d0a4a46 fix(ci): pin staging Wrangler source config
+ebb0817 security(docs): upgrade sharp past libvips advisories
+b7d8840 security: harden EtherCalc trust boundaries
+59a2d5a test: harden seam security boundaries
+9f3475f Avoid account chrome menu overlap
+44a98ce Harden headless DOM rendering
+96fb19f Test multisheet bridge contracts
+e3fad6a Harden SocialCalc headless bundle generation
+b160b7d Harden self-host Docker build context
+908e3d1 Fix root Vite+ build and dev workflows
+d30e899 fix(worker): serve multi-sheet assets in standalone
+5f731d5 test(oracle-harness): raised oracle mutation coverage thresholds
+7f083e1 fix: restore multi-sheet entry flow (#838)
+59562b6 Fix API command websocket broadcasts
+93cc22f Merge remote-tracking branch 'origin/main' into issue-842-merge
+b352c29 Fix relative WebSocket URLs in older browsers
+```
+
+### By theme
+
+#### 1. Security hardening (primary ship payload)
+
+Lands mostly at `b7d8840` and tightens trust boundaries already partially
+present at the passkey merge:
+
+- **Protocol / intake:** shared message field caps + canonical parser
+  (`packages/shared/src/messages.ts`); multi-sheet TOC caps (`multi.ts`);
+  Socket.IO session/poll/queue caps (`socketio-shim`); RoomDO attachment-
+  room binding; sheet/command limits (`command-limits.ts` — **new file**);
+  formula limits in headless; XLSX/import/cross-sheet bounds; HTML export
+  sanitizer tightening; rate-limit / room-name / create-limit harden.
+- **HTTP / Worker edge:** global security headers + CSP module
+  (`lib/csp.ts`, `ETHERCALC_ORIGIN`-anchored `connect-src`);
+  `run_worker_first`; body guards; trusted-proxy / client-IP handling;
+  gated `/_timetrigger`; scheduler refusal handling.
+- **Auth harden (not green-field auth):** `__Host-ec_sess` rename; AuthDO
+  ceremony Origin/Content-Type guards; logout revocation; per-IP ceremony
+  limits; www→naked redirect.
+- **Client XSS / multi-sheet trust:** graph panel sanitizer,
+  `postMessage`/TOC harden, passkey chrome layout tweak.
+
+Largest product files in the diff (illustrative): `room.ts` (+540/−179),
+`formula-limits.ts` (+650), `command-limits.ts` (+464), `auth-do.ts`
+(+181/−39), `messages.ts` (+172), `socketio-shim/adapter.ts` (+126),
+`index.ts` (+131/−20).
+
+#### 2. API contract changes operators/clients will notice
+
+- `POST /_/:room` propagates RoomDO non-2xx (e.g. **413** sheet limits)
+  instead of a false **202** — `5d37bd0`.
+- WS close **1008** / **1009** on over-limit execute / oversize frames
+  (failure mode change vs silent drop for the 1 MiB case).
+- Stricter reject of malformed Socket.IO / native frames and cross-room
+  spoofed `parsed.room` (except documented formdata sibling path fixed
+  in client `2acd1d0`).
+- Public anonymous write on public rooms remains by design.
+
+#### 3. Assets / UI layout
+
+- Extract root inline scripts → `static/index-bootstrap.js`,
+  `index-l10n.js`, `panels.js`, `start-bootstrap.js`, `start-page.js`
+  (`b7d8840`); drop `manifest` attribute from `index.html`.
+- `scripts/build-assets.ts` enforces the REQUIRED_PAGE_SCRIPTS set.
+- Multi-sheet entry restore (`7f083e1`), relative WS URL fix (`b352c29`),
+  standalone multi asset serve (`d30e899`), account-menu overlap
+  (`9f3475f`).
+- Passkey UI already deployed at floor — only small chrome/CSS deltas
+  remain in tree.
+
+Approx theme weight under path filter: ~8 asset files (+492/−4) plus
+related client sources counted under security/API above.
+
+#### 4. Infra / runtime pins
+
+- `wrangler.toml`: `compatibility_date` `2024-11-12` → `2026-07-21`;
+  `run_worker_first = true`; comment-only cron/email binding edits.
+- `workerd/config.capnp`: `compatibilityDate` `2025-04-01` → `2026-07-14`.
+- Self-host Docker build-context harden (`b160b7d`); Helm hardening
+  check script; smoke-selfhost; staging wrangler `--config` pins;
+  sharp/libvips bump in docs image path; Vite+ workflow scripts.
+
+#### 5. Tests / CI (majority of line volume)
+
+~78 test/CI files (+8858/−756) pinning the above contracts: room limits,
+auth-do, CSP, routes-security, socketio adapter, shared messages, legacy
+snapshot forward/reverse, oracle-harness mutation thresholds, e2e
+wrangler source pin, mutation ratchet-verify fix. These ship with the
+bundle but are not user-visible cutover steps.
+
+#### 6. Explicitly **not** remaining (do not re-ship as new)
+
+| Topic | Why not in remaining delta |
+| :--- | :--- |
+| DO migration `v2` / `AuthDO` class | Identical at both ends; live whoami proves applied |
+| `meta:access` / `meta:acl` / `authorize()` | Present and unchanged since `d2afa90` |
+| Passkey enable + RP env vars | Live `enabled:true`; vars on at floor |
+| SocialCalc 3.0.8 → 3.1.0 engine bump | `0.20260716.0`; both ends `^3.1.0` |
+| D1 SQL migrations 0001–0003 | Byte-identical across range |
+| KV/R2 | Still unused scaffolding |
+
+### Cutover implication (pointer only)
+
+Because no new Durable Object class lifecycle remains, Cloudflare
+**gradual `versions deploy`** is available for this ship bundle (runbook
+§C). Residual operator risks are cookie rename lockout, asset/AppCache
+skew, stricter protocol/sheet limits, and truthful 413 on over-limit
+POSTs — not private-sheet declassification and not a green-field
+passkey launch.
