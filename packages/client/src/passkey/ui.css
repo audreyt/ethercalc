@@ -39,6 +39,11 @@
    `#tableeditor` for exactly this case. `width: fit-content` +
    `margin-left: auto` keeps the pill itself shrink-wrapped and
    right-aligned rather than stretching the whole row full-width.
+   Keep the host `relative`, not `static`: M3E's shadow state layer is
+   `position: absolute; inset: 0`, so it needs the toolbar as its containing
+   block instead of expanding against the initial containing block. Resetting
+   `top`/`right` preserves the in-flow placement that `static` previously
+   provided.
    SocialCalc re-measures `#tableeditor`'s new `offsetTop` on its own
    (see ui.ts) - the grid simply starts lower, the same trade-off the
    pre-redesign toolbar always made, just no longer paid on desktop
@@ -48,7 +53,9 @@
    ~126px cluster begins around x=777 there, leaving a measured 8px gap. */
 @media (max-width: 920px) {
   #ec-room-access {
-    position: static;
+    position: relative;
+    top: auto;
+    right: auto;
     display: block;
     width: fit-content;
     max-width: calc(100% - 24px);

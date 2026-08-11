@@ -543,13 +543,16 @@ test.describe('passkey room-access chrome', () => {
     // widths (see `mountRoomAccessCluster()`'s doc comment in ui.ts for
     // the measured collision math that sets that cutoff).
     const room = `access-compact-${Date.now().toString(36)}`;
-    await routeWhoami(page, signedInAuth);
+    let authState: { enabled: boolean; uid: string | null } = signedInAuth;
+    await page.route('**/_auth/whoami', (route) =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify(authState) }),
+    );
     await page.route('**/_/*/access', (route) =>
       route.fulfill({ contentType: 'application/json', body: JSON.stringify(publicAccess) }),
     );
 
     await page.goto(`${workerBase}/${room}`);
-    await expect(page.locator('#ec-room-access')).toBeVisible();
+    await expect(page.locator('#ec-account-trigger')).toBeVisible();
 
     const desktop = await page.evaluate(() => {
       const cluster = document.getElementById('ec-room-access');
@@ -570,22 +573,70 @@ test.describe('passkey room-access chrome', () => {
     expect(desktop.right).toBeLessThanOrEqual(desktop.clientWidth);
     expect(desktop.top).toBeLessThan(30);
 
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto(`${workerBase}/${room}`);
-    await expect(page.locator('#ec-room-access')).toBeVisible();
-    const mobile = await page.evaluate(() => {
-      const cluster = document.getElementById('ec-room-access');
-      const rect = cluster?.getBoundingClientRect();
-      return {
-        clientWidth: document.documentElement.clientWidth,
-        left: rect?.left ?? -1,
-        right: rect?.right ?? 0,
-        position: cluster ? getComputedStyle(cluster).position : null,
-      };
-    });
-    expect(mobile.position).toBe('static');
-    expect(mobile.left).toBeGreaterThanOrEqual(0);
-    expect(mobile.right).toBeLessThanOrEqual(mobile.clientWidth);
+    const states = [
+      { name: 'signed-in avatar', auth: signedInAuth, trigger: '#ec-account-trigger' },
+      { name: 'anonymous key', auth: anonymousAuth, trigger: '#ec-passkey-trigger' },
+    ] as const;
+    const narrowViewports = [
+      { width: 499, height: 466 },
+      { width: 800, height: 700 },
+    ] as const;
+
+    for (const state of states) {
+      authState = state.auth;
+      for (const viewport of narrowViewports) {
+        await page.setViewportSize(viewport);
+        await page.goto(`${workerBase}/${room}`);
+        await expect(page.locator(state.trigger), `${state.name} trigger at ${viewport.width}px`).toBeVisible();
+
+        const compact = await page.evaluate(() => {
+          const cluster = document.getElementById('ec-room-access');
+          const stateLayer = cluster?.shadowRoot?.querySelector<HTMLElement>('m3e-state-layer');
+          const clusterRect = cluster?.getBoundingClientRect();
+          const layerRect = stateLayer?.getBoundingClientRect();
+          return {
+            clientWidth: document.documentElement.clientWidth,
+            position: cluster ? getComputedStyle(cluster).position : null,
+            cluster: clusterRect
+              ? {
+                  left: clusterRect.left,
+                  right: clusterRect.right,
+                  top: clusterRect.top,
+                  width: clusterRect.width,
+                  height: clusterRect.height,
+                }
+              : null,
+            stateLayer: layerRect
+              ? {
+                  left: layerRect.left,
+                  top: layerRect.top,
+                  width: layerRect.width,
+                  height: layerRect.height,
+                }
+              : null,
+          };
+        });
+
+        expect(compact.cluster, `${state.name} host at ${viewport.width}px`).not.toBeNull();
+        expect(compact.stateLayer, `${state.name} shadow state layer at ${viewport.width}px`).not.toBeNull();
+        const host = compact.cluster!;
+        const layer = compact.stateLayer!;
+        expect(host.left).toBeGreaterThanOrEqual(0);
+        expect(host.right).toBeLessThanOrEqual(compact.clientWidth);
+        expect(host.width, `${state.name} host width at ${viewport.width}px`).toBeLessThan(200);
+        expect(host.height, `${state.name} host height at ${viewport.width}px`).toBeLessThan(100);
+        // Guard the actual failure surface. With `position: static` on the
+        // toolbar host, M3E's `absolute; inset: 0` shadow state layer became
+        // 499x466 here while the visible host remained a misleading 60x40.
+        expect(layer.width, `${state.name} state-layer width at ${viewport.width}px`).toBeLessThan(200);
+        expect(layer.height, `${state.name} state-layer height at ${viewport.width}px`).toBeLessThan(100);
+        expect(compact.position, `${state.name} host position at ${viewport.width}px`).toBe('relative');
+        expect(Math.abs(layer.left - host.left)).toBeLessThan(2);
+        expect(Math.abs(layer.top - host.top)).toBeLessThan(2);
+        expect(Math.abs(layer.width - host.width)).toBeLessThan(2);
+        expect(Math.abs(layer.height - host.height)).toBeLessThan(2);
+      }
+    }
   });
 
   test('never overlaps SocialCalc\'s own menu bar across the fixed/in-flow breakpoint', async ({
@@ -632,7 +683,7 @@ test.describe('passkey room-access chrome', () => {
         };
       });
 
-      expect(geometry.position, `unexpected position at ${width}px`).toBe(width <= 920 ? 'static' : 'fixed');
+      expect(geometry.position, `unexpected position at ${width}px`).toBe(width <= 920 ? 'relative' : 'fixed');
       expect(geometry.cluster, `no cluster rect at ${width}px`).not.toBeNull();
       expect(geometry.menu, `no SocialCalc menu row found at ${width}px`).not.toBeNull();
       const c = geometry.cluster!;
