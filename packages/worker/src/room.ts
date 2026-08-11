@@ -28,13 +28,13 @@ import {
   isStorageSafeCommand,
   parseClientMessage,
   type ServerMessage,
-} from '@ethercalc/shared/messages';
+} from "@ethercalc/shared/messages";
 import {
   decodeFrame,
   nativeToSocketIoEvent,
   PacketType,
   socketIoEventToNative,
-} from '@ethercalc/socketio-shim';
+} from "@ethercalc/socketio-shim";
 import {
   auditKey,
   chatKey,
@@ -42,49 +42,35 @@ import {
   logKey,
   STORAGE_KEYS,
   snapshotChunkKey,
-} from '@ethercalc/shared/storage-keys';
-import {
-  createSpreadsheet,
-  HeadlessSpreadsheet,
-} from '@ethercalc/socialcalc-headless';
-import type { Env } from './env.ts';
-import { buildEmailSender } from './handlers/cron.ts';
-import { parseSeedPayload } from './handlers/migrate.ts';
-import { verifyAuth } from './lib/auth.ts';
-import { verifyAuthSession } from './lib/auth-session.ts';
-import { authorize as authorizeRoom } from './lib/authorize.ts';
-import {
-  hydrateCrossSheetRefs,
-  readBoundedResponseText,
-} from './lib/cross-sheet.ts';
-import {
-  isCommandBatchWithinLimits,
-  isSnapshotWithinSheetLimits,
-} from './lib/command-limits.ts';
-import { neutralizeCSVDocument } from './lib/csv-encode.ts';
-import { parseCSV } from './lib/csv-parse.ts';
-import { parseSendemail } from './lib/email.ts';
-import { formdataSiblingRoom } from './lib/formdata-sibling.ts';
-import { csvToMarkdown } from './lib/md.ts';
-import { getMaxSubsheetIndex } from './lib/multi-sheet-import.ts';
-import { workbookToLoadClipboardCommand } from './lib/xlsx-import.ts';
-import { MAX_MULTI_SHEETS } from '@ethercalc/shared';
-import {
-  bookmarkStorage,
-  isPitrUnavailableError,
-  parsePitrRequest,
-} from './lib/pitr.ts';
-import { encodeRoom, isValidRoomName } from './lib/room-name.ts';
-import {
-  deleteRoomFromD1,
-  mirrorRoomToD1,
-} from './lib/rooms-index.ts';
+} from "@ethercalc/shared/storage-keys";
+import { createSpreadsheet, HeadlessSpreadsheet } from "@ethercalc/socialcalc-headless";
+import type { Env } from "./env.ts";
+import { buildEmailSender } from "./handlers/cron.ts";
+import { parseSeedPayload } from "./handlers/migrate.ts";
+import { verifyAuth } from "./lib/auth.ts";
+import { verifyAuthSession } from "./lib/auth-session.ts";
+import { authorize as authorizeRoom } from "./lib/authorize.ts";
+import { hydrateCrossSheetRefs, readBoundedResponseText } from "./lib/cross-sheet.ts";
+import { isCommandBatchWithinLimits, isSnapshotWithinSheetLimits } from "./lib/command-limits.ts";
+import { PARENT_READ_HEADER } from "./lib/do-dispatch.ts";
+import { neutralizeCSVDocument } from "./lib/csv-encode.ts";
+import { parseCSV } from "./lib/csv-parse.ts";
+import { parseSendemail } from "./lib/email.ts";
+import { formdataSiblingRoom } from "./lib/formdata-sibling.ts";
+import { verifyMigrateToken } from "./lib/migrate-auth.ts";
+import { csvToMarkdown } from "./lib/md.ts";
+import { getMaxSubsheetIndex } from "./lib/multi-sheet-import.ts";
+import { workbookToLoadClipboardCommand } from "./lib/xlsx-import.ts";
+import { MAX_MULTI_SHEETS, MAX_MULTI_SHEET_TITLE_LENGTH } from "@ethercalc/shared";
+import { bookmarkStorage, isPitrUnavailableError, parsePitrRequest } from "./lib/pitr.ts";
+import { encodeRoom, isValidRoomName } from "./lib/room-name.ts";
+import { deleteRoomFromD1, mirrorRoomToD1 } from "./lib/rooms-index.ts";
 import {
   isSandstormEnforced,
   sandstormAllowsWsWrite,
   sandstormCanModify,
-} from './lib/sandstorm-access.ts';
-import type { SessionPrincipal } from './lib/session.ts';
+} from "./lib/sandstorm-access.ts";
+import type { SessionPrincipal } from "./lib/session.ts";
 import {
   AUDIT_HISTORY_KEEP,
   appendAuditRows,
@@ -93,7 +79,7 @@ import {
   deleteAuditRows,
   deleteChatRows,
   type SeqRow,
-} from './lib/seq-store.ts';
+} from "./lib/seq-store.ts";
 import {
   hasSnapshot,
   SNAPSHOT_CHUNK_BYTES,
@@ -102,29 +88,25 @@ import {
   readSnapshotMeta,
   type SnapshotMeta,
   snapshotEntries,
-} from './lib/snapshot-storage.ts';
+} from "./lib/snapshot-storage.ts";
 import {
   deleteStorageKeysBatched,
   putStorageEntriesBatched,
   replaceStorageEntriesBatched,
-} from './lib/storage-batch.ts';
-import { isFilteredExecuteCommand } from './lib/ws-dispatch.ts';
+} from "./lib/storage-batch.ts";
+import { isFilteredExecuteCommand } from "./lib/ws-dispatch.ts";
 import {
   dispatchWsMessage,
   type WsContext,
   type WsSiblingDO,
   type WsStorage,
-} from './lib/ws-handlers.ts';
-import {
-  upgradeLegacySocketIo,
-  upgradeWebSocket,
-  type WsAttachment,
-} from './lib/ws-upgrade.ts';
+} from "./lib/ws-handlers.ts";
+import { upgradeLegacySocketIo, upgradeWebSocket, type WsAttachment } from "./lib/ws-upgrade.ts";
 import {
   BINARY_CONTENT_TYPES,
   type BinaryFormat,
   sheetViewToBinaryWorkbook,
-} from './lib/xlsx-build.ts';
+} from "./lib/xlsx-build.ts";
 
 /** Shape returned from `GET /_do/log`. */
 export interface RoomLogSnapshot {
@@ -133,11 +115,11 @@ export interface RoomLogSnapshot {
 }
 
 /** Content type used for plain-text bodies returned from the DO. */
-const PLAIN_TEXT = 'text/plain; charset=utf-8';
-const APP_JSON = 'application/json';
-const TEXT_CSV = 'text/csv; charset=utf-8';
-const TEXT_HTML = 'text/html; charset=utf-8';
-const TEXT_MARKDOWN = 'text/x-markdown; charset=utf-8';
+const PLAIN_TEXT = "text/plain; charset=utf-8";
+const APP_JSON = "application/json";
+const TEXT_CSV = "text/csv; charset=utf-8";
+const TEXT_HTML = "text/html; charset=utf-8";
+const TEXT_MARKDOWN = "text/x-markdown; charset=utf-8";
 
 /**
  * How long one AuthDO session verification stays reusable inside a
@@ -171,8 +153,10 @@ type SessionVerification = {
  * log never holds more than `LOG_RING` entries. `audit:` is NEVER trimmed
  * here (it is the append-only record).
  */
+const MULTI_RESERVATION_PREFIX = "meta:multi-reservation:";
+const MULTI_RESERVATION_TTL_MS = 10 * 60 * 1000;
+const MAX_MULTI_RESERVATIONS = 16;
 const LOG_RING = 1024;
-
 
 /**
  * Cap on distinct `ecell:<user>` keys retained per room. ecells are keyed
@@ -194,7 +178,6 @@ const WS_RATE_WINDOW_MS = 10_000;
 const MAX_WS_MESSAGES_PER_WINDOW = 300;
 const MAX_ROOM_WS_MESSAGES_PER_WINDOW = 1_500;
 
-
 /**
  * Cadence (ms) at which the housekeeping alarm re-fires while a room stays
  * active. One hour keeps chat-trim/TTL checks cheap without a tight loop.
@@ -211,23 +194,23 @@ const PITR_ABORT_DELAY_MS = 100;
 function plainResponse(body: string, status = 200): Response {
   return new Response(body, {
     status,
-    headers: { 'Content-Type': PLAIN_TEXT },
+    headers: { "Content-Type": PLAIN_TEXT },
   });
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': APP_JSON },
+    headers: { "Content-Type": APP_JSON },
   });
 }
 
 function notFound(): Response {
-  return plainResponse('', 404);
+  return plainResponse("", 404);
 }
 
 function textResponse(body: string, contentType: string, status = 200): Response {
-  return new Response(body, { status, headers: { 'Content-Type': contentType } });
+  return new Response(body, { status, headers: { "Content-Type": contentType } });
 }
 
 function binaryResponse(bytes: Uint8Array, contentType: string, status = 200): Response {
@@ -236,7 +219,7 @@ function binaryResponse(bytes: Uint8Array, contentType: string, status = 200): R
   // doesn't structurally match `BodyInit` (the DO → worker hop streams it).
   return new Response(bytes as unknown as BodyInit, {
     status,
-    headers: { 'Content-Type': contentType },
+    headers: { "Content-Type": contentType },
   });
 }
 
@@ -250,9 +233,7 @@ function binaryResponse(bytes: Uint8Array, contentType: string, status = 200): R
  * serialise the result.
  */
 function foldSnapshot(snapshot: string, log: readonly string[]): string {
-  const ss = createSpreadsheet(
-    snapshot ? { snapshot, log } : { log },
-  );
+  const ss = createSpreadsheet(snapshot ? { snapshot, log } : { log });
   return ss.createSpreadsheetSave();
 }
 
@@ -299,12 +280,17 @@ export class RoomDO implements DurableObject {
    */
   #ownName: string | undefined;
   /**
-   * Memoized `{meta:access, meta:acl}` pair backing the request gate.
-   * Invalidated by `#resetVolatile` (every wipe/replace site) so a
-   * warm room costs one batched storage read per isolate, not one per
-   * request.
+   * Memoized local access metadata. Parent *verdicts are never cached*: a
+   * parent ACL revocation must take effect on its children immediately.
    */
-  #accessMeta: { access: unknown; acl: unknown } | null = null;
+  #accessMeta: {
+    hasAccess: boolean;
+    access: unknown;
+    hasAcl: boolean;
+    acl: unknown;
+    hasParent: boolean;
+    parent: unknown;
+  } | null = null;
   /**
    * Isolate-local AuthDO verification memo, keyed by opaque session
    * token (see `SESSION_VERIFY_TTL_MS`). Insertion-ordered, so the
@@ -321,10 +307,8 @@ export class RoomDO implements DurableObject {
     // hibernated legacy sockets answer pings without waking the isolate
     // (and without a JS timer that would pin the DO awake).
     /* istanbul ignore next -- @preserve: WebSocketRequestResponsePair is a workerd global */
-    if (typeof WebSocketRequestResponsePair === 'function') {
-      this.#state.setWebSocketAutoResponse(
-        new WebSocketRequestResponsePair('2::', '2::'),
-      );
+    if (typeof WebSocketRequestResponsePair === "function") {
+      this.#state.setWebSocketAutoResponse(new WebSocketRequestResponsePair("2::", "2::"));
     }
   }
 
@@ -334,115 +318,126 @@ export class RoomDO implements DurableObject {
     // Every `doFetch` caller now threads the room name through as
     // `?name=…` so the DO can mirror to D1 without re-deriving it from
     // its opaque id. `/_do/ping` already used the same param.
-    const roomName = url.searchParams.get('name');
+    const roomName = url.searchParams.get("name");
     if (roomName) this.#ownName = roomName;
+    const uid = request.headers.get("X-EC-Uid");
     // Worker-internal capability and operator paths bypass the generic ACL
     // gate. None serve sheet content: access returns only a verdict, PITR is
     // operator-authenticated, and fire-trigger is reached only by the Worker
     // scheduler (the public compatibility route requires the operator token).
     const isGateExemptPath =
-      path === '/_do/access' ||
-      path === '/_do/ping' ||
-      path === '/_do/pitr-restore' ||
-      path === '/_do/pitr-touch' ||
-      path === '/_do/fire-trigger';
-    if (!isGateExemptPath) {
-      const purpose = request.method === 'GET' ? 'read' : 'write';
+      path === "/_do/access" ||
+      path === "/_do/ping" ||
+      path === "/_do/pitr-restore" ||
+      path === "/_do/pitr-touch" ||
+      path === "/_do/fire-trigger";
+    const trustedParentRead = await this.#isTrustedParentRead(request, path);
+    if (!isGateExemptPath && !trustedParentRead) {
+      const purpose = request.method === "GET" ? "read" : "write";
       if (!(await this.#isAuthorized(request, purpose))) {
-        return plainResponse('Forbidden', 403);
+        return plainResponse("Forbidden", 403);
       }
     }
 
-    if (path === '/_do/access' && request.method === 'GET') {
+    if (path === "/_do/access" && request.method === "GET") {
       return this.#getAccessVerdict(request);
     }
-    if (path === '/_do/ping') {
+    if (path === "/_do/ping") {
       return jsonResponse({
         id: this.#state.id.toString(),
         name: roomName,
         nonce: this.#instanceNonce,
       });
     }
-    if (path === '/_do/pitr-restore' && request.method === 'POST') {
+    if (path === "/_do/pitr-restore" && request.method === "POST") {
       return this.#postPitrRestore(request);
     }
-    if (path === '/_do/pitr-touch' && request.method === 'POST') {
+    if (path === "/_do/pitr-touch" && request.method === "POST") {
       return this.#postPitrTouch(roomName);
     }
-    if (path === '/_do/snapshot') {
-      if (request.method === 'GET') return this.#getSnapshot();
-      if (request.method === 'PUT') return this.#putSnapshot(request, roomName);
+    if (path === "/_do/snapshot") {
+      if (request.method === "GET") return this.#getSnapshot();
+      if (request.method === "PUT") return this.#putSnapshot(request, roomName);
     }
-    if (path === '/_do/log' && request.method === 'GET') {
+    if (path === "/_do/log" && request.method === "GET") {
       return this.#getLog();
     }
-    if (path === '/_do/commands' && request.method === 'POST') {
+    if (path === "/_do/commands" && request.method === "POST") {
       return this.#postCommands(request, roomName);
     }
-    if (path === '/_do/import-append-toc' && request.method === 'POST') {
+    if (path === "/_do/child-snapshot" && request.method === "POST") {
+      return this.#postChildSnapshot(request, roomName);
+    }
+    if (path === "/_do/set-parent" && request.method === "POST") {
+      return this.#postSetParent(request, roomName);
+    }
+    if (path === "/_do/backfill-children" && request.method === "POST") {
+      return this.#postBackfillChildren(request, roomName);
+    }
+    if (path === "/_do/import-append-toc" && request.method === "POST") {
       return this.#postImportAppendToc(request, roomName);
     }
-    if (path === '/_do/all' && request.method === 'DELETE') {
-      return this.#deleteAll(roomName, request.headers.get('X-EC-Uid'));
+    if (path === "/_do/all" && request.method === "DELETE") {
+      return this.#deleteAll(roomName, request.headers.get("X-EC-Uid"));
     }
-    if (path === '/_do/exists' && request.method === 'GET') {
+    if (path === "/_do/exists" && request.method === "GET") {
       return this.#getExists();
     }
-    if (path === '/_do/workbook-kind' && request.method === 'GET') {
-      return this.#getWorkbookKind();
+    if (path === "/_do/workbook-kind" && request.method === "GET") {
+      return this.#getWorkbookKind(uid);
     }
-    if (path === '/_do/cells' && request.method === 'GET') {
-      return this.#getCells();
+    if (path === "/_do/cells" && request.method === "GET") {
+      return this.#getCells(uid);
     }
     const cellMatch = path.match(/^\/_do\/cells\/(.+)$/);
-    if (cellMatch && request.method === 'GET') {
+    if (cellMatch && request.method === "GET") {
       try {
-        return this.#getCell(decodeURIComponent(cellMatch[1]!));
+        return this.#getCell(decodeURIComponent(cellMatch[1]!), uid);
       } catch {
-        return plainResponse('Bad Request', 400);
+        return plainResponse("Bad Request", 400);
       }
     }
     // ─── Phase 8: export routes ────────────────────────────────────────
-    if (path === '/_do/html' && request.method === 'GET') {
-      return this.#getHtml();
+    if (path === "/_do/html" && request.method === "GET") {
+      return this.#getHtml(uid);
     }
-    if (path === '/_do/csv' && request.method === 'GET') {
-      return this.#getCsv();
+    if (path === "/_do/csv" && request.method === "GET") {
+      return this.#getCsv(uid);
     }
-    if (path === '/_do/csv.json' && request.method === 'GET') {
-      return this.#getCsvJson();
+    if (path === "/_do/csv.json" && request.method === "GET") {
+      return this.#getCsvJson(uid);
     }
-    if (path === '/_do/md' && request.method === 'GET') {
-      return this.#getMd();
+    if (path === "/_do/md" && request.method === "GET") {
+      return this.#getMd(uid);
     }
-    if (path === '/_do/xlsx' && request.method === 'GET') {
-      return this.#getBinary('xlsx');
+    if (path === "/_do/xlsx" && request.method === "GET") {
+      return this.#getBinary("xlsx", uid);
     }
-    if (path === '/_do/ods' && request.method === 'GET') {
-      return this.#getBinary('ods');
+    if (path === "/_do/ods" && request.method === "GET") {
+      return this.#getBinary("ods", uid);
     }
-    if (path === '/_do/fods' && request.method === 'GET') {
-      return this.#getBinary('fods');
+    if (path === "/_do/fods" && request.method === "GET") {
+      return this.#getBinary("fods", uid);
     }
     // ─── Phase 8.1: sheet-data for multi-sheet export ────────────────
     // Returns the structural SheetData (cells + valueformats + cellformats
     // + attribs) as JSON, for the top-level `/_/=:room/*` route to walk
     // cross-DO and build a multi-sheet workbook with formula fidelity.
-    if (path === '/_do/sheet-data' && request.method === 'GET') {
-      return this.#getSheetData();
+    if (path === "/_do/sheet-data" && request.method === "GET") {
+      return this.#getSheetData(uid);
     }
     // ─── Phase 6: cross-DO rename primitives ─────────────────────────
     // `set A\d+:B\d+ empty multi-cascade` in the HTTP command layer
     // moves snapshot/log/audit from <from> into <to> and wipes <from>.
     // `rename` runs on the source DO; `install` is the target-side
     // receiver. Both additive; no existing path shape changes.
-    if (path === '/_do/rename' && request.method === 'POST') {
+    if (path === "/_do/rename" && request.method === "POST") {
       return this.#postRename(request);
     }
-    if (path === '/_do/install' && request.method === 'POST') {
+    if (path === "/_do/install" && request.method === "POST") {
       return this.#postInstall(request);
     }
-    if (path === '/_do/clone' && request.method === 'POST') {
+    if (path === "/_do/clone" && request.method === "POST") {
       return this.#postClone(request);
     }
     // ─── Phase 11b: full-fidelity migration seed ─────────────────────
@@ -452,7 +447,7 @@ export class RoomDO implements DurableObject {
     // worker-level `PUT /_migrate/seed/:room` route authenticates the
     // caller before dispatching here; direct DO access from inside the
     // namespace (tests, future tooling) can bypass that.
-    if (path === '/_do/seed' && request.method === 'POST') {
+    if (path === "/_do/seed" && request.method === "POST") {
       return this.#postSeed(request, roomName);
     }
     // ─── Phase 11b: client-side chunked snapshot upload ──────────────
@@ -464,21 +459,21 @@ export class RoomDO implements DurableObject {
     // `snapshot:meta` over to the new layout; readers see either the
     // pre-migration state or the freshly-assembled save, never a
     // mix. See the `#postSnapshotChunk` doc for the full contract.
-    if (path === '/_do/snapshot-chunk' && request.method === 'POST') {
+    if (path === "/_do/snapshot-chunk" && request.method === "POST") {
       return this.#postSnapshotChunk(request, roomName, url.searchParams);
     }
     // ─── Phase A: atomic private-room initialization ─────────────────
-    if (path === '/_do/init-private' && request.method === 'POST') {
+    if (path === "/_do/init-private" && request.method === "POST") {
       return this.#postInitPrivate(request);
     }
     // ─── Phase 7: native WebSocket upgrade ───────────────────────────
-    if (path === '/_do/ws' && request.method === 'GET') {
+    if (path === "/_do/ws" && request.method === "GET") {
       return this.#acceptWebSocket(request);
     }
     // Legacy socket.io v0.9 WS — hibernation API with `legacy: true`
     // attachment so webSocketMessage/send use socket.io framing. Worker
     // routes `/socket.io/1/websocket/:sid` here on a sid-keyed RoomDO.
-    if (path === '/_do/legacy-ws' && request.method === 'GET') {
+    if (path === "/_do/legacy-ws" && request.method === "GET") {
       return this.#acceptLegacyWebSocket(request);
     }
     // ─── Phase 9: cron fire-trigger hook ───────────────────────────────
@@ -489,47 +484,179 @@ export class RoomDO implements DurableObject {
     // <body>`, dispatches through the injected EmailSender, and
     // broadcasts the legacy `confirmemailsent` WS event to this
     // room's peers.
-    if (path === '/_do/fire-trigger' && request.method === 'POST') {
-      return this.#fireTrigger(url.searchParams.get('cell') ?? '');
+    if (path === "/_do/fire-trigger" && request.method === "POST") {
+      return this.#fireTrigger(url.searchParams.get("cell") ?? "");
     }
-    return new Response('Not implemented', { status: 501 });
+    return new Response("Not implemented", { status: 501 });
   }
 
   // ─── Handlers ──────────────────────────────────────────────────────────
 
-  async #isAuthorized(
-    request: Request,
-    purpose: 'read' | 'write',
-  ): Promise<boolean> {
-    const { access, acl } = await this.#getAccessMeta();
-    const uid = request.headers.get('X-EC-Uid');
-    return authorizeRoom(purpose, uid === null ? null : { uid }, access, acl);
+  async #isAuthorized(request: Request, purpose: "read" | "write"): Promise<boolean> {
+    const uid = request.headers.get("X-EC-Uid");
+    const access = await this.#effectiveAccess(uid);
+    return purpose === "read" ? access.canRead : access.canWrite;
   }
 
   async #getAccessVerdict(request: Request): Promise<Response> {
-    const { access, acl } = await this.#getAccessMeta();
-    const uid = request.headers.get('X-EC-Uid');
-    const principal = uid === null ? null : { uid };
+    const uid = request.headers.get("X-EC-Uid");
+    const access = await this.#effectiveAccess(uid);
     return jsonResponse({
-      isPrivate: access === 'private',
-      canRead: authorizeRoom('read', principal, access, acl),
-      canWrite: authorizeRoom('write', principal, access, acl),
+      isPrivate: access.isPrivate,
+      canRead: access.canRead,
+      canWrite: access.canWrite,
     });
   }
 
+  async #isTrustedParentRead(request: Request, path: string): Promise<boolean> {
+    if (request.method !== "GET" || path !== "/_do/snapshot") return false;
+    const claimedParent = request.headers.get(PARENT_READ_HEADER);
+    if (claimedParent === null) return false;
+    const meta = await this.#getAccessMeta();
+    return (
+      meta.hasParent &&
+      !meta.hasAccess &&
+      !meta.hasAcl &&
+      typeof meta.parent === "string" &&
+      meta.parent === claimedParent
+    );
+  }
+
   /**
-   * Memoized access-plane read. Both keys land in one batched get; the
-   * memo lives until `#resetVolatile` (wipes, seeds, init-private).
+   * Resolve the one authoritative access verdict for this room.
+   *
+   * A parent marker delegates the entire decision to the parent RoomDO.
+   * Local access beside a parent marker is corruption, never an override.
+   * Parent verdicts are intentionally uncached so revocation is immediate.
    */
-  async #getAccessMeta(): Promise<{ access: unknown; acl: unknown }> {
+  async #effectiveAccess(uid: string | null): Promise<{
+    isPrivate: boolean;
+    canRead: boolean;
+    canWrite: boolean;
+    parented: boolean;
+  }> {
+    const meta = await this.#getAccessMeta();
+    if (meta.hasParent) {
+      if (meta.hasAccess || meta.hasAcl) {
+        console.error("room-access-metadata-conflict", {
+          room: this.#ownName ?? null,
+        });
+        return {
+          isPrivate: true,
+          canRead: false,
+          canWrite: false,
+          parented: true,
+        };
+      }
+      if (
+        typeof meta.parent !== "string" ||
+        meta.parent.length === 0 ||
+        meta.parent === this.#ownName
+      ) {
+        console.error("room-parent-metadata-invalid", {
+          room: this.#ownName ?? null,
+        });
+        return {
+          isPrivate: true,
+          canRead: false,
+          canWrite: false,
+          parented: true,
+        };
+      }
+      return this.#fetchParentAccess(meta.parent, uid);
+    }
+
+    const principal = uid === null ? null : { uid };
+    return {
+      isPrivate: meta.access === "private",
+      canRead: authorizeRoom("read", principal, meta.access, meta.acl),
+      canWrite: authorizeRoom("write", principal, meta.access, meta.acl),
+      parented: false,
+    };
+  }
+
+  async #fetchParentAccess(
+    parent: string,
+    uid: string | null,
+  ): Promise<{
+    isPrivate: boolean;
+    canRead: boolean;
+    canWrite: boolean;
+    parented: true;
+  }> {
+    try {
+      const stub = this.#env.ROOM.get(this.#env.ROOM.idFromName(encodeRoom(parent)));
+      const headers = new Headers();
+      if (uid !== null) headers.set("X-EC-Uid", uid);
+      const response = await stub.fetch(
+        `https://do.local/_do/access?name=${encodeURIComponent(parent)}`,
+        {
+          method: "GET",
+          headers,
+          signal: AbortSignal.timeout(5_000),
+        },
+      );
+      if (response.status !== 200) {
+        throw new Error(`parent access ${response.status}`);
+      }
+      const verdict: unknown = await response.json();
+      if (
+        verdict === null ||
+        typeof verdict !== "object" ||
+        !("isPrivate" in verdict) ||
+        typeof verdict.isPrivate !== "boolean" ||
+        !("canRead" in verdict) ||
+        typeof verdict.canRead !== "boolean" ||
+        !("canWrite" in verdict) ||
+        typeof verdict.canWrite !== "boolean"
+      ) {
+        throw new Error("parent access malformed");
+      }
+      return {
+        isPrivate: verdict.isPrivate,
+        canRead: verdict.canRead,
+        canWrite: verdict.canWrite,
+        parented: true,
+      };
+    } catch (error) {
+      console.error("room-parent-access-failed", {
+        room: this.#ownName ?? null,
+        parent,
+        reason: error instanceof Error ? error.message : "unknown",
+      });
+      return {
+        isPrivate: true,
+        canRead: false,
+        canWrite: false,
+        parented: true,
+      };
+    }
+  }
+
+  /**
+   * Memoized local access-plane read. Parent verdicts are never memoized.
+   */
+  async #getAccessMeta(): Promise<{
+    hasAccess: boolean;
+    access: unknown;
+    hasAcl: boolean;
+    acl: unknown;
+    hasParent: boolean;
+    parent: unknown;
+  }> {
     if (this.#accessMeta) return this.#accessMeta;
     const stored = await this.#state.storage.get<unknown>([
       STORAGE_KEYS.metaAccess,
       STORAGE_KEYS.metaAcl,
+      STORAGE_KEYS.metaParent,
     ]);
     const meta = {
+      hasAccess: stored.has(STORAGE_KEYS.metaAccess),
       access: stored.get(STORAGE_KEYS.metaAccess),
+      hasAcl: stored.has(STORAGE_KEYS.metaAcl),
       acl: stored.get(STORAGE_KEYS.metaAcl),
+      hasParent: stored.has(STORAGE_KEYS.metaParent),
+      parent: stored.get(STORAGE_KEYS.metaParent),
     };
     this.#accessMeta = meta;
     return meta;
@@ -539,6 +666,8 @@ export class RoomDO implements DurableObject {
     const keys = [
       STORAGE_KEYS.metaAccess,
       STORAGE_KEYS.metaAcl,
+      STORAGE_KEYS.metaParent,
+      STORAGE_KEYS.metaNextChildIndex,
       STORAGE_KEYS.metaGroup,
     ];
     const stored = await this.#state.storage.get<unknown>(keys);
@@ -548,6 +677,278 @@ export class RoomDO implements DurableObject {
     }
     return entries;
   }
+  async #postChildSnapshot(request: Request, roomName: string | null): Promise<Response> {
+    if (!roomName) return plainResponse("room name required", 400);
+    let raw: unknown;
+    try {
+      raw = await request.json();
+    } catch {
+      return plainResponse("child-snapshot body must be valid JSON", 400);
+    }
+    if (raw === null || typeof raw !== "object") {
+      return plainResponse("child-snapshot body must be an object", 400);
+    }
+    const parent = "parent" in raw ? raw.parent : null;
+    const snapshot = "snapshot" in raw ? raw.snapshot : null;
+    const mode = "mode" in raw ? raw.mode : null;
+    if (
+      !isValidRoomName(parent) ||
+      typeof snapshot !== "string" ||
+      (mode !== "create" && mode !== "replace" && mode !== "verify")
+    ) {
+      return plainResponse("child-snapshot body must be {parent,snapshot,mode}", 400);
+    }
+    if (!this.#isManagedChildName(parent, roomName)) {
+      return plainResponse("child room is outside parent namespace", 400);
+    }
+    if (!isSnapshotWithinSheetLimits(snapshot)) {
+      return plainResponse("child snapshot exceeds sheet limits", 413);
+    }
+    const uid = request.headers.get("X-EC-Uid");
+    if (!(await this.#fetchParentAccess(parent, uid)).canWrite) {
+      return plainResponse("Forbidden", 403);
+    }
+
+    type ChildSnapshotOutcome =
+      | "created"
+      | "idempotent"
+      | "replace"
+      | "occupied"
+      | "unparented"
+      | "local-access"
+      | "different-parent";
+    const outcome = await this.#state.blockConcurrencyWhile(
+      async (): Promise<ChildSnapshotOutcome> => {
+        const stored = await this.#state.storage.get<unknown>([
+          STORAGE_KEYS.metaAccess,
+          STORAGE_KEYS.metaAcl,
+          STORAGE_KEYS.metaParent,
+        ]);
+        if (stored.has(STORAGE_KEYS.metaAccess) || stored.has(STORAGE_KEYS.metaAcl)) {
+          return "local-access";
+        }
+        if (stored.has(STORAGE_KEYS.metaParent)) {
+          if (stored.get(STORAGE_KEYS.metaParent) !== parent) {
+            return "different-parent";
+          }
+          return mode === "replace" ? "replace" : "idempotent";
+        }
+        if (mode === "verify") return "unparented";
+        if ((await this.#state.storage.list({ limit: 1 })).size > 0) {
+          return "occupied";
+        }
+        await this.#state.storage.transaction(async (txn) => {
+          await putStorageEntriesBatched(txn, {
+            ...snapshotEntries(snapshot),
+            [STORAGE_KEYS.metaParent]: parent,
+            [STORAGE_KEYS.metaUpdatedAt]: Date.now(),
+          });
+        });
+        return "created";
+      },
+    );
+    if (outcome === "local-access") {
+      return plainResponse("Child has local access metadata", 409);
+    }
+    if (outcome === "different-parent") {
+      return plainResponse("Child belongs to a different parent", 409);
+    }
+    if (outcome === "unparented") {
+      return plainResponse("Child is not initialized for this parent", 409);
+    }
+    if (outcome === "occupied") {
+      return plainResponse(
+        mode === "replace"
+          ? "Child must be backfilled before replacement"
+          : "Child room is occupied",
+        409,
+      );
+    }
+    if (outcome === "replace") {
+      const replaced = await this.#putSnapshot(
+        new Request(request.url, { method: "PUT", body: snapshot }),
+        roomName,
+      );
+      if (!replaced.ok) return replaced;
+    }
+    this.#resetVolatile();
+    await this.#armAlarm();
+    return jsonResponse({ created: outcome === "created", parent }, 201);
+  }
+
+  #isManagedChildName(parent: string, child: string): boolean {
+    const prefix = `${parent}.`;
+    return child.startsWith(prefix) && /^[1-9]\d*$/.test(child.slice(prefix.length));
+  }
+
+  async #postSetParent(request: Request, roomName: string | null): Promise<Response> {
+    if (!roomName) return plainResponse("room name required", 400);
+    const token = verifyMigrateToken(
+      this.#env.ETHERCALC_MIGRATE_TOKEN,
+      request.headers.get("Authorization"),
+    );
+    if (token.kind === "disabled") return plainResponse("Not Found", 404);
+    if (token.kind !== "ok") return plainResponse("Unauthorized", 401);
+    let raw: unknown;
+    try {
+      raw = await request.json();
+    } catch {
+      return plainResponse("set-parent body must be valid JSON", 400);
+    }
+    if (raw === null || typeof raw !== "object") {
+      return plainResponse("set-parent body must be an object", 400);
+    }
+    const parent = "parent" in raw ? raw.parent : null;
+    const approved = "approved" in raw ? raw.approved : false;
+    const dryRun = "dryRun" in raw ? raw.dryRun : false;
+    if (!isValidRoomName(parent) || approved !== true || typeof dryRun !== "boolean") {
+      return plainResponse("set-parent body must be {parent,approved:true,dryRun?:boolean}", 400);
+    }
+    if (!this.#isManagedChildName(parent, roomName)) {
+      return plainResponse("child room is outside parent namespace", 400);
+    }
+
+    const uid = request.headers.get("X-EC-Uid");
+    if (uid === null) return plainResponse("Forbidden", 403);
+    try {
+      const parentStub = this.#env.ROOM.get(this.#env.ROOM.idFromName(encodeRoom(parent)));
+      const approvalResponse = await parentStub.fetch(
+        `https://do.local/_do/backfill-children?name=${encodeURIComponent(parent)}`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: request.headers.get("Authorization")!,
+            "Content-Type": "application/json",
+            "X-EC-Uid": uid,
+          },
+          body: JSON.stringify({
+            children: [roomName],
+            approved: true,
+            dryRun: true,
+          }),
+          signal: AbortSignal.timeout(5_000),
+        },
+      );
+      if (approvalResponse.status === 501) return plainResponse("Not implemented", 501);
+      if (approvalResponse.status !== 200) return plainResponse("Forbidden", 403);
+      const approval: unknown = await approvalResponse.json();
+      if (
+        approval === null ||
+        typeof approval !== "object" ||
+        !("children" in approval) ||
+        !Array.isArray(approval.children) ||
+        !approval.children.includes(roomName)
+      ) {
+        return plainResponse("Child is not in the parent TOC", 409);
+      }
+    } catch {
+      return plainResponse("Forbidden", 403);
+    }
+
+    const outcome = await this.#state.blockConcurrencyWhile(async () => {
+      return this.#state.storage.transaction(async (txn) => {
+        const stored = await txn.get<unknown>([
+          STORAGE_KEYS.metaAccess,
+          STORAGE_KEYS.metaAcl,
+          STORAGE_KEYS.metaParent,
+        ]);
+        if (stored.has(STORAGE_KEYS.metaAccess) || stored.has(STORAGE_KEYS.metaAcl)) {
+          return "local-access" as const;
+        }
+        if (stored.has(STORAGE_KEYS.metaParent) && stored.get(STORAGE_KEYS.metaParent) !== parent) {
+          return "different-parent" as const;
+        }
+        if (stored.get(STORAGE_KEYS.metaParent) === parent) {
+          return "already-parented" as const;
+        }
+        if (!dryRun) await txn.put(STORAGE_KEYS.metaParent, parent);
+        return dryRun ? ("eligible" as const) : ("set" as const);
+      });
+    });
+    if (outcome === "local-access") {
+      return plainResponse("Child has local access metadata", 409);
+    }
+    if (outcome === "different-parent") {
+      return plainResponse("Child belongs to a different parent", 409);
+    }
+    if (outcome === "set") {
+      this.#resetVolatile();
+      await this.#deleteIndex(roomName);
+    }
+    return jsonResponse({
+      child: roomName,
+      parent,
+      status: outcome,
+    });
+  }
+
+  async #postBackfillChildren(request: Request, roomName: string | null): Promise<Response> {
+    if (!roomName) return plainResponse("room name required", 400);
+    const token = verifyMigrateToken(
+      this.#env.ETHERCALC_MIGRATE_TOKEN,
+      request.headers.get("Authorization"),
+    );
+    if (token.kind === "disabled") return plainResponse("Not Found", 404);
+    if (token.kind !== "ok") return plainResponse("Unauthorized", 401);
+    const uid = request.headers.get("X-EC-Uid");
+    const local = await this.#getAccessMeta();
+    if (
+      uid === null ||
+      local.hasParent ||
+      local.access !== "private" ||
+      local.acl === null ||
+      typeof local.acl !== "object" ||
+      !("owner" in local.acl) ||
+      local.acl.owner !== uid
+    ) {
+      return plainResponse("Forbidden", 403);
+    }
+
+    let raw: unknown;
+    try {
+      raw = await request.json();
+    } catch {
+      return plainResponse("backfill body must be valid JSON", 400);
+    }
+    if (raw === null || typeof raw !== "object") {
+      return plainResponse("backfill body must be an object", 400);
+    }
+    const children = "children" in raw ? raw.children : null;
+    const approved = "approved" in raw ? raw.approved : false;
+    const dryRun = "dryRun" in raw ? raw.dryRun : false;
+    if (
+      !Array.isArray(children) ||
+      !children.every((child) => typeof child === "string") ||
+      approved !== true ||
+      typeof dryRun !== "boolean"
+    ) {
+      return plainResponse("backfill body must be {children,approved:true,dryRun?:boolean}", 400);
+    }
+
+    const ss = await this.#getSpreadsheet(uid);
+    const tocLinks = new Set(
+      parseCSV(ss.exportCSV())
+        .slice(1)
+        .map((row) => row[0])
+        .filter((link): link is string => typeof link === "string"),
+    );
+    const eligible: string[] = [];
+    const skipped: string[] = [];
+    for (const child of children) {
+      if (this.#isManagedChildName(roomName, child) && tocLinks.has(`/${child}`)) {
+        eligible.push(child);
+      } else {
+        skipped.push(child);
+      }
+    }
+    return jsonResponse({
+      parent: roomName,
+      dryRun,
+      children: eligible,
+      skipped,
+    });
+  }
+
   /**
    * Resolve or schedule a SQLite DO PITR bookmark. A successful restore is
    * applied only after this instance restarts, so return the target + undo
@@ -558,19 +959,23 @@ export class RoomDO implements DurableObject {
     try {
       body = await request.json();
     } catch {
-      return plainResponse('body must be valid JSON', 400);
+      return plainResponse("body must be valid JSON", 400);
     }
     const parsed = parsePitrRequest(body);
     if (!parsed.ok) return plainResponse(parsed.error, 400);
+    const accessMeta = await this.#getAccessMeta();
+    if (accessMeta.hasParent || accessMeta.access === "private") {
+      return plainResponse("PITR restore is not supported for protected room metadata", 409);
+    }
 
     const storage = bookmarkStorage(this.#state.storage);
     if (!storage) {
-      return plainResponse('PITR is unavailable on this deployment', 501);
+      return plainResponse("PITR is unavailable on this deployment", 501);
     }
 
     let bookmark: string;
     try {
-      if ('at' in parsed.value) {
+      if ("at" in parsed.value) {
         bookmark = await storage.getBookmarkForTime(parsed.value.at);
       } else {
         bookmark = parsed.value.bookmark;
@@ -578,9 +983,9 @@ export class RoomDO implements DurableObject {
       }
     } catch (error) {
       if (isPitrUnavailableError(error)) {
-        return plainResponse('PITR is unavailable on this deployment', 501);
+        return plainResponse("PITR is unavailable on this deployment", 501);
       }
-      return plainResponse('PITR target is unavailable', 400);
+      return plainResponse("PITR target is unavailable", 400);
     }
 
     if (parsed.value.dryRun) {
@@ -592,16 +997,16 @@ export class RoomDO implements DurableObject {
       undoBookmark = await storage.onNextSessionRestoreBookmark(bookmark);
     } catch (error) {
       if (isPitrUnavailableError(error)) {
-        return plainResponse('PITR is unavailable on this deployment', 501);
+        return plainResponse("PITR is unavailable on this deployment", 501);
       }
-      return plainResponse('PITR target is unavailable', 400);
+      return plainResponse("PITR target is unavailable", 400);
     }
 
     const { promise, resolve } = Promise.withResolvers<void>();
     this.#state.waitUntil(promise);
     setTimeout(() => {
       resolve();
-      this.#state.abort('PITR restore scheduled');
+      this.#state.abort("PITR restore scheduled");
     }, PITR_ABORT_DELAY_MS);
     return jsonResponse({
       bookmark,
@@ -623,9 +1028,13 @@ export class RoomDO implements DurableObject {
     }
     const updatedAt = Date.now();
     await this.#state.storage.put(STORAGE_KEYS.metaUpdatedAt, updatedAt);
-    const { access } = await this.#getAccessMeta();
-    if (access === 'private') await this.#deleteIndex(roomName);
-    else await this.#mirrorIndex(roomName, updatedAt);
+    const accessMeta = await this.#getAccessMeta();
+    if (accessMeta.hasParent) await this.#deleteIndex(roomName);
+    else {
+      const access = await this.#effectiveAccess(null);
+      if (access.isPrivate || !access.canRead) await this.#deleteIndex(roomName);
+      else await this.#mirrorIndex(roomName, updatedAt);
+    }
     await this.#armAlarm();
     return jsonResponse({ exists: true, updatedAt });
   }
@@ -635,7 +1044,7 @@ export class RoomDO implements DurableObject {
     // fit under CF's 96 MB DO-response body ceiling with plenty of
     // headroom).
     const single = await this.#state.storage.get<string>(STORAGE_KEYS.snapshot);
-    if (typeof single === 'string') return plainResponse(single);
+    if (typeof single === "string") return plainResponse(single);
     const meta = await readSnapshotMeta(this.#state.storage);
     if (meta === null) return notFound();
     // Chunked path: stream the reassembled save. Materializing a 148 MB
@@ -653,7 +1062,7 @@ export class RoomDO implements DurableObject {
           return;
         }
         const part = await storage.get<string>(snapshotChunkKey(i));
-        if (typeof part !== 'string') {
+        if (typeof part !== "string") {
           controller.error(new Error(`snapshot chunk ${i} missing`));
           return;
         }
@@ -663,7 +1072,7 @@ export class RoomDO implements DurableObject {
     });
     return new Response(stream, {
       status: 200,
-      headers: { 'Content-Type': PLAIN_TEXT },
+      headers: { "Content-Type": PLAIN_TEXT },
     });
   }
 
@@ -671,7 +1080,7 @@ export class RoomDO implements DurableObject {
     const body = await request.text();
     let updatedAt = 0;
     if (!isSnapshotWithinSheetLimits(body)) {
-      return plainResponse('snapshot exceeds sheet limits', 413);
+      return plainResponse("snapshot exceeds sheet limits", 413);
     }
     await this.#state.blockConcurrencyWhile(async () => {
       const accessEntries = await this.#readAccessEntries();
@@ -691,7 +1100,7 @@ export class RoomDO implements DurableObject {
     // Keep housekeeping active so a room created/replaced via PUT and never
     // subsequently edited still gets TTL expiry.
     await this.#armAlarm();
-    return plainResponse('OK', 201);
+    return plainResponse("OK", 201);
   }
 
   async #getLog(): Promise<Response> {
@@ -704,193 +1113,325 @@ export class RoomDO implements DurableObject {
 
   async #postCommands(request: Request, roomName: string | null): Promise<Response> {
     const body = await request.text();
-    if (!body) return plainResponse('', 202);
-    const applied = await this.#applyCommandAndMirror(roomName, body);
-    if (!applied) return plainResponse('command exceeds sheet limits', 413);
+    if (!body) return plainResponse("", 202);
+    const applied = await this.#applyCommandAndMirror(
+      roomName,
+      body,
+      request.headers.get("X-EC-Uid"),
+    );
+    if (!applied) return plainResponse("command exceeds sheet limits", 413);
     // HTTP commands have no originating socket to exclude. Fan out only
     // after persistence succeeds; native WS commands use handleExecute's
     // separate broadcast path and never enter #postCommands.
     const broadcastRoom = roomName ?? this.#ownName;
     if (broadcastRoom) {
       await this.#broadcastAll({
-        type: 'execute',
+        type: "execute",
         room: broadcastRoom,
-        user: '',
+        user: "",
         cmdstr: body,
       });
     }
-    return plainResponse('', 202);
+    return plainResponse("", 202);
   }
 
   /**
-   * Atomically allocate N multi-sheet TOC rows for an append import.
-   *
-   * Body JSON: `{ "titles": string[] }` — preferred titles (not yet unique).
-   * Under `blockConcurrencyWhile`, reads the live TOC, assigns unique
-   * `room.<max+1..>` child ids, pastes TOC rows via the same loadclipboard
-   * command path as ordinary appends, and returns:
-   *   `{ firstIndex, sheets: [{ subroom, link, title }] }`
-   *
-   * Callers then PUT child snapshots into the returned ids. Concurrent
-   * appends serialize here so two imports never share the same base.N or
-   * paste row.
+   * Two-phase append reservation. Reserve assigns collision-free child ids
+   * without publishing TOC rows; callers initialize every child, then commit.
+   * A failed child therefore cannot leave the parent pointing at public data.
    */
-  async #postImportAppendToc(
-    request: Request,
-    roomName: string | null,
-  ): Promise<Response> {
-    // Require ?name= explicitly so a sticky #ownName from an earlier call
-    // on the same isolate cannot silently authorize allocation.
-    const room = roomName;
-    if (!room) {
-      return plainResponse('room name required', 400);
-    }
-
-    let titles: string[];
+  async #postImportAppendToc(request: Request, roomName: string | null): Promise<Response> {
+    if (!roomName) return plainResponse("room name required", 400);
+    const uid = request.headers.get("X-EC-Uid");
+    let raw: unknown;
     try {
-      const parsed = JSON.parse(await request.text()) as { titles?: unknown };
-      if (!parsed || !Array.isArray(parsed.titles)) {
-        return plainResponse('titles array required', 400);
-      }
-      titles = parsed.titles.map((t) => (typeof t === 'string' ? t : ''));
+      raw = await request.json();
     } catch {
-      return plainResponse('invalid JSON body', 400);
+      return plainResponse("invalid JSON body", 400);
     }
-    if (titles.length === 0) {
-      return plainResponse('titles array required', 400);
+    if (raw === null || typeof raw !== "object" || !("phase" in raw)) {
+      return plainResponse("phase required", 400);
     }
-    if (titles.length > MAX_MULTI_SHEETS) {
-      return plainResponse(
-        `workbook exceeds ${MAX_MULTI_SHEETS} sheets (${titles.length})`,
-        413,
+    const phase = raw.phase;
+    const requestId = "requestId" in raw ? raw.requestId : null;
+    if (
+      typeof requestId !== "string" ||
+      requestId.length === 0 ||
+      requestId.length > 128 ||
+      !/^[A-Za-z0-9_-]+$/.test(requestId)
+    ) {
+      return plainResponse("valid requestId required", 400);
+    }
+    const reservationKey = `${MULTI_RESERVATION_PREFIX}${requestId}`;
+    type ReservedSheet = { subroom: string; link: string; title: string };
+    type Reservation = {
+      uid: string | null;
+      createdAt: number;
+      firstIndex: number;
+      requestedTitles: string[];
+      tocStartRow?: number;
+      committedAt?: number;
+      sheets: ReservedSheet[];
+    };
+
+    if (phase === "reserve") {
+      const requested = "sheets" in raw && Array.isArray(raw.sheets) ? raw.sheets : null;
+      if (requested === null || requested.length === 0) {
+        return plainResponse("sheets array required", 400);
+      }
+      const titles: string[] = [];
+      for (const sheet of requested) {
+        if (
+          sheet === null ||
+          typeof sheet !== "object" ||
+          !("title" in sheet) ||
+          typeof sheet.title !== "string"
+        ) {
+          return plainResponse("sheets array required", 400);
+        }
+        titles.push(sheet.title.slice(0, MAX_MULTI_SHEET_TITLE_LENGTH));
+      }
+      if (titles.length > MAX_MULTI_SHEETS) {
+        return plainResponse(`workbook exceeds ${MAX_MULTI_SHEETS} sheets (${titles.length})`, 413);
+      }
+      const reserved = await this.#state.blockConcurrencyWhile(
+        async (): Promise<
+          { ok: true; reservation: Reservation } | { ok: false; status: number; message: string }
+        > => {
+          const existing = await this.#state.storage.get<Reservation>(reservationKey);
+          if (existing) {
+            if (
+              existing.uid !== uid ||
+              existing.requestedTitles.length !== titles.length ||
+              existing.requestedTitles.some((title, index) => title !== titles[index])
+            ) {
+              return {
+                ok: false,
+                status: 409,
+                message: "requestId already reserved",
+              };
+            }
+            return { ok: true, reservation: existing };
+          }
+
+          const now = Date.now();
+          const pending = await this.#state.storage.list<Reservation>({
+            prefix: MULTI_RESERVATION_PREFIX,
+          });
+          const live: Reservation[] = [];
+          for (const [key, reservation] of pending) {
+            if (now - reservation.createdAt >= MULTI_RESERVATION_TTL_MS) {
+              await this.#state.storage.delete(key);
+            } else if (reservation.committedAt === undefined) {
+              live.push(reservation);
+            }
+          }
+          if (live.length >= MAX_MULTI_RESERVATIONS) {
+            return {
+              ok: false,
+              status: 429,
+              message: "too many pending sheet operations",
+            };
+          }
+
+          const ss = await this.#getSpreadsheet(uid);
+          const grid = parseCSV(ss.exportCSV());
+          const existingLinks: string[] = [];
+          const currentTitles: string[] = [];
+          for (const row of grid.slice(1)) {
+            const link = row[0];
+            if (!link) continue;
+            existingLinks.push(link);
+            currentTitles.push(row[1] ?? "");
+          }
+          const pendingCount = live.reduce(
+            (sum, reservation) => sum + reservation.sheets.length,
+            0,
+          );
+          if (existingLinks.length + pendingCount + titles.length > MAX_MULTI_SHEETS) {
+            return {
+              ok: false,
+              status: 413,
+              message: `workbook exceeds ${MAX_MULTI_SHEETS} sheets`,
+            };
+          }
+          const pendingLinks = live.flatMap((reservation) =>
+            reservation.sheets.map((sheet) => sheet.link),
+          );
+          const inferredNext =
+            getMaxSubsheetIndex([...existingLinks, ...pendingLinks], roomName) + 1;
+          const storedNext = await this.#state.storage.get<number>(STORAGE_KEYS.metaNextChildIndex);
+          const firstIndex =
+            typeof storedNext === "number" && Number.isSafeInteger(storedNext) && storedNext > 0
+              ? Math.max(storedNext, inferredNext)
+              : inferredNext;
+          const lastIndex = firstIndex + titles.length - 1;
+          if (!Number.isSafeInteger(lastIndex) || !isValidRoomName(`${roomName}.${lastIndex}`)) {
+            return {
+              ok: false,
+              status: 413,
+              message: "child room namespace exhausted",
+            };
+          }
+          for (const reservation of live) {
+            currentTitles.push(...reservation.sheets.map((sheet) => sheet.title));
+          }
+          const sheets: ReservedSheet[] = [];
+          for (let index = 0; index < titles.length; index++) {
+            const childIndex = firstIndex + index;
+            const preferred = titles[index]!.trim() || `Sheet${childIndex}`;
+            let title = preferred;
+            if (
+              currentTitles
+                .map((candidate) => candidate.toLowerCase())
+                .includes(title.toLowerCase())
+            ) {
+              title = `${title}_${childIndex}`;
+            }
+            currentTitles.push(title);
+            const subroom = `${roomName}.${childIndex}`;
+            sheets.push({ subroom, link: `/${subroom}`, title });
+          }
+          const reservation: Reservation = {
+            uid,
+            createdAt: now,
+            firstIndex,
+            requestedTitles: titles,
+            sheets,
+          };
+          await this.#state.storage.put({
+            [reservationKey]: reservation,
+            [STORAGE_KEYS.metaNextChildIndex]: firstIndex + titles.length,
+          });
+          return { ok: true, reservation };
+        },
+      );
+      if (!reserved.ok) {
+        return plainResponse(reserved.message, reserved.status);
+      }
+      return jsonResponse(
+        {
+          requestId,
+          firstIndex: reserved.reservation.firstIndex,
+          sheets: reserved.reservation.sheets,
+        },
+        201,
       );
     }
 
-    type AllocSheet = { subroom: string; link: string; title: string };
-    type AllocResult =
-      | {
-          ok: true;
-          firstIndex: number;
-          sheets: AllocSheet[];
-          cmdBatches: string[];
-          auditRows: Array<{ seq: number; ts: number; body: string }>;
-        }
-      | { ok: false; status: number; message: string };
+    if (phase !== "commit") return plainResponse("invalid phase", 400);
+    const reserved = await this.#state.storage.get<Reservation>(reservationKey);
+    if (!reserved) return plainResponse("reservation not found", 409);
+    if (reserved.uid !== uid) return plainResponse("Forbidden", 403);
 
-    const allocated = await this.#state.blockConcurrencyWhile(async (): Promise<AllocResult> => {
-      // Authoritative private check under the same lock as allocation.
-      // The Worker precheck is UX-only; a parent can flip private between
-      // those awaits, and absent ACL on fresh children would publish content.
-      const { access } = await this.#getAccessMeta();
-      if (access === 'private') {
-        return {
-          ok: false,
-          status: 409,
-          message:
-            'Multi-sheet import is unavailable for private rooms because new sub-sheets would be public.',
-        };
-      }
-
-      const ss = await this.#getSpreadsheet();
-      const grid = parseCSV(ss.exportCSV());
-      const existingLinks: string[] = [];
-      const existingTitles: string[] = [];
-      if (grid.length > 1) {
-        for (const row of grid.slice(1)) {
-          const link = row[0];
-          if (!link) continue;
-          existingLinks.push(link);
-          existingTitles.push(row[1] ?? '');
-        }
-      }
-      if (existingLinks.length + titles.length > MAX_MULTI_SHEETS) {
-        return {
-          ok: false,
-          status: 413,
-          message: `workbook exceeds ${MAX_MULTI_SHEETS} sheets (${existingLinks.length + titles.length})`,
-        };
-      }
-
-      const startMax = getMaxSubsheetIndex(existingLinks, room);
-      const firstIndex = startMax + 1;
-      const currentTitles = [...existingTitles];
-      const sheets: AllocSheet[] = [];
-      const cmdBatches: string[] = [];
-      const auditRows: Array<{ seq: number; ts: number; body: string }> = [];
-
-      for (let i = 0; i < titles.length; i++) {
-        const nextIdx = firstIndex + i;
-        const preferred = titles[i]!.trim() || `Sheet${nextIdx}`;
-        let title = preferred;
-        if (currentTitles.map((t) => t.toLowerCase()).includes(title.toLowerCase())) {
-          title = `${title}_${nextIdx}`;
-        }
-        currentTitles.push(title);
-        const subroom = `${room}.${nextIdx}`;
-        const link = `/${subroom}`;
-        sheets.push({ subroom, link, title });
-
-        const csvBody = `"${link.replace(/"/g, '""')}","${title.replace(/"/g, '""')}"`;
-        const loadcmd = workbookToLoadClipboardCommand(
-          new TextEncoder().encode(csvBody),
+    const verifyHeaders = new Headers({ "Content-Type": "application/json" });
+    if (uid !== null) verifyHeaders.set("X-EC-Uid", uid);
+    for (const sheet of reserved.sheets) {
+      const child = this.#env.ROOM.get(this.#env.ROOM.idFromName(encodeRoom(sheet.subroom)));
+      let verified: Response;
+      try {
+        verified = await child.fetch(
+          `https://do.local/_do/child-snapshot?name=${encodeURIComponent(sheet.subroom)}`,
+          {
+            method: "POST",
+            headers: verifyHeaders,
+            body: JSON.stringify({
+              parent: roomName,
+              snapshot: "",
+              mode: "verify",
+            }),
+            signal: AbortSignal.timeout(5_000),
+          },
         );
-        if (!loadcmd) {
-          return {
-            ok: false,
-            status: 500,
-            message: 'import failed',
-          };
-        }
-        const pasteRow = existingLinks.length + i + 2;
-        const commandText = `${loadcmd}\npaste A${pasteRow} all`;
-        const applied = await this.#appendCommand(commandText);
-        if (applied === null) {
-          return {
-            ok: false,
-            status: 413,
-            message: 'command exceeds sheet limits',
-          };
-        }
-        cmdBatches.push(commandText);
-        auditRows.push({
-          seq: applied.auditSeq,
-          ts: applied.ts,
-          body: applied.auditBody,
+      } catch {
+        return new Response("child verification failed", {
+          status: 503,
+          headers: { "Content-Type": PLAIN_TEXT, "Retry-After": "5" },
         });
       }
-      return { ok: true, firstIndex, sheets, cmdBatches, auditRows };
-    });
-
-    if (!allocated.ok) {
-      return plainResponse(allocated.message, allocated.status);
-    }
-
-    // Mirror rooms index + durable audit_log outside the lock (parity with
-    // #applyCommandAndMirror used by POST /_do/commands).
-    const lastTs = allocated.auditRows[allocated.auditRows.length - 1]!.ts;
-    await this.#mirrorIndex(room, lastTs);
-    await this.#mirrorAudit(room, allocated.auditRows);
-    for (const row of allocated.auditRows) {
-      if (row.seq >= AUDIT_HISTORY_KEEP) {
-        await this.#state.storage.delete(auditKey(row.seq - AUDIT_HISTORY_KEEP));
+      if (verified.status === 501) return plainResponse("Not implemented", 501);
+      if (verified.status !== 201) {
+        return plainResponse(
+          (await verified.text().catch(() => "child verification failed")) ||
+            "child verification failed",
+          verified.status >= 400 ? verified.status : 500,
+        );
       }
     }
-    await this.#armAlarm();
-    for (const cmdstr of allocated.cmdBatches) {
+
+    const committed = await this.#state.blockConcurrencyWhile(async () => {
+      const reservation = await this.#state.storage.get<Reservation>(reservationKey);
+      if (!reservation) return { kind: "missing" } as const;
+      if (reservation.uid !== uid) return { kind: "forbidden" } as const;
+      if (reservation.committedAt !== undefined) {
+        return { kind: "already", reservation } as const;
+      }
+      const ss = await this.#getSpreadsheet(uid);
+      const grid = parseCSV(ss.exportCSV());
+      const hasTocContent = grid.some((row) => row.some((cell) => cell !== ""));
+      const tocStartRow = hasTocContent ? grid.length + 1 : 2;
+      const csvRows = reservation.sheets.map(
+        ({ link, title }) => `"${link.replace(/"/g, '""')}","${title.replace(/"/g, '""')}"`,
+      );
+      if (!hasTocContent) csvRows.unshift('"#url","#title"');
+      const loadcmd = workbookToLoadClipboardCommand(new TextEncoder().encode(csvRows.join("\n")));
+      if (!loadcmd) return { kind: "too-large" } as const;
+      const commandText = `${loadcmd}\npaste A${hasTocContent ? grid.length + 1 : 1} all`;
+      const applied = await this.#appendCommand(commandText, uid, {
+        [reservationKey]: {
+          ...reservation,
+          committedAt: Date.now(),
+          tocStartRow,
+        } satisfies Reservation,
+      });
+      if (applied === null) return { kind: "too-large" } as const;
+      return { kind: "applied", commandText, applied, tocStartRow } as const;
+    });
+    if (committed.kind === "missing") {
+      return plainResponse("reservation not found", 409);
+    }
+    if (committed.kind === "forbidden") return plainResponse("Forbidden", 403);
+    if (committed.kind === "too-large") {
+      return plainResponse("command exceeds sheet limits", 413);
+    }
+    if (committed.kind === "applied") {
+      await this.#mirrorIndex(roomName, committed.applied.ts);
+      await this.#mirrorAudit(roomName, [
+        {
+          seq: committed.applied.auditSeq,
+          ts: committed.applied.ts,
+          body: committed.applied.auditBody,
+        },
+      ]);
+      await this.#armAlarm();
       await this.#broadcastAll({
-        type: 'execute',
-        room,
-        user: '',
-        cmdstr,
+        type: "execute",
+        room: roomName,
+        user: "",
+        cmdstr: committed.commandText,
       });
     }
-
-    return jsonResponse({
-      firstIndex: allocated.firstIndex,
-      sheets: allocated.sheets,
-    });
+    const tocStartRow =
+      committed.kind === "applied" ? committed.tocStartRow : committed.reservation.tocStartRow;
+    if (
+      typeof tocStartRow !== "number" ||
+      !Number.isSafeInteger(tocStartRow) ||
+      tocStartRow < 2
+    ) {
+      return plainResponse("reservation row is unavailable", 500);
+    }
+    return jsonResponse(
+      {
+        requestId,
+        firstIndex: reserved.firstIndex,
+        sheets: reserved.sheets.map((sheet, index) => ({
+          ...sheet,
+          row: tocStartRow + index,
+        })),
+      },
+      201,
+    );
   }
-
 
   /**
    * Apply a command batch + mirror to D1. Shared between the HTTP path
@@ -902,10 +1443,9 @@ export class RoomDO implements DurableObject {
   async #applyCommandAndMirror(
     roomName: string | null,
     cmdstr: string,
+    uid: string | null,
   ): Promise<boolean> {
-    const applied = await this.#state.blockConcurrencyWhile(() =>
-      this.#appendCommand(cmdstr),
-    );
+    const applied = await this.#state.blockConcurrencyWhile(() => this.#appendCommand(cmdstr, uid));
     if (applied === null) return false;
     await this.#mirrorIndex(roomName, applied.ts);
     // Offload the audit entry to D1 (the durable record) so the alarm's DO
@@ -918,19 +1458,14 @@ export class RoomDO implements DurableObject {
       },
     ]);
     if (applied.auditSeq >= AUDIT_HISTORY_KEEP) {
-      await this.#state.storage.delete(
-        auditKey(applied.auditSeq - AUDIT_HISTORY_KEEP),
-      );
+      await this.#state.storage.delete(auditKey(applied.auditSeq - AUDIT_HISTORY_KEEP));
     }
     return true;
   }
 
-  async #deleteAll(
-    roomName: string | null,
-    uid: string | null,
-  ): Promise<Response> {
-    await this.#deleteAllAndUnindex(roomName, true, uid);
-    return plainResponse('OK', 201);
+  async #deleteAll(roomName: string | null, uid: string | null): Promise<Response> {
+    await this.#deleteAllAndUnindex(roomName, uid);
+    return plainResponse("OK", 201);
   }
 
   /**
@@ -940,25 +1475,19 @@ export class RoomDO implements DurableObject {
    * `/_rooms` kept listing rooms that had been stopHuddle'd through the
    * WS (discovered during 2026-04-20 browser smoke).
    *
-   * `preserveAccess` keeps the private access trio as a tombstone so a
-   * deleted private room's name cannot be squatted; the TTL alarm
-   * passes false to reclaim the name entirely. `uid` is forwarded to
-   * the formdata sibling so a private sibling accepts the cascade.
+   * The local private ACL or immutable parent marker is retained as a
+   * permanent tombstone so neither a protected room nor a child can be
+   * re-created as public. `uid` is forwarded to the formdata sibling so a
+   * private sibling accepts the cascade.
    */
-  async #deleteAllAndUnindex(
-    roomName: string | null,
-    preserveAccess: boolean,
-    uid: string | null,
-  ): Promise<void> {
-    let keptPrivateTombstone = false;
+  async #deleteAllAndUnindex(roomName: string | null, uid: string | null): Promise<void> {
     await this.#state.blockConcurrencyWhile(async () => {
-      const accessEntries = preserveAccess
-        ? await this.#readAccessEntries()
-        : {};
-      keptPrivateTombstone =
-        accessEntries[STORAGE_KEYS.metaAccess] === 'private';
+      const accessEntries = await this.#readAccessEntries();
+      const keptProtectedTombstone =
+        accessEntries[STORAGE_KEYS.metaAccess] === "private" ||
+        typeof accessEntries[STORAGE_KEYS.metaParent] === "string";
       await this.#state.storage.deleteAll();
-      if (keptPrivateTombstone) {
+      if (keptProtectedTombstone) {
         accessEntries[STORAGE_KEYS.metaUpdatedAt] = Date.now();
         await this.#state.storage.put(accessEntries);
       }
@@ -968,10 +1497,9 @@ export class RoomDO implements DurableObject {
       this.#nextChatSeq = 0;
       this.#resetVolatile();
     });
-    // `deleteAll()` may clear a pre-existing alarm under newer workerd
-    // compatibility dates; tombstones need their own TTL wake-up to release
-    // the reservation after expiry.
-    if (keptPrivateTombstone) await this.#armAlarm();
+    // Protected tombstones are permanent: reclaiming a private parent's ACL
+    // would declassify every surviving child, and reclaiming a child's parent
+    // marker would make a surviving TOC reopen it as standalone public.
     await this.#deleteIndex(roomName);
     await this.#deleteAuditChatFromD1(roomName);
     await this.#deleteFormdataSibling(roomName, uid);
@@ -982,23 +1510,17 @@ export class RoomDO implements DurableObject {
    * the main room is deleted. Skips when `roomName` is already a form-data
    * sibling or missing (issue #442).
    */
-  async #deleteFormdataSibling(
-    roomName: string | null,
-    uid: string | null,
-  ): Promise<void> {
+  async #deleteFormdataSibling(roomName: string | null, uid: string | null): Promise<void> {
     if (!roomName) return;
     const sibling = formdataSiblingRoom(roomName);
     if (!sibling) return;
     try {
       const id = this.#env.ROOM.idFromName(encodeRoom(sibling));
       const stub = this.#env.ROOM.get(id);
-      await stub.fetch(
-        `https://do.local/_do/all?name=${encodeURIComponent(sibling)}`,
-        {
-          method: 'DELETE',
-          ...(uid === null ? {} : { headers: { 'X-EC-Uid': uid } }),
-        },
-      );
+      await stub.fetch(`https://do.local/_do/all?name=${encodeURIComponent(sibling)}`, {
+        method: "DELETE",
+        ...(uid === null ? {} : { headers: { "X-EC-Uid": uid } }),
+      });
     } catch {
       // Sibling may not exist; legacy delete was silent on orphans too.
     }
@@ -1016,51 +1538,33 @@ export class RoomDO implements DurableObject {
    * initialized through the current cold-room CSV path put the same header in
    * row 2 because that compatibility path pastes at A2.
    */
-  async #getWorkbookKind(): Promise<Response> {
+  async #getWorkbookKind(uid: string | null): Promise<Response> {
     if (!(await hasSnapshot(this.#state.storage))) {
-      return jsonResponse({ kind: 'absent' });
+      return jsonResponse({ kind: "absent" });
     }
-    const ss = await this.#getSpreadsheet();
-    const a1 = (
-      ss.exportCell('A1') as
-        | { readonly datavalue?: unknown }
-        | null
-        | undefined
-    )?.datavalue;
-    const b1 = (
-      ss.exportCell('B1') as
-        | { readonly datavalue?: unknown }
-        | null
-        | undefined
-    )?.datavalue;
-    const a2 = (
-      ss.exportCell('A2') as
-        | { readonly datavalue?: unknown }
-        | null
-        | undefined
-    )?.datavalue;
-    const b2 = (
-      ss.exportCell('B2') as
-        | { readonly datavalue?: unknown }
-        | null
-        | undefined
-    )?.datavalue;
-    const isMulti =
-      (a1 === '#url' && b1 === '#title') ||
-      (a2 === '#url' && b2 === '#title');
-    return jsonResponse({ kind: isMulti ? 'multi' : 'single' });
+    const ss = await this.#getSpreadsheet(uid);
+    const a1 = (ss.exportCell("A1") as { readonly datavalue?: unknown } | null | undefined)
+      ?.datavalue;
+    const b1 = (ss.exportCell("B1") as { readonly datavalue?: unknown } | null | undefined)
+      ?.datavalue;
+    const a2 = (ss.exportCell("A2") as { readonly datavalue?: unknown } | null | undefined)
+      ?.datavalue;
+    const b2 = (ss.exportCell("B2") as { readonly datavalue?: unknown } | null | undefined)
+      ?.datavalue;
+    const isMulti = (a1 === "#url" && b1 === "#title") || (a2 === "#url" && b2 === "#title");
+    return jsonResponse({ kind: isMulti ? "multi" : "single" });
   }
 
-  async #getCells(): Promise<Response> {
-    const ss = await this.#getSpreadsheet();
+  async #getCells(uid: string | null): Promise<Response> {
+    const ss = await this.#getSpreadsheet(uid);
     // Legacy (src/sc.ls:361): `JSON.stringify(window.ss.sheet.cells)`.
     // Unwrapped — not `{cells: ...}`. External clients parse the map
     // directly as `response.A1.datavalue`, etc.
     return jsonResponse(ss.exportCells());
   }
 
-  async #getCell(coord: string): Promise<Response> {
-    const ss = await this.#getSpreadsheet();
+  async #getCell(coord: string, uid: string | null): Promise<Response> {
+    const ss = await this.#getSpreadsheet(uid);
     return jsonResponse(ss.exportCell(coord));
   }
 
@@ -1070,31 +1574,31 @@ export class RoomDO implements DurableObject {
   // caching beyond what the SocialCalc instance itself does. That keeps
   // each GET deterministic after any mutation (POST /_do/commands).
 
-  async #getHtml(): Promise<Response> {
-    const ss = await this.#getSpreadsheet();
+  async #getHtml(uid: string | null): Promise<Response> {
+    const ss = await this.#getSpreadsheet(uid);
     return textResponse(ss.createSheetHTML(), TEXT_HTML);
   }
 
-  async #getCsv(): Promise<Response> {
-    const ss = await this.#getSpreadsheet();
+  async #getCsv(uid: string | null): Promise<Response> {
+    const ss = await this.#getSpreadsheet(uid);
     // The `.csv` download is opened in desktop spreadsheet apps, so defang
     // formula/DDE injection (`=`, `+`, `-`, `@`) before emitting. csv.json
     // stays faithful — it's consumed as JSON, not evaluated as a formula.
     return textResponse(neutralizeCSVDocument(ss.exportCSV()), TEXT_CSV);
   }
 
-  async #getCsvJson(): Promise<Response> {
-    const ss = await this.#getSpreadsheet();
+  async #getCsvJson(uid: string | null): Promise<Response> {
+    const ss = await this.#getSpreadsheet(uid);
     return jsonResponse(parseCSV(ss.exportCSV()));
   }
 
-  async #getMd(): Promise<Response> {
-    const ss = await this.#getSpreadsheet();
+  async #getMd(uid: string | null): Promise<Response> {
+    const ss = await this.#getSpreadsheet(uid);
     return textResponse(csvToMarkdown(ss.exportCSV()), TEXT_MARKDOWN);
   }
 
-  async #getBinary(format: BinaryFormat): Promise<Response> {
-    const ss = await this.#getSpreadsheet();
+  async #getBinary(format: BinaryFormat, uid: string | null): Promise<Response> {
+    const ss = await this.#getSpreadsheet(uid);
     // Walk the raw SocialCalc sheet rather than going through CSV — that
     // preserves formulas, number formats, merges, and comments. See
     // `sheetViewToWorksheet` for the graceful-degrade-to-value rules.
@@ -1102,8 +1606,8 @@ export class RoomDO implements DurableObject {
     return binaryResponse(bytes, BINARY_CONTENT_TYPES[format]);
   }
 
-  async #getSheetData(): Promise<Response> {
-    const ss = await this.#getSpreadsheet();
+  async #getSheetData(uid: string | null): Promise<Response> {
+    const ss = await this.#getSpreadsheet(uid);
     return jsonResponse(ss.exportSheetData());
   }
 
@@ -1130,13 +1634,11 @@ export class RoomDO implements DurableObject {
     const parsed = (await request.json()) as { to?: unknown };
     const to = parsed.to;
     if (!isValidRoomName(to)) {
-      return new Response('rename body must be {to: string}', { status: 400 });
+      return new Response("rename body must be {to: string}", { status: 400 });
     }
-    if (
-      (await this.#state.storage.get<unknown>(STORAGE_KEYS.metaAccess)) ===
-      'private'
-    ) {
-      return new Response('Private room rename is not supported', {
+    const access = await this.#effectiveAccess(request.headers.get("X-EC-Uid"));
+    if (access.parented || access.isPrivate || !access.canRead || !access.canWrite) {
+      return new Response("Private room rename is not supported", {
         status: 409,
       });
     }
@@ -1149,13 +1651,11 @@ export class RoomDO implements DurableObject {
       // No-op: legacy `if snapshot` guard at main.ls:427 -- nothing to rename.
       return new Response(null, { status: 204 });
     }
-    const targetStub = this.#env.ROOM.get(
-      this.#env.ROOM.idFromName(encodeRoom(to)),
-    );
-    const installRes = await targetStub.fetch('https://do.local/_do/install', {
-      method: 'POST',
+    const targetStub = this.#env.ROOM.get(this.#env.ROOM.idFromName(encodeRoom(to)));
+    const installRes = await targetStub.fetch("https://do.local/_do/install", {
+      method: "POST",
       body: JSON.stringify({ snapshot, log, audit }),
-      headers: { 'Content-Type': 'application/json' },
+      headers: { "Content-Type": "application/json" },
     });
     if (!installRes.ok) {
       return new Response(`install failed: ${installRes.status}`, { status: 502 });
@@ -1168,7 +1668,7 @@ export class RoomDO implements DurableObject {
       this.#nextChatSeq = 0;
       this.#resetVolatile();
     });
-    return plainResponse('OK', 201);
+    return plainResponse("OK", 201);
   }
 
   /**
@@ -1179,17 +1679,15 @@ export class RoomDO implements DurableObject {
     const parsed = (await request.json()) as { to?: unknown };
     const to = parsed.to;
     if (!isValidRoomName(to)) {
-      return new Response('clone body must be {to: string}', { status: 400 });
+      return new Response("clone body must be {to: string}", { status: 400 });
     }
     // A clone copies this room's snapshot into a PUBLIC target — on a
     // private source that would declassify content (a writer-only
     // member could exfiltrate a sheet they cannot read). Same Phase A
     // stopgap as rename: refuse outright.
-    if (
-      (await this.#state.storage.get<unknown>(STORAGE_KEYS.metaAccess)) ===
-      'private'
-    ) {
-      return new Response('Private room clone is not supported', {
+    const access = await this.#effectiveAccess(request.headers.get("X-EC-Uid"));
+    if (access.isPrivate || !access.canRead || !access.canWrite) {
+      return new Response("Private room clone is not supported", {
         status: 409,
       });
     }
@@ -1198,12 +1696,12 @@ export class RoomDO implements DurableObject {
     const targetStub = this.#env.ROOM.get(targetId);
     const putRes = await targetStub.fetch(
       `https://do.local/_do/snapshot?name=${encodeURIComponent(to)}`,
-      { method: 'PUT', body: snapshot ?? '' },
+      { method: "PUT", body: snapshot ?? "" },
     );
     if (!putRes.ok) {
       return new Response(`clone failed: ${putRes.status}`, { status: 502 });
     }
-    return plainResponse('OK', 201);
+    return plainResponse("OK", 201);
   }
 
   /**
@@ -1226,7 +1724,7 @@ export class RoomDO implements DurableObject {
     try {
       raw = await request.json();
     } catch {
-      return new Response('seed body must be valid JSON', { status: 400 });
+      return new Response("seed body must be valid JSON", { status: 400 });
     }
     const parsed = parseSeedPayload(raw, () => Date.now());
     if (!parsed.ok) {
@@ -1248,9 +1746,7 @@ export class RoomDO implements DurableObject {
     //     "commands but never folded" rooms into a normal snapshot room.
     //   - neither → empty room; keep the "no snapshot" shape.
     const hasState = payload.snapshot.length > 0 || payload.log.length > 0;
-    const foldedSnapshot = hasState
-      ? foldSnapshot(payload.snapshot, payload.log as string[])
-      : '';
+    const foldedSnapshot = hasState ? foldSnapshot(payload.snapshot, payload.log as string[]) : "";
     const logTail = (payload.log as string[]).slice(-LOG_RING);
     await this.#state.blockConcurrencyWhile(async () => {
       const accessEntries = await this.#readAccessEntries();
@@ -1330,7 +1826,7 @@ export class RoomDO implements DurableObject {
         ),
       );
     }
-    return plainResponse('OK', 201);
+    return plainResponse("OK", 201);
   }
 
   /**
@@ -1365,8 +1861,8 @@ export class RoomDO implements DurableObject {
     roomName: string | null,
     searchParams: URLSearchParams,
   ): Promise<Response> {
-    const seqRaw = searchParams.get('seq');
-    const chunksRaw = searchParams.get('chunks');
+    const seqRaw = searchParams.get("seq");
+    const chunksRaw = searchParams.get("chunks");
     // `URLSearchParams.get` returns `null` for missing params;
     // `Number(null) === 0` would otherwise slip through the range check.
     const seq = seqRaw === null ? NaN : Number(seqRaw);
@@ -1379,13 +1875,13 @@ export class RoomDO implements DurableObject {
       chunks > MAX_SNAPSHOT_CHUNKS ||
       seq >= chunks
     ) {
-      return new Response('seq/chunks must be integers with 0 ≤ seq < chunks', {
+      return new Response("seq/chunks must be integers with 0 ≤ seq < chunks", {
         status: 400,
       });
     }
     const bytes = await request.arrayBuffer();
     if (bytes.byteLength > SNAPSHOT_CHUNK_BYTES) {
-      return plainResponse('snapshot chunk exceeds 100 KiB', 413);
+      return plainResponse("snapshot chunk exceeds 100 KiB", 413);
     }
     const body = new TextDecoder().decode(bytes);
     const isFinal = seq === chunks - 1;
@@ -1422,7 +1918,7 @@ export class RoomDO implements DurableObject {
     if (isFinal) {
       await this.#mirrorIndex(roomName, updatedAt);
     }
-    return plainResponse('OK', 201);
+    return plainResponse("OK", 201);
   }
 
   async #postInstall(request: Request): Promise<Response> {
@@ -1431,16 +1927,16 @@ export class RoomDO implements DurableObject {
       log?: unknown;
       audit?: unknown;
     };
-    if (typeof parsed.snapshot !== 'string') {
-      return new Response('install body.snapshot must be string', { status: 400 });
+    if (typeof parsed.snapshot !== "string") {
+      return new Response("install body.snapshot must be string", { status: 400 });
     }
     const log = Array.isArray(parsed.log) ? (parsed.log as unknown[]) : [];
     const audit = Array.isArray(parsed.audit) ? (parsed.audit as unknown[]) : [];
-    if (!log.every((e) => typeof e === 'string')) {
-      return new Response('install body.log must be string[]', { status: 400 });
+    if (!log.every((e) => typeof e === "string")) {
+      return new Response("install body.log must be string[]", { status: 400 });
     }
-    if (!audit.every((e) => typeof e === 'string')) {
-      return new Response('install body.audit must be string[]', { status: 400 });
+    if (!audit.every((e) => typeof e === "string")) {
+      return new Response("install body.audit must be string[]", { status: 400 });
     }
     // Fold base+log into a single authoritative snapshot on ingest.
     // `#getSpreadsheet` no longer replays the log when a snapshot is
@@ -1471,7 +1967,7 @@ export class RoomDO implements DurableObject {
       this.#resetVolatile();
     });
     await this.#armAlarm();
-    return plainResponse('OK', 201);
+    return plainResponse("OK", 201);
   }
 
   /**
@@ -1484,55 +1980,52 @@ export class RoomDO implements DurableObject {
    * by someone else.
    */
   async #postInitPrivate(request: Request): Promise<Response> {
-    const uid = request.headers.get('X-EC-Uid');
+    const uid = request.headers.get("X-EC-Uid");
     if (uid === null || uid.length === 0) {
-      return plainResponse('Forbidden', 403);
+      return plainResponse("Forbidden", 403);
     }
     let raw: unknown;
     try {
       raw = await request.json();
     } catch {
-      return plainResponse('init-private body must be valid JSON', 400);
+      return plainResponse("init-private body must be valid JSON", 400);
     }
-    if (raw === null || typeof raw !== 'object') {
-      return plainResponse('init-private body must be an object', 400);
+    if (raw === null || typeof raw !== "object") {
+      return plainResponse("init-private body must be an object", 400);
     }
-    const snapshot =
-      'snapshot' in raw && typeof raw.snapshot === 'string'
-        ? raw.snapshot
-        : null;
+    const snapshot = "snapshot" in raw && typeof raw.snapshot === "string" ? raw.snapshot : null;
     if (snapshot === null) {
-      return plainResponse('init-private body.snapshot must be string', 400);
+      return plainResponse("init-private body.snapshot must be string", 400);
     }
     if (!isSnapshotWithinSheetLimits(snapshot)) {
-      return plainResponse('init-private snapshot exceeds sheet limits', 413);
+      return plainResponse("init-private snapshot exceeds sheet limits", 413);
     }
-    const acl = 'acl' in raw ? raw.acl : null;
+    const acl = "acl" in raw ? raw.acl : null;
     if (
       acl === null ||
-      typeof acl !== 'object' ||
-      !('owner' in acl) ||
-      typeof acl.owner !== 'string' ||
+      typeof acl !== "object" ||
+      !("owner" in acl) ||
+      typeof acl.owner !== "string" ||
       acl.owner.length === 0 ||
-      !('readers' in acl) ||
+      !("readers" in acl) ||
       !Array.isArray(acl.readers) ||
-      !acl.readers.every((r) => typeof r === 'string' && r.length > 0) ||
-      !('writers' in acl) ||
+      !acl.readers.every((r) => typeof r === "string" && r.length > 0) ||
+      !("writers" in acl) ||
       !Array.isArray(acl.writers) ||
-      !acl.writers.every((w) => typeof w === 'string' && w.length > 0)
+      !acl.writers.every((w) => typeof w === "string" && w.length > 0)
     ) {
-      return plainResponse('init-private body.acl is malformed', 400);
+      return plainResponse("init-private body.acl is malformed", 400);
     }
-    const group = 'group' in raw ? raw.group : undefined;
-    if (group !== undefined && typeof group !== 'string') {
-      return plainResponse('init-private body.group must be string', 400);
+    const group = "group" in raw ? raw.group : undefined;
+    if (group !== undefined && typeof group !== "string") {
+      return plainResponse("init-private body.group must be string", 400);
     }
     if (acl.owner !== uid) {
-      return plainResponse('Forbidden', 403);
+      return plainResponse("Forbidden", 403);
     }
     const privateEntries = {
       ...snapshotEntries(snapshot),
-      [STORAGE_KEYS.metaAccess]: 'private',
+      [STORAGE_KEYS.metaAccess]: "private",
       [STORAGE_KEYS.metaAcl]: {
         owner: acl.owner,
         readers: acl.readers,
@@ -1550,7 +2043,7 @@ export class RoomDO implements DurableObject {
       }),
     );
     if (!created) {
-      return plainResponse('Room already exists', 409);
+      return plainResponse("Room already exists", 409);
     }
     this.#ss = null;
     this.#nextLogSeq = 0;
@@ -1558,7 +2051,7 @@ export class RoomDO implements DurableObject {
     this.#nextChatSeq = 0;
     this.#resetVolatile();
     await this.#armAlarm();
-    return plainResponse('OK', 201);
+    return plainResponse("OK", 201);
   }
 
   // ─── Cron fire-trigger (Phase 9) ───────────────────────────────────────
@@ -1590,28 +2083,25 @@ export class RoomDO implements DurableObject {
    * also moved on.
    */
   async #fireTrigger(cell: string): Promise<Response> {
-    if (cell.length === 0) return plainResponse('', 200);
+    if (cell.length === 0) return plainResponse("", 200);
     const ss = await this.#getSpreadsheet();
-    const cellRecord = ss.exportCell(cell) as
-      | { datavalue?: unknown; formula?: unknown }
-      | null;
-    if (!cellRecord) return plainResponse('', 200);
+    const cellRecord = ss.exportCell(cell) as { datavalue?: unknown; formula?: unknown } | null;
+    if (!cellRecord) return plainResponse("", 200);
     // Legacy's TriggerIoAction.Email reconstructs the command from
     // formula-like payload stored in the cell. In practice clients put
     // the full `sendemail <to> <subject> <body>` URL-encoded string
     // into `formula` (for triggered cells) or `datavalue` (for plain
     // text). Try both.
     const candidate =
-      (typeof cellRecord.formula === 'string' && cellRecord.formula.length > 0
+      (typeof cellRecord.formula === "string" && cellRecord.formula.length > 0
         ? cellRecord.formula
-        : '') ||
-      (typeof cellRecord.datavalue === 'string' ? cellRecord.datavalue : '');
+        : "") || (typeof cellRecord.datavalue === "string" ? cellRecord.datavalue : "");
     const parsed = parseSendemail(candidate);
-    if (!parsed) return plainResponse('', 200);
+    if (!parsed) return plainResponse("", 200);
     const sender = buildEmailSender(this.#env);
     const { message } = await sender.send(parsed.to, parsed.subject, parsed.body);
-    await this.#broadcastAll({ type: 'confirmemailsent', message });
-    return plainResponse('', 200);
+    await this.#broadcastAll({ type: "confirmemailsent", message });
+    return plainResponse("", 200);
   }
 
   // ─── WebSocket acceptance ──────────────────────────────────────────────
@@ -1622,14 +2112,14 @@ export class RoomDO implements DurableObject {
    * session token so private-room frames can honor logout revocation.
    */
   #acceptWebSocket(request: Request): Response {
-    if (request.headers.get('Upgrade') !== 'websocket') {
-      return plainResponse('Expected Upgrade: websocket', 426);
+    if (request.headers.get("Upgrade") !== "websocket") {
+      return plainResponse("Expected Upgrade: websocket", 426);
     }
     // Per-room connection cap — a coarse DoS backstop. The hibernation API
     // keeps every accepted socket retrievable via `getWebSockets()`, so a
     // simple count is the live connection total for this room.
     if (this.#state.getWebSockets().length >= MAX_CONN) {
-      return plainResponse('Too many connections', 503);
+      return plainResponse("Too many connections", 503);
     }
     /* istanbul ignore next -- @preserve
      *   `upgradeWebSocket` needs `WebSocketPair`, `state.acceptWebSocket`,
@@ -1638,21 +2128,18 @@ export class RoomDO implements DurableObject {
      *   workers-pool integration tests (`test/ws.test.ts`,
      *   `test/legacy-socketio.test.ts`, `test/room.test.ts`).
      */
-    const uid = request.headers.get('X-EC-Uid');
-    const sessionExpHeader = request.headers.get('X-EC-Session-Exp');
-    const session = request.headers.get('X-EC-Session');
+    const uid = request.headers.get("X-EC-Uid");
+    const sessionExpHeader = request.headers.get("X-EC-Session-Exp");
+    const session = request.headers.get("X-EC-Session");
     /* istanbul ignore next -- workerd-only WebSocket attachment wiring */
-    const sessionExp =
-      sessionExpHeader === null ? null : Number(sessionExpHeader);
+    const sessionExp = sessionExpHeader === null ? null : Number(sessionExpHeader);
     /* istanbul ignore next -- workerd-only WebSocket attachment wiring */
     const wsOpts = {
       ...(isSandstormEnforced(this.#env)
         ? { sandstormModify: sandstormCanModify(request.headers) }
         : {}),
       ...(uid === null ? {} : { uid }),
-      ...(sessionExp === null || !Number.isFinite(sessionExp)
-        ? {}
-        : { sessionExp }),
+      ...(sessionExp === null || !Number.isFinite(sessionExp) ? {} : { sessionExp }),
       ...(session === null ? {} : { session }),
     };
     return upgradeWebSocket(this.#state, request, wsOpts);
@@ -1664,11 +2151,11 @@ export class RoomDO implements DurableObject {
    * `legacy: true` + `#sendTo` / `webSocketMessage`).
    */
   #acceptLegacyWebSocket(request: Request): Response {
-    if (request.headers.get('Upgrade') !== 'websocket') {
-      return plainResponse('Expected Upgrade: websocket', 426);
+    if (request.headers.get("Upgrade") !== "websocket") {
+      return plainResponse("Expected Upgrade: websocket", 426);
     }
     if (this.#state.getWebSockets().length >= MAX_CONN) {
-      return plainResponse('Too many connections', 503);
+      return plainResponse("Too many connections", 503);
     }
     /* istanbul ignore next -- @preserve
      *   Same workerd-only surface as `#acceptWebSocket` (WebSocketPair +
@@ -1690,28 +2177,23 @@ export class RoomDO implements DurableObject {
    * Worker-shim baseline — so spreadsheet state stays on the real room DO.
    */
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
-    const attachment =
-      (ws.deserializeAttachment() as WsAttachment | null) ??
-      { user: '', room: '', auth: '' };
-    const messageSize =
-      typeof message === 'string' ? message.length : message.byteLength;
+    const attachment = (ws.deserializeAttachment() as WsAttachment | null) ?? {
+      user: "",
+      room: "",
+      auth: "",
+    };
+    const messageSize = typeof message === "string" ? message.length : message.byteLength;
     if (messageSize > MAX_WS_FRAME_CHARS) {
       try {
-        ws.close(1009, 'Message too large');
+        ws.close(1009, "Message too large");
       } catch {
         // The peer may already be gone.
       }
       return;
     }
     if (this.#rateLimitSocket(ws, attachment)) return;
-    if (typeof message !== 'string') return;
-    if (
-      await this.#closeUnauthorizedPrivateSocket(
-        ws,
-        attachment,
-        'read-or-write',
-      )
-    ) {
+    if (typeof message !== "string") return;
+    if (await this.#closeUnauthorizedPrivateSocket(ws, attachment, "read-or-write")) {
       return;
     }
     if (attachment.legacy) {
@@ -1723,35 +2205,27 @@ export class RoomDO implements DurableObject {
     // Every room-labelled frame stays on its accepted socket. `ask.recalc`
     // is the one legacy exception: its room names a cross-sheet reference,
     // while this DO supplies the current cached snapshot.
-    if (parsed.type !== 'ask.recalc' && parsed.room !== attachment.room) return;
+    if (parsed.type !== "ask.recalc" && parsed.room !== attachment.room) return;
     // The handshake defines the cosmetic user identity for this socket.
     // Canonical parsing produced a fresh object, so rebinding cannot mutate
     // caller-owned state.
-    if ('user' in parsed) parsed.user = attachment.user;
+    if ("user" in parsed) parsed.user = attachment.user;
     const perMessageAuth =
-      'auth' in parsed && typeof parsed.auth === 'string'
-        ? parsed.auth
-        : attachment.auth;
-    const ctx = this.#buildWsContext(
-      ws,
-      attachment,
-      attachment.room,
-      perMessageAuth,
-    );
+      "auth" in parsed && typeof parsed.auth === "string" ? parsed.auth : attachment.auth;
+    const ctx = this.#buildWsContext(ws, attachment, attachment.room, perMessageAuth);
     await dispatchWsMessage(ctx, parsed);
   }
-
 
   #rateLimitSocket(ws: WebSocket, attachment: WsAttachment): boolean {
     const now = Date.now();
     const startedAt = attachment.rateWindowStartedAt;
     const inCurrentWindow =
-      typeof startedAt === 'number' &&
+      typeof startedAt === "number" &&
       Number.isFinite(startedAt) &&
       now >= startedAt &&
       now - startedAt < WS_RATE_WINDOW_MS;
     const priorCount =
-      typeof attachment.rateMessageCount === 'number' &&
+      typeof attachment.rateMessageCount === "number" &&
       Number.isFinite(attachment.rateMessageCount) &&
       attachment.rateMessageCount >= 0
         ? attachment.rateMessageCount
@@ -1777,11 +2251,11 @@ export class RoomDO implements DurableObject {
         const peerStartedAt = peerAttachment?.rateWindowStartedAt;
         const peerCount = peerAttachment?.rateMessageCount;
         if (
-          typeof peerStartedAt === 'number' &&
+          typeof peerStartedAt === "number" &&
           Number.isFinite(peerStartedAt) &&
           now >= peerStartedAt &&
           now - peerStartedAt < WS_RATE_WINDOW_MS &&
-          typeof peerCount === 'number' &&
+          typeof peerCount === "number" &&
           Number.isFinite(peerCount) &&
           peerCount >= 0
         ) {
@@ -1814,21 +2288,17 @@ export class RoomDO implements DurableObject {
       } satisfies WsAttachment);
     } catch {
       try {
-        ws.close(1011, 'Attachment state unavailable');
+        ws.close(1011, "Attachment state unavailable");
       } catch {
         // The peer may already be gone.
       }
       return true;
     }
     const socketExceeded = rateMessageCount > MAX_WS_MESSAGES_PER_WINDOW;
-    const roomExceeded =
-      this.#roomRateMessageCount > MAX_ROOM_WS_MESSAGES_PER_WINDOW;
+    const roomExceeded = this.#roomRateMessageCount > MAX_ROOM_WS_MESSAGES_PER_WINDOW;
     if (!socketExceeded && !roomExceeded) return false;
     try {
-      ws.close(
-        1008,
-        roomExceeded ? 'Room message rate exceeded' : 'Message rate exceeded',
-      );
+      ws.close(1008, roomExceeded ? "Room message rate exceeded" : "Message rate exceeded");
     } catch {
       // The peer may already be gone.
     }
@@ -1840,16 +2310,12 @@ export class RoomDO implements DurableObject {
    * this DO is the room the frame names) or forward `execute` to the
    * named room DO (session-host / sid-keyed case).
    */
-  async #handleLegacyFrame(
-    ws: WebSocket,
-    attachment: WsAttachment,
-    raw: string,
-  ): Promise<void> {
+  async #handleLegacyFrame(ws: WebSocket, attachment: WsAttachment, raw: string): Promise<void> {
     const packet = decodeFrame(raw);
     if (!packet) return;
     if (packet.type === PacketType.Disconnect) {
       try {
-        ws.close(1000, 'client disconnected');
+        ws.close(1000, "client disconnected");
       } catch {
         /* already closed */
       }
@@ -1867,19 +2333,17 @@ export class RoomDO implements DurableObject {
     // (preserves spreadsheet locality); other types need two-way state
     // and are dropped here just as the pre-hibernate baseline did.
     if (!attachment.room) {
-      if (parsed.type !== 'execute') return;
+      if (parsed.type !== "execute") return;
       if (isFilteredExecuteCommand(parsed.cmdstr)) return;
       const room = parsed.room;
       const auth = parsed.auth ?? attachment.auth;
       if (!(await verifyAuth(this.#env.ETHERCALC_KEY, room, auth))) return;
       try {
-        const stub = this.#env.ROOM.get(
-          this.#env.ROOM.idFromName(encodeRoom(room)),
-        );
-        await stub.fetch(
-          `https://do.local/_do/commands?name=${encodeURIComponent(room)}`,
-          { method: 'POST', body: parsed.cmdstr },
-        );
+        const stub = this.#env.ROOM.get(this.#env.ROOM.idFromName(encodeRoom(room)));
+        await stub.fetch(`https://do.local/_do/commands?name=${encodeURIComponent(room)}`, {
+          method: "POST",
+          body: parsed.cmdstr,
+        });
       } catch {
         // Best-effort; a missing ROOM binding in unit tests no-ops.
       }
@@ -1889,18 +2353,11 @@ export class RoomDO implements DurableObject {
     // Room-scoped legacy socket: full native dispatch with framing on send.
     // Same room-binding invariant as the native path. Cross-sheet
     // `ask.recalc` keeps its legacy target-room label.
-    if (parsed.type !== 'ask.recalc' && parsed.room !== attachment.room) return;
-    if ('user' in parsed) parsed.user = attachment.user;
+    if (parsed.type !== "ask.recalc" && parsed.room !== attachment.room) return;
+    if ("user" in parsed) parsed.user = attachment.user;
     const perMessageAuth =
-      'auth' in parsed && typeof parsed.auth === 'string'
-        ? parsed.auth
-        : attachment.auth;
-    const ctx = this.#buildWsContext(
-      ws,
-      attachment,
-      attachment.room,
-      perMessageAuth,
-    );
+      "auth" in parsed && typeof parsed.auth === "string" ? parsed.auth : attachment.auth;
+    const ctx = this.#buildWsContext(ws, attachment, attachment.room, perMessageAuth);
     await dispatchWsMessage(ctx, parsed);
   }
 
@@ -1943,8 +2400,7 @@ export class RoomDO implements DurableObject {
           await this.#state.storage.put(`${prefix}${key}`, value);
         }
       },
-      appendLog: (prefix, value) =>
-        this.#appendLogEntry(prefix, value, attachment.room),
+      appendLog: (prefix, value) => this.#appendLogEntry(prefix, value, attachment.room),
       getSnapshot: async () => (await readSnapshot(this.#state.storage)) ?? undefined,
       deleteAll: async () => {
         // WS `stopHuddle` is the hot path. Mirror the HTTP DELETE flow:
@@ -1955,11 +2411,7 @@ export class RoomDO implements DurableObject {
         // attacker-supplied `room` field can't unindex a third party.
         // The handler enforces auth before calling this, so we don't
         // need to re-verify here.
-        await this.#deleteAllAndUnindex(
-          attachment.room,
-          true,
-          attachment.uid ?? null,
-        );
+        await this.#deleteAllAndUnindex(attachment.room, attachment.uid ?? null);
       },
     };
     const env = this.#env;
@@ -1975,10 +2427,11 @@ export class RoomDO implements DurableObject {
         const applied = await this.#applyCommandAndMirror(
           attachment.room,
           cmdstr,
+          attachment.uid ?? null,
         );
         if (!applied) {
           try {
-            ws.close(1008, 'Command exceeds sheet limits');
+            ws.close(1008, "Command exceeds sheet limits");
           } catch {
             // The peer may already be gone.
           }
@@ -1994,27 +2447,18 @@ export class RoomDO implements DurableObject {
       },
       verifyAuth: async () => {
         // Sandstorm viewers lack `modify` — block WS writes (SH-6).
-        if (
-          !sandstormAllowsWsWrite(env, attachment.sandstormModify)
-        ) {
+        if (!sandstormAllowsWsWrite(env, attachment.sandstormModify)) {
           return false;
         }
         // Legacy explicit view-only sentinel (`auth === '0'`) stays an
         // absolute veto on both public and private paths.
-        if (messageAuth === '0') return false;
-        const { access, acl } = await this.#getAccessMeta();
-        if (access === 'private') {
-          // Deny-overrides on private rooms: ACL membership REPLACES
-          // the legacy HMAC — an old ?auth= token must not bypass the
-          // ACL, and members must not need one. The uid comes from the
-          // handshake attachment, minted from the verified session.
-          // `webSocketMessage` closes any private-room socket without a
-          // verified uid before dispatch, so the null arm is unreachable
-          // defense in depth for a future caller of this closure.
-          const uid = attachment.uid;
-          /* istanbul ignore next -- @preserve: private gate guarantees a uid */
-          const principal = uid === undefined ? null : { uid };
-          return authorizeRoom('write', principal, access, acl);
+        if (messageAuth === "0") return false;
+        const uid = attachment.uid ?? null;
+        const access = await this.#effectiveAccess(uid);
+        if (!access.canWrite) return false;
+        if (access.isPrivate) {
+          // Private access (local or parent-derived) replaces legacy HMAC.
+          return true;
         }
         // Execute/ecell/stopHuddle carry their own per-message `auth`
         // string; legacy verified against that field (src/main.ls:516).
@@ -2023,8 +2467,8 @@ export class RoomDO implements DurableObject {
         return await verifyAuth(env.ETHERCALC_KEY, messageRoom, messageAuth);
       },
       allowSubmitForm: async () => {
-        const { access } = await this.#getAccessMeta();
-        return access == null || access === 'public';
+        const access = await this.#effectiveAccess(attachment.uid ?? null);
+        return !access.isPrivate && access.canWrite;
       },
       siblingDo: (room: string): WsSiblingDO => {
         const id = env.ROOM.idFromName(room);
@@ -2035,8 +2479,8 @@ export class RoomDO implements DurableObject {
             // Thread the sender's verified identity so a private
             // formdata sibling accepts the write.
             const headers = new Headers(init?.headers);
-            headers.delete('X-EC-Uid');
-            if (uid !== undefined) headers.set('X-EC-Uid', uid);
+            headers.delete("X-EC-Uid");
+            if (uid !== undefined) headers.set("X-EC-Uid", uid);
             return await stub.fetch(path, { ...init, headers });
           },
         };
@@ -2046,17 +2490,14 @@ export class RoomDO implements DurableObject {
 
   // ─── WS broadcast primitives ───────────────────────────────────────────
 
-  #closeExpiredSessionSocket(
-    ws: WebSocket,
-    attachment?: WsAttachment | null,
-  ): boolean {
+  #closeExpiredSessionSocket(ws: WebSocket, attachment?: WsAttachment | null): boolean {
     let stored = attachment;
     if (stored === undefined) {
       try {
         stored = ws.deserializeAttachment() as WsAttachment | null;
       } catch {
         try {
-          ws.close(1008, 'Session expired');
+          ws.close(1008, "Session expired");
         } catch {
           // The socket may already be closed; it must still receive no data.
         }
@@ -2065,15 +2506,11 @@ export class RoomDO implements DurableObject {
     }
     if (!stored || stored.uid === undefined) return false;
     const { sessionExp } = stored;
-    if (
-      typeof sessionExp === 'number' &&
-      Number.isFinite(sessionExp) &&
-      Date.now() < sessionExp
-    ) {
+    if (typeof sessionExp === "number" && Number.isFinite(sessionExp) && Date.now() < sessionExp) {
       return false;
     }
     try {
-      ws.close(1008, 'Session expired');
+      ws.close(1008, "Session expired");
     } catch {
       // The socket may already be closed; it must still receive no data.
     }
@@ -2107,7 +2544,7 @@ export class RoomDO implements DurableObject {
   async #closeUnauthorizedPrivateSocket(
     ws: WebSocket,
     attachment?: WsAttachment | null,
-    purpose: 'read' | 'read-or-write' = 'read',
+    purpose: "read" | "read-or-write" = "read",
   ): Promise<boolean> {
     let stored = attachment;
     if (stored === undefined) {
@@ -2115,7 +2552,7 @@ export class RoomDO implements DurableObject {
         stored = ws.deserializeAttachment() as WsAttachment | null;
       } catch {
         try {
-          ws.close(1008, 'Session invalid');
+          ws.close(1008, "Session invalid");
         } catch {
           // The socket may already be closed.
         }
@@ -2123,15 +2560,11 @@ export class RoomDO implements DurableObject {
       }
     }
     if (this.#closeExpiredSessionSocket(ws, stored)) return true;
-    const { access, acl } = await this.#getAccessMeta();
-    if (access !== 'private') return false;
-    if (
-      !stored ||
-      stored.uid === undefined ||
-      stored.session === undefined
-    ) {
+    const access = await this.#effectiveAccess(stored?.uid ?? null);
+    if (!access.isPrivate && access.canRead) return false;
+    if (!stored || stored.uid === undefined || stored.session === undefined) {
       try {
-        ws.close(1008, 'Session invalid');
+        ws.close(1008, "Session invalid");
       } catch {
         // The socket may already be closed.
       }
@@ -2142,18 +2575,15 @@ export class RoomDO implements DurableObject {
       principal !== null &&
       principal.uid === stored.uid &&
       principal.exp === stored.sessionExp &&
-      (authorizeRoom('read', principal, access, acl) ||
-        (purpose === 'read-or-write' &&
-          authorizeRoom('write', principal, access, acl)));
+      (access.canRead || (purpose === "read-or-write" && access.canWrite));
     if (authorized) return false;
     try {
-      ws.close(1008, 'Session invalid');
+      ws.close(1008, "Session invalid");
     } catch {
       // The socket may already be closed.
     }
     return true;
   }
-
 
   async #sendTo(ws: WebSocket, msg: ServerMessage): Promise<void> {
     // The inbound frame already passed the private-session check. Re-check
@@ -2213,11 +2643,7 @@ export class RoomDO implements DurableObject {
    * route through this method so the concurrency guard stays in one
    * place.
    */
-  async #appendLogEntry(
-    prefix: string,
-    value: string,
-    roomName: string | null,
-  ): Promise<void> {
+  async #appendLogEntry(prefix: string, value: string, roomName: string | null): Promise<void> {
     // Today only `chat:` is reachable from the handler layer —
     // `log:`/`audit:` writes go through `applyCommand` → `#appendCommand`.
     // The non-chat fallthrough is a silent no-op rather than a throw to
@@ -2237,24 +2663,28 @@ export class RoomDO implements DurableObject {
   }
 
   /**
-   * Append a batch of commands to log+audit, run through SocialCalc, and
-   * write the resulting snapshot + meta timestamp. Caller is responsible
-   * for wrapping this in `blockConcurrencyWhile` when called from a
-   * handler that needs serialization.
+   * Append a batch of commands to log+audit, run it through SocialCalc, and
+   * write the resulting snapshot + meta timestamp. `atomicEntries` lets a
+   * caller commit protocol state (currently the append reservation) in that
+   * same storage transaction, eliminating a crash window between the sheet
+   * mutation and its idempotency marker. Caller is responsible for wrapping
+   * this in `blockConcurrencyWhile` when it needs serialization.
    */
   async #appendCommand(
     body: string,
+    uid: string | null,
+    atomicEntries?: Readonly<Record<string, unknown>>,
   ): Promise<{
     auditSeq: number;
     ts: number;
     auditBody: string;
   } | null> {
-    const ss = await this.#getSpreadsheet();
+    const ss = await this.#getSpreadsheet(uid);
     const attribs = ss.exportSheetData().attribs;
     if (
       !isCommandBatchWithinLimits(body, {
-        rows: Number(attribs['lastrow'] ?? 1),
-        columns: Number(attribs['lastcol'] ?? 1),
+        rows: Number(attribs["lastrow"] ?? 1),
+        columns: Number(attribs["lastcol"] ?? 1),
       })
     ) {
       return null;
@@ -2271,7 +2701,7 @@ export class RoomDO implements DurableObject {
     // `#NAME?` because the referenced siblings weren't in the formula
     // cache during the initial recalc. Fetch them now and recalc so the
     // stored snapshot carries the live value.
-    await this.#hydrateCrossSheetRefs(ss, this.#ownName);
+    await this.#hydrateCrossSheetRefs(ss, this.#ownName, uid);
     const newSnapshot = ss.createSpreadsheetSave();
 
     // Build one atomic snapshot/log/audit replacement. Both transitions need
@@ -2279,9 +2709,7 @@ export class RoomDO implements DurableObject {
     // removes the old fast-path key or readers would keep returning stale data.
     const priorMeta = await readSnapshotMeta(this.#state.storage);
     const newEntries = snapshotEntries(newSnapshot);
-    const newMeta = newEntries[STORAGE_KEYS.snapshotMeta] as
-      | { chunks: number }
-      | undefined;
+    const newMeta = newEntries[STORAGE_KEYS.snapshotMeta] as { chunks: number } | undefined;
     const newChunkCount = newMeta?.chunks ?? 0;
     const stale: string[] = [];
     if (newMeta) {
@@ -2304,6 +2732,7 @@ export class RoomDO implements DurableObject {
           [STORAGE_KEYS.metaUpdatedAt]: ts,
           [logKey(logSeq)]: auditBody,
           [auditKey(auditSeq)]: auditBody,
+          ...atomicEntries,
         });
         await deleteStorageKeysBatched(txn, stale);
       });
@@ -2334,7 +2763,7 @@ export class RoomDO implements DurableObject {
    * `/_do/snapshot` DO-to-DO route; unresolved siblings just stay absent
    * and the formulas return `#NAME?` as graceful degrade.
    */
-  async #getSpreadsheet(): Promise<HeadlessSpreadsheet> {
+  async #getSpreadsheet(uid: string | null = null): Promise<HeadlessSpreadsheet> {
     if (this.#ss) return this.#ss;
     const snapshot = await readSnapshot(this.#state.storage);
     // The stored snapshot is AUTHORITATIVE on hydrate. `#appendCommand`
@@ -2352,25 +2781,30 @@ export class RoomDO implements DurableObject {
     // #ownName is set by the fetch handler on every request; when it's
     // unset (e.g. direct construction in unit tests) we skip cross-sheet
     // resolution so tests don't require a full env.ROOM stub.
-    await this.#hydrateCrossSheetRefs(ss, this.#ownName);
+    await this.#hydrateCrossSheetRefs(ss, this.#ownName, uid);
     this.#ss = ss;
     return this.#ss;
   }
 
   /**
-   * Enumerate cross-sheet refs and pre-populate SocialCalc's sheet cache
-   * with the referenced siblings, then re-run recalc. No-op when there
-   * are no cross-sheet references.
+   * Fetch a sibling snapshot after confirming this room can read. When this
+   * room is the sibling's declared parent, an internal assertion avoids a
+   * child→parent authorization callback that would deadlock while the parent
+   * is inside `blockConcurrencyWhile`. Worker dispatch strips this header
+   * from ingress, and the child accepts it only for marker-matched GETs.
    */
-  /**
-   * Fetch a sibling room's snapshot via the standard DO-to-DO path.
-   * Returns `null` when the sibling has no snapshot (404) or the fetch
-   * throws (e.g. workers recursion limit).
-   */
-  async #fetchSibling(name: string): Promise<string | null> {
+  async #fetchSibling(name: string, uid: string | null): Promise<string | null> {
+    const ownAccess = await this.#effectiveAccess(uid);
+    if (!ownAccess.canRead) return null;
     const stub = this.#env.ROOM.get(this.#env.ROOM.idFromName(encodeRoom(name)));
-    const res = await stub.fetch('https://do.local/_do/snapshot', {
-      method: 'GET',
+    const headers = new Headers();
+    if (uid !== null) headers.set("X-EC-Uid", uid);
+    if (this.#ownName !== undefined) {
+      headers.set(PARENT_READ_HEADER, this.#ownName);
+    }
+    const res = await stub.fetch(`https://do.local/_do/snapshot?name=${encodeURIComponent(name)}`, {
+      method: "GET",
+      headers,
     });
     if (res.status !== 200) return null;
     const text = await readBoundedResponseText(res);
@@ -2379,9 +2813,10 @@ export class RoomDO implements DurableObject {
 
   async #hydrateCrossSheetRefs(
     ss: HeadlessSpreadsheet,
-    ownName?: string,
+    ownName: string | undefined,
+    uid: string | null,
   ): Promise<void> {
-    await hydrateCrossSheetRefs(ss, (name) => this.#fetchSibling(name), ownName);
+    await hydrateCrossSheetRefs(ss, (name) => this.#fetchSibling(name, uid), ownName);
   }
 
   /** Ordered list of values stored under `prefix`, sorted by key. */
@@ -2425,9 +2860,7 @@ export class RoomDO implements DurableObject {
    * ordering guarantee `#listPrefix` relies on).
    */
   async #nextSeq(prefix: string): Promise<number> {
-    const keys = Array.from(
-      (await this.#state.storage.list<string>({ prefix })).keys(),
-    );
+    const keys = Array.from((await this.#state.storage.list<string>({ prefix })).keys());
     const last = keys[keys.length - 1];
     return last === undefined ? 0 : Number(last.slice(prefix.length)) + 1;
   }
@@ -2441,10 +2874,13 @@ export class RoomDO implements DurableObject {
    */
   async #mirrorIndex(roomName: string | null, updatedAt: number): Promise<void> {
     if (!this.#env.DB || !roomName) return;
-    // Private rooms never enter the cross-room index (Phase A / P8) —
-    // the D1 `rooms` table backs the public `/_rooms*` listings.
-    const { access } = await this.#getAccessMeta();
-    if (access === 'private') return;
+    // Parented rooms are workbook-internal and never belong in the flat public
+    // index, even when their parent is public. This avoids a parent DO hop on
+    // every write and fails safe if the parent is temporarily unavailable.
+    const meta = await this.#getAccessMeta();
+    if (meta.hasParent) return;
+    const access = await this.#effectiveAccess(null);
+    if (access.isPrivate || !access.canRead || !access.canWrite) return;
     await mirrorRoomToD1(this.#env.DB, roomName, updatedAt);
   }
 
@@ -2626,24 +3062,16 @@ export class RoomDO implements DurableObject {
     // do NOT re-arm (the room is gone).
     const ttlMs = parseExpireMs(this.#env.ETHERCALC_EXPIRE);
     if (ttlMs !== null) {
-      const updatedAt = await this.#state.storage.get<number>(
-        STORAGE_KEYS.metaUpdatedAt,
-      );
-      if (typeof updatedAt === 'number' && Date.now() - updatedAt >= ttlMs) {
-        await this.#deleteAllAndUnindex(this.#ownName ?? null, false, null);
+      const updatedAt = await this.#state.storage.get<number>(STORAGE_KEYS.metaUpdatedAt);
+      if (typeof updatedAt === "number" && Date.now() - updatedAt >= ttlMs) {
+        await this.#deleteAllAndUnindex(this.#ownName ?? null, null);
         return;
       }
     }
     // (a) Catch up tails from migrated or pre-cap state. Normal append paths
     // evict one oldest row immediately; the alarm handles existing overflow.
-    const chatTrimmed = await this.#trimTail(
-      STORAGE_KEYS.chatPrefix,
-      CHAT_HISTORY_KEEP,
-    );
-    const auditTrimmed = await this.#trimTail(
-      STORAGE_KEYS.auditPrefix,
-      AUDIT_HISTORY_KEEP,
-    );
+    const chatTrimmed = await this.#trimTail(STORAGE_KEYS.chatPrefix, CHAT_HISTORY_KEEP);
+    const auditTrimmed = await this.#trimTail(STORAGE_KEYS.auditPrefix, AUDIT_HISTORY_KEEP);
     // Invariant: write paths call `#armAlarm()`; this gate only decides
     // whether the idle cadence continues. See method doc above for the
     // three re-arm conditions.
@@ -2667,10 +3095,7 @@ export class RoomDO implements DurableObject {
     const keys = Array.from(map.keys());
     if (keys.length <= keep) return false;
     // list() returns ascending key order; the oldest are at the front.
-    await deleteStorageKeysBatched(
-      this.#state.storage,
-      keys.slice(0, keys.length - keep),
-    );
+    await deleteStorageKeysBatched(this.#state.storage, keys.slice(0, keys.length - keep));
     return true;
   }
 
