@@ -7659,8 +7659,8 @@ describe('RoomDO — POST /_do/init-private (Phase A)', () => {
     const record: FakeStorageRecord = { map: new Map() };
     const room = new RoomDO(makeState('init-large', record), makeEnv());
     // A three-byte BMP scalar crosses the same 128-chunk boundary with one
-    // third as many loop iterations as ASCII, keeping Stryker's instrumented
-    // dry run below Vitest's per-test timeout.
+    // third as many loop iterations as ASCII. Stryker instrumentation makes
+    // this boundary case slower, so the test has an explicit timeout below.
     const scalar = String.fromCharCode(0x800);
     const charsPerChunk = Math.floor(SNAPSHOT_CHUNK_BYTES / 3);
     const snapshot = scalar.repeat(charsPerChunk * 128 + 1);
@@ -7676,7 +7676,7 @@ describe('RoomDO — POST /_do/init-private (Phase A)', () => {
     expect(record.map.get(STORAGE_KEYS.snapshotMeta)).toEqual({ chunks: 129 });
     expect(record.map.get(snapshotChunkKey(128))).toBe(scalar);
     expect(record.map.get(STORAGE_KEYS.metaAccess)).toBe('private');
-  });
+  }, 15_000);
 
   it('invalidates warm public access metadata after private initialization', async () => {
     const record: FakeStorageRecord = { map: new Map() };
