@@ -520,6 +520,10 @@ describe('multi-sheet-import mutation pins', () => {
     expect(getMaxSubsheetIndex(['/room.5', '/room.5', '/room.4'], 'room')).toBe(5);
     // Leading-zero multi-digit still numeric.
     expect(getMaxSubsheetIndex(['/room.09', '/room.9'], 'room')).toBe(9);
+    // Scientific-looking suffix must NOT parse as a number (kills loose regex /
+    // skipped-regex mutants: Number('5e2') === 500).
+    expect(getMaxSubsheetIndex(['/room.5e2', '/room.3'], 'room')).toBe(3);
+    expect(getMaxSubsheetIndex(['/room.5e2'], 'room')).toBe(0);
   });
 
   it('mutation pins for rewriteSheetReferences quoting and empty names', () => {
