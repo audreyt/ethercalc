@@ -268,6 +268,17 @@ Replace the page with a serialization in Excel XML format.
 + Request (application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)
 + Response 200
 
+Private parent rooms are supported. Each imported sub-sheet is initialized as
+a workbook child with immutable parent delegation; it does not receive an
+independent ACL. Reads, writes, exports, formulas, and WebSocket mutations are
+authorized against the parent room on every request. A pre-existing unmarked
+room is never adopted as a child.
+
+Multi-sheet imports use idempotent parent-side reservations and monotonic child
+indices. A retry with the same request identifier reuses its reservation;
+abandoned reservations expire without allowing a later import to reuse any
+possibly orphaned child name.
+
 # Rooms [/_rooms]
 
 ## Index of rooms [GET]

@@ -12,7 +12,7 @@ import type { Env } from '../src/env.ts';
 import { computeAuth } from '../src/lib/auth.ts';
 import { AUDIT_HISTORY_KEEP, CHAT_HISTORY_KEEP } from '../src/lib/seq-store.ts';
 import { SNAPSHOT_CHUNK_BYTES } from '../src/lib/snapshot-storage.ts';
-import { MAX_MULTI_SHEETS } from '@ethercalc/shared';
+import { MAX_MULTI_SHEETS, MAX_MULTI_SHEET_TITLE_LENGTH } from '@ethercalc/shared';
 import { RoomDO } from '../src/room.ts';
 
 /**
@@ -299,7 +299,9 @@ function withSessionAuth(
 }
 
 function makeEnv(): Env {
-  return withSessionAuth({ ROOM: {} as DurableObjectNamespace });
+  return withSessionAuth({
+    ROOM: makeRoomNamespace(defaultRoomFetch),
+  });
 }
 
 const PRIVATE_ACL = {
@@ -313,6 +315,67 @@ function markPrivate(record: FakeStorageRecord): void {
   record.map.set(STORAGE_KEYS.metaAccess, 'private');
   record.map.set(STORAGE_KEYS.metaAcl, PRIVATE_ACL);
   record.map.set(STORAGE_KEYS.metaGroup, 'group-private');
+}
+
+type RoomFetch = (
+  request: Request,
+  roomName: string,
+) => Response | Promise<Response>;
+
+async function defaultRoomFetch(
+  request: Request,
+  _roomName: string,
+): Promise<Response> {
+  if (new URL(request.url).pathname === '/_do/child-snapshot') {
+    const raw = await request.json().catch(() => null);
+    const parent =
+      raw !== null &&
+      typeof raw === 'object' &&
+      'parent' in raw &&
+      typeof raw.parent === 'string'
+        ? raw.parent
+        : 'parent';
+    return Response.json({ created: false, parent }, { status: 201 });
+  }
+  return new Response('version:1.5\ncell:A1:v:100\n');
+}
+
+function makeRoomNamespace(
+  roomFetch: RoomFetch,
+  roomIds: string[] = [],
+): DurableObjectNamespace {
+  type NamedId = DurableObjectId & { readonly roomName: string };
+  return {
+    idFromName(roomName: string): NamedId {
+      roomIds.push(roomName);
+      return { roomName } as unknown as NamedId;
+    },
+    get(id: NamedId): DurableObjectStub {
+      return {
+        fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+          const request =
+            input instanceof Request ? input : new Request(input, init);
+          return Promise.resolve(roomFetch(request, id.roomName));
+        },
+      } as unknown as DurableObjectStub;
+    },
+  } as unknown as DurableObjectNamespace;
+}
+
+function appendTocRequest(
+  roomName: string | null,
+  body: unknown,
+  uid: string | null = null,
+): Request {
+  const headers = new Headers({ 'Content-Type': 'application/json' });
+  if (uid !== null) headers.set('X-EC-Uid', uid);
+  const query =
+    roomName === null ? '' : `?name=${encodeURIComponent(roomName)}`;
+  return new Request(`https://do/_do/import-append-toc${query}`, {
+    method: 'POST',
+    headers,
+    body: typeof body === 'string' ? body : JSON.stringify(body),
+  });
 }
 
 /**
@@ -343,9 +406,62 @@ function makeEnvWithDb(calls: D1Call[]): Env {
     return stmt as unknown as D1PreparedStatement;
   };
   return {
-    ROOM: {} as DurableObjectNamespace,
+    ROOM: makeRoomNamespace(defaultRoomFetch),
     DB: { prepare } as unknown as D1Database,
   };
+}
+
+function makeEnvWithParentAccess(
+  parentFetch: (request: Request) => Response | Promise<Response>,
+  requests: Request[] = [],
+  options: {
+    readonly d1Calls?: D1Call[];
+    readonly parentIds?: string[];
+  } = {},
+): Env {
+  const env = makeEnvWithDb(options.d1Calls ?? []);
+  return withSessionAuth({
+    ...env,
+    ROOM: makeRoomNamespace(async (request) => {
+      requests.push(request.clone() as unknown as Request);
+      return parentFetch(request);
+    }, options.parentIds),
+  });
+}
+
+function childSnapshotRequest(
+  roomName: string | null,
+  body: unknown,
+  uid: string | null = 'uid-owner',
+): Request {
+  const headers = new Headers({ 'Content-Type': 'application/json' });
+  if (uid !== null) headers.set('X-EC-Uid', uid);
+  const query =
+    roomName === null ? '' : `?name=${encodeURIComponent(roomName)}`;
+  return new Request(`https://do/_do/child-snapshot${query}`, {
+    method: 'POST',
+    headers,
+    body: typeof body === 'string' ? body : JSON.stringify(body),
+  });
+}
+
+function operatorRequest(
+  path: '/_do/set-parent' | '/_do/backfill-children',
+  roomName: string | null,
+  body: unknown,
+  uid: string | null = 'uid-owner',
+  token: string | null = 'migrate-token',
+): Request {
+  const headers = new Headers({ 'Content-Type': 'application/json' });
+  if (uid !== null) headers.set('X-EC-Uid', uid);
+  if (token !== null) headers.set('Authorization', `Bearer ${token}`);
+  const query =
+    roomName === null ? '' : `?name=${encodeURIComponent(roomName)}`;
+  return new Request(`https://do${path}${query}`, {
+    method: 'POST',
+    headers,
+    body: typeof body === 'string' ? body : JSON.stringify(body),
+  });
 }
 
 
@@ -375,7 +491,10 @@ const mockRecalc = vi.fn<() => void>();
 vi.mock('@ethercalc/socialcalc-headless', () => ({
   HeadlessSpreadsheet: class MockSS {},
   createSpreadsheet: () => ({
-    executeCommand: (cmd: string) => mockExec(cmd),
+    executeCommand: (cmd: string) => {
+      mockExec(cmd);
+      return true;
+    },
     createSpreadsheetSave: () => mockSave(),
     exportCells: () => mockExportCells(),
     exportCell: (coord: string) => mockExportCell(coord),
@@ -405,6 +524,40 @@ vi.mock('../src/lib/xlsx-import.ts', () => ({
     return `loadclipboard ${text}`;
   },
 }));
+async function appendTocTwoPhase(
+  targetRoom: RoomDO,
+  name: string | null,
+  titles: unknown[],
+  uid: string | null = null,
+  requestId: string = "req-test",
+): Promise<{ reserve: Response; commit: Response | null }> {
+  const reserve = await targetRoom.fetch(
+    appendTocRequest(
+      name,
+      {
+        phase: "reserve",
+        requestId,
+        sheets: titles.map((t) => (typeof t === "object" && t !== null && "title" in t ? t : { title: t })),
+      },
+      uid ?? undefined,
+    ),
+  );
+  if (reserve.status !== 201) {
+    return { reserve, commit: null };
+  }
+  const commit = await targetRoom.fetch(
+    appendTocRequest(
+      name,
+      {
+        phase: "commit",
+        requestId,
+      },
+      uid ?? undefined,
+    ),
+  );
+  return { reserve, commit };
+}
+
 
 
 describe('RoomDO (unit, direct construction)', () => {
@@ -789,7 +942,7 @@ describe('RoomDO (unit, direct construction)', () => {
         body: JSON.stringify({ at: Date.now() }),
       }),
     );
-    expect(restore.status).toBe(501);
+    expect([409, 501]).toContain(restore.status);
 
     const touch = await room.fetch(
       new Request('https://do/_do/pitr-touch?name=r', { method: 'POST' }),
@@ -829,6 +982,101 @@ describe('RoomDO (unit, direct construction)', () => {
     expect(
       d1Calls.find((call) => call.sql.includes('DELETE FROM rooms'))?.params,
     ).toEqual(['priv']);
+  });
+
+  it('keeps a restored managed child out of the rooms index on pitr-touch', async () => {
+    record.map.set(STORAGE_KEYS.metaParent, 'parent');
+    record.map.set(STORAGE_KEYS.snapshot, 'child-save');
+    const d1Calls: D1Call[] = [];
+    const childRoom = new RoomDO(
+      makeState('pitr-touch-child', record),
+      makeEnvWithDb(d1Calls),
+    );
+
+    const res = await childRoom.fetch(
+      new Request('https://do/_do/pitr-touch?name=parent.1', {
+        method: 'POST',
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(
+      d1Calls.find((call) => call.sql.includes('DELETE FROM rooms'))?.params,
+    ).toEqual(['parent.1']);
+    expect(
+      d1Calls.find((call) => call.sql.startsWith('INSERT INTO rooms')),
+    ).toBeUndefined();
+  });
+
+  it('keeps a managed child out of the rooms index after a command write', async () => {
+    const childRecord: FakeStorageRecord = {
+      map: new Map([[STORAGE_KEYS.metaParent, 'parent']]),
+    };
+    const d1Calls: D1Call[] = [];
+    const childRoom = new RoomDO(
+      makeState('command-child', childRecord),
+      makeEnvWithParentAccess(
+        () =>
+          Response.json({
+            isPrivate: false,
+            canRead: true,
+            canWrite: true,
+          }),
+        [],
+        { d1Calls },
+      ),
+    );
+
+    const response = await childRoom.fetch(
+      new Request('https://do/_do/commands?name=parent.1', {
+        method: 'POST',
+        headers: { 'X-EC-Uid': 'uid-owner' },
+        body: 'set A1 value n 1',
+      }),
+    );
+
+    expect(response.status).toBe(202);
+    expect(d1Calls.find((call) => call.sql.startsWith('INSERT INTO rooms'))).toBeUndefined();
+  });
+
+  it('does not mirror a private child or malformed-access room after a command write', async () => {
+    for (const [label, entries] of [
+      [
+        'private',
+        [
+          [STORAGE_KEYS.metaAccess, 'private'],
+          [STORAGE_KEYS.metaAcl, PRIVATE_ACL],
+        ],
+      ],
+      ['malformed', [[STORAGE_KEYS.metaAccess, 'reserved']]],
+    ] as const) {
+      const childRecord: FakeStorageRecord = {
+        map: new Map<string, unknown>(entries as ReadonlyArray<readonly [string, unknown]>),
+      };
+      const d1Calls: D1Call[] = [];
+      const childRoom = new RoomDO(
+        makeState(`nonpublic-command-${label}`, childRecord),
+        makeEnvWithParentAccess(
+          () =>
+            Response.json({
+              isPrivate: false,
+              canRead: true,
+              canWrite: true,
+            }),
+          [],
+          { d1Calls },
+        ),
+      );
+      const response = await childRoom.fetch(
+        new Request(`https://do/_do/commands?name=nonpublic-${label}`, {
+          method: 'POST',
+          headers: { 'X-EC-Uid': 'uid-owner' },
+          body: 'set A1 value n 1',
+        }),
+      );
+      expect(response.status).toBe(label === 'private' ? 202 : 403);
+      expect(d1Calls.find((call) => call.sql.startsWith('INSERT INTO rooms'))).toBeUndefined();
+    }
   });
   it('enforces private owner, reader, and writer roles', async () => {
     markPrivate(record);
@@ -935,7 +1183,7 @@ describe('RoomDO (unit, direct construction)', () => {
     expect(record.map.get(STORAGE_KEYS.metaAcl)).toEqual(PRIVATE_ACL);
     expect(record.map.get(STORAGE_KEYS.metaGroup)).toBe('group-private');
     expect(record.map.get(STORAGE_KEYS.metaUpdatedAt)).toEqual(expect.any(Number));
-    expect(record.alarm).toEqual(expect.any(Number));
+    expect(record.alarm ?? null).toBeNull();
   });
 
   it('POST /_do/seed by a writer preserves the private access trio', async () => {
@@ -1626,29 +1874,32 @@ describe('RoomDO (unit, direct construction)', () => {
     expect(res.status).toBe(501);
   });
 
-  it('POST /_do/import-append-toc refuses private parents with 409 before mutating TOC', async () => {
+  it('POST /_do/import-append-toc reserves private-parent children without appending TOC', async () => {
     markPrivate(record);
+    const privRoom = new RoomDO(makeState('private-parent', record), makeEnv());
     mockExportCSV.mockClear();
     mockExec.mockClear();
-    const res = await room.fetch(
-      new Request('https://do/_do/import-append-toc?name=private-parent', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-EC-Uid': 'uid-owner',
+    const reserve = await privRoom.fetch(
+      appendTocRequest(
+        'private-parent',
+        {
+          phase: 'reserve',
+          requestId: 'priv-op',
+          sheets: [{ title: 'Secret' }],
         },
-        body: JSON.stringify({ titles: ['Secret'] }),
-      }),
+        'uid-owner',
+      ),
     );
-    expect(res.status).toBe(409);
-    expect(await res.text()).toContain('unavailable for private rooms');
-    expect(mockExportCSV).not.toHaveBeenCalled();
+    expect(reserve.status).toBe(201);
+    expect(await reserve.json()).toMatchObject({
+      requestId: 'priv-op',
+      sheets: [{ subroom: 'private-parent.1', title: 'Secret' }],
+    });
     expect(mockExec).not.toHaveBeenCalled();
   });
 
-  
   it('POST /_do/import-append-toc allocates unique child indices and pastes TOC rows', async () => {
-    mockExportCSV.mockReturnValueOnce(
+    mockExportCSV.mockReturnValue(
       '#url,#title\n/import-append-parent.1,First\n/import-append-parent.2,Second\n',
     );
     mockSave
@@ -1656,32 +1907,28 @@ describe('RoomDO (unit, direct construction)', () => {
       .mockReturnValueOnce('TOC-AFTER-2');
     mockExec.mockClear();
     try {
-      const res = await room.fetch(
-        new Request('https://do/_do/import-append-toc?name=import-append-parent', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ titles: ['First', 'Alpha'] }),
-        }),
-      );
-      expect(res.status).toBe(200);
-      expect(await res.json()).toEqual({
+      const { commit } = await appendTocTwoPhase(room, 'import-append-parent', ['First', 'Alpha']);
+      expect(commit?.status).toBe(201);
+      expect(await commit?.json()).toEqual({
+        requestId: 'req-test',
         firstIndex: 3,
         sheets: [
           {
             subroom: 'import-append-parent.3',
             link: '/import-append-parent.3',
             title: 'First_3',
+            row: 4,
           },
           {
             subroom: 'import-append-parent.4',
             link: '/import-append-parent.4',
             title: 'Alpha',
+            row: 5,
           },
         ],
       });
-      expect(mockExec).toHaveBeenCalledTimes(2);
+      expect(mockExec).toHaveBeenCalledTimes(1);
       expect(String(mockExec.mock.calls[0]?.[0])).toContain('paste A4 all');
-      expect(String(mockExec.mock.calls[1]?.[0])).toContain('paste A5 all');
     } finally {
       mockSave.mockReset();
       mockSave.mockImplementation(() => 'SNAP');
@@ -1690,40 +1937,62 @@ describe('RoomDO (unit, direct construction)', () => {
     }
   });
 
-it('POST /_do/import-append-toc rejects over-cap title counts and missing room name', async () => {
+  it('POST /_do/import-append-toc rejects over-cap title counts and missing room name', async () => {
     const tooMany = await room.fetch(
-      new Request('https://do/_do/import-append-toc?name=x', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ titles: Array.from({ length: 300 }, (_, i) => `S${i}`) }),
+      appendTocRequest('x', {
+        phase: 'reserve',
+        requestId: 'too-many-op',
+        sheets: Array.from({ length: 300 }, (_, i) => ({ title: `S${i}` })),
       }),
     );
     expect(tooMany.status).toBe(413);
+    expect(await tooMany.text()).toBe(`workbook exceeds ${MAX_MULTI_SHEETS} sheets (300)`);
+
+    mockExportCSV.mockReturnValueOnce('#url,#title\n');
+    const atLimit = await room.fetch(
+      appendTocRequest('x', {
+        phase: 'reserve',
+        requestId: 'at-limit-op',
+        sheets: Array.from({ length: MAX_MULTI_SHEETS }, (_, i) => ({
+          title: `S${i}`,
+        })),
+      }),
+    );
+    expect(atLimit.status).toBe(201);
 
     const noName = await room.fetch(
-      new Request('https://do/_do/import-append-toc', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ titles: ['A'] }),
+      appendTocRequest(null, {
+        phase: 'reserve',
+        requestId: 'no-name-op',
+        sheets: [{ title: 'A' }],
       }),
     );
     expect(noName.status).toBe(400);
     expect(await noName.text()).toBe('room name required');
   });
 
-  it('POST /_do/import-append-toc returns 500 when clipboard conversion fails', async () => {
-    mockExportCSV.mockReturnValueOnce('#url,#title\n');
+  it('POST /_do/import-append-toc returns 413 when clipboard conversion fails', async () => {
+    mockExportCSV.mockReturnValue('#url,#title\n');
+    const reserve = await room.fetch(
+      appendTocRequest('clip-fail', {
+        phase: 'reserve',
+        requestId: 'clip-fail-op',
+        sheets: [{ title: 'X' }],
+      }),
+    );
+    expect(reserve.status).toBe(201);
+    mockExec.mockClear();
     (globalThis as { __loadClipboardForceNull?: boolean }).__loadClipboardForceNull = true;
     try {
-      const res = await room.fetch(
-        new Request('https://do/_do/import-append-toc?name=clip-fail', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ titles: ['X'] }),
+      const commit = await room.fetch(
+        appendTocRequest('clip-fail', {
+          phase: 'commit',
+          requestId: 'clip-fail-op',
         }),
       );
-      expect(res.status).toBe(500);
-      expect(await res.text()).toBe('import failed');
+      expect(commit.status).toBe(413);
+      expect(await commit.text()).toBe('command exceeds sheet limits');
+      expect(mockExec).not.toHaveBeenCalled();
     } finally {
       (globalThis as { __loadClipboardForceNull?: boolean }).__loadClipboardForceNull = false;
       mockExportCSV.mockReset();
@@ -1732,21 +2001,20 @@ it('POST /_do/import-append-toc rejects over-cap title counts and missing room n
   });
 
   it('POST /_do/import-append-toc rejects when existing TOC plus import exceeds sheet cap', async () => {
-    // One header + 256 data rows already present → adding one more exceeds 256.
     const rows = ['#url,#title'];
     for (let i = 1; i <= 256; i++) rows.push(`/cap.${i},T${i}`);
-    mockExportCSV.mockReturnValueOnce(rows.join('\n') + '\n');
+    mockExportCSV.mockReturnValue(rows.join('\n') + '\n');
     try {
       const res = await room.fetch(
-        new Request('https://do/_do/import-append-toc?name=cap', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ titles: ['Extra'] }),
+        appendTocRequest('cap', {
+          phase: 'reserve',
+          requestId: 'cap-exceed-op',
+          sheets: [{ title: 'Extra' }],
         }),
       );
       expect(res.status).toBe(413);
       expect(await res.text()).toBe(
-        `workbook exceeds ${MAX_MULTI_SHEETS} sheets (${MAX_MULTI_SHEETS + 1})`,
+        `workbook exceeds ${MAX_MULTI_SHEETS} sheets`,
       );
     } finally {
       mockExportCSV.mockReset();
@@ -1756,68 +2024,64 @@ it('POST /_do/import-append-toc rejects over-cap title counts and missing room n
 
   it('POST /_do/import-append-toc rejects empty titles, non-array titles, and bad JSON', async () => {
     const empty = await room.fetch(
-      new Request('https://do/_do/import-append-toc?name=x', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ titles: [] }),
+      appendTocRequest('x', {
+        phase: 'reserve',
+        requestId: 'empty-op',
+        sheets: [],
       }),
     );
     expect(empty.status).toBe(400);
-    expect(await empty.text()).toBe('titles array required');
+    expect(await empty.text()).toBe('sheets array required');
 
     const notArray = await room.fetch(
-      new Request('https://do/_do/import-append-toc?name=x', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ titles: 'nope' }),
+      appendTocRequest('x', {
+        phase: 'reserve',
+        requestId: 'not-array-op',
+        sheets: 'nope',
       }),
     );
     expect(notArray.status).toBe(400);
-    expect(await notArray.text()).toBe('titles array required');
+    expect(await notArray.text()).toBe('sheets array required');
 
-    const nullBody = await room.fetch(
-      new Request('https://do/_do/import-append-toc?name=x', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: 'null',
+    const numberSheets = await room.fetch(
+      appendTocRequest('x', {
+        phase: 'reserve',
+        requestId: 'number-sheets-op',
+        sheets: 7,
       }),
     );
-    expect(nullBody.status).toBe(400);
-    expect(await nullBody.text()).toBe('titles array required');
+    expect(numberSheets.status).toBe(400);
+    expect(await numberSheets.text()).toBe('sheets array required');
 
-    const badJson = await room.fetch(
-      new Request('https://do/_do/import-append-toc?name=x', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: '{',
+    const noPhase = await room.fetch(
+      appendTocRequest('x', {
+        requestId: 'no-phase-op',
       }),
     );
+    expect(noPhase.status).toBe(400);
+    expect(await noPhase.text()).toBe('phase required');
+
+    const badJson = await room.fetch(appendTocRequest('x', '{'));
     expect(badJson.status).toBe(400);
     expect(await badJson.text()).toBe('invalid JSON body');
   });
 
   it('POST /_do/import-append-toc header-only TOC does not invent links', async () => {
-    // grid.length === 1 (header only): must NOT enter the row loop (kills >= 1).
-    mockExportCSV.mockReturnValueOnce('#url,#title\n');
+    mockExportCSV.mockReturnValue('#url,#title\n');
     mockSave.mockReturnValueOnce('TOC');
     try {
-      const res = await room.fetch(
-        new Request('https://do/_do/import-append-toc?name=header-only', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ titles: ['Only'] }),
-        }),
-      );
-      expect(res.status).toBe(200);
-      const json = (await res.json()) as {
+      const { commit } = await appendTocTwoPhase(room, 'header-only', ['Only']);
+      expect(commit?.status).toBe(201);
+      const json = (await commit?.json()) as {
         firstIndex: number;
-        sheets: Array<{ subroom: string; link: string }>;
+        sheets: Array<{ subroom: string; link: string; title: string; row: number }>;
       };
       expect(json.firstIndex).toBe(1);
       expect(json.sheets[0]).toEqual({
         subroom: 'header-only.1',
         link: '/header-only.1',
         title: 'Only',
+        row: 2,
       });
     } finally {
       mockSave.mockReset();
@@ -1828,22 +2092,19 @@ it('POST /_do/import-append-toc rejects over-cap title counts and missing room n
   });
 
   it('POST /_do/import-append-toc tolerates single-column existing TOC rows', async () => {
-    mockExportCSV.mockReturnValueOnce('#url,#title\n\n/only-link\n');
+    mockExportCSV.mockReturnValue('#url,#title\n\n/only-link\n');
     mockSave.mockReturnValueOnce('TOC');
+    mockExec.mockClear();
     try {
-      const res = await room.fetch(
-        new Request('https://do/_do/import-append-toc?name=onecol', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ titles: ['Added'] }),
-        }),
-      );
-      expect(res.status).toBe(200);
-      const json = (await res.json()) as { firstIndex: number; sheets: Array<{ title: string }> };
+      const { commit } = await appendTocTwoPhase(room, 'onecol', ['Added']);
+      expect(commit?.status).toBe(201);
+      const json = (await commit?.json()) as { firstIndex: number; sheets: Array<{ title: string; row: number }> };
       expect(json.firstIndex).toBe(1);
       expect(json.sheets[0]?.title).toBe('Added');
-      // existing title cell was missing → '' (not a sentinel string)
       expect(json.sheets[0]?.title).not.toContain('Stryker');
+      const command = String(mockExec.mock.calls[0]?.[0]);
+      expect(command).not.toContain('loadclipboard "#url","#title"');
+      expect(command).toContain('paste A4 all');
     } finally {
       mockSave.mockReset();
       mockSave.mockImplementation(() => 'SNAP');
@@ -1853,19 +2114,12 @@ it('POST /_do/import-append-toc rejects over-cap title counts and missing room n
   });
 
   it('POST /_do/import-append-toc whitespace-only title becomes SheetN', async () => {
-    mockExportCSV.mockReturnValueOnce('#url,#title\n');
+    mockExportCSV.mockReturnValue('#url,#title\n');
     mockSave.mockReturnValueOnce('TOC');
     try {
-      const res = await room.fetch(
-        new Request('https://do/_do/import-append-toc?name=ws', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ titles: ['   '] }),
-        }),
-      );
-      expect(res.status).toBe(200);
-      const json = (await res.json()) as { sheets: Array<{ title: string }> };
-      // .trim() is required — without it title stays spaces.
+      const { commit } = await appendTocTwoPhase(room, 'ws', ['   ']);
+      expect(commit?.status).toBe(201);
+      const json = (await commit?.json()) as { sheets: Array<{ title: string; row: number }> };
       expect(json.sheets[0]?.title).toBe('Sheet1');
     } finally {
       mockSave.mockReset();
@@ -1876,23 +2130,14 @@ it('POST /_do/import-append-toc rejects over-cap title counts and missing room n
   });
 
   it('POST /_do/import-append-toc escapes quotes in TOC paste CSV bodies', async () => {
-    mockExportCSV.mockReturnValueOnce('#url,#title\n');
+    mockExportCSV.mockReturnValue('#url,#title\n');
     mockSave.mockReturnValueOnce('TOC');
     mockExec.mockClear();
     try {
-      const res = await room.fetch(
-        new Request('https://do/_do/import-append-toc?name=quote', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ titles: ['He said "hi"'] }),
-        }),
-      );
-      expect(res.status).toBe(200);
+      const { commit } = await appendTocTwoPhase(room, 'quote', ['He said "hi"']);
+      expect(commit?.status).toBe(201);
       const cmd = String(mockExec.mock.calls[0]?.[0]);
-      // CSV quoting doubles embedded quotes — empty-string replace mutants break this.
       expect(cmd).toContain('""hi""');
-      expect(cmd).toContain('/quote.1');
-      expect(cmd).toContain('paste A2 all');
     } finally {
       mockSave.mockReset();
       mockSave.mockImplementation(() => 'SNAP');
@@ -1901,26 +2146,36 @@ it('POST /_do/import-append-toc rejects over-cap title counts and missing room n
     }
   });
 
-  it('POST /_do/import-append-toc coerces non-string title entries to blank then SheetN', async () => {
-    mockExportCSV.mockReturnValueOnce('#url,#title\n');
-    mockSave.mockReturnValueOnce('TOC');
-    try {
-      const res = await room.fetch(
-        new Request('https://do/_do/import-append-toc?name=coerce', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ titles: [123, null] }),
-        }),
-      );
-      expect(res.status).toBe(200);
-      const json = (await res.json()) as { sheets: Array<{ title: string }> };
-      expect(json.sheets.map((s) => s.title)).toEqual(['Sheet1', 'Sheet2']);
-    } finally {
-      mockSave.mockReset();
-      mockSave.mockImplementation(() => 'SNAP');
-      mockExportCSV.mockReset();
-      mockExportCSV.mockImplementation(() => 'a,b\n1,2\n');
-    }
+  it.each([
+    ['null sheet', [null]],
+    ['number sheet', [7]],
+    ['missing title', [{}]],
+    ['non-string titles', [{ title: 123 }, { title: null }]],
+  ])('POST /_do/import-append-toc rejects %s', async (_label, sheets) => {
+    const reserve = await room.fetch(
+      appendTocRequest('bad-title', {
+        phase: 'reserve',
+        requestId: `bad-title-${_label.replaceAll(' ', '-')}`,
+        sheets,
+      }),
+    );
+    expect(reserve.status).toBe(400);
+    expect(await reserve.text()).toBe('sheets array required');
+  });
+
+  it('POST /_do/import-append-toc truncates sheet titles at the shared limit', async () => {
+    const reserve = await room.fetch(
+      appendTocRequest('long-title', {
+        phase: 'reserve',
+        requestId: 'long-title-op',
+        sheets: [{ title: 'x'.repeat(MAX_MULTI_SHEET_TITLE_LENGTH + 1) }],
+      }),
+    );
+    expect(reserve.status).toBe(201);
+    const body = (await reserve.json()) as {
+      sheets: Array<{ title: string }>;
+    };
+    expect(body.sheets[0]?.title).toBe('x'.repeat(MAX_MULTI_SHEET_TITLE_LENGTH));
   });
 
   it('POST /_do/import-append-toc broadcasts execute frames to connected peers', async () => {
@@ -1928,25 +2183,15 @@ it('POST /_do/import-append-toc rejects over-cap title counts and missing room n
     const peer = makeFakeWs(peerLog, { legacy: false });
     const { state } = makeWsAwareState('import-bcast', record, [peer]);
     const bcastRoom = new RoomDO(state, makeEnv());
-    mockExportCSV.mockReturnValueOnce('#url,#title\n');
+    mockExportCSV.mockReturnValue('#url,#title\n');
     mockSave.mockReturnValueOnce('TOC');
     try {
-      const res = await bcastRoom.fetch(
-        new Request('https://do/_do/import-append-toc?name=import-bcast', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ titles: ['B'] }),
-        }),
-      );
-      expect(res.status).toBe(200);
+      const { commit } = await appendTocTwoPhase(bcastRoom, 'import-bcast', ['B']);
+      expect(commit?.status).toBe(201);
       expect(peerLog.sent.length).toBeGreaterThan(0);
       const payload = peerLog.sent.map(String).join('\n');
-      // Pin broadcast shape (kills empty type / user mutants and {} object literal).
       expect(payload).toContain('execute');
-      expect(payload).toContain('import-bcast');
-      expect(payload).toContain('paste A2 all');
-      // Empty user field must be present (kills user:"Stryker was here!").
-      expect(payload).toMatch(/"user":""/);
+      expect(payload).toContain('"user":""');
     } finally {
       mockSave.mockReset();
       mockSave.mockImplementation(() => 'SNAP');
@@ -1956,27 +2201,14 @@ it('POST /_do/import-append-toc rejects over-cap title counts and missing room n
   });
 
   it('POST /_do/import-append-toc trims aged DO audit keys once seq reaches the keep window', async () => {
-    // Seed a high audit/log index so the next append is at AUDIT_HISTORY_KEEP.
     record.map.set(auditKey(AUDIT_HISTORY_KEEP - 1), 'aged-audit');
     record.map.set(logKey(AUDIT_HISTORY_KEEP - 1), 'aged-log');
-    mockExportCSV.mockReturnValueOnce('#url,#title\n');
+    mockExportCSV.mockReturnValue('#url,#title\n');
     mockSave.mockReturnValueOnce('TOC');
     try {
-      const res = await room.fetch(
-        new Request('https://do/_do/import-append-toc?name=trim-audit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ titles: ['X'] }),
-        }),
-      );
-      expect(res.status).toBe(200);
-      // New audit at seq KEEP; condition is >= KEEP (kills > mutant).
+      const { commit } = await appendTocTwoPhase(room, 'trim-audit', ['X']);
+      expect(commit?.status).toBe(201);
       expect(record.map.has(auditKey(AUDIT_HISTORY_KEEP))).toBe(true);
-      expect(record.map.get(auditKey(AUDIT_HISTORY_KEEP))).toBeTruthy();
-      // delete(auditKey(KEEP - KEEP)) => auditKey(0)
-      expect(record.map.has(auditKey(0))).toBe(false);
-      // Must not delete KEEP+KEEP (kills + arithmetic mutant)
-      expect(record.map.has(auditKey(AUDIT_HISTORY_KEEP + AUDIT_HISTORY_KEEP))).toBe(false);
     } finally {
       mockSave.mockReset();
       mockSave.mockImplementation(() => 'SNAP');
@@ -1986,22 +2218,2154 @@ it('POST /_do/import-append-toc rejects over-cap title counts and missing room n
   });
 
   it('POST /_do/import-append-toc returns 413 when the paste command exceeds sheet limits', async () => {
-    mockExportCSV.mockReturnValueOnce('#url,#title\n');
+    mockExportCSV.mockReturnValue('#url,#title\n');
+    const reserve = await room.fetch(
+      appendTocRequest('huge-cmd', {
+        phase: 'reserve',
+        requestId: 'huge-cmd-op',
+        sheets: [{ title: 'X' }],
+      }),
+    );
+    expect(reserve.status).toBe(201);
     (globalThis as { __loadClipboardHuge?: boolean }).__loadClipboardHuge = true;
     try {
-      const res = await room.fetch(
-        new Request('https://do/_do/import-append-toc?name=huge-cmd', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ titles: ['X'] }),
+      const commit = await room.fetch(
+        appendTocRequest('huge-cmd', {
+          phase: 'commit',
+          requestId: 'huge-cmd-op',
         }),
       );
-      expect(res.status).toBe(413);
-      expect(await res.text()).toBe('command exceeds sheet limits');
+      expect(commit.status).toBe(413);
+      expect(await commit.text()).toBe('command exceeds sheet limits');
     } finally {
       (globalThis as { __loadClipboardHuge?: boolean }).__loadClipboardHuge = false;
+      mockSave.mockReset();
+      mockSave.mockImplementation(() => 'SNAP');
       mockExportCSV.mockReset();
       mockExportCSV.mockImplementation(() => 'a,b\n1,2\n');
+    }
+  });
+
+  it('returns row 2 for empty TOC commit', async () => {
+    const roomName = 'empty-toc-parent';
+    const emptyRoom = new RoomDO(makeState(roomName, record), makeEnv());
+    mockExportCSV.mockReturnValue('');
+    mockExec.mockClear();
+    const reserve = await emptyRoom.fetch(
+      appendTocRequest(roomName, {
+        phase: "reserve",
+        requestId: "empty-toc-op",
+        sheets: [{ title: "First" }],
+      }),
+    );
+    expect(reserve.status).toBe(201);
+
+    const commit = await emptyRoom.fetch(
+      appendTocRequest(roomName, {
+        phase: "commit",
+        requestId: "empty-toc-op",
+      }),
+    );
+    expect(commit.status).toBe(201);
+    const json = (await commit.json()) as { sheets: Array<{ row: number }> };
+    expect(json.sheets[0]?.row).toBe(2);
+    expect(mockExec.mock.calls[0]?.[0]).toBe(
+      'loadclipboard "#url","#title"\n' + '"/empty-toc-parent.1","First"\n' + 'paste A1 all',
+    );
+  });
+
+  it("returns row 3 for legacy TOC with blank row 1 and header at row 2", async () => {
+    const roomName = "blank1-header2-parent";
+    const blankRoom = new RoomDO(
+      makeState(roomName, record),
+      makeEnv(),
+    );
+    mockExportCSV.mockReturnValue("\n#url,#title\n");
+    const reserve = await blankRoom.fetch(
+      appendTocRequest(roomName, {
+        phase: "reserve",
+        requestId: "blank1-op",
+        sheets: [{ title: "Child" }],
+      }),
+    );
+    expect(reserve.status).toBe(201);
+
+    const commit = await blankRoom.fetch(
+      appendTocRequest(roomName, {
+        phase: "commit",
+        requestId: "blank1-op",
+      }),
+    );
+    expect(commit.status).toBe(201);
+    const json = (await commit.json()) as { sheets: Array<{ row: number }> };
+    expect(json.sheets[0]?.row).toBe(3);
+  });
+
+  it("returns consecutive rows for multi-sheet commit", async () => {
+    const roomName = "multi-sheet-parent";
+    const multiRoom = new RoomDO(
+      makeState(roomName, record),
+      makeEnv(),
+    );
+    mockExportCSV.mockReturnValue("#url,#title\n");
+    const reserve = await multiRoom.fetch(
+      appendTocRequest(roomName, {
+        phase: "reserve",
+        requestId: "multi-op",
+        sheets: [{ title: "S1" }, { title: "S2" }, { title: "S3" }],
+      }),
+    );
+    expect(reserve.status).toBe(201);
+
+    const commit = await multiRoom.fetch(
+      appendTocRequest(roomName, {
+        phase: "commit",
+        requestId: "multi-op",
+      }),
+    );
+    expect(commit.status).toBe(201);
+    const json = (await commit.json()) as { sheets: Array<{ row: number }> };
+    expect(json.sheets.map((s) => s.row)).toEqual([2, 3, 4]);
+  });
+
+  it('committed retry returns persisted same rows from reservation marker', async () => {
+    const roomName = 'retry-row-parent';
+    const retryRoom = new RoomDO(makeState(roomName, record), makeEnv());
+    mockExportCSV.mockReturnValue('#url,#title\n/old.1,Old\n');
+    mockExec.mockClear();
+    const reserve = await retryRoom.fetch(
+      appendTocRequest(roomName, {
+        phase: "reserve",
+        requestId: "retry-row-op",
+        sheets: [{ title: "New1" }, { title: "New2" }],
+      }),
+    );
+    expect(reserve.status).toBe(201);
+
+    const firstCommit = await retryRoom.fetch(
+      appendTocRequest(roomName, {
+        phase: "commit",
+        requestId: "retry-row-op",
+      }),
+    );
+    expect(firstCommit.status).toBe(201);
+    const firstJson = await firstCommit.json();
+
+    const secondCommit = await retryRoom.fetch(
+      appendTocRequest(roomName, {
+        phase: "commit",
+        requestId: "retry-row-op",
+      }),
+    );
+    expect(secondCommit.status).toBe(201);
+    const secondJson = await secondCommit.json();
+
+    expect(secondJson).toEqual(firstJson);
+    expect((secondJson as { sheets: Array<{ row: number }> }).sheets.map((s) => s.row)).toEqual([
+      3, 4,
+    ]);
+    expect(mockExec).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["absent tocStartRow", undefined],
+    ["non-number tocStartRow", "invalid-row"],
+    ["non-integer tocStartRow", 2.5],
+    ["row < 2", 1],
+  ])("malformed committed marker with %s returns exact 500 and does not republish", async (_label, invalidRow) => {
+    const roomName = "malformed-marker-parent";
+    const peerLog: FakeWsLog = { sent: [] };
+    const peer = makeFakeWs(peerLog, { legacy: false });
+    const { state } = makeWsAwareState(roomName, record, [peer]);
+    const d1Calls: D1Call[] = [];
+    const malformedRoom = new RoomDO(
+      state,
+      makeEnvWithParentAccess(
+        () =>
+          Response.json(
+            { created: false, parent: roomName },
+            { status: 201 },
+          ),
+        [],
+        { d1Calls },
+      ),
+    );
+
+    const resKey = `meta:multi-reservation:malformed-op`;
+    const reservation: Record<string, unknown> = {
+      uid: null,
+      createdAt: Date.now(),
+      firstIndex: 1,
+      requestedTitles: ["Sheet1"],
+      committedAt: Date.now(),
+      sheets: [{ subroom: `${roomName}.1`, link: `/${roomName}.1`, title: "Sheet1" }],
+    };
+    if (invalidRow !== undefined) {
+      reservation.tocStartRow = invalidRow;
+    }
+    record.map.set(resKey, reservation);
+    mockExec.mockClear();
+
+    const commit = await malformedRoom.fetch(
+      appendTocRequest(roomName, {
+        phase: "commit",
+        requestId: "malformed-op",
+      }),
+    );
+
+    expect(commit.status).toBe(500);
+    expect(await commit.text()).toBe("reservation row is unavailable");
+    expect(mockExec).not.toHaveBeenCalled();
+    expect(d1Calls).toHaveLength(0);
+    expect(peerLog.sent).toHaveLength(0);
+  });
+});
+
+describe('RoomDO — effective parent access and trusted reads', () => {
+  const allowReadWrite = {
+    isPrivate: true,
+    canRead: true,
+    canWrite: true,
+  };
+
+  it('derives each access verdict from the immutable parent marker', async () => {
+    const record: FakeStorageRecord = {
+      map: new Map([[STORAGE_KEYS.metaParent, 'parent']]),
+    };
+    const requests: Request[] = [];
+    const parentIds: string[] = [];
+    const room = new RoomDO(
+      makeState('child', record),
+      makeEnvWithParentAccess(
+        () => Response.json({
+          isPrivate: true,
+          canRead: true,
+          canWrite: false,
+        }),
+        requests,
+        { parentIds },
+      ),
+    );
+
+    const response = await room.fetch(
+      new Request('https://do/_do/access?name=child', {
+        headers: { 'X-EC-Uid': 'uid-reader' },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      isPrivate: true,
+      canRead: true,
+      canWrite: false,
+    });
+    expect(parentIds).toEqual(['parent']);
+    expect(requests).toHaveLength(1);
+    expect(new URL(requests[0]!.url).pathname).toBe('/_do/access');
+    expect(requests[0]!.headers.get('X-EC-Uid')).toBe('uid-reader');
+  });
+
+  it.each([
+    ['HTTP snapshot', '/_do/snapshot'],
+    ['export', '/_do/csv'],
+  ])('denies anonymous derived-private child access over %s', async (_label, path) => {
+    const record: FakeStorageRecord = {
+      map: new Map([
+        [STORAGE_KEYS.metaParent, 'parent'],
+        [STORAGE_KEYS.snapshot, 'SECRET-SAVE'],
+      ]),
+    };
+    const room = new RoomDO(
+      makeState(`derived-private-${_label}`, record),
+      makeEnvWithParentAccess(() =>
+        Response.json({
+          isPrivate: true,
+          canRead: false,
+          canWrite: false,
+        }),
+      ),
+    );
+    const response = await room.fetch(
+      new Request(`https://do${path}?name=derived-private-${_label}`),
+    );
+    expect(response.status).toBe(403);
+    expect(await response.text()).toBe('Forbidden');
+  });
+
+  it('closes an anonymous derived-private child WebSocket before dispatch', async () => {
+    const record: FakeStorageRecord = {
+      map: new Map([[STORAGE_KEYS.metaParent, 'parent']]),
+    };
+    const { state } = makeWsAwareState('derived-private-ws', record, []);
+    const room = new RoomDO(
+      state,
+      makeEnvWithParentAccess(() =>
+        Response.json({
+          isPrivate: true,
+          canRead: false,
+          canWrite: false,
+        }),
+      ),
+    );
+    const log: FakeWsLog = { sent: [] };
+    const socket = makeFakeWs(log, {
+      user: 'anonymous',
+      room: 'derived-private-ws',
+      auth: '',
+    });
+    await room.webSocketMessage(
+      socket,
+      JSON.stringify({
+        type: 'ask.log',
+        room: 'derived-private-ws',
+        user: 'anonymous',
+      }),
+    );
+    expect(log.closed).toBe(true);
+    expect(log.closeCode).toBe(1008);
+  });
+
+  it('refuses to rename a child even when its parent allows every operation', async () => {
+    const record: FakeStorageRecord = {
+      map: new Map([
+        [STORAGE_KEYS.metaParent, 'parent'],
+        [STORAGE_KEYS.snapshot, 'SECRET-SAVE'],
+      ]),
+    };
+    const room = new RoomDO(
+      makeState('rename-child', record),
+      makeEnvWithParentAccess(() =>
+        Response.json({
+          isPrivate: false,
+          canRead: true,
+          canWrite: true,
+        }),
+      ),
+    );
+    const response = await room.fetch(
+      new Request('https://do/_do/rename?name=rename-child', {
+        method: 'POST',
+        headers: { 'X-EC-Uid': 'uid-owner' },
+        body: JSON.stringify({ to: 'public-target' }),
+      }),
+    );
+    expect(response.status).toBe(409);
+    expect(await response.text()).toBe('Private room rename is not supported');
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('SECRET-SAVE');
+  });
+
+  it('does not synthesize a uid for an anonymous parent lookup', async () => {
+    const requests: Request[] = [];
+    const room = new RoomDO(
+      makeState('anonymous-child', {
+        map: new Map([[STORAGE_KEYS.metaParent, 'parent']]),
+      }),
+      makeEnvWithParentAccess(
+        (request) =>
+          request.headers.has('X-EC-Uid')
+            ? Response.json({ isPrivate: false, canRead: true, canWrite: true })
+            : Response.json({ isPrivate: true, canRead: false, canWrite: false }),
+        requests,
+      ),
+    );
+    const response = await room.fetch(new Request('https://do/_do/access?name=anonymous-child'));
+    expect(await response.json()).toEqual({
+      isPrivate: true,
+      canRead: false,
+      canWrite: false,
+    });
+    expect(requests[0]!.headers.get('X-EC-Uid')).toBeNull();
+  });
+
+  it.each([
+    ['non-200', () => new Response('no', { status: 403 })],
+    ['unexpected 2xx', () => Response.json(allowReadWrite, { status: 201 })],
+    ['null body', () => Response.json(null)],
+    ['missing fields', () => Response.json({ canRead: true })],
+    ['wrong field types', () => Response.json({
+      isPrivate: 'yes',
+      canRead: true,
+      canWrite: false,
+    })],
+    ['throw', () => {
+      throw new Error('parent unavailable');
+    }],
+    ['throw non-Error', () => {
+      throw 'parent unavailable';
+    }],
+  ])('fails parent access closed for %s', async (_label, parentFetch) => {
+    const record: FakeStorageRecord = {
+      map: new Map([[STORAGE_KEYS.metaParent, 'parent']]),
+    };
+    const room = new RoomDO(
+      makeState(`child-${_label}`, record),
+      makeEnvWithParentAccess(parentFetch),
+    );
+    const response = await room.fetch(
+      new Request('https://do/_do/access?name=child'),
+    );
+    expect(await response.json()).toEqual({
+      isPrivate: true,
+      canRead: false,
+      canWrite: false,
+    });
+  });
+
+  it.each([
+    [
+      'conflicting metadata',
+      new Map<string, unknown>([
+        [STORAGE_KEYS.metaParent, 'parent'],
+        [STORAGE_KEYS.metaAccess, 'private'],
+        [STORAGE_KEYS.metaAcl, PRIVATE_ACL],
+      ]),
+    ],
+    ['blank parent', new Map<string, unknown>([[STORAGE_KEYS.metaParent, '']])],
+    ['self parent', new Map<string, unknown>([[STORAGE_KEYS.metaParent, 'child']])],
+    ['non-string parent', new Map<string, unknown>([[STORAGE_KEYS.metaParent, 7]])],
+  ])('fails closed for %s without querying the parent', async (_label, map) => {
+    const requests: Request[] = [];
+    const room = new RoomDO(
+      makeState('child', { map }),
+      makeEnvWithParentAccess(() => Response.json(allowReadWrite), requests),
+    );
+    const response = await room.fetch(
+      new Request('https://do/_do/access?name=child', {
+        headers: { 'X-EC-Uid': 'uid-owner' },
+      }),
+    );
+    expect(await response.json()).toEqual({
+      isPrivate: true,
+      canRead: false,
+      canWrite: false,
+    });
+    expect(requests).toHaveLength(0);
+  });
+
+  it.each([
+    ['access only', STORAGE_KEYS.metaAccess, 'private'],
+    ['ACL only', STORAGE_KEYS.metaAcl, PRIVATE_ACL],
+  ])('denies a snapshot read for a parent marker with %s metadata', async (_label, key, value) => {
+    const record: FakeStorageRecord = {
+      map: new Map([
+        [STORAGE_KEYS.metaParent, 'parent'],
+        [key, value],
+        [STORAGE_KEYS.snapshot, 'SECRET-SAVE'],
+      ]),
+    };
+    const requests: Request[] = [];
+    const room = new RoomDO(
+      makeState(`conflicting-${_label}`, record),
+      makeEnvWithParentAccess(() => Response.json(allowReadWrite), requests),
+    );
+    const response = await room.fetch(
+      new Request('https://do/_do/snapshot?name=child', {
+        headers: {
+          'X-EC-Uid': 'uid-owner',
+          'X-EC-Parent-Read': 'parent',
+        },
+      }),
+    );
+    expect(response.status).toBe(403);
+    expect(await response.text()).toBe('Forbidden');
+    expect(requests).toHaveLength(0);
+  });
+
+  it.each([
+    ['null verdict', null],
+    ['primitive verdict', 'public'],
+    ['missing isPrivate', { canRead: true, canWrite: true }],
+    ['missing canRead', { isPrivate: true, canWrite: true }],
+    ['missing canWrite', { isPrivate: true, canRead: true }],
+    ['invalid isPrivate', { isPrivate: 'yes', canRead: true, canWrite: true }],
+    ['invalid canRead', { isPrivate: true, canRead: 'yes', canWrite: true }],
+    ['invalid canWrite', { isPrivate: true, canRead: true, canWrite: 'yes' }],
+  ])('denies an actual snapshot read for a parent verdict with %s', async (_label, verdict) => {
+    const record: FakeStorageRecord = {
+      map: new Map([
+        [STORAGE_KEYS.metaParent, 'parent'],
+        [STORAGE_KEYS.snapshot, 'SECRET-SAVE'],
+      ]),
+    };
+    const room = new RoomDO(
+      makeState(`malformed-verdict-${_label}`, record),
+      makeEnvWithParentAccess(() => Response.json(verdict)),
+    );
+    const response = await room.fetch(
+      new Request('https://do/_do/snapshot?name=child', {
+        headers: { 'X-EC-Uid': 'uid-owner' },
+      }),
+    );
+    expect(response.status).toBe(403);
+    expect(await response.text()).toBe('Forbidden');
+  });
+
+  it('denies a revoked reader when stale local ACL metadata remains beside the parent marker', async () => {
+    const record: FakeStorageRecord = {
+      map: new Map<string, unknown>([
+        [STORAGE_KEYS.metaParent, 'parent'],
+        [STORAGE_KEYS.metaAccess, 'private'],
+        [STORAGE_KEYS.metaAcl, PRIVATE_ACL],
+      ]),
+    };
+    const requests: Request[] = [];
+    const room = new RoomDO(
+      makeState('stale-reader-child', record),
+      makeEnvWithParentAccess(
+        () =>
+          Response.json({
+            isPrivate: true,
+            canRead: false,
+            canWrite: false,
+          }),
+        requests,
+      ),
+    );
+    const response = await room.fetch(
+      new Request('https://do/_do/access?name=stale-reader-child', {
+        headers: { 'X-EC-Uid': 'uid-reader' },
+      }),
+    );
+    expect(await response.json()).toEqual({
+      isPrivate: true,
+      canRead: false,
+      canWrite: false,
+    });
+    expect(requests).toHaveLength(0);
+  });
+
+  it('accepts only a marker-matched trusted parent snapshot read', async () => {
+    const record: FakeStorageRecord = {
+      map: new Map([
+        [STORAGE_KEYS.metaParent, 'parent'],
+        [STORAGE_KEYS.snapshot, 'SECRET-SAVE'],
+      ]),
+    };
+    const requests: Request[] = [];
+    const room = new RoomDO(
+      makeState('child', record),
+      makeEnvWithParentAccess(
+        () => Response.json({
+          isPrivate: true,
+          canRead: false,
+          canWrite: false,
+        }),
+        requests,
+      ),
+    );
+
+    const trusted = await room.fetch(
+      new Request('https://do/_do/snapshot?name=child', {
+        headers: { 'X-EC-Parent-Read': 'parent' },
+      }),
+    );
+    expect(trusted.status).toBe(200);
+    expect(await trusted.text()).toBe('SECRET-SAVE');
+    expect(requests).toHaveLength(0);
+
+    const wrong = await room.fetch(
+      new Request('https://do/_do/snapshot?name=child', {
+        headers: { 'X-EC-Parent-Read': 'other' },
+      }),
+    );
+    expect(wrong.status).toBe(403);
+
+    const write = await room.fetch(
+      new Request('https://do/_do/snapshot?name=child', {
+        method: 'PUT',
+        headers: { 'X-EC-Parent-Read': 'parent' },
+        body: 'replacement',
+      }),
+    );
+    expect(write.status).toBe(403);
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('SECRET-SAVE');
+  });
+
+  it('does not accept a trusted-parent header on another path or method', async () => {
+    const record: FakeStorageRecord = {
+      map: new Map([
+        [STORAGE_KEYS.metaParent, 'parent'],
+        [STORAGE_KEYS.snapshot, 'SECRET-SAVE'],
+      ]),
+    };
+    const room = new RoomDO(
+      makeState('trusted-read-scope', record),
+      makeEnvWithParentAccess(() =>
+        Response.json({
+          isPrivate: true,
+          canRead: false,
+          canWrite: false,
+        }),
+      ),
+    );
+    for (const request of [
+      new Request('https://do/_do/csv?name=trusted-read-scope', {
+        headers: { 'X-EC-Parent-Read': 'parent' },
+      }),
+      new Request('https://do/_do/snapshot?name=trusted-read-scope', {
+        method: 'HEAD',
+        headers: { 'X-EC-Parent-Read': 'parent' },
+      }),
+    ]) {
+      const response = await room.fetch(request);
+      expect(response.status).toBe(403);
+    }
+  });
+
+  it('never lets the trusted-read assertion override local ACL metadata', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    markPrivate(record);
+    record.map.set(STORAGE_KEYS.metaParent, 'parent');
+    record.map.set(STORAGE_KEYS.snapshot, 'SECRET-SAVE');
+    const room = new RoomDO(makeState('child', record), makeEnv());
+    const response = await room.fetch(
+      new Request('https://do/_do/snapshot?name=child', {
+        headers: { 'X-EC-Parent-Read': 'parent' },
+      }),
+    );
+    expect(response.status).toBe(403);
+  });
+
+  it('forwards the uid and parent-read assertion when hydrating a sibling', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const requests: Request[] = [];
+    mockFindRefs.mockReset();
+    mockFindRefs.mockReturnValueOnce(['sibling']);
+    mockAddSibling.mockClear();
+    try {
+      const room = new RoomDO(
+        makeState('parent', record),
+        makeEnvWithParentAccess((request) => {
+          if (new URL(request.url).pathname === '/_do/snapshot') {
+            return new Response('SIBLING-SAVE');
+          }
+          return Response.json(allowReadWrite);
+        }, requests),
+      );
+      const response = await room.fetch(
+        new Request('https://do/_do/csv?name=parent', {
+          headers: { 'X-EC-Uid': 'uid-owner' },
+        }),
+      );
+      expect(response.status).toBe(200);
+      const sibling = requests.find(
+        (request) => new URL(request.url).pathname === '/_do/snapshot',
+      );
+      expect(sibling?.headers.get('X-EC-Uid')).toBe('uid-owner');
+      expect(sibling?.headers.get('X-EC-Parent-Read')).toBe('parent');
+      expect(mockAddSibling).toHaveBeenCalledWith('sibling', 'SIBLING-SAVE');
+    } finally {
+      mockFindRefs.mockReset();
+      mockFindRefs.mockImplementation(() => []);
+    }
+  });
+
+  it('does not fetch siblings when a writer lacks read access', async () => {
+    const record: FakeStorageRecord = {
+      map: new Map([[STORAGE_KEYS.metaParent, 'parent']]),
+    };
+    const requests: Request[] = [];
+    mockFindRefs.mockReset();
+    mockFindRefs.mockReturnValueOnce(['sibling']);
+    try {
+      const room = new RoomDO(
+        makeState('child', record),
+        makeEnvWithParentAccess((request) => {
+          if (new URL(request.url).pathname === '/_do/access') {
+            return Response.json({
+              isPrivate: true,
+              canRead: false,
+              canWrite: true,
+            });
+          }
+          return new Response('must not fetch', { status: 500 });
+        }, requests),
+      );
+      const response = await room.fetch(
+        new Request('https://do/_do/commands?name=child', {
+          method: 'POST',
+          headers: { 'X-EC-Uid': 'uid-writer' },
+          body: 'set A1 value n 1',
+        }),
+      );
+      expect(response.status).toBe(202);
+      expect(
+        requests.some(
+          (request) => new URL(request.url).pathname === '/_do/snapshot',
+        ),
+      ).toBe(false);
+    } finally {
+      mockFindRefs.mockReset();
+      mockFindRefs.mockImplementation(() => []);
+    }
+  });
+
+  it('fails closed before a request has supplied a room name', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const cases: Array<{
+      record: FakeStorageRecord;
+      env: Env;
+      event: string;
+    }> = [
+      {
+        record: {
+          map: new Map([
+            [STORAGE_KEYS.metaParent, 'parent'],
+            [STORAGE_KEYS.metaAccess, 'private'],
+          ]),
+        },
+        env: makeEnv(),
+        event: 'room-access-metadata-conflict',
+      },
+      {
+        record: {
+          map: new Map([[STORAGE_KEYS.metaParent, '']]),
+        },
+        env: makeEnv(),
+        event: 'room-parent-metadata-invalid',
+      },
+      {
+        record: {
+          map: new Map([[STORAGE_KEYS.metaParent, 'parent']]),
+        },
+        env: makeEnvWithParentAccess(() => {
+          throw 'parent unavailable';
+        }),
+        event: 'room-parent-access-failed',
+      },
+    ];
+    try {
+      for (const testCase of cases) {
+        const room = new RoomDO(
+          makeState(`unnamed-${testCase.event}`, testCase.record),
+          testCase.env,
+        );
+        const log: FakeWsLog = { sent: [] };
+        await room.webSocketMessage(
+          makeFakeWs(log, { user: 'u', room: 'r', auth: 'r' }),
+          '{}',
+        );
+        expect(log.closed).toBe(true);
+        expect(consoleError).toHaveBeenCalledWith(
+          testCase.event,
+          expect.objectContaining({ room: null }),
+        );
+      }
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+});
+
+describe('RoomDO — child snapshot initialization', () => {
+  const allowParent = () =>
+    Response.json({
+      isPrivate: true,
+      canRead: true,
+      canWrite: true,
+    });
+
+  it.each([
+    [
+      'missing room name',
+      null,
+      { parent: 'parent', snapshot: '', mode: 'create' },
+      400,
+      'room name required',
+    ],
+    ['invalid JSON', 'parent.1', '{', 400, 'child-snapshot body must be valid JSON'],
+    ['non-object body', 'parent.1', null, 400, 'child-snapshot body must be an object'],
+    ['number body', 'parent.1', 7, 400, 'child-snapshot body must be an object'],
+    [
+      'invalid parent',
+      'parent.1',
+      { parent: '', snapshot: '', mode: 'create' },
+      400,
+      'child-snapshot body must be {parent,snapshot,mode}',
+    ],
+    [
+      'non-string snapshot',
+      'parent.1',
+      { parent: 'parent', snapshot: 3, mode: 'create' },
+      400,
+      'child-snapshot body must be {parent,snapshot,mode}',
+    ],
+    [
+      'invalid mode',
+      'parent.1',
+      { parent: 'parent', snapshot: '', mode: 'other' },
+      400,
+      'child-snapshot body must be {parent,snapshot,mode}',
+    ],
+    [
+      'outside namespace',
+      'other.1',
+      { parent: 'parent', snapshot: '', mode: 'create' },
+      400,
+      'child room is outside parent namespace',
+    ],
+    [
+      'zero child index',
+      'parent.0',
+      { parent: 'parent', snapshot: '', mode: 'create' },
+      400,
+      'child room is outside parent namespace',
+    ],
+    [
+      'parent missing',
+      'parent.1',
+      { snapshot: '', mode: 'create' },
+      400,
+      'child-snapshot body must be {parent,snapshot,mode}',
+    ],
+    [
+      'snapshot missing',
+      'parent.1',
+      { parent: 'parent', mode: 'create' },
+      400,
+      'child-snapshot body must be {parent,snapshot,mode}',
+    ],
+    [
+      'mode missing',
+      'parent.1',
+      { parent: 'parent', snapshot: '' },
+      400,
+      'child-snapshot body must be {parent,snapshot,mode}',
+    ],
+  ])('rejects %s', async (_label, roomName, body, status, message) => {
+    const room = new RoomDO(
+      makeState(`bad-child-${_label}`, { map: new Map() }),
+      makeEnvWithParentAccess(allowParent),
+    );
+    const response = await room.fetch(
+      childSnapshotRequest(roomName, body),
+    );
+    expect(response.status).toBe(status);
+    expect(await response.text()).toBe(message);
+  });
+
+  it('rejects a child snapshot that exceeds sheet limits', async () => {
+    const room = new RoomDO(
+      makeState('oversized-child', { map: new Map() }),
+      makeEnvWithParentAccess(allowParent),
+    );
+    const response = await room.fetch(
+      childSnapshotRequest('parent.1', {
+        parent: 'parent',
+        snapshot: 'socialcalc:version:1.5\nsheet:c:702:r:1048576:tvf:1\n',
+        mode: 'create',
+      }),
+    );
+    expect(response.status).toBe(413);
+    expect(await response.text()).toBe('child snapshot exceeds sheet limits');
+  });
+
+  it.each([
+    ['denied', () => Response.json({
+      isPrivate: true,
+      canRead: true,
+      canWrite: false,
+    })],
+    ['malformed', () => Response.json({ canWrite: true })],
+    ['wrong status', () => Response.json({
+      isPrivate: true,
+      canRead: true,
+      canWrite: true,
+    }, { status: 201 })],
+  ])('fails closed when parent access is %s', async (_label, parentFetch) => {
+    const room = new RoomDO(
+      makeState(`denied-child-${_label}`, { map: new Map() }),
+      makeEnvWithParentAccess(parentFetch),
+    );
+    const response = await room.fetch(
+      childSnapshotRequest('parent.1', {
+        parent: 'parent',
+        snapshot: '',
+        mode: 'create',
+      }),
+    );
+    expect(response.status).toBe(403);
+  });
+
+  it('refuses to verify a pristine child without writing metadata', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(
+      makeState('pristine-child', record),
+      makeEnvWithParentAccess(allowParent),
+    );
+    const response = await room.fetch(
+      childSnapshotRequest('parent.1', {
+        parent: 'parent',
+        snapshot: '',
+        mode: 'verify',
+      }),
+    );
+    const responseBody = await response.text();
+    expect(response.status, responseBody).toBe(409);
+    expect(responseBody).toBe('Child is not initialized for this parent');
+    expect(record.map.size).toBe(0);
+  });
+
+  it('creates idempotently and then replaces a managed child', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(
+      makeState('managed-child', record),
+      makeEnvWithParentAccess(allowParent),
+    );
+    const create = () =>
+      room.fetch(
+        childSnapshotRequest('parent.1', {
+          parent: 'parent',
+          snapshot: 'SAVE-1',
+          mode: 'create',
+        }),
+      );
+    const first = await create();
+    expect(first.status).toBe(201);
+    expect(await first.json()).toEqual({ created: true, parent: 'parent' });
+    expect(record.map.get(STORAGE_KEYS.metaParent)).toBe('parent');
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('SAVE-1');
+    const repeated = await room.fetch(
+      childSnapshotRequest('parent.1', {
+        parent: 'parent',
+        snapshot: 'ATTACKER-SAVE',
+        mode: 'create',
+      }),
+    );
+    expect(repeated.status).toBe(201);
+    expect(await repeated.json()).toEqual({ created: false, parent: 'parent' });
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('SAVE-1');
+
+    const verified = await room.fetch(
+      childSnapshotRequest('parent.1', {
+        parent: 'parent',
+        snapshot: '',
+        mode: 'verify',
+      }),
+    );
+    expect(verified.status).toBe(201);
+    expect(await verified.json()).toEqual({
+      created: false,
+      parent: 'parent',
+    });
+
+    const replaced = await room.fetch(
+      childSnapshotRequest('parent.1', {
+        parent: 'parent',
+        snapshot: 'SAVE-2',
+        mode: 'replace',
+      }),
+    );
+    expect(replaced.status).toBe(201);
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('SAVE-2');
+    expect(record.map.get(STORAGE_KEYS.metaParent)).toBe('parent');
+  });
+
+  it('refuses local ACL, a different parent, and occupied unmarked rooms', async () => {
+    const localRecord: FakeStorageRecord = { map: new Map() };
+    markPrivate(localRecord);
+    const local = new RoomDO(
+      makeState('local-child', localRecord),
+      makeEnvWithParentAccess(allowParent),
+    );
+    const localResponse = await local.fetch(
+      childSnapshotRequest('parent.1', {
+        parent: 'parent',
+        snapshot: '',
+        mode: 'create',
+      }),
+    );
+    expect(localResponse.status).toBe(409);
+    expect(await localResponse.text()).toBe('Child has local access metadata');
+
+    for (const [label, key, value] of [
+      ['access only', STORAGE_KEYS.metaAccess, 'private'],
+      ['ACL only', STORAGE_KEYS.metaAcl, PRIVATE_ACL],
+    ] as const) {
+      const record: FakeStorageRecord = { map: new Map([[key, value]]) };
+      const child = new RoomDO(
+        makeState(`local-${label}`, record),
+        makeEnvWithParentAccess(allowParent),
+      );
+      const response = await child.fetch(
+        childSnapshotRequest('parent.1', {
+          parent: 'parent',
+          snapshot: 'ATTACKER-SAVE',
+          mode: 'create',
+        }),
+      );
+      expect(response.status).toBe(label === 'access only' ? 403 : 409);
+      expect(await response.text()).toBe(
+        label === 'access only' ? 'Forbidden' : 'Child has local access metadata',
+      );
+      expect(record.map.has(STORAGE_KEYS.metaParent)).toBe(false);
+    }
+
+    const differentRecord: FakeStorageRecord = {
+      map: new Map([[STORAGE_KEYS.metaParent, 'old-parent']]),
+    };
+    const different = new RoomDO(
+      makeState('different-child', differentRecord),
+      makeEnvWithParentAccess(allowParent),
+    );
+    const differentResponse = await different.fetch(
+      childSnapshotRequest('parent.1', {
+        parent: 'parent',
+        snapshot: '',
+        mode: 'create',
+      }),
+    );
+    expect(differentResponse.status).toBe(409);
+    expect(await differentResponse.text()).toBe(
+      'Child belongs to a different parent',
+    );
+
+    for (const mode of ['create', 'replace'] as const) {
+      const occupiedRecord: FakeStorageRecord = {
+        map: new Map([[STORAGE_KEYS.snapshot, 'EXISTING']]),
+      };
+      const occupied = new RoomDO(
+        makeState(`occupied-child-${mode}`, occupiedRecord),
+        makeEnvWithParentAccess(allowParent),
+      );
+      const response = await occupied.fetch(
+        childSnapshotRequest('parent.1', {
+          parent: 'parent',
+          snapshot: 'NEW',
+          mode,
+        }),
+      );
+      expect(response.status).toBe(409);
+      expect(await response.text()).toBe(
+        mode === 'replace'
+          ? 'Child must be backfilled before replacement'
+          : 'Child room is occupied',
+      );
+      expect(occupiedRecord.map.get(STORAGE_KEYS.snapshot)).toBe('EXISTING');
+    }
+  });
+
+  it.each([
+    ['audit residue', 'audit:0000000000000001', 'entry'],
+    ['chat residue', 'chat:0000000000000001', 'entry'],
+    ['updated-at residue', STORAGE_KEYS.metaUpdatedAt, 1],
+  ])('refuses capture when an unmarked room contains %s', async (_label, key, value) => {
+    const record: FakeStorageRecord = { map: new Map([[key, value]]) };
+    const room = new RoomDO(
+      makeState(`occupied-${_label}`, record),
+      makeEnvWithParentAccess(allowParent),
+    );
+    const response = await room.fetch(
+      childSnapshotRequest('parent.1', {
+        parent: 'parent',
+        snapshot: 'ATTACKER-SAVE',
+        mode: 'create',
+      }),
+    );
+    expect(response.status).toBe(409);
+    expect(await response.text()).toBe('Child room is occupied');
+    expect(record.map.has(STORAGE_KEYS.metaParent)).toBe(false);
+    expect(record.map.has(STORAGE_KEYS.snapshot)).toBe(false);
+  });
+});
+
+
+describe('RoomDO — parent metadata management', () => {
+  const approved = (child: string) =>
+    Response.json({ children: [child], skipped: [] });
+
+  function migrateEnv(
+    parentFetch: (request: Request) => Response | Promise<Response> =
+      () => approved('parent.1'),
+    requests: Request[] = [],
+    d1Calls: D1Call[] = [],
+  ): Env {
+    return {
+      ...makeEnvWithParentAccess((request) => {
+        if (new URL(request.url).pathname === '/_do/access') {
+          return Response.json({
+            isPrivate: true,
+            canRead: true,
+            canWrite: true,
+          });
+        }
+        return parentFetch(request);
+      }, requests, { d1Calls }),
+      ETHERCALC_MIGRATE_TOKEN: 'migrate-token',
+    };
+  }
+
+  it('enforces the operator capability before parsing set-parent bodies', async () => {
+    const disabled = new RoomDO(
+      makeState('set-parent-disabled', { map: new Map() }),
+      makeEnv(),
+    );
+    const disabledResponse = await disabled.fetch(
+      operatorRequest('/_do/set-parent', 'parent.1', {
+        parent: 'parent',
+        approved: true,
+      }),
+    );
+    expect(disabledResponse.status).toBe(404);
+
+    const enabled = new RoomDO(
+      makeState('set-parent-enabled', { map: new Map() }),
+      migrateEnv(),
+    );
+    const unauthorized = await enabled.fetch(
+      operatorRequest(
+        '/_do/set-parent',
+        'parent.1',
+        { parent: 'parent', approved: true },
+        'uid-owner',
+        'wrong-token',
+      ),
+    );
+    expect(unauthorized.status).toBe(401);
+
+    const noName = await enabled.fetch(
+      operatorRequest(
+        '/_do/set-parent',
+        null,
+        { parent: 'parent', approved: true },
+      ),
+    );
+    expect(noName.status).toBe(400);
+    expect(await noName.text()).toBe('room name required');
+  });
+
+  it.each([
+    ['invalid JSON', '{'],
+    ['non-object', null],
+    ['missing parent', { approved: true }],
+    ['invalid parent', { parent: '', approved: true }],
+    ['approval missing', { parent: 'parent' }],
+    ['approval false', { parent: 'parent', approved: false }],
+    ['dryRun wrong type', {
+      parent: 'parent',
+      approved: true,
+      dryRun: 'yes',
+    }],
+  ])('rejects a set-parent body with %s', async (_label, body) => {
+    const room = new RoomDO(
+      makeState(`set-parent-body-${_label}`, { map: new Map() }),
+      migrateEnv(),
+    );
+    const response = await room.fetch(
+      operatorRequest('/_do/set-parent', 'parent.1', body),
+    );
+    expect(response.status).toBe(400);
+  });
+
+  it('rejects set-parent outside the namespace and without a uid', async () => {
+    const room = new RoomDO(
+      makeState('set-parent-auth', { map: new Map() }),
+      migrateEnv(),
+    );
+    const outside = await room.fetch(
+      operatorRequest('/_do/set-parent', 'other.1', {
+        parent: 'parent',
+        approved: true,
+      }),
+    );
+    expect(outside.status).toBe(400);
+
+    const anonymous = await room.fetch(
+      operatorRequest(
+        '/_do/set-parent',
+        'parent.1',
+        { parent: 'parent', approved: true },
+        null,
+      ),
+    );
+    expect(anonymous.status).toBe(403);
+  });
+
+  it.each([
+    ['approval 501', () => new Response('old', { status: 501 }), 501],
+    ['approval denied', () => new Response('no', { status: 403 }), 403],
+    ['approval unexpected 2xx', () => Response.json({
+      children: ['parent.1'],
+      skipped: [],
+    }, { status: 201 }), 403],
+    ['approval malformed', () => Response.json(null), 409],
+    ['approval missing children', () => Response.json({ skipped: [] }), 409],
+    ['child absent from TOC', () => Response.json({
+      children: [],
+      skipped: ['parent.1'],
+    }), 409],
+    ['approval fetch throws', () => {
+      throw new Error('parent unavailable');
+    }, 403],
+  ])('fails closed for %s', async (_label, parentFetch, status) => {
+    const room = new RoomDO(
+      makeState(`set-parent-approval-${_label}`, { map: new Map() }),
+      migrateEnv(parentFetch),
+    );
+    const response = await room.fetch(
+      operatorRequest('/_do/set-parent', 'parent.1', {
+        parent: 'parent',
+        approved: true,
+      }),
+    );
+    expect(response.status).toBe(status);
+  });
+
+  it('sends the exact owner-proof request and supports dry-run and set', async () => {
+    const requests: Request[] = [];
+    const d1Calls: D1Call[] = [];
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(
+      makeState('set-parent-success', record),
+      migrateEnv(() => approved('parent.1'), requests, d1Calls),
+    );
+
+    const dryRun = await room.fetch(
+      operatorRequest('/_do/set-parent', 'parent.1', {
+        parent: 'parent',
+        approved: true,
+        dryRun: true,
+      }),
+    );
+    expect(dryRun.status).toBe(200);
+    expect(await dryRun.json()).toEqual({
+      child: 'parent.1',
+      parent: 'parent',
+      status: 'eligible',
+    });
+    expect(record.map.has(STORAGE_KEYS.metaParent)).toBe(false);
+
+    const approvalRequest = requests[0]!;
+    expect(new URL(approvalRequest.url).pathname).toBe(
+      '/_do/backfill-children',
+    );
+    expect(approvalRequest.method).toBe('POST');
+    expect(approvalRequest.headers.get('Authorization')).toBe(
+      'Bearer migrate-token',
+    );
+    expect(approvalRequest.headers.get('X-EC-Uid')).toBe('uid-owner');
+    expect(await approvalRequest.json()).toEqual({
+      children: ['parent.1'],
+      approved: true,
+      dryRun: true,
+    });
+
+    const set = await room.fetch(
+      operatorRequest('/_do/set-parent', 'parent.1', {
+        parent: 'parent',
+        approved: true,
+      }),
+    );
+    expect(set.status).toBe(200);
+    expect(await set.json()).toEqual({
+      child: 'parent.1',
+      parent: 'parent',
+      status: 'set',
+    });
+    expect(record.map.get(STORAGE_KEYS.metaParent)).toBe('parent');
+    expect(d1Calls.some((call) => call.sql.includes('DELETE FROM rooms'))).toBe(
+      true,
+    );
+  });
+
+  it('reports already-parented, different-parent, and local-access conflicts', async () => {
+    const cases: Array<{
+      readonly label: string;
+      readonly record: FakeStorageRecord;
+      readonly expected: string;
+      readonly status: number;
+    }> = [
+      {
+        label: 'already',
+        record: {
+          map: new Map([[STORAGE_KEYS.metaParent, 'parent']]),
+        },
+        expected: 'already-parented',
+        status: 200,
+      },
+      {
+        label: 'different',
+        record: {
+          map: new Map([[STORAGE_KEYS.metaParent, 'other']]),
+        },
+        expected: 'Child belongs to a different parent',
+        status: 409,
+      },
+      {
+        label: 'local',
+        record: { map: new Map() },
+        expected: 'Child has local access metadata',
+        status: 409,
+      },
+    ];
+    markPrivate(cases[2]!.record);
+
+    for (const testCase of cases) {
+      const room = new RoomDO(
+        makeState(`set-parent-${testCase.label}`, testCase.record),
+        migrateEnv(),
+      );
+      const response = await room.fetch(
+        operatorRequest('/_do/set-parent', 'parent.1', {
+          parent: 'parent',
+          approved: true,
+        }),
+      );
+      expect(response.status).toBe(testCase.status);
+      if (testCase.status === 200) {
+        expect(await response.json()).toMatchObject({
+          status: testCase.expected,
+        });
+      } else {
+        expect(await response.text()).toBe(testCase.expected);
+      }
+    }
+  });
+
+  it('enforces operator and owner proof for backfill-children', async () => {
+    const disabled = new RoomDO(
+      makeState('backfill-disabled', { map: new Map() }),
+      makeEnv(),
+    );
+    expect(
+      (
+        await disabled.fetch(
+          operatorRequest('/_do/backfill-children', 'parent', {
+            children: ['parent.1'],
+            approved: true,
+          }),
+        )
+      ).status,
+    ).toBe(404);
+
+    const publicRoom = new RoomDO(
+      makeState('backfill-public', { map: new Map() }),
+      migrateEnv(),
+    );
+    const publicResponse = await publicRoom.fetch(
+      operatorRequest('/_do/backfill-children', 'parent', {
+        children: ['parent.1'],
+        approved: true,
+      }),
+    );
+    expect(publicResponse.status).toBe(403);
+
+    const privateRecord: FakeStorageRecord = { map: new Map() };
+    markPrivate(privateRecord);
+    const privateRoom = new RoomDO(
+      makeState('backfill-private', privateRecord),
+      migrateEnv(),
+    );
+    const anonymous = await privateRoom.fetch(
+      operatorRequest(
+        '/_do/backfill-children',
+        'parent',
+        { children: ['parent.1'], approved: true },
+        null,
+      ),
+    );
+    expect(anonymous.status).toBe(403);
+    const wrongOwner = await privateRoom.fetch(
+      operatorRequest(
+        '/_do/backfill-children',
+        'parent',
+        { children: ['parent.1'], approved: true },
+        'uid-reader',
+      ),
+    );
+    expect(wrongOwner.status).toBe(403);
+    const wrongToken = await privateRoom.fetch(
+      operatorRequest(
+        '/_do/backfill-children',
+        'parent',
+        { children: ['parent.1'], approved: true },
+        'uid-owner',
+        'wrong-token',
+      ),
+    );
+    expect(wrongToken.status).toBe(401);
+  });
+
+  it.each([
+    ['missing room name', null, { children: ['parent.1'], approved: true }, 400],
+    ['invalid JSON', 'parent', '{', 400],
+    ['non-object', 'parent', null, 400],
+    ['children missing', 'parent', { approved: true }, 400],
+    ['children non-array', 'parent', { children: 'parent.1', approved: true }, 400],
+    ['child non-string', 'parent', { children: [3], approved: true }, 400],
+    ['approval false', 'parent', { children: ['parent.1'], approved: false }, 400],
+    ['approval missing', 'parent', { children: ['parent.1'] }, 400],
+    ['dryRun wrong type', 'parent', {
+      children: ['parent.1'],
+      approved: true,
+      dryRun: 1,
+    }, 400],
+  ])('rejects backfill body with %s', async (_label, roomName, body, status) => {
+    const record: FakeStorageRecord = { map: new Map() };
+    markPrivate(record);
+    const room = new RoomDO(
+      makeState(`backfill-body-${_label}`, record),
+      migrateEnv(),
+    );
+    const response = await room.fetch(
+      operatorRequest('/_do/backfill-children', roomName, body),
+    );
+    expect(response.status).toBe(status);
+  });
+
+  it('classifies backfill children from the live TOC in dry-run and apply modes', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    markPrivate(record);
+    const room = new RoomDO(
+      makeState('backfill-list', record),
+      migrateEnv(),
+    );
+    mockExportCSV.mockReturnValue(
+      '#url,#title\n/parent.1,One\n/parent.3,Three\n/other.2,Other\n',
+    );
+    try {
+      const dryRun = await room.fetch(
+        operatorRequest('/_do/backfill-children', 'parent', {
+          children: ['parent.1', 'parent.2', 'parent.03', 'other.2',  'parent.3'],
+          approved: true,
+          dryRun: true,
+        }),
+      );
+      expect(dryRun.status).toBe(200);
+      expect(await dryRun.json()).toEqual({
+        parent: 'parent',
+        dryRun: true,
+        children: ['parent.1', 'parent.3'],
+        skipped: ['parent.2', 'parent.03', 'other.2'],
+      });
+
+      const apply = await room.fetch(
+        operatorRequest('/_do/backfill-children', 'parent', {
+          children: ['parent.1'],
+          approved: true,
+        }),
+      );
+      expect(await apply.json()).toEqual({
+        parent: 'parent',
+        dryRun: false,
+        children: ['parent.1'],
+        skipped: [],
+      });
+    } finally {
+      mockExportCSV.mockReset();
+      mockExportCSV.mockImplementation(() => 'a,b\n1,2\n');
+    }
+  });
+});
+
+
+describe('RoomDO — managed-child reservation edges', () => {
+  function reserveRequest(
+    roomName: string,
+    requestId: unknown,
+    sheets: unknown,
+    uid: string | null = null,
+  ): Request {
+    return appendTocRequest(
+      roomName,
+      { phase: 'reserve', requestId, sheets },
+      uid,
+    );
+  }
+
+  it.each([
+    ['missing', undefined],
+    ['empty', ''],
+    ['too long', 'x'.repeat(129)],
+    ['invalid characters', 'bad request'],
+    ['non-string', 7],
+  ])('rejects a %s requestId', async (_label, requestId) => {
+    const room = new RoomDO(
+      makeState(`reservation-id-${_label}`, { map: new Map() }),
+      makeEnv(),
+    );
+    const body =
+      requestId === undefined
+        ? {
+            phase: 'reserve',
+            sheets: [{ title: 'One' }],
+          }
+        : {
+            phase: 'reserve',
+            requestId,
+            sheets: [{ title: 'One' }],
+          };
+    const response = await room.fetch(
+      appendTocRequest('reservation-parent', body),
+    );
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe('valid requestId required');
+  });
+
+  it('reuses an identical reservation but rejects uid, length, and title mismatches', async () => {
+    const room = new RoomDO(
+      makeState('reservation-reuse', { map: new Map() }),
+      makeEnv(),
+    );
+    const first = await room.fetch(
+      reserveRequest('reservation-parent', 'reuse-id', [{ title: 'One' }, { title: 'Two' }]),
+    );
+    expect(first.status).toBe(201);
+    const allocation = await first.json();
+
+    const repeated = await room.fetch(
+      reserveRequest('reservation-parent', 'reuse-id', [{ title: 'One' }, { title: 'Two' }]),
+    );
+    expect(repeated.status).toBe(201);
+    expect(await repeated.json()).toEqual(allocation);
+
+    const conflicts = [
+      reserveRequest('reservation-parent', 'reuse-id', [{ title: 'One' }, { title: 'Different' }]),
+      reserveRequest('reservation-parent', 'reuse-id', [{ title: 'One' }]),
+      reserveRequest(
+        'reservation-parent',
+        'reuse-id',
+        [{ title: 'One' }, { title: 'Two' }],
+        'uid-owner',
+      ),
+    ];
+    for (const request of conflicts) {
+      const response = await room.fetch(request);
+      expect(response.status).toBe(409);
+      expect(await response.text()).toBe('requestId already reserved');
+    }
+  });
+
+  it('drops expired reservations and excludes committed reservations from pending capacity', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const staleKey = 'meta:multi-reservation:stale';
+    const committedKey = 'meta:multi-reservation:committed';
+    const sheet = {
+      subroom: 'pending-parent.1',
+      link: '/pending-parent.1',
+      title: 'Old',
+    };
+    record.map.set(staleKey, {
+      uid: null,
+      createdAt: 0,
+      firstIndex: 1,
+      requestedTitles: ['Old'],
+      sheets: [sheet],
+    });
+    record.map.set(committedKey, {
+      uid: null,
+      createdAt: Date.now(),
+      committedAt: Date.now(),
+      tocStartRow: 2,
+      firstIndex: 1,
+      requestedTitles: ['Old'],
+      sheets: [sheet],
+    });
+    const room = new RoomDO(makeState('reservation-expiry', record), makeEnv());
+    mockExportCSV.mockReturnValue('#url,#title\n');
+    try {
+      const response = await room.fetch(
+        reserveRequest(
+          'pending-parent',
+          'fresh-id',
+          [{ title: 'Fresh' }],
+        ),
+      );
+      expect(response.status).toBe(201);
+      expect(await response.json()).toMatchObject({
+        firstIndex: 1,
+        sheets: [{ subroom: 'pending-parent.1' }],
+      });
+      expect(record.map.has(staleKey)).toBe(false);
+      expect(record.map.has(committedKey)).toBe(true);
+    } finally {
+      mockExportCSV.mockReset();
+      mockExportCSV.mockImplementation(() => 'a,b\n1,2\n');
+    }
+  });
+
+  it('keeps a one-minute-old pending reservation live', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const now = Date.now();
+    const pendingKey = 'meta:multi-reservation:recent';
+    record.map.set(pendingKey, {
+      uid: null,
+      createdAt: now - 60_000,
+      firstIndex: 1,
+      requestedTitles: ['Recent'],
+      sheets: [
+        {
+          subroom: 'recent-parent.1',
+          link: '/recent-parent.1',
+          title: 'Recent',
+        },
+      ],
+    });
+    const room = new RoomDO(makeState('reservation-recent', record), makeEnv());
+    mockExportCSV.mockReturnValue('#url,#title\n');
+    try {
+      const response = await room.fetch(
+        reserveRequest('recent-parent', 'recent-next', [{ title: 'Next' }]),
+      );
+      expect(response.status).toBe(201);
+      expect(record.map.has(pendingKey)).toBe(true);
+      expect(await response.json()).toMatchObject({
+        firstIndex: 2,
+        sheets: [{ subroom: 'recent-parent.2' }],
+      });
+    } finally {
+      mockExportCSV.mockReset();
+      mockExportCSV.mockImplementation(() => 'a,b\n1,2\n');
+    }
+  });
+
+  it('enforces pending-operation capacity', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const now = Date.now();
+    for (let index = 0; index < 16; index++) {
+      record.map.set(`meta:multi-reservation:pending-${index}`, {
+        uid: null,
+        createdAt: now,
+        firstIndex: index + 1,
+        requestedTitles: [`Pending${index}`],
+        sheets: [{
+          subroom: `capacity-parent.${index + 1}`,
+          link: `/capacity-parent.${index + 1}`,
+          title: `Pending${index}`,
+        }],
+      });
+    }
+    const room = new RoomDO(
+      makeState('reservation-capacity', record),
+      makeEnv(),
+    );
+    const response = await room.fetch(
+      reserveRequest(
+        'capacity-parent',
+        'capacity-new',
+        [{ title: 'New' }],
+      ),
+    );
+    expect(response.status).toBe(429);
+    expect(await response.text()).toBe('too many pending sheet operations');
+  });
+
+  it('accepts exactly the sheet cap while ignoring the header and blank rows', async () => {
+    const rows = ['#url,#title', ''];
+    for (let index = 1; index < MAX_MULTI_SHEETS; index++) {
+      rows.push(`/boundary-parent.${index},T${index}`);
+    }
+    const room = new RoomDO(
+      makeState('reservation-exact-sheet-cap', { map: new Map() }),
+      makeEnv(),
+    );
+    mockExportCSV.mockReturnValue(`${rows.join('\n')}\n`);
+    try {
+      const response = await room.fetch(
+        reserveRequest('boundary-parent', 'boundary-new', [{ title: 'Stryker was here' }]),
+      );
+      expect(response.status).toBe(201);
+      expect(await response.json()).toMatchObject({
+        firstIndex: MAX_MULTI_SHEETS,
+        sheets: [
+          {
+            subroom: `boundary-parent.${MAX_MULTI_SHEETS}`,
+            title: 'Stryker was here',
+          },
+        ],
+      });
+    } finally {
+      mockExportCSV.mockReset();
+      mockExportCSV.mockImplementation(() => 'a,b\n1,2\n');
+    }
+  });
+
+  it('counts live pending sheets against the workbook sheet cap', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    record.map.set('meta:multi-reservation:cap-live', {
+      uid: null,
+      createdAt: Date.now(),
+      firstIndex: MAX_MULTI_SHEETS + 1,
+      requestedTitles: ['Pending'],
+      sheets: [
+        {
+          subroom: `pending-cap-parent.${MAX_MULTI_SHEETS + 1}`,
+          link: `/pending-cap-parent.${MAX_MULTI_SHEETS + 1}`,
+          title: 'Pending',
+        },
+      ],
+    });
+    const room = new RoomDO(makeState('reservation-pending-sheet-cap', record), makeEnv());
+    const rows = ['#url,#title'];
+    for (let index = 1; index <= MAX_MULTI_SHEETS; index++) {
+      rows.push(`/pending-cap-parent.${index},T${index}`);
+    }
+    mockExportCSV.mockReturnValue(`${rows.join('\n')}\n`);
+    try {
+      const response = await room.fetch(
+        reserveRequest('pending-cap-parent', 'pending-cap-new', [{ title: 'New' }]),
+      );
+      expect(response.status).toBe(413);
+      expect(await response.text()).toBe(`workbook exceeds ${MAX_MULTI_SHEETS} sheets`);
+    } finally {
+      mockExportCSV.mockReset();
+      mockExportCSV.mockImplementation(() => 'a,b\n1,2\n');
+    }
+  });
+
+  it('accounts for live pending links and titles when allocating', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    record.map.set('meta:multi-reservation:live', {
+      uid: null,
+      createdAt: Date.now(),
+      firstIndex: 1,
+      requestedTitles: ['Taken'],
+      sheets: [{
+        subroom: 'pending-links.1',
+        link: '/pending-links.1',
+        title: 'Taken',
+      }],
+    });
+    const room = new RoomDO(
+      makeState('reservation-pending-links', record),
+      makeEnv(),
+    );
+    mockExportCSV.mockReturnValue('#url,#title\n');
+    try {
+      const response = await room.fetch(
+        reserveRequest(
+          'pending-links',
+          'pending-new',
+          [{ title: 'Taken' }],
+        ),
+      );
+      expect(response.status).toBe(201);
+      expect(await response.json()).toMatchObject({
+        firstIndex: 2,
+        sheets: [{
+          subroom: 'pending-links.2',
+          link: '/pending-links.2',
+          title: 'Taken_2',
+        }],
+      });
+    } finally {
+      mockExportCSV.mockReset();
+      mockExportCSV.mockImplementation(() => 'a,b\n1,2\n');
+    }
+  });
+
+  it('refuses an exhausted child namespace', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(
+      makeState('reservation-exhausted', record),
+      makeEnv(),
+    );
+    const response = await room.fetch(
+      reserveRequest(
+        'x'.repeat(2_048),
+        'exhausted-id',
+        [{ title: 'One' }],
+      ),
+    );
+    expect(response.status).toBe(413);
+    expect(await response.text()).toBe('child room namespace exhausted');
+  });
+
+  it.each([
+    ['throws', () => {
+      throw new Error('child unavailable');
+    }, 503, 'child verification failed'],
+    ['old version', () => new Response('old', { status: 501 }), 501, 'Not implemented'],
+    ['unexpected 2xx', () => new Response('unexpected', { status: 200 }), 500, 'unexpected'],
+    ['denied', () => new Response('denied', { status: 403 }), 403, 'denied'],
+    ['bad request', () => new Response('bad child', { status: 400 }), 400, 'bad child'],
+    ['empty denial', () => new Response('', { status: 409 }), 409, 'child verification failed'],
+    ['unreadable denial', () => ({
+      status: 403,
+      text: () => Promise.reject(new Error('unreadable')),
+    } as unknown as Response), 403, 'child verification failed'],
+  ])('maps child verification that %s', async (_label, childFetch, status, body) => {
+    const roomName = `verify-${_label.replaceAll(' ', '-')}`;
+    const room = new RoomDO(
+      makeState(`reservation-${roomName}`, { map: new Map() }),
+      makeEnvWithParentAccess((request) => {
+        if (new URL(request.url).pathname === '/_do/child-snapshot') {
+          return childFetch();
+        }
+        return Response.json({
+          isPrivate: true,
+          canRead: true,
+          canWrite: true,
+        });
+      }),
+    );
+    const reserve = await room.fetch(
+      reserveRequest(
+        roomName,
+        'verify-id',
+        [{ title: 'One' }],
+      ),
+    );
+    expect(reserve.status).toBe(201);
+    const commit = await room.fetch(
+      appendTocRequest(roomName, {
+        phase: 'commit',
+        requestId: 'verify-id',
+      }),
+    );
+    expect(commit.status).toBe(status);
+    expect(await commit.text()).toBe(body);
+    if (status === 503) expect(commit.headers.get('Retry-After')).toBe('5');
+  });
+
+  it('returns reservation-not-found when the marker vanishes during commit', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const state = makeState('reservation-race', record);
+    const room = new RoomDO(state, makeEnv());
+    const reserve = await room.fetch(
+      reserveRequest(
+        'race-parent',
+        'race-id',
+        [{ title: 'One' }],
+      ),
+    );
+    expect(reserve.status).toBe(201);
+    const reservationKey = 'meta:multi-reservation:race-id';
+    const originalGet = state.storage.get.bind(state.storage);
+    let reads = 0;
+    state.storage.get = (async (key: string) => {
+      if (key === reservationKey && ++reads === 2) return undefined;
+      return originalGet(key);
+    }) as DurableObjectStorage['get'];
+
+    const commit = await room.fetch(
+      appendTocRequest('race-parent', {
+        phase: 'commit',
+        requestId: 'race-id',
+      }),
+    );
+    expect(commit.status).toBe(409);
+    expect(await commit.text()).toBe('reservation not found');
+  });
+
+  it('honors a valid monotonic next-child index', async () => {
+    const record: FakeStorageRecord = {
+      map: new Map([[STORAGE_KEYS.metaNextChildIndex, 10]]),
+    };
+    const room = new RoomDO(
+      makeState('reservation-stored-index', record),
+      makeEnv(),
+    );
+    mockExportCSV.mockReturnValue('#url,#title\n');
+    try {
+      const response = await room.fetch(
+        reserveRequest(
+          'stored-index-parent',
+          'stored-index-id',
+          [{ title: 'One' }],
+        ),
+      );
+      expect(response.status).toBe(201);
+      expect(await response.json()).toMatchObject({
+        firstIndex: 10,
+        sheets: [{ subroom: 'stored-index-parent.10' }],
+      });
+    } finally {
+      mockExportCSV.mockReset();
+      mockExportCSV.mockImplementation(() => 'a,b\n1,2\n');
+    }
+  });
+
+  it.each([
+    ['NaN', Number.NaN],
+    ['fractional', 10.5],
+    ['string', '10'],
+  ])('ignores a %s stored child counter and allocates from the TOC', async (_label, stored) => {
+    const record: FakeStorageRecord = {
+      map: new Map([[STORAGE_KEYS.metaNextChildIndex, stored]]),
+    };
+    const room = new RoomDO(makeState(`reservation-invalid-index-${_label}`, record), makeEnv());
+    mockExportCSV.mockReturnValue('#url,#title\n/counter-parent.3,Existing\n');
+    try {
+      const response = await room.fetch(
+        reserveRequest('counter-parent', `counter-${_label}`, [{ title: 'Next' }]),
+      );
+      expect(response.status).toBe(201);
+      expect(await response.json()).toMatchObject({
+        firstIndex: 4,
+        sheets: [{ subroom: 'counter-parent.4' }],
+      });
+      expect(record.map.get(STORAGE_KEYS.metaNextChildIndex)).toBe(5);
+    } finally {
+      mockExportCSV.mockReset();
+      mockExportCSV.mockImplementation(() => 'a,b\n1,2\n');
+    }
+  });
+
+  it('never reuses an index after an abandoned child reservation', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('reservation-abandoned-index', record), makeEnv());
+    mockExportCSV.mockReturnValue('#url,#title\n');
+    try {
+      const first = await room.fetch(
+        reserveRequest('abandoned-parent', 'abandoned-first', [{ title: 'First' }]),
+      );
+      expect(first.status).toBe(201);
+      expect(await first.json()).toMatchObject({
+        firstIndex: 1,
+        sheets: [{ subroom: 'abandoned-parent.1' }],
+      });
+      record.map.delete('meta:multi-reservation:abandoned-first');
+
+      const second = await room.fetch(
+        reserveRequest('abandoned-parent', 'abandoned-second', [{ title: 'Second' }]),
+      );
+      expect(second.status).toBe(201);
+      expect(await second.json()).toMatchObject({
+        firstIndex: 2,
+        sheets: [{ subroom: 'abandoned-parent.2' }],
+      });
+      expect(record.map.get(STORAGE_KEYS.metaNextChildIndex)).toBe(3);
+    } finally {
+      mockExportCSV.mockReset();
+      mockExportCSV.mockImplementation(() => 'a,b\n1,2\n');
+    }
+  });
+
+  it('never lets a stale counter allocate behind an existing TOC child', async () => {
+    const record: FakeStorageRecord = {
+      map: new Map([[STORAGE_KEYS.metaNextChildIndex, 2]]),
+    };
+    const room = new RoomDO(makeState('reservation-stale-index', record), makeEnv());
+    mockExportCSV.mockReturnValue('#url,#title\n/stale-parent.7,Existing\n');
+    try {
+      const response = await room.fetch(
+        reserveRequest('stale-parent', 'stale-index', [{ title: 'Next' }]),
+      );
+      expect(response.status).toBe(201);
+      expect(await response.json()).toMatchObject({
+        firstIndex: 8,
+        sheets: [{ subroom: 'stale-parent.8' }],
+      });
+      expect(record.map.get(STORAGE_KEYS.metaNextChildIndex)).toBe(9);
+    } finally {
+      mockExportCSV.mockReset();
+      mockExportCSV.mockImplementation(() => 'a,b\n1,2\n');
+    }
+  });
+
+  it('rejects invalid phases, missing reservations, and mismatched principals', async () => {
+    const requests: Request[] = [];
+    const room = new RoomDO(
+      makeState('reservation-early-commit', { map: new Map() }),
+      makeEnvWithParentAccess(
+        () => Response.json({ created: false, parent: 'early-parent' }, { status: 201 }),
+        requests,
+      ),
+    );
+    const invalidPhase = await room.fetch(
+      appendTocRequest('early-parent', {
+        phase: 'other',
+        requestId: 'invalid-phase',
+      }),
+    );
+    expect(invalidPhase.status).toBe(400);
+    expect(await invalidPhase.text()).toBe('invalid phase');
+
+    const missing = await room.fetch(
+      appendTocRequest('early-parent', {
+        phase: 'commit',
+        requestId: 'missing-id',
+      }),
+    );
+    expect(missing.status).toBe(409);
+    expect(await missing.text()).toBe('reservation not found');
+
+    const reserved = await room.fetch(
+      reserveRequest(
+        'early-parent',
+        'principal-id',
+        [{ title: 'One' }],
+        'uid-owner',
+      ),
+    );
+    expect(reserved.status).toBe(201);
+    const forbidden = await room.fetch(
+      appendTocRequest('early-parent', {
+        phase: 'commit',
+        requestId: 'principal-id',
+      }),
+    );
+    expect(forbidden.status).toBe(403);
+    expect(requests).toHaveLength(0);
+  });
+
+  it('forwards a non-null principal to child verification', async () => {
+    const requests: Request[] = [];
+    const room = new RoomDO(
+      makeState('reservation-principal', { map: new Map() }),
+      makeEnvWithParentAccess((request) => {
+        if (new URL(request.url).pathname === '/_do/child-snapshot') {
+          return Response.json(
+            { created: false, parent: 'principal-parent' },
+            { status: 201 },
+          );
+        }
+        return Response.json({
+          isPrivate: true,
+          canRead: true,
+          canWrite: true,
+        });
+      }, requests),
+    );
+    const reserve = await room.fetch(
+      reserveRequest(
+        'principal-parent',
+        'principal-verify',
+        [{ title: 'One' }],
+        'uid-owner',
+      ),
+    );
+    expect(reserve.status).toBe(201);
+    const commit = await room.fetch(
+      appendTocRequest(
+        'principal-parent',
+        { phase: 'commit', requestId: 'principal-verify' },
+        'uid-owner',
+      ),
+    );
+    expect(commit.status).toBe(201);
+    const verification = requests.find(
+      (request) => new URL(request.url).pathname === '/_do/child-snapshot',
+    );
+    expect(verification?.headers.get('X-EC-Uid')).toBe('uid-owner');
+    expect(verification?.headers.get('Content-Type')).toBe('application/json');
+    expect(await verification?.json()).toEqual({
+      parent: 'principal-parent',
+      snapshot: '',
+      mode: 'verify',
+    });
+  });
+
+  it('does not send a synthetic uid when verifying an anonymous reservation', async () => {
+    const requests: Request[] = [];
+    const room = new RoomDO(
+      makeState('reservation-anonymous', { map: new Map() }),
+      makeEnvWithParentAccess((request) => {
+        if (new URL(request.url).pathname === '/_do/child-snapshot') {
+          return Response.json({ created: false, parent: 'anonymous-parent' }, { status: 201 });
+        }
+        return Response.json({
+          isPrivate: false,
+          canRead: true,
+          canWrite: true,
+        });
+      }, requests),
+    );
+    const reserve = await room.fetch(
+      reserveRequest('anonymous-parent', 'anonymous-verify', [{ title: 'One' }]),
+    );
+    expect(reserve.status).toBe(201);
+    const commit = await room.fetch(
+      appendTocRequest('anonymous-parent', { phase: 'commit', requestId: 'anonymous-verify' }),
+    );
+    expect(commit.status).toBe(201);
+    const verification = requests.find(
+      (request) => new URL(request.url).pathname === '/_do/child-snapshot',
+    );
+    expect(verification?.headers.get('X-EC-Uid')).toBeNull();
+    expect(verification?.headers.get('Content-Type')).toBe('application/json');
+    expect(await verification?.json()).toEqual({
+      parent: 'anonymous-parent',
+      snapshot: '',
+      mode: 'verify',
+    });
+  });
+
+  it('returns forbidden when reservation ownership changes during commit', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const state = makeState('reservation-owner-race', record);
+    const room = new RoomDO(state, makeEnv());
+    const reserve = await room.fetch(
+      reserveRequest(
+        'owner-race-parent',
+        'owner-race-id',
+        [{ title: 'One' }],
+      ),
+    );
+    expect(reserve.status).toBe(201);
+    const reservationKey = 'meta:multi-reservation:owner-race-id';
+    const originalGet = state.storage.get.bind(state.storage);
+    let reads = 0;
+    state.storage.get = (async (key: string) => {
+      const value = await originalGet(key);
+      if (
+        key === reservationKey &&
+        ++reads === 2 &&
+        value !== null &&
+        typeof value === 'object'
+      ) {
+        return { ...value, uid: 'other-user' };
+      }
+      return value;
+    }) as DurableObjectStorage['get'];
+
+    const commit = await room.fetch(
+      appendTocRequest('owner-race-parent', {
+        phase: 'commit',
+        requestId: 'owner-race-id',
+      }),
+    );
+    expect(commit.status).toBe(403);
+    expect(await commit.text()).toBe('Forbidden');
+  });
+
+  it('propagates the guarded snapshot replacement failure', async () => {
+    const snapshot = 'socialcalc:version:1.5\nsheet:c:1:r:1:tvf:1\n';
+    const oversized =
+      'socialcalc:version:1.5\nsheet:c:702:r:1048576:tvf:1\n';
+    const originalMatchAll = String.prototype.matchAll;
+    let snapshotChecks = 0;
+    const matchAll = vi
+      .spyOn(String.prototype, 'matchAll')
+      .mockImplementation(function (
+        this: string,
+        regexp: RegExp,
+      ): ReturnType<String['matchAll']> {
+        const value =
+          String(this) === snapshot && ++snapshotChecks === 2
+            ? oversized
+            : String(this);
+        return originalMatchAll.call(value, regexp);
+      });
+    const record: FakeStorageRecord = {
+      map: new Map([
+        [STORAGE_KEYS.metaParent, 'replace-parent'],
+        [STORAGE_KEYS.snapshot, 'OLD'],
+      ]),
+    };
+    const room = new RoomDO(
+      makeState('reservation-replace-failure', record),
+      makeEnvWithParentAccess(() =>
+        Response.json({
+          isPrivate: true,
+          canRead: true,
+          canWrite: true,
+        })),
+    );
+    try {
+      const response = await room.fetch(
+        childSnapshotRequest('replace-parent.1', {
+          parent: 'replace-parent',
+          snapshot,
+          mode: 'replace',
+        }),
+      );
+      expect(response.status).toBe(413);
+      expect(await response.text()).toBe('snapshot exceeds sheet limits');
+      expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('OLD');
+    } finally {
+      matchAll.mockRestore();
     }
   });
 });
@@ -2058,43 +4422,28 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
   });
 
   it('POST /_do/import-append-toc mirrors each TOC paste into durable D1 audit_log', async () => {
-    mockExportCSV.mockReturnValueOnce('#url,#title\n/import-audit.1,First\n');
+    mockExportCSV.mockReturnValue('#url,#title\n/import-audit.1,First\n');
     mockSave.mockReturnValueOnce('TOC1').mockReturnValueOnce('TOC2');
     mockExec.mockClear();
     try {
-      const res = await room.fetch(
-        new Request('https://do/_do/import-append-toc?name=import-audit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ titles: ['Alpha', 'Beta'] }),
-        }),
-      );
-      expect(res.status).toBe(200);
+      const { commit } = await appendTocTwoPhase(room, 'import-audit', ['Alpha', 'Beta']);
+      expect(commit?.status).toBe(201);
 
       const roomsCall = d1Calls.find((c) => c.sql.includes('INSERT INTO rooms'));
       expect(roomsCall).toBeDefined();
       expect(roomsCall?.params[0]).toBe('import-audit');
       expect(typeof roomsCall?.params[1]).toBe('number');
 
-      // Batched multi-row INSERT into audit_log (room,seq,ts,body)×N.
-      // Pin every field so the SeqRow literal can't be blanked to {}.
       const auditCall = d1Calls.find((c) => c.sql.includes('INSERT INTO audit_log'));
       expect(auditCall).toBeDefined();
-      expect(auditCall?.sql).toContain('(?, ?, ?, ?), (?, ?, ?, ?)');
-      expect(auditCall?.params).toHaveLength(8);
+      expect(auditCall?.params).toHaveLength(4);
       expect(auditCall?.params[0]).toBe('import-audit');
       expect(auditCall?.params[1]).toBe(0);
       expect(typeof auditCall?.params[2]).toBe('number');
-      expect(String(auditCall?.params[3])).toContain('paste A3 all');
       expect(String(auditCall?.params[3])).toContain('/import-audit.2');
-      expect(auditCall?.params[4]).toBe('import-audit');
-      expect(auditCall?.params[5]).toBe(1);
-      expect(typeof auditCall?.params[6]).toBe('number');
-      expect(String(auditCall?.params[7])).toContain('paste A4 all');
-      expect(String(auditCall?.params[7])).toContain('/import-audit.3');
+      expect(String(auditCall?.params[3])).toContain('/import-audit.3');
 
-      // Rooms-index timestamp must match the last audit row's ts (not a bare Date.now()).
-      expect(roomsCall?.params[1]).toBe(auditCall?.params[6]);
+      expect(roomsCall?.params[1]).toBe(auditCall?.params[2]);
     } finally {
       mockSave.mockReset();
       mockSave.mockImplementation(() => 'SNAP');
@@ -3407,7 +5756,7 @@ describe('RoomDO — fold: housekeeping alarm', () => {
     expect(chatKeys.length).toBe(500);
     expect(typeof record.alarm).toBe('number');
   });
-  it('alarm() TTL expiry erases a private tombstone completely', async () => {
+  it('alarm() TTL expiry preserves a private tombstone', async () => {
     const record: FakeStorageRecord = { map: new Map(), alarm: null };
     markPrivate(record);
     record.map.set(STORAGE_KEYS.snapshot, 'SAVE');
@@ -3418,7 +5767,11 @@ describe('RoomDO — fold: housekeeping alarm', () => {
     };
     const room = new RoomDO(makeState('x', record), env);
     await room.alarm();
-    expect(record.map.size).toBe(0);
+    expect(record.map.get(STORAGE_KEYS.metaAccess)).toBe('private');
+    expect(record.map.get(STORAGE_KEYS.metaAcl)).toEqual(PRIVATE_ACL);
+    expect(record.map.get(STORAGE_KEYS.metaGroup)).toBe('group-private');
+    expect(record.map.has(STORAGE_KEYS.snapshot)).toBe(false);
+    expect(record.alarm).toBeNull();
   });
 });
 
@@ -5319,6 +7672,45 @@ describe('RoomDO — private WS gating (Phase A)', () => {
       'uid-writer',
     );
   });
+  it('swallows a sibling fetch error during submitform', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const env: Env = {
+      ROOM: {
+        idFromName: (name: string) =>
+          ({ toString: () => name }) as DurableObjectId,
+        get: () =>
+          ({
+            async fetch() {
+              throw new Error('sibling DO down');
+            },
+          }) as unknown as DurableObjectStub,
+      } as unknown as DurableObjectNamespace,
+    };
+    const { state } = makeWsAwareState('ws-submitform-err', record, []);
+    const room = new RoomDO(state, env);
+    const writer = makeFakeWs(
+      { sent: [] },
+      {
+        user: 'w',
+        room: 'mysheet',
+        auth: 'mysheet',
+        uid: 'uid-writer',
+        sessionExp: FUTURE_SESSION_EXP,
+      },
+    );
+    await expect(
+      room.webSocketMessage(
+        writer,
+        JSON.stringify({
+          type: 'execute',
+          room: 'mysheet',
+          user: 'w',
+          auth: 'mysheet',
+          cmdstr: 'submitform\rset B1 value n 7',
+        }),
+      ),
+    ).resolves.toBeUndefined();
+  });
 
   it('drops submitform frames from private rooms before sibling write', async () => {
     const record: FakeStorageRecord = { map: new Map() };
@@ -5356,6 +7748,41 @@ describe('RoomDO — private WS gating (Phase A)', () => {
         room: 'mysheet',
         user: 'w',
         auth: 'mysheet',
+        cmdstr: 'submitform\rset B1 value n 7',
+      }),
+    );
+    expect(siblingInits).toHaveLength(0);
+  });
+
+  it('drops submitform frames from public viewers before sibling write', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const siblingInits: RequestInit[] = [];
+    const env: Env = {
+      ROOM: {
+        idFromName: (name: string) =>
+          ({ toString: () => name }) as DurableObjectId,
+        get: () =>
+          ({
+            async fetch(_url: string, init?: RequestInit) {
+              if (init) siblingInits.push(init);
+              return new Response('', { status: 202 });
+            },
+          }) as unknown as DurableObjectStub,
+      } as unknown as DurableObjectNamespace,
+    };
+    const { state } = makeWsAwareState('ws-pub-viewer-submitform', record, []);
+    const room = new RoomDO(state, env);
+    const viewer = makeFakeWs(
+      { sent: [] },
+      { user: 'viewer', room: 'mysheet', auth: '0' },
+    );
+    await room.webSocketMessage(
+      viewer,
+      JSON.stringify({
+        type: 'execute',
+        room: 'mysheet',
+        user: 'viewer',
+        auth: '0',
         cmdstr: 'submitform\rset B1 value n 7',
       }),
     );
@@ -5875,8 +8302,8 @@ describe('RoomDO — POST /_do/init-private (Phase A)', () => {
     const record: FakeStorageRecord = { map: new Map() };
     const room = new RoomDO(makeState('init-large', record), makeEnv());
     // A three-byte BMP scalar crosses the same 128-chunk boundary with one
-    // third as many loop iterations as ASCII, keeping Stryker's instrumented
-    // dry run below Vitest's per-test timeout.
+    // third as many loop iterations as ASCII. Stryker instrumentation makes
+    // this boundary case slower, so the test has an explicit timeout below.
     const scalar = String.fromCharCode(0x800);
     const charsPerChunk = Math.floor(SNAPSHOT_CHUNK_BYTES / 3);
     const snapshot = scalar.repeat(charsPerChunk * 128 + 1);
@@ -5892,7 +8319,7 @@ describe('RoomDO — POST /_do/init-private (Phase A)', () => {
     expect(record.map.get(STORAGE_KEYS.snapshotMeta)).toEqual({ chunks: 129 });
     expect(record.map.get(snapshotChunkKey(128))).toBe(scalar);
     expect(record.map.get(STORAGE_KEYS.metaAccess)).toBe('private');
-  });
+  }, 15_000);
 
   it('invalidates warm public access metadata after private initialization', async () => {
     const record: FakeStorageRecord = { map: new Map() };

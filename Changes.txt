@@ -14,6 +14,10 @@ Unreleased
 ==============================================================================
 
 Security
+- Private multi-sheet workbooks now initialize children with immutable
+  `meta:parent` delegation. RoomDO derives each child authorization verdict
+  from the parent, rejects local-ACL conflicts and occupied-room capture, and
+  keeps workbook-internal children out of the public rooms index.
 - Multi-sheet append import maps a mixed-version RoomDO `501` on
   `/_do/import-append-toc` to a retryable `503` with clear copy (Worker/DO
   skew during deploy), instead of surfacing bare "Not implemented".

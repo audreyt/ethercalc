@@ -295,7 +295,7 @@ describe('POST multi-sheet append import', () => {
       requestWithEnv(barrierEnv, 'POST', `/=${room}.xlsx`, b),
     ]);
     expect(barrierTimedOut).toBe(false);
-    expect(arrivals).toBe(2);
+    expect(arrivals).toBe(4);
     expect(resA.status).toBe(201);
     expect(resB.status).toBe(201);
 
@@ -392,7 +392,7 @@ describe('POST multi-sheet append import', () => {
     expect(toc[2]).toEqual([`/${room}.2`, 'Second']);
   });
 
-  it('rejects append and replace on private multi-sheet rooms for every format', async () => {
+  it('imports every multi-sheet format under a private parent without exposing children', async () => {
     const base = `mpriv-${Math.random().toString(36).slice(2, 8)}`;
     const initRes = await doFetch(
       env as unknown as Env,
@@ -409,16 +409,14 @@ describe('POST multi-sheet append import', () => {
     );
     expect(initRes.status).toBe(201);
 
-    const privateMsg =
-      'Multi-sheet import is unavailable for private rooms because new sub-sheets would be public.';
 
     // Unauthenticated workbook POST is denied before the private-room message.
     const unauthedPost = await request('POST', `/=${base}.xlsx`, twoSheetXlsx());
     expect(unauthedPost.status).toBe(403);
     expect(await unauthedPost.text()).toBe('Forbidden');
 
-    // Authenticated owner: every append/replace format refuses with 409 and creates no child.
-    // (Fresh sub-rooms have no ACL and would otherwise publish as public — the bypass class.)
+    // Authenticated owner: every append/replace format creates derived-private children.
+    // Children inherit access at authorization time without storing local ACL metadata.
     const cases: Array<{ method: 'POST' | 'PUT'; path: string; body: BodyInit | Uint8Array }> = [
       { method: 'POST', path: `/=${base}.xlsx`, body: twoSheetXlsx() },
       { method: 'PUT', path: `/=${base}.xlsx`, body: twoSheetXlsx() },
@@ -435,16 +433,12 @@ describe('POST multi-sheet append import', () => {
 
     for (const c of cases) {
       const res = await requestWithAuth(c.method, c.path, c.body);
-      expect(res.status).toBe(409);
-      expect(await res.text()).toBe(privateMsg);
+      expect(res.status).toBe(201);
     }
 
-    // No imported subroom exists after refusal. Policy forbids private multi-sheet import
-    // rather than minting ACL-inheriting children, so there is no child that could answer
-    // 401/403 — a regression that published a public child would yield 200 here instead.
+    // Imported subrooms inherit the private parent's access and refuse anonymous access.
     const subRes = await request('GET', `/_/${base}.1`);
-    expect(subRes.status).toBe(404);
-    expect(subRes.status).not.toBe(200);
+    expect(subRes.status).toBe(403);
   });
 
   it('POST text formats append one sheet on a public parent and keep it world-readable', async () => {

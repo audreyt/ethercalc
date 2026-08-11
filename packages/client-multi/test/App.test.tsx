@@ -26,6 +26,18 @@ function createMockFoldr(): HackFoldr {
       mockRows.push([`/room.${mockRows.length}`, title]);
       return new Response('OK', { status: 201 });
     }
+    if (init?.method === 'POST' && /\/_\/=[^/]+\/sheet$/.test(href)) {
+      const body = JSON.parse(String(init.body)) as { title: string };
+      const row = mockRows.length + 1;
+      const sheet = {
+        subroom: `room.${mockRows.length}`,
+        link: `/room.${mockRows.length}`,
+        title: body.title,
+        row,
+      };
+      mockRows.push([sheet.link, sheet.title]);
+      return Response.json({ sheet }, { status: 201 });
+    }
     if (init?.method === 'POST') {
       // TOC paste / add-sheet command path.
       return {

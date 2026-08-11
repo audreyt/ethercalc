@@ -13,20 +13,17 @@ import {
  *     builds `rows = [{link, title, row}]` for each body row where `link` is
  *     non-empty and not `#…`-prefixed. Missing titles become `SheetN` where
  *     `N = idx+2` in the source sheet (row `2` onwards, matching legacy).
- *   - If the room was never-before-seen (response body empty), the first
- *     write of a row writes two CSV lines (`#url/#title` header + row).
- *   - If the room is known but empty, the first push writes two CSV lines
- *     (header, then row).
- *   - `push(row)` appends a row, POSTs CSV, and updates `row.row` from the
- *     server's returned `paste A<N>` command.
+ *   - If the TOC is empty, seeds the first sheet through the guarded
+ *     `POST /_/=:room/sheet` endpoint.
+ *   - `push(row)` asks that endpoint to allocate and initialize the child
+ *     sheet, then mounts only the authoritative row returned by the server.
  *   - `setAt(idx, {title})` sends `set B{row} text t {title}` via POST.
  *   - `deleteAt(idx)` sends `set A{row}:B{row} empty multi-cascade`.
  *
  * Any behavior below not marked "legacy bug" is a faithful port.
  *
- * Error handling: the legacy code silently ignored POST failures (the
- * superagent callback didn't check status). We preserve that — HTTP errors
- * don't throw, they only prevent the `row.row` update in `push`.
+ * Add-sheet failures are intentionally swallowed by `push`, which preserves
+ * its `Promise<this>` API. `pushChecked` reports the same failure as `false`.
  */
 
 export interface FoldrRow {
@@ -42,10 +39,13 @@ export interface FoldrPushResponse {
 }
 
 export type FetchImpl = typeof fetch;
+export type RequestIdFactory = () => string;
 
 export interface FoldrOptions {
   /** Override `fetch` (e.g. test mock). Defaults to the global `fetch`. */
   readonly fetchImpl?: FetchImpl;
+  /** Override guarded Add Sheet request IDs (e.g. deterministic unit tests). */
+  readonly requestIdFactory?: RequestIdFactory;
 }
 
 /**
@@ -60,10 +60,12 @@ export class HackFoldr {
   wasNonExistent = false;
   wasEmpty = false;
   private readonly fetchImpl: FetchImpl;
+  private readonly requestIdFactory: RequestIdFactory;
 
   constructor(base: string, options: FoldrOptions = {}) {
     this.base = base.replace(/\/+$/, '');
     this.fetchImpl = options.fetchImpl ?? fetch.bind(globalThis);
+    this.requestIdFactory = options.requestIdFactory ?? defaultRequestId;
   }
 
   size(): number {
@@ -135,39 +137,56 @@ export class HackFoldr {
     }
   }
 
-  /** Append a new row, preserving the legacy local-first error semantics. */
+  /** Ask the server to create and append a new sheet, preserving the `this` API. */
   async push(row: FoldrRow): Promise<this> {
-    if (!isSafeMultiSheetLink(row.link)) return this;
-    row.title = row.title.slice(0, MAX_MULTI_SHEET_TITLE_LENGTH);
-    await this.initIfNeeded(row);
-    const res = await this.postCsv(row.link, row.title);
-    this.finishPush(row, res);
+    await this.pushChecked(row);
     return this;
   }
 
   /**
-   * Append a TOC row only when the server accepts it. Import uses this checked
-   * variant so a rejected TOC POST cannot be reported as a successful import.
+   * Append only after the guarded server endpoint has initialized the child
+   * sheet and returned its authoritative TOC metadata.
    */
   async pushChecked(row: FoldrRow): Promise<boolean> {
     if (!isSafeMultiSheetLink(row.link)) return false;
-    row.title = row.title.slice(0, MAX_MULTI_SHEET_TITLE_LENGTH);
-    await this.initIfNeeded(row);
-    const res = await this.postCsv(row.link, row.title);
-    if (res === null) return false;
-    this.finishPush(row, res);
+    const title = row.title.slice(0, MAX_MULTI_SHEET_TITLE_LENGTH);
+    let requestId: string;
+    try {
+      requestId = this.requestIdFactory();
+    } catch {
+      return false;
+    }
+    if (
+      typeof requestId !== 'string' ||
+      requestId.length === 0 ||
+      !REQUEST_ID_RE.test(requestId)
+    ) {
+      return false;
+    }
+    const sheet = await this.postSheet(title, requestId);
+    if (!sheet) return false;
+    Object.assign(row, sheet);
+    this.rows.push(row);
+    this.wasNonExistent = false;
+    this.wasEmpty = false;
     return true;
   }
 
-  private finishPush(row: FoldrRow, res: FoldrPushResponse | null): void {
-    const command = extractCommand(res);
-    if (typeof command === 'string') {
-      const m = /paste A(\d+) all/.exec(command);
-      if (m) {
-        row.row = parseInt(m[1] as string, 10);
-      }
+  private async postSheet(title: string, requestId: string): Promise<FoldrRow | null> {
+    try {
+      const res = await this.fetchImpl(`${this.base}/_/=${this.id}/sheet`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json',
+        },
+        body: JSON.stringify({ title, requestId }),
+      });
+      if (res.status !== 201) return null;
+      return parseCreatedSheet(await res.json());
+    } catch {
+      return null;
     }
-    this.rows.push(row);
   }
 
   /**
@@ -202,7 +221,7 @@ export class HackFoldr {
 
   /** Send a raw SocialCalc command string via text/plain POST. */
   async sendCmd(cmd: string): Promise<void> {
-    await this.initIfNeeded(null);
+    await this.initIfNeeded();
     try {
       await this.fetchImpl(`${this.base}/_/${this.id}`, {
         method: 'POST',
@@ -214,51 +233,32 @@ export class HackFoldr {
     }
   }
 
-  private async initIfNeeded(row: FoldrRow | null): Promise<void> {
+  private async initIfNeeded(): Promise<void> {
     if (this.wasNonExistent) {
       this.wasNonExistent = false;
       this.wasEmpty = false;
-      if (row) {
-        row.row = 2;
-        await this.postInitCsv(
-          '#url',
-          '#title',
-          `/${this.id}.1`,
-          'Sheet1',
-          row.link,
-          row.title,
-        );
-      } else {
-        await this.postRawCsv('#url', '#title', `/${this.id}.1`, 'Sheet1');
-      }
+      await this.postRawCsv('#url', '#title', `/${this.id}.1`, 'Sheet1');
       return;
     }
     if (this.wasEmpty) {
       this.wasEmpty = false;
-      if (row) {
-        row.row = 2;
-        await this.postRawCsv(`/${this.id}.1`, 'Sheet1', row.link, row.title);
-      } else {
-        await this.postCsv(`/${this.id}.1`, 'Sheet1');
-      }
-      return;
+      await this.postCsv(`/${this.id}.1`, 'Sheet1');
     }
-    // Nothing to do.
   }
 
-  /** Single-row CSV POST (used for incremental `push` on an existing sheet). */
+  /** Low-level single-row CSV POST retained for raw TOC initialization callers. */
   async postCsv(a = '', b = ''): Promise<FoldrPushResponse | null> {
     const body = `"${escapeCsv(a)}","${escapeCsv(b)}"`;
     return this.postCsvBody(body);
   }
 
-  /** Two-row CSV POST (header + row for sheets that were empty on load). */
+  /** Low-level two-row CSV POST retained for raw TOC initialization callers. */
   async postRawCsv(a = '', b = '', c = '', d = ''): Promise<FoldrPushResponse | null> {
     const body = `"${escapeCsv(a)}","${escapeCsv(b)}"\n"${escapeCsv(c)}","${escapeCsv(d)}"`;
     return this.postCsvBody(body);
   }
 
-  /** Three-row CSV POST used the first time we touch a never-before-existed sheet. */
+  /** Low-level three-row CSV POST retained for non-Add-sheet callers. */
   async postInitCsv(
     a = '',
     b = '',
@@ -288,6 +288,40 @@ export class HackFoldr {
       return null;
     }
   }
+}
+
+const REQUEST_ID_RE = /^[A-Za-z0-9_-]+$/;
+
+function defaultRequestId(): string {
+  return globalThis.crypto.randomUUID();
+}
+
+function parseCreatedSheet(body: unknown): FoldrRow | null {
+  if (body === null || typeof body !== 'object' || !('sheet' in body)) return null;
+  const sheet = body.sheet;
+  if (sheet === null || typeof sheet !== 'object') return null;
+  if (!('subroom' in sheet) || typeof sheet.subroom !== 'string' || sheet.subroom.length === 0) {
+    return null;
+  }
+  if (!('link' in sheet) || typeof sheet.link !== 'string' || !isSafeMultiSheetLink(sheet.link)) {
+    return null;
+  }
+  if (
+    !('title' in sheet) ||
+    typeof sheet.title !== 'string' ||
+    sheet.title.length > MAX_MULTI_SHEET_TITLE_LENGTH
+  ) {
+    return null;
+  }
+  if (
+    !('row' in sheet) ||
+    typeof sheet.row !== 'number' ||
+    !Number.isInteger(sheet.row) ||
+    sheet.row < 2
+  ) {
+    return null;
+  }
+  return { link: sheet.link, title: sheet.title, row: sheet.row };
 }
 
 /**
@@ -348,16 +382,4 @@ export function encodeSocialCalcText(value: string): string {
     .replace(/\\/g, '\\b')
     .replace(/:/g, '\\c')
     .replace(/\r\n?|\n/g, '\\n');
-}
-
-/**
- * The legacy code read `res.body.command[1]` — body.command is an array
- * shaped `[status, commandString]`. Pull the string out defensively.
- */
-function extractCommand(res: FoldrPushResponse | null): string | undefined {
-  if (!res) return undefined;
-  const cmd = res.command;
-  if (Array.isArray(cmd) && typeof cmd[1] === 'string') return cmd[1];
-  if (typeof cmd === 'string') return cmd;
-  return undefined;
 }

@@ -18,23 +18,23 @@ export const STORAGE_KEYS = {
    * under the DO-storage 128 KiB per-value ceiling. Large snapshots
    * use the chunked layout below instead.
    */
-  snapshot: 'snapshot',
+  snapshot: "snapshot",
   /**
    * Object `{ chunks: number }` — present iff the snapshot is split
    * across `snapshot:chunk:<i>` keys. Absent for small snapshots.
    */
-  snapshotMeta: 'snapshot:meta',
+  snapshotMeta: "snapshot:meta",
   /** Prefix for chunked snapshot parts: `snapshot:chunk:<padSeq(i)>`. */
-  snapshotChunkPrefix: 'snapshot:chunk:',
+  snapshotChunkPrefix: "snapshot:chunk:",
   /** Number — ms since epoch. Updated on every snapshot write. */
-  metaUpdatedAt: 'meta:updated_at',
+  metaUpdatedAt: "meta:updated_at",
   /**
    * String — room access mode. Absent on legacy/public rooms (the
    * default). Set to `'private'` by `POST /_do/init-private`.
    * `'public'` is the implicit default when this key is absent, so
    * existing rooms and oracle replays are unaffected.
    */
-  metaAccess: 'meta:access',
+  metaAccess: "meta:access",
   /**
    * Object — room ACL. Present iff `metaAccess` is set. Shape:
    * `{ owner: string, writers: string[], readers: string[] }` where
@@ -42,21 +42,32 @@ export const STORAGE_KEYS = {
    * always implicitly a reader and writer; the arrays are explicit
    * for clarity and mutation safety.
    */
-  metaAcl: 'meta:acl',
+  metaAcl: "meta:acl",
+  /**
+   * String — immutable parent room name for a workbook-internal child.
+   * When present, the parent RoomDO is the sole access authority; a child
+   * must never also carry local `meta:access` / `meta:acl`.
+   */
+  metaParent: "meta:parent",
+  /**
+   * Number — next never-before-allocated workbook child index. Monotonic so
+   * an expired partial reservation can never alias a safely orphaned child.
+   */
+  metaNextChildIndex: "meta:next_child_index",
   /**
    * String — optional group identifier for multi-sheet workbook
    * pairing. Present on rooms that belong to a workbook group.
    * Immutable after creation.
    */
-  metaGroup: 'meta:group',
+  metaGroup: "meta:group",
   /** Prefix for command log entries (folded into snapshot periodically). */
-  logPrefix: 'log:',
+  logPrefix: "log:",
   /** Prefix for audit log entries (never truncated). */
-  auditPrefix: 'audit:',
+  auditPrefix: "audit:",
   /** Prefix for chat messages. */
-  chatPrefix: 'chat:',
+  chatPrefix: "chat:",
   /** Prefix for per-user ecell tracking. Key: `ecell:<user>` → cell coord. */
-  ecellPrefix: 'ecell:',
+  ecellPrefix: "ecell:",
 } as const;
 
 /**
@@ -64,7 +75,7 @@ export const STORAGE_KEYS = {
  * legacy behavior). `'private'` gates both read and write on the ACL.
  * The value stored under `STORAGE_KEYS.metaAccess`; absent = public.
  */
-export type AccessMode = 'public' | 'private';
+export type AccessMode = "public" | "private";
 
 /**
  * Room ACL — who can read and write a non-public room. Stored under
@@ -75,9 +86,9 @@ export type AccessMode = 'public' | 'private';
 export interface RoomAcl {
   /** The uid that created the room. Has all permissions implicitly. */
   readonly owner: string;
- /** Uids that can write (in addition to the owner). */
+  /** Uids that can write (in addition to the owner). */
   readonly writers: readonly string[];
- /** Uids that can read (in addition to the owner + writers). */
+  /** Uids that can read (in addition to the owner + writers). */
   readonly readers: readonly string[];
 }
 
@@ -88,7 +99,7 @@ export function padSeq(n: number): string {
   if (!Number.isInteger(n) || n < 0) {
     throw new RangeError(`padSeq requires a non-negative integer, got ${n}`);
   }
-  return n.toString().padStart(SEQ_PAD_WIDTH, '0');
+  return n.toString().padStart(SEQ_PAD_WIDTH, "0");
 }
 
 export function logKey(n: number): string {
@@ -104,7 +115,7 @@ export function chatKey(n: number): string {
 }
 
 export function ecellKey(user: string): string {
-  if (!user) throw new RangeError('ecellKey requires a non-empty user');
+  if (!user) throw new RangeError("ecellKey requires a non-empty user");
   return STORAGE_KEYS.ecellPrefix + user;
 }
 

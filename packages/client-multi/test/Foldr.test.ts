@@ -19,7 +19,9 @@ interface FakeRequest {
 }
 
 function makeFetch(
-  responses: Array<{ ok?: boolean; json?: unknown; throwError?: boolean } | undefined>,
+  responses: Array<
+    { ok?: boolean; status?: number; json?: unknown; throwError?: boolean } | undefined
+  >,
 ): { fetchImpl: FetchImpl; calls: FakeRequest[] } {
   const calls: FakeRequest[] = [];
   let i = 0;
@@ -39,6 +41,7 @@ function makeFetch(
     const jsonPayload = r.json;
     return {
       ok,
+      status: r.status ?? (ok ? 200 : 500),
       async json() {
         if (jsonPayload === '__THROW__') throw new Error('bad json');
         return jsonPayload;
@@ -147,60 +150,142 @@ describe('HackFoldr', () => {
       expect(f.rows).toEqual([{ link: '/r.ok', title: 'Sheet3', row: 4 }]);
     });
 
-    it('marks was-non-existent when the response is empty, and seeds Sheet1', async () => {
-      // Three calls total: GET → POST init-csv (3 rows) → POST csv (single row).
-      // The legacy code deliberately re-posts the seed row via the outer push.
+    it('auto-seeds a non-existent workbook through the guarded sheet route', async () => {
       const { fetchImpl, calls } = makeFetch([
-        { json: [] }, // empty body → non-existent
-        { ok: true, json: null }, // init-csv (3 rows)
-        { ok: true, json: null }, // post-csv follow-up
+        { json: [] },
+        {
+          status: 201,
+          json: {
+            sheet: { subroom: 'r.4', link: '/r.4', title: 'Server Seed', row: 5 },
+          },
+        },
       ]);
-      const f = new HackFoldr('http://x', { fetchImpl });
+      const f = new HackFoldr('http://x', {
+        fetchImpl,
+        requestIdFactory: () => 'seed_nonexistent',
+      });
       await f.fetch('r');
-      expect(f.rows).toEqual([{ link: '/r.1', title: 'Sheet1', row: 2 }]);
+
+      expect(f.rows).toEqual([{ link: '/r.4', title: 'Server Seed', row: 5 }]);
       expect(f.wasNonExistent).toBe(false);
       expect(f.wasEmpty).toBe(false);
-      expect(calls).toHaveLength(3);
-      expect(calls[1]?.method).toBe('POST');
-      expect(calls[1]?.body).toContain('"#url","#title"');
-      expect(calls[1]?.body).toContain('"/r.1","Sheet1"');
-      expect(calls[2]?.body).toBe('"/r.1","Sheet1"');
+      expect(calls).toHaveLength(2);
+      expect(calls[1]).toMatchObject({
+        url: 'http://x/_/=r/sheet',
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json',
+        },
+      });
+      expect(JSON.parse(calls[1]?.body ?? '')).toEqual({
+        title: 'Sheet1',
+        requestId: 'seed_nonexistent',
+      });
     });
 
-    it('marks was-empty when the TOC response has only a header', async () => {
+    it('auto-seeds a header-only workbook through the guarded sheet route', async () => {
       const { fetchImpl, calls } = makeFetch([
         { json: [['#url', '#title']] },
-        { ok: true, json: null }, // post-raw-csv (2 rows)
-        { ok: true, json: null }, // post-csv follow-up
+        {
+          status: 201,
+          json: {
+            sheet: { subroom: 'r.2', link: '/r.2', title: 'Sheet1', row: 2 },
+          },
+        },
       ]);
-      const f = new HackFoldr('http://x', { fetchImpl });
+      const f = new HackFoldr('http://x', {
+        fetchImpl,
+        requestIdFactory: () => 'seed_empty',
+      });
       await f.fetch('r');
-      expect(f.rows).toEqual([{ link: '/r.1', title: 'Sheet1', row: 2 }]);
+
+      expect(f.rows).toEqual([{ link: '/r.2', title: 'Sheet1', row: 2 }]);
       expect(f.wasEmpty).toBe(false);
-      // The init POST writes the seed row twice (header-free since wasEmpty
-      // is the "have-TOC-but-empty" case → post-raw-csv without the #header).
-      expect(calls[1]?.body).toBe('"/r.1","Sheet1"\n"/r.1","Sheet1"');
-      expect(calls[2]?.body).toBe('"/r.1","Sheet1"');
+      expect(calls).toHaveLength(2);
+      expect(calls[1]?.url).toBe('http://x/_/=r/sheet');
+      expect(JSON.parse(calls[1]?.body ?? '')).toEqual({
+        title: 'Sheet1',
+        requestId: 'seed_empty',
+      });
     });
 
-    it('survives a thrown fetch (treats as non-existent)', async () => {
+    it('survives a thrown TOC fetch and seeds through the guarded route', async () => {
       const { fetchImpl } = makeFetch([
         { throwError: true },
-        { ok: true, json: null },
+        {
+          status: 201,
+          json: { sheet: { subroom: 'r.1', link: '/r.1', title: 'Sheet1', row: 2 } },
+        },
       ]);
-      const f = new HackFoldr('http://x', { fetchImpl });
+      const f = new HackFoldr('http://x', {
+        fetchImpl,
+        requestIdFactory: () => 'seed_after_throw',
+      });
       await f.fetch('r');
       expect(f.rows).toEqual([{ link: '/r.1', title: 'Sheet1', row: 2 }]);
     });
 
-    it('survives a !ok response (treats body as null → non-existent)', async () => {
+    it('survives a rejected TOC fetch and seeds through the guarded route', async () => {
       const { fetchImpl } = makeFetch([
         { ok: false },
-        { ok: true, json: null },
+        {
+          status: 201,
+          json: { sheet: { subroom: 'r.1', link: '/r.1', title: 'Sheet1', row: 2 } },
+        },
       ]);
-      const f = new HackFoldr('http://x', { fetchImpl });
+      const f = new HackFoldr('http://x', {
+        fetchImpl,
+        requestIdFactory: () => 'seed_after_reject',
+      });
       await f.fetch('r');
       expect(f.rows).toEqual([{ link: '/r.1', title: 'Sheet1', row: 2 }]);
+    });
+
+    it('keeps empty rows and init flags when automatic seeding fails', async () => {
+      const rejected = makeFetch([{ json: [] }, { ok: false, status: 409 }]);
+      const rejectedFoldr = new HackFoldr('http://x', {
+        fetchImpl: rejected.fetchImpl,
+        requestIdFactory: () => 'seed_rejected',
+      });
+      await rejectedFoldr.fetch('r');
+      expect(rejectedFoldr.rows).toEqual([]);
+      expect(rejectedFoldr.wasNonExistent).toBe(true);
+      expect(rejectedFoldr.wasEmpty).toBe(true);
+
+      const malformed = makeFetch([
+        { json: [['#url', '#title']] },
+        {
+          status: 201,
+          json: {
+            sheet: {
+              subroom: 'r.1',
+              link: '//evil.example',
+              title: 'Sheet1',
+              row: 2,
+            },
+          },
+        },
+      ]);
+      const malformedFoldr = new HackFoldr('http://x', {
+        fetchImpl: malformed.fetchImpl,
+        requestIdFactory: () => 'seed_malformed',
+      });
+      await malformedFoldr.fetch('r');
+      expect(malformedFoldr.rows).toEqual([]);
+      expect(malformedFoldr.wasEmpty).toBe(true);
+
+      const throwing = makeFetch([
+        { json: [['#url', '#title']] },
+        { throwError: true },
+      ]);
+      const throwingFoldr = new HackFoldr('http://x', {
+        fetchImpl: throwing.fetchImpl,
+        requestIdFactory: () => 'seed_throwing',
+      });
+      await throwingFoldr.fetch('r');
+      expect(throwingFoldr.rows).toEqual([]);
+      expect(throwingFoldr.wasEmpty).toBe(true);
     });
   });
 
@@ -234,120 +319,175 @@ describe('HackFoldr', () => {
   });
 
   describe('push()', () => {
-    it('posts a single-row CSV and picks up row from the server paste command', async () => {
+    it('uses the guarded route and mounts authoritative server metadata', async () => {
       const { fetchImpl, calls } = makeFetch([
-        { json: [['#', '#'], ['/a', 'A']] }, // fetch
-        { ok: true, json: { command: [0, 'paste A7 all'] } }, // post-csv
+        { json: [['#', '#'], ['/a', 'A']] },
+        {
+          status: 201,
+          json: {
+            sheet: {
+              subroom: 'r.11',
+              link: '/r.11',
+              title: 'Server Assigned',
+              row: 12,
+            },
+          },
+        },
       ]);
-      const f = new HackFoldr('http://x', { fetchImpl });
+      const f = new HackFoldr('http://x/', {
+        fetchImpl,
+        requestIdFactory: () => 'push_req_1',
+      });
       await f.fetch('r');
-      await f.push({ link: '/new', title: 'New', row: 0 });
-      expect(calls[1]?.headers).toMatchObject({ 'content-type': 'text/csv' });
-      expect(calls[1]?.body).toBe('"/new","New"');
-      expect(f.rows[1]).toMatchObject({ link: '/new', title: 'New', row: 7 });
+      const proposed = {
+        link: '/client-proposal',
+        title: 'New',
+        row: 99,
+      };
+
+      await expect(f.push(proposed)).resolves.toBe(f);
+      expect(calls[1]).toMatchObject({
+        url: 'http://x/_/=r/sheet',
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json',
+        },
+      });
+      expect(JSON.parse(calls[1]?.body ?? '')).toEqual({
+        title: 'New',
+        requestId: 'push_req_1',
+      });
+      expect(f.rows[1]).toEqual({
+        link: '/r.11',
+        title: 'Server Assigned',
+        row: 12,
+      });
+      expect(proposed).toEqual(f.rows[1]);
     });
 
-    it('falls back to existing row.row when server returns no paste command', async () => {
+    it('caps the requested title before sending it to the guarded route', async () => {
+      const cappedTitle = 't'.repeat(MAX_MULTI_SHEET_TITLE_LENGTH);
+      const { fetchImpl, calls } = makeFetch([
+        { json: [['#', '#'], ['/a', 'A']] },
+        {
+          status: 201,
+          json: {
+            sheet: { subroom: 'r.2', link: '/r.2', title: cappedTitle, row: 3 },
+          },
+        },
+      ]);
+      const f = new HackFoldr('http://x', {
+        fetchImpl,
+        requestIdFactory: () => 'title_cap',
+      });
+      await f.fetch('r');
+      await f.push({
+        link: '/proposal',
+        title: `${cappedTitle}overflow`,
+        row: 0,
+      });
+
+      expect(JSON.parse(calls[1]?.body ?? '')).toEqual({
+        title: cappedTitle,
+        requestId: 'title_cap',
+      });
+    });
+
+    it('leaves rows unchanged when the guarded request is rejected', async () => {
       const { fetchImpl } = makeFetch([
         { json: [['#', '#'], ['/a', 'A']] },
-        { ok: true, json: {} }, // no command
+        { ok: false, status: 409 },
       ]);
-      const f = new HackFoldr('http://x', { fetchImpl });
+      const f = new HackFoldr('http://x', {
+        fetchImpl,
+        requestIdFactory: () => 'rejected_push',
+      });
       await f.fetch('r');
-      await f.push({ link: '/new', title: 'New', row: 42 });
-      expect(f.rows[1]).toMatchObject({ row: 42 });
+
+      await expect(f.push({ link: '/proposal', title: 'New', row: 0 })).resolves.toBe(f);
+      expect(f.rows).toEqual([{ link: '/a', title: 'A', row: 2 }]);
     });
 
-    it('honors a string command (not an array)', async () => {
+    it('rejects malformed 201 sheet responses without mounting a row', async () => {
+      const malformed = [
+        {},
+        { sheet: null },
+        { sheet: { subroom: 'r.2', link: '//evil.example', title: 'New', row: 3 } },
+        { sheet: { subroom: '', link: '/r.2', title: 'New', row: 3 } },
+        {
+          sheet: {
+            subroom: 'r.2',
+            link: '/r.2',
+            title: 't'.repeat(MAX_MULTI_SHEET_TITLE_LENGTH + 1),
+            row: 3,
+          },
+        },
+        { sheet: { subroom: 'r.2', link: '/r.2', title: 'New', row: 3.5 } },
+      ];
       const { fetchImpl } = makeFetch([
         { json: [['#', '#'], ['/a', 'A']] },
-        { ok: true, json: { command: 'paste A9 all' } },
+        ...malformed.map((json) => ({ status: 201, json })),
       ]);
-      const f = new HackFoldr('http://x', { fetchImpl });
+      let request = 0;
+      const f = new HackFoldr('http://x', {
+        fetchImpl,
+        requestIdFactory: () => `malformed_${request++}`,
+      });
       await f.fetch('r');
-      await f.push({ link: '/n', title: 'N', row: 0 });
-      // Non-[status, cmd] arrays don't match; only string passes through.
-      expect(f.rows[1]?.row).toBe(9);
+
+      for (const _ of malformed) {
+        await f.push({ link: '/proposal', title: 'New', row: 0 });
+      }
+      expect(f.rows).toEqual([{ link: '/a', title: 'A', row: 2 }]);
     });
 
-    it('ignores array commands where [1] is not a string', async () => {
-      const { fetchImpl } = makeFetch([
-        { json: [['#', '#'], ['/a', 'A']] },
-        { ok: true, json: { command: [0, 123] } },
-      ]);
-      const f = new HackFoldr('http://x', { fetchImpl });
-      await f.fetch('r');
-      await f.push({ link: '/n', title: 'N', row: 55 });
-      expect(f.rows[1]?.row).toBe(55);
-    });
-
-    it('ignores command strings that do not match the paste regex', async () => {
-      const { fetchImpl } = makeFetch([
-        { json: [['#', '#'], ['/a', 'A']] },
-        { ok: true, json: { command: [0, 'set A1 value 1'] } }, // not `paste A<n>`
-      ]);
-      const f = new HackFoldr('http://x', { fetchImpl });
-      await f.fetch('r');
-      await f.push({ link: '/n', title: 'N', row: 77 });
-      expect(f.rows[1]?.row).toBe(77);
-    });
-
-    it('survives a POST !ok (no paste update, row still appended)', async () => {
-      const { fetchImpl } = makeFetch([
-        { json: [['#', '#'], ['/a', 'A']] },
-        { ok: false },
-      ]);
-      const f = new HackFoldr('http://x', { fetchImpl });
-      await f.fetch('r');
-      await f.push({ link: '/n', title: 'N', row: 3 });
-      expect(f.rows[1]).toMatchObject({ row: 3 });
-    });
-
-    it('survives a POST throw (no paste update, row still appended)', async () => {
+    it('leaves rows unchanged when the guarded request or JSON body throws', async () => {
       const { fetchImpl } = makeFetch([
         { json: [['#', '#'], ['/a', 'A']] },
         { throwError: true },
+        { status: 201, json: '__THROW__' },
       ]);
-      const f = new HackFoldr('http://x', { fetchImpl });
+      let request = 0;
+      const f = new HackFoldr('http://x', {
+        fetchImpl,
+        requestIdFactory: () => `throwing_${request++}`,
+      });
       await f.fetch('r');
-      await f.push({ link: '/n', title: 'N', row: 3 });
-      expect(f.rows[1]).toMatchObject({ row: 3 });
+
+      await f.push({ link: '/proposal', title: 'Network throw', row: 0 });
+      await f.push({ link: '/proposal', title: 'JSON throw', row: 0 });
+      expect(f.rows).toEqual([{ link: '/a', title: 'A', row: 2 }]);
     });
 
-    it('survives a POST whose body fails to json-parse', async () => {
-      const { fetchImpl } = makeFetch([
-        { json: [['#', '#'], ['/a', 'A']] },
-        { ok: true, json: '__THROW__' },
-      ]);
-      const f = new HackFoldr('http://x', { fetchImpl });
-      await f.fetch('r');
-      await f.push({ link: '/n', title: 'N', row: 3 });
-      expect(f.rows[1]).toMatchObject({ row: 3 });
-    });
+    it('rejects unsafe links and invalid request IDs without making a request', async () => {
+      const { fetchImpl, calls } = makeFetch([]);
+      const unsafeLink = new HackFoldr('http://x', {
+        fetchImpl,
+        requestIdFactory: () => 'valid_request',
+      });
+      await unsafeLink.push({
+        link: 'https://evil.example',
+        title: 'Evil',
+        row: 0,
+      });
+      const invalidRequestId = new HackFoldr('http://x', {
+        fetchImpl,
+        requestIdFactory: () => 'not valid!',
+      });
+      await invalidRequestId.push({ link: '/safe', title: 'Safe', row: 0 });
+      const throwingRequestId = new HackFoldr('http://x', {
+        fetchImpl,
+        requestIdFactory: () => {
+          throw new Error('request id unavailable');
+        },
+      });
+      await throwingRequestId.push({ link: '/safe', title: 'Safe', row: 0 });
 
-    it('double-row POST when pushing the first row of an empty room', async () => {
-      // A fetch-from-empty room calls init → push internally, so by the time
-      // the user invokes push({X}), was-empty is already cleared.
-      const { fetchImpl, calls } = makeFetch([
-        { json: [['#url', '#title']] }, // empty
-        { ok: true, json: null }, // init post-raw-csv (2 rows)
-        { ok: true, json: null }, // init follow-up post-csv
-        { ok: true, json: { command: [0, 'paste A4 all'] } }, // push
-      ]);
-      const f = new HackFoldr('http://x', { fetchImpl });
-      await f.fetch('r');
-      await f.push({ link: '/x', title: 'X', row: 0 });
-      expect(calls[1]?.body).toBe('"/r.1","Sheet1"\n"/r.1","Sheet1"');
-      expect(calls[2]?.body).toBe('"/r.1","Sheet1"');
-      expect(calls[3]?.body).toBe('"/x","X"');
-      expect(f.rows[1]).toMatchObject({ row: 4 });
-    });
-
-    it('escapes double-quotes in the low-level CSV encoder', async () => {
-      const { fetchImpl, calls } = makeFetch([{ ok: true, json: null }]);
-      const f = new HackFoldr('http://x', { fetchImpl });
-      await f.postCsv('/a"b', 'T"t');
-      expect(calls[0]?.body).toBe('"/a""b","T""t"');
+      expect(calls).toHaveLength(0);
+      expect(unsafeLink.rows).toEqual([]);
+      expect(invalidRequestId.rows).toEqual([]);
+      expect(throwingRequestId.rows).toEqual([]);
     });
   });
 
@@ -411,42 +551,61 @@ describe('HackFoldr', () => {
     });
   });
 
-    it('rejects an unsafe row before writing or mounting it', async () => {
-      const { fetchImpl, calls } = makeFetch([]);
-      const f = new HackFoldr('http://x', { fetchImpl });
-      await f.push({ link: 'https://evil.example', title: 'Evil', row: 0 });
-      expect(calls).toHaveLength(0);
-      expect(f.rows).toEqual([]);
-    });
-
   describe('pushChecked()', () => {
-    it('mounts the row only after an accepted TOC POST', async () => {
+    it('returns true and mounts the authoritative guarded response', async () => {
       const { fetchImpl } = makeFetch([
         { json: [['#', '#'], ['/a', 'A']] },
-        { ok: true, json: { command: [0, 'paste A8 all'] } },
+        {
+          status: 201,
+          json: {
+            sheet: {
+              subroom: 'r.8',
+              link: '/r.8',
+              title: 'Server Import',
+              row: 9,
+            },
+          },
+        },
       ]);
-      const f = new HackFoldr('http://x', { fetchImpl });
+      const f = new HackFoldr('http://x', {
+        fetchImpl,
+        requestIdFactory: () => 'checked_success',
+      });
       await f.fetch('r');
 
-      await expect(f.pushChecked({ link: '/r.2', title: 'Imported', row: 0 })).resolves.toBe(true);
-      expect(f.rows[1]).toEqual({ link: '/r.2', title: 'Imported', row: 8 });
+      await expect(
+        f.pushChecked({ link: '/proposal', title: 'Imported', row: 0 }),
+      ).resolves.toBe(true);
+      expect(f.rows[1]).toEqual({
+        link: '/r.8',
+        title: 'Server Import',
+        row: 9,
+      });
     });
 
-    it('returns false and leaves rows unchanged when the TOC POST is rejected', async () => {
+    it('returns false and leaves rows unchanged when the guarded request fails', async () => {
       const { fetchImpl } = makeFetch([
         { json: [['#', '#'], ['/a', 'A']] },
-        { ok: false },
+        { ok: true, status: 200, json: {} },
       ]);
-      const f = new HackFoldr('http://x', { fetchImpl });
+      const f = new HackFoldr('http://x', {
+        fetchImpl,
+        requestIdFactory: () => 'checked_failure',
+      });
       await f.fetch('r');
 
-      await expect(f.pushChecked({ link: '/r.2', title: 'Imported', row: 0 })).resolves.toBe(false);
+      await expect(
+        f.pushChecked({ link: '/proposal', title: 'Imported', row: 0 }),
+      ).resolves.toBe(false);
       expect(f.rows).toEqual([{ link: '/a', title: 'A', row: 2 }]);
     });
 
-    it('rejects unsafe links without sending a request', async () => {
+    it('returns false for unsafe input without sending a request', async () => {
       const { fetchImpl, calls } = makeFetch([]);
-      const f = new HackFoldr('http://x', { fetchImpl });
+      const f = new HackFoldr('http://x', {
+        fetchImpl,
+        requestIdFactory: () => 'checked_unsafe',
+      });
 
       await expect(
         f.pushChecked({ link: 'https://evil.example', title: 'Imported', row: 0 }),
@@ -493,34 +652,11 @@ describe('HackFoldr', () => {
     });
   });
 
-  describe('was-non-existent init flow', () => {
-    it('on first push after non-existent state, writes a 3-row init + 1-row follow-up', async () => {
-      // The fetch() on a never-seen room runs the full seed flow:
-      //   GET → POST init-csv (3 rows: #url/#title, /r.1/Sheet1, /r.1/Sheet1)
-      //       → POST csv (1 row: /r.1, Sheet1)
-      // After that, was-non-existent and was-empty are cleared; the user's
-      // subsequent push(/fresh) is a plain single-row POST.
-      const { fetchImpl, calls } = makeFetch([
-        { json: [] },
-        { ok: true, json: null },
-        { ok: true, json: null },
-        { ok: true, json: { command: [0, 'paste A5 all'] } },
-      ]);
-      const f = new HackFoldr('http://x', { fetchImpl });
-      await f.fetch('r');
-      await f.push({ link: '/fresh', title: 'Fresh', row: 0 });
-      expect(calls[1]?.body).toBe(
-        '"#url","#title"\n"/r.1","Sheet1"\n"/r.1","Sheet1"',
-      );
-      expect(calls[2]?.body).toBe('"/r.1","Sheet1"');
-      expect(calls[3]?.body).toBe('"/fresh","Fresh"');
-      expect(f.rows[1]?.row).toBe(5);
-    });
+  describe('raw-command lazy init flow', () => {
 
     it('sendCmd triggers lazy init when sheet was non-existent (no row)', async () => {
-      // This tests the `initIfNeeded(null)` branch when wasNonExistent is still
-      // true — which can only happen if a caller invokes `sendCmd` or `push`
-      // before `fetch` settled. We set the flags by hand to exercise it.
+      // We set the flags by hand to exercise lazy TOC initialization before a
+      // non-Add-sheet raw command.
       const { fetchImpl, calls } = makeFetch([
         { ok: true, json: null }, // init post-raw-csv
         { ok: true, json: null }, // sendCmd post
@@ -570,6 +706,20 @@ describe('HackFoldr', () => {
       f.id = 'r';
       const out = await f.postCsv('a', 'b');
       expect(out).toEqual({ command: 'x' });
+    });
+
+    it('returns null when the response body is not JSON', async () => {
+      const { fetchImpl } = makeFetch([{ ok: true, json: '__THROW__' }]);
+      const f = new HackFoldr('http://x', { fetchImpl });
+      f.id = 'r';
+      await expect(f.postCsv('a', 'b')).resolves.toBeNull();
+    });
+
+    it('escapes double-quotes in the low-level CSV encoder', async () => {
+      const { fetchImpl, calls } = makeFetch([{ ok: true, json: null }]);
+      const f = new HackFoldr('http://x', { fetchImpl });
+      await f.postCsv('/a"b', 'T"t');
+      expect(calls[0]?.body).toBe('"/a""b","T""t"');
     });
 
     it('postCsv uses default empty strings when no args are passed', async () => {
@@ -735,16 +885,4 @@ describe('HackFoldr', () => {
     });
   });
 
-  describe('extractCommand', () => {
-    it('ignores empty command field', async () => {
-      const { fetchImpl } = makeFetch([
-        { json: [['#', '#'], ['/a', 'A']] },
-        { ok: true, json: { command: undefined } },
-      ]);
-      const f = new HackFoldr('http://x', { fetchImpl });
-      await f.fetch('r');
-      await f.push({ link: '/n', title: 'N', row: 77 });
-      expect(f.rows[1]?.row).toBe(77);
-    });
-  });
 });

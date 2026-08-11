@@ -22,6 +22,8 @@ describe('STORAGE_KEYS', () => {
       metaUpdatedAt: 'meta:updated_at',
       metaAccess: 'meta:access',
       metaAcl: 'meta:acl',
+      metaParent: 'meta:parent',
+      metaNextChildIndex: 'meta:next_child_index',
       metaGroup: 'meta:group',
       logPrefix: 'log:',
       auditPrefix: 'audit:',

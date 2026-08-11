@@ -3,9 +3,9 @@
  * Object. Keeps the route layer free of `env.ROOM.get(idFromName(…))`
  * boilerplate and makes it trivial to stub `ROOM` in route tests.
  */
-import { encodeRoom, isValidRoomName } from './room-name.ts';
-import type { SessionPrincipal } from './session.ts';
-import type { Env } from '../env.ts';
+import { encodeRoom, isValidRoomName } from "./room-name.ts";
+import type { SessionPrincipal } from "./session.ts";
+import type { Env } from "../env.ts";
 
 function roomStubForValidName(env: Env, room: string): DurableObjectStub {
   const id = env.ROOM.idFromName(encodeRoom(room));
@@ -14,9 +14,11 @@ function roomStubForValidName(env: Env, room: string): DurableObjectStub {
 
 /** Return the DO stub for `room`, keyed by its legacy-encoded form. */
 export function roomStub(env: Env, room: string): DurableObjectStub {
-  if (!isValidRoomName(room)) throw new RangeError('Invalid room name');
+  if (!isValidRoomName(room)) throw new RangeError("Invalid room name");
   return roomStubForValidName(env, room);
 }
+
+export const PARENT_READ_HEADER = "X-EC-Parent-Read";
 
 /**
  * Fetch against the DO using the `/_do/*` protocol. Callers pass the path
@@ -30,10 +32,10 @@ export function roomStub(env: Env, room: string): DurableObjectStub {
  * replace any existing query because `path` may already carry one
  * (e.g. `/_do/ping?name=foo` used by unit tests).
  *
- * Identity hardening (Phase A): the trusted `X-EC-Uid` header reaches
- * the DO ONLY from the verified session `principal` — any value already
- * present on `init.headers` (a forged ingress header accidentally
- * threaded through) is stripped before dispatch.
+ * Identity hardening (Phase A): trusted identity/capability headers reach
+ * RoomDO only from verified Worker or RoomDO code. Any `X-EC-Uid` or
+ * `X-EC-Parent-Read` value already present on `init.headers` is stripped
+ * before dispatch.
  */
 export async function doFetch(
   env: Env,
@@ -43,16 +45,17 @@ export async function doFetch(
   principal: SessionPrincipal | null = null,
 ): Promise<Response> {
   if (!isValidRoomName(room)) {
-    return new Response('Invalid room name', {
+    return new Response("Invalid room name", {
       status: 400,
-      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
     });
   }
   const stub = roomStubForValidName(env, room);
-  const sep = path.includes('?') ? '&' : '?';
+  const sep = path.includes("?") ? "&" : "?";
   const url = `https://do.local${path}${sep}name=${encodeURIComponent(room)}`;
   const headers = new Headers(init.headers);
-  headers.delete('X-EC-Uid');
-  if (principal) headers.set('X-EC-Uid', principal.uid);
+  headers.delete("X-EC-Uid");
+  headers.delete(PARENT_READ_HEADER);
+  if (principal) headers.set("X-EC-Uid", principal.uid);
   return stub.fetch(url, { ...init, headers });
 }
