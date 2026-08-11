@@ -526,6 +526,30 @@ describe('multi-sheet-import mutation pins', () => {
     expect(getMaxSubsheetIndex(['/room.5e2'], 'room')).toBe(0);
   });
 
+  it('buildMultiSheetImport treats non-array SheetNames as empty', () => {
+    // Defensive fallback: SheetJS always yields an array, but a broken/mocked
+    // reader must not invent sheet names from the empty-array literal. If the
+    // `[]` fallback is replaced with a non-empty default, a coincidental
+    // Sheets key would be imported.
+    const phantom = 'Stryker was here';
+    const ws = {
+      A1: { t: 's', v: 'leaked' },
+      '!ref': 'A1',
+    };
+    const out = buildMultiSheetImport(
+      new Uint8Array([1]),
+      'room',
+      () =>
+        ({
+          SheetNames: null,
+          Sheets: { [phantom]: ws },
+        }) as never,
+    );
+    expect(out.subSheets).toEqual([]);
+    expect(out.tocSave).not.toContain('leaked');
+    expect(out.tocSave).not.toContain(phantom);
+  });
+
   it('mutation pins for rewriteSheetReferences quoting and empty names', () => {
     const body = "cell:A1:vtf:n:1:Second!A1+'O''Brien'!B2";
     expect(rewriteSheetReferences(body, [], 'room', 6)).toBe(body);

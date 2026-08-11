@@ -75,6 +75,8 @@ export function getMaxSubsheetIndex(links: readonly string[], room: string): num
     const suffix = link.slice(prefix.length);
     if (!/^\d+$/.test(suffix)) continue;
     const value = Number(suffix);
+    // Stryker disable next-line EqualityOperator : `value >= max` only reassigns
+    // the same number when equal, so the stored max is observationally identical.
     if (value > max) max = value;
   }
   return max;
@@ -249,6 +251,8 @@ export function buildMultiSheetAppendImport(
   // Back-compat: older tests pass `readFn` as the 5th positional argument.
   const opts: BuildMultiSheetAppendImportOptions =
     typeof options === 'function' ? { readFn: options } : options;
+  // Stryker disable next-line MethodExpression : prepareAppendImportPlan lowercases
+  // `format` again before any includes() check, so toUpperCase() here is a no-op.
   const format = (opts.format ?? 'xlsx').toLowerCase();
   const readFn = opts.readFn ?? XLSX.read;
 
