@@ -1191,7 +1191,32 @@ curl -fsS -H "$HDR" -o /dev/null -w '%{http_code}\n' \
 
 Optional but strongly recommended under override before ramp (**`[OPERATOR-VERIFY]`**, throwaway/operator-owned private room + test passkey — no customer data): discoverable login; owner private R/W; anonymous private 403; over-limit `POST /_/:room` → **413**.
 
+#### Step 3c — DO-protocol additions: atomic 100% only (no gradual split)
+
+Cloudflare gradual deployments pin **each Durable Object instance to one Worker version** for the life of that deployment, while the front-door Worker isolate that handles an ingress request may be a *different* version ([Gradual deployments with Durable Objects](https://developers.cloudflare.com/workers/versions-and-deployments/gradual-deployments/with-durable-objects/)). EtherCalc has **one `RoomDO` per room**, so a 10% / 50% ramp means some rooms still run the pre-ship DO class.
+
+**Rule:** introducing a **new `/_do/*` RoomDO endpoint** means the change **cannot be gradually ramped**. During any split (or a version-override that only selects the Worker entrypoint), requests routed to the new Worker may hit an old DO isolate and fail at the unknown-path catch-all (`501 Not implemented`, `packages/worker/src/room.ts`).
+
+- Deploy DO-protocol additions as an **atomic `versions deploy <SHIP>@100%` cutover** (skip Step 4’s 10/50 split).
+- Expect a **brief post-cutover window** until already-running RoomDO isolates reload onto ship code; the Worker MUST map that window to a **retryable** client error rather than a bare 501 (see `IMPORT_APPEND_DO_SKEW_MESSAGE` / `503` in `packages/worker/src/routes/multi-import.ts` for `POST /_do/import-append-toc`).
+- Sibling case already documented for passkey rollout: `POST /_do/init-private` against a Phase-1 DO returns 501 verbatim (Appendix A.1.3.1 / old §4.3.1).
+
+**Incident evidence (2026-08-11, issue #843 append import ship):**
+
+| Item | Value |
+| :--- | :---- |
+| Floor (rollback) | `0e024a32-5ce8-4315-a4eb-a4c5c2a8f780` @100% after abort |
+| Ship (aborted) | `1369531f-7366-4353-b8f0-a71cabb07c25` |
+| Split sampled | floor@90% / ship@10% |
+| Append sample n=80 (`POST /_/=<room>/csv`) | `{404: 66, 501: 12, 201: 2}` — real user-path 501s under split |
+| Asset discriminator (busted hash) | ~10% 200 / ~90% 404 (Worker selection worked) |
+| Override-only append | also `501 Not implemented` (Worker ship + DO still floor) |
+
+This is evidence, not folklore: **do not re-introduce a gradual split for this class of change.**
+
 #### Step 4 — Gradual ramp
+
+> **Skip this step** when the ship bundle adds or renames any `/_do/*` DO RPC (Step 3c). Go straight to `<SHIP>@100%`.
 
 ```bash
 vp exec wrangler versions deploy \
