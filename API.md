@@ -272,7 +272,30 @@ Private parent rooms are supported. Each imported sub-sheet is initialized as
 a workbook child with immutable parent delegation; it does not receive an
 independent ACL. Reads, writes, exports, formulas, and WebSocket mutations are
 authorized against the parent room on every request. A pre-existing unmarked
-room is never adopted as a child.
+occupied room is never auto-adopted as a child. On 2026-08-11 a read-only D1
+`rooms` index query plus anonymous probes of gate-exempt `GET /_/<parent>/access`
+counted 1,883,069 rooms, 68,582 child-shaped names (`<base>.<positive decimal>`),
+and 13,875 distinct candidate parents — 13,873 public, 2 not-found, 0 private.
+Pre-fix children had no access metadata, so `#mirrorIndex` treated them as
+public and wrote them into the index; post-fix parented children are never
+indexed. No remediation is required in hosted production: the fix is
+prospective and closed the hole before anyone was exposed by it. The
+invokability facts remain true and explain why a sweep was never needed (and
+would still block anyone who later wants one): `/_do/backfill-children` and
+`/_do/set-parent` exist only on the internal Durable Object dispatch surface
+(`packages/worker/src/room.ts:371,374`) with no Worker route proxying them;
+`ETHERCALC_MIGRATE_TOKEN` is unset in production so operator-gated paths return
+404 (`packages/worker/src/lib/migrate-auth.ts:40`); and `#postBackfillChildren`
+requires `local.acl.owner === uid` (`packages/worker/src/room.ts:916-928`), so
+an operator cannot remediate rooms they do not own. A hosted sweep would still
+require shipping a new Worker route, provisioning the token secret, and deciding
+whether to keep owner-only auth or permit operator overrides. The D1 count is a
+lower bound — a child whose mirror write failed, or any self-hosted deployment,
+is not represented — but zero is plausible rather than lucky: exposure required
+a private room (passkeys reached production only around `d2afa90`, 2026-07-18)
+and multi-sheet use and a child that received content. New children are safe on
+creation, and pristine pre-fix children are adopted on the next TOC write
+(`packages/worker/src/routes/multi-import.ts:415`).
 
 Multi-sheet imports use idempotent parent-side reservations and monotonic child
 indices. A retry with the same request identifier reuses its reservation;

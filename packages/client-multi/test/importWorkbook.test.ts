@@ -146,22 +146,24 @@ describe('appendImportedWorkbook', () => {
     );
   });
 
-  it('surfaces server status and body, including private-room 409 text', async () => {
+  it('surfaces server status and body in the import failure alert', async () => {
     const alert = vi.fn();
     const foldr = existingFoldr(vi.fn() as FetchImpl);
 
-    const privateMsg =
-      'Multi-sheet import is unavailable for private rooms because new sub-sheets would be public.';
-    const fetch409 = vi.fn().mockResolvedValue(new Response(privateMsg, { status: 409 }));
+    // Real Worker body from packages/worker/src/routes/multi-import.ts
+    // (PARENTED_CHILD_DO_SKEW_MESSAGE) during mixed-version DO skew.
+    const skewMsg =
+      'Sheet creation is briefly unavailable while the server finishes updating. Please retry in a moment.';
+    const fetch503 = vi.fn().mockResolvedValue(new Response(skewMsg, { status: 503 }));
     await appendImportedWorkbook({
       foldr,
       index: 'room',
       basePath: 'http://localhost',
       file: new File(['a'], 'secret.csv'),
-      fetchImpl: fetch409,
+      fetchImpl: fetch503,
       alertImpl: alert,
     });
-    expect(alert).toHaveBeenLastCalledWith(`Import failed (409): ${privateMsg}`);
+    expect(alert).toHaveBeenLastCalledWith(`Import failed (503): ${skewMsg}`);
 
     const fetch413 = vi.fn().mockResolvedValue(
       new Response('workbook exceeds 200000 cells', { status: 413 }),

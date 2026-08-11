@@ -15,9 +15,36 @@ Unreleased
 
 Security
 - Private multi-sheet workbooks now initialize children with immutable
-  `meta:parent` delegation. RoomDO derives each child authorization verdict
-  from the parent, rejects local-ACL conflicts and occupied-room capture, and
-  keeps workbook-internal children out of the public rooms index.
+  `meta:parent` delegation, closing a confidentiality exposure where
+  sub-sheets of a private room were anonymously readable. RoomDO derives
+  each child authorization verdict from the parent, rejects local-ACL
+  conflicts and occupied-room capture, and keeps workbook-internal
+  children out of the public rooms index. On 2026-08-11 a read-only D1
+  `rooms` index query plus anonymous probes of gate-exempt
+  `GET /_/<parent>/access` counted 1,883,069 rooms, 68,582 child-shaped
+  names (`<base>.<positive decimal>`), and 13,875 distinct candidate
+  parents — 13,873 public, 2 not-found, 0 private. Pre-fix children had
+  no access metadata, so `#mirrorIndex` treated them as public and wrote
+  them into the index; post-fix parented children are never indexed. No
+  remediation is required in hosted production: the fix is prospective and
+  closed the hole before anyone was exposed by it. The invokability facts
+  remain true and explain why a sweep was never needed (and would still
+  block anyone who later wants one): `/_do/backfill-children` and
+  `/_do/set-parent` exist only on the internal Durable Object dispatch
+  surface (`packages/worker/src/room.ts:371,374`) with no Worker route
+  proxying them; `ETHERCALC_MIGRATE_TOKEN` is unset in production so
+  operator-gated paths 404 (`packages/worker/src/lib/migrate-auth.ts:40`);
+  and `RoomDO.#postBackfillChildren` enforces `local.acl.owner === uid`
+  (`packages/worker/src/room.ts:916-928`), preventing operator sweeps of
+  user rooms. A hosted sweep would still require new code and a deploy (a
+  public Worker route, a provisioned token, and a policy choice between
+  owner-only vs. operator sweeps). The D1 count is a lower bound — a child
+  whose mirror write failed, or any self-hosted deployment, is not
+  represented — but zero is plausible rather than lucky: exposure required
+  a private room (passkeys reached production only around `d2afa90`,
+  2026-07-18) and multi-sheet use and a child that received content. New
+  children are safe on creation, and pristine pre-fix children are marked
+  on the next TOC write (`packages/worker/src/routes/multi-import.ts:415`).
 - Multi-sheet append import maps a mixed-version RoomDO `501` on
   `/_do/import-append-toc` to a retryable `503` with clear copy (Worker/DO
   skew during deploy), instead of surfacing bare "Not implemented".
@@ -49,10 +76,10 @@ Security
   fetching, so a crawler blocked from a URL can never observe its `noindex`
   header and already-indexed rooms would be stranded permanently.
 - Multi-sheet workbook import (replace and append — xlsx/ods/fods and
-  csv/tsv/txt/socialcalc) is unavailable for private rooms: the server
-  refuses with HTTP 409 because freshly created sub-sheets have no ACL and
-  would publish as public. All formats share one guarded server append door;
-  the multi-sheet client no longer PUTs sub-rooms directly.
+  csv/tsv/txt/socialcalc) is re-enabled for private rooms: children are
+  created with immutable `meta:parent` so they inherit the parent's access
+  instead of publishing as public. All formats share one guarded server
+  append door; the multi-sheet client no longer PUTs sub-rooms directly.
 
 Tooling
 - Migrated the repository interface to Vite+ 0.2.4: package operations use
