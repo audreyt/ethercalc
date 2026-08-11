@@ -334,6 +334,64 @@ describe('POST multi-sheet append import', () => {
     expect(values.has('concurrent-B')).toBe(true);
   });
 
+  it('maps old RoomDO 501 on import-append-toc to retryable 503 with clear body', async () => {
+    // Mixed-version window: new Worker entrypoint + old RoomDO isolate that
+    // lacks /_do/import-append-toc returns bare 501 from the DO catch-all.
+    // Must not pass "Not implemented" through to the user.
+    const room = `mskew-${Math.random().toString(36).slice(2, 8)}`;
+    const seed = await request('PUT', `/=${room}.xlsx`, twoSheetXlsx());
+    expect(seed.status).toBe(201);
+
+    const realRoom = (env as unknown as Env).ROOM;
+    let sawAppendToc = false;
+    const skewEnv = {
+      ...(env as unknown as Env),
+      ROOM: {
+        idFromName: (name: string) => realRoom.idFromName(name),
+        idFromString: (id: string) =>
+          (realRoom as unknown as { idFromString(id: string): DurableObjectId }).idFromString(id),
+        get: (id: DurableObjectId) => {
+          const stub = realRoom.get(id);
+          return {
+            fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+              const url =
+                typeof input === 'string'
+                  ? input
+                  : input instanceof URL
+                    ? input.toString()
+                    : input.url;
+              if (url.includes('/_do/import-append-toc')) {
+                sawAppendToc = true;
+                return new Response('Not implemented', { status: 501 });
+              }
+              return stub.fetch(input as Request, init);
+            },
+          } as unknown as DurableObjectStub;
+        },
+      } as unknown as DurableObjectNamespace,
+    } as Env;
+
+    const csv = new TextEncoder().encode('A,B\n1,2\n');
+    const res = await requestWithEnv(skewEnv, 'POST', `/_/=${room}/csv`, csv);
+    expect(sawAppendToc).toBe(true);
+    expect(res.status).toBe(503);
+    expect(res.headers.get('Retry-After')).toBe('5');
+    expect(res.headers.get('Content-Type') ?? '').toMatch(/text\/plain/);
+    const body = await res.text();
+    expect(body).toContain('briefly unavailable');
+    expect(body).toContain('retry');
+    expect(body.toLowerCase()).not.toContain('not implemented');
+
+    // No third child was minted; TOC still only the two seeded sheets.
+    const ghost = await request('GET', `/_/${room}.3`);
+    expect(ghost.status).toBe(404);
+    const toc = (await (await request('GET', `/_/${room}/csv.json`)).json()) as string[][];
+    expect(toc).toHaveLength(3);
+    expect(toc[0]).toEqual(['#url', '#title']);
+    expect(toc[1]).toEqual([`/${room}.1`, 'First']);
+    expect(toc[2]).toEqual([`/${room}.2`, 'Second']);
+  });
+
   it('rejects append and replace on private multi-sheet rooms for every format', async () => {
     const base = `mpriv-${Math.random().toString(36).slice(2, 8)}`;
     const initRes = await doFetch(

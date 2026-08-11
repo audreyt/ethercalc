@@ -51,6 +51,10 @@ import {
 const TEXT_CT = 'text/plain; charset=utf-8';
 const PRIVATE_IMPORT_MESSAGE =
   'Multi-sheet import is unavailable for private rooms because new sub-sheets would be public.';
+/** Returned when the parent RoomDO lacks `/_do/import-append-toc` (old isolate). */
+export const IMPORT_APPEND_DO_SKEW_MESSAGE =
+  'Import is briefly unavailable while the server finishes updating. Please retry in a moment.';
+
 
 /**
  * Mirror a DO 401/403 auth verdict to the client verbatim (status +
@@ -254,6 +258,18 @@ async function appendWorkbook(
     return new Response(await allocRes.text(), {
       status: 413,
       headers: { 'Content-Type': TEXT_CT },
+    });
+  }
+  // Old RoomDO isolates answer unknown /_do/* with bare 501. During a Worker/DO
+  // version skew window that must not surface as "Not implemented" — map it to a
+  // retryable 503 with operator-facing copy the multi client already alerts.
+  if (allocRes.status === 501) {
+    return new Response(IMPORT_APPEND_DO_SKEW_MESSAGE, {
+      status: 503,
+      headers: {
+        'Content-Type': TEXT_CT,
+        'Retry-After': '5',
+      },
     });
   }
   if (allocRes.status >= 300) {
