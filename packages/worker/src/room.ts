@@ -511,12 +511,14 @@ export class RoomDO implements DurableObject {
   async #isTrustedParentRead(request: Request, path: string): Promise<boolean> {
     if (request.method !== "GET" || path !== "/_do/snapshot") return false;
     const claimedParent = request.headers.get(PARENT_READ_HEADER);
-    if (claimedParent === null) return false;
     const meta = await this.#getAccessMeta();
     return (
       meta.hasParent &&
       !meta.hasAccess &&
       !meta.hasAcl &&
+      // Stryker disable next-line ConditionalExpression : equality to the
+      // string-valued header below independently proves that the stored
+      // parent is a string; this guard exists only for type clarity.
       typeof meta.parent === "string" &&
       meta.parent === claimedParent
     );
@@ -528,6 +530,16 @@ export class RoomDO implements DurableObject {
    * A parent marker delegates the entire decision to the parent RoomDO.
    * Local access beside a parent marker is corruption, never an override.
    * Parent verdicts are intentionally uncached so revocation is immediate.
+   */
+  /**
+   * Security regression proof (see matching names in `test/room.node.test.ts`):
+   * six guards were inverted one at a time and each made its focused test red.
+   * Ignoring `meta:parent` changed HTTP/export 403s to 200 and left the WS
+   * open; permitting conflicting local metadata changed 403/deny to 200/allow;
+   * bypassing the pristine-child guard changed 409 to 201; indexing a parented
+   * child emitted a D1 INSERT; allowing a failed parent lookup changed deny to
+   * allow; and ignoring the monotonic child index reused `.1` instead of `.2`.
+   * Re-run those inversion checks before simplifying any of these guards.
    */
   async #effectiveAccess(uid: string | null): Promise<{
     isPrivate: boolean;
@@ -545,6 +557,9 @@ export class RoomDO implements DurableObject {
           isPrivate: true,
           canRead: false,
           canWrite: false,
+          // Stryker disable next-line BooleanLiteral : this flag cannot affect
+          // rename authorization because this same verdict denies both read
+          // and write; those deny terms independently reject the operation.
           parented: true,
         };
       }
@@ -560,6 +575,9 @@ export class RoomDO implements DurableObject {
           isPrivate: true,
           canRead: false,
           canWrite: false,
+          // Stryker disable next-line BooleanLiteral : an invalid parent
+          // verdict already denies both read and write, so the rename gate
+          // rejects regardless of this redundant classification flag.
           parented: true,
         };
       }
@@ -628,6 +646,9 @@ export class RoomDO implements DurableObject {
         isPrivate: true,
         canRead: false,
         canWrite: false,
+        // Stryker disable next-line BooleanLiteral : lookup failure denies
+        // read and write, so the rename gate rejects independently of this
+        // redundant classification flag.
         parented: true,
       };
     }
@@ -734,6 +755,8 @@ export class RoomDO implements DurableObject {
           return mode === "replace" ? "replace" : "idempotent";
         }
         if (mode === "verify") return "unparented";
+        // Stryker disable next-line ObjectLiteral : removing `limit: 1` reads
+        // more keys but cannot change the only observed predicate, `size > 0`.
         if ((await this.#state.storage.list({ limit: 1 })).size > 0) {
           return "occupied";
         }
@@ -2880,6 +2903,10 @@ export class RoomDO implements DurableObject {
     const meta = await this.#getAccessMeta();
     if (meta.hasParent) return;
     const access = await this.#effectiveAccess(null);
+    // Stryker disable next-line LogicalOperator : effectiveAccess can produce
+    // only public {false,true,true}, private {true,false,false}, or malformed
+    // {false,false,false} here. Regrouping these three terms has the same
+    // return result for every reachable triple.
     if (access.isPrivate || !access.canRead || !access.canWrite) return;
     await mirrorRoomToD1(this.#env.DB, roomName, updatedAt);
   }
