@@ -12,6 +12,7 @@ import type { Env } from '../src/env.ts';
 import { computeAuth } from '../src/lib/auth.ts';
 import { AUDIT_HISTORY_KEEP, CHAT_HISTORY_KEEP } from '../src/lib/seq-store.ts';
 import { SNAPSHOT_CHUNK_BYTES } from '../src/lib/snapshot-storage.ts';
+import { MAX_MULTI_SHEETS } from '@ethercalc/shared';
 import { RoomDO } from '../src/room.ts';
 
 /**
@@ -1744,6 +1745,9 @@ it('POST /_do/import-append-toc rejects over-cap title counts and missing room n
         }),
       );
       expect(res.status).toBe(413);
+      expect(await res.text()).toBe(
+        `workbook exceeds ${MAX_MULTI_SHEETS} sheets (${MAX_MULTI_SHEETS + 1})`,
+      );
     } finally {
       mockExportCSV.mockReset();
       mockExportCSV.mockImplementation(() => 'a,b\n1,2\n');
@@ -1846,6 +1850,32 @@ it('POST /_do/import-append-toc rejects over-cap title counts and missing room n
     }
   });
 
+  it('POST /_do/import-append-toc escapes quotes in TOC paste CSV bodies', async () => {
+    mockExportCSV.mockReturnValueOnce('#url,#title\n');
+    mockSave.mockReturnValueOnce('TOC');
+    mockExec.mockClear();
+    try {
+      const res = await room.fetch(
+        new Request('https://do/_do/import-append-toc?name=quote', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ titles: ['He said "hi"'] }),
+        }),
+      );
+      expect(res.status).toBe(200);
+      const cmd = String(mockExec.mock.calls[0]?.[0]);
+      // CSV quoting doubles embedded quotes — empty-string replace mutants break this.
+      expect(cmd).toContain('""hi""');
+      expect(cmd).toContain('/quote.1');
+      expect(cmd).toContain('paste A2 all');
+    } finally {
+      mockSave.mockReset();
+      mockSave.mockImplementation(() => 'SNAP');
+      mockExportCSV.mockReset();
+      mockExportCSV.mockImplementation(() => 'a,b\n1,2\n');
+    }
+  });
+
   it('POST /_do/import-append-toc coerces non-string title entries to blank then SheetN', async () => {
     mockExportCSV.mockReturnValueOnce('#url,#title\n');
     mockSave.mockReturnValueOnce('TOC');
@@ -1860,6 +1890,36 @@ it('POST /_do/import-append-toc rejects over-cap title counts and missing room n
       expect(res.status).toBe(200);
       const json = (await res.json()) as { sheets: Array<{ title: string }> };
       expect(json.sheets.map((s) => s.title)).toEqual(['Sheet1', 'Sheet2']);
+    } finally {
+      mockSave.mockReset();
+      mockSave.mockImplementation(() => 'SNAP');
+      mockExportCSV.mockReset();
+      mockExportCSV.mockImplementation(() => 'a,b\n1,2\n');
+    }
+  });
+
+  it('POST /_do/import-append-toc broadcasts execute frames to connected peers', async () => {
+    const peerLog: FakeWsLog = { sent: [] };
+    const peer = makeFakeWs(peerLog, { legacy: false });
+    const { state } = makeWsAwareState('import-bcast', record, [peer]);
+    const bcastRoom = new RoomDO(state, makeEnv());
+    mockExportCSV.mockReturnValueOnce('#url,#title\n');
+    mockSave.mockReturnValueOnce('TOC');
+    try {
+      const res = await bcastRoom.fetch(
+        new Request('https://do/_do/import-append-toc?name=import-bcast', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ titles: ['B'] }),
+        }),
+      );
+      expect(res.status).toBe(200);
+      expect(peerLog.sent.length).toBeGreaterThan(0);
+      const payload = peerLog.sent.map(String).join('\n');
+      // Pin broadcast shape (kills empty type / user mutants and {} object literal).
+      expect(payload).toContain('execute');
+      expect(payload).toContain('import-bcast');
+      expect(payload).toContain('paste A2 all');
     } finally {
       mockSave.mockReset();
       mockSave.mockImplementation(() => 'SNAP');
@@ -1883,9 +1943,13 @@ it('POST /_do/import-append-toc rejects over-cap title counts and missing room n
         }),
       );
       expect(res.status).toBe(200);
-      // New audit at seq KEEP; old seq 0 key is deleted (KEEP - KEEP).
+      // New audit at seq KEEP; condition is >= KEEP (kills > mutant).
       expect(record.map.has(auditKey(AUDIT_HISTORY_KEEP))).toBe(true);
+      expect(record.map.get(auditKey(AUDIT_HISTORY_KEEP))).toBeTruthy();
+      // delete(auditKey(KEEP - KEEP)) => auditKey(0)
       expect(record.map.has(auditKey(0))).toBe(false);
+      // Must not delete KEEP+KEEP (kills + arithmetic mutant)
+      expect(record.map.has(auditKey(AUDIT_HISTORY_KEEP + AUDIT_HISTORY_KEEP))).toBe(false);
     } finally {
       mockSave.mockReset();
       mockSave.mockImplementation(() => 'SNAP');

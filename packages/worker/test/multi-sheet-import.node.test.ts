@@ -510,7 +510,10 @@ describe('multi-sheet-import mutation pins', () => {
       getMaxSubsheetIndex(['/room.9', '/room.10', '/room.2', '/room.10a', '/room.not', '/other.99'], 'room'),
     ).toBe(10);
     // Prefix gate: foreign rooms never contribute even with large numeric suffixes.
-    expect(getMaxSubsheetIndex(['/other.999', '/roomX.8', 'room.7'], 'room')).toBe(0);
+    // Critical: `/b.100` with room `a` must stay 0 — if startsWith is removed,
+    // slice(prefix.length) yields `100` and max becomes 100.
+    expect(getMaxSubsheetIndex(['/other.999', '/roomX.8', 'room.7', '/b.100'], 'a')).toBe(0);
+    expect(getMaxSubsheetIndex(['/a.3', '/b.100'], 'a')).toBe(3);
     // Non-numeric / empty suffix ignored.
     expect(getMaxSubsheetIndex(['/room.', '/room.abc', '/room.1b2'], 'room')).toBe(0);
     // Equality: equal max is not increased (kills >= mutant).
@@ -589,6 +592,13 @@ describe('multi-sheet-import mutation pins', () => {
     ).materializeSaves('r', 2)[0]!;
     expect(sc).toContain("'r.2'!A1");
     expect(sc).not.toContain('SheetX!');
+  });
+
+  it("mutation pins format 'XLSX' lowercasing on append import", () => {
+    const bytes = workbookBytes([{ name: 'S', aoa: [[1]] }]);
+    const res = buildMultiSheetAppendImport(bytes, 'room', [], [], { format: 'XLSX' });
+    expect(res.subSheets).toHaveLength(1);
+    expect(res.subSheets[0]?.subroom).toBe('room.1');
   });
 
   it('mutation pins for buildMultiSheetAppendImport sheet-cap arithmetic', () => {
