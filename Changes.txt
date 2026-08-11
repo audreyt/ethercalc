@@ -19,10 +19,20 @@ Security
   sub-sheets of a private room were anonymously readable. RoomDO derives
   each child authorization verdict from the parent, rejects local-ACL
   conflicts and occupied-room capture, and keeps workbook-internal
-  children out of the public rooms index. Operator backfill of pre-fix
-  unmarked children has not been run — those rooms stay public until
-  processed, and private parents are absent from the rooms index so any
-  inventory is incomplete.
+  children out of the public rooms index. Pre-fix unmarked children remain
+  world-readable. Fleet remediation is not currently invokable:
+  `/_do/backfill-children` and `/_do/set-parent` exist only on the internal
+  Durable Object dispatch surface (`packages/worker/src/room.ts:371,374`)
+  with no Worker route proxying them; `ETHERCALC_MIGRATE_TOKEN` is unset in
+  production so operator-gated paths 404 (`packages/worker/src/lib/migrate-auth.ts:40`);
+  and `RoomDO.#postBackfillChildren` enforces `local.acl.owner === uid`
+  (`packages/worker/src/room.ts:916-928`), preventing operator sweeps of user
+  rooms. Executing a remediation requires new code and a deploy (a public Worker
+  route, a provisioned token, and a policy choice between owner-only vs. operator
+  sweeps), not just running a procedure. New children are safe on creation, and
+  pristine pre-fix children are marked on the next TOC write
+  (`packages/worker/src/routes/multi-import.ts:415`), so the exposed set is
+  bounded and shrinking, but occupied pre-fix children persist.
 - Multi-sheet append import maps a mixed-version RoomDO `501` on
   `/_do/import-append-toc` to a retryable `503` with clear copy (Worker/DO
   skew during deploy), instead of surfacing bare "Not implemented".

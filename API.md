@@ -272,10 +272,18 @@ Private parent rooms are supported. Each imported sub-sheet is initialized as
 a workbook child with immutable parent delegation; it does not receive an
 independent ACL. Reads, writes, exports, formulas, and WebSocket mutations are
 authorized against the parent room on every request. A pre-existing unmarked
-room is never adopted as a child. Operator backfill of children created before
-this fix has not been run: those rooms stay world-readable until processed,
-and private parents are absent from the rooms index so any inventory is
-incomplete.
+occupied room is never auto-adopted as a child. Pre-fix unmarked children
+remain world-readable, and remediation cannot be run in production as currently
+shipped: `/_do/backfill-children` and `/_do/set-parent` exist only on the
+internal Durable Object dispatch surface (`packages/worker/src/room.ts:371,374`)
+with no Worker route proxying them; `ETHERCALC_MIGRATE_TOKEN` is unset in
+production so operator-gated paths return 404 (`packages/worker/src/lib/migrate-auth.ts:40`);
+and `#postBackfillChildren` requires `local.acl.owner === uid`
+(`packages/worker/src/room.ts:916-928`), so an operator cannot remediate rooms
+they do not own. Remediation requires shipping a new Worker route, provisioning
+the token secret, and deciding whether to keep owner-only auth or permit operator
+overrides. Meanwhile, new children are safe on creation, and pristine pre-fix
+children are adopted on the next TOC write (`packages/worker/src/routes/multi-import.ts:415`).
 
 Multi-sheet imports use idempotent parent-side reservations and monotonic child
 indices. A retry with the same request identifier reuses its reservation;
