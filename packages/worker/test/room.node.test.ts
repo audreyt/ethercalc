@@ -1842,6 +1842,31 @@ it('POST /_do/import-append-toc rejects over-cap title counts and missing room n
       const json = (await res.json()) as { firstIndex: number; sheets: Array<{ title: string }> };
       expect(json.firstIndex).toBe(1);
       expect(json.sheets[0]?.title).toBe('Added');
+      // existing title cell was missing → '' (not a sentinel string)
+      expect(json.sheets[0]?.title).not.toContain('Stryker');
+    } finally {
+      mockSave.mockReset();
+      mockSave.mockImplementation(() => 'SNAP');
+      mockExportCSV.mockReset();
+      mockExportCSV.mockImplementation(() => 'a,b\n1,2\n');
+    }
+  });
+
+  it('POST /_do/import-append-toc whitespace-only title becomes SheetN', async () => {
+    mockExportCSV.mockReturnValueOnce('#url,#title\n');
+    mockSave.mockReturnValueOnce('TOC');
+    try {
+      const res = await room.fetch(
+        new Request('https://do/_do/import-append-toc?name=ws', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ titles: ['   '] }),
+        }),
+      );
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as { sheets: Array<{ title: string }> };
+      // .trim() is required — without it title stays spaces.
+      expect(json.sheets[0]?.title).toBe('Sheet1');
     } finally {
       mockSave.mockReset();
       mockSave.mockImplementation(() => 'SNAP');
@@ -1920,6 +1945,8 @@ it('POST /_do/import-append-toc rejects over-cap title counts and missing room n
       expect(payload).toContain('execute');
       expect(payload).toContain('import-bcast');
       expect(payload).toContain('paste A2 all');
+      // Empty user field must be present (kills user:"Stryker was here!").
+      expect(payload).toMatch(/"user":""/);
     } finally {
       mockSave.mockReset();
       mockSave.mockImplementation(() => 'SNAP');

@@ -701,3 +701,37 @@ describe('multi-sheet-import mutation pins (workbook read + cells)', () => {
     expect(literalTabAsCsv).not.toBe(tabOnly);
   });
 });
+
+
+describe('multi-sheet-import final mutation kills', () => {
+  it('kills SheetNames non-array fallback and cell-count accumulation', () => {
+    const noNames = (() => ({ SheetNames: null, Sheets: {} })) as unknown as typeof XLSX.read;
+    const empty = buildMultiSheetImport(new Uint8Array(), 'room', noNames);
+    expect(empty.subSheets).toHaveLength(0);
+    // toc still has header only
+    expect(empty.tocSave.length).toBeGreaterThan(0);
+
+    // Two sheets × (MAX_IMPORT_CELLS/2 + 1) cells => sum exceeds limit only if += works.
+    const half = Math.floor(MAX_IMPORT_CELLS / 2) + 1;
+    const mkSheet = () => {
+      const ws: Record<string, unknown> = { '!ref': 'A1' };
+      for (let i = 0; i < half; i++) ws[`A${i + 1}`] = { t: 'n', v: i };
+      return ws;
+    };
+    const readOver = (() => ({
+      SheetNames: ['A', 'B'],
+      Sheets: { A: mkSheet(), B: mkSheet() },
+    })) as unknown as typeof XLSX.read;
+    expect(() => prepareAppendImportPlan(new Uint8Array(), 'xlsx', undefined, readOver)).toThrow(
+      /cells|import/i,
+    );
+  });
+
+  it('kills foreign-prefix max-index when suffix is purely numeric after wrong room', () => {
+    // room "ab": link "/abc.5" starts with "/ab." ? "/abc.5".startsWith("/ab.") is true!
+    // Use room "room" and "/roomy.12" which starts with "/room" but not "/room."
+    expect(getMaxSubsheetIndex(['/roomy.12', '/room.4'], 'room')).toBe(4);
+    // If startsWith(prefix) is forced true for all, "/zz.7" would yield max 7 for room "room".
+    expect(getMaxSubsheetIndex(['/zz.7'], 'room')).toBe(0);
+  });
+});
