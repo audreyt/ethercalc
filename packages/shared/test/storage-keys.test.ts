@@ -23,6 +23,7 @@ describe('STORAGE_KEYS', () => {
       metaAccess: 'meta:access',
       metaAcl: 'meta:acl',
       metaParent: 'meta:parent',
+      metaNextChildIndex: 'meta:next_child_index',
       metaGroup: 'meta:group',
       logPrefix: 'log:',
       auditPrefix: 'audit:',

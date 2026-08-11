@@ -423,7 +423,7 @@ function makeEnvWithParentAccess(
   return withSessionAuth({
     ...env,
     ROOM: makeRoomNamespace(async (request) => {
-      requests.push(request.clone());
+      requests.push(request.clone() as unknown as Request);
       return parentFetch(request);
     }, options.parentIds),
   });
