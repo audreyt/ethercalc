@@ -272,7 +272,10 @@ Private parent rooms are supported. Each imported sub-sheet is initialized as
 a workbook child with immutable parent delegation; it does not receive an
 independent ACL. Reads, writes, exports, formulas, and WebSocket mutations are
 authorized against the parent room on every request. A pre-existing unmarked
-room is never adopted as a child.
+room is never adopted as a child. Operator backfill of children created before
+this fix has not been run: those rooms stay world-readable until processed,
+and private parents are absent from the rooms index so any inventory is
+incomplete.
 
 Multi-sheet imports use idempotent parent-side reservations and monotonic child
 indices. A retry with the same request identifier reuses its reservation;

@@ -15,9 +15,14 @@ Unreleased
 
 Security
 - Private multi-sheet workbooks now initialize children with immutable
-  `meta:parent` delegation. RoomDO derives each child authorization verdict
-  from the parent, rejects local-ACL conflicts and occupied-room capture, and
-  keeps workbook-internal children out of the public rooms index.
+  `meta:parent` delegation, closing a confidentiality exposure where
+  sub-sheets of a private room were anonymously readable. RoomDO derives
+  each child authorization verdict from the parent, rejects local-ACL
+  conflicts and occupied-room capture, and keeps workbook-internal
+  children out of the public rooms index. Operator backfill of pre-fix
+  unmarked children has not been run — those rooms stay public until
+  processed, and private parents are absent from the rooms index so any
+  inventory is incomplete.
 - Multi-sheet append import maps a mixed-version RoomDO `501` on
   `/_do/import-append-toc` to a retryable `503` with clear copy (Worker/DO
   skew during deploy), instead of surfacing bare "Not implemented".
@@ -49,10 +54,10 @@ Security
   fetching, so a crawler blocked from a URL can never observe its `noindex`
   header and already-indexed rooms would be stranded permanently.
 - Multi-sheet workbook import (replace and append — xlsx/ods/fods and
-  csv/tsv/txt/socialcalc) is unavailable for private rooms: the server
-  refuses with HTTP 409 because freshly created sub-sheets have no ACL and
-  would publish as public. All formats share one guarded server append door;
-  the multi-sheet client no longer PUTs sub-rooms directly.
+  csv/tsv/txt/socialcalc) is re-enabled for private rooms: children are
+  created with immutable `meta:parent` so they inherit the parent's access
+  instead of publishing as public. All formats share one guarded server
+  append door; the multi-sheet client no longer PUTs sub-rooms directly.
 
 Tooling
 - Migrated the repository interface to Vite+ 0.2.4: package operations use
