@@ -2407,6 +2407,40 @@ describe('RoomDO — effective parent access and trusted reads', () => {
     expect(requests).toHaveLength(0);
   });
 
+  it('denies a revoked reader when stale local ACL metadata remains beside the parent marker', async () => {
+    const record: FakeStorageRecord = {
+      map: new Map([
+        [STORAGE_KEYS.metaParent, 'parent'],
+        [STORAGE_KEYS.metaAccess, 'private'],
+        [STORAGE_KEYS.metaAcl, PRIVATE_ACL],
+      ]),
+    };
+    const requests: Request[] = [];
+    const room = new RoomDO(
+      makeState('stale-reader-child', record),
+      makeEnvWithParentAccess(
+        () =>
+          Response.json({
+            isPrivate: true,
+            canRead: false,
+            canWrite: false,
+          }),
+        requests,
+      ),
+    );
+    const response = await room.fetch(
+      new Request('https://do/_do/access?name=stale-reader-child', {
+        headers: { 'X-EC-Uid': 'uid-reader' },
+      }),
+    );
+    expect(await response.json()).toEqual({
+      isPrivate: true,
+      canRead: false,
+      canWrite: false,
+    });
+    expect(requests).toHaveLength(0);
+  });
+
   it('accepts only a marker-matched trusted parent snapshot read', async () => {
     const record: FakeStorageRecord = {
       map: new Map([
