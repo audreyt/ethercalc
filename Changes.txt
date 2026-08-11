@@ -41,6 +41,11 @@ Security
   file deliberately carries no `Disallow` directive — `Disallow` forbids
   fetching, so a crawler blocked from a URL can never observe its `noindex`
   header and already-indexed rooms would be stranded permanently.
+- Multi-sheet workbook import (replace and append — xlsx/ods/fods and
+  csv/tsv/txt/socialcalc) is unavailable for private rooms: the server
+  refuses with HTTP 409 because freshly created sub-sheets have no ACL and
+  would publish as public. All formats share one guarded server append door;
+  the multi-sheet client no longer PUTs sub-rooms directly.
 
 Tooling
 - Migrated the repository interface to Vite+ 0.2.4: package operations use

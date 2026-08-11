@@ -13,6 +13,7 @@ export interface TabBarProps {
   readonly suffix: string;
   readonly index: string;
   readonly onChange: (idx: number) => void;
+  readonly onRename?: ((idx: number) => void) | undefined;
   readonly firstFocusUsed: boolean;
   readonly onFirstFocus: () => void;
 }
@@ -35,6 +36,7 @@ export const TabBar: FC<TabBarProps> = ({
   suffix,
   index,
   onChange,
+  onRename,
   firstFocusUsed,
   onFirstFocus,
 }) => {
@@ -58,6 +60,10 @@ export const TabBar: FC<TabBarProps> = ({
               value={value}
               className={styles['tabTitle']}
               aria-label={title}
+              onDoubleClick={() => {
+                onChange(i);
+                onRename?.(i);
+              }}
             >
               <span className={styles['tabTitleButton']}>{title}</span>
             </Tabs.Trigger>

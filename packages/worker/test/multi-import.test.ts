@@ -2,7 +2,26 @@ import { env } from 'cloudflare:test';
 import * as XLSX from '@e965/xlsx';
 import { describe, expect, it } from 'vite-plus/test';
 import type { Env } from '../src/env.ts';
+import { doFetch } from '../src/lib/do-dispatch.ts';
 import worker from '../src/index.ts';
+const AUTH_UID = 'uid-passkey-1';
+const AUTH_EXP = Number.MAX_SAFE_INTEGER;
+const AUTH_COOKIE = '__Host-ec_sess=tok-valid';
+
+function withAuth(e: Env, uid: string = AUTH_UID): Env {
+  return {
+    ...e,
+    ETHERCALC_AUTH: '1',
+    ETHERCALC_ORIGIN: 'https://example.test',
+    AUTH: {
+      idFromName: () => ({}) as DurableObjectId,
+      get: () =>
+        ({
+          fetch: async () => Response.json({ uid, exp: AUTH_EXP }),
+        }) as unknown as DurableObjectStub,
+    } as unknown as DurableObjectNamespace,
+  };
+}
 
 async function request(method: string, path: string, body?: BodyInit | Uint8Array | null): Promise<Response> {
   const req = new Request(`https://example.test${path}`, { method, body: body as unknown as BodyInit | null });
@@ -13,6 +32,35 @@ async function request(method: string, path: string, body?: BodyInit | Uint8Arra
   return worker.fetch(req, env as unknown as Env, ctx);
 }
 
+async function requestWithAuth(method: string, path: string, body?: BodyInit | Uint8Array | null): Promise<Response> {
+  const req = new Request(`https://example.test${path}`, {
+    method,
+    headers: { Cookie: AUTH_COOKIE },
+    body: body as unknown as BodyInit | null,
+  });
+  const ctx = {
+    waitUntil() {},
+    passThroughOnException() {},
+  } satisfies Partial<ExecutionContext> as unknown as ExecutionContext;
+  return worker.fetch(req, withAuth(env as unknown as Env) as never, ctx);
+}
+
+async function requestWithEnv(
+  e: Env,
+  method: string,
+  path: string,
+  body?: BodyInit | Uint8Array | null,
+): Promise<Response> {
+  const req = new Request(`https://example.test${path}`, {
+    method,
+    body: body as unknown as BodyInit | null,
+  });
+  const ctx = {
+    waitUntil() {},
+    passThroughOnException() {},
+  } satisfies Partial<ExecutionContext> as unknown as ExecutionContext;
+  return worker.fetch(req, e as never, ctx);
+}
 /** POST a JSON `{command}` body to the real command route (`POST /_/:room`). */
 async function postCommand(room: string, command: string): Promise<Response> {
   const req = new Request(`https://example.test/_/${room}`, {
@@ -111,6 +159,305 @@ describe('PUT multi-sheet import', () => {
     expect(toc.status).toBe(404);
     const sub1 = await request('GET', `/_/${room}.1`);
     expect(sub1.status).toBe(404);
+  });
+});
+describe('POST multi-sheet append import', () => {
+  it('POST /=:room.xlsx appends worksheets strictly after the current max index and updates TOC', async () => {
+    const room = `mappend-${Math.random().toString(36).slice(2, 8)}`;
+
+    // Initial 2-sheet PUT
+    const putRes = await request('PUT', `/=${room}.xlsx`, twoSheetXlsx());
+    expect(putRes.status).toBe(201);
+
+    // Append 2 sheets via POST
+    const postRes = await request('POST', `/=${room}.xlsx`, twoSheetXlsx());
+    expect(postRes.status).toBe(201);
+
+    // Assert TOC has 4 sheets (.1, .2, .3, .4)
+    const tocJson = await request('GET', `/_/${room}/csv.json`);
+    expect(tocJson.status).toBe(200);
+    const tocGrid = (await tocJson.json()) as string[][];
+    expect(tocGrid).toEqual([
+      ['#url', '#title'],
+      [`/${room}.1`, 'First'],
+      [`/${room}.2`, 'Second'],
+      [`/${room}.3`, 'First_3'],
+      [`/${room}.4`, 'Second_4'],
+    ]);
+
+    // Assert original subrooms .1 and .2 were not overwritten
+    const cells1 = (await (await request('GET', `/_/${room}.1/cells`)).json()) as Record<
+      string,
+      { datavalue?: unknown }
+    >;
+    expect(cells1.A1?.datavalue).toBe('hello');
+
+    // Assert appended subroom .3 exists and has value
+    const cells3 = (await (await request('GET', `/_/${room}.3/cells`)).json()) as Record<
+      string,
+      { datavalue?: unknown }
+    >;
+    expect(cells3.A1?.datavalue).toBe('hello');
+  });
+
+  it('POST /_/:room/ods is accepted too for append', async () => {
+    const room = `mappend-ods-${Math.random().toString(36).slice(2, 8)}`;
+    const postRes = await request('POST', `/_/=${room}/ods`, twoSheetXlsx());
+    expect(postRes.status).toBe(201);
+  });
+
+  it('POST /=:room.xlsx returns 400 when a sheet exceeds SocialCalc ZZ column', async () => {
+    const room = `mappend-overflow-${Math.random().toString(36).slice(2, 8)}`;
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([['ok']]);
+    ws.AAA1 = { t: 's', v: 'too wide' };
+    ws['!ref'] = 'A1:AAA1';
+    XLSX.utils.book_append_sheet(wb, ws, 'TooWide');
+    const bytes = new Uint8Array(XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer);
+
+    const res = await request('POST', `/=${room}.xlsx`, bytes);
+    expect(res.status).toBe(400);
+    expect(await res.text()).toContain('exceeds SocialCalc max ZZ');
+  });
+
+  it('serializes two simultaneous POST appends so both imports keep distinct sheets and TOC rows', async () => {
+    const room = `mconc-${Math.random().toString(36).slice(2, 8)}`;
+    const seed = await request('PUT', `/=${room}.xlsx`, twoSheetXlsx());
+    expect(seed.status).toBe(201);
+
+    // Distinct one-sheet workbooks so snapshot content proves no overwrite.
+    const mk = (name: string, value: string): Uint8Array => {
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(
+        wb,
+        XLSX.utils.aoa_to_sheet([[value]]),
+        name,
+      );
+      return new Uint8Array(
+        XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer,
+      );
+    };
+    const a = mk('Alpha', 'concurrent-A');
+    const b = mk('Beta', 'concurrent-B');
+
+    // Deterministic overlap: wrap the real ROOM binding and hold both
+    // callers at /_do/import-append-toc until both have arrived, then
+    // forward to the same DO stub. A bare Promise.all is not proof of
+    // overlap; this barrier is.
+    const realRoom = (env as unknown as Env).ROOM;
+    let arrivals = 0;
+    let releaseBarrier!: () => void;
+    const bothArrived = new Promise<void>((resolve) => {
+      releaseBarrier = resolve;
+    });
+    let barrierTimedOut = false;
+    const barrierTimeoutMs = 5_000;
+    const barrierOrTimeout = Promise.race([
+      bothArrived,
+      new Promise<void>((resolve) => {
+        setTimeout(() => {
+          barrierTimedOut = true;
+          resolve();
+        }, barrierTimeoutMs);
+      }),
+    ]);
+
+    const barrierEnv = {
+      ...(env as unknown as Env),
+      ROOM: {
+        idFromName: (name: string) => realRoom.idFromName(name),
+        idFromString: (id: string) =>
+          (realRoom as unknown as { idFromString(id: string): DurableObjectId }).idFromString(id),
+        get: (id: DurableObjectId) => {
+          const stub = realRoom.get(id);
+          return {
+            fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+              const url =
+                typeof input === 'string'
+                  ? input
+                  : input instanceof URL
+                    ? input.toString()
+                    : input.url;
+              if (url.includes('/_do/import-append-toc')) {
+                arrivals += 1;
+                if (arrivals >= 2) releaseBarrier();
+                await barrierOrTimeout;
+              }
+              return stub.fetch(input as Request, init);
+            },
+          } as unknown as DurableObjectStub;
+        },
+      } as unknown as DurableObjectNamespace,
+    } as Env;
+
+    const [resA, resB] = await Promise.all([
+      requestWithEnv(barrierEnv, 'POST', `/=${room}.xlsx`, a),
+      requestWithEnv(barrierEnv, 'POST', `/=${room}.xlsx`, b),
+    ]);
+    expect(barrierTimedOut).toBe(false);
+    expect(arrivals).toBe(2);
+    expect(resA.status).toBe(201);
+    expect(resB.status).toBe(201);
+
+    const tocJson = await request('GET', `/_/${room}/csv.json`);
+    expect(tocJson.status).toBe(200);
+    const tocGrid = (await tocJson.json()) as string[][];
+    // Seeded First/Second plus one row from each concurrent import.
+    expect(tocGrid).toHaveLength(5);
+    expect(tocGrid[0]).toEqual(['#url', '#title']);
+    expect(tocGrid[1]).toEqual([`/${room}.1`, 'First']);
+    expect(tocGrid[2]).toEqual([`/${room}.2`, 'Second']);
+
+    const titles = tocGrid.slice(3).map((row) => row[1]);
+    const links = tocGrid.slice(3).map((row) => row[0]);
+    // Both import titles present (uniqueness may suffix _N, so match by prefix).
+    expect(titles.some((title) => typeof title === 'string' && title.startsWith('Alpha'))).toBe(
+      true,
+    );
+    expect(titles.some((title) => typeof title === 'string' && title.startsWith('Beta'))).toBe(
+      true,
+    );
+    // Distinct child links — the race would have made both point at the same id.
+    expect(new Set(links).size).toBe(2);
+    expect(links).toContain(`/${room}.3`);
+    expect(links).toContain(`/${room}.4`);
+
+    // Both child snapshots survived with their own distinct cell values.
+    const cells3 = (await (
+      await request('GET', `/_/${room}.3/cells`)
+    ).json()) as Record<string, { datavalue?: unknown }>;
+    const cells4 = (await (
+      await request('GET', `/_/${room}.4/cells`)
+    ).json()) as Record<string, { datavalue?: unknown }>;
+    const values = new Set([cells3.A1?.datavalue, cells4.A1?.datavalue]);
+    expect(values.has('concurrent-A')).toBe(true);
+    expect(values.has('concurrent-B')).toBe(true);
+  });
+
+  it('rejects append and replace on private multi-sheet rooms for every format', async () => {
+    const base = `mpriv-${Math.random().toString(36).slice(2, 8)}`;
+    const initRes = await doFetch(
+      env as unknown as Env,
+      base,
+      '/_do/init-private',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          snapshot: '# SocialCalc\n',
+          acl: { owner: 'uid-passkey-1', readers: [], writers: [] },
+        }),
+      },
+      { uid: 'uid-passkey-1', exp: Number.MAX_SAFE_INTEGER },
+    );
+    expect(initRes.status).toBe(201);
+
+    const privateMsg =
+      'Multi-sheet import is unavailable for private rooms because new sub-sheets would be public.';
+
+    // Unauthenticated workbook POST is denied before the private-room message.
+    const unauthedPost = await request('POST', `/=${base}.xlsx`, twoSheetXlsx());
+    expect(unauthedPost.status).toBe(403);
+    expect(await unauthedPost.text()).toBe('Forbidden');
+
+    // Authenticated owner: every append/replace format refuses with 409 and creates no child.
+    // (Fresh sub-rooms have no ACL and would otherwise publish as public — the bypass class.)
+    const cases: Array<{ method: 'POST' | 'PUT'; path: string; body: BodyInit | Uint8Array }> = [
+      { method: 'POST', path: `/=${base}.xlsx`, body: twoSheetXlsx() },
+      { method: 'PUT', path: `/=${base}.xlsx`, body: twoSheetXlsx() },
+      { method: 'POST', path: `/=${base}.csv`, body: 'secret,value\n1,2' },
+      { method: 'POST', path: `/=${base}.tsv`, body: 'secret\tvalue\n1\t2' },
+      { method: 'POST', path: `/=${base}.txt`, body: 'secret,value\n1,2' },
+      {
+        method: 'POST',
+        path: `/=${base}.socialcalc`,
+        body: 'cell:A1:t:leaked\n',
+      },
+      { method: 'POST', path: `/_/=${base}/csv?title=Leak`, body: 'a,b\n1,2' },
+    ];
+
+    for (const c of cases) {
+      const res = await requestWithAuth(c.method, c.path, c.body);
+      expect(res.status).toBe(409);
+      expect(await res.text()).toBe(privateMsg);
+    }
+
+    // No imported subroom exists after refusal. Policy forbids private multi-sheet import
+    // rather than minting ACL-inheriting children, so there is no child that could answer
+    // 401/403 — a regression that published a public child would yield 200 here instead.
+    const subRes = await request('GET', `/_/${base}.1`);
+    expect(subRes.status).toBe(404);
+    expect(subRes.status).not.toBe(200);
+  });
+
+  it('POST text formats append one sheet on a public parent and keep it world-readable', async () => {
+    const room = `mtext-${Math.random().toString(36).slice(2, 8)}`;
+    const seed = await request('PUT', `/=${room}.xlsx`, twoSheetXlsx());
+    expect(seed.status).toBe(201);
+
+    const csvPost = await request(
+      'POST',
+      `/_/=${room}/csv?title=CSVData`,
+      'name,value\ncafe,42',
+    );
+    expect(csvPost.status).toBe(201);
+
+    const tsvPost = await request('POST', `/=${room}.tsv?title=TSVData`, 'a\tb\n1\t2');
+    expect(tsvPost.status).toBe(201);
+
+    const txtPost = await request('POST', `/=${room}.txt?title=TXTData`, 'x,y\n3,4');
+    expect(txtPost.status).toBe(201);
+
+    const scPost = await request(
+      'POST',
+      `/=${room}.socialcalc?title=SCData`,
+      'cell:A1:t:hello-sc\n',
+    );
+    expect(scPost.status).toBe(201);
+
+    const tocJson = await request('GET', `/_/${room}/csv.json`);
+    expect(tocJson.status).toBe(200);
+    const tocGrid = (await tocJson.json()) as string[][];
+    expect(tocGrid).toEqual([
+      ['#url', '#title'],
+      [`/${room}.1`, 'First'],
+      [`/${room}.2`, 'Second'],
+      [`/${room}.3`, 'CSVData'],
+      [`/${room}.4`, 'TSVData'],
+      [`/${room}.5`, 'TXTData'],
+      [`/${room}.6`, 'SCData'],
+    ]);
+
+    // Unauthenticated direct GET of imported subrooms succeeds on a public parent
+    // (proves the fix is not a blanket deny). Owner path is the same public GET here.
+    const csvGet = await request('GET', `/_/${room}.3`);
+    expect(csvGet.status).toBe(200);
+    expect(await csvGet.text()).toMatch(/cafe|42/);
+
+    const scGet = await request('GET', `/_/${room}.6`);
+    expect(scGet.status).toBe(200);
+    expect(await scGet.text()).toContain('hello-sc');
+
+    const cells = (await (
+      await request('GET', `/_/${room}.3/cells`)
+    ).json()) as Record<string, { datavalue?: unknown }>;
+    // SheetJS/csv path stores values; accept either string cells from SocialCalc save.
+    expect(cells.A1?.datavalue === 'name' || cells.A1?.datavalue === 'cafe' || cells.A2?.datavalue === 'cafe').toBe(
+      true,
+    );
+  });
+
+  it('rejects an oversized text append body before parsing', async () => {
+    const req = new Request('https://example.test/=oversized.csv', {
+      method: 'POST',
+      headers: { 'Content-Length': String(25 * 1024 * 1024 + 1) },
+      body: 'x',
+    });
+    const ctx = {
+      waitUntil() {},
+      passThroughOnException() {},
+    } satisfies Partial<ExecutionContext> as unknown as ExecutionContext;
+    const response = await worker.fetch(req, env as unknown as Env, ctx);
+    expect(response.status).toBe(413);
   });
 });
 

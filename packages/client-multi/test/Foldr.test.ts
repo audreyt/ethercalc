@@ -419,6 +419,42 @@ describe('HackFoldr', () => {
       expect(f.rows).toEqual([]);
     });
 
+  describe('pushChecked()', () => {
+    it('mounts the row only after an accepted TOC POST', async () => {
+      const { fetchImpl } = makeFetch([
+        { json: [['#', '#'], ['/a', 'A']] },
+        { ok: true, json: { command: [0, 'paste A8 all'] } },
+      ]);
+      const f = new HackFoldr('http://x', { fetchImpl });
+      await f.fetch('r');
+
+      await expect(f.pushChecked({ link: '/r.2', title: 'Imported', row: 0 })).resolves.toBe(true);
+      expect(f.rows[1]).toEqual({ link: '/r.2', title: 'Imported', row: 8 });
+    });
+
+    it('returns false and leaves rows unchanged when the TOC POST is rejected', async () => {
+      const { fetchImpl } = makeFetch([
+        { json: [['#', '#'], ['/a', 'A']] },
+        { ok: false },
+      ]);
+      const f = new HackFoldr('http://x', { fetchImpl });
+      await f.fetch('r');
+
+      await expect(f.pushChecked({ link: '/r.2', title: 'Imported', row: 0 })).resolves.toBe(false);
+      expect(f.rows).toEqual([{ link: '/a', title: 'A', row: 2 }]);
+    });
+
+    it('rejects unsafe links without sending a request', async () => {
+      const { fetchImpl, calls } = makeFetch([]);
+      const f = new HackFoldr('http://x', { fetchImpl });
+
+      await expect(
+        f.pushChecked({ link: 'https://evil.example', title: 'Imported', row: 0 }),
+      ).resolves.toBe(false);
+      expect(calls).toHaveLength(0);
+    });
+  });
+
   describe('deleteAt()', () => {
     it('sends a multi-cascade empty command and removes the row', async () => {
       const { fetchImpl, calls } = makeFetch([

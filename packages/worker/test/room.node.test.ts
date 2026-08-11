@@ -10,8 +10,9 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { Env } from '../src/env.ts';
 import { computeAuth } from '../src/lib/auth.ts';
-import { CHAT_HISTORY_KEEP } from '../src/lib/seq-store.ts';
+import { AUDIT_HISTORY_KEEP, CHAT_HISTORY_KEEP } from '../src/lib/seq-store.ts';
 import { SNAPSHOT_CHUNK_BYTES } from '../src/lib/snapshot-storage.ts';
+import { MAX_MULTI_SHEETS } from '@ethercalc/shared';
 import { RoomDO } from '../src/room.ts';
 
 /**
@@ -391,6 +392,20 @@ vi.mock('@ethercalc/socialcalc-headless', () => ({
     createSheetHTML: () => mockCreateSheetHTML(),
   }),
 }));
+
+vi.mock('../src/lib/xlsx-import.ts', () => ({
+  workbookToLoadClipboardCommand: (bytes: Uint8Array) => {
+    const g = globalThis as {
+      __loadClipboardForceNull?: boolean;
+      __loadClipboardHuge?: boolean;
+    };
+    if (g.__loadClipboardForceNull) return null;
+    if (g.__loadClipboardHuge) return `set A1 text t ${'x'.repeat(200_000)}`;
+    const text = new TextDecoder().decode(bytes);
+    return `loadclipboard ${text}`;
+  },
+}));
+
 
 describe('RoomDO (unit, direct construction)', () => {
   let record: FakeStorageRecord;
@@ -1610,6 +1625,385 @@ describe('RoomDO (unit, direct construction)', () => {
     const res = await room.fetch(new Request(`https://do${path}`, { method }));
     expect(res.status).toBe(501);
   });
+
+  it('POST /_do/import-append-toc refuses private parents with 409 before mutating TOC', async () => {
+    markPrivate(record);
+    mockExportCSV.mockClear();
+    mockExec.mockClear();
+    const res = await room.fetch(
+      new Request('https://do/_do/import-append-toc?name=private-parent', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-EC-Uid': 'uid-owner',
+        },
+        body: JSON.stringify({ titles: ['Secret'] }),
+      }),
+    );
+    expect(res.status).toBe(409);
+    expect(await res.text()).toContain('unavailable for private rooms');
+    expect(mockExportCSV).not.toHaveBeenCalled();
+    expect(mockExec).not.toHaveBeenCalled();
+  });
+
+  
+  it('POST /_do/import-append-toc allocates unique child indices and pastes TOC rows', async () => {
+    mockExportCSV.mockReturnValueOnce(
+      '#url,#title\n/import-append-parent.1,First\n/import-append-parent.2,Second\n',
+    );
+    mockSave
+      .mockReturnValueOnce('TOC-AFTER-1')
+      .mockReturnValueOnce('TOC-AFTER-2');
+    mockExec.mockClear();
+    try {
+      const res = await room.fetch(
+        new Request('https://do/_do/import-append-toc?name=import-append-parent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ titles: ['First', 'Alpha'] }),
+        }),
+      );
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({
+        firstIndex: 3,
+        sheets: [
+          {
+            subroom: 'import-append-parent.3',
+            link: '/import-append-parent.3',
+            title: 'First_3',
+          },
+          {
+            subroom: 'import-append-parent.4',
+            link: '/import-append-parent.4',
+            title: 'Alpha',
+          },
+        ],
+      });
+      expect(mockExec).toHaveBeenCalledTimes(2);
+      expect(String(mockExec.mock.calls[0]?.[0])).toContain('paste A4 all');
+      expect(String(mockExec.mock.calls[1]?.[0])).toContain('paste A5 all');
+    } finally {
+      mockSave.mockReset();
+      mockSave.mockImplementation(() => 'SNAP');
+      mockExportCSV.mockReset();
+      mockExportCSV.mockImplementation(() => 'a,b\n1,2\n');
+    }
+  });
+
+it('POST /_do/import-append-toc rejects over-cap title counts and missing room name', async () => {
+    const tooMany = await room.fetch(
+      new Request('https://do/_do/import-append-toc?name=x', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ titles: Array.from({ length: 300 }, (_, i) => `S${i}`) }),
+      }),
+    );
+    expect(tooMany.status).toBe(413);
+
+    const noName = await room.fetch(
+      new Request('https://do/_do/import-append-toc', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ titles: ['A'] }),
+      }),
+    );
+    expect(noName.status).toBe(400);
+    expect(await noName.text()).toBe('room name required');
+  });
+
+  it('POST /_do/import-append-toc returns 500 when clipboard conversion fails', async () => {
+    mockExportCSV.mockReturnValueOnce('#url,#title\n');
+    (globalThis as { __loadClipboardForceNull?: boolean }).__loadClipboardForceNull = true;
+    try {
+      const res = await room.fetch(
+        new Request('https://do/_do/import-append-toc?name=clip-fail', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ titles: ['X'] }),
+        }),
+      );
+      expect(res.status).toBe(500);
+      expect(await res.text()).toBe('import failed');
+    } finally {
+      (globalThis as { __loadClipboardForceNull?: boolean }).__loadClipboardForceNull = false;
+      mockExportCSV.mockReset();
+      mockExportCSV.mockImplementation(() => 'a,b\n1,2\n');
+    }
+  });
+
+  it('POST /_do/import-append-toc rejects when existing TOC plus import exceeds sheet cap', async () => {
+    // One header + 256 data rows already present → adding one more exceeds 256.
+    const rows = ['#url,#title'];
+    for (let i = 1; i <= 256; i++) rows.push(`/cap.${i},T${i}`);
+    mockExportCSV.mockReturnValueOnce(rows.join('\n') + '\n');
+    try {
+      const res = await room.fetch(
+        new Request('https://do/_do/import-append-toc?name=cap', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ titles: ['Extra'] }),
+        }),
+      );
+      expect(res.status).toBe(413);
+      expect(await res.text()).toBe(
+        `workbook exceeds ${MAX_MULTI_SHEETS} sheets (${MAX_MULTI_SHEETS + 1})`,
+      );
+    } finally {
+      mockExportCSV.mockReset();
+      mockExportCSV.mockImplementation(() => 'a,b\n1,2\n');
+    }
+  });
+
+  it('POST /_do/import-append-toc rejects empty titles, non-array titles, and bad JSON', async () => {
+    const empty = await room.fetch(
+      new Request('https://do/_do/import-append-toc?name=x', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ titles: [] }),
+      }),
+    );
+    expect(empty.status).toBe(400);
+    expect(await empty.text()).toBe('titles array required');
+
+    const notArray = await room.fetch(
+      new Request('https://do/_do/import-append-toc?name=x', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ titles: 'nope' }),
+      }),
+    );
+    expect(notArray.status).toBe(400);
+    expect(await notArray.text()).toBe('titles array required');
+
+    const nullBody = await room.fetch(
+      new Request('https://do/_do/import-append-toc?name=x', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: 'null',
+      }),
+    );
+    expect(nullBody.status).toBe(400);
+    expect(await nullBody.text()).toBe('titles array required');
+
+    const badJson = await room.fetch(
+      new Request('https://do/_do/import-append-toc?name=x', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{',
+      }),
+    );
+    expect(badJson.status).toBe(400);
+    expect(await badJson.text()).toBe('invalid JSON body');
+  });
+
+  it('POST /_do/import-append-toc header-only TOC does not invent links', async () => {
+    // grid.length === 1 (header only): must NOT enter the row loop (kills >= 1).
+    mockExportCSV.mockReturnValueOnce('#url,#title\n');
+    mockSave.mockReturnValueOnce('TOC');
+    try {
+      const res = await room.fetch(
+        new Request('https://do/_do/import-append-toc?name=header-only', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ titles: ['Only'] }),
+        }),
+      );
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as {
+        firstIndex: number;
+        sheets: Array<{ subroom: string; link: string }>;
+      };
+      expect(json.firstIndex).toBe(1);
+      expect(json.sheets[0]).toEqual({
+        subroom: 'header-only.1',
+        link: '/header-only.1',
+        title: 'Only',
+      });
+    } finally {
+      mockSave.mockReset();
+      mockSave.mockImplementation(() => 'SNAP');
+      mockExportCSV.mockReset();
+      mockExportCSV.mockImplementation(() => 'a,b\n1,2\n');
+    }
+  });
+
+  it('POST /_do/import-append-toc tolerates single-column existing TOC rows', async () => {
+    mockExportCSV.mockReturnValueOnce('#url,#title\n\n/only-link\n');
+    mockSave.mockReturnValueOnce('TOC');
+    try {
+      const res = await room.fetch(
+        new Request('https://do/_do/import-append-toc?name=onecol', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ titles: ['Added'] }),
+        }),
+      );
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as { firstIndex: number; sheets: Array<{ title: string }> };
+      expect(json.firstIndex).toBe(1);
+      expect(json.sheets[0]?.title).toBe('Added');
+      // existing title cell was missing → '' (not a sentinel string)
+      expect(json.sheets[0]?.title).not.toContain('Stryker');
+    } finally {
+      mockSave.mockReset();
+      mockSave.mockImplementation(() => 'SNAP');
+      mockExportCSV.mockReset();
+      mockExportCSV.mockImplementation(() => 'a,b\n1,2\n');
+    }
+  });
+
+  it('POST /_do/import-append-toc whitespace-only title becomes SheetN', async () => {
+    mockExportCSV.mockReturnValueOnce('#url,#title\n');
+    mockSave.mockReturnValueOnce('TOC');
+    try {
+      const res = await room.fetch(
+        new Request('https://do/_do/import-append-toc?name=ws', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ titles: ['   '] }),
+        }),
+      );
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as { sheets: Array<{ title: string }> };
+      // .trim() is required — without it title stays spaces.
+      expect(json.sheets[0]?.title).toBe('Sheet1');
+    } finally {
+      mockSave.mockReset();
+      mockSave.mockImplementation(() => 'SNAP');
+      mockExportCSV.mockReset();
+      mockExportCSV.mockImplementation(() => 'a,b\n1,2\n');
+    }
+  });
+
+  it('POST /_do/import-append-toc escapes quotes in TOC paste CSV bodies', async () => {
+    mockExportCSV.mockReturnValueOnce('#url,#title\n');
+    mockSave.mockReturnValueOnce('TOC');
+    mockExec.mockClear();
+    try {
+      const res = await room.fetch(
+        new Request('https://do/_do/import-append-toc?name=quote', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ titles: ['He said "hi"'] }),
+        }),
+      );
+      expect(res.status).toBe(200);
+      const cmd = String(mockExec.mock.calls[0]?.[0]);
+      // CSV quoting doubles embedded quotes — empty-string replace mutants break this.
+      expect(cmd).toContain('""hi""');
+      expect(cmd).toContain('/quote.1');
+      expect(cmd).toContain('paste A2 all');
+    } finally {
+      mockSave.mockReset();
+      mockSave.mockImplementation(() => 'SNAP');
+      mockExportCSV.mockReset();
+      mockExportCSV.mockImplementation(() => 'a,b\n1,2\n');
+    }
+  });
+
+  it('POST /_do/import-append-toc coerces non-string title entries to blank then SheetN', async () => {
+    mockExportCSV.mockReturnValueOnce('#url,#title\n');
+    mockSave.mockReturnValueOnce('TOC');
+    try {
+      const res = await room.fetch(
+        new Request('https://do/_do/import-append-toc?name=coerce', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ titles: [123, null] }),
+        }),
+      );
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as { sheets: Array<{ title: string }> };
+      expect(json.sheets.map((s) => s.title)).toEqual(['Sheet1', 'Sheet2']);
+    } finally {
+      mockSave.mockReset();
+      mockSave.mockImplementation(() => 'SNAP');
+      mockExportCSV.mockReset();
+      mockExportCSV.mockImplementation(() => 'a,b\n1,2\n');
+    }
+  });
+
+  it('POST /_do/import-append-toc broadcasts execute frames to connected peers', async () => {
+    const peerLog: FakeWsLog = { sent: [] };
+    const peer = makeFakeWs(peerLog, { legacy: false });
+    const { state } = makeWsAwareState('import-bcast', record, [peer]);
+    const bcastRoom = new RoomDO(state, makeEnv());
+    mockExportCSV.mockReturnValueOnce('#url,#title\n');
+    mockSave.mockReturnValueOnce('TOC');
+    try {
+      const res = await bcastRoom.fetch(
+        new Request('https://do/_do/import-append-toc?name=import-bcast', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ titles: ['B'] }),
+        }),
+      );
+      expect(res.status).toBe(200);
+      expect(peerLog.sent.length).toBeGreaterThan(0);
+      const payload = peerLog.sent.map(String).join('\n');
+      // Pin broadcast shape (kills empty type / user mutants and {} object literal).
+      expect(payload).toContain('execute');
+      expect(payload).toContain('import-bcast');
+      expect(payload).toContain('paste A2 all');
+      // Empty user field must be present (kills user:"Stryker was here!").
+      expect(payload).toMatch(/"user":""/);
+    } finally {
+      mockSave.mockReset();
+      mockSave.mockImplementation(() => 'SNAP');
+      mockExportCSV.mockReset();
+      mockExportCSV.mockImplementation(() => 'a,b\n1,2\n');
+    }
+  });
+
+  it('POST /_do/import-append-toc trims aged DO audit keys once seq reaches the keep window', async () => {
+    // Seed a high audit/log index so the next append is at AUDIT_HISTORY_KEEP.
+    record.map.set(auditKey(AUDIT_HISTORY_KEEP - 1), 'aged-audit');
+    record.map.set(logKey(AUDIT_HISTORY_KEEP - 1), 'aged-log');
+    mockExportCSV.mockReturnValueOnce('#url,#title\n');
+    mockSave.mockReturnValueOnce('TOC');
+    try {
+      const res = await room.fetch(
+        new Request('https://do/_do/import-append-toc?name=trim-audit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ titles: ['X'] }),
+        }),
+      );
+      expect(res.status).toBe(200);
+      // New audit at seq KEEP; condition is >= KEEP (kills > mutant).
+      expect(record.map.has(auditKey(AUDIT_HISTORY_KEEP))).toBe(true);
+      expect(record.map.get(auditKey(AUDIT_HISTORY_KEEP))).toBeTruthy();
+      // delete(auditKey(KEEP - KEEP)) => auditKey(0)
+      expect(record.map.has(auditKey(0))).toBe(false);
+      // Must not delete KEEP+KEEP (kills + arithmetic mutant)
+      expect(record.map.has(auditKey(AUDIT_HISTORY_KEEP + AUDIT_HISTORY_KEEP))).toBe(false);
+    } finally {
+      mockSave.mockReset();
+      mockSave.mockImplementation(() => 'SNAP');
+      mockExportCSV.mockReset();
+      mockExportCSV.mockImplementation(() => 'a,b\n1,2\n');
+    }
+  });
+
+  it('POST /_do/import-append-toc returns 413 when the paste command exceeds sheet limits', async () => {
+    mockExportCSV.mockReturnValueOnce('#url,#title\n');
+    (globalThis as { __loadClipboardHuge?: boolean }).__loadClipboardHuge = true;
+    try {
+      const res = await room.fetch(
+        new Request('https://do/_do/import-append-toc?name=huge-cmd', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ titles: ['X'] }),
+        }),
+      );
+      expect(res.status).toBe(413);
+      expect(await res.text()).toBe('command exceeds sheet limits');
+    } finally {
+      (globalThis as { __loadClipboardHuge?: boolean }).__loadClipboardHuge = false;
+      mockExportCSV.mockReset();
+      mockExportCSV.mockImplementation(() => 'a,b\n1,2\n');
+    }
+  });
 });
 
 /**
@@ -1661,6 +2055,72 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
     expect(auditCall).toBeDefined();
     expect(auditCall?.params[0]).toBe('beta');
     expect(auditCall?.params[3]).toBe('set A1 value n 1');
+  });
+
+  it('POST /_do/import-append-toc mirrors each TOC paste into durable D1 audit_log', async () => {
+    mockExportCSV.mockReturnValueOnce('#url,#title\n/import-audit.1,First\n');
+    mockSave.mockReturnValueOnce('TOC1').mockReturnValueOnce('TOC2');
+    mockExec.mockClear();
+    try {
+      const res = await room.fetch(
+        new Request('https://do/_do/import-append-toc?name=import-audit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ titles: ['Alpha', 'Beta'] }),
+        }),
+      );
+      expect(res.status).toBe(200);
+
+      const roomsCall = d1Calls.find((c) => c.sql.includes('INSERT INTO rooms'));
+      expect(roomsCall).toBeDefined();
+      expect(roomsCall?.params[0]).toBe('import-audit');
+      expect(typeof roomsCall?.params[1]).toBe('number');
+
+      // Batched multi-row INSERT into audit_log (room,seq,ts,body)×N.
+      // Pin every field so the SeqRow literal can't be blanked to {}.
+      const auditCall = d1Calls.find((c) => c.sql.includes('INSERT INTO audit_log'));
+      expect(auditCall).toBeDefined();
+      expect(auditCall?.sql).toContain('(?, ?, ?, ?), (?, ?, ?, ?)');
+      expect(auditCall?.params).toHaveLength(8);
+      expect(auditCall?.params[0]).toBe('import-audit');
+      expect(auditCall?.params[1]).toBe(0);
+      expect(typeof auditCall?.params[2]).toBe('number');
+      expect(String(auditCall?.params[3])).toContain('paste A3 all');
+      expect(String(auditCall?.params[3])).toContain('/import-audit.2');
+      expect(auditCall?.params[4]).toBe('import-audit');
+      expect(auditCall?.params[5]).toBe(1);
+      expect(typeof auditCall?.params[6]).toBe('number');
+      expect(String(auditCall?.params[7])).toContain('paste A4 all');
+      expect(String(auditCall?.params[7])).toContain('/import-audit.3');
+
+      // Rooms-index timestamp must match the last audit row's ts (not a bare Date.now()).
+      expect(roomsCall?.params[1]).toBe(auditCall?.params[6]);
+    } finally {
+      mockSave.mockReset();
+      mockSave.mockImplementation(() => 'SNAP');
+      mockExportCSV.mockReset();
+      mockExportCSV.mockImplementation(() => 'a,b\n1,2\n');
+    }
+  });
+
+  it('POST /_do/import-append-toc does NOT mirror audit without ?name even when DB is bound', async () => {
+    mockExportCSV.mockReturnValueOnce('#url,#title\n');
+    try {
+      // No name → room-name required 400 before any mirror.
+      const res = await room.fetch(
+        new Request('https://do/_do/import-append-toc', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ titles: ['X'] }),
+        }),
+      );
+      expect(res.status).toBe(400);
+      expect(d1Calls.some((c) => c.sql.includes('INSERT INTO audit_log'))).toBe(false);
+      expect(d1Calls.some((c) => c.sql.includes('INSERT INTO rooms'))).toBe(false);
+    } finally {
+      mockExportCSV.mockReset();
+      mockExportCSV.mockImplementation(() => 'a,b\n1,2\n');
+    }
   });
 
   it('does NOT mirror audit when a command arrives without ?name (DB bound)', async () => {

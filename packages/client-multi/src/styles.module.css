@@ -43,7 +43,7 @@
 }
 
 .tabList {
-  right: 200px;
+  right: 260px;
   left: 0;
   padding-left: 8px;
   white-space: nowrap;
@@ -55,13 +55,15 @@
 }
 
 .buttons {
-  width: 200px;
+  box-sizing: border-box;
+  width: 260px;
   right: 0;
   padding-right: 8px;
   text-align: right;
 }
 
-.buttons button {
+.buttons button,
+.importButton {
   font-family: Helvetica, sans-serif;
   background: #eee;
   font-size: 14px;
@@ -70,9 +72,15 @@
   border: 1px solid #eee;
   margin-left: 2px;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  box-sizing: border-box;
+  vertical-align: middle;
 }
 
-.buttons button:hover {
+.buttons button:hover,
+.importButton:hover {
   border: 1px solid #ccc;
   background: #fff;
 }
@@ -155,4 +163,45 @@
   font: inherit;
   color: inherit;
   cursor: pointer;
+}
+/* Responsive adjustments for narrow viewports / Sandstorm iframe grains (issue #843 item 1). */
+@media (max-width: 680px) {
+  .tabList {
+    right: 0;
+    bottom: 37px;
+    height: 32px;
+  }
+  .buttons {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    width: 100%;
+    height: 32px;
+    overflow-x: auto;
+  }
+  .wrapper {
+    bottom: 70px;
+  }
+  .readonly .tabList {
+    bottom: 5px;
+    height: 43px;
+  }
+  .readonly .wrapper {
+    bottom: 51px;
+  }
+  .buttons button,
+  .importButton {
+    flex: 0 0 auto;
+    font-size: 12px;
+    padding: 0 4px;
+    margin-left: 1px;
+  }
+}
+
+@media (max-width: 400px) {
+  .buttons button,
+  .importButton {
+    font-size: 11px;
+    padding: 0 2px;
+  }
 }
