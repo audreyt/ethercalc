@@ -196,6 +196,7 @@
     },
   },
   "overrides": {
+    "emitter": "file:./third-party/emitter",
     "vite": "catalog:",
     "vitest": "catalog:",
   },
@@ -1407,8 +1408,6 @@
 
     "electron-to-chromium": ["electron-to-chromium@1.5.340", "", {}, "sha512-908qahOGocRMinT2nM3ajCEM99H4iPdv84eagPP3FfZy/1ZGeOy2CZYzjhms81ckOPCXPlW7LkY4XpxD8r1DrA=="],
 
-    "emitter": ["emitter@http://github.com/component/emitter/archive/1.0.1.tar.gz", { "dependencies": { "indexof": "0.0.1" } }, "sha512-r/UcFj7JS3lRjv9cgYjgpDNbAsGUdqU64n6ZUOgSF7s1UFBbGu7pUDwKEjHu9NBCy6j2AmmjNW4rijR4De65eA=="],
-
     "emmet": ["emmet@2.4.11", "", { "dependencies": { "@emmetio/abbreviation": "^2.3.3", "@emmetio/css-abbreviation": "^2.1.8" } }, "sha512-23QPJB3moh/U9sT4rQzGgeyyGIrcM+GH5uVYg2C6wZIxAIJq7Ng3QLT79tl8FUwDXhyq9SusfknOrofAKqvgyQ=="],
 
     "emoji-regex": ["emoji-regex@10.6.0", "", {}, "sha512-toUI84YS5YmxW219erniWD0CIVOo46xGKColeNQRgOzDorgBi1v4D71/OFzgD9GO2UGKIv1C3Sp8DAn0+j5w7A=="],
@@ -2612,6 +2611,8 @@
     "socket.io-client/debug": ["debug@0.7.4", "", {}, "sha512-EohAb3+DSHSGx8carOSKJe8G0ayV5/i609OD0J2orCkuyae7SyZSz2aoLmQF2s0Pj5gITDebwPH7GFBlqOUQ1Q=="],
 
     "socket.io-parser/debug": ["debug@0.7.4", "", {}, "sha512-EohAb3+DSHSGx8carOSKJe8G0ayV5/i609OD0J2orCkuyae7SyZSz2aoLmQF2s0Pj5gITDebwPH7GFBlqOUQ1Q=="],
+
+    "socket.io-parser/emitter": ["emitter@file:./third-party/emitter", {}],
 
     "string-width/emoji-regex": ["emoji-regex@8.0.0", "", {}, "sha512-MSjYzcWNOA0ewAHpz0MxpYFvwg6yjy1NG3xteoqz644VCo/RPgnr1/GGt+ic3iJTzQ8Eu3TdM14SawnVUmGE6A=="],
 

@@ -1,0 +1,17 @@
+{
+  "name": "emitter",
+  "description": "Event emitter",
+  "version": "1.0.1",
+  "dependencies": {
+    "indexof": "0.0.1"
+  },
+  "devDependencies": {
+    "mocha": "*",
+    "should": "*"
+  },
+  "component": {
+    "scripts": {
+      "emitter": "index.js"
+    }
+  }
+}

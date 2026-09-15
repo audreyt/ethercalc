@@ -80,7 +80,7 @@
     "prepack": "vp run build:assets",
     "postinstall": "node scripts/install-runtime-deps.js",
     "pretest": "vp run build:assets",
-    "test": "bun test scripts/build-assets.test.ts scripts/vite-workflow.test.ts && vp run --filter './packages/*' test",
+    "test": "bun test scripts/build-assets.test.ts scripts/vite-workflow.test.ts scripts/lockfile-transport.test.ts && vp run --filter './packages/*' test",
     "build:clients": "vp run @ethercalc/client#build && vp run @ethercalc/client-multi#build",
     "build:assets": "vp run build:clients && bun scripts/build-assets.ts",
     "typecheck": "vp run --filter './packages/*' typecheck",
@@ -115,7 +115,8 @@
   },
   "overrides": {
     "vite": "catalog:",
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "emitter": "file:./third-party/emitter"
   },
   "catalog": {
     "@vitest/coverage-istanbul": "4.1.10",
