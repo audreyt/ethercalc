@@ -1801,13 +1801,10 @@ describe('AuthDO', () => {
         }),
       );
       expect(notJson.status).toBe(400);
-      expect(await notJson.text()).toBe('Missing session');
       const nonString = await call('/_auth/refresh-session', 7);
       expect(nonString.status).toBe(400);
-      expect(await nonString.text()).toBe('Missing session');
       const invalid = await call('/_auth/refresh-session', 'not-a-session');
       expect(invalid.status).toBe(401);
-      expect(await invalid.text()).toBe('Invalid session');
       const getRefresh = await auth.fetch(makeRequest('/_auth/refresh-session', { method: 'GET' }));
       expect(getRefresh.status).toBe(404);
     });

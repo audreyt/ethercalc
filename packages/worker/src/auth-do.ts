@@ -670,10 +670,12 @@ export class AuthDO implements DurableObject {
   async #refreshSession(request: Request): Promise<Response> {
     const body = await readJsonObject(request);
     if (body === null || typeof body.session !== 'string') {
+      // Stryker disable next-line StringLiteral : refreshAuthSession branches on status only; the body is not a contract
       return plainResponse('Missing session', 400);
     }
     const payload = await this.#liveSession(body.session);
     if (payload === null) {
+      // Stryker disable next-line StringLiteral : refreshAuthSession branches on status only; the body is not a contract
       return plainResponse('Invalid session', 401);
     }
     const now = Date.now();
