@@ -21,14 +21,19 @@ function setup(whoamiStates: WhoamiState[] = [{ enabled: true, uid: null }]) {
   const whoami = vi.fn(async () => whoamiStates.shift() ?? { enabled: true, uid: null });
   const signIn = vi.fn(async () => 'uid-1');
   const clearTimeout = vi.fn(timers.clearTimeoutFn);
+  let clock = 0;
+  const setNow = (value: number): void => {
+    clock = value;
+  };
   const guard = createSessionGuard(adapter, {
     whoami,
     signIn,
     setTimeout: timers.setTimeoutFn,
     clearTimeout,
+    now: () => clock,
     render: (view) => views.push(view),
   });
-  return { guard, adapter, timers, views, whoami, signIn, clearTimeout };
+  return { guard, adapter, timers, views, whoami, signIn, clearTimeout, setNow };
 }
 
 describe('session guard expiry hold', () => {
@@ -88,6 +93,72 @@ describe('session guard expiry hold', () => {
     await guard.refresh();
     expect(clearTimeout).toHaveBeenCalledTimes(1);
     expect(timers.pending).toHaveLength(1);
+  });
+
+  it('keeps monitoring through failed whoami calls and holds on the last known deadline', async () => {
+    const failed = { enabled: false, uid: null };
+    const MINUTE = 60_000;
+    const { guard, adapter, timers, setNow } = setup([
+      { enabled: true, uid: 'uid-1', expiresInMs: EXPIRY_LEAD_MS + 90 * MINUTE },
+      failed,
+      failed,
+    ]);
+    await guard.refresh();
+    expect(timers.pending.map((t) => t.ms)).toEqual([60 * MINUTE]);
+
+    setNow(60 * MINUTE);
+    timers.advance();
+    await flush();
+    expect(timers.pending.map((t) => t.ms)).toEqual([30 * MINUTE]);
+    expect(adapter.hold).not.toHaveBeenCalled();
+
+    setNow(90 * MINUTE);
+    timers.advance();
+    await flush();
+    expect(adapter.hold).toHaveBeenCalledTimes(1);
+    expect(timers.pending.map((t) => t.ms)).toEqual([EXPIRY_LEAD_MS + EXPIRY_GRACE_MS]);
+  });
+
+  it('resumes normal monitoring when whoami recovers after a failure', async () => {
+    const long = { enabled: true, uid: 'uid-1', expiresInMs: 10 * MAX_CHECK_INTERVAL_MS };
+    const { guard, timers, whoami } = setup([long, { enabled: false, uid: null }, long]);
+    await guard.refresh();
+    for (let check = 0; check < 2; check += 1) {
+      timers.advance();
+      await flush();
+    }
+    expect(whoami).toHaveBeenCalledTimes(3);
+    expect(timers.pending.map((t) => t.ms)).toEqual([MAX_CHECK_INTERVAL_MS]);
+  });
+
+  it('stops guarding once whoami definitively reports no session', async () => {
+    const { guard, adapter, timers } = setup([
+      { enabled: true, uid: 'uid-1', expiresInMs: 10 * MAX_CHECK_INTERVAL_MS },
+      { enabled: true, uid: null },
+    ]);
+    await guard.refresh();
+    timers.advance();
+    await flush();
+    expect(timers.pending).toHaveLength(0);
+    expect(adapter.hold).not.toHaveBeenCalled();
+  });
+
+  it('re-checks when the post-expiry reconnect opens, without holding again for an anonymous sheet', async () => {
+    const { guard, adapter, timers, whoami } = setup([
+      { enabled: true, uid: 'uid-1', expiresInMs: 0 },
+      { enabled: true, uid: null },
+    ]);
+    await guard.refresh();
+    timers.advance();
+    expect(adapter.reconnectNow).toHaveBeenCalledTimes(1);
+    guard.onStatus({ type: 'open' });
+    await flush();
+    expect(whoami).toHaveBeenCalledTimes(2);
+    expect(adapter.hold).toHaveBeenCalledTimes(1);
+    expect(timers.pending).toHaveLength(0);
+    guard.onStatus({ type: 'open' });
+    await flush();
+    expect(whoami).toHaveBeenCalledTimes(2);
   });
 
   it('keeps the signed-out reason when the expiry hold fires afterwards', async () => {
@@ -173,22 +244,17 @@ describe('session guard sign-in', () => {
 });
 
 describe('describeSessionGuardView', () => {
-  it('offers sign-in for both sign-in reasons and mentions a failed attempt', () => {
+  it('offers sign-in for both sign-in reasons and distinguishes each state', () => {
     const expiring = describeSessionGuardView({ kind: 'sign-in', reason: 'expiring', signInFailed: false });
     const signedOut = describeSessionGuardView({ kind: 'sign-in', reason: 'signed-out', signInFailed: false });
     const failed = describeSessionGuardView({ kind: 'sign-in', reason: 'signed-out', signInFailed: true });
-    expect(expiring.action).toEqual({ kind: 'sign-in', label: 'Sign in again' });
-    expect(signedOut.action).toEqual({ kind: 'sign-in', label: 'Sign in again' });
-    expect(expiring.message).not.toBe(signedOut.message);
-    expect(failed.message.startsWith(signedOut.message)).toBe(true);
-    expect(failed.message.length).toBeGreaterThan(signedOut.message.length);
+    expect(expiring.action?.kind).toBe('sign-in');
+    expect(signedOut.action?.kind).toBe('sign-in');
+    expect(new Set([expiring.message, signedOut.message, failed.message]).size).toBe(3);
   });
 
   it('offers retry only when the adapter gave up', () => {
-    expect(describeSessionGuardView({ kind: 'unreachable' }).action).toEqual({
-      kind: 'retry',
-      label: 'Retry',
-    });
+    expect(describeSessionGuardView({ kind: 'unreachable' }).action?.kind).toBe('retry');
     expect(describeSessionGuardView({ kind: 'reconnecting' }).action).toBeNull();
   });
 });

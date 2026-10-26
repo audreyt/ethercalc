@@ -425,6 +425,8 @@ function createSessionBanner(
         'padding:10px 16px;font:14px/1.4 system-ui,sans-serif;color:#fff;';
       document.body.appendChild(root);
     }
+    root.dataset['kind'] = view.kind;
+    root.dataset['reason'] = view.kind === 'sign-in' ? view.reason : '';
     root.style.background = view.kind === 'reconnecting' ? '#5f6368' : '#b3261e';
     const message = document.createElement('span');
     message.textContent = copy.message;
@@ -432,6 +434,7 @@ function createSessionBanner(
     if (copy.action) {
       const button = document.createElement('button');
       button.type = 'button';
+      button.dataset['action'] = copy.action.kind;
       button.textContent = copy.action.label;
       button.style.cssText =
         'padding:6px 14px;border:0;border-radius:16px;background:#fff;color:#b3261e;' +
@@ -453,6 +456,7 @@ function installSessionGuard(adapter: WsAdapter): SessionGuard {
     signIn: () => signIn(passkeyHost),
     setTimeout: (fn, ms) => window.setTimeout(fn, ms),
     clearTimeout: (id) => window.clearTimeout(id),
+    now: () => Date.now(),
     render: createSessionBanner(
       () => void guard.signIn(),
       () => guard.retry(),

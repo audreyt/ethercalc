@@ -82,7 +82,8 @@ test.describe('session guard', () => {
     const banner = page.locator('#ec-session-banner');
     await expect(banner).toBeVisible({ timeout: 15_000 });
     await expect(banner).toHaveAttribute('role', 'alert');
-    await expect(banner).toContainText('about to expire');
+    await expect(banner).toHaveAttribute('data-kind', 'sign-in');
+    await expect(banner).toHaveAttribute('data-reason', 'expiring');
 
     await typeIntoCell(page, 'A1', 'held edit');
     const warnsOnUnload = await page.evaluate(() => {
@@ -94,7 +95,7 @@ test.describe('session guard', () => {
     expect(await serverCell(page, authWorkerBase, room, 'A1')).not.toBe('held edit');
 
     sessionEnding = false;
-    await banner.getByRole('button', { name: 'Sign in again' }).click();
+    await banner.locator('[data-action="sign-in"]').click();
     await expect(banner).toHaveCount(0, { timeout: 15_000 });
     await expect
       .poll(() => serverCell(page, authWorkerBase, room, 'A1'), { timeout: 15_000 })

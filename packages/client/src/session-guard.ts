@@ -48,6 +48,7 @@ export interface SessionGuardHost {
   readonly signIn: () => Promise<unknown>;
   readonly setTimeout: (fn: () => void, ms: number) => number;
   readonly clearTimeout: (id: number) => void;
+  readonly now: () => number;
   readonly render: (view: SessionGuardView | null) => void;
 }
 
@@ -73,6 +74,10 @@ export function createSessionGuard(
   let unreachable = false;
   let reconnecting = false;
   let timer: number | null = null;
+  // When the session ends, on the client clock, per the last whoami that
+  // reported it. A failed whoami keeps it, so monitoring and the hold
+  // continue through an outage; only a definitive sign-out clears it.
+  let deadline: number | null = null;
 
   function render(): void {
     if (signInReason !== null) {
@@ -108,16 +113,26 @@ export function createSessionGuard(
   async function refresh(): Promise<void> {
     const state = await host.whoami();
     clearTimer();
-    if (state.uid === null || state.expiresInMs === undefined) return;
-    const lead = state.expiresInMs - EXPIRY_LEAD_MS;
-    if (lead <= 0) {
-      holdForSignIn(state.expiresInMs);
+    const now = host.now();
+    if (state.uid !== null && state.expiresInMs !== undefined) {
+      deadline = now + state.expiresInMs;
+    } else if (state.enabled && state.uid === null) {
+      deadline = null;
+    }
+    if (deadline === null) return;
+    schedule(now, deadline);
+  }
+
+  function schedule(now: number, ends: number): void {
+    const untilHold = ends - EXPIRY_LEAD_MS - now;
+    if (untilHold <= 0) {
+      holdForSignIn(Math.max(0, ends - now));
       return;
     }
     timer = host.setTimeout(() => {
       timer = null;
       void refresh();
-    }, Math.min(lead, MAX_CHECK_INTERVAL_MS));
+    }, Math.min(untilHold, MAX_CHECK_INTERVAL_MS));
   }
 
   function onStatus(status: WsStatus): void {
@@ -127,6 +142,9 @@ export function createSessionGuard(
         signInFailed = false;
         unreachable = false;
         reconnecting = false;
+        // The post-expiry reconnect left nothing scheduled: learn what this
+        // connection is (signed in again, or anonymous on a public sheet).
+        if (timer === null && deadline !== null) void refresh();
         break;
       case 'close':
         if (status.code !== SESSION_CLOSE_CODE || !SESSION_CLOSE_REASON.test(status.reason ?? '')) {
