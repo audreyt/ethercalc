@@ -133,7 +133,15 @@ export function registerAuth(app: Hono<EtherCalcHonoEnv>): void {
   app.get('/_auth/whoami', async (c) => {
     const enabled = authEnabled(c.env);
     const principal = enabled ? await getSessionPrincipal(c) : null;
-    return c.json({ uid: principal?.uid ?? null, enabled });
+    if (principal === null) return c.json({ uid: null, enabled });
+    // Relative lifetime, immune to client clock skew: the client holds edits
+    // before RoomDO starts closing this session's sockets (and dropping the
+    // frame that triggered the close).
+    return c.json({
+      uid: principal.uid,
+      enabled,
+      expiresInMs: Math.max(0, principal.exp - Date.now()),
+    });
   });
   // Revoke every token issued to this uid at or before the current session,
   // then clear the browser cookie. A revocation failure must not claim that

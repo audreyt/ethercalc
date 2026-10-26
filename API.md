@@ -356,7 +356,9 @@ returns `{uid}`.
 ## Who Am I [GET /_auth/whoami]
 
 Returns `{uid, enabled}` — `uid` is null for anonymous visitors and
-`enabled` reports whether passkey auth is configured at all.
+`enabled` reports whether passkey auth is configured at all. A signed-in
+response adds `expiresInMs`, the session's remaining lifetime; the sheet
+client holds edits and prompts a fresh sign-in shortly before it ends.
 
 + Response 200 (application/json)
 
