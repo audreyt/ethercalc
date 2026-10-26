@@ -32,6 +32,12 @@ export const MAX_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 export const WHOAMI_RETRY_MS = 5 * 60 * 1000;
 /** Reconnect attempt (500 ms apart) at which a dropped connection is shown. */
 export const RECONNECTING_NOTICE_ATTEMPT = 3;
+/**
+ * A socket keeps the session it was admitted with, while whoami renews the
+ * cookie at most daily. Rolling the socket this often keeps its session
+ * within about a day of the cookie's, so it never ends before the hold.
+ */
+export const SOCKET_ROLL_MS = 24 * 60 * 60 * 1000;
 
 const SESSION_CLOSE_CODE = 1008;
 const SESSION_CLOSE_REASON = /^Session (?:expired|invalid)$/;
@@ -80,6 +86,7 @@ export function createSessionGuard(
   // reported it. A failed whoami keeps it, so monitoring and the hold
   // continue through an outage; only a definitive sign-out clears it.
   let deadline: number | null = null;
+  let openedAt: number | null = null;
 
   function render(): void {
     if (signInReason !== null) {
@@ -141,15 +148,22 @@ export function createSessionGuard(
       holdForSignIn(Math.max(0, ends - now));
       return;
     }
+    if (openedAt !== null && now - openedAt >= SOCKET_ROLL_MS) {
+      openedAt = null;
+      adapter.reconnectNow();
+    }
+    // Wake no later than the socket's roll time, not just the hourly check.
+    const untilRoll = openedAt === null ? Infinity : openedAt + SOCKET_ROLL_MS - now;
     timer = host.setTimeout(() => {
       timer = null;
       void refresh();
-    }, Math.min(untilHold, MAX_CHECK_INTERVAL_MS));
+    }, Math.min(untilHold, MAX_CHECK_INTERVAL_MS, untilRoll));
   }
 
   function onStatus(status: WsStatus): void {
     switch (status.type) {
       case 'open':
+        openedAt = host.now();
         signInReason = null;
         signInFailed = false;
         unreachable = false;

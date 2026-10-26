@@ -6,6 +6,7 @@ import {
   EXPIRY_LEAD_MS,
   MAX_CHECK_INTERVAL_MS,
   RECONNECTING_NOTICE_ATTEMPT,
+  SOCKET_ROLL_MS,
   WHOAMI_RETRY_MS,
   createSessionGuard,
   describeSessionGuardView,
@@ -195,6 +196,31 @@ describe('session guard expiry hold', () => {
     guard.onStatus({ type: 'open' });
     await flush();
     expect(whoami).toHaveBeenCalledTimes(2);
+  });
+
+  it('rolls the socket exactly a day after it opened, through the real scheduler', async () => {
+    const long = { enabled: true, uid: 'uid-1', expiresInMs: 60 * SOCKET_ROLL_MS };
+    const { guard, adapter, timers, setNow } = setup(Array.from({ length: 40 }, () => long));
+    let clock = 0;
+    const rolls: number[] = [];
+    adapter.reconnectNow.mockImplementation(() => rolls.push(clock));
+    await guard.refresh();
+    clock = 100;
+    setNow(clock);
+    guard.onStatus({ type: 'open' });
+    for (let check = 0; check < 30 && rolls.length === 0; check += 1) {
+      clock += timers.pending[0]!.ms;
+      setNow(clock);
+      timers.advance();
+      await flush();
+    }
+    expect(rolls).toEqual([100 + SOCKET_ROLL_MS]);
+
+    clock += timers.pending[0]!.ms;
+    setNow(clock);
+    timers.advance();
+    await flush();
+    expect(rolls).toHaveLength(1);
   });
 
   it('keeps the signed-out reason when the expiry hold fires afterwards', async () => {
