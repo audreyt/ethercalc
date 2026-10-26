@@ -42,7 +42,7 @@ describe('session cookies', () => {
     );
     expect(createSessionCookie('t', 0)).toContain('Max-Age=0;');
     for (const lifetime of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
-      expect(() => createSessionCookie('t', lifetime)).toThrow('invalid session cookie lifetime');
+      expect(() => createSessionCookie('t', lifetime)).toThrow(RangeError);
     }
   });
 
