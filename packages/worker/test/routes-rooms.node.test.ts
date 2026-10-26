@@ -1190,3 +1190,39 @@ describe('private create/copy routes (P7)', () => {
     expect(await res.text()).toBe('Conflict');
   });
 });
+
+describe('unreachable RoomDO maps to a retryable 503 (#862)', () => {
+  const lost = () =>
+    Object.assign(new Error('Network connection lost.'), { retryable: true });
+
+  it('a GET that fails once is retried and succeeds', async () => {
+    let n = 0;
+    const { env, calls } = makeFakeRoomNamespace(() => {
+      n += 1;
+      if (n === 1) throw lost();
+      return new Response('a,b\n', { headers: { 'Content-Type': 'text/csv' } });
+    });
+    const res = await buildApp().request('/_/r/csv', {}, env);
+    expect(res.status).toBe(200);
+    expect(calls).toHaveLength(2);
+  });
+
+  it('a GET that keeps failing returns 503 with Retry-After instead of 500', async () => {
+    const { env, calls } = makeFakeRoomNamespace(() => {
+      throw lost();
+    });
+    const res = await buildApp().request('/_/r/csv.json', {}, env);
+    expect(res.status).toBe(503);
+    expect(res.headers.get('Retry-After')).toBe('1');
+    expect(calls).toHaveLength(2);
+  });
+
+  it('an exception from RoomDO code itself still surfaces as 500', async () => {
+    const { env, calls } = makeFakeRoomNamespace(() => {
+      throw Object.assign(new Error('bug'), { remote: true });
+    });
+    const res = await buildApp().request('/_/r/csv.json', {}, env);
+    expect(res.status).toBe(500);
+    expect(calls).toHaveLength(1);
+  });
+});

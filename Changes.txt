@@ -18,6 +18,12 @@ Fixes
   (#864). SocialCalc assigns numeric `colSpan`/`rowSpan`; the headless DOM
   shim stored them unconverted and its attribute escaper threw. The shim's
   attribute-backed properties now coerce to strings, as the DOM does.
+- A Worker request whose Durable Object call fails in transit (`Network
+  connection lost.`, typically while a deploy moves or restarts the object)
+  no longer returns a bare 500 (#862). Reads (GET/HEAD) that the runtime
+  marks retryable are retried once on a fresh stub; anything still failing
+  returns 503 with `Retry-After: 1`. Writes are not retried, and exceptions
+  raised by the Durable Object's own code still surface as 500.
 
 ==============================================================================
 0.20261026.0 — 2026-10-26
