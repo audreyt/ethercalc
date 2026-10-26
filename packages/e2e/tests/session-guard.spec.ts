@@ -86,12 +86,17 @@ test.describe('session guard', () => {
     await expect(banner).toHaveAttribute('data-reason', 'expiring');
 
     await typeIntoCell(page, 'A1', 'held edit');
-    const warnsOnUnload = await page.evaluate(() => {
-      const event = new Event('beforeunload', { cancelable: true });
-      window.dispatchEvent(event);
-      return event.defaultPrevented;
-    });
-    expect(warnsOnUnload).toBe(true);
+    // SocialCalc schedules the command asynchronously: wait for the edit to
+    // reach the held queue (the unload warning arms), then check the server.
+    await page.waitForFunction(
+      () => {
+        const event = new Event('beforeunload', { cancelable: true });
+        window.dispatchEvent(event);
+        return event.defaultPrevented;
+      },
+      undefined,
+      { timeout: 10_000 },
+    );
     expect(await serverCell(page, authWorkerBase, room, 'A1')).not.toBe('held edit');
 
     sessionEnding = false;
