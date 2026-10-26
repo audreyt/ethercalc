@@ -10,8 +10,10 @@ import { MAX_WS_FRAME_CHARS } from '@ethercalc/shared/messages';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { cors } from 'hono/cors';
+import { HTTPException } from 'hono/http-exception';
 
 import { websocketAuthority } from './lib/csp.ts';
+import { doUnavailableResponse } from './lib/do-dispatch.ts';
 import {
   isIndexablePath,
   ROBOTS_NOINDEX,
@@ -68,6 +70,13 @@ const roomCreateStore = createRoomCreateStore();
 
 export function buildApp(): Hono<EtherCalcHonoEnv> {
   const app = new Hono<EtherCalcHonoEnv>();
+  // Hono's default error handling, except that an unreachable RoomDO
+  // (`DoUnavailableError` from `doFetch`) is a retryable 503, not a 500.
+  app.onError((err, c) => {
+    if (err instanceof HTTPException) return err.getResponse();
+    console.error(err);
+    return doUnavailableResponse(err) ?? c.text('Internal Server Error', 500);
+  });
   // APIs remain CORS-friendly for external embeds and dashboards.
   app.use('*', cors());
   app.use('*', async (c, next) => {
