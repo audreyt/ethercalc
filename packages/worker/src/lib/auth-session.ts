@@ -21,6 +21,7 @@ async function postSession(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ session }),
   });
+  // Stryker disable next-line StringLiteral : callers map every throw to null; the message is never observed
   if (!response.ok) throw new Error(`AuthDO refused session (${response.status})`);
   return response.json();
 }

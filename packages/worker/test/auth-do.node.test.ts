@@ -1793,7 +1793,21 @@ describe('AuthDO', () => {
       const forged = await token({ iat: t0, exp: t0 + DAY, auth: 'yesterday' });
       expect((await call('/_auth/verify-session', forged)).status).toBe(401);
       expect((await call('/_auth/refresh-session', forged)).status).toBe(401);
-      expect((await call('/_auth/refresh-session', 7)).status).toBe(400);
+      const notJson = await auth.fetch(
+        makeRequest('/_auth/refresh-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: '{',
+        }),
+      );
+      expect(notJson.status).toBe(400);
+      expect(await notJson.text()).toBe('Missing session');
+      const nonString = await call('/_auth/refresh-session', 7);
+      expect(nonString.status).toBe(400);
+      expect(await nonString.text()).toBe('Missing session');
+      const invalid = await call('/_auth/refresh-session', 'not-a-session');
+      expect(invalid.status).toBe(401);
+      expect(await invalid.text()).toBe('Invalid session');
       const getRefresh = await auth.fetch(makeRequest('/_auth/refresh-session', { method: 'GET' }));
       expect(getRefresh.status).toBe(404);
     });

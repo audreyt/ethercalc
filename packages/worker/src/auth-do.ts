@@ -225,6 +225,7 @@ async function decodeSession(
     return null;
   }
   if (Date.now() >= parsed.exp) return null;
+  // Stryker disable next-line ConditionalExpression,LogicalOperator : an `auth: undefined` key behaves exactly like an absent one (authenticatedAt uses ??, JSON.stringify drops it)
   return 'auth' in parsed && typeof parsed.auth === 'number'
     ? { uid: parsed.uid, iat: parsed.iat, exp: parsed.exp, auth: parsed.auth }
     : { uid: parsed.uid, iat: parsed.iat, exp: parsed.exp };

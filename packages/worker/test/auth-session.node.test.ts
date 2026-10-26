@@ -195,6 +195,13 @@ describe('refreshAuthSession', () => {
     await expect(refreshAuthSession(env, 'signed.token')).resolves.toBeNull();
   });
 
+  it('fails closed on a malformed principal even when a replacement token is attached', async () => {
+    const { env } = makeEnv(() =>
+      Response.json({ uid: 7, exp: Date.now() + 60_000, session: 'renewed.token' }),
+    );
+    await expect(refreshAuthSession(env, 'signed.token')).resolves.toBeNull();
+  });
+
   it('fails closed like verification: disabled, unbound, refused, malformed, or throwing', async () => {
     const disabled = makeEnv(() => Response.json({ uid: 'u', exp: Date.now() + 60_000 }), '0');
     await expect(refreshAuthSession(disabled.env, 'signed.token')).resolves.toBeNull();
