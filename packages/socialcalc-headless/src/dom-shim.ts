@@ -57,25 +57,28 @@ export class ShimNode {
   }
 
   get id(): string | undefined { return this.attrs.id; }
-  set id(v: string) { this.attrs.id = v; }
+  // Attribute-backed setters coerce like the DOM does: SocialCalc assigns
+  // numbers (e.g. `td.colSpan = span` for merged cells), and `outerHTML`
+  // escapes every stored value as a string.
+  set id(v: string) { this.attrs.id = String(v); }
 
   get width(): string | undefined { return this.attrs.width; }
-  set width(v: string) { this.attrs.width = v; }
+  set width(v: string) { this.attrs.width = String(v); }
 
   get height(): string | undefined { return this.attrs.height; }
-  set height(v: string) { this.attrs.height = v; }
+  set height(v: string) { this.attrs.height = String(v); }
 
   get className(): string | undefined { return this.attrs.class; }
-  set className(v: string) { this.attrs.class = v; }
+  set className(v: string) { this.attrs.class = String(v); }
 
   get colSpan(): string | undefined { return this.attrs.colspan; }
-  set colSpan(v: string) { this.attrs.colspan = v; }
+  set colSpan(v: string) { this.attrs.colspan = String(v); }
 
   get rowSpan(): string | undefined { return this.attrs.rowspan; }
-  set rowSpan(v: string) { this.attrs.rowspan = v; }
+  set rowSpan(v: string) { this.attrs.rowspan = String(v); }
 
   get title(): string | undefined { return this.attrs.title; }
-  set title(v: string) { this.attrs.title = v; }
+  set title(v: string) { this.attrs.title = String(v); }
 
   get innerHTML(): string {
     if (this.text !== undefined) return escapeText(this.text);

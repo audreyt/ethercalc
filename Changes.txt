@@ -10,6 +10,16 @@ EtherCalc bundles SocialCalc from the audreyt/socialcalc fork; see
 
 
 ==============================================================================
+Unreleased
+==============================================================================
+
+Fixes
+- Fixed `GET /<room>.html` returning 500 for any sheet with a merged cell
+  (#864). SocialCalc assigns numeric `colSpan`/`rowSpan`; the headless DOM
+  shim stored them unconverted and its attribute escaper threw. The shim's
+  attribute-backed properties now coerce to strings, as the DOM does.
+
+==============================================================================
 0.20261026.0 — 2026-10-26
 ==============================================================================
 

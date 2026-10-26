@@ -25,6 +25,14 @@ describe('socialcalc headless (Phase 1 spike — Plan A)', () => {
     expect(ss.exportCSV()).toBe('1\n2\n3\n');
   });
 
+  it('createSheetHTML renders merged cells with colspan/rowspan (#864)', () => {
+    const ss = createSpreadsheet();
+    ss.executeCommand(['set A1 text t wide', 'merge A1:B1', 'set C1 text t tall', 'merge C1:C2'].join('\n'));
+    const html = ss.createSheetHTML();
+    expect(html).toMatch(/<td[^>]* colspan="2"[^>]*>wide<\/td>/);
+    expect(html).toMatch(/<td[^>]* rowspan="2"[^>]*>tall<\/td>/);
+  });
+
   it('csvToSave preserves formulas from leading = (#304)', () => {
     const save = csvToSave('1,=A1*2\n');
     const ss = createSpreadsheet({ snapshot: save });
