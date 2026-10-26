@@ -60,6 +60,21 @@ describe('ShimNode attribute API', () => {
     expect(el.getAttribute('colspan')).toBe('3');
   });
 
+  it('attribute-backed properties coerce numbers like the DOM (#864)', () => {
+    const el = new ShimNode('td');
+    const n = (v: number) => v as unknown as string;
+    el.colSpan = n(2);
+    el.rowSpan = n(3);
+    el.width = n(80);
+    el.height = n(20);
+    el.id = n(7);
+    el.title = n(1);
+    el.className = n(0);
+    expect(el.outerHTML).toBe(
+      '<td colspan="2" rowspan="3" width="80" height="20" id="7" title="1" class="0"></td>',
+    );
+  });
+
   it('outerHTML serializes role/aria attributes set via setAttribute, in insertion order', () => {
     const el = new ShimNode('table');
     el.setAttribute('role', 'grid');
