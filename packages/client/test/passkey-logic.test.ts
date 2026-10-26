@@ -62,6 +62,23 @@ describe('whoami', () => {
     expect(fetchMock).toHaveBeenCalledWith('/_auth/whoami');
   });
 
+  it('passes through a finite session lifetime only for a signed-in account', async () => {
+    const respond = (body: unknown) =>
+      makeHost({ fetch: vi.fn(async () => jsonResponse(body)) as unknown as typeof fetch });
+    await expect(
+      whoami(respond({ enabled: true, uid: 'abc123', expiresInMs: 60_000 })),
+    ).resolves.toEqual({ enabled: true, uid: 'abc123', expiresInMs: 60_000 });
+    await expect(
+      whoami(respond({ enabled: true, uid: 'abc123', expiresInMs: '60000' })),
+    ).resolves.toEqual({ enabled: true, uid: 'abc123' });
+    await expect(
+      whoami(respond({ enabled: true, uid: 'abc123', expiresInMs: Number.POSITIVE_INFINITY })),
+    ).resolves.toEqual({ enabled: true, uid: 'abc123' });
+    await expect(
+      whoami(respond({ enabled: true, uid: null, expiresInMs: 60_000 })),
+    ).resolves.toEqual({ enabled: true, uid: null });
+  });
+
   it('normalizes a non-string uid to null', async () => {
     const host = makeHost({
       fetch: vi.fn(async () => jsonResponse({ enabled: true, uid: 42 })) as unknown as typeof fetch,

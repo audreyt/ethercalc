@@ -5,7 +5,7 @@ import { defineConfig } from 'vite-plus';
  * and mock SocialCalc so we don't need jsdom. See AGENTS.md §8 Phase 10.
  *
  * Coverage gate (100%) applies to ws-adapter, socialcalc-callbacks, main,
- * graph, sanitize-html, and passkey/logic (the M3E passkey UI's DOM-free
+ * graph, sanitize-html, session-guard, and passkey/logic (the M3E passkey UI's DOM-free
  * module — `passkey/ui.ts` itself is browser-only, verified by Playwright,
  * and deliberately excluded here: importing `@m3e/web/*` under Node would
  * exercise its browser-only side effects incorrectly, see the design doc).
@@ -23,6 +23,7 @@ export default defineConfig({
         'src/graph.ts',
         'src/sanitize-html.ts',
         'src/passkey/logic.ts',
+        'src/session-guard.ts',
       ],
       reporter: ['text', 'json-summary', 'lcov'],
       thresholds: {

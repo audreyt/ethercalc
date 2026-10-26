@@ -12,6 +12,14 @@ import DOMPurify from 'dompurify';
 import { runMain, type MainHost } from './main.ts';
 import { installGraph } from './graph.ts';
 import { installSecurityPolicy } from './sanitize-html.ts';
+import { signIn, whoami, type PasskeyLogicHost } from './passkey/logic.ts';
+import {
+  createSessionGuard,
+  describeSessionGuardView,
+  type SessionGuard,
+  type SessionGuardView,
+} from './session-guard.ts';
+import type { WsAdapter } from './ws-adapter.ts';
 
 /**
  * Minimal DOM surface `openLegacyExportDialog` needs to construct an
@@ -395,6 +403,70 @@ export function initializeSpreadsheet(host: BootHost): void {
   installSocialCalcLogoLink(host);
 }
 
+function createSessionBanner(
+  onSignIn: () => void,
+  onRetry: () => void,
+): (view: SessionGuardView | null) => void {
+  let root: HTMLDivElement | null = null;
+  return (view) => {
+    if (view === null) {
+      root?.remove();
+      root = null;
+      return;
+    }
+    const copy = describeSessionGuardView(view);
+    if (!root) {
+      root = document.createElement('div');
+      root.id = 'ec-session-banner';
+      root.setAttribute('role', 'alert');
+      root.style.cssText =
+        'position:fixed;left:0;right:0;bottom:0;z-index:2147483000;display:flex;' +
+        'gap:12px;align-items:center;justify-content:center;flex-wrap:wrap;' +
+        'padding:10px 16px;font:14px/1.4 system-ui,sans-serif;color:#fff;';
+      document.body.appendChild(root);
+    }
+    root.style.background = view.kind === 'reconnecting' ? '#5f6368' : '#b3261e';
+    const message = document.createElement('span');
+    message.textContent = copy.message;
+    root.replaceChildren(message);
+    if (copy.action) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = copy.action.label;
+      button.style.cssText =
+        'padding:6px 14px;border:0;border-radius:16px;background:#fff;color:#b3261e;' +
+        'font:inherit;font-weight:600;cursor:pointer;';
+      button.addEventListener('click', copy.action.kind === 'sign-in' ? onSignIn : onRetry);
+      root.appendChild(button);
+    }
+  };
+}
+
+function installSessionGuard(adapter: WsAdapter): SessionGuard {
+  const passkeyHost: PasskeyLogicHost = {
+    fetch: window.fetch.bind(window),
+    navigator: window.navigator,
+    location: window.location,
+  };
+  const guard: SessionGuard = createSessionGuard(adapter, {
+    whoami: () => whoami(passkeyHost),
+    signIn: () => signIn(passkeyHost),
+    setTimeout: (fn, ms) => window.setTimeout(fn, ms),
+    clearTimeout: (id) => window.clearTimeout(id),
+    render: createSessionBanner(
+      () => void guard.signIn(),
+      () => guard.retry(),
+    ),
+  });
+  window.addEventListener('beforeunload', (event) => {
+    if (!guard.shouldWarnOnUnload()) return;
+    event.preventDefault();
+    event.returnValue = '';
+  });
+  void guard.refresh();
+  return guard;
+}
+
 async function autoBoot(): Promise<void> {
   if (typeof document === 'undefined' || typeof window === 'undefined') return;
   const w = window as unknown as BootHost;
@@ -410,8 +482,12 @@ async function autoBoot(): Promise<void> {
     win: window as unknown as Parameters<typeof installGraph>[0]['win'],
     doc: document,
   });
-  const handle = runMain({ host: w });
+  // The adapter (created inside runMain) needs onStatus before the guard,
+  // which needs the adapter, exists.
+  const statusSink: { guard?: SessionGuard } = {};
+  const handle = runMain({ host: w, onStatus: (status) => statusSink.guard?.onStatus(status) });
   if (!handle) return;
+  statusSink.guard = installSessionGuard(handle.adapter);
   initializeSpreadsheet(w);
 }
 
