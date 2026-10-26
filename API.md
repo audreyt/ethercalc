@@ -360,6 +360,11 @@ Returns `{uid, enabled}` — `uid` is null for anonymous visitors and
 response adds `expiresInMs`, the session's remaining lifetime; the sheet
 client holds edits and prompts a fresh sign-in shortly before it ends.
 
+Sessions renew while in use: at most once a day, whoami re-issues the
+session cookie with a fresh 30-day lifetime, capped at 90 days after the
+passkey sign-in that started it. After the cap, sign in with the passkey
+again. Logout still revokes every session from that sign-in or earlier.
+
 + Response 200 (application/json)
 
 ## Logout [POST /_auth/logout]

@@ -250,6 +250,57 @@ describe('auth routes', () => {
     expect(await lifetime(Date.now() - hour)).toBeUndefined();
   });
 
+  it('whoami renews a due session and sets the replacement cookie with its own lifetime', async () => {
+    const lifetime = 30 * 24 * 60 * 60 * 1000;
+    const { env, calls } = makeAuthEnv((call) =>
+      call.url.endsWith('/_auth/refresh-session')
+        ? Response.json({ uid: 'uid-owner', exp: Date.now() + lifetime, session: 'renewed.token' })
+        : new Response('unexpected', { status: 500 }),
+    );
+    const res = await buildApp().fetch(
+      new Request('https://t.test/_auth/whoami', {
+        headers: { Cookie: '__Host-ec_sess=signed.token' },
+      }),
+      env,
+    );
+    expect(await res.json()).toEqual({ uid: 'uid-owner', enabled: true, expiresInMs: expect.any(Number) });
+    const cookie = res.headers.get('Set-Cookie') ?? '';
+    expect(cookie).toMatch(
+      /^__Host-ec_sess=renewed\.token; Path=\/; Max-Age=\d+; HttpOnly; Secure; SameSite=Lax$/,
+    );
+    const maxAge = Number(/Max-Age=(\d+)/.exec(cookie)?.[1]);
+    expect(maxAge).toBeGreaterThan(lifetime / 1000 - 60);
+    expect(maxAge).toBeLessThanOrEqual(lifetime / 1000);
+    expect(calls.map((call) => call.url)).toEqual(['https://auth.local/_auth/refresh-session']);
+  });
+
+  it('whoami falls back to verification when AuthDO cannot refresh', async () => {
+    const { env, calls } = makeAuthEnv((call) =>
+      call.url.endsWith('/_auth/refresh-session')
+        ? new Response('Not Found', { status: 404 })
+        : Response.json({ uid: 'uid-owner', exp: Date.now() + 3_600_000 }),
+    );
+    const res = await buildApp().fetch(
+      new Request('https://t.test/_auth/whoami', {
+        headers: { Cookie: '__Host-ec_sess=signed.token' },
+      }),
+      env,
+    );
+    expect(await res.json()).toEqual({ uid: 'uid-owner', enabled: true, expiresInMs: expect.any(Number) });
+    expect(res.headers.get('Set-Cookie')).toBeNull();
+    expect(calls.map((call) => call.url)).toEqual([
+      'https://auth.local/_auth/refresh-session',
+      'https://auth.local/_auth/verify-session',
+    ]);
+  });
+
+  it('whoami does not contact AuthDO without a session cookie', async () => {
+    const { env, calls } = makeAuthEnv(() => new Response('unexpected', { status: 500 }));
+    const res = await buildApp().fetch(new Request('https://t.test/_auth/whoami'), env);
+    expect(await res.json()).toEqual({ uid: null, enabled: true });
+    expect(calls).toHaveLength(0);
+  });
+
   it('whoami reports enabled:false when ETHERCALC_AUTH is "0" or null', async () => {
     // Kill-switch proof: even with AUTH + RP anchors + a session cookie that
     // would verify under ETHERCALC_AUTH=1, the flag alone forces

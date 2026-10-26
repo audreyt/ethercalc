@@ -14,6 +14,7 @@
 /* istanbul ignore file */
 import type { Hono } from 'hono';
 
+import { refreshAuthSession } from '../lib/auth-session.ts';
 import { clientIpFromHeaders } from '../lib/rate-limit.ts';
 import { flagEnabled } from '../lib/room-index-access.ts';
 import { getSessionPrincipal } from '../lib/session-middleware.ts';
@@ -132,16 +133,27 @@ export function registerAuth(app: Hono<EtherCalcHonoEnv>): void {
   // a disabled deployment simply reports anonymous.
   app.get('/_auth/whoami', async (c) => {
     const enabled = authEnabled(c.env);
-    const principal = enabled ? await getSessionPrincipal(c) : null;
+    if (!enabled) return c.json({ uid: null, enabled });
+    // Renew while in use (AuthDO decides: at most daily, capped 90 days after
+    // the passkey ceremony). An AuthDO that cannot refresh — e.g. an older
+    // version during a gradual rollout — falls back to plain verification,
+    // so a signed-in visitor is never reported as anonymous.
+    const session = parseSessionCookie(c.req.header('Cookie') ?? null);
+    const refreshed = session === null ? null : await refreshAuthSession(c.env, session);
+    const principal = refreshed ?? (session === null ? null : await getSessionPrincipal(c));
     if (principal === null) return c.json({ uid: null, enabled });
     // Relative lifetime, immune to client clock skew: the client holds edits
     // before RoomDO starts closing this session's sockets (and dropping the
     // frame that triggered the close).
-    return c.json({
-      uid: principal.uid,
-      enabled,
-      expiresInMs: Math.max(0, principal.exp - Date.now()),
-    });
+    const expiresInMs = Math.max(0, principal.exp - Date.now());
+    if (refreshed?.session !== undefined) {
+      c.header(
+        'Set-Cookie',
+        createSessionCookie(refreshed.session, Math.floor(expiresInMs / 1000)),
+        { append: true },
+      );
+    }
+    return c.json({ uid: principal.uid, enabled, expiresInMs });
   });
   // Revoke every token issued to this uid at or before the current session,
   // then clear the browser cookie. A revocation failure must not claim that

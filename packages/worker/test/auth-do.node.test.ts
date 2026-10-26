@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vite-plus/test';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vite-plus/test';
 
 import { AuthDO } from '../src/auth-do.ts';
 
@@ -1701,6 +1701,101 @@ describe('AuthDO', () => {
         ),
       );
       expect(res.status).toBe(401);
+    });
+  });
+
+  describe('POST /_auth/refresh-session', () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const secret = 'refresh-session-secret';
+    const uid = 'uid-refresh';
+    const t0 = 1_700_000_000_000;
+
+    type Refreshed = { uid: string; exp: number; session?: string };
+    async function call(path: string, session: unknown): Promise<Response> {
+      return auth.fetch(makeRequest(path, jsonBody({ session })));
+    }
+    async function refresh(session: string): Promise<Refreshed> {
+      const response = await call('/_auth/refresh-session', session);
+      expect(response.status).toBe(200);
+      return (await response.json()) as Refreshed;
+    }
+    function payloadOf(session: string): unknown {
+      const encoded = session.slice(0, session.lastIndexOf('.'));
+      return JSON.parse(atob(encoded.replace(/-/g, '+').replace(/_/g, '/')));
+    }
+    const token = (payload: Record<string, unknown>): Promise<string> =>
+      signSessionPayload(secret, JSON.stringify({ uid, ...payload }));
+
+    beforeEach(() => {
+      vi.useFakeTimers({ now: t0 });
+      record.map.set('session-secret', secret);
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('keeps a session younger than a day as it is', async () => {
+      const session = await token({ iat: t0, exp: t0 + 30 * DAY });
+      vi.setSystemTime(t0 + DAY - 1);
+      expect(await refresh(session)).toEqual({ uid, exp: t0 + 30 * DAY });
+    });
+
+    it('renews a day-old session for 30 days and carries its authentication time', async () => {
+      const session = await token({ iat: t0, exp: t0 + 30 * DAY });
+      vi.setSystemTime(t0 + DAY);
+      const renewed = await refresh(session);
+      expect(renewed).toEqual({ uid, exp: t0 + 31 * DAY, session: expect.any(String) });
+      expect(payloadOf(renewed.session!)).toEqual({
+        uid,
+        iat: t0 + DAY,
+        exp: t0 + 31 * DAY,
+        auth: t0,
+      });
+      const verified = await call('/_auth/verify-session', renewed.session);
+      expect(await verified.json()).toEqual({ uid, exp: t0 + 31 * DAY });
+
+      vi.setSystemTime(t0 + 2 * DAY);
+      const again = await refresh(renewed.session!);
+      expect(payloadOf(again.session!)).toMatchObject({ iat: t0 + 2 * DAY, auth: t0 });
+    });
+
+    it('caps renewal 90 days after the passkey ceremony, then stops renewing', async () => {
+      const nearCap = await token({ iat: t0 + 65 * DAY, exp: t0 + 89 * DAY, auth: t0 });
+      vi.setSystemTime(t0 + 70 * DAY);
+      const capped = await refresh(nearCap);
+      expect(capped.exp).toBe(t0 + 90 * DAY);
+      expect(payloadOf(capped.session!)).toMatchObject({ exp: t0 + 90 * DAY, auth: t0 });
+
+      const atCap = await token({ iat: t0 + 70 * DAY, exp: t0 + 90 * DAY, auth: t0 });
+      vi.setSystemTime(t0 + 75 * DAY);
+      expect(await refresh(atCap)).toEqual({ uid, exp: t0 + 90 * DAY });
+    });
+
+    it('lets logout revoke every token in a chain authenticated before it', async () => {
+      const login = await token({ iat: t0, exp: t0 + 30 * DAY });
+      vi.setSystemTime(t0 + DAY);
+      const renewed = (await refresh(login)).session!;
+      vi.setSystemTime(t0 + DAY + 1);
+      expect((await call('/_auth/revoke-session', renewed)).status).toBe(204);
+      // A renewal racing the logout can carry an iat after the cutoff; the
+      // chain's authentication time still predates it.
+      const raced = await token({ iat: t0 + DAY + 2, exp: t0 + 31 * DAY, auth: t0 });
+      vi.setSystemTime(t0 + DAY + 3);
+      for (const session of [login, renewed, raced]) {
+        expect((await call('/_auth/verify-session', session)).status).toBe(401);
+        expect((await call('/_auth/refresh-session', session)).status).toBe(401);
+      }
+      const nextLogin = await token({ iat: t0 + DAY + 3, exp: t0 + 31 * DAY });
+      expect((await call('/_auth/verify-session', nextLogin)).status).toBe(200);
+    });
+
+    it('rejects a non-numeric authentication time and malformed requests', async () => {
+      const forged = await token({ iat: t0, exp: t0 + DAY, auth: 'yesterday' });
+      expect((await call('/_auth/verify-session', forged)).status).toBe(401);
+      expect((await call('/_auth/refresh-session', forged)).status).toBe(401);
+      expect((await call('/_auth/refresh-session', 7)).status).toBe(400);
+      const getRefresh = await auth.fetch(makeRequest('/_auth/refresh-session', { method: 'GET' }));
+      expect(getRefresh.status).toBe(404);
     });
   });
 

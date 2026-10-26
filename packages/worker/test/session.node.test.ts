@@ -36,6 +36,16 @@ describe('session cookies', () => {
     );
   });
 
+  it('uses a renewed token\'s own lifetime when given one', () => {
+    expect(createSessionCookie('token.payload.signature', 60)).toBe(
+      '__Host-ec_sess=token.payload.signature; Path=/; Max-Age=60; HttpOnly; Secure; SameSite=Lax',
+    );
+    expect(createSessionCookie('t', 0)).toContain('Max-Age=0;');
+    for (const lifetime of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => createSessionCookie('t', lifetime)).toThrow('invalid session cookie lifetime');
+    }
+  });
+
   it('rejects unsafe cookie values before constructing a header', () => {
     for (const session of ['', 'white space', 'line\r\nbreak', 'semi;colon']) {
       expect(() => createSessionCookie(session)).toThrow(RangeError);
