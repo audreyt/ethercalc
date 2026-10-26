@@ -13,6 +13,10 @@
  * Frames published while the socket is not in `OPEN` are queued and flushed
  * on the next `open`. Frames submitted while permanently closed are dropped
  * (matches `return unless SocialCalc.isConnected` in the legacy callback).
+ *
+ * `hold()` drops the socket and keeps queueing without reconnecting, so the
+ * session guard can stop frames from reaching a server that would discard
+ * them; `reconnectNow()` ends the hold (or a give-up) with a fresh socket.
  */
 import {
   type ClientMessage,
@@ -88,8 +92,14 @@ export interface WsAdapter {
   onMessage(cb: (msg: ServerMessage) => void): () => void;
   /** Stop reconnecting and close the socket for good. */
   close(): void;
+  /** Drop the socket and queue every frame, without reconnecting, until `reconnectNow()`. */
+  hold(): void;
+  /** Replace the socket with a fresh connection now, ending any hold or give-up. */
+  reconnectNow(): void;
   /** For diagnostics/tests. */
   readonly queueLength: number;
+  /** Queued `execute` frames: sheet edits the server has not received yet. */
+  readonly queuedEditCount: number;
   readonly connected: boolean;
   readonly reconnectAttempts: number;
 }
@@ -181,8 +191,10 @@ export function createWsAdapter(opts: CreateWsAdapterOptions): WsAdapter {
 
   const subscribers = new Set<(msg: ServerMessage) => void>();
   const queue: string[] = [];
+  let queuedEdits = 0;
   let socket: WsLike | null = null;
   let closed = false;
+  let held = false;
   let reconnectAttempts = 0;
   let pendingTimer: number | null = null;
 
@@ -202,7 +214,11 @@ export function createWsAdapter(opts: CreateWsAdapterOptions): WsAdapter {
     }
     socket = s;
     s.addEventListener('open', onOpen);
-    s.addEventListener('close', onClose);
+    // A socket released by `hold()`/`reconnectNow()` must not null out or
+    // reconnect over its replacement when its own close event lands.
+    s.addEventListener('close', (ev) => {
+      if (socket === s) onClose(ev);
+    });
     s.addEventListener('error', onError);
     s.addEventListener('message', onMessageFrame);
   }
@@ -232,7 +248,7 @@ export function createWsAdapter(opts: CreateWsAdapterOptions): WsAdapter {
   }
 
   function scheduleReconnect(): void {
-    if (closed) return;
+    if (closed || held) return;
     if (reconnectAttempts >= maxAttempts) {
       notifyStatus({ type: 'reconnect_failed' });
       return;
@@ -252,6 +268,7 @@ export function createWsAdapter(opts: CreateWsAdapterOptions): WsAdapter {
       const frame = queue.shift()!;
       socket!.send(frame);
     }
+    queuedEdits = 0;
   }
 
   function broadcast(type: string, data: Record<string, unknown> = {}): void {
@@ -265,6 +282,7 @@ export function createWsAdapter(opts: CreateWsAdapterOptions): WsAdapter {
       socket.send(frame);
     } else {
       queue.push(frame);
+      if (type === 'execute') queuedEdits += 1;
     }
   }
 
@@ -273,6 +291,35 @@ export function createWsAdapter(opts: CreateWsAdapterOptions): WsAdapter {
     return () => {
       subscribers.delete(cb);
     };
+  }
+
+  function release(): void {
+    if (pendingTimer !== null) {
+      clearTimeoutFn(pendingTimer);
+      pendingTimer = null;
+    }
+    const s = socket;
+    socket = null;
+    if (!s) return;
+    try {
+      s.close();
+    } catch {
+      // Some mock sockets throw on double-close — ignore.
+    }
+  }
+
+  function hold(): void {
+    if (closed) return;
+    held = true;
+    release();
+  }
+
+  function reconnectNow(): void {
+    if (closed) return;
+    held = false;
+    release();
+    reconnectAttempts = 0;
+    connect();
   }
 
   function close(): void {
@@ -291,6 +338,7 @@ export function createWsAdapter(opts: CreateWsAdapterOptions): WsAdapter {
     }
     subscribers.clear();
     queue.length = 0;
+    queuedEdits = 0;
   }
 
   // Kick off the first connection synchronously so tests that await a
@@ -301,8 +349,13 @@ export function createWsAdapter(opts: CreateWsAdapterOptions): WsAdapter {
     broadcast,
     onMessage,
     close,
+    hold,
+    reconnectNow,
     get queueLength() {
       return queue.length;
+    },
+    get queuedEditCount() {
+      return queuedEdits;
     },
     get connected() {
       return socket !== null && socket.readyState === WS_OPEN;

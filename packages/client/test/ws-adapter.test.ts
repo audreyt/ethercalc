@@ -381,3 +381,132 @@ beforeEach(() => {
 afterEach(() => {
   for (const fn of cleanupFns) fn();
 });
+
+describe('createWsAdapter hold / reconnectNow', () => {
+  function make(maxReconnectAttempts = 10) {
+    const { factory, sockets } = createMockFactory();
+    const timers = createFakeTimers();
+    const statuses: Array<{ type: string }> = [];
+    const adapter = createWsAdapter({
+      room: 'r',
+      user: 'u',
+      url: 'ws://h',
+      wsFactory: factory,
+      setTimeoutFn: timers.setTimeoutFn,
+      clearTimeoutFn: timers.clearTimeoutFn,
+      reconnectDelayMs: 5,
+      maxReconnectAttempts,
+      onStatus: (s) => statuses.push(s),
+    });
+    return { adapter, sockets, timers, statuses };
+  }
+
+  it('hold() queues frames without reconnecting until reconnectNow() flushes them', () => {
+    const { adapter, sockets, timers, statuses } = make();
+    sockets[0]!.acceptOpen();
+    const seen = statuses.length;
+    adapter.hold();
+    adapter.hold();
+    expect(sockets[0]!.readyState).toBe(MockWebSocket.CLOSED);
+    expect(statuses.slice(seen)).toEqual([]);
+    expect(timers.pending).toHaveLength(0);
+
+    adapter.broadcast('execute', { cmdstr: 'set A1 value n 1' });
+    expect(adapter.queueLength).toBe(1);
+    expect(adapter.connected).toBe(false);
+    expect(sockets).toHaveLength(1);
+
+    adapter.reconnectNow();
+    expect(sockets).toHaveLength(2);
+    sockets[1]!.acceptOpen();
+    expect(adapter.queueLength).toBe(0);
+    expect(JSON.parse(sockets[1]!.sent[0]!)).toMatchObject({ type: 'execute', cmdstr: 'set A1 value n 1' });
+    adapter.close();
+  });
+
+  it('a held adapter does not reconnect when the old socket closes late', () => {
+    const { adapter, sockets, timers } = make();
+    sockets[0]!.acceptOpen();
+    sockets[0]!.close = () => {};
+    adapter.hold();
+    sockets[0]!.acceptClose(1008, 'Session expired');
+    expect(timers.pending).toHaveLength(0);
+    expect(sockets).toHaveLength(1);
+    adapter.close();
+  });
+
+  it('reconnectNow() cancels a pending retry and resets a give-up', () => {
+    const { adapter, sockets, timers, statuses } = make(1);
+    sockets[0]!.acceptClose(1006);
+    expect(timers.pending).toHaveLength(1);
+    adapter.reconnectNow();
+    expect(timers.pending).toHaveLength(0);
+    expect(sockets).toHaveLength(2);
+
+    sockets[1]!.acceptClose(1006);
+    timers.advance();
+    sockets[2]!.acceptClose(1006);
+    expect(statuses.at(-1)).toEqual({ type: 'reconnect_failed' });
+
+    adapter.reconnectNow();
+    expect(adapter.reconnectAttempts).toBe(0);
+    sockets[3]!.acceptOpen();
+    expect(adapter.connected).toBe(true);
+    adapter.close();
+  });
+
+  it('reconnectNow() replaces a live socket without the old close interfering', () => {
+    const { adapter, sockets, timers } = make();
+    sockets[0]!.acceptOpen();
+    sockets[0]!.close = () => {};
+    adapter.reconnectNow();
+    sockets[1]!.acceptOpen();
+    sockets[0]!.acceptClose(1008, 'Session expired');
+    expect(adapter.connected).toBe(true);
+    expect(timers.pending).toHaveLength(0);
+    adapter.broadcast('chat', { msg: 'hi' });
+    expect(sockets[1]!.sent).toHaveLength(1);
+    expect(sockets[0]!.sent).toHaveLength(0);
+    adapter.close();
+  });
+
+  it('tolerates the released socket throwing on close', () => {
+    const { adapter, sockets } = make();
+    sockets[0]!.close = () => {
+      throw new Error('already closed');
+    };
+    expect(() => adapter.hold()).not.toThrow();
+    adapter.close();
+  });
+
+  it('counts only queued execute frames as unsaved edits', () => {
+    const { adapter, sockets } = make();
+    adapter.broadcast('ask.log');
+    adapter.broadcast('my.ecell', { ecell: 'A1' });
+    expect(adapter.queueLength).toBe(2);
+    expect(adapter.queuedEditCount).toBe(0);
+    adapter.broadcast('execute', { cmdstr: 'set A1 value n 1' });
+    adapter.broadcast('execute', { cmdstr: 'set A2 value n 2' });
+    expect(adapter.queuedEditCount).toBe(2);
+    sockets[0]!.acceptOpen();
+    expect(adapter.queuedEditCount).toBe(0);
+    adapter.broadcast('execute', { cmdstr: 'set A3 value n 3' });
+    expect(adapter.queuedEditCount).toBe(0);
+
+    adapter.hold();
+    adapter.broadcast('execute', { cmdstr: 'set A4 value n 4' });
+    expect(adapter.queuedEditCount).toBe(1);
+    adapter.close();
+    expect(adapter.queuedEditCount).toBe(0);
+  });
+
+  it('hold() and reconnectNow() are no-ops after close()', () => {
+    const { adapter, sockets } = make();
+    adapter.close();
+    adapter.hold();
+    adapter.reconnectNow();
+    expect(sockets).toHaveLength(1);
+    adapter.broadcast('chat', { msg: 'late' });
+    expect(adapter.queueLength).toBe(0);
+  });
+});

@@ -221,12 +221,33 @@ describe('auth routes', () => {
       { ROOM: {} as DurableObjectNamespace } as Env,
     );
 
-    expect(await authed.json()).toEqual({ uid: 'uid-owner', enabled: true });
+    const authedBody = (await authed.json()) as { expiresInMs: number };
+    expect(authedBody).toEqual({ uid: 'uid-owner', enabled: true, expiresInMs: expect.any(Number) });
+    expect(authedBody.expiresInMs).toBeGreaterThan(Number.MAX_SAFE_INTEGER - Date.now() - 60_000);
     expect(await anon.json()).toEqual({ uid: null, enabled: true });
     expect(await disabled.json()).toEqual({ uid: null, enabled: false });
     expect(authed.headers.get('Cache-Control')).toBe('private, no-store');
     expect(anon.headers.get('Cache-Control')).toBe('private, no-store');
     expect(disabled.headers.get('Cache-Control')).toBe('private, no-store');
+  });
+
+  it('whoami reports the remaining session lifetime, and none once it has lapsed', async () => {
+    const app = buildApp();
+    const lifetime = async (exp: number): Promise<unknown> => {
+      const { env } = makeAuthEnv(() => Response.json({ uid: 'uid-owner', exp }));
+      const res = await app.fetch(
+        new Request('https://t.test/_auth/whoami', {
+          headers: { Cookie: '__Host-ec_sess=signed.token' },
+        }),
+        env,
+      );
+      return ((await res.json()) as { expiresInMs: unknown }).expiresInMs;
+    };
+    const hour = 60 * 60 * 1000;
+    const remaining = (await lifetime(Date.now() + hour)) as number;
+    expect(remaining).toBeGreaterThan(hour - 60_000);
+    expect(remaining).toBeLessThanOrEqual(hour);
+    expect(await lifetime(Date.now() - hour)).toBeUndefined();
   });
 
   it('whoami reports enabled:false when ETHERCALC_AUTH is "0" or null', async () => {

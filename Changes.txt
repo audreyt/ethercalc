@@ -119,6 +119,14 @@ Integration
   preserving fixed top-right chrome on wider sheets.
 
 Bug fixes
+- Fixed silent loss of sheet edits when a passkey session ends while a sheet
+  is open. RoomDO closes such sockets (`1008 Session expired`/`invalid`), but
+  the client kept retrying, queued every later edit in memory, and showed
+  nothing, so closing or reloading the tab discarded them. `/_auth/whoami` now
+  reports `expiresInMs`; the single-sheet client holds edits shortly before
+  expiry, shows a banner offering an in-place passkey sign-in that reconnects
+  and flushes them, surfaces lost connections and reconnect give-ups, and
+  warns before unloading a tab with unsent edits.
 - Fixed `POST /_/:room` returning `202` on Durable Object command rejections,
   which silently discarded writes. The route now propagates the DO status and
   response body (such as `413 command exceeds sheet limits` when a batch exceeds
