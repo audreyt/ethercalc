@@ -25,6 +25,8 @@ export interface WhoamiState {
   readonly uid: string | null;
   /** Remaining session lifetime, present only when signed in. */
   readonly expiresInMs?: number;
+  /** The probe itself failed: unknown, not signed out. Callers may retry. */
+  readonly unavailable?: true;
 }
 
 export interface RoomAccessVerdict {
@@ -60,7 +62,7 @@ async function postJson(host: PasskeyLogicHost, path: string, body: unknown): Pr
 export async function whoami(host: PasskeyLogicHost): Promise<WhoamiState> {
   try {
     const res = await host.fetch('/_auth/whoami');
-    if (!res.ok) return { uid: null, enabled: false };
+    if (!res.ok) return { uid: null, enabled: false, unavailable: true };
     const state = (await res.json()) as { enabled?: unknown; uid?: unknown; expiresInMs?: unknown };
     const uid = typeof state?.uid === 'string' ? state.uid : null;
     const expiresInMs = state?.expiresInMs;
@@ -72,7 +74,7 @@ export async function whoami(host: PasskeyLogicHost): Promise<WhoamiState> {
         : {}),
     };
   } catch {
-    return { uid: null, enabled: false };
+    return { uid: null, enabled: false, unavailable: true };
   }
 }
 

@@ -28,6 +28,8 @@ export const EXPIRY_LEAD_MS = 2 * 60 * 1000;
 export const EXPIRY_GRACE_MS = 5 * 1000;
 /** Re-check whoami at least this often (also keeps setTimeout in range). */
 export const MAX_CHECK_INTERVAL_MS = 60 * 60 * 1000;
+/** Retry a whoami that failed before any session lifetime was known. */
+export const WHOAMI_RETRY_MS = 5 * 60 * 1000;
 /** Reconnect attempt (500 ms apart) at which a dropped connection is shown. */
 export const RECONNECTING_NOTICE_ATTEMPT = 3;
 
@@ -116,11 +118,21 @@ export function createSessionGuard(
     const now = host.now();
     if (state.uid !== null && state.expiresInMs !== undefined) {
       deadline = now + state.expiresInMs;
-    } else if (state.enabled && state.uid === null) {
+    } else if (state.unavailable !== true && state.uid === null) {
       deadline = null;
     }
-    if (deadline === null) return;
-    schedule(now, deadline);
+    // A deadline already behind us is a session that has ended: its sockets
+    // are closed (1008) or held behind the sign-in prompt, so holding again on
+    // stale information would only loop.
+    if (deadline !== null && now > deadline) deadline = null;
+    if (deadline !== null) {
+      schedule(now, deadline);
+    } else if (state.unavailable === true) {
+      timer = host.setTimeout(() => {
+        timer = null;
+        void refresh();
+      }, WHOAMI_RETRY_MS);
+    }
   }
 
   function schedule(now: number, ends: number): void {

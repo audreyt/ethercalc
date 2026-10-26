@@ -6,6 +6,7 @@ import {
   EXPIRY_LEAD_MS,
   MAX_CHECK_INTERVAL_MS,
   RECONNECTING_NOTICE_ATTEMPT,
+  WHOAMI_RETRY_MS,
   createSessionGuard,
   describeSessionGuardView,
   type SessionGuardView,
@@ -96,7 +97,7 @@ describe('session guard expiry hold', () => {
   });
 
   it('keeps monitoring through failed whoami calls and holds on the last known deadline', async () => {
-    const failed = { enabled: false, uid: null };
+    const failed = { enabled: false, uid: null, unavailable: true as const };
     const MINUTE = 60_000;
     const { guard, adapter, timers, setNow } = setup([
       { enabled: true, uid: 'uid-1', expiresInMs: EXPIRY_LEAD_MS + 90 * MINUTE },
@@ -121,7 +122,7 @@ describe('session guard expiry hold', () => {
 
   it('resumes normal monitoring when whoami recovers after a failure', async () => {
     const long = { enabled: true, uid: 'uid-1', expiresInMs: 10 * MAX_CHECK_INTERVAL_MS };
-    const { guard, timers, whoami } = setup([long, { enabled: false, uid: null }, long]);
+    const { guard, timers, whoami } = setup([long, { enabled: false, uid: null, unavailable: true }, long]);
     await guard.refresh();
     for (let check = 0; check < 2; check += 1) {
       timers.advance();
@@ -129,6 +130,41 @@ describe('session guard expiry hold', () => {
     }
     expect(whoami).toHaveBeenCalledTimes(3);
     expect(timers.pending.map((t) => t.ms)).toEqual([MAX_CHECK_INTERVAL_MS]);
+  });
+
+  it('retries a whoami that fails before any lifetime is known, then starts monitoring', async () => {
+    const { guard, timers, whoami } = setup([
+      { enabled: false, uid: null, unavailable: true },
+      { enabled: true, uid: 'uid-1', expiresInMs: 10 * MAX_CHECK_INTERVAL_MS },
+    ]);
+    await guard.refresh();
+    expect(timers.pending.map((t) => t.ms)).toEqual([WHOAMI_RETRY_MS]);
+    timers.advance();
+    await flush();
+    expect(whoami).toHaveBeenCalledTimes(2);
+    expect(timers.pending.map((t) => t.ms)).toEqual([MAX_CHECK_INTERVAL_MS]);
+  });
+
+  it('does not hold again after expiry while whoami keeps failing', async () => {
+    const unavailable = { enabled: false, uid: null, unavailable: true as const };
+    const { guard, adapter, timers, setNow } = setup([
+      { enabled: true, uid: 'uid-1', expiresInMs: 60_000 },
+      unavailable,
+      unavailable,
+    ]);
+    await guard.refresh();
+    expect(adapter.hold).toHaveBeenCalledTimes(1);
+    setNow(60_000 + EXPIRY_GRACE_MS);
+    timers.advance();
+    expect(adapter.reconnectNow).toHaveBeenCalledTimes(1);
+    guard.onStatus({ type: 'open' });
+    await flush();
+    expect(timers.pending.map((t) => t.ms)).toEqual([WHOAMI_RETRY_MS]);
+    timers.advance();
+    await flush();
+    expect(adapter.hold).toHaveBeenCalledTimes(1);
+    expect(adapter.reconnectNow).toHaveBeenCalledTimes(1);
+    expect(timers.pending.map((t) => t.ms)).toEqual([WHOAMI_RETRY_MS]);
   });
 
   it('stops guarding once whoami definitively reports no session', async () => {

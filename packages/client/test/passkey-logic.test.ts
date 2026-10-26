@@ -90,7 +90,7 @@ describe('whoami', () => {
     const host = makeHost({
       fetch: vi.fn(async () => new Response('', { status: 500 })) as unknown as typeof fetch,
     });
-    await expect(whoami(host)).resolves.toEqual({ enabled: false, uid: null });
+    await expect(whoami(host)).resolves.toEqual({ enabled: false, uid: null, unavailable: true });
   });
 
   it('returns disabled+null when fetch throws', async () => {
@@ -99,7 +99,7 @@ describe('whoami', () => {
         throw new Error('network down');
       }) as unknown as typeof fetch,
     });
-    await expect(whoami(host)).resolves.toEqual({ enabled: false, uid: null });
+    await expect(whoami(host)).resolves.toEqual({ enabled: false, uid: null, unavailable: true });
   });
 });
 
