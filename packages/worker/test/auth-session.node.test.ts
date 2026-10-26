@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
 
-import { verifyAuthSession } from '../src/lib/auth-session.ts';
+import { refreshAuthSession, verifyAuthSession } from '../src/lib/auth-session.ts';
 import type { Env } from '../src/env.ts';
 
 interface AuthCall {
@@ -157,5 +157,62 @@ describe('verifyAuthSession', () => {
     const responder = vi.fn().mockRejectedValue(new Error('binding failed'));
     const { env } = makeEnv(responder);
     await expect(verifyAuthSession(env, 'signed.token')).resolves.toBeNull();
+  });
+});
+
+describe('refreshAuthSession', () => {
+  it('posts to refresh-session and returns the principal when AuthDO keeps the token', async () => {
+    const exp = Date.now() + 60_000;
+    const { env, calls } = makeEnv(() => Response.json({ uid: 'uid-owner', exp }));
+    await expect(refreshAuthSession(env, 'signed.token')).resolves.toEqual({ uid: 'uid-owner', exp });
+    expect(calls).toEqual([
+      {
+        name: 'auth',
+        url: 'https://auth.local/_auth/refresh-session',
+        method: 'POST',
+        contentType: 'application/json',
+        body: { session: 'signed.token' },
+      },
+    ]);
+  });
+
+  it('returns the replacement token when AuthDO renews the session', async () => {
+    const exp = Date.now() + 60_000;
+    const { env } = makeEnv(() => Response.json({ uid: 'uid-owner', exp, session: 'renewed.token' }));
+    await expect(refreshAuthSession(env, 'signed.token')).resolves.toEqual({
+      uid: 'uid-owner',
+      exp,
+      session: 'renewed.token',
+    });
+  });
+
+  it.each([
+    ['empty replacement', { session: '' }],
+    ['numeric replacement', { session: 7 }],
+    ['null replacement', { session: null }],
+  ])('fails closed on a %s', async (_label, extra) => {
+    const { env } = makeEnv(() => Response.json({ uid: 'uid-owner', exp: Date.now() + 60_000, ...extra }));
+    await expect(refreshAuthSession(env, 'signed.token')).resolves.toBeNull();
+  });
+
+  it('fails closed on a malformed principal even when a replacement token is attached', async () => {
+    const { env } = makeEnv(() =>
+      Response.json({ uid: 7, exp: Date.now() + 60_000, session: 'renewed.token' }),
+    );
+    await expect(refreshAuthSession(env, 'signed.token')).resolves.toBeNull();
+  });
+
+  it('fails closed like verification: disabled, unbound, refused, malformed, or throwing', async () => {
+    const disabled = makeEnv(() => Response.json({ uid: 'u', exp: Date.now() + 60_000 }), '0');
+    await expect(refreshAuthSession(disabled.env, 'signed.token')).resolves.toBeNull();
+    expect(disabled.calls).toHaveLength(0);
+    const unbound = { ROOM: {} as DurableObjectNamespace, ETHERCALC_AUTH: '1' } as Env;
+    await expect(refreshAuthSession(unbound, 'signed.token')).resolves.toBeNull();
+    const refused = makeEnv(() => new Response('Not Found', { status: 404 })).env;
+    await expect(refreshAuthSession(refused, 'signed.token')).resolves.toBeNull();
+    const malformed = makeEnv(() => Response.json({ uid: 7, exp: Date.now() + 60_000 })).env;
+    await expect(refreshAuthSession(malformed, 'signed.token')).resolves.toBeNull();
+    const throwing = makeEnv(vi.fn().mockRejectedValue(new Error('binding failed'))).env;
+    await expect(refreshAuthSession(throwing, 'signed.token')).resolves.toBeNull();
   });
 });

@@ -36,12 +36,22 @@ export function parseSessionCookie(cookieHeader: string | null): string | null {
   return session;
 }
 
-/** Build the Set-Cookie value for an AuthDO-issued opaque session token. */
-export function createSessionCookie(session: string): string {
+/**
+ * Build the Set-Cookie value for an AuthDO-issued opaque session token. A
+ * renewed token passes its own remaining lifetime, which the 90-day cap can
+ * make shorter than the default.
+ */
+export function createSessionCookie(
+  session: string,
+  maxAgeSeconds: number = SESSION_MAX_AGE_SECONDS,
+): string {
   if (!SESSION_VALUE_PATTERN.test(session)) {
     throw new RangeError('invalid session cookie value');
   }
-  return `${SESSION_COOKIE_NAME}=${session}; Path=/; Max-Age=${SESSION_MAX_AGE_SECONDS}; HttpOnly; Secure; SameSite=Lax`;
+  if (!Number.isInteger(maxAgeSeconds) || maxAgeSeconds < 0) {
+    throw new RangeError('invalid session cookie lifetime');
+  }
+  return `${SESSION_COOKIE_NAME}=${session}; Path=/; Max-Age=${maxAgeSeconds}; HttpOnly; Secure; SameSite=Lax`;
 }
 
 /** Parse and verify a session cookie, failing closed on verifier errors. */

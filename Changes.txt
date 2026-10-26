@@ -119,6 +119,14 @@ Integration
   preserving fixed top-right chrome on wider sheets.
 
 Bug fixes
+- Passkey sessions now renew while in use. `/_auth/whoami` re-issues the
+  session cookie at most once a day with a fresh 30-day lifetime, capped at
+  90 days after the passkey ceremony that started the chain (renewed tokens
+  carry that `auth` time). Logout revocation now compares the chain's
+  authentication time, so a renewal cannot outlive a later logout. An AuthDO
+  without the refresh route falls back to plain verification. The sheet
+  client reconnects its WebSocket daily so sockets pick up the renewed
+  session.
 - Fixed silent loss of sheet edits when a passkey session ends while a sheet
   is open. RoomDO closes such sockets (`1008 Session expired`/`invalid`), but
   the client kept retrying, queued every later edit in memory, and showed

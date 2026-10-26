@@ -75,11 +75,16 @@ interface StoredChallenge {
   readonly exp: number;
 }
 
-/** Session token payload: HMAC(secret) over `uid|iat|exp`. */
+/**
+ * Session token payload: HMAC(secret) over its JSON. `auth` is the passkey
+ * authentication time a renewed token inherits; tokens minted by a ceremony
+ * omit it because it equals `iat`.
+ */
 interface SessionPayload {
   readonly uid: string;
   readonly iat: number;
   readonly exp: number;
+  readonly auth?: number;
 }
 
 /** Logout-all cutoff for one uid, keyed by `session-revoked:<uid>`. */
@@ -90,6 +95,10 @@ interface SessionRevocation {
 
 const CHALLENGE_TTL_MS = 120_000; // 2 minutes
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+// Renewal slides `exp` while the session is in use, but never past this
+// long after the passkey ceremony that started the chain.
+const SESSION_MAX_LIFETIME_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
+const SESSION_RENEW_AFTER_MS = 24 * 60 * 60 * 1000; // at most daily
 const ALARM_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const MAX_ACTIVE_CHALLENGES = 1_024;
 const SESSION_REVOCATION_PREFIX = 'session-revoked:';
@@ -210,12 +219,21 @@ async function decodeSession(
     !('iat' in parsed) ||
     typeof parsed.iat !== 'number' ||
     !('exp' in parsed) ||
-    typeof parsed.exp !== 'number'
+    typeof parsed.exp !== 'number' ||
+    ('auth' in parsed && typeof parsed.auth !== 'number')
   ) {
     return null;
   }
   if (Date.now() >= parsed.exp) return null;
-  return { uid: parsed.uid, iat: parsed.iat, exp: parsed.exp };
+  // Stryker disable next-line ConditionalExpression,LogicalOperator : an `auth: undefined` key behaves exactly like an absent one (authenticatedAt uses ??, JSON.stringify drops it)
+  return 'auth' in parsed && typeof parsed.auth === 'number'
+    ? { uid: parsed.uid, iat: parsed.iat, exp: parsed.exp, auth: parsed.auth }
+    : { uid: parsed.uid, iat: parsed.iat, exp: parsed.exp };
+}
+
+/** When the passkey ceremony behind this token (or its renewal chain) ran. */
+function authenticatedAt(payload: SessionPayload): number {
+  return payload.auth ?? payload.iat;
 }
 
 export class AuthDO implements DurableObject {
@@ -284,6 +302,9 @@ export class AuthDO implements DurableObject {
     }
     if (path === '/_auth/verify-session' && request.method === 'POST') {
       return this.#verifySession(request);
+    }
+    if (path === '/_auth/refresh-session' && request.method === 'POST') {
+      return this.#refreshSession(request);
     }
     if (path === '/_auth/revoke-session' && request.method === 'POST') {
       return this.#revokeSession(request);
@@ -565,13 +586,12 @@ export class AuthDO implements DurableObject {
   }
 
   async #createSession(uid: string): Promise<string> {
-    const secret = await this.#getSecret();
     const now = Date.now();
-    const payload: SessionPayload = {
-      uid,
-      iat: now,
-      exp: now + SESSION_TTL_MS,
-    };
+    return this.#mintSession({ uid, iat: now, exp: now + SESSION_TTL_MS });
+  }
+
+  async #mintSession(payload: SessionPayload): Promise<string> {
+    const secret = await this.#getSecret();
     const mac = await hmacHex(secret, JSON.stringify(payload));
     return encodeSession(payload, mac);
   }
@@ -605,16 +625,15 @@ export class AuthDO implements DurableObject {
   }
 
 
-  async #verifySession(request: Request): Promise<Response> {
-    const body = await readJsonObject(request);
-    if (body === null || typeof body.session !== 'string') {
-      return plainResponse('Missing session', 400);
-    }
+  /**
+   * Decode a session and apply logout revocation. Revocation compares the
+   * chain's authentication time, not `iat`, so a token renewed after an
+   * earlier login cannot outlive a later logout of that login.
+   */
+  async #liveSession(session: string): Promise<SessionPayload | null> {
     const secret = await this.#getSecret();
-    const payload = await decodeSession(body.session, secret);
-    if (payload === null) {
-      return plainResponse('Invalid session', 401);
-    }
+    const payload = await decodeSession(session, secret);
+    if (payload === null) return null;
     const revocation =
       await this.#state.storage.get<SessionRevocation>(
         `${SESSION_REVOCATION_PREFIX}${payload.uid}`,
@@ -623,10 +642,49 @@ export class AuthDO implements DurableObject {
       revocation !== undefined &&
       (!Number.isFinite(revocation.before) ||
         !Number.isFinite(revocation.exp) ||
-        payload.iat <= revocation.before)
+        authenticatedAt(payload) <= revocation.before)
     ) {
+      return null;
+    }
+    return payload;
+  }
+
+  async #verifySession(request: Request): Promise<Response> {
+    const body = await readJsonObject(request);
+    if (body === null || typeof body.session !== 'string') {
+      return plainResponse('Missing session', 400);
+    }
+    const payload = await this.#liveSession(body.session);
+    if (payload === null) {
       return plainResponse('Invalid session', 401);
     }
     return jsonResponse({ uid: payload.uid, exp: payload.exp });
+  }
+
+  /**
+   * Verify a session and, at most once a day, re-issue it with a fresh
+   * lifetime capped at SESSION_MAX_LIFETIME_MS after its passkey ceremony.
+   * The old token stays valid until its own `exp`; open sockets roll over
+   * to the new one when the client reconnects.
+   */
+  async #refreshSession(request: Request): Promise<Response> {
+    const body = await readJsonObject(request);
+    if (body === null || typeof body.session !== 'string') {
+      // Stryker disable next-line StringLiteral : refreshAuthSession branches on status only; the body is not a contract
+      return plainResponse('Missing session', 400);
+    }
+    const payload = await this.#liveSession(body.session);
+    if (payload === null) {
+      // Stryker disable next-line StringLiteral : refreshAuthSession branches on status only; the body is not a contract
+      return plainResponse('Invalid session', 401);
+    }
+    const now = Date.now();
+    const auth = authenticatedAt(payload);
+    const exp = Math.min(now + SESSION_TTL_MS, auth + SESSION_MAX_LIFETIME_MS);
+    if (now - payload.iat < SESSION_RENEW_AFTER_MS || exp <= payload.exp) {
+      return jsonResponse({ uid: payload.uid, exp: payload.exp });
+    }
+    const session = await this.#mintSession({ uid: payload.uid, iat: now, exp, auth });
+    return jsonResponse({ uid: payload.uid, exp, session });
   }
 }
