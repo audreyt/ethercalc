@@ -20,10 +20,10 @@
  *
  * Legacy behavior (src/main.ls:363-392): iterates the TOC sheet rows,
  * fetches each sub-sheet by its `<room>.<N>` key, and merges them into a
- * single workbook with one named sheet per row. This requires DO-to-DO
- * fetches plus some TOC-parsing glue that depends on Phase 6 exec routes
- * and the multi-sheet routing in §1. Scoped out of Phase 8 per the phase
- * spec — routes return `501 Phase 8.1` with a brief explanation body.
+ * single workbook with one named sheet per row. Only the workbook formats
+ * (xlsx/ods/fods) exist for `=:room`, as in legacy; a single-sheet format
+ * (csv, csv.json, html, md) cannot hold several sheets, so those requests
+ * get a 400 naming the workbook export and the per-sheet route (#861).
  *
  * Route registration is via `registerExports(app)`, separate from
  * `registerRoomRoutes(app)` to avoid collisions with Phase 6's planned
@@ -56,6 +56,15 @@ import { MAX_IMPORT_CELLS } from '../lib/xlsx-import.ts';
 import type { Env, EtherCalcHonoEnv } from '../env.ts';
 
 const TEXT_CT = 'text/plain; charset=utf-8';
+
+/** 400 for a single-sheet format requested on a multi-sheet workbook. */
+function singleSheetFormatOnWorkbook(key: string): Response {
+  return new Response(
+    `A multi-sheet workbook has no single ${key} export. Download the whole workbook ` +
+      `as /=<id>.xlsx (or .ods/.fods), or one sheet as /<id>.<N>.${key}.`,
+    { status: 400, headers: { 'Content-Type': TEXT_CT } },
+  );
+}
 const MAX_MULTI_EXPORT_TOC_BYTES = 1024 * 1024;
 const MAX_MULTI_EXPORT_SHEET_BYTES = 8 * 1024 * 1024;
 const MAX_MULTI_EXPORT_TOTAL_CHARS = 12 * 1024 * 1024;
@@ -402,8 +411,8 @@ export function registerExports(app: Hono<EtherCalcHonoEnv>): void {
     //
     // Guard: if the room name starts with `=` we're actually in the
     // multi-sheet path. Hono's `:room` matcher greedily consumes `=room`
-    // into the param so we peel it at runtime and hand back the 501 the
-    // explicit multi-sheet route above would have emitted.
+    // into the param so we peel it at runtime: workbook formats dispatch
+    // to the multi-sheet export, single-sheet formats get a 400.
     app.get(`/_/:room/${key}`, async (c) => {
       const room = c.req.param('room') ?? '';
       const principal = await getSessionPrincipal(c);
@@ -412,10 +421,7 @@ export function registerExports(app: Hono<EtherCalcHonoEnv>): void {
         if (format.binary && format.attachmentExt) {
           return dispatchMultiSheetExport(c.env, room.slice(1), format.attachmentExt as BinaryFormat, principal);
         }
-        return new Response(
-          `multi-sheet ${key} export: only xlsx/ods/fods supported`,
-          { status: 501, headers: { 'Content-Type': TEXT_CT } },
-        );
+        return singleSheetFormatOnWorkbook(key);
       }
       return dispatchExport(c.env, room, format, principal);
     });
@@ -434,10 +440,7 @@ export function registerExports(app: Hono<EtherCalcHonoEnv>): void {
         if (format.binary && format.attachmentExt) {
           return dispatchMultiSheetExport(c.env, room.slice(1), format.attachmentExt as BinaryFormat, principal);
         }
-        return new Response(
-          `multi-sheet ${key} export: only xlsx/ods/fods supported`,
-          { status: 501, headers: { 'Content-Type': TEXT_CT } },
-        );
+        return singleSheetFormatOnWorkbook(key);
       }
       return dispatchExport(c.env, room, format, principal);
     });

@@ -257,9 +257,16 @@ Returns a Excel XML rendering of the page. (GET `/_/{id}/md` also works.)
 
 ## Export [GET]
 
-Fetch the sheet collection in Excel XML format.  (GET `/_/{id}/xlsx` also works.)
+Fetch the sheet collection in Excel XML format.  (GET `/_/={id}/xlsx` also works.)
+The workbook is also available as `/={id}.ods` and `/={id}.fods`.
+
+Single-sheet formats (`/={id}.csv`, `.csv.json`, `.html`, `.md`) cannot hold
+several sheets and return 400 with a pointer to the workbook export. Export one
+sheet through its own room instead, e.g. `/{id}.1.csv`.
 
 + Response 200 (application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)
+
++ Response 400 (text/plain)
 
 ## Import [PUT]
 
