@@ -1226,3 +1226,26 @@ describe('unreachable RoomDO maps to a retryable 503 (#862)', () => {
     expect(calls).toHaveLength(1);
   });
 });
+
+describe('single-sheet formats on a multi-sheet workbook (#861)', () => {
+  const keys = ['csv', 'csv.json', 'html', 'md'];
+
+  it('returns 400 text/plain without touching any DO, on both URL forms', async () => {
+    for (const key of keys) {
+      for (const path of [`/=r.${key}`, `/_/=r/${key}`]) {
+        const { env, calls } = makeFakeRoomNamespace(() => new Response('x'));
+        const res = await buildApp().request(path, {}, env);
+        expect(res.status, path).toBe(400);
+        expect(res.headers.get('Content-Type'), path).toBe('text/plain; charset=utf-8');
+        expect(calls, path).toHaveLength(0);
+      }
+    }
+  });
+
+  it('the per-sheet route named in the 400 dispatches to the child room', async () => {
+    const { env, calls } = makeFakeRoomNamespace(() => new Response('a\n'));
+    const res = await buildApp().request('/r.1.csv', {}, env);
+    expect(res.status).toBe(200);
+    expect(calls[0]?.url).toContain('/_do/csv?name=r.1');
+  });
+});

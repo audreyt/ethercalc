@@ -24,6 +24,11 @@ Fixes
   marks retryable are retried once on a fresh stub; anything still failing
   returns 503 with `Retry-After: 1`. Writes are not retried, and exceptions
   raised by the Durable Object's own code still surface as 500.
+- Requesting a single-sheet format from a multi-sheet workbook
+  (`/=<id>.csv`, `.csv.json`, `.html`, `.md`, or their `/_/=<id>/<fmt>`
+  forms) now returns 400 with a pointer to `/=<id>.xlsx` (or `.ods`/`.fods`)
+  and to the per-sheet `/<id>.<N>.<fmt>` route, instead of an undocumented
+  501 (#861). API.md documents the limit.
 
 ==============================================================================
 0.20261026.0 — 2026-10-26
