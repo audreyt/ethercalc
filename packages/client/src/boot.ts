@@ -11,6 +11,7 @@ import DOMPurify from 'dompurify';
 
 import { runMain, type MainHost } from './main.ts';
 import { installGraph } from './graph.ts';
+import { installPivotTable } from './pivot-table.ts';
 import { installSecurityPolicy } from './sanitize-html.ts';
 import { signIn, whoami, type PasskeyLogicHost } from './passkey/logic.ts';
 import {
@@ -493,6 +494,7 @@ async function autoBoot(): Promise<void> {
   if (!handle) return;
   statusSink.guard = installSessionGuard(handle.adapter);
   initializeSpreadsheet(w);
+  installPivotTable({ SocialCalc: w.SocialCalc, spreadsheet: w.spreadsheet, document });
 }
 
 if (typeof document !== 'undefined' && typeof window !== 'undefined') {

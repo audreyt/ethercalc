@@ -7,6 +7,7 @@ export interface ButtonsProps {
   readonly onRename: () => void;
   readonly onDelete: () => void;
   readonly onImport: (file: File) => void;
+  readonly onPivotTable?: (() => void) | undefined;
 }
 
 /**
@@ -19,6 +20,7 @@ export const Buttons: FC<ButtonsProps> = ({
   onRename,
   onDelete,
   onImport,
+  onPivotTable,
 }) => {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
     const file = e.target.files?.[0];
@@ -54,6 +56,7 @@ export const Buttons: FC<ButtonsProps> = ({
       <button onClick={onDelete} disabled={!canDelete}>
         Delete
       </button>
+      <button onClick={onPivotTable}>Pivot Table</button>
     </div>
   );
 };
