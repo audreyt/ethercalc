@@ -1,4 +1,4 @@
-import { useCallback, useReducer, useRef, type FC } from 'react';
+import { useCallback, useEffect, useReducer, useRef, type FC } from 'react';
 import { HackFoldr } from './Foldr.ts';
 import { appendImportedWorkbook } from './importWorkbook.ts';
 import { Buttons } from './components/Buttons.tsx';
@@ -39,6 +39,14 @@ export const App: FC<AppProps> = ({
   const [state, dispatch] = useReducer(reducer, foldr, createInitialState);
   const firstFocusUsed = useRef(false);
   const importQueue = useRef<Promise<void>>(Promise.resolve());
+  const pivotRequest = useRef(false);
+  const pivotSourceWindow = useRef<Window | null>(null);
+  type PivotSource = { headers: string[]; rows: string[][]; rawRows: string[][] };
+  const [pivotSheet, setPivotSheet] = useReducer(
+    (_: { link: string; source: PivotSource } | null,
+      next: { link: string; source: PivotSource } | null) => next,
+    null,
+  );
   const onFirstFocus = useCallback(() => {
     firstFocusUsed.current = true;
   }, []);
@@ -46,6 +54,35 @@ export const App: FC<AppProps> = ({
     dispatch({ type: 'syncToc' });
   }, []);
   useTocPoll(foldr, onTocSync);
+
+  useEffect(() => {
+    const onMessage = async (event: MessageEvent<unknown>): Promise<void> => {
+      if (event.origin !== window.location.origin || !pivotRequest.current || event.source !== pivotSourceWindow.current || !event.data || typeof event.data !== 'object') return;
+      const message = event.data as { type?: unknown; source?: { headers?: unknown; rows?: unknown; rawRows?: unknown } };
+      if (message.type !== 'ethercalc:pivot-source' || !Array.isArray(message.source?.headers) || !Array.isArray(message.source?.rows) || !Array.isArray(message.source?.rawRows)) return;
+      const source = message.source as PivotSource;
+      if (!source.headers.every((v) => typeof v === 'string') || !source.rows.every((r) => Array.isArray(r) && r.every((v) => typeof v === 'string')) || !source.rawRows.every((r) => Array.isArray(r) && r.every((v) => typeof v === 'string'))) return;
+      pivotRequest.current = false;
+      pivotSourceWindow.current = null;
+      const next = computeNextRow(foldr, index);
+      let pivotTitle = 'Pivot';
+      let suffix = 2;
+      while (foldr.titles().some((title) => title.toLowerCase() === pivotTitle.toLowerCase())) {
+        pivotTitle = `Pivot ${suffix++}`;
+      }
+      const ok = await foldr.pushChecked({ ...next, title: pivotTitle });
+      if (!ok) {
+        (alertImpl ?? ((m) => window.alert(m)))('Could not create the Pivot sheet.');
+        return;
+      }
+      const created = foldr.lastRow();
+      const link = created.link ?? '';
+      setPivotSheet({ link, source });
+      dispatch({ type: 'bumpRev+setActive', index: foldr.lastIndex() });
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [foldr, index, alertImpl]);
 
   const clampedIndex = Math.max(0, Math.min(state.activeIndex, foldr.lastIndex()));
 
@@ -82,6 +119,13 @@ export const App: FC<AppProps> = ({
     await foldr.deleteAt(clampedIndex);
     dispatch({ type: 'bumpRev' });
   };
+  const handlePivotTable = (): void => {
+    const frame = document.querySelector<HTMLIFrameElement>('[data-state="active"] iframe');
+    if (!frame?.contentWindow) return;
+    pivotRequest.current = true;
+    pivotSourceWindow.current = frame.contentWindow;
+    frame.contentWindow.postMessage({ type: 'ethercalc:create-pivot-table' }, window.location.origin);
+  };
   const handleImport = (file: File): void => {
     importQueue.current = importQueue.current.then(async () => {
       await foldr.refreshToc();
@@ -115,6 +159,8 @@ export const App: FC<AppProps> = ({
         onRename={isReadOnly ? undefined : handleRename}
         firstFocusUsed={firstFocusUsed.current}
         onFirstFocus={onFirstFocus}
+        pivotLink={pivotSheet?.link}
+        pivotSource={pivotSheet?.source}
       />
       {isReadOnly ? null : (
         <Buttons
@@ -123,6 +169,7 @@ export const App: FC<AppProps> = ({
           onImport={handleImport}
           onRename={handleRename}
           onDelete={handleDelete}
+          onPivotTable={handlePivotTable}
         />
       )}
     </div>
