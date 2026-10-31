@@ -13,6 +13,16 @@ EtherCalc bundles SocialCalc from the audreyt/socialcalc fork; see
 Unreleased
 ==============================================================================
 
+==============================================================================
+0.20261101.0 — 2026-11-01
+==============================================================================
+
+Maintenance
+- Updated dependencies and improved service reliability across hosted and
+  self-hosted deployments.
+- Improved workbook import, export, and collaboration behavior.
+- Updated the bundled Helm chart's default image version.
+
 Fixes
 - Fixed `GET /<room>.html` returning 500 for any sheet with a merged cell
   (#864). SocialCalc assigns numeric `colSpan`/`rowSpan`; the headless DOM
