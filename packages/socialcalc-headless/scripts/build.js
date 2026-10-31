@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { patchSocialCalc } from '../../../scripts/patch-socialcalc.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_INPUT = path.join(__dirname, '../node_modules/socialcalc/dist/SocialCalc.js');
@@ -120,7 +121,7 @@ export function createSocialCalcFactory() {
  */
 export function generateBundle({ input = DEFAULT_INPUT, output = DEFAULT_OUTPUT } = {}) {
   const src = fs.readFileSync(input, 'utf8');
-  const wrapped = wrapSocialCalcSource(transformSocialCalcSource(src));
+  const wrapped = wrapSocialCalcSource(patchSocialCalc(transformSocialCalcSource(src)));
   fs.writeFileSync(output, wrapped);
   return { input, output, bytes: Buffer.byteLength(wrapped) };
 }

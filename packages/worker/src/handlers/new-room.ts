@@ -1,13 +1,13 @@
 /**
  * `GET /_new` and `GET /=_new` — redirect to a freshly-minted room id.
  *
- * Legacy (src/main.ls:91-96):
- *   - `/=_new` → `/=<room>/edit` if KEY set, else `/=<room>`
- *   - `/_new` → `/<room>/edit` if KEY set, else `/<room>`
+ * A keyed deployment places the edit capability in the redirect for the
+ * newly generated name. Other room entry routes never mint one.
  *
  * Pure-logic slice; the Hono glue wraps this with `c.redirect(url, 302)`.
  * Tests assert the `Location` shape.
  */
+import { computeAuth } from '../lib/auth.ts';
 import { generateRoomId } from '../lib/room-name.ts';
 
 /** Shape of a redirect that Hono can turn into an actual `Response`. */
@@ -20,22 +20,23 @@ export interface RedirectInfo {
 
 export interface BuildNewRoomRedirectOpts {
   readonly basepath?: string;
-  readonly hasKey: boolean;
+  readonly key?: string | undefined;
   /** true for `/=_new` (multi-sheet), false for `/_new` (single-sheet). */
   readonly multi: boolean;
   /** Injectable for determinism in tests. Defaults to `generateRoomId`. */
   readonly idGen?: () => string;
 }
 
-export function buildNewRoomRedirect(opts: BuildNewRoomRedirectOpts): RedirectInfo {
+export async function buildNewRoomRedirect(opts: BuildNewRoomRedirectOpts): Promise<RedirectInfo> {
   const room = (opts.idGen ?? generateRoomId)();
   const basepath = opts.basepath ?? '';
   const prefix = opts.multi ? '=' : '';
-  const tail = opts.hasKey ? '/edit' : '';
+  const name = `${prefix}${room}`;
+  const tail = opts.key ? `?auth=${await computeAuth(opts.key, name)}` : '';
   return {
     status: 302,
     headers: {
-      Location: `${basepath}/${prefix}${room}${tail}`,
+      Location: `${basepath}/${name}${tail}`,
     },
   };
 }

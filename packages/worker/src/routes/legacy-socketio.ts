@@ -28,6 +28,9 @@ import { validateSid } from '@ethercalc/socketio-shim/sid';
 import type { Hono } from 'hono';
 
 import type { Env, EtherCalcHonoEnv } from '../env.ts';
+import { getSessionPrincipal } from '../lib/session-middleware.ts';
+import { parseSessionCookie } from '../lib/session.ts';
+import { isAllowedWebSocketOrigin } from '../lib/ws-origin.ts';
 
 const JS_CT = 'application/javascript; charset=utf-8';
 
@@ -85,6 +88,10 @@ export function registerLegacySocketIo(app: Hono<EtherCalcHonoEnv>): void {
     }
     const sid = c.req.param('sid') ?? '';
     if (!validateSid(sid)) return c.text('Invalid sid', 400);
+    const session = parseSessionCookie(c.req.header('Cookie') ?? null);
+    if (!isAllowedWebSocketOrigin(c.req.raw, c.env.ETHERCALC_ORIGIN, session !== null)) {
+      return c.text('Forbidden', 403);
+    }
     // The hibernated DO owns this transport from here. Remove the
     // isolate-local handshake breadcrumb when both requests hit one isolate.
     ensureShim().releaseHandshake(sid);
@@ -92,9 +99,18 @@ export function registerLegacySocketIo(app: Hono<EtherCalcHonoEnv>): void {
     // hibernation API (`upgradeLegacySocketIo`) so the socket does not pin
     // any room DO — or this Worker isolate — awake between frames.
     const stub = legacySidStub(c.env, sid);
+    const headers = new Headers({ Upgrade: 'websocket' });
+    const sandstormPerms = c.req.header('X-Sandstorm-Permissions');
+    if (sandstormPerms) headers.set('X-Sandstorm-Permissions', sandstormPerms);
+    const principal = await getSessionPrincipal(c);
+    if (principal) {
+      headers.set('X-EC-Uid', principal.uid);
+      headers.set('X-EC-Session-Exp', String(principal.exp));
+      if (session !== null) headers.set('X-EC-Session', session);
+    }
     const req = new Request('https://do.local/_do/legacy-ws', {
       method: 'GET',
-      headers: { Upgrade: 'websocket' },
+      headers,
     });
     return stub.fetch(req);
   });

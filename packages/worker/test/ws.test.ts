@@ -6,12 +6,15 @@
 import {
   createExecutionContext,
   env,
+  runInDurableObject,
   waitOnExecutionContext,
 } from 'cloudflare:test';
 import { describe, it, expect } from 'vite-plus/test';
 import worker from '../src/index.ts';
 import type { Env } from '../src/env.ts';
+import { computeAuth } from '../src/lib/auth.ts';
 import { upgradeWebSocket, upgradeLegacySocketIo } from '../src/lib/ws-upgrade.ts';
+import { RoomDO } from '../src/room.ts';
 
 async function request(method: string, path: string, init: RequestInit = {}) {
   const req = new Request(`https://example.test${path}`, { method, ...init });
@@ -82,6 +85,57 @@ describe('native WS — /_ws/:room', () => {
 });
 
 describe('DO WS — /_do/ws integration (runInDurableObject)', () => {
+  it('never sends an editor capability to a view-only peer', async () => {
+    const roomName = 'ws-keyed-peer-redaction';
+    const key = 'ws-peer-secret';
+    const token = await computeAuth(key, roomName);
+    const runtimeEnv = env as unknown as Env;
+    const stub = runtimeEnv.ROOM.get(runtimeEnv.ROOM.idFromName(roomName));
+
+    await runInDurableObject(stub, async (_instance, state) => {
+      const room = new RoomDO(state, { ...runtimeEnv, ETHERCALC_KEY: key });
+      const editorUpgrade = upgradeWebSocket(
+        state,
+        new Request(`https://do.local/_do/ws?room=${roomName}&user=editor&auth=${token}`),
+      );
+      const editor = state.getWebSockets()[0]!;
+      editorUpgrade.webSocket!.accept();
+      const viewerUpgrade = upgradeWebSocket(
+        state,
+        new Request(`https://do.local/_do/ws?room=${roomName}&user=viewer&auth=0`),
+      );
+      const viewer = viewerUpgrade.webSocket!;
+      viewer.accept();
+
+      const sendAndRead = async (message: Record<string, unknown>): Promise<Record<string, unknown>> => {
+        const { promise, resolve } = Promise.withResolvers<Record<string, unknown>>();
+        viewer.addEventListener('message', (event) => {
+          resolve(JSON.parse(event.data as string) as Record<string, unknown>);
+        }, { once: true });
+        await room.webSocketMessage(editor, JSON.stringify({ room: roomName, auth: token, ...message }));
+        return promise;
+      };
+
+      const executed = await sendAndRead({
+        type: 'execute', user: 'editor', cmdstr: 'set A1 value n 1',
+      });
+      expect(executed).toMatchObject({ type: 'execute', cmdstr: 'set A1 value n 1' });
+      expect(executed).not.toHaveProperty('auth');
+
+      const cursor = await sendAndRead({
+        type: 'ecell', user: 'editor', ecell: 'A1',
+      });
+      expect(cursor).toMatchObject({ type: 'ecell', ecell: 'A1' });
+      expect(cursor).not.toHaveProperty('auth');
+
+      const stopped = await sendAndRead({ type: 'stopHuddle' });
+      expect(stopped).toMatchObject({ type: 'stopHuddle', room: roomName });
+      expect(stopped).not.toHaveProperty('auth');
+      editorUpgrade.webSocket!.close();
+      viewer.close();
+    });
+  });
+
   it('preserves query and trusted attachment invariants', () => {
     let accepted: WebSocket | undefined;
     const state = { acceptWebSocket(server: WebSocket) { accepted = server; } } as unknown as DurableObjectState;
@@ -105,6 +159,18 @@ describe('DO WS — /_do/ws integration (runInDurableObject)', () => {
     expect(response.status).toBe(101);
     expect(accepted?.deserializeAttachment()).toEqual({ user: '', room: '', auth: '', legacy: true });
     expect(accepted).toBeDefined();
+  });
+
+  it('preserves verified identity and grain permission on legacy upgrades', () => {
+    let accepted: WebSocket | undefined;
+    const state = { acceptWebSocket(server: WebSocket) { accepted = server; } } as unknown as DurableObjectState;
+    upgradeLegacySocketIo(state, {
+      uid: 'verified', sessionExp: 123, session: 'signed.token', sandstormModify: false,
+    });
+    expect(accepted?.deserializeAttachment()).toEqual({
+      user: '', room: '', auth: '', legacy: true,
+      uid: 'verified', sessionExp: 123, session: 'signed.token', sandstormModify: false,
+    });
   });
   it.each([
     ['none', '', '', ''],

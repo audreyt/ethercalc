@@ -114,13 +114,13 @@ describe('HackFoldr', () => {
             ['#url', '#title'],
             ['', 'blank-link'],
             ['#note', 'note row'],
-            ['/r.a', 'Real'],
+            ['/r.3', 'Real'],
           ],
         },
       ]);
       const f = new HackFoldr('http://x', { fetchImpl });
       await f.fetch('r');
-      expect(f.rows).toEqual([{ link: '/r.a', title: 'Real', row: 4 }]);
+      expect(f.rows).toEqual([{ link: '/r.3', title: 'Real', row: 4 }]);
     });
 
     it('defaults missing titles to SheetN (1-based counter)', async () => {
@@ -143,11 +143,11 @@ describe('HackFoldr', () => {
 
     it('coerces non-string link/title to empty string (skips empties)', async () => {
       const { fetchImpl } = makeFetch([
-        { json: [['#u', '#t'], [1, 2], [null, null], ['/r.ok', undefined]] },
+        { json: [['#u', '#t'], [1, 2], [null, null], ['/r.3', undefined]] },
       ]);
       const f = new HackFoldr('http://x', { fetchImpl });
       await f.fetch('r');
-      expect(f.rows).toEqual([{ link: '/r.ok', title: 'Sheet3', row: 4 }]);
+      expect(f.rows).toEqual([{ link: '/r.3', title: 'Sheet3', row: 4 }]);
     });
 
     it('auto-seeds a non-existent workbook through the guarded sheet route', async () => {
@@ -304,14 +304,14 @@ describe('HackFoldr', () => {
 
     it('reports the correct counts after populate', async () => {
       const { fetchImpl } = makeFetch([
-        { json: [['#', '#'], ['/a', 'A'], ['/b', 'B']] },
+        { json: [['#', '#'], ['/r.1', 'A'], ['/r.2', 'B']] },
       ]);
       const f = new HackFoldr('http://x', { fetchImpl });
       await f.fetch('r');
       expect(f.size()).toBe(2);
       expect(f.lastIndex()).toBe(1);
       expect(f.lastRow()).toMatchObject({ title: 'B' });
-      expect(f.links()).toEqual(['/a', '/b']);
+      expect(f.links()).toEqual(['/r.1', '/r.2']);
       expect(f.titles()).toEqual(['A', 'B']);
       expect(f.at(0)).toMatchObject({ title: 'A' });
       expect(f.at(99)).toEqual({});
@@ -321,7 +321,7 @@ describe('HackFoldr', () => {
   describe('push()', () => {
     it('uses the guarded route and mounts authoritative server metadata', async () => {
       const { fetchImpl, calls } = makeFetch([
-        { json: [['#', '#'], ['/a', 'A']] },
+        { json: [['#', '#'], ['/r.1', 'A']] },
         {
           status: 201,
           json: {
@@ -369,7 +369,7 @@ describe('HackFoldr', () => {
     it('caps the requested title before sending it to the guarded route', async () => {
       const cappedTitle = 't'.repeat(MAX_MULTI_SHEET_TITLE_LENGTH);
       const { fetchImpl, calls } = makeFetch([
-        { json: [['#', '#'], ['/a', 'A']] },
+        { json: [['#', '#'], ['/r.1', 'A']] },
         {
           status: 201,
           json: {
@@ -396,7 +396,7 @@ describe('HackFoldr', () => {
 
     it('leaves rows unchanged when the guarded request is rejected', async () => {
       const { fetchImpl } = makeFetch([
-        { json: [['#', '#'], ['/a', 'A']] },
+        { json: [['#', '#'], ['/r.1', 'A']] },
         { ok: false, status: 409 },
       ]);
       const f = new HackFoldr('http://x', {
@@ -406,7 +406,7 @@ describe('HackFoldr', () => {
       await f.fetch('r');
 
       await expect(f.push({ link: '/proposal', title: 'New', row: 0 })).resolves.toBe(f);
-      expect(f.rows).toEqual([{ link: '/a', title: 'A', row: 2 }]);
+      expect(f.rows).toEqual([{ link: '/r.1', title: 'A', row: 2 }]);
     });
 
     it('rejects malformed 201 sheet responses without mounting a row', async () => {
@@ -414,6 +414,8 @@ describe('HackFoldr', () => {
         {},
         { sheet: null },
         { sheet: { subroom: 'r.2', link: '//evil.example', title: 'New', row: 3 } },
+        { sheet: { subroom: 'other.2', link: '/other.2', title: 'New', row: 3 } },
+        { sheet: { subroom: 'r.3', link: '/r.2', title: 'New', row: 3 } },
         { sheet: { subroom: '', link: '/r.2', title: 'New', row: 3 } },
         {
           sheet: {
@@ -426,7 +428,7 @@ describe('HackFoldr', () => {
         { sheet: { subroom: 'r.2', link: '/r.2', title: 'New', row: 3.5 } },
       ];
       const { fetchImpl } = makeFetch([
-        { json: [['#', '#'], ['/a', 'A']] },
+        { json: [['#', '#'], ['/r.1', 'A']] },
         ...malformed.map((json) => ({ status: 201, json })),
       ]);
       let request = 0;
@@ -439,12 +441,12 @@ describe('HackFoldr', () => {
       for (const _ of malformed) {
         await f.push({ link: '/proposal', title: 'New', row: 0 });
       }
-      expect(f.rows).toEqual([{ link: '/a', title: 'A', row: 2 }]);
+      expect(f.rows).toEqual([{ link: '/r.1', title: 'A', row: 2 }]);
     });
 
     it('leaves rows unchanged when the guarded request or JSON body throws', async () => {
       const { fetchImpl } = makeFetch([
-        { json: [['#', '#'], ['/a', 'A']] },
+        { json: [['#', '#'], ['/r.1', 'A']] },
         { throwError: true },
         { status: 201, json: '__THROW__' },
       ]);
@@ -457,7 +459,7 @@ describe('HackFoldr', () => {
 
       await f.push({ link: '/proposal', title: 'Network throw', row: 0 });
       await f.push({ link: '/proposal', title: 'JSON throw', row: 0 });
-      expect(f.rows).toEqual([{ link: '/a', title: 'A', row: 2 }]);
+      expect(f.rows).toEqual([{ link: '/r.1', title: 'A', row: 2 }]);
     });
 
     it('rejects unsafe links and invalid request IDs without making a request', async () => {
@@ -494,7 +496,7 @@ describe('HackFoldr', () => {
   describe('setAt()', () => {
     it('sends a title command when patch.title is defined', async () => {
       const { fetchImpl, calls } = makeFetch([
-        { json: [['#', '#'], ['/a', 'A']] },
+        { json: [['#', '#'], ['/r.1', 'A']] },
         { ok: true, json: null },
       ]);
       const f = new HackFoldr('http://x', { fetchImpl });
@@ -506,7 +508,7 @@ describe('HackFoldr', () => {
 
     it('encodes title metacharacters without creating a second command', async () => {
       const { fetchImpl, calls } = makeFetch([
-        { json: [['#', '#'], ['/a', 'A']] },
+        { json: [['#', '#'], ['/r.1', 'A']] },
         { ok: true, json: null },
       ]);
       const f = new HackFoldr('http://x', { fetchImpl });
@@ -520,29 +522,40 @@ describe('HackFoldr', () => {
 
     it('rejects an unsafe link mutation', async () => {
       const { fetchImpl, calls } = makeFetch([
-        { json: [['#', '#'], ['/a', 'A']] },
+        { json: [['#', '#'], ['/r.1', 'A']] },
       ]);
       const f = new HackFoldr('http://x', { fetchImpl });
       await f.fetch('r');
       await f.setAt(0, { link: '//evil.example' });
       expect(calls).toHaveLength(1);
-      expect(f.at(0).link).toBe('/a');
+      expect(f.at(0).link).toBe('/r.1');
+    });
+
+    it('keeps a link patch within the current workbook', async () => {
+      const { fetchImpl, calls } = makeFetch([
+        { json: [['#', '#'], ['/r.1', 'A']] },
+      ]);
+      const f = new HackFoldr('http://x', { fetchImpl });
+      await f.fetch('r');
+      await f.setAt(0, { link: '/other.1' });
+      expect(calls).toHaveLength(1);
+      expect(f.at(0).link).toBe('/r.1');
     });
 
     it('skips the command when no title patch is given', async () => {
       const { fetchImpl, calls } = makeFetch([
-        { json: [['#', '#'], ['/a', 'A']] },
+        { json: [['#', '#'], ['/r.1', 'A']] },
       ]);
       const f = new HackFoldr('http://x', { fetchImpl });
       await f.fetch('r');
-      await f.setAt(0, { link: '/a2' });
+      await f.setAt(0, { link: '/r.3' });
       expect(calls).toHaveLength(1); // only the initial fetch
-      expect(f.at(0)).toMatchObject({ link: '/a2', title: 'A' });
+      expect(f.at(0)).toMatchObject({ link: '/r.3', title: 'A' });
     });
 
     it('no-ops when index is out of range', async () => {
       const { fetchImpl, calls } = makeFetch([
-        { json: [['#', '#'], ['/a', 'A']] },
+        { json: [['#', '#'], ['/r.1', 'A']] },
       ]);
       const f = new HackFoldr('http://x', { fetchImpl });
       await f.fetch('r');
@@ -554,7 +567,7 @@ describe('HackFoldr', () => {
   describe('pushChecked()', () => {
     it('returns true and mounts the authoritative guarded response', async () => {
       const { fetchImpl } = makeFetch([
-        { json: [['#', '#'], ['/a', 'A']] },
+        { json: [['#', '#'], ['/r.1', 'A']] },
         {
           status: 201,
           json: {
@@ -585,7 +598,7 @@ describe('HackFoldr', () => {
 
     it('returns false and leaves rows unchanged when the guarded request fails', async () => {
       const { fetchImpl } = makeFetch([
-        { json: [['#', '#'], ['/a', 'A']] },
+        { json: [['#', '#'], ['/r.1', 'A']] },
         { ok: true, status: 200, json: {} },
       ]);
       const f = new HackFoldr('http://x', {
@@ -597,7 +610,7 @@ describe('HackFoldr', () => {
       await expect(
         f.pushChecked({ link: '/proposal', title: 'Imported', row: 0 }),
       ).resolves.toBe(false);
-      expect(f.rows).toEqual([{ link: '/a', title: 'A', row: 2 }]);
+      expect(f.rows).toEqual([{ link: '/r.1', title: 'A', row: 2 }]);
     });
 
     it('returns false for unsafe input without sending a request', async () => {
@@ -617,7 +630,7 @@ describe('HackFoldr', () => {
   describe('deleteAt()', () => {
     it('sends a multi-cascade empty command and removes the row', async () => {
       const { fetchImpl, calls } = makeFetch([
-        { json: [['#', '#'], ['/a', 'A'], ['/b', 'B']] },
+        { json: [['#', '#'], ['/r.1', 'A'], ['/r.2', 'B']] },
         { ok: true, json: null },
       ]);
       const f = new HackFoldr('http://x', { fetchImpl });
@@ -630,7 +643,7 @@ describe('HackFoldr', () => {
 
     it('no-ops when index is out of range', async () => {
       const { fetchImpl, calls } = makeFetch([
-        { json: [['#', '#'], ['/a', 'A']] },
+        { json: [['#', '#'], ['/r.1', 'A']] },
       ]);
       const f = new HackFoldr('http://x', { fetchImpl });
       await f.fetch('r');
@@ -643,7 +656,7 @@ describe('HackFoldr', () => {
   describe('sendCmd()', () => {
     it('survives a POST throw without rejecting', async () => {
       const { fetchImpl } = makeFetch([
-        { json: [['#', '#'], ['/a', 'A']] },
+        { json: [['#', '#'], ['/r.1', 'A']] },
         { throwError: true },
       ]);
       const f = new HackFoldr('http://x', { fetchImpl });
@@ -749,8 +762,8 @@ describe('HackFoldr', () => {
 
   describe('parseTocBody()', () => {
     it('returns [] for non-array or empty input', () => {
-      expect(parseTocBody(null)).toEqual([]);
-      expect(parseTocBody([])).toEqual([]);
+      expect(parseTocBody(null, 'r')).toEqual([]);
+      expect(parseTocBody([], 'r')).toEqual([]);
     });
 
     it('drops cross-origin and traversal links from persisted TOC data', () => {
@@ -760,9 +773,10 @@ describe('HackFoldr', () => {
           ['https://evil.example', 'external'],
           ['//evil.example', 'protocol-relative'],
           ['/%2e%2e', 'traversal'],
-          ['/safe.1', 'Safe'],
-        ]),
-      ).toEqual([{ link: '/safe.1', title: 'Safe', row: 5 }]);
+          ['/r.1', 'Safe'],
+          ['/other.1', 'Other'],
+        ], 'r'),
+      ).toEqual([{ link: '/r.1', title: 'Safe', row: 5 }]);
     });
 
     it('bounds TOC fan-out and sheet-title length', () => {
@@ -770,7 +784,7 @@ describe('HackFoldr', () => {
         `/room.${index + 1}`,
         't'.repeat(MAX_MULTI_SHEET_TITLE_LENGTH + 1),
       ]);
-      const parsed = parseTocBody([['#url', '#title'], ...rows]);
+      const parsed = parseTocBody([['#url', '#title'], ...rows], 'room');
       expect(parsed).toHaveLength(MAX_MULTI_SHEETS);
       expect(parsed[0]?.title).toHaveLength(MAX_MULTI_SHEET_TITLE_LENGTH);
     });
@@ -784,9 +798,9 @@ describe('HackFoldr', () => {
 
   describe('tocRowsEqual()', () => {
     it('compares link, title, and row index', () => {
-      const a = [{ link: '/a', title: 'A', row: 2 }];
-      const b = [{ link: '/a', title: 'A', row: 2 }];
-      const c = [{ link: '/a', title: 'B', row: 2 }];
+      const a = [{ link: '/r.1', title: 'A', row: 2 }];
+      const b = [{ link: '/r.1', title: 'A', row: 2 }];
+      const c = [{ link: '/r.1', title: 'B', row: 2 }];
       expect(tocRowsEqual(a, b)).toBe(true);
       expect(tocRowsEqual(a, c)).toBe(false);
       expect(tocRowsEqual(a, [])).toBe(false);

@@ -98,6 +98,7 @@ interface CallLog {
 
 interface MakeCtxOpts {
   authOk?: boolean;
+  deleteAuthOk?: boolean;
   applyOk?: boolean;
   allowSubmitFormOk?: boolean;
   state?: StorageState;
@@ -139,6 +140,9 @@ function makeCtx(opts: MakeCtxOpts = {}): { ctx: WsContext; calls: CallLog; stat
     },
     async verifyAuth() {
       return opts.authOk !== false;
+    },
+    async verifyDeleteAuth() {
+      return opts.deleteAuthOk !== false;
     },
     async allowSubmitForm() {
       return opts.allowSubmitFormOk !== false;
@@ -314,7 +318,7 @@ describe("handleExecute", () => {
     expect(state.snapshot).toBeUndefined();
   });
 
-  it("broadcast payload carries auth field through when supplied", async () => {
+  it("omits client auth from execute peer events", async () => {
     const { ctx, calls } = makeCtx();
     await handleExecute(ctx, {
       type: "execute",
@@ -324,10 +328,10 @@ describe("handleExecute", () => {
       cmdstr: "set A1 value n 1",
     });
     const frame = calls.broadcasts[0]!.msg as ServerMessage & { auth?: string };
-    expect(frame.auth).toBe("abc");
+    expect(frame.auth).toBeUndefined();
   });
 
-  it("submitform forwards sibling commands and broadcasts with includeSelf=true", async () => {
+  it("submitform forwards sibling commands without sending them to source peers", async () => {
     const { ctx, calls } = makeCtx();
     await handleExecute(ctx, {
       type: "execute",
@@ -343,12 +347,7 @@ describe("handleExecute", () => {
     );
     expect(calls.siblingFetches[0]!.init?.method).toBe("POST");
     expect(calls.siblingFetches[0]!.init?.body).toBe("set A1 value n 1\rset A2 value n 2");
-    expect(calls.broadcasts).toHaveLength(1);
-    expect(calls.broadcasts[0]!.includeSelf).toBe(true);
-    const execFrame = calls.broadcasts[0]!.msg as ServerMessage & {
-      include_self?: boolean;
-    };
-    expect(execFrame.include_self).toBe(true);
+    expect(calls.broadcasts).toHaveLength(0);
   });
 
   it("submitform on a room already suffixed _formdata keeps the same room", async () => {
@@ -362,7 +361,7 @@ describe("handleExecute", () => {
     expect(calls.siblingFetches[0]!.room).toBe("x_formdata");
   });
 
-  it("submitform with no payload skips sibling fetch but still broadcasts", async () => {
+  it("submitform with no payload skips sibling fetch", async () => {
     const { ctx, calls } = makeCtx();
     await handleExecute(ctx, {
       type: "execute",
@@ -371,11 +370,10 @@ describe("handleExecute", () => {
       cmdstr: "submitform",
     });
     expect(calls.siblingFetches).toHaveLength(0);
-    expect(calls.broadcasts).toHaveLength(1);
-    expect(calls.broadcasts[0]!.includeSelf).toBe(true);
+    expect(calls.broadcasts).toHaveLength(0);
   });
 
-  it("submitform still broadcasts when sibling fetch throws", async () => {
+  it("submitform tolerates a sibling fetch error", async () => {
     const { ctx, calls } = makeCtx({ siblingFetchFails: true });
     await handleExecute(ctx, {
       type: "execute",
@@ -384,7 +382,7 @@ describe("handleExecute", () => {
       cmdstr: "submitform\rset A1 value n 1",
     });
     expect(calls.siblingFetches).toHaveLength(1);
-    expect(calls.broadcasts).toHaveLength(1);
+    expect(calls.broadcasts).toHaveLength(0);
   });
 
   it("submitform tolerates a non-2xx sibling response (never throws)", async () => {
@@ -396,7 +394,7 @@ describe("handleExecute", () => {
       cmdstr: "submitform\rrow",
     });
     expect(calls.siblingFetches).toHaveLength(1);
-    expect(calls.broadcasts).toHaveLength(1);
+    expect(calls.broadcasts).toHaveLength(0);
   });
   it("submitform returns silently when allowSubmitForm is false", async () => {
     const { ctx, calls } = makeCtx({ allowSubmitFormOk: false });
@@ -531,7 +529,7 @@ describe("handleStopHuddle", () => {
       ecell: new Map(),
       wiped: 0,
     };
-    const { ctx, calls } = makeCtx({ authOk: false, state });
+    const { ctx, calls } = makeCtx({ deleteAuthOk: false, state });
     await handleStopHuddle(ctx, { type: "stopHuddle", room: "r" });
     expect(calls.broadcasts).toHaveLength(0);
     expect(state.wiped).toBe(0);
@@ -556,7 +554,7 @@ describe("handleStopHuddle", () => {
     expect(calls.broadcasts[0]!.includeSelf).toBe(false);
   });
 
-  it("preserves auth field on the broadcast payload when supplied", async () => {
+  it("omits client auth from the stop broadcast", async () => {
     const { ctx, calls } = makeCtx();
     await handleStopHuddle(ctx, {
       type: "stopHuddle",
@@ -564,7 +562,7 @@ describe("handleStopHuddle", () => {
       auth: "h",
     });
     const frame = calls.broadcasts[0]!.msg as ServerMessage & { auth?: string };
-    expect(frame.auth).toBe("h");
+    expect(frame.auth).toBeUndefined();
   });
 });
 
@@ -601,7 +599,7 @@ describe("handleEcell", () => {
     expect(calls.broadcasts[0]!.includeSelf).toBe(false);
   });
 
-  it("preserves original + auth optional fields in the broadcast", async () => {
+  it("preserves original but omits client auth from the broadcast", async () => {
     const { ctx, calls } = makeCtx();
     await handleEcell(ctx, {
       type: "ecell",
@@ -616,7 +614,7 @@ describe("handleEcell", () => {
       auth?: string;
     };
     expect(frame.original).toBe("B2");
-    expect(frame.auth).toBe("h");
+    expect(frame.auth).toBeUndefined();
   });
 });
 
@@ -832,8 +830,8 @@ describe("dispatchWsMessage end-to-end interactions", () => {
 // ─── Context wiring edge cases ─────────────────────────────────────────────
 
 describe("WsContext wiring corners", () => {
-  it("verifyAuth returning false gates both stopHuddle and ecell independently", async () => {
-    const { ctx, calls, state } = makeCtx({ authOk: false });
+  it("write and delete permissions gate their respective messages", async () => {
+    const { ctx, calls, state } = makeCtx({ authOk: false, deleteAuthOk: false });
     await dispatchWsMessage(ctx, { type: "stopHuddle", room: "r" });
     await dispatchWsMessage(ctx, {
       type: "ecell",
@@ -907,7 +905,7 @@ describe("WsContext wiring corners", () => {
     };
     expect(frame.type).toBe("execute");
     expect(frame.cmdstr).toBe("set A1 value n 1");
-    expect(frame.auth).toBe("hmac");
+    expect(frame.auth).toBeUndefined();
     expect(frame.include_self).toBeUndefined();
   });
 });

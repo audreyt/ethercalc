@@ -30,7 +30,8 @@
     "low": 93,
     "break": 90
   },
-  "timeoutMS": 120000,
+  "timeoutMS": 5000,
   "concurrency": 4,
+  "maxTestRunnerReuse": 20,
   "tempDirName": ".stryker-tmp"
 }

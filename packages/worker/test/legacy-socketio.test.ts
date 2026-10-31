@@ -71,6 +71,27 @@ describe('legacy socket.io shim — routes', () => {
     expect(res.status).toBe(426);
   });
 
+  it('rejects a foreign browser origin on the legacy WebSocket route', async () => {
+    const res = await request(
+      'GET',
+      '/socket.io/1/websocket/0123456789abcdef0123456789abcdef',
+      { headers: { Upgrade: 'websocket', Origin: 'https://other.test' } },
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it('accepts the configured browser origin on the legacy WebSocket route', async () => {
+    const expectedOrigin = (env as { ETHERCALC_ORIGIN?: string }).ETHERCALC_ORIGIN || 'https://example.test';
+    const res = await request(
+      'GET',
+      '/socket.io/1/websocket/0123456789abcdef0123456789abcdef',
+      { headers: { Upgrade: 'websocket', Origin: expectedOrigin } },
+    );
+    expect(res.status).toBe(101);
+    res.webSocket?.accept();
+    res.webSocket?.close();
+  });
+
   it('POST /socket.io/1/xhr-polling/<sid> with bad sid returns 400', async () => {
     const res = await request('POST', '/socket.io/1/xhr-polling/too-short');
     expect(res.status).toBe(400);

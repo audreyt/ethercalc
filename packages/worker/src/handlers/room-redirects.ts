@@ -3,8 +3,8 @@
  *
  * Legacy (src/main.ls:277-305):
  *   - `/:room/edit` → 302 `/<room>?auth=<hmac>`
- *   - `/:room/view` → 302 `/<room>?auth=<hmac>&view=1`
- *   - `/:room/app`  → 302 `/<room>?auth=<hmac>&app=1`
+ *   - `/:room/view` → 302 `/<room>?auth=0&view=1` when keyed
+ *   - `/:room/app`  → 302 `/<room>?auth=0&app=1` when keyed
  *   - `/:room` when KEY set and `?auth` is missing → 302 `/<room>?auth=0`
  *   - `/:room` when KEY set and `?auth` present → serve `index.html`
  *   - `/:room` when no KEY → serve `index.html`
@@ -18,7 +18,7 @@
  * glue either returns the redirect or hands off to the assets handler.
  */
 import { computeAuth } from '../lib/auth.ts';
-import { encodeRoom } from '../lib/room-name.ts';
+import { encodeRoom, encodeRoomPath } from '../lib/room-name.ts';
 import type { RedirectInfo } from './new-room.ts';
 
 export type RoomMode = 'edit' | 'view' | 'app' | 'entry';
@@ -34,6 +34,7 @@ export interface BuildRoomRedirectOpts {
    * present, we 302 to `?auth=0`. Otherwise null → serve index.
    */
   readonly authQuery?: string | undefined;
+  readonly authorizedAuth?: string | undefined;
 }
 
 /**
@@ -46,19 +47,22 @@ export async function buildRoomRedirect(
 ): Promise<RedirectInfo | null> {
   const basepath = opts.basepath ?? '';
   const room = encodeRoom(opts.room);
-  const base = `${basepath}/${room}`;
+  const base = `${basepath}/${encodeRoomPath(opts.room)}`;
   switch (opts.mode) {
     case 'edit': {
-      const auth = await computeAuth(opts.key, room);
-      return { status: 302, headers: { Location: `${base}?auth=${auth}` } };
+      const auth = opts.key ? (opts.authorizedAuth ?? '0') : await computeAuth(opts.key, room);
+      if (auth === '0') {
+        return { status: 302, headers: { Location: `${base}?auth=0&view=1` } };
+      }
+      return { status: 302, headers: { Location: `${base}?auth=${encodeURIComponent(auth)}` } };
     }
     case 'view': {
-      const auth = await computeAuth(opts.key, room);
-      return { status: 302, headers: { Location: `${base}?auth=${auth}&view=1` } };
+      const auth = opts.key ? '0' : await computeAuth(opts.key, room);
+      return { status: 302, headers: { Location: `${base}?auth=${encodeURIComponent(auth)}&view=1` } };
     }
     case 'app': {
-      const auth = await computeAuth(opts.key, room);
-      return { status: 302, headers: { Location: `${base}?auth=${auth}&app=1` } };
+      const auth = opts.key ? (opts.authorizedAuth ?? '0') : await computeAuth(opts.key, room);
+      return { status: 302, headers: { Location: `${base}?auth=${encodeURIComponent(auth)}&app=1` } };
     }
     case 'entry': {
       // Legacy: no KEY → always serve index; KEY set → require ?auth=…

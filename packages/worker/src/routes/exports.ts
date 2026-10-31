@@ -35,7 +35,7 @@ import type { Hono } from 'hono';
 import {
   MAX_MULTI_SHEETS,
   MAX_MULTI_SHEET_TITLE_LENGTH,
-  isSafeMultiSheetLink,
+  isWorkbookChildLink,
 } from '@ethercalc/shared';
 
 import { doFetch } from '../lib/do-dispatch.ts';
@@ -134,8 +134,8 @@ async function fetchMultiSheetBundle(
   for (const raw of tocRows) {
     if (!Array.isArray(raw)) continue;
     const link = typeof raw[0] === 'string' ? raw[0] : '';
-    if (!isSafeMultiSheetLink(link)) continue;
-    const subroom = link.slice(1);
+    if (!isWorkbookChildLink(link, room)) continue;
+    const subroom = decodeURIComponent(link.slice(1));
     const rawTitle = typeof raw[1] === 'string' ? raw[1] : '';
     const title =
       rawTitle.length > 0 && rawTitle.length <= MAX_MULTI_SHEET_TITLE_LENGTH

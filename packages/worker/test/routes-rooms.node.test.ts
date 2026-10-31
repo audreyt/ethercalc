@@ -15,6 +15,7 @@ import { describe, expect, it } from 'vite-plus/test';
 
 import type { Env } from '../src/env.ts';
 import { buildApp } from '../src/index.ts';
+import { computeAuth } from '../src/lib/auth.ts';
 import { RoomDO } from '../src/room.ts';
 
 interface Call {
@@ -380,6 +381,38 @@ describe('route glue — env.ROOM dispatch shapes', () => {
     expect(await res.json()).toEqual(verdict);
   });
 
+  it('GET /_/:room/access preserves the public response contract', async () => {
+    const { env } = makeFakeRoomNamespace(() => Response.json({
+      isPrivate: true,
+      canRead: false,
+      canWrite: false,
+      parented: true,
+    }));
+    const res = await buildApp().fetch(
+      new Request('https://t.test/_/child/access'),
+      env as never,
+    );
+    const body = await res.text();
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('application/json; charset=utf-8');
+    expect(Number(res.headers.get('content-length'))).toBe(new TextEncoder().encode(body).length);
+    expect(JSON.parse(body)).toEqual({ isPrivate: true, canRead: false, canWrite: false });
+  });
+
+  it('GET /_/:room/access preserves a non-success verdict', async () => {
+    const { env } = makeFakeRoomNamespace(() => new Response('Forbidden', {
+      status: 403,
+      headers: { 'X-Access-Reason': 'denied' },
+    }));
+    const res = await buildApp().fetch(
+      new Request('https://t.test/_/child/access'),
+      env as never,
+    );
+    expect(res.status).toBe(403);
+    expect(res.headers.get('X-Access-Reason')).toBe('denied');
+    expect(await res.text()).toBe('Forbidden');
+  });
+
   it('GET /_/:room/access forwards only the verified session principal to RoomDO', async () => {
     const verdict = { isPrivate: true, canRead: true, canWrite: false };
     const { env, calls } = makeFakeRoomNamespace(() => Response.json(verdict));
@@ -427,9 +460,10 @@ describe('route glue — env.ROOM dispatch shapes', () => {
       () => new Response('OK', { status: 201 }),
     );
     const app = buildApp();
+    const token = await computeAuth('test-key', 'r');
     const res = await app.fetch(
-      new Request('https://t.test/_/r', { method: 'DELETE' }),
-      env as never,
+      new Request(`https://t.test/_/r?auth=${token}`, { method: 'DELETE' }),
+      { ...env, ETHERCALC_KEY: 'test-key' } as never,
     );
     expect(calls[0]!.method).toBe('DELETE');
     expect(calls[0]!.url).toBe('https://do.local/_do/all?name=r');
@@ -487,6 +521,55 @@ describe('route glue — env.ROOM dispatch shapes', () => {
     expect(calls).toHaveLength(0);
   });
 
+  it.each([
+    ['PUT', '/_/protected', 'snapshot'],
+    ['POST', '/_/protected', 'set A1 value n 1'],
+    ['POST', '/_', JSON.stringify({ room: 'protected', snapshot: 'data' })],
+  ] as const)('requires a room capability for %s %s', async (method, path, body) => {
+    const { env, calls } = makeFakeRoomNamespace(
+      () => new Response('OK', { status: 201 }),
+    );
+    const app = buildApp();
+    const keyedEnv = { ...env, ETHERCALC_KEY: 'test-key' } as never;
+    for (const token of ['', 'wrong', '0']) {
+      const suffix = path.includes('?') ? '&' : '?';
+      const res = await app.fetch(
+        new Request(`https://t.test${path}${suffix}auth=${token}`, {
+          method,
+          headers: { 'Content-Type': path === '/_' ? 'application/json' : 'text/plain' },
+          body,
+        }),
+        keyedEnv,
+      );
+      expect(res.status).toBe(403);
+    }
+    expect(calls.some((call) => call.method !== 'GET')).toBe(false);
+    const token = await computeAuth('test-key', 'protected');
+    const allowed = await app.fetch(
+      new Request(`https://t.test${path}?auth=${token}`, {
+        method,
+        headers: { 'Content-Type': path === '/_' ? 'application/json' : 'text/plain' },
+        body,
+      }),
+      keyedEnv,
+    );
+    expect(allowed.status).toBe(method === 'POST' && path !== '/_' ? 202 : 201);
+    expect(calls.some((call) => call.method !== 'GET')).toBe(true);
+  });
+
+  it('allows fresh generated rooms without a pre-existing capability', async () => {
+    const { env, calls } = makeFakeRoomNamespace(
+      () => new Response('OK', { status: 201 }),
+    );
+    const app = buildApp();
+    const res = await app.fetch(
+      new Request('https://t.test/_', { method: 'POST', body: 'new save' }),
+      { ...env, ETHERCALC_KEY: 'test-key' } as never,
+    );
+    expect(res.status).toBe(201);
+    expect(calls).toHaveLength(1);
+  });
+
   it('POST /_ with text/x-socialcalc generates a room and returns Location', async () => {
     const { env, calls } = makeFakeRoomNamespace(
       () => new Response('OK', { status: 201 }),
@@ -527,7 +610,7 @@ describe('route glue — env.ROOM dispatch shapes', () => {
     expect(calls[0]!.bodyText).toBe('x');
   });
 
-  it('POST /_ with garbage XLSX body still creates a blank room (empty fallback)', async () => {
+  it('POST /_ with an invalid workbook does not create a room', async () => {
     const { env, calls } = makeFakeRoomNamespace((call) => {
       // Body-preserving PUT — accept and echo.
       if (call.url.includes('/_do/snapshot')) {
@@ -543,18 +626,37 @@ describe('route glue — env.ROOM dispatch shapes', () => {
           'content-type':
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         },
-        body: 'PKZIP', // garbage — classifier catches parse error, treats as empty.
+        body: 'PKZIP',
       }),
       env as never,
     );
-    // Garbage body → empty save → 201 at a new room.
-    expect(res.status).toBe(201);
-    // One DO write to snapshot.
-    expect(calls.some((c) => c.url.includes('/_do/snapshot'))).toBe(true);
+    expect(res.status).toBe(400);
+    expect(calls.some((c) => c.url.includes('/_do/snapshot'))).toBe(false);
+  });
+
+  it('PUT /_/:room with an invalid workbook leaves the room untouched', async () => {
+    const { env, calls } = makeFakeRoomNamespace(
+      () => new Response('', { status: 201 }),
+    );
+    const res = await buildApp().fetch(
+      new Request('https://t.test/_/existing', {
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        },
+        body: 'PKZIP',
+      }),
+      env as never,
+    );
+    expect(res.status).toBe(400);
+    expect(calls.some((call) => call.method === 'PUT')).toBe(false);
   });
 
   it('GET /_from/:template copies template snapshot into a new room', async () => {
     const { env, calls } = makeFakeRoomNamespace((call) => {
+      if (call.url.includes('/_do/access')) {
+        return Response.json({ isPrivate: false, parented: false, canRead: true });
+      }
       // Path is `/_do/snapshot?name=<room>` — match the path prefix.
       if (call.url.startsWith('https://do.local/_do/snapshot') && call.method === 'GET') {
         return new Response('TPL-SNAP');
@@ -569,17 +671,20 @@ describe('route glue — env.ROOM dispatch shapes', () => {
     expect(res.status).toBe(302);
     const loc = res.headers.get('location') ?? '';
     expect(loc).toMatch(/^\/[a-z0-9]{12}$/);
-    // First call GET (template), second PUT (new room) with copied snapshot.
+    // Access, snapshot, then the new public room.
     expect(calls[0]!.method).toBe('GET');
-    expect(calls[0]!.url).toBe('https://do.local/_do/snapshot?name=some-template');
-    expect(calls[1]!.method).toBe('PUT');
-    expect(calls[1]!.url).toMatch(/^https:\/\/do\.local\/_do\/snapshot\?name=[a-z0-9]{12}$/);
-    expect(calls[1]!.bodyText).toBe('TPL-SNAP');
+    expect(calls[0]!.url).toBe('https://do.local/_do/access?name=some-template');
+    expect(calls[1]!.url).toBe('https://do.local/_do/snapshot?name=some-template');
+    expect(calls[2]!.method).toBe('PUT');
+    expect(calls[2]!.url).toMatch(/^https:\/\/do\.local\/_do\/snapshot\?name=[a-z0-9]{12}$/);
+    expect(calls[2]!.bodyText).toBe('TPL-SNAP');
   });
 
   it('GET /_from/:template when template does not exist redirects to a blank room', async () => {
-    const { env, calls } = makeFakeRoomNamespace(
-      () => new Response('', { status: 404 }),
+    const { env, calls } = makeFakeRoomNamespace((call) =>
+      call.url.includes('/_do/access')
+        ? Response.json({ isPrivate: false, parented: false, canRead: true })
+        : new Response('', { status: 404 }),
     );
     const app = buildApp();
     const res = await app.fetch(
@@ -587,9 +692,87 @@ describe('route glue — env.ROOM dispatch shapes', () => {
       env as never,
     );
     expect(res.status).toBe(302);
-    // Only the template snapshot GET is attempted; no PUT when 404.
+    // No PUT when the template is absent.
     expect(calls.filter((c) => c.method === 'PUT')).toHaveLength(0);
   });
+
+  it.each([true, false])('passes the editor capability for a new public copy (template exists: %s)', async (templateExists) => {
+    const key = 'copy-route-key';
+    const { env, calls } = makeFakeRoomNamespace((call) => {
+      if (call.url.includes('/_do/access')) {
+        return Response.json({ isPrivate: false, parented: false, canRead: true, canWrite: true });
+      }
+      if (call.method === 'GET') {
+        return templateExists ? new Response('TPL-SNAP') : new Response('', { status: 404 });
+      }
+      return new Response('OK', { status: 201 });
+    });
+    const app = buildApp();
+    const keyedEnv = { ...env, ETHERCALC_KEY: key };
+    const response = await app.fetch(
+      new Request('https://t.test/_from/some-template', { redirect: 'manual' }),
+      keyedEnv as never,
+    );
+    expect(response.status).toBe(302);
+    const location = response.headers.get('location') ?? '';
+    const match = /^\/([a-z0-9]{12})\?auth=([0-9a-f]{64})$/.exec(location);
+    expect(match).not.toBeNull();
+    const room = match![1]!;
+    const auth = match![2]!;
+    expect(auth).toBe(await computeAuth(key, room));
+    expect(calls.filter((call) => call.method === 'PUT')).toHaveLength(templateExists ? 1 : 0);
+
+    const editor = await app.fetch(
+      new Request(`https://t.test/${room}/edit?auth=${auth}`, { redirect: 'manual' }),
+      keyedEnv as never,
+    );
+    expect(editor.status).toBe(302);
+    expect(editor.headers.get('location')).toBe(location);
+  });
+
+  it('keeps a private template private when using the public copy route', async () => {
+    const { env, calls } = makePrivateRoomDoNamespace('PRIVATE-CONTENT');
+    const response = await buildApp().fetch(
+      new Request('https://t.test/_from/existing-private', {
+        headers: { Cookie: AUTH_COOKIE },
+        redirect: 'manual',
+      }),
+      withAuth(env) as never,
+    );
+    expect(response.status).toBe(409);
+    expect(calls[0]?.uid).toBeNull();
+    expect(calls.filter((call) => call.method === 'PUT')).toHaveLength(0);
+  });
+
+  it('does not publish a parented template', async () => {
+    const { env, calls } = makeFakeRoomNamespace((call) =>
+      call.url.includes('/_do/access')
+        ? Response.json({ isPrivate: false, parented: true, canRead: true })
+        : new Response('CHILD-SAVE'),
+    );
+    const response = await buildApp().fetch(
+      new Request('https://t.test/_from/parent.1', { redirect: 'manual' }),
+      env as never,
+    );
+    expect(response.status).toBe(409);
+    expect(calls).toHaveLength(1);
+  });
+
+  it.each(['cross-site', 'same-site'])(
+    'ignores a %s navigation to the copy route',
+    async (site) => {
+      const { env, calls } = makeFakeRoomNamespace(() => new Response('TPL-SNAP'));
+      const response = await buildApp().fetch(
+        new Request('https://t.test/_from/template', {
+          headers: { 'Sec-Fetch-Site': site },
+          redirect: 'manual',
+        }),
+        env as never,
+      );
+      expect(response.status).toBe(403);
+      expect(calls).toHaveLength(0);
+    },
+  );
 
   it('GET /_rooms returns [] with JSON content-type', async () => {
     const { env } = makeFakeRoomNamespace(() => new Response());
@@ -865,9 +1048,10 @@ describe('route glue — DO auth verdict propagation (Phase A)', () => {
       () => new Response('Forbidden', { status: 403 }),
     );
     const app = buildApp();
+    const token = await computeAuth('test-key', 'locked');
     const res = await app.fetch(
-      new Request('https://t.test/_/locked', { method: 'DELETE' }),
-      env as never,
+      new Request(`https://t.test/_/locked?auth=${token}`, { method: 'DELETE' }),
+      { ...env, ETHERCALC_KEY: 'test-key' } as never,
     );
     expect(res.status).toBe(403);
     expect(await res.text()).toBe('Forbidden');

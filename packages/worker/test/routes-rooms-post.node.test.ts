@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vite-plus/test';
 import * as XLSX from '@e965/xlsx';
 import type { Env } from '../src/env.ts';
 import { buildApp } from '../src/index.ts';
+import { computeAuth } from '../src/lib/auth.ts';
 
 /**
  * Node-env tests for POST /_/:room (command execution). The Hono
@@ -396,9 +397,7 @@ describe('POST /_/:room — command execution', () => {
     );
   });
 
-  it('multi-cascade: renames an OWN sub-sheet (<room>.<n>) to <room>.<n>.bak', async () => {
-    // Legitimate path: the multi-sheet editor cascade-deletes one of its
-    // own sub-sheets, which are always named `<room>.<n>`.
+  it('multi-cascade clears the table row without moving another room', async () => {
     const { env, calls } = makeFakeRoomNamespace((call) => {
       if (call.url.includes('/_do/snapshot') && call.method === 'GET') {
         return new Response(
@@ -421,9 +420,7 @@ describe('POST /_/:room — command execution', () => {
     );
     expect(res.status).toBe(202);
     const renameCall = calls.find((c) => c.url.includes('/_do/rename'));
-    expect(renameCall).toBeDefined();
-    expect(renameCall!.method).toBe('POST');
-    expect(JSON.parse(renameCall!.bodyText!)).toEqual({ to: 'r.1.bak' });
+    expect(renameCall).toBeUndefined();
     const dispatch = calls.find((c) => c.url.includes('/_do/commands'));
     expect(dispatch!.bodyText).toBe('set A5:B3 empty multi-cascade');
   });
@@ -714,8 +711,10 @@ describe('POST /_/:room — command execution', () => {
 function makeFakeZipCentralDirectory(
   entries: Array<{ name: string; compressedSize: number; uncompressedSize: number }>
 ): Uint8Array {
+  const localHeader = new Uint8Array(30);
+  localHeader.set([0x50, 0x4b, 0x03, 0x04]);
   const cdHeaders: Uint8Array[] = [];
-  let cdOffset = 0;
+  let cdSize = 0;
   for (const entry of entries) {
     const nameBytes = new TextEncoder().encode(entry.name);
     const header = new Uint8Array(46 + nameBytes.length);
@@ -735,7 +734,7 @@ function makeFakeZipCentralDirectory(
     header[29] = (nameBytes.length >> 8) & 0xff;
     header.set(nameBytes, 46);
     cdHeaders.push(header);
-    cdOffset += header.length;
+    cdSize += header.length;
   }
   const eocd = new Uint8Array(22);
   eocd[0] = 0x50;
@@ -746,16 +745,17 @@ function makeFakeZipCentralDirectory(
   eocd[9] = (entries.length >> 8) & 0xff;
   eocd[10] = entries.length & 0xff;
   eocd[11] = (entries.length >> 8) & 0xff;
-  eocd[12] = cdOffset & 0xff;
-  eocd[13] = (cdOffset >> 8) & 0xff;
-  eocd[14] = (cdOffset >> 16) & 0xff;
-  eocd[15] = (cdOffset >> 24) & 0xff;
-  eocd[16] = 0;
+  eocd[12] = cdSize & 0xff;
+  eocd[13] = (cdSize >> 8) & 0xff;
+  eocd[14] = (cdSize >> 16) & 0xff;
+  eocd[15] = (cdSize >> 24) & 0xff;
+  eocd[16] = localHeader.length;
   eocd[17] = 0;
   eocd[18] = 0;
   eocd[19] = 0;
-  const result = new Uint8Array(cdOffset + eocd.length);
-  let pos = 0;
+  const result = new Uint8Array(localHeader.length + cdSize + eocd.length);
+  result.set(localHeader);
+  let pos = localHeader.length;
   for (const header of cdHeaders) {
     result.set(header, pos);
     pos += header.length;
@@ -857,12 +857,12 @@ describe('POST /_/:room — DO write verdict gating (Phase A)', () => {
     );
     const app = buildApp();
     const res = await app.fetch(
-      new Request('https://t.test/_/locked', {
+      new Request(`https://t.test/_/locked?auth=${await computeAuth('operator-key', 'locked')}`, {
         method: 'POST',
         headers: { 'content-type': 'text/x-socialcalc' },
         body: 'settimetrigger A1 100,200',
       }),
-      { ...env, DB: makePoisonedDb() } as never,
+      { ...env, ETHERCALC_KEY: 'operator-key', DB: makePoisonedDb() } as never,
     );
     // A poisoned D1 stub throws on ANY access — reaching it would
     // surface a 500 instead of the propagated verdict below.
@@ -878,15 +878,32 @@ describe('POST /_/:room — DO write verdict gating (Phase A)', () => {
     });
     const app = buildApp();
     const res = await app.fetch(
+      new Request(`https://t.test/_/r?auth=${await computeAuth('operator-key', 'r')}`, {
+        method: 'POST',
+        headers: { 'content-type': 'text/x-socialcalc' },
+        body: 'settimetrigger A1 100,200',
+      }),
+      { ...env, ETHERCALC_KEY: 'operator-key', DB: makeRecordingDb(events) } as never,
+    );
+    expect(res.status).toBe(202);
+    expect(events).toEqual(['do:commands', 'd1:batch']);
+  });
+
+  it('does not schedule commands without the operator credential', async () => {
+    const { env, calls } = makeFakeRoomNamespace(
+      () => new Response(null, { status: 202 }),
+    );
+    const app = buildApp();
+    const res = await app.fetch(
       new Request('https://t.test/_/r', {
         method: 'POST',
         headers: { 'content-type': 'text/x-socialcalc' },
         body: 'settimetrigger A1 100,200',
       }),
-      { ...env, DB: makeRecordingDb(events) } as never,
+      { ...env, DB: makePoisonedDb() } as never,
     );
-    expect(res.status).toBe(202);
-    expect(events).toEqual(['do:commands', 'd1:batch']);
+    expect(res.status).toBe(403);
+    expect(calls).toHaveLength(0);
   });
 
   it('a DO 403 write verdict fires ZERO sibling renames for multi-cascade', async () => {
@@ -917,7 +934,7 @@ describe('POST /_/:room — DO write verdict gating (Phase A)', () => {
     expect(calls.find((c) => c.url.includes('/_do/rename'))).toBeUndefined();
   });
 
-  it('multi-cascade sibling rename dispatches only after the commands write', async () => {
+  it('multi-cascade leaves sibling rooms untouched after the commands write', async () => {
     const { env, calls } = makeFakeRoomNamespace((call) => {
       if (call.url.includes('/_do/snapshot') && call.method === 'GET') {
         return new Response(
@@ -939,6 +956,6 @@ describe('POST /_/:room — DO write verdict gating (Phase A)', () => {
     const commandsIdx = calls.findIndex((c) => c.url.includes('/_do/commands'));
     const renameIdx = calls.findIndex((c) => c.url.includes('/_do/rename'));
     expect(commandsIdx).toBeGreaterThanOrEqual(0);
-    expect(renameIdx).toBeGreaterThan(commandsIdx);
+    expect(renameIdx).toBe(-1);
   });
 });

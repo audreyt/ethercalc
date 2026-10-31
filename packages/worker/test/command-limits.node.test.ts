@@ -116,6 +116,9 @@ describe('isCommandBatchWithinLimits', () => {
   it('requires a bounded clipboard in the same command batch', () => {
     expect(isCommandBatchWithinLimits('paste C3 all')).toBe(false);
     expect(isCommandBatchWithinLimits('copy A1:B2\npaste C3 all')).toBe(true);
+    expect(isCommandBatchWithinLimits('COPY A1:B2\npaste C3 all')).toBe(false);
+    expect(isCommandBatchWithinLimits('copy\tA1:B2\npaste C3 all')).toBe(false);
+    expect(isCommandBatchWithinLimits('copy A1:B2\rpaste C3 all')).toBe(true);
     expect(
       isCommandBatchWithinLimits(
         'loadclipboard cell:A1:t:x\\ncopiedfrom\\cA1\\cB2\\n\npaste C3 all',
@@ -354,14 +357,14 @@ describe('isCommandBatchWithinLimits', () => {
     ).toBe(false);
   });
 
-  it('distinguishes row inserts from column inserts, case-insensitively', () => {
+  it('distinguishes executable row and column insert verbs', () => {
     // 199_999 x 1 leaves room for exactly one more row but not one more
     // column, so the two verbs must not be interchangeable.
     const nearlyFull = { rows: 199_999, columns: 1 } as const;
     expect(isCommandBatchWithinLimits('insertrow A1', nearlyFull)).toBe(true);
     expect(isCommandBatchWithinLimits('INSERTROW A1', nearlyFull)).toBe(true);
     expect(isCommandBatchWithinLimits('insertcol A1', nearlyFull)).toBe(false);
-    expect(isCommandBatchWithinLimits('INSERTCOL A1', nearlyFull)).toBe(false);
+    expect(isCommandBatchWithinLimits('INSERTCOL A1', nearlyFull)).toBe(true);
   });
 
   it('applies the structural pre-check to moveinsert only', () => {
@@ -375,7 +378,7 @@ describe('isCommandBatchWithinLimits', () => {
       false,
     );
     expect(isCommandBatchWithinLimits('MOVEINSERT A1:A2 A3 all', oversized)).toBe(
-      false,
+      true,
     );
   });
 
@@ -399,6 +402,113 @@ describe('isCommandBatchWithinLimits', () => {
     // the range is small enough to stay inside the work budget.
     expect(isCommandBatchWithinLimits('set A0:B5 bgcolor red')).toBe(false);
     expect(isCommandBatchWithinLimits('set 0:5 height 20')).toBe(false);
+  });
+
+  it('uses valid initial dimensions when checking later structural growth', () => {
+    expect(isCommandBatchWithinLimits('insertcol A1', {
+      rows: 100_001,
+      columns: 0,
+    })).toBe(false);
+    expect(isCommandBatchWithinLimits('insertcol A1', {
+      rows: 100_001,
+      columns: -1,
+    })).toBe(false);
+    expect(isCommandBatchWithinLimits('insertcol A1', {
+      rows: 100_000,
+      columns: 1.5,
+    })).toBe(true);
+    expect(isCommandBatchWithinLimits('insertrow A1', {
+      rows: Number.POSITIVE_INFINITY,
+      columns: 1,
+    })).toBe(true);
+  });
+
+  it('distinguishes complete targets from named ranges', () => {
+    expect(isCommandBatchWithinLimits('set prefixA200001 value n 1')).toBe(true);
+    expect(isCommandBatchWithinLimits('set A200001suffix value n 1')).toBe(true);
+    expect(isCommandBatchWithinLimits('set ZZ285 value n 1')).toBe(false);
+    expect(isCommandBatchWithinLimits('set $ZZ$285 value n 1')).toBe(false);
+    expect(isCommandBatchWithinLimits('set row_0 height 20')).toBe(true);
+    expect(isCommandBatchWithinLimits('set 0suffix height 20')).toBe(true);
+    expect(isCommandBatchWithinLimits('set 0 height 20')).toBe(false);
+    expect(isCommandBatchWithinLimits('set 10:200010 height 20')).toBe(false);
+  });
+
+  it('keeps whole-column targets distinct from opaque names', () => {
+    expect(isCommandBatchWithinLimits('copy prefixA:ZZ\npaste A285 all')).toBe(true);
+    expect(isCommandBatchWithinLimits('copy A:ZZsuffix\npaste A285 all')).toBe(true);
+    expect(isCommandBatchWithinLimits('copy A:ZZ\npaste A285 all')).toBe(false);
+    expect(isCommandBatchWithinLimits('copy ZZ:A\npaste A285 all')).toBe(false);
+    expect(isCommandBatchWithinLimits('copy ZZ\npaste ZZ285 all')).toBe(false);
+  });
+
+  it('checks clipboard coordinates and the exact area ceiling', () => {
+    expect(isCommandBatchWithinLimits('loadclipboard copiedfrom\\cA0\\cB2\npaste A1 all')).toBe(false);
+    expect(isCommandBatchWithinLimits('loadclipboard copiedfrom\\cZZ1\\cZZ200001\npaste A1 all')).toBe(false);
+    expect(isCommandBatchWithinLimits('loadclipboard copiedfrom\\cA1000\\cZZ1000\npaste A1 all')).toBe(true);
+    expect(isCommandBatchWithinLimits('loadclipboard copiedfrom\\cA1\\cB100000\npaste A1 all')).toBe(true);
+    expect(isCommandBatchWithinLimits('copy myrange\npaste A1 all\nset 1:200001 height 20')).toBe(false);
+  });
+
+  it('charges clipboard placement from its destination corner', () => {
+    expect(isCommandBatchWithinLimits('copy A1:B1\npaste ZZ285 all')).toBe(false);
+    expect(isCommandBatchWithinLimits('copy A1:C1\npaste namedrange all', {
+      rows: MAX_SHEET_CELLS,
+      columns: 1,
+    })).toBe(true);
+    expect(isCommandBatchWithinLimits('copy myrange\npaste ZZ285 all')).toBe(true);
+    expect(isCommandBatchWithinLimits('copy A1:B2\npaste 0:5 all')).toBe(false);
+  });
+
+  it('checks structural operations at and beyond the area ceiling', () => {
+    expect(isCommandBatchWithinLimits('deleterow A1', {
+      rows: MAX_SHEET_CELLS,
+      columns: 1,
+    })).toBe(true);
+    expect(isCommandBatchWithinLimits('deletecol A1', {
+      rows: MAX_SHEET_CELLS,
+      columns: 1,
+    })).toBe(true);
+    expect(isCommandBatchWithinLimits('insertcol A:B', {
+      rows: 66_666,
+      columns: 1,
+    })).toBe(false);
+  });
+
+  it('checks both axes when moving a rectangular block', () => {
+    expect(isCommandBatchWithinLimits('movepaste A3:A1 A199998 all')).toBe(true);
+    expect(isCommandBatchWithinLimits('movepaste A3:A1 A199999 all')).toBe(false);
+    expect(isCommandBatchWithinLimits('movepaste A1:C1 ZY285 all')).toBe(false);
+    expect(isCommandBatchWithinLimits('movepaste namedrange ZZ285 all')).toBe(true);
+  });
+
+  it('accounts for insertion after a move', () => {
+    expect(isCommandBatchWithinLimits('moveinsert A1:A2 A3 all', {
+      rows: 99_998,
+      columns: 1,
+    })).toBe(true);
+    expect(isCommandBatchWithinLimits('moveinsert A1:A2 A3 all', {
+      rows: 99_999,
+      columns: 1,
+    })).toBe(false);
+    expect(isCommandBatchWithinLimits('moveinsert A1:C1 A1 all', {
+      rows: 49_999,
+      columns: 1,
+    })).toBe(false);
+    expect(isCommandBatchWithinLimits('moveinsert namedrange other all', {
+      rows: MAX_SHEET_CELLS,
+      columns: 1,
+    })).toBe(true);
+  });
+
+  it('applies range work limits to each direct range verb', () => {
+    for (const verb of ['merge', 'unmerge', 'erase', 'cut', 'fillright', 'filldown', 'sort']) {
+      expect(isCommandBatchWithinLimits(`${verb} A1:ZZ285 all`), verb).toBe(false);
+    }
+  });
+
+  it('leaves unrelated sheet settings outside the dimension check', () => {
+    expect(isCommandBatchWithinLimits('set sheet printarea 1048577')).toBe(true);
   });
 });
 

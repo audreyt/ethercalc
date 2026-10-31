@@ -4,6 +4,7 @@ import {
   buildMultiSheetImport,
   buildMultiSheetAppendImport,
   prepareAppendImportPlan,
+  enforceTextImportLimits,
   getMaxSubsheetIndex,
   rewriteSheetReferences,
   ImportTooManySheetsError,
@@ -18,6 +19,7 @@ import {
   worksheetToSave,
 } from '../src/lib/xlsx-import.ts';
 import { MAX_MULTI_SHEETS } from '@ethercalc/shared';
+import { MAX_SOCIALCALC_COL } from '../src/lib/command-limits.ts';
 
 function workbookBytes(sheets: Array<{ name: string; aoa: (string | number | boolean)[][] }>): Uint8Array {
   const wb = XLSX.utils.book_new();
@@ -456,6 +458,15 @@ describe('getMaxSubsheetIndex & rewriteSheetReferences', () => {
 });
 
 describe('prepareAppendImportPlan', () => {
+  it('bounds text imports before save materialization', () => {
+    const bytes = new TextEncoder().encode('x,'.repeat(MAX_IMPORT_CELLS + 1));
+    expect(() => prepareAppendImportPlan(bytes, 'csv')).toThrow(ImportDimensionsTooLargeError);
+    expect(() => enforceTextImportLimits(new TextEncoder().encode('"a,b",c\r\nd,e\n'), 'csv')).not.toThrow();
+    expect(() => enforceTextImportLimits(new TextEncoder().encode('"a""b",c\n'), 'csv')).not.toThrow();
+    expect(() => enforceTextImportLimits(new TextEncoder().encode('a\tb\n'), 'tsv')).not.toThrow();
+    expect(() => enforceTextImportLimits(new TextEncoder().encode('a\r'), 'csv')).not.toThrow();
+    expect(() => enforceTextImportLimits(new Uint8Array(1024 * 1024 + 1).fill(0x78), 'txt')).toThrow(ImportArchiveTooLargeError);
+  });
   it('defers concrete subroom ids until materializeSaves is given firstIndex', () => {
     const plan = prepareAppendImportPlan(
       new TextEncoder().encode('a,b\n1,2'),
@@ -563,10 +574,11 @@ describe('multi-sheet-import mutation pins', () => {
 
   it('mutation pins for upload size boundary and format gates', () => {
     // Equal to limit is allowed; one over throws (kills >= mutant).
+    const atLimit = new Uint8Array(MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES);
     expect(() =>
       prepareAppendImportPlan(
-        new Uint8Array(MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES),
-        'csv',
+        atLimit,
+        'socialcalc',
         'Edge',
       ),
     ).not.toThrow();
@@ -663,6 +675,62 @@ describe('multi-sheet-import mutation pins', () => {
       expect((err as Error).message.length).toBeGreaterThan(0);
     }
   });
+});
+
+describe('text import limits', () => {
+  const bytes = (text: string): Uint8Array => new TextEncoder().encode(text);
+  const maxFieldBytes = 1024 * 1024;
+
+  it('bounds each field independently, including quoted content', () => {
+    expect(() => enforceTextImportLimits(new Uint8Array(maxFieldBytes).fill(0x78), 'txt'))
+      .not.toThrow();
+    expect(() => enforceTextImportLimits(bytes(`"${'x'.repeat(maxFieldBytes)}"`), 'csv'))
+      .toThrow(ImportArchiveTooLargeError);
+    expect(() => enforceTextImportLimits(bytes(`${'x'.repeat(1000)}\n`.repeat(1100)), 'txt'))
+      .not.toThrow();
+  }, 30_000);
+
+  it('counts unquoted columns and resets the count for each row', () => {
+    const maxColumns = Array(MAX_SOCIALCALC_COL).fill('x').join(',');
+    expect(() => enforceTextImportLimits(bytes(`${maxColumns}\n`), 'csv')).not.toThrow();
+    expect(() => enforceTextImportLimits(bytes(`${maxColumns},x\n`), 'csv'))
+      .toThrow(ImportDimensionsTooLargeError);
+    expect(() => enforceTextImportLimits(bytes('x,y\n'.repeat(MAX_SOCIALCALC_COL)), 'csv'))
+      .not.toThrow();
+    expect(() => enforceTextImportLimits(bytes('x\t'.repeat(MAX_SOCIALCALC_COL)), 'tsv'))
+      .toThrow(ImportDimensionsTooLargeError);
+    expect(() => enforceTextImportLimits(bytes('x\t'.repeat(MAX_SOCIALCALC_COL)), 'csv'))
+      .not.toThrow();
+  });
+
+  it('treats quoted separators and escaped quotes as field content', () => {
+    const remaining = Array(MAX_SOCIALCALC_COL - 1).fill('x').join(',');
+    expect(() => enforceTextImportLimits(bytes(`"a""b,c",${remaining}\n`), 'csv'))
+      .not.toThrow();
+    expect(() => enforceTextImportLimits(bytes(`"a\tb"\t${remaining}\n`), 'tsv'))
+      .not.toThrow();
+  });
+
+  it('counts logical rows across LF, CRLF, quoted newlines and final rows', () => {
+    expect(() => enforceTextImportLimits(bytes('x\n'.repeat(MAX_IMPORT_CELLS)), 'csv'))
+      .not.toThrow();
+    expect(() => enforceTextImportLimits(bytes('x\n'.repeat(MAX_IMPORT_CELLS + 1)), 'csv'))
+      .toThrow(ImportDimensionsTooLargeError);
+    expect(() => enforceTextImportLimits(bytes('x\r\n'.repeat(Math.floor(MAX_IMPORT_CELLS / 2) + 1)), 'csv'))
+      .not.toThrow();
+    expect(() => enforceTextImportLimits(bytes(`"x\ny"\n${'x\n'.repeat(MAX_IMPORT_CELLS - 1)}`), 'csv'))
+      .not.toThrow();
+    expect(() => enforceTextImportLimits(bytes(`${'x\n'.repeat(MAX_IMPORT_CELLS)}x`), 'csv'))
+      .toThrow(ImportDimensionsTooLargeError);
+  }, 30_000);
+
+  it('caps the populated rectangle even when rows and columns each fit', () => {
+    const row = `${Array(500).fill('x').join(',')}\n`;
+    expect(() => enforceTextImportLimits(bytes(row.repeat(MAX_IMPORT_CELLS / 500)), 'csv'))
+      .not.toThrow();
+    expect(() => enforceTextImportLimits(bytes(row.repeat(MAX_IMPORT_CELLS / 500 + 1)), 'csv'))
+      .toThrow(ImportDimensionsTooLargeError);
+  }, 30_000);
 });
 
 describe('multi-sheet-import mutation pins (workbook read + cells)', () => {

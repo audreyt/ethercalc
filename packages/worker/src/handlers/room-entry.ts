@@ -46,7 +46,7 @@
  * Hono decodes the param before we see it, so we re-encode via
  * `encodeRoom` to keep storage keys byte-identical with the oracle.
  */
-import { encodeRoom, generateRoomId } from '../lib/room-name.ts';
+import { encodeRoom, encodeRoomPath, generateRoomId } from '../lib/room-name.ts';
 
 /** Marker statuses for the template-form stub. Exported so the route
  * layer can read `TEMPLATE_FORM_STUB_STATUS` as its `init.status`.
@@ -114,7 +114,7 @@ export function buildRoomEntry(opts: BuildRoomEntryOpts): RoomEntryDecision {
   // redirect body shape is `Found. Redirecting to <url>` with a
   // `text/plain; charset=UTF-8` body; we reproduce it so oracle replays
   // stay byte-aligned with the rest of the redirect family.
-  const location = `${basepath}/${encoded}?auth=0`;
+  const location = `${basepath}/${encodeRoomPath(opts.room)}?auth=0`;
   const body = `Found. Redirecting to ${location}`;
   return {
     kind: 'redirect',
@@ -132,6 +132,7 @@ export function buildRoomEntry(opts: BuildRoomEntryOpts): RoomEntryDecision {
 export interface BuildTemplateFormRedirectOpts {
   readonly basepath?: string;
   readonly template: string;
+  readonly auth?: string;
   /** Injectable for deterministic tests. Defaults to `generateRoomId`. */
   readonly idGen?: () => string;
   /**
@@ -190,7 +191,8 @@ export function buildTemplateFormRedirect(
     };
   }
 
-  const location = `${basepath}/${newRoom}/app`;
+  const auth = opts.auth ? `?auth=${encodeURIComponent(opts.auth)}` : '';
+  const location = `${basepath}/${encodeRoomPath(opts.template)}_${id}/app${auth}`;
   const body = `Found. Redirecting to ${location}`;
   return {
     status: 302,

@@ -1,47 +1,38 @@
 import { describe, it, expect } from 'vite-plus/test';
 
 import { buildNewRoomRedirect } from '../src/handlers/new-room.ts';
+import { computeAuth } from '../src/lib/auth.ts';
 
 describe('buildNewRoomRedirect', () => {
   const fixedId = () => 'b2wgtc1rmuqu';
 
-  it('redirects to /<room> when no key, single-sheet', () => {
-    const r = buildNewRoomRedirect({ hasKey: false, multi: false, idGen: fixedId });
+  it('redirects to a fresh single-sheet room without a key', async () => {
+    const r = await buildNewRoomRedirect({ multi: false, idGen: fixedId });
     expect(r).toEqual({ status: 302, headers: { Location: '/b2wgtc1rmuqu' } });
   });
 
-  it('redirects to /<room>/edit when key is set', () => {
-    const r = buildNewRoomRedirect({ hasKey: true, multi: false, idGen: fixedId });
-    expect(r.headers.Location).toBe('/b2wgtc1rmuqu/edit');
+  it('delivers the edit capability for a newly generated room', async () => {
+    const key = 'secret';
+    const r = await buildNewRoomRedirect({ key, multi: false, idGen: fixedId });
+    expect(r.headers.Location).toBe(`/b2wgtc1rmuqu?auth=${await computeAuth(key, 'b2wgtc1rmuqu')}`);
   });
 
-  it('redirects to /=<room> for multi-sheet, no key', () => {
-    const r = buildNewRoomRedirect({ hasKey: false, multi: true, idGen: fixedId });
-    expect(r.headers.Location).toBe('/=b2wgtc1rmuqu');
+  it('handles the multi-sheet prefix in both modes', async () => {
+    const plain = await buildNewRoomRedirect({ multi: true, idGen: fixedId });
+    expect(plain.headers.Location).toBe('/=b2wgtc1rmuqu');
+    const keyed = await buildNewRoomRedirect({ key: 'secret', multi: true, idGen: fixedId });
+    expect(keyed.headers.Location).toBe(`/=b2wgtc1rmuqu?auth=${await computeAuth('secret', '=b2wgtc1rmuqu')}`);
   });
 
-  it('redirects to /=<room>/edit for multi-sheet with key', () => {
-    const r = buildNewRoomRedirect({ hasKey: true, multi: true, idGen: fixedId });
-    expect(r.headers.Location).toBe('/=b2wgtc1rmuqu/edit');
-  });
-
-  it('honors basepath prefix', () => {
-    const r = buildNewRoomRedirect({
-      basepath: '/ec',
-      hasKey: false,
-      multi: false,
-      idGen: fixedId,
+  it('honors the basepath prefix', async () => {
+    const r = await buildNewRoomRedirect({
+      basepath: '/ec', multi: false, idGen: fixedId,
     });
     expect(r.headers.Location).toBe('/ec/b2wgtc1rmuqu');
   });
 
-  it('defaults idGen to generateRoomId when not injected', () => {
-    const r = buildNewRoomRedirect({ hasKey: false, multi: false });
+  it('uses a generated id when none is supplied', async () => {
+    const r = await buildNewRoomRedirect({ multi: false });
     expect(r.headers.Location).toMatch(/^\/[0-9a-z]{12}$/);
-  });
-
-  it('defaults basepath to empty string', () => {
-    const r = buildNewRoomRedirect({ hasKey: true, multi: true, idGen: fixedId });
-    expect(r.headers.Location).toBe('/=b2wgtc1rmuqu/edit');
   });
 });

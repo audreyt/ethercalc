@@ -83,5 +83,9 @@ export async function upsertCronTriggers(
 export function buildEmailSender(env: Env): EmailSender {
   if (!env.EMAIL) return new DisabledEmailSender();
   const from = env.EMAIL_FROM ?? 'noreply@ethercalc.invalid';
-  return new BindingEmailSender(env.EMAIL, from);
+  const recipients = (env.ETHERCALC_EMAIL_ALLOWED_RECIPIENTS ?? '')
+    .split(',')
+    .map((address) => address.trim())
+    .filter((address) => /^[^\s,@]+@[^\s,@]+\.[^\s,@]+$/.test(address));
+  return new BindingEmailSender(env.EMAIL, from, env.ETHERCALC_KEY ? recipients : []);
 }

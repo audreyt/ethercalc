@@ -87,6 +87,32 @@ function twoSheetXlsx(): Uint8Array {
   return new Uint8Array(XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer);
 }
 
+describe('Multi-sheet workbook import validation', () => {
+  for (const format of ['xlsx', 'ods'] as const) {
+    it(`rejects unreadable ${format} content before changing rooms`, async () => {
+      const room = `mvalidate-${format}-${Math.random().toString(36).slice(2, 8)}`;
+      const path = format === 'xlsx' ? `/=${room}.xlsx` : `/_/=${room}/ods`;
+
+      const put = await request('PUT', path, 'item,value\nfirst,second\n');
+      expect(put.status).toBe(400);
+      expect((await request('GET', `/_/${room}`)).status).toBe(404);
+
+      const seed = await request('PUT', path, twoSheetXlsx());
+      expect(seed.status).toBe(201);
+      const beforeRes = await request('GET', `/_/${room}`);
+      expect(beforeRes.status).toBe(200);
+      const before = await beforeRes.text();
+
+      const post = await request('POST', path, 'item,value\nfirst,second\n');
+      expect(post.status).toBe(400);
+      const afterRes = await request('GET', `/_/${room}`);
+      expect(afterRes.status).toBe(200);
+      expect(await afterRes.text()).toBe(before);
+      expect((await request('GET', `/_/${room}.3`)).status).toBe(404);
+    });
+  }
+});
+
 describe('PUT multi-sheet import', () => {
   it('PUT /=:room.xlsx imports a workbook into TOC + sub-rooms and round-trips through export', async () => {
     const room = `mimport-${Math.random().toString(36).slice(2, 8)}`;

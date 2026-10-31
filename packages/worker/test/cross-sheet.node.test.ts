@@ -113,12 +113,15 @@ describe('hydrateCrossSheetRefs', () => {
   ): CrossSheetSpreadsheet & {
     added: string[];
     recalced: number;
+    resets: number;
   } {
     const added: string[] = [];
     let recalced = 0;
+    let resets = 0;
     return {
       findCrossSheetRefs: (limit = Number.POSITIVE_INFINITY) =>
         refs.slice(0, limit),
+      resetSiblingSheets: () => { resets++; },
       addSiblingSheet: (name: string) => {
         added.push(name);
       },
@@ -131,6 +134,9 @@ describe('hydrateCrossSheetRefs', () => {
       get recalced() {
         return recalced;
       },
+      get resets() {
+        return resets;
+      },
     };
   }
 
@@ -141,6 +147,7 @@ describe('hydrateCrossSheetRefs', () => {
     expect(added).toBe(0);
     expect(fetchSibling).not.toHaveBeenCalled();
     expect(ss.recalced).toBe(0);
+    expect(ss.resets).toBe(0);
   });
 
   it('fetches each ref, adds to sibling cache, and recalcs once', async () => {
@@ -150,6 +157,7 @@ describe('hydrateCrossSheetRefs', () => {
     expect(added).toBe(2);
     expect(ss.added).toEqual(['alpha', 'beta']);
     expect(ss.recalced).toBe(1);
+    expect(ss.resets).toBe(1);
   });
 
   it('caps sibling subrequests even when a spreadsheet advertises more refs', async () => {
@@ -209,6 +217,13 @@ describe('hydrateCrossSheetRefs', () => {
     expect(ss.added).toEqual(['two']);
   });
 
+  it('recalculates after a reference is no longer available', async () => {
+    const ss = makeSS(['unavailable']);
+    expect(await hydrateCrossSheetRefs(ss, async () => null)).toBe(0);
+    expect(ss.resets).toBe(1);
+    expect(ss.recalced).toBe(1);
+  });
+
   it('swallows fetch errors and continues', async () => {
     const ss = makeSS(['throws', 'ok']);
     const fetchSibling = vi.fn(async (name: string) => {
@@ -220,12 +235,12 @@ describe('hydrateCrossSheetRefs', () => {
     expect(ss.added).toEqual(['ok']);
   });
 
-  it('does NOT recalc when no siblings were added', async () => {
+  it('recalculates unresolved references', async () => {
     const ss = makeSS(['all-missing']);
     const fetchSibling = vi.fn(async () => null);
     const added = await hydrateCrossSheetRefs(ss, fetchSibling);
     expect(added).toBe(0);
-    expect(ss.recalced).toBe(0);
+    expect(ss.recalced).toBe(1);
   });
 });
 
@@ -250,6 +265,7 @@ describe('cross-sheet fetch guards', () => {
     const added: string[] = [];
     return {
       findCrossSheetRefs: () => refs,
+      resetSiblingSheets: () => {},
       addSiblingSheet: (name: string) => void added.push(name),
       recalc: () => {},
       get added() {

@@ -41,10 +41,13 @@ describe('isSandstormMutationRoute', () => {
     expect(isSandstormMutationRoute('POST', '/_')).toBe(true);
     expect(isSandstormMutationRoute('POST', '/_/room')).toBe(true);
     expect(isSandstormMutationRoute('PUT', '/_/room')).toBe(true);
+    expect(isSandstormMutationRoute('PUT', '/=sheet.xlsx')).toBe(true);
+    expect(isSandstormMutationRoute('POST', '/=sheet.csv')).toBe(true);
+    expect(isSandstormMutationRoute('GET', '/sheet/form')).toBe(true);
     expect(isSandstormMutationRoute('GET', '/_new')).toBe(true);
     expect(isSandstormMutationRoute('GET', '/_from/t')).toBe(true);
     expect(isSandstormMutationRoute('GET', '/_/room')).toBe(false);
-    expect(isSandstormMutationRoute('PATCH', '/_/room')).toBe(false);
+    expect(isSandstormMutationRoute('PATCH', '/_/room')).toBe(true);
   });
 });
 
@@ -85,13 +88,19 @@ describe('sandstorm route and permission matching', () => {
   it.each([
     ['POST', '/_', true],
     ['POST', '/_/room', true],
-    ['POST', '/_x', false],
-    ['POST', '/other', false],
+    ['POST', '/_x', true],
+    ['POST', '/other', true],
+    ['POST', '/socket.io/1/xhr-polling/0123456789abcdef0123456789abcdef', false],
+    ['POST', '/socket.io/1/xhr-polling/invalid', true],
     ['PUT', '/_/room', true],
-    ['PUT', '/room', false],
+    ['PUT', '/room', true],
+    ['PUT', '/=sheet.xlsx', true],
+    ['POST', '/=sheet.csv', true],
     ['GET', '/_new', true],
     ['GET', '/=_new', true],
     ['GET', '/_from/tpl', true],
+    ['GET', '/tpl/form', true],
+    ['GET', '/tpl/other', false],
     ['GET', '/room', false],
     ['GET', '/_', false],
     ['HEAD', '/_', false],

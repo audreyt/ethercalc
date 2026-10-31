@@ -129,6 +129,18 @@ describe('upsertCronTriggers', () => {
 });
 
 describe('buildEmailSender', () => {
+  it('keeps delivery off unless the key and recipient list are both configured', async () => {
+    const send = vi.fn(async (_m: unknown) => undefined);
+    for (const setting of [
+      { ETHERCALC_KEY: 'key' },
+      { ETHERCALC_EMAIL_ALLOWED_RECIPIENTS: 'u@ex.com' },
+      { ETHERCALC_KEY: 'key', ETHERCALC_EMAIL_ALLOWED_RECIPIENTS: 'invalid' },
+    ]) {
+      const sender = buildEmailSender({ EMAIL: { send }, ...setting } as unknown as Env);
+      expect(await sender.send('u@ex.com', 's', 'b')).toEqual({ message: ' [E-mail not sent]' });
+    }
+    expect(send).not.toHaveBeenCalled();
+  });
   it('returns DisabledEmailSender when env.EMAIL is undefined', () => {
     const env = {} as unknown as Env;
     const sender = buildEmailSender(env);
@@ -138,6 +150,8 @@ describe('buildEmailSender', () => {
   it('returns BindingEmailSender when env.EMAIL is bound', () => {
     const env = {
       EMAIL: { send: vi.fn(async () => undefined) },
+      ETHERCALC_KEY: 'operator-key',
+      ETHERCALC_EMAIL_ALLOWED_RECIPIENTS: 'u@ex.com',
     } as unknown as Env;
     const sender = buildEmailSender(env);
     expect(sender).toBeInstanceOf(BindingEmailSender);
@@ -151,6 +165,8 @@ describe('buildEmailSender', () => {
     const env1 = {
       EMAIL: { send: send1 },
       EMAIL_FROM: 'a@ex.com',
+      ETHERCALC_KEY: 'operator-key',
+      ETHERCALC_EMAIL_ALLOWED_RECIPIENTS: 'u@ex.com',
     } as unknown as Env;
     const sender1 = buildEmailSender(env1);
     await sender1.send('u@ex.com', 's', 'b');
@@ -160,6 +176,8 @@ describe('buildEmailSender', () => {
     const send2 = vi.fn(async (_m: unknown) => undefined);
     const env2 = {
       EMAIL: { send: send2 },
+      ETHERCALC_KEY: 'operator-key',
+      ETHERCALC_EMAIL_ALLOWED_RECIPIENTS: 'u@ex.com',
     } as unknown as Env;
     const sender2 = buildEmailSender(env2);
     await sender2.send('u@ex.com', 's', 'b');

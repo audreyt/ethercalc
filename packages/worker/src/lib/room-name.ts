@@ -69,3 +69,9 @@ export function encodeRoom(raw: string): string {
   if (!isValidRoomName(raw)) throw new RangeError('Invalid room name');
   return encodeURI(raw);
 }
+
+/** Encode one URL path segment while keeping the room's storage key unchanged. */
+export function encodeRoomPath(raw: string): string {
+  if (!isValidRoomName(raw)) throw new RangeError('Invalid room name');
+  return encodeURIComponent(raw);
+}

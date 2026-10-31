@@ -35,3 +35,11 @@ export function isSafeMultiSheetLink(link: string): boolean {
   if (segment === '.' || segment === '..') return false;
   return !/[\\/?#"!\u0000-\u001f\u007f]/.test(segment);
 }
+
+/** Accept a numbered sheet link belonging to the given workbook. */
+export function isWorkbookChildLink(link: string, workbook: string): boolean {
+  if (!workbook || !isSafeMultiSheetLink(link)) return false;
+  const room = decodeURIComponent(link.slice(1));
+  const prefix = `${workbook}.`;
+  return room.startsWith(prefix) && /^[1-9]\d*$/.test(room.slice(prefix.length));
+}

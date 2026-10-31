@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test';
 import {
   isSafeMultiSheetLink,
+  isWorkbookChildLink,
   MAX_MULTI_SHEET_LINK_LENGTH,
   MAX_MULTI_SHEET_TITLE_LENGTH,
   MAX_MULTI_SHEETS,
@@ -52,5 +53,16 @@ describe('multi-sheet trust policy', () => {
     expect(
       isSafeMultiSheetLink('/' + 'a'.repeat(MAX_MULTI_SHEET_LINK_LENGTH - 1)),
     ).toBe(true);
+  });
+
+  it('accepts only numbered children of the selected workbook', () => {
+    expect(isWorkbookChildLink('/book.1', 'book')).toBe(true);
+    expect(isWorkbookChildLink('/caf%C3%A9.12', 'café')).toBe(true);
+    expect(isWorkbookChildLink('/book.2', '')).toBe(false);
+    expect(isWorkbookChildLink('//outside.test', 'book')).toBe(false);
+    expect(isWorkbookChildLink('/other.1', 'book')).toBe(false);
+    expect(isWorkbookChildLink('/book.0', 'book')).toBe(false);
+    expect(isWorkbookChildLink('/book.01', 'book')).toBe(false);
+    expect(isWorkbookChildLink('/book.1.extra', 'book')).toBe(false);
   });
 });

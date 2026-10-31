@@ -136,10 +136,18 @@ describe('DisabledEmailSender', () => {
 
 
 describe('BindingEmailSender', () => {
+  it('sends only to configured recipients', async () => {
+    const send = vi.fn(async (_msg: unknown) => undefined);
+    const sender = new BindingEmailSender({ send }, 'noreply@ex.com', ['Allowed@ex.com']);
+    expect(await sender.send('other@ex.com', 's', 'b')).toEqual({ message: EMAIL_FAILURE_MESSAGE });
+    expect(send).not.toHaveBeenCalled();
+    expect(await sender.send('allowed@ex.com', 's', 'b')).toEqual({ message: STUB_SENT_MESSAGE });
+    expect(send).toHaveBeenCalledOnce();
+  });
   it('calls the structured Email Service binding and returns success', async () => {
     const send = vi.fn(async (_msg: unknown) => undefined);
     const binding: SendEmailBinding = { send };
-    const sender = new BindingEmailSender(binding, 'noreply@ex.com');
+    const sender = new BindingEmailSender(binding, 'noreply@ex.com', ['u@ex.com']);
     const res = await sender.send('u@ex.com', 'hi', 'body');
     expect(res).toEqual({ message: STUB_SENT_MESSAGE });
     expect(send).toHaveBeenCalledOnce();
@@ -156,6 +164,7 @@ describe('BindingEmailSender', () => {
     const sender = new BindingEmailSender(
       { send },
       'sender@example.com\r\nBcc:evil@example.com',
+      ['to@example.comBcc:evil@example.com'],
     );
     await sender.send(
       'to@example.com\r\nBcc:evil@example.com',
@@ -176,7 +185,7 @@ describe('BindingEmailSender', () => {
         throw new Error('secret provider detail');
       }),
     };
-    const sender = new BindingEmailSender(binding, 'f@ex.com');
+    const sender = new BindingEmailSender(binding, 'f@ex.com', ['t@ex.com']);
     const res = await sender.send('t@ex.com', 's', 'b');
     expect(res).toEqual({ message: EMAIL_FAILURE_MESSAGE });
   });
@@ -188,7 +197,7 @@ describe('BindingEmailSender', () => {
         throw 'secret non-error detail';
       }),
     };
-    const sender = new BindingEmailSender(binding, 'f@ex.com');
+    const sender = new BindingEmailSender(binding, 'f@ex.com', ['t@ex.com']);
     const res = await sender.send('t@ex.com', 's', 'b');
     expect(res).toEqual({ message: EMAIL_FAILURE_MESSAGE });
   });

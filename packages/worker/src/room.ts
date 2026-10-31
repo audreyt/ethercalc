@@ -505,6 +505,7 @@ export class RoomDO implements DurableObject {
       isPrivate: access.isPrivate,
       canRead: access.canRead,
       canWrite: access.canWrite,
+      parented: access.parented,
     });
   }
 
@@ -2184,7 +2185,18 @@ export class RoomDO implements DurableObject {
      *   Same workerd-only surface as `#acceptWebSocket` (WebSocketPair +
      *   acceptWebSocket + 101 Response). Covered by workers-pool tests.
      */
-    return upgradeLegacySocketIo(this.#state);
+    const uid = request.headers.get("X-EC-Uid");
+    const sessionExpHeader = request.headers.get("X-EC-Session-Exp");
+    const session = request.headers.get("X-EC-Session");
+    const sessionExp = sessionExpHeader === null ? null : Number(sessionExpHeader);
+    return upgradeLegacySocketIo(this.#state, {
+      ...(isSandstormEnforced(this.#env)
+        ? { sandstormModify: sandstormCanModify(request.headers) }
+        : {}),
+      ...(uid === null ? {} : { uid }),
+      ...(sessionExp === null || !Number.isFinite(sessionExp) ? {} : { sessionExp }),
+      ...(session === null ? {} : { session }),
+    });
   }
 
   /**
@@ -2358,6 +2370,22 @@ export class RoomDO implements DurableObject {
     if (!attachment.room) {
       if (parsed.type !== "execute") return;
       if (isFilteredExecuteCommand(parsed.cmdstr)) return;
+      if (!sandstormAllowsWsWrite(this.#env, attachment.sandstormModify)) return;
+      if (attachment.session !== undefined) {
+        const principal = await this.#verifySession(attachment.session);
+        if (
+          principal === null ||
+          principal.uid !== attachment.uid ||
+          principal.exp !== attachment.sessionExp
+        ) {
+          try {
+            ws.close(1008, "Session invalid");
+          } catch {
+            // The peer may already be closed.
+          }
+          return;
+        }
+      }
       const room = parsed.room;
       const auth = parsed.auth ?? attachment.auth;
       if (!(await verifyAuth(this.#env.ETHERCALC_KEY, room, auth))) return;
@@ -2366,6 +2394,7 @@ export class RoomDO implements DurableObject {
         await stub.fetch(`https://do.local/_do/commands?name=${encodeURIComponent(room)}`, {
           method: "POST",
           body: parsed.cmdstr,
+          ...(attachment.uid === undefined ? {} : { headers: { "X-EC-Uid": attachment.uid } }),
         });
       } catch {
         // Best-effort; a missing ROOM binding in unit tests no-ops.
@@ -2462,6 +2491,7 @@ export class RoomDO implements DurableObject {
         return applied;
       },
       broadcast: async (msg, includeSelf) => {
+        /* istanbul ignore if -- @preserve: WS handlers exclude the sender; all-peer events call #broadcastAll directly */
         if (includeSelf) await this.#broadcastAll(msg);
         else await this.#broadcast(ws, msg);
       },
@@ -2488,6 +2518,15 @@ export class RoomDO implements DurableObject {
         // Messages without an auth field pass empty string → rejected by
         // `verifyAuth` as view-only unless KEY is unset (identity path).
         return await verifyAuth(env.ETHERCALC_KEY, messageRoom, messageAuth);
+      },
+      verifyDeleteAuth: async () => {
+        if (!sandstormAllowsWsWrite(env, attachment.sandstormModify) || messageAuth === "0") {
+          return false;
+        }
+        const access = await this.#effectiveAccess(attachment.uid ?? null);
+        if (!access.canWrite) return false;
+        if (access.isPrivate) return attachment.uid !== undefined;
+        return !!env.ETHERCALC_KEY && await verifyAuth(env.ETHERCALC_KEY, messageRoom, messageAuth);
       },
       allowSubmitForm: async () => {
         const access = await this.#effectiveAccess(attachment.uid ?? null);
@@ -2809,26 +2848,29 @@ export class RoomDO implements DurableObject {
     return this.#ss;
   }
 
-  /**
-   * Fetch a sibling snapshot after confirming this room can read. When this
-   * room is the sibling's declared parent, an internal assertion avoids a
-   * child→parent authorization callback that would deadlock while the parent
-   * is inside `blockConcurrencyWhile`. Worker dispatch strips this header
-   * from ingress, and the child accepts it only for marker-matched GETs.
-   */
+  /** Fetch a sibling readable by every reader of this room. */
   async #fetchSibling(name: string, uid: string | null): Promise<string | null> {
     const ownAccess = await this.#effectiveAccess(uid);
     if (!ownAccess.canRead) return null;
     const stub = this.#env.ROOM.get(this.#env.ROOM.idFromName(encodeRoom(name)));
-    const headers = new Headers();
-    if (uid !== null) headers.set("X-EC-Uid", uid);
-    if (this.#ownName !== undefined) {
-      headers.set(PARENT_READ_HEADER, this.#ownName);
-    }
-    const res = await stub.fetch(`https://do.local/_do/snapshot?name=${encodeURIComponent(name)}`, {
+    const url = `https://do.local/_do/snapshot?name=${encodeURIComponent(name)}`;
+    let res = await stub.fetch(url, {
       method: "GET",
-      headers,
     });
+    if (res.status !== 200) {
+      const meta = await this.#getAccessMeta();
+      const parent = meta.hasParent ? meta.parent : this.#ownName;
+      if (
+        typeof parent !== "string" ||
+        !this.#isManagedChildName(parent, name)
+      ) {
+        return null;
+      }
+      res = await stub.fetch(url, {
+        method: "GET",
+        headers: { [PARENT_READ_HEADER]: parent },
+      });
+    }
     if (res.status !== 200) return null;
     const text = await readBoundedResponseText(res);
     return text || null;

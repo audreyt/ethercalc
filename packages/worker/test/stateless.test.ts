@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vite-plus/test';
 
 import worker from '../src/index.ts';
 import type { Env } from '../src/env.ts';
+import { computeAuth } from '../src/lib/auth.ts';
 
 /**
  * Integration tests for Phase 4 stateless routes. Runs inside workerd
@@ -15,6 +16,14 @@ async function call(path: string, init: RequestInit = {}): Promise<Response> {
   const req = new Request(`https://example.test${path}`, { redirect: 'manual', ...init });
   const ctx = createExecutionContext();
   const res = await worker.fetch(req, env as never, ctx);
+  await waitOnExecutionContext(ctx);
+  return res;
+}
+
+async function callWithKey(path: string): Promise<Response> {
+  const req = new Request(`https://example.test${path}`, { redirect: 'manual' });
+  const ctx = createExecutionContext();
+  const res = await worker.fetch(req, { ...env, ETHERCALC_KEY: 'test-key' } as never, ctx);
   await waitOnExecutionContext(ctx);
   return res;
 }
@@ -103,6 +112,48 @@ describe('GET /:room/app', () => {
     const res = await call('/some-room/app');
     expect(res.status).toBe(302);
     expect(res.headers.get('Location')).toBe('/some-room?auth=some-room&app=1');
+  });
+});
+
+describe('keyed room links', () => {
+  it('does not issue an edit capability through view or app links', async () => {
+    const view = await callWithKey('/shared/view');
+    const app = await callWithKey('/shared/app');
+    expect(view.headers.get('Location')).toBe('/shared?auth=0&view=1');
+    expect(app.headers.get('Location')).toBe('/shared?auth=0&app=1');
+  });
+
+  it('preserves an authorized edit capability without minting one on request', async () => {
+    const denied = await callWithKey('/shared/edit');
+    expect(denied.headers.get('Location')).toBe('/shared/view');
+    const token = await computeAuth('test-key', 'shared');
+    const allowed = await callWithKey(`/shared/edit?auth=${token}`);
+    expect(allowed.headers.get('Location')).toBe(`/shared?auth=${token}`);
+  });
+
+  it('issues an edit capability only for a newly generated room', async () => {
+    const response = await callWithKey('/_new');
+    const location = response.headers.get('Location') ?? '';
+    const room = /^\/([0-9a-z]{12})\?auth=([a-f0-9]{64})$/.exec(location);
+    expect(room).not.toBeNull();
+    expect(room?.[2]).toBe(await computeAuth('test-key', room![1]!));
+  });
+});
+
+describe('room redirects with encoded delimiters', () => {
+  it.each(['edit', 'view', 'app'])(
+    'keeps the %s redirect on the current origin',
+    async (mode) => {
+      const res = await call(`/%2Fother.test/${mode}`);
+      expect(res.status).toBe(302);
+      expect(res.headers.get('Location')).toMatch(/^\/%2Fother\.test(?:\?|\/)/);
+    },
+  );
+
+  it('keeps the template clone redirect on the current origin', async () => {
+    const res = await call('/%2Fother.test%23/form');
+    expect(res.status).toBe(302);
+    expect(res.headers.get('Location')).toMatch(/^\/%2Fother\.test%23_[0-9a-z]{12}\/app$/);
   });
 });
 

@@ -1022,7 +1022,7 @@ More comments yet to come...
     this.statuscallbackparams = null;
   };
   SC.ResetSheet = function (sheet, _reload) {
-    sheet.cells = {};
+    sheet.cells = Object.create(null);
     sheet.attribs = {
       lastcol: 1,
       lastrow: 1,
@@ -1090,7 +1090,10 @@ More comments yet to come...
     return last_row;
   };
   SC.Sheet.prototype.GetAssuredCell = function (coord) {
-    return this.cells[coord] || this.AddCell(new SocialCalc.Cell(coord));
+    if (!/^[A-Za-z]+[1-9][0-9]*$/.test(coord)) throw new Error('Invalid cell coordinate');
+    return Object.prototype.hasOwnProperty.call(this.cells, coord)
+      ? this.cells[coord]
+      : this.AddCell(new SocialCalc.Cell(coord));
   };
   SC.Sheet.prototype.ParseSheetSave = function (savedsheet) {
     SocialCalc.ParseSheetSave(savedsheet, this);
@@ -1158,6 +1161,7 @@ More comments yet to come...
       parts = line.split(':');
       switch (parts[0]) {
         case 'cell':
+          if (!/^[A-Za-z]+[1-9][0-9]*$/.test(parts[1] || '')) break;
           cell = sheetobj.GetAssuredCell(parts[1]);
           j = 2;
           sheetobj.CellFromStringParts(cell, parts, j);
@@ -5170,6 +5174,27 @@ More comments yet to come...
     }
     return string;
   };
+  SC.SafeFormatStyle = function (style) {
+    var declarations = style.split(';').filter(Boolean);
+    if (declarations.length === 0 || declarations.length > 4) return '';
+    var safe = [];
+    for (var i = 0; i < declarations.length; i++) {
+      var match = /^\s*([a-z-]+)\s*:\s*([^;]+?)\s*$/.exec(declarations[i]);
+      if (!match) return '';
+      var property = match[1].toLowerCase();
+      var value = match[2].toLowerCase();
+      var color = /^(?:#[0-9a-f]{3,8}|black|white|red|green|blue|yellow|gray|grey|silver|maroon|purple|fuchsia|lime|olive|navy|teal|aqua|transparent|rgb\(\s*[0-9]{1,3}\s*,\s*[0-9]{1,3}\s*,\s*[0-9]{1,3}\s*\))$/.test(value);
+      if (!(
+        ((property === 'color' || property === 'background-color') && color) ||
+        (property === 'font-weight' && /^(?:normal|bold|[1-9]00)$/.test(value)) ||
+        (property === 'font-style' && /^(?:normal|italic|oblique)$/.test(value)) ||
+        (property === 'text-decoration' && /^(?:none|underline|line-through)$/.test(value)) ||
+        (property === 'text-align' && /^(?:left|right|center|justify)$/.test(value))
+      )) return '';
+      safe.push(property + ':' + value);
+    }
+    return safe.join(';');
+  };
   SC.Lookup = function (value, list) {
     for (var i = 0; i < list.length; i++) {
       if (list[i] > value) {
@@ -5311,7 +5336,10 @@ More comments yet to come...
     if (valueformat == null || valueformat == 'none') {
       valueformat = '';
     }
-    return SocialCalc.format_number_for_display(cell.datavalue, valuetype, valueformat);
+    return SocialCalc.format_number_for_display(cell.datavalue, valuetype, valueformat)
+      .replace(/&(amp|lt|gt|quot);/g, function (_match, entity) {
+        return { amp: '&', lt: '<', gt: '>', quot: '"' }[entity];
+      });
   };
   SC.FormatValueForDisplay = function (sheetobj, value, cr, linkstyle) {
     var valueformat, valuetype, valuesubtype;
@@ -5332,7 +5360,7 @@ More comments yet to come...
     valuetype = valuetype.charAt(0);
     if (cell.errors || valuetype == 'e') {
       displayvalue = cell.errors || valuesubtype || 'Error in cell';
-      return displayvalue;
+      return SocialCalc.special_chars(String(displayvalue));
     }
     if (valuetype == 't') {
       valueformat =
@@ -7069,7 +7097,7 @@ More comments yet to come...
     circ = editor.context.sheetobj.attribs.circularreferencecell;
     if (circ) {
       circ = circ.replace(/\|/, ' referenced by ');
-      sstr += ' &nbsp; ' + scc.s_statusline_circref + circ + '</span>';
+      sstr += ' &nbsp; ' + scc.s_statusline_circref + SocialCalc.special_chars(circ) + '</span>';
     }
     sstr += '';
     return sstr;
@@ -11518,7 +11546,7 @@ More comments yet to come...
     while ((op = thisformat.operators[oppos])) {
       operandstr = thisformat.operands[oppos++];
       if (op == scfn.commands.copy) {
-        result += operandstr;
+        result += operandstr === '&nbsp;' ? '&nbsp;' : SocialCalc.special_chars(operandstr);
       } else if (op == scfn.commands.color) {
         textcolor = operandstr;
       } else if (op == scfn.commands.style) {
@@ -11585,7 +11613,7 @@ More comments yet to come...
           result += '-';
           negativevalue = 0;
         }
-        result += (operandstr === '$' ? currency_char : operandstr) || operandstr;
+        result += SocialCalc.special_chars(String((operandstr === '$' ? currency_char : operandstr) || operandstr));
       } else if (op == scfn.commands.general) {
         if (value != 0) {
           var factor = Math.floor(Math.LOG10E * Math.log(value));
@@ -11701,7 +11729,8 @@ More comments yet to come...
       result = '<span style="color:' + textcolor + ';">' + result + '</span>';
     }
     if (textstyle) {
-      result = '<span style="' + textstyle + ';">' + result + '</span>';
+      var safeStyle = SocialCalc.SafeFormatStyle(textstyle);
+      if (safeStyle) result = '<span style="' + safeStyle + ';">' + result + '</span>';
     }
     return result;
   };
@@ -11725,7 +11754,7 @@ More comments yet to come...
     } else if (section == 3) {
       section = 3;
     } else {
-      return value;
+      return SocialCalc.special_chars(value);
     }
     sectioninfo = thisformat.sectioninfo[section];
     oppos = sectioninfo.sectionstart || 0;
@@ -11733,9 +11762,9 @@ More comments yet to come...
       operandstr = thisformat.operands[oppos++];
       if (op == scfn.commands.copy) {
         if (operandstr == '@') {
-          result += value;
+          result += SocialCalc.special_chars(value);
         } else {
-          result += operandstr.replace(/ /g, '&nbsp;');
+          result += operandstr === '&nbsp;' ? '&nbsp;' : SocialCalc.special_chars(operandstr).replace(/ /g, '&nbsp;');
         }
       } else if (op == scfn.commands.color) {
         textcolor = operandstr;
@@ -11747,7 +11776,8 @@ More comments yet to come...
       result = '<span style="color:' + textcolor + ';">' + result + '</span>';
     }
     if (textstyle) {
-      result = '<span style="' + textstyle + ';">' + result + '</span>';
+      var safeStyle = SocialCalc.SafeFormatStyle(textstyle);
+      if (safeStyle) result = '<span style="' + safeStyle + ';">' + result + '</span>';
     }
     return result;
   };

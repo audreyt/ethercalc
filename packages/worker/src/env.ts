@@ -57,8 +57,8 @@ export interface Env {
   readonly ASSETS?: Fetcher;
 
   /**
-   * HMAC secret used to gate `edit`/`view`/`app` routes and WS `execute`
-   * commands. When unset, the server falls back to identity HMAC and
+   * HMAC secret used to validate room edit capabilities on HTTP and WS
+   * writes. When unset, the server falls back to identity HMAC and
    * anonymous operation (matches legacy `--key` absent behavior; see
    * AGENTS.md §6.4).
    */
@@ -114,6 +114,8 @@ export interface Env {
    * bound.
    */
   readonly EMAIL_FROM?: string;
+
+  readonly ETHERCALC_EMAIL_ALLOWED_RECIPIENTS?: string;
 
   /**
    * Operator bearer token that unlocks migration writes, hosted PITR restore,

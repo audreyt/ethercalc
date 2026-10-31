@@ -17,6 +17,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as XLSX from '@e965/xlsx';
 import { loadSocialCalc } from '@ethercalc/socialcalc-headless';
+import { inflateRawSync } from 'node:zlib';
 import { encodeColumn, parseCoord } from './xlsx-build.ts';
 import {
   MAX_SHEET_CELLS,
@@ -104,6 +105,31 @@ export class ImportArchiveTooLargeError extends Error {
     this.byteCount = byteCount;
     this.limit = limit;
   }
+}
+
+export class ImportArchiveInvalidError extends Error {
+  constructor() {
+    super('invalid workbook archive');
+    this.name = 'ImportArchiveInvalidError';
+  }
+}
+
+export function assertWorkbookFormat(
+  bytes: Uint8Array,
+  format: 'xlsx' | 'ods' | 'fods' | 'ods-or-fods',
+): void {
+  const zip =
+    bytes.length >= 4 &&
+    bytes[0] === 0x50 && bytes[1] === 0x4b &&
+    bytes[2] === 0x03 && bytes[3] === 0x04;
+  if (zip && format !== 'fods') return;
+  if (format === 'fods' || format === 'ods-or-fods') {
+    const prefix = new TextDecoder().decode(bytes.subarray(0, 4096));
+    if (
+      /^\uFEFF?\s*(?:<\?xml\b[^?]*\?>\s*)?<office:document(?:\s|>)/.test(prefix)
+    ) return;
+  }
+  throw new ImportArchiveInvalidError();
 }
 
 export function enforceImportArchiveLimit(bytes: Uint8Array): void {
@@ -217,6 +243,111 @@ export function enforceImportArchiveLimit(bytes: Uint8Array): void {
 
     offset += 46 + fileNameLength + extraLength + commentLength;
   }
+}
+
+export function enforceActualImportArchiveLimit(bytes: Uint8Array): void {
+  if (bytes.length > MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES) {
+    throw new ImportArchiveTooLargeError(bytes.length);
+  }
+  if (bytes.length < 2 || bytes[0] !== 0x50 || bytes[1] !== 0x4b) return;
+
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const validSpan = (start: number, size: number): boolean =>
+    Number.isSafeInteger(start) && start >= 0 && size >= 0 && start + size <= bytes.length;
+  const u16 = (at: number): number => view.getUint16(at, true);
+  const u32 = (at: number): number => view.getUint32(at, true);
+  const invalid = (): never => { throw new ImportArchiveInvalidError(); };
+  let end = -1;
+  for (let at = bytes.length - 22; at >= Math.max(0, bytes.length - 22 - 0xffff); at--) {
+    if (u32(at) === 0x06054b50) { end = at; break; }
+  }
+  if (end < 0 || !validSpan(end, 22) || end + 22 + u16(end + 20) !== bytes.length) invalid();
+  const count = u16(end + 10);
+  const cdSize = u32(end + 12);
+  const cdStart = u32(end + 16);
+  const cdEnd = cdStart + cdSize;
+  if (
+    u16(end + 4) !== 0 || u16(end + 6) !== 0 ||
+    u16(end + 8) !== count || count > 4096 || count === 0xffff ||
+    cdSize === 0xffffffff || cdStart === 0xffffffff ||
+    !validSpan(cdStart, cdSize) || cdEnd > end
+  ) invalid();
+
+  let offset = cdStart;
+  let total = 0;
+  for (let index = 0; index < count; index++) {
+    if (!validSpan(offset, 46) || offset + 46 > cdEnd || u32(offset) !== 0x02014b50) invalid();
+    const flags = u16(offset + 8);
+    const method = u16(offset + 10);
+    const compressedSize = u32(offset + 20);
+    const declaredSize = u32(offset + 24);
+    const nameLength = u16(offset + 28);
+    const extraLength = u16(offset + 30);
+    const commentLength = u16(offset + 32);
+    const localOffset = u32(offset + 42);
+    const entryEnd = offset + 46 + nameLength + extraLength + commentLength;
+    if (
+      compressedSize === 0xffffffff || declaredSize === 0xffffffff ||
+      localOffset === 0xffffffff || entryEnd > cdEnd ||
+      !validSpan(offset, entryEnd - offset) ||
+      !validSpan(localOffset, 30) || u32(localOffset) !== 0x04034b50
+    ) invalid();
+
+    const localFlags = u16(localOffset + 6);
+    const localMethod = u16(localOffset + 8);
+    const localCompressedSize = u32(localOffset + 18);
+    const localDeclaredSize = u32(localOffset + 22);
+    const localNameLength = u16(localOffset + 26);
+    const localExtraLength = u16(localOffset + 28);
+    const dataStart = localOffset + 30 + localNameLength + localExtraLength;
+    if (
+      flags !== localFlags || method !== localMethod ||
+      localNameLength !== nameLength ||
+      !validSpan(localOffset + 30, localNameLength + localExtraLength) ||
+      !validSpan(dataStart, compressedSize) || dataStart + compressedSize > cdStart ||
+      (localCompressedSize !== 0 && localCompressedSize !== compressedSize) ||
+      (localDeclaredSize !== 0 && localDeclaredSize !== declaredSize) ||
+      ((flags & 8) === 0 && (localCompressedSize !== compressedSize || localDeclaredSize !== declaredSize))
+    ) invalid();
+    for (let i = 0; i < nameLength; i++) {
+      if (bytes[offset + 46 + i] !== bytes[localOffset + 30 + i]) invalid();
+    }
+    for (const [start, length] of [
+      [offset + 46 + nameLength, extraLength],
+      [localOffset + 30 + localNameLength, localExtraLength],
+    ] as const) {
+      let at = start;
+      while (at < start + length) {
+        if (at + 4 > start + length) invalid();
+        const fieldLength = u16(at + 2);
+        if (u16(at) === 1 || at + 4 + fieldLength > start + length) invalid();
+        at += 4 + fieldLength;
+      }
+    }
+
+    let actualSize = 0;
+    if (method === 0) {
+      actualSize = compressedSize;
+    } else if (method === 8) {
+      try {
+        actualSize = inflateRawSync(
+          bytes.subarray(dataStart, dataStart + compressedSize),
+          { maxOutputLength: MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES - total + 1 },
+        ).length;
+      } catch {
+        throw new ImportArchiveTooLargeError(MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES + 1);
+      }
+    } else {
+      invalid();
+    }
+    total += actualSize;
+    if (total > MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES) {
+      throw new ImportArchiveTooLargeError(total);
+    }
+    if (actualSize !== declaredSize) invalid();
+    offset = entryEnd;
+  }
+  if (offset !== cdEnd) invalid();
 }
 
 /**
@@ -506,6 +637,7 @@ function replayWorkbook(bytes: Uint8Array): { ss: any; sheet: any } {
   const sheet = ss.context.sheetobj;
 
   enforceImportArchiveLimit(bytes);
+  enforceActualImportArchiveLimit(bytes);
 
   // Stryker disable next-line ObjectLiteral,StringLiteral : @e965/xlsx
   // auto-infers `type` from a Uint8Array and defaults `cellFormula:true`

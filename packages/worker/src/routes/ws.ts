@@ -22,6 +22,7 @@ import {
 import { roomStub } from '../lib/do-dispatch.ts';
 import { getSessionPrincipal } from '../lib/session-middleware.ts';
 import { parseSessionCookie } from '../lib/session.ts';
+import { isAllowedWebSocketOrigin } from '../lib/ws-origin.ts';
 import { encodeRoom, isValidRoomName } from '../lib/room-name.ts';
 import type { EtherCalcHonoEnv } from '../env.ts';
 
@@ -63,11 +64,8 @@ export function registerWs(app: Hono<EtherCalcHonoEnv>): void {
       return c.text('Invalid WebSocket parameters', 400);
     }
     const session = parseSessionCookie(c.req.header('Cookie') ?? null);
-    if (session !== null) {
-      const expectedOrigin = c.env.ETHERCALC_ORIGIN;
-      if (!expectedOrigin || c.req.header('Origin') !== expectedOrigin) {
-        return c.text('Forbidden', 403);
-      }
+    if (!isAllowedWebSocketOrigin(c.req.raw, c.env.ETHERCALC_ORIGIN, session !== null)) {
+      return c.text('Forbidden', 403);
     }
     const stub = roomStub(c.env, room);
     const doUrl = buildDoUrl(room, url);

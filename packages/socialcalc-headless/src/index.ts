@@ -62,15 +62,18 @@ type StatusCallback = (data: unknown, status: string, arg: unknown, params: unkn
 
 let cachedNamespace: SocialCalcNamespace | null = null;
 
-export function loadSocialCalc(): SocialCalcNamespace {
-  if (cachedNamespace) return cachedNamespace;
+function newSocialCalcNamespace(): SocialCalcNamespace {
   // Double-cast through `unknown`: the bundled factory is `@ts-nocheck`
   // so tsgo infers its return type as void/undefined, but at runtime it
   // always yields the SocialCalc namespace (see `socialcalc.bundled.ts`
   // bottom — `return SocialCalc`).
-  cachedNamespace = createSocialCalcFactory() as unknown as SocialCalcNamespace;
-  installFormulaLimits(cachedNamespace);
-  return cachedNamespace;
+  const namespace = createSocialCalcFactory() as unknown as SocialCalcNamespace;
+  installFormulaLimits(namespace);
+  return namespace;
+}
+
+export function loadSocialCalc(): SocialCalcNamespace {
+  return cachedNamespace ??= newSocialCalcNamespace();
 }
 
 export interface HeadlessSpreadsheetOptions {
@@ -167,6 +170,16 @@ export class HeadlessSpreadsheet {
     Formula.AddSheetToCache(name, save, false);
   }
 
+  resetSiblingSheets(): void {
+    const Formula = this.#SC.Formula as unknown as {
+      SheetCache: { sheets: Record<string, unknown>; waitingForLoading: string | null };
+      FreshnessInfo: { sheets: Record<string, unknown> };
+    };
+    Formula.SheetCache.sheets = Object.create(null) as Record<string, unknown>;
+    Formula.SheetCache.waitingForLoading = null;
+    Formula.FreshnessInfo.sheets = Object.create(null) as Record<string, unknown>;
+  }
+
   /**
    * Re-run recalc. Useful after `addSiblingSheet(...)` populates the
    * formula-evaluator cache so cross-sheet refs that previously returned
@@ -205,7 +218,7 @@ export class HeadlessSpreadsheet {
  * because the rehydrated DO couldn't parse its own stored snapshot.
  */
 export function csvToSave(csv: string): string {
-  const SC = loadSocialCalc();
+  const SC = newSocialCalcNamespace();
   const clipboardSave = SC.ConvertOtherFormatToSave(csv, 'csv');
   const ss = new SC.SpreadsheetControl();
   // The legacy `loadclipboard <encoded-save>` command decodes the save
@@ -227,7 +240,7 @@ export function csvToSave(csv: string): string {
 }
 
 export function createSpreadsheet(opts: HeadlessSpreadsheetOptions = {}): HeadlessSpreadsheet {
-  const SC = loadSocialCalc();
+  const SC = newSocialCalcNamespace();
   const ss = new SC.SpreadsheetControl();
   if (opts.snapshot) {
     try {

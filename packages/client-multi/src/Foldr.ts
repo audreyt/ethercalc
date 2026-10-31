@@ -1,5 +1,6 @@
 import {
   isSafeMultiSheetLink,
+  isWorkbookChildLink,
   MAX_MULTI_SHEETS,
   MAX_MULTI_SHEET_TITLE_LENGTH,
 } from '@ethercalc/shared';
@@ -99,7 +100,7 @@ export class HackFoldr {
     this.id = id;
     const body = await this.loadTocJson();
     if (Array.isArray(body) && body.length > 0) {
-      this.rows = parseTocBody(body);
+      this.rows = parseTocBody(body, this.id);
     } else {
       this.wasNonExistent = true;
     }
@@ -121,7 +122,7 @@ export class HackFoldr {
     if (!this.id) return false;
     const body = await this.loadTocJson();
     if (!Array.isArray(body) || body.length === 0) return false;
-    const next = parseTocBody(body);
+    const next = parseTocBody(body, this.id);
     if (tocRowsEqual(this.rows, next)) return false;
     this.rows = next;
     return true;
@@ -183,7 +184,7 @@ export class HackFoldr {
         body: JSON.stringify({ title, requestId }),
       });
       if (res.status !== 201) return null;
-      return parseCreatedSheet(await res.json());
+      return parseCreatedSheet(await res.json(), this.id);
     } catch {
       return null;
     }
@@ -196,7 +197,7 @@ export class HackFoldr {
   async setAt(idx: number, patch: Partial<FoldrRow>): Promise<this> {
     const existing = this.rows[idx];
     if (!existing) return this;
-    if (patch.link !== undefined && !isSafeMultiSheetLink(patch.link)) return this;
+    if (patch.link !== undefined && !isWorkbookChildLink(patch.link, this.id)) return this;
     if (patch.title !== undefined) {
       const title = patch.title.slice(0, MAX_MULTI_SHEET_TITLE_LENGTH);
       await this.sendCmd(`set B${existing.row} text t ${encodeSocialCalcText(title)}`);
@@ -208,8 +209,7 @@ export class HackFoldr {
   }
 
   /**
-   * Remove a row. Sends `set A<row>:B<row> empty multi-cascade` to let the
-   * server cascade-clear the TOC entry + its associated sub-sheet blob.
+   * Remove a row from the table of contents.
    */
   async deleteAt(idx: number): Promise<this> {
     const existing = this.rows[idx];
@@ -296,14 +296,19 @@ function defaultRequestId(): string {
   return globalThis.crypto.randomUUID();
 }
 
-function parseCreatedSheet(body: unknown): FoldrRow | null {
+function parseCreatedSheet(body: unknown, workbook: string): FoldrRow | null {
   if (body === null || typeof body !== 'object' || !('sheet' in body)) return null;
   const sheet = body.sheet;
   if (sheet === null || typeof sheet !== 'object') return null;
   if (!('subroom' in sheet) || typeof sheet.subroom !== 'string' || sheet.subroom.length === 0) {
     return null;
   }
-  if (!('link' in sheet) || typeof sheet.link !== 'string' || !isSafeMultiSheetLink(sheet.link)) {
+  if (
+    !('link' in sheet) ||
+    typeof sheet.link !== 'string' ||
+    !isWorkbookChildLink(sheet.link, workbook) ||
+    sheet.subroom !== decodeURIComponent(sheet.link.slice(1))
+  ) {
     return null;
   }
   if (
@@ -328,7 +333,7 @@ function parseCreatedSheet(body: unknown): FoldrRow | null {
  * Parse a `csv.json` body (array-of-arrays) into deduped TOC rows.
  * Exported for unit tests; `fetch` and `refreshToc` both use this.
  */
-export function parseTocBody(body: unknown): FoldrRow[] {
+export function parseTocBody(body: unknown, workbook: string): FoldrRow[] {
   if (!Array.isArray(body) || body.length === 0) return [];
   const rowsIn = body.slice(1, MAX_MULTI_SHEETS + 1) as unknown[];
   const parsed: FoldrRow[] = [];
@@ -336,7 +341,7 @@ export function parseTocBody(body: unknown): FoldrRow[] {
     if (!Array.isArray(raw)) return;
     const link = typeof raw[0] === 'string' ? raw[0] : '';
     let title = typeof raw[1] === 'string' ? raw[1] : '';
-    if (!isSafeMultiSheetLink(link)) return;
+    if (!isWorkbookChildLink(link, workbook)) return;
     if (!title) title = 'Sheet' + (idx + 1);
     title = title.slice(0, MAX_MULTI_SHEET_TITLE_LENGTH);
     parsed.push({ link, title, row: idx + 2 });
