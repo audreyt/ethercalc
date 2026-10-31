@@ -39,6 +39,7 @@ import { buildDynamicAppcache, APPCACHE_CONTENT_TYPE } from "../handlers/manifes
 import { buildFormPartPath } from "../handlers/static-form.ts";
 import { buildRoomEntry, buildTemplateFormRedirect } from "../handlers/room-entry.ts";
 import { computeAuth } from "../lib/auth.ts";
+import { allowsCloneNavigation } from "../lib/clone-navigation.ts";
 import { doFetch } from "../lib/do-dispatch.ts";
 import { getSessionPrincipal } from "../lib/session-middleware.ts";
 import { encodeRoom, encodeRoomPath, generateRoomId } from "../lib/room-name.ts";
@@ -285,6 +286,12 @@ export function registerAssets(app: Hono<EtherCalcHonoEnv>): void {
   // `/:template/form` — duplicate template snapshot into `<template>_<id>`
   // and redirect to `/app` (legacy main.ls:287-293).
   app.get("/:template/form", async (c) => {
+    if (!allowsCloneNavigation(c.req.header("Sec-Fetch-Site"))) {
+      return new Response("Forbidden", {
+        status: 403,
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+      });
+    }
     const template = c.req.param("template") ?? "";
     const newId = generateRoomId();
     const newRoom = `${template}_${newId}`;

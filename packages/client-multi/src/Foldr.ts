@@ -4,6 +4,7 @@ import {
   MAX_MULTI_SHEETS,
   MAX_MULTI_SHEET_TITLE_LENGTH,
 } from '@ethercalc/shared';
+import { withAuthQuery } from './url.ts';
 
 /**
  * Port of `multi/foldr.ls` (`HackFoldr`) from LiveScript/superagent to TS/fetch.
@@ -47,6 +48,8 @@ export interface FoldrOptions {
   readonly fetchImpl?: FetchImpl;
   /** Override guarded Add Sheet request IDs (e.g. deterministic unit tests). */
   readonly requestIdFactory?: RequestIdFactory;
+  /** Current workbook capability, if the entry URL supplied one. */
+  readonly auth?: string | null;
 }
 
 /**
@@ -62,11 +65,13 @@ export class HackFoldr {
   wasEmpty = false;
   private readonly fetchImpl: FetchImpl;
   private readonly requestIdFactory: RequestIdFactory;
+  private readonly auth: string | null;
 
   constructor(base: string, options: FoldrOptions = {}) {
     this.base = base.replace(/\/+$/, '');
     this.fetchImpl = options.fetchImpl ?? fetch.bind(globalThis);
     this.requestIdFactory = options.requestIdFactory ?? defaultRequestId;
+    this.auth = options.auth ?? null;
   }
 
   size(): number {
@@ -129,7 +134,7 @@ export class HackFoldr {
   }
 
   private async loadTocJson(): Promise<unknown> {
-    const url = `${this.base}/_/${this.id}/csv.json`;
+    const url = withAuthQuery(`${this.base}/_/${this.id}/csv.json`, this.auth);
     try {
       const res = await this.fetchImpl(url);
       return res.ok ? await res.json() : null;
@@ -175,7 +180,7 @@ export class HackFoldr {
 
   private async postSheet(title: string, requestId: string): Promise<FoldrRow | null> {
     try {
-      const res = await this.fetchImpl(`${this.base}/_/=${this.id}/sheet`, {
+      const res = await this.fetchImpl(withAuthQuery(`${this.base}/_/=${this.id}/sheet`, this.auth), {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -223,7 +228,7 @@ export class HackFoldr {
   async sendCmd(cmd: string): Promise<void> {
     await this.initIfNeeded();
     try {
-      await this.fetchImpl(`${this.base}/_/${this.id}`, {
+      await this.fetchImpl(withAuthQuery(`${this.base}/_/${this.id}`, this.auth), {
         method: 'POST',
         headers: { 'content-type': 'text/plain' },
         body: cmd,
@@ -273,7 +278,7 @@ export class HackFoldr {
 
   private async postCsvBody(body: string): Promise<FoldrPushResponse | null> {
     try {
-      const res = await this.fetchImpl(`${this.base}/_/${this.id}`, {
+      const res = await this.fetchImpl(withAuthQuery(`${this.base}/_/${this.id}`, this.auth), {
         method: 'POST',
         headers: {
           'content-type': 'text/csv',

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vite-plus/test';
-import { DEFAULT_INDEX, parseMultiEnv, resolveViteApiBase } from '../src/url.ts';
+import { DEFAULT_INDEX, parseMultiEnv, resolveViteApiBase, withAuthQuery } from '../src/url.ts';
 
 function loc(href: string, search = ''): { href: string; search: string } {
   return { href, search };
@@ -9,6 +9,7 @@ describe('parseMultiEnv', () => {
   it('returns the fallback index for an unmatched URL', () => {
     const env = parseMultiEnv(loc('https://example.com/'));
     expect(env.index).toBe(DEFAULT_INDEX);
+    expect(env.auth).toBeNull();
     expect(env.basePath).toBe('.');
     expect(env.isReadOnly).toBe(false);
     expect(env.suffix).toBe('');
@@ -76,7 +77,8 @@ describe('parseMultiEnv', () => {
     expect(env.basePath).toBe('..');
     expect(env.isReadOnly).toBe(true);
     expect(env.suffix).toBe('/view');
-    expect(env.pushStatePath).toBe('./=foo/view');
+    expect(env.auth).toBe('0');
+    expect(env.pushStatePath).toBe('./=foo/view?auth=0');
   });
 
   it('bumps basePath to .. and sets /edit suffix for ?auth=<nonzero>', () => {
@@ -86,7 +88,14 @@ describe('parseMultiEnv', () => {
     expect(env.basePath).toBe('..');
     expect(env.isReadOnly).toBe(false);
     expect(env.suffix).toBe('/edit');
-    expect(env.pushStatePath).toBe('./=foo/edit');
+    expect(env.auth).toBe('abc123');
+    expect(env.pushStatePath).toBe('./=foo/edit?auth=abc123');
+  });
+
+  it('reads an auth query after another parameter and encodes it in history', () => {
+    const env = parseMultiEnv(loc('https://x.com/=foo?view=1&auth=a%2Bb', '?view=1&auth=a%2Bb'));
+    expect(env.auth).toBe('a+b');
+    expect(env.pushStatePath).toBe('./=foo/edit?auth=a%2Bb');
   });
 
   it('preserves non-default basePath (dev) when ?auth is present', () => {
@@ -113,6 +122,18 @@ describe('parseMultiEnv', () => {
   it('falls through when the vite base override is empty', () => {
     const env = parseMultiEnv(loc('https://x.com/=r'), '');
     expect(env.basePath).toBe('.');
+  });
+});
+
+describe('withAuthQuery', () => {
+  it('keeps absent capabilities absent and preserves the view-only sentinel', () => {
+    expect(withAuthQuery('/room', null)).toBe('/room');
+    expect(withAuthQuery('/room', undefined)).toBe('/room');
+    expect(withAuthQuery('/room', '0')).toBe('/room?auth=0');
+  });
+
+  it('appends an encoded capability after existing query parameters', () => {
+    expect(withAuthQuery('/room?title=Data', 'a+b')).toBe('/room?title=Data&auth=a%2Bb');
   });
 });
 

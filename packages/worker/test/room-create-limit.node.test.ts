@@ -83,6 +83,9 @@ describe('route method precedence', () => {
     expect(isRoomCreationRoute('POST', '/_new')).toBe(false);
     expect(isRoomCreationRoute('PUT', '/_from/template')).toBe(false);
     expect(isRoomCreationRoute('PUT', '/_/')).toBe(false);
+    expect(isRoomCreationRoute('GET', '/_from/template/private')).toBe(false);
+    expect(isRoomCreationRoute('POST', '/template/form')).toBe(false);
+    expect(isRoomCreationRoute('GET', '/=template.xlsx')).toBe(false);
   });
 });
 
@@ -144,6 +147,7 @@ describe('creation-route matching is anchored', () => {
     ['GET', '/x/_from/a', false],
     ['POST', '/_from/a/private', true],
     ['POST', '/_from/a/private/x', false],
+    ['POST', '/prefix/_from/a/private', false],
     ['POST', '/_from//private', false],
     ['GET', '/a/form', true],
     ['GET', '/a/b/form', false],
@@ -153,6 +157,7 @@ describe('creation-route matching is anchored', () => {
     ['PUT', '/=a.ods', true],
     ['PUT', '/=a.fods', true],
     ['PUT', '/=a.xlsxx', false],
+    ['PUT', '/prefix/=a.xlsx', false],
     ['PUT', '/=a/b.xlsx', false],
     ['PUT', '/=.xlsx', false],
     ['PUT', '/_/=a/xlsx', true],
@@ -160,6 +165,8 @@ describe('creation-route matching is anchored', () => {
     ['PUT', '/_/=a/fods', true],
     ['PUT', '/_/=a/csv', false],
     ['PUT', '/_/=a/b/xlsx', false],
+    ['PUT', '/prefix/_/=a/ods', false],
+    ['PUT', '/_/=a/ods/extra', false],
   ] as const)('%s %s → %s', (method, path, expected) => {
     expect(isRoomCreationRoute(method, path)).toBe(expected);
   });

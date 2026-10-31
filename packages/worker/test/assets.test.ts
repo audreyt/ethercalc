@@ -415,13 +415,30 @@ describe("GET /:template/appeditor", () => {
 });
 
 describe("GET /:template/form", () => {
-  it("302 redirects to /<template>_<id>/app", async () => {
-    const stub = buildFullStub();
-    const res = await call("/tpl/form", { ASSETS: stub.ASSETS });
+  it.each(["same-origin", "none"])("302 redirects for %s navigation", async (site) => {
+    const req = new Request("https://example.test/tpl/form", {
+      headers: { "Sec-Fetch-Site": site },
+      redirect: "manual",
+    });
+    const ctx = createExecutionContext();
+    const res = await worker.fetch(req, env as never, ctx);
+    await waitOnExecutionContext(ctx);
     expect(res.status).toBe(302);
     const loc = res.headers.get("Location") ?? "";
     expect(loc).toMatch(/\/tpl_[0-9a-z]{12}\/app$/);
     expect(await res.text()).toContain(loc);
+  });
+
+  it.each(["cross-site", "same-site", "unexpected", undefined])("rejects %s navigation before cloning", async (site) => {
+    const req = new Request("https://example.test/tpl/form", {
+      ...(site === undefined ? {} : { headers: { "Sec-Fetch-Site": site } }),
+      redirect: "manual",
+    });
+    const ctx = createExecutionContext();
+    const res = await worker.fetch(req, env as never, ctx);
+    await waitOnExecutionContext(ctx);
+    expect(res.status).toBe(403);
+    expect(await res.text()).toBe("Forbidden");
   });
 });
 

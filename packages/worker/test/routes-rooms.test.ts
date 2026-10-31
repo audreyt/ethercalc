@@ -200,7 +200,9 @@ describe('Phase 5 routes — full round-trip', () => {
       headers: { 'content-type': 'text/x-socialcalc' },
       body: 'original-data',
     });
-    const res = await request('GET', '/_from/tpl');
+    const res = await request('GET', '/_from/tpl', {
+      headers: { 'Sec-Fetch-Site': 'same-origin' },
+    });
     expect(res.status).toBe(302);
     const loc = res.headers.get('location') ?? '';
     expect(loc).toMatch(/^\/[a-z0-9]{12}$/);
@@ -210,7 +212,9 @@ describe('Phase 5 routes — full round-trip', () => {
   });
 
   it('GET /_from/:template on non-existent template still 302s to a blank room', async () => {
-    const res = await request('GET', '/_from/never-a-template');
+    const res = await request('GET', '/_from/never-a-template', {
+      headers: { 'Sec-Fetch-Site': 'none' },
+    });
     expect(res.status).toBe(302);
     expect(res.headers.get('location')).toMatch(/^\/[a-z0-9]{12}$/);
   });

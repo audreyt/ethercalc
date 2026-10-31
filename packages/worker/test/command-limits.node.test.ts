@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vite-plus/test';
 
 import {
   MAX_COMMAND_RANGE_WORK,
+  MAX_LEGACY_SHEET_CELLS,
   MAX_SHEET_CELLS,
   MAX_SOCIALCALC_COL,
   MAX_SOCIALCALC_ROW,
   isCommandBatchWithinLimits,
   isSnapshotWithinSheetLimits,
+  storedSnapshotAreaLimit,
 } from '../src/lib/command-limits.ts';
 
 describe('isCommandBatchWithinLimits', () => {
@@ -596,5 +598,29 @@ describe('isSnapshotWithinSheetLimits', () => {
     expect(
       isSnapshotWithinSheetLimits(`sheet:c:2:r:${MAX_SHEET_CELLS / 2 + 1}`),
     ).toBe(false);
+  });
+
+  it('rejects saved records that would expand beyond their declared sheet', () => {
+    expect(isSnapshotWithinSheetLimits('cell:B2:t:ok\nsheet:c:2:r:2\n')).toBe(true);
+    expect(isSnapshotWithinSheetLimits('cell:ZZ100000:t:x\nsheet:c:2:r:1\n')).toBe(false);
+    expect(isSnapshotWithinSheetLimits('row:100000:h:20\nsheet:c:2:r:1\n')).toBe(false);
+    expect(isSnapshotWithinSheetLimits('col:ZZ:w:80\nsheet:c:2:r:1\n')).toBe(false);
+    expect(isSnapshotWithinSheetLimits('cell:A2:t:x\nsheet:\n')).toBe(false);
+    expect(isSnapshotWithinSheetLimits('row:bad:h:20\nsheet:c:1:r:1\n')).toBe(false);
+    expect(isSnapshotWithinSheetLimits(`row:${MAX_SOCIALCALC_ROW + 1}:h:20\nsheet:c:1:r:1\n`)).toBe(false);
+    expect(isSnapshotWithinSheetLimits('col:AAA:w:80\nsheet:c:1:r:1\n')).toBe(false);
+    expect(isSnapshotWithinSheetLimits('cell:A0:t:x\nsheet:c:1:r:1\n')).toBe(false);
+    expect(isSnapshotWithinSheetLimits(`cell:A${MAX_SOCIALCALC_ROW + 1}:t:x\nsheet:c:1:r:1\n`)).toBe(false);
+  });
+
+  it('bounds compatibility edits for internally consistent existing sheets', () => {
+    const existing = 'sheet:c:500:r:500\ncell:SF500:t:old\n';
+    const permittedArea = storedSnapshotAreaLimit(existing);
+    expect(permittedArea).toBe(250_000);
+    expect(isSnapshotWithinSheetLimits(existing)).toBe(false);
+    expect(isSnapshotWithinSheetLimits(existing, permittedArea)).toBe(true);
+    expect(isSnapshotWithinSheetLimits('sheet:c:500:r:500\ncell:ZZ500:t:x\n', permittedArea)).toBe(false);
+    expect(storedSnapshotAreaLimit('sheet:c:702:r:1048576')).toBe(MAX_LEGACY_SHEET_CELLS);
+    expect(isSnapshotWithinSheetLimits('sheet:c:702:r:1048576', MAX_LEGACY_SHEET_CELLS)).toBe(false);
   });
 });

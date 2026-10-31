@@ -114,6 +114,205 @@ export class ImportArchiveInvalidError extends Error {
   }
 }
 
+export class ImportOdfUnsupportedFeatureError extends Error {
+  constructor() {
+    super('ODF conditional style maps are unsupported for import');
+    this.name = 'ImportOdfUnsupportedFeatureError';
+  }
+}
+
+const MAX_ODF_TEXT_SPACES = 1024 * 1024;
+const MAX_ODF_FORMAT_WIDTH = 4096;
+const ODF_FORMAT_WIDTH_ATTRIBUTES = new Set([
+  'decimal-places',
+  'min-decimal-places',
+  'min-integer-digits',
+  'min-exponent-digits',
+  'min-numerator-digits',
+  'min-denominator-digits',
+]);
+
+/** Find the flat ODF root after XML declarations and comments of any length. */
+function isFlatOdf(xml: string): boolean {
+  // TextDecoder strips a UTF-8 BOM, if present.
+  let offset = 0;
+  while (offset < xml.length) {
+    while (offset < xml.length) {
+      const char = xml.charCodeAt(offset);
+      if (char !== 0x20 && char !== 0x09 && char !== 0x0a && char !== 0x0d) break;
+      offset++;
+    }
+    if (xml.startsWith('<!--', offset)) {
+      const end = xml.indexOf('-->', offset + 4);
+      if (end < 0) return false;
+      offset = end + 3;
+    } else if (xml.startsWith('<?', offset)) {
+      const end = xml.indexOf('?>', offset + 2);
+      if (end < 0) return false;
+      offset = end + 2;
+    } else {
+      return xml.startsWith('<office:document', offset) &&
+        /[\s>]/.test(xml[offset + '<office:document'.length] ?? '');
+    }
+  }
+  return false;
+}
+
+/**
+ * SheetJS expands ODF row and cell repetition while parsing XML. Check the
+ * expanded rectangular extent first, while the representation is still
+ * small. This covers flat FODS and an ODS archive's content.xml alike.
+ */
+function enforceOdfXmlLimits(xml: string): void {
+  // Match SheetJS's attribute grammar. Its parser removes any namespace
+  // prefix, truncates an unprefixed name at `_`, and keeps the last duplicate.
+  // Checking every recognized occurrence also handles duplicates safely.
+  const attributes = /\s([^"\s?>/]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^'">\s]+))/g;
+  let offset = 0;
+  let totalCells = 0;
+  let tableRows = 0;
+  let tableColumns = 0;
+  let rowRepeat = 0;
+  let rowColumns = 0;
+  let cellRepeat = 1;
+  let expandedText = 0;
+
+  const parseCount = (raw: string, allowZero: boolean): number => {
+    if (!/^[0-9]+$/.test(raw) || (!allowZero && raw[0] === '0')) {
+      throw new ImportArchiveInvalidError();
+    }
+    const count = Number(raw);
+    if (!Number.isSafeInteger(count)) throw new ImportArchiveTooLargeError(count);
+    return count;
+  };
+  const chargeText = (count: number): void => {
+    expandedText += count;
+    if (expandedText > MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES) {
+      throw new ImportArchiveTooLargeError(expandedText);
+    }
+  };
+  const finishRow = (): void => {
+    if (rowRepeat === 0) return;
+    tableRows += rowRepeat;
+    tableColumns = Math.max(tableColumns, Math.max(1, rowColumns));
+    totalCells += rowRepeat * Math.max(1, rowColumns);
+    if (tableRows * tableColumns > MAX_SHEET_CELLS || totalCells > MAX_IMPORT_CELLS) {
+      throw new ImportDimensionsTooLargeError(tableRows, tableColumns);
+    }
+    rowRepeat = 0;
+    rowColumns = 0;
+    cellRepeat = 1;
+  };
+
+  while (offset < xml.length) {
+    const start = xml.indexOf('<', offset);
+    if (start < 0) break;
+    if (xml.startsWith('<!--', start)) {
+      const end = xml.indexOf('-->', start + 4);
+      if (end < 0) throw new ImportArchiveInvalidError();
+      // Inspect tag-like content too: the underlying reader is permissive.
+      offset = start + 4;
+      continue;
+    }
+    if (xml.startsWith('<![CDATA[', start)) {
+      const end = xml.indexOf(']]>', start + 9);
+      if (end < 0) throw new ImportArchiveInvalidError();
+      offset = start + 9;
+      continue;
+    }
+    let quote = '';
+    let end = start + 1;
+    for (; end < xml.length; end++) {
+      const char = xml[end]!;
+      if (quote) {
+        if (char === quote) quote = '';
+      } else if (char === '"' || char === "'") {
+        quote = char;
+      } else if (char === '>') {
+        break;
+      }
+    }
+    if (end >= xml.length) throw new ImportArchiveInvalidError();
+    offset = end + 1;
+    const tag = xml.slice(start, offset);
+    const element = /^<\s*(\/?)\s*([^\s/>]+)/.exec(tag);
+    if (!element) continue;
+    // SheetJS removes an underscore suffix from element names before dispatch.
+    const name = element[2]!.split(':').at(-1)!.replace(/_.*/, '').toLowerCase();
+    const closing = element[1] === '/';
+    const selfClosing = /\/\s*>$/.test(tag);
+    const isRow = name === 'table-row' || name === '行';
+    const isCell = name === 'table-cell' || name === 'covered-table-cell' || name === '数据';
+    const isSpace = name === 's';
+    let styleMapAttribute = false;
+    let repeatedRows = 1;
+    let repeatedColumns = 1;
+    let spaces = 1;
+    for (const match of tag.matchAll(attributes)) {
+      const rawName = match[1]!;
+      const colon = rawName.indexOf(':');
+      const underscore = rawName.indexOf('_');
+      const key = (colon >= 0
+        ? rawName.slice(colon + 1)
+        : underscore > 0 ? rawName.slice(0, underscore) : rawName).toLowerCase();
+      const raw = match[2] ?? match[3] ?? match[4]!;
+      if (key === 'apply-style-name' || key === 'condition') styleMapAttribute = true;
+      if (isRow && !closing && key === 'number-rows-repeated') {
+        const count = parseCount(raw, false);
+        if (count > MAX_IMPORT_CELLS) throw new ImportTooLargeError(count);
+        repeatedRows = Math.max(repeatedRows, count);
+      } else if (isCell && !closing && key === 'number-columns-repeated') {
+        const count = parseCount(raw, false);
+        if (count > MAX_IMPORT_CELLS) throw new ImportTooLargeError(count);
+        repeatedColumns = Math.max(repeatedColumns, count);
+      } else if (isSpace && !closing && key === 'c') {
+        const count = parseCount(raw, true);
+        if (count > MAX_ODF_TEXT_SPACES) {
+          throw new ImportArchiveTooLargeError(count, MAX_ODF_TEXT_SPACES);
+        }
+        spaces = Math.max(spaces, count);
+      } else if (ODF_FORMAT_WIDTH_ATTRIBUTES.has(key)) {
+        const count = parseCount(raw, true);
+        if (count > MAX_ODF_FORMAT_WIDTH) {
+          throw new ImportArchiveTooLargeError(count, MAX_ODF_FORMAT_WIDTH);
+        }
+        chargeText(count);
+      }
+    }
+    if (name === 'map' && !closing &&
+      (element[2]!.toLowerCase().startsWith('style:') || styleMapAttribute)) {
+      throw new ImportOdfUnsupportedFeatureError();
+    }
+    if (isSpace && !closing) {
+      chargeText(spaces * Math.max(1, rowRepeat) * cellRepeat);
+    }
+    if (name === 'table' || name === '工作表') {
+      if (!closing) {
+        finishRow();
+        tableRows = 0;
+        tableColumns = 0;
+      }
+    } else if (isRow) {
+      if (closing) finishRow();
+      else {
+        finishRow();
+        rowRepeat = repeatedRows;
+        if (selfClosing) finishRow();
+      }
+    } else if (isCell) {
+      if (closing) cellRepeat = 1;
+      else if (rowRepeat > 0) {
+        rowColumns += repeatedColumns;
+        cellRepeat = selfClosing ? 1 : repeatedColumns;
+        if (rowColumns > MAX_SOCIALCALC_COL) {
+          throw new ImportDimensionsTooLargeError(Math.max(1, tableRows + rowRepeat), rowColumns);
+        }
+      }
+    }
+  }
+  finishRow();
+}
+
 export function assertWorkbookFormat(
   bytes: Uint8Array,
   format: 'xlsx' | 'ods' | 'fods' | 'ods-or-fods',
@@ -124,10 +323,7 @@ export function assertWorkbookFormat(
     bytes[2] === 0x03 && bytes[3] === 0x04;
   if (zip && format !== 'fods') return;
   if (format === 'fods' || format === 'ods-or-fods') {
-    const prefix = new TextDecoder().decode(bytes.subarray(0, 4096));
-    if (
-      /^\uFEFF?\s*(?:<\?xml\b[^?]*\?>\s*)?<office:document(?:\s|>)/.test(prefix)
-    ) return;
+    if (isFlatOdf(new TextDecoder('utf-8').decode(bytes))) return;
   }
   throw new ImportArchiveInvalidError();
 }
@@ -249,7 +445,13 @@ export function enforceActualImportArchiveLimit(bytes: Uint8Array): void {
   if (bytes.length > MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES) {
     throw new ImportArchiveTooLargeError(bytes.length);
   }
-  if (bytes.length < 2 || bytes[0] !== 0x50 || bytes[1] !== 0x4b) return;
+  if (bytes.length < 2 || bytes[0] !== 0x50 || bytes[1] !== 0x4b) {
+    const xml = new TextDecoder('utf-8').decode(bytes);
+    if (isFlatOdf(xml)) {
+      enforceOdfXmlLimits(xml);
+    }
+    return;
+  }
 
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const validSpan = (start: number, size: number): boolean =>
@@ -325,26 +527,33 @@ export function enforceActualImportArchiveLimit(bytes: Uint8Array): void {
       }
     }
 
-    let actualSize = 0;
+    let content: Uint8Array = bytes.subarray(dataStart, dataStart);
     if (method === 0) {
-      actualSize = compressedSize;
+      content = bytes.subarray(dataStart, dataStart + compressedSize);
     } else if (method === 8) {
       try {
-        actualSize = inflateRawSync(
+        content = inflateRawSync(
           bytes.subarray(dataStart, dataStart + compressedSize),
           { maxOutputLength: MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES - total + 1 },
-        ).length;
+        );
       } catch {
         throw new ImportArchiveTooLargeError(MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES + 1);
       }
     } else {
       invalid();
     }
+    const actualSize = content.length;
     total += actualSize;
     if (total > MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES) {
       throw new ImportArchiveTooLargeError(total);
     }
     if (actualSize !== declaredSize) invalid();
+    const name = new TextDecoder('utf-8').decode(bytes.subarray(offset + 46, offset + 46 + nameLength));
+    // ODF readers accept aliases such as `Root Entry/content.xml`. Every XML
+    // entry is already bounded by the archive limit, so scan them all.
+    if (name.toLowerCase().endsWith('.xml')) {
+      enforceOdfXmlLimits(new TextDecoder('utf-8').decode(content));
+    }
     offset = entryEnd;
   }
   if (offset !== cdEnd) invalid();

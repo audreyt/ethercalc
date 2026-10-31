@@ -1,4 +1,5 @@
 import type { HackFoldr } from './Foldr.ts';
+import { withAuthQuery } from './url.ts';
 
 /**
  * Must match the Worker `bodyLimit` / `MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES`
@@ -21,6 +22,7 @@ export interface ImportWorkbookOptions {
   readonly foldr: HackFoldr;
   readonly index: string;
   readonly basePath: string;
+  readonly auth?: string | null;
   readonly file: File;
   readonly fetchImpl: typeof fetch;
   readonly alertImpl: (message: string) => void;
@@ -48,6 +50,7 @@ export async function appendImportedWorkbook({
   foldr,
   index,
   basePath,
+  auth,
   file,
   fetchImpl,
   alertImpl,
@@ -69,7 +72,7 @@ export async function appendImportedWorkbook({
   const base = basePath.replace(/\/+$/, '');
   const stem = file.name.replace(/\.[^/.]+$/, '');
   const params = stem.trim() ? `?title=${encodeURIComponent(stem.trim().slice(0, 256))}` : '';
-  const url = `${base}/_/=${index}/${ext}${params}`;
+  const url = withAuthQuery(`${base}/_/=${index}/${ext}${params}`, auth);
 
   let response: Response;
   try {

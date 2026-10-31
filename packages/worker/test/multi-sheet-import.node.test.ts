@@ -102,6 +102,45 @@ describe('worksheetToSave', () => {
 });
 
 describe('buildMultiSheetImport', () => {
+  it('rejects invalid child numbering before materializing saves', () => {
+    const readFn = (() => ({
+      SheetNames: ['A', 'B'],
+      Sheets: {},
+    })) as unknown as typeof XLSX.read;
+    expect(() => buildMultiSheetImport(new Uint8Array(), 'room', readFn, 0))
+      .toThrow('firstIndex must be a positive safe integer');
+    expect(() => buildMultiSheetImport(new Uint8Array(), 'room', readFn, Number.MAX_SAFE_INTEGER))
+      .toThrow('child room namespace exhausted');
+  });
+
+  it('accepts the last safe child index for a single worksheet', () => {
+    const readFn = (() => ({
+      SheetNames: ['Last'],
+      Sheets: { Last: XLSX.utils.aoa_to_sheet([['x']]) },
+    })) as unknown as typeof XLSX.read;
+    const out = buildMultiSheetImport(
+      new Uint8Array(),
+      'room',
+      readFn,
+      Number.MAX_SAFE_INTEGER,
+    );
+    expect(out.subSheets.map((sheet) => sheet.subroom)).toEqual([
+      `room.${Number.MAX_SAFE_INTEGER}`,
+    ]);
+  });
+
+  it('rejects a compact repeated-row workbook before parsing either import path', () => {
+    const bytes = new TextEncoder().encode(
+      '<office:document><table:table><table:table-row table:number-rows-repeated="200001">' +
+      '<table:table-cell office:value-type="string"><text:p>x</text:p></table:table-cell>' +
+      '</table:table-row></table:table></office:document>',
+    );
+    const readFn = vi.fn(() => { throw new Error('parser should not run'); }) as unknown as typeof XLSX.read;
+    expect(() => buildMultiSheetImport(bytes, 'room', readFn)).toThrow(/exceeds/);
+    expect(() => prepareAppendImportPlan(bytes, 'fods', undefined, readFn)).toThrow(/exceeds/);
+    expect(readFn).not.toHaveBeenCalled();
+  });
+
   it('produces one sub-room per worksheet, named <room>.<N>', () => {
     const bytes = workbookBytes([
       { name: 'Alpha', aoa: [['a']] },
@@ -143,13 +182,19 @@ describe('buildMultiSheetImport', () => {
 
   it('enforces the cell-limit across the whole workbook', () => {
     const half = Math.ceil(MAX_IMPORT_CELLS / 2) + 1;
-    const aoa = Array.from({ length: half }, (_, i) => [i]);
-    const bytes = workbookBytes([
-      { name: 'A', aoa },
-      { name: 'B', aoa },
-    ]);
-    expect(() => buildMultiSheetImport(bytes, 'big')).toThrow(/exceeds/);
-  });
+    // Keep this test about the aggregate guard; real parser and conversion
+    // paths are exercised above. Serializing a 200K-cell ZIP here makes the
+    // mutation dry run depend on the CI runner's CPU speed.
+    const cells = Object.fromEntries(
+      Array.from({ length: half }, (_, index) => [`A${index + 1}`, { t: 'n', v: index }]),
+    );
+    const readFn = vi.fn(() => ({
+      SheetNames: ['A', 'B'],
+      Sheets: { A: cells, B: cells },
+    })) as unknown as typeof XLSX.read;
+    expect(() => buildMultiSheetImport(new Uint8Array(), 'big', readFn)).toThrow(/exceeds/);
+    expect(readFn).toHaveBeenCalledOnce();
+  }, 15_000);
 
   it('rejects workbook fan-out beyond the shared sheet limit', () => {
     const names = Array.from(
@@ -459,7 +504,7 @@ describe('getMaxSubsheetIndex & rewriteSheetReferences', () => {
 
 describe('prepareAppendImportPlan', () => {
   it('bounds text imports before save materialization', () => {
-    const bytes = new TextEncoder().encode('x,'.repeat(MAX_IMPORT_CELLS + 1));
+    const bytes = new TextEncoder().encode('x,'.repeat(MAX_SOCIALCALC_COL) + 'x');
     expect(() => prepareAppendImportPlan(bytes, 'csv')).toThrow(ImportDimensionsTooLargeError);
     expect(() => enforceTextImportLimits(new TextEncoder().encode('"a,b",c\r\nd,e\n'), 'csv')).not.toThrow();
     expect(() => enforceTextImportLimits(new TextEncoder().encode('"a""b",c\n'), 'csv')).not.toThrow();
@@ -680,6 +725,28 @@ describe('multi-sheet-import mutation pins', () => {
 describe('text import limits', () => {
   const bytes = (text: string): Uint8Array => new TextEncoder().encode(text);
   const maxFieldBytes = 1024 * 1024;
+
+  it('keeps quoted separators in one field and counts escaped quotes once', () => {
+    expect(() => enforceTextImportLimits(
+      bytes(`"x",${'y,'.repeat(MAX_SOCIALCALC_COL)}`),
+      'csv',
+    )).toThrow(ImportDimensionsTooLargeError);
+
+    const quotedAtLimit = `"${'x'.repeat(maxFieldBytes - 3)}"""`;
+    expect(() => enforceTextImportLimits(bytes(quotedAtLimit), 'csv')).not.toThrow();
+  });
+
+  it('treats only tabs as TSV separators', () => {
+    expect(() => enforceTextImportLimits(bytes('x'.repeat(MAX_SOCIALCALC_COL + 1)), 'tsv'))
+      .not.toThrow();
+  });
+
+  it('counts CR-only and LF-only rows', () => {
+    expect(() => enforceTextImportLimits(bytes('x\r'.repeat(MAX_IMPORT_CELLS + 1)), 'csv'))
+      .toThrow(ImportDimensionsTooLargeError);
+    expect(() => enforceTextImportLimits(bytes('\n'.repeat(MAX_IMPORT_CELLS + 1)), 'csv'))
+      .toThrow(ImportDimensionsTooLargeError);
+  });
 
   it('bounds each field independently, including quoted content', () => {
     expect(() => enforceTextImportLimits(new Uint8Array(maxFieldBytes).fill(0x78), 'txt'))

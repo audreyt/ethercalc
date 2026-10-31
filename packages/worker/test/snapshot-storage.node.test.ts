@@ -18,13 +18,17 @@ import {
 
 type FakeStorage = DurableObjectStorage & {
   __map: Map<string, unknown>;
+  __getKeys: unknown[];
 };
 
 function fakeStorage(): FakeStorage {
   const m = new Map<string, unknown>();
+  const getKeys: unknown[] = [];
   return {
     __map: m,
+    __getKeys: getKeys,
     async get(key: unknown) {
+      getKeys.push(Array.isArray(key) ? [...key] : key);
       if (typeof key === 'string') return m.get(key);
       if (Array.isArray(key)) {
         if (key.length > 128) {
@@ -232,11 +236,56 @@ describe('snapshotEntries', () => {
     expect(parts.join('')).toBe(s);
     expect(parts[1]).toBe(high);
   });
+
+  it('uses exactly two complete chunks at a two-chunk byte boundary', () => {
+    const chunk = 'x'.repeat(SNAPSHOT_CHUNK_BYTES);
+    const entries = snapshotEntries(chunk + chunk);
+    expect(entries).toStrictEqual({
+      [STORAGE_KEYS.snapshotMeta]: { chunks: 2 },
+      [snapshotChunkKey(0)]: chunk,
+      [snapshotChunkKey(1)]: chunk,
+    });
+  });
+
+  it.each([
+    ['last two-byte scalar', '\u07ff', 2],
+    ['first three-byte scalar', '\u0800', 3],
+    ['first surrogate pair', '\ud800\udc00', 4],
+    ['last surrogate pair', '\udbff\udfff', 4],
+  ] as const)('fills a chunk using the encoded width of the %s', (_label, scalar, width) => {
+    const perChunk = Math.floor(SNAPSHOT_CHUNK_BYTES / width);
+    const entries = snapshotEntries(scalar.repeat(perChunk + 1));
+    expect(entries[STORAGE_KEYS.snapshotMeta]).toEqual({ chunks: 2 });
+    expect(entries[snapshotChunkKey(0)]).toBe(scalar.repeat(perChunk));
+    expect(entries[snapshotChunkKey(1)]).toBe(scalar);
+  });
+
+  it.each([
+    ['non-high scalar before a low surrogate', '\u0800\udc00', 5, '\u0800'],
+    ['post-surrogate BMP scalar before a low surrogate', '\ue000\udc00', 5, '\ue000'],
+    ['high surrogate before a two-byte scalar', '\ud800\u00e9', 4, '\ud800'],
+    ['high surrogate before a non-low three-byte scalar', '\ud800\ue000', 5, '\ud800'],
+  ] as const)(
+    'bounds chunks when an invalid surrogate sequence follows: %s',
+    (_label, suffix, headroom, expectedTail) => {
+      const prefix = 'a'.repeat(SNAPSHOT_CHUNK_BYTES - headroom);
+      const entries = snapshotEntries(prefix + suffix);
+      expect(entries[STORAGE_KEYS.snapshotMeta]).toEqual({ chunks: 2 });
+      expect(entries[snapshotChunkKey(0)]).toBe(prefix + expectedTail);
+      expect(entries[snapshotChunkKey(1)]).toBe(suffix.slice(expectedTail.length));
+    },
+  );
 });
 
 describe('readSnapshot', () => {
   it('returns null when nothing is stored', async () => {
     expect(await readSnapshot(fakeStorage())).toBeNull();
+  });
+
+  it('returns null when chunk metadata is explicitly null', async () => {
+    const storage = fakeStorage();
+    storage.__map.set(STORAGE_KEYS.snapshotMeta, null);
+    await expect(readSnapshot(storage)).resolves.toBeNull();
   });
 
   it('fast path: returns the single-key value unchanged', async () => {
@@ -250,6 +299,11 @@ describe('readSnapshot', () => {
     const big = 'z'.repeat(SNAPSHOT_CHUNK_BYTES + 500);
     await s.put(snapshotEntries(big));
     expect(await readSnapshot(s)).toBe(big);
+    expect(s.__getKeys).toEqual([
+      STORAGE_KEYS.snapshot,
+      STORAGE_KEYS.snapshotMeta,
+      [snapshotChunkKey(0), snapshotChunkKey(1)],
+    ]);
   });
 
   it('reassembles snapshots whose chunk count exceeds one storage batch', async () => {
@@ -333,6 +387,16 @@ describe('snapshot chunk metadata', () => {
 });
 
 describe('chunk metadata validation boundaries', () => {
+  it.each([42, 'meta', true])(
+    'reports malformed scalar metadata as a snapshot error: %s',
+    async (value) => {
+      const storage = fakeStorage();
+      storage.__map.set(STORAGE_KEYS.snapshotMeta, value);
+      await expect(readSnapshotMeta(storage)).rejects.toThrow(
+        'invalid snapshot chunk metadata',
+      );
+    },
+  );
   it('accepts only a safe-integer chunk count inside the retention range', async () => {
     const accept = async (chunks: unknown): Promise<boolean> => {
       const s = fakeStorage();

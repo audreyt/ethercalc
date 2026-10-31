@@ -634,6 +634,26 @@ describe('route glue — env.ROOM dispatch shapes', () => {
     expect(calls.some((c) => c.url.includes('/_do/snapshot'))).toBe(false);
   });
 
+  it('rejects oversized CSV on create and replace before writing a snapshot', async () => {
+    const { env, calls } = makeFakeRoomNamespace(
+      () => new Response('', { status: 201 }),
+    );
+    const body = 'x\n'.repeat(200_001);
+    const app = buildApp();
+    for (const [url, method] of [
+      ['https://t.test/_', 'POST'],
+      ['https://t.test/_/existing', 'PUT'],
+    ] as const) {
+      const response = await app.fetch(new Request(url, {
+        method,
+        headers: { 'content-type': 'text/csv' },
+        body,
+      }), env as never);
+      expect(response.status).toBe(413);
+    }
+    expect(calls.some((call) => call.url.includes('/_do/snapshot'))).toBe(false);
+  });
+
   it('PUT /_/:room with an invalid workbook leaves the room untouched', async () => {
     const { env, calls } = makeFakeRoomNamespace(
       () => new Response('', { status: 201 }),
@@ -652,7 +672,7 @@ describe('route glue — env.ROOM dispatch shapes', () => {
     expect(calls.some((call) => call.method === 'PUT')).toBe(false);
   });
 
-  it('GET /_from/:template copies template snapshot into a new room', async () => {
+  it.each(['same-origin', 'none'])('GET /_from/:template copies from %s navigation', async (site) => {
     const { env, calls } = makeFakeRoomNamespace((call) => {
       if (call.url.includes('/_do/access')) {
         return Response.json({ isPrivate: false, parented: false, canRead: true });
@@ -665,7 +685,9 @@ describe('route glue — env.ROOM dispatch shapes', () => {
     });
     const app = buildApp();
     const res = await app.fetch(
-      new Request('https://t.test/_from/some-template', { redirect: 'manual' }),
+      new Request('https://t.test/_from/some-template', {
+        headers: { 'Sec-Fetch-Site': site }, redirect: 'manual',
+      }),
       env as never,
     );
     expect(res.status).toBe(302);
@@ -688,7 +710,9 @@ describe('route glue — env.ROOM dispatch shapes', () => {
     );
     const app = buildApp();
     const res = await app.fetch(
-      new Request('https://t.test/_from/nonexistent', { redirect: 'manual' }),
+      new Request('https://t.test/_from/nonexistent', {
+        headers: { 'Sec-Fetch-Site': 'same-origin' }, redirect: 'manual',
+      }),
       env as never,
     );
     expect(res.status).toBe(302);
@@ -710,7 +734,9 @@ describe('route glue — env.ROOM dispatch shapes', () => {
     const app = buildApp();
     const keyedEnv = { ...env, ETHERCALC_KEY: key };
     const response = await app.fetch(
-      new Request('https://t.test/_from/some-template', { redirect: 'manual' }),
+      new Request('https://t.test/_from/some-template', {
+        headers: { 'Sec-Fetch-Site': 'same-origin' }, redirect: 'manual',
+      }),
       keyedEnv as never,
     );
     expect(response.status).toBe(302);
@@ -734,7 +760,7 @@ describe('route glue — env.ROOM dispatch shapes', () => {
     const { env, calls } = makePrivateRoomDoNamespace('PRIVATE-CONTENT');
     const response = await buildApp().fetch(
       new Request('https://t.test/_from/existing-private', {
-        headers: { Cookie: AUTH_COOKIE },
+        headers: { Cookie: AUTH_COOKIE, 'Sec-Fetch-Site': 'same-origin' },
         redirect: 'manual',
       }),
       withAuth(env) as never,
@@ -751,20 +777,24 @@ describe('route glue — env.ROOM dispatch shapes', () => {
         : new Response('CHILD-SAVE'),
     );
     const response = await buildApp().fetch(
-      new Request('https://t.test/_from/parent.1', { redirect: 'manual' }),
+      new Request('https://t.test/_from/parent.1', {
+        headers: { 'Sec-Fetch-Site': 'same-origin' }, redirect: 'manual',
+      }),
       env as never,
     );
     expect(response.status).toBe(409);
     expect(calls).toHaveLength(1);
   });
 
-  it.each(['cross-site', 'same-site'])(
+  it.each(['cross-site', 'same-site', 'unexpected', undefined])(
     'ignores a %s navigation to the copy route',
     async (site) => {
       const { env, calls } = makeFakeRoomNamespace(() => new Response('TPL-SNAP'));
+      const headers = new Headers();
+      if (site !== undefined) headers.set('Sec-Fetch-Site', site);
       const response = await buildApp().fetch(
         new Request('https://t.test/_from/template', {
-          headers: { 'Sec-Fetch-Site': site },
+          headers,
           redirect: 'manual',
         }),
         env as never,
@@ -1091,7 +1121,9 @@ describe('route glue — DO auth verdict propagation (Phase A)', () => {
     );
     const app = buildApp();
     const res = await app.fetch(
-      new Request('https://t.test/_from/locked', { redirect: 'manual' }),
+      new Request('https://t.test/_from/locked', {
+        headers: { 'Sec-Fetch-Site': 'same-origin' }, redirect: 'manual',
+      }),
       env as never,
     );
     expect(res.status).toBe(403);

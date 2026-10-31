@@ -147,6 +147,17 @@ describe('Single-sheet XLSX PUT and POST room routes', () => {
     expect(await getRes.text()).toContain('flat-ods');
   });
 
+  it('reports unsupported ODF conditional style maps clearly', async () => {
+    const body = '<office:document><style:map style:condition="value()>=0" ' +
+      'style:apply-style-name="previous"/></office:document>';
+    const response = await request('PUT', '/_/unsupported-odf-style', {
+      headers: { 'content-type': 'application/vnd.oasis.opendocument.spreadsheet' },
+      body,
+    });
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe('ODF conditional style maps are unsupported for import');
+  });
+
   it('PUT /_/:room with xlsx body imports the sheet as a new snapshot', async () => {
     const ws = {
       '!ref': 'A1:A2',

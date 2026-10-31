@@ -28,6 +28,7 @@ test.describe('/:template/form clone redirect', () => {
     expect(put.status()).toBe(201);
 
     const res = await request.get(`${workerBase}/${template}/form`, {
+      headers: { 'Sec-Fetch-Site': 'none' },
       maxRedirects: 0,
     });
     expect(res.status()).toBe(302);
@@ -52,6 +53,7 @@ test.describe('/:template/form clone redirect', () => {
     });
     expect(put.status()).toBe(201);
     const cloned = await request.get(`${workerBase}/${encodeURIComponent(template)}/form`, {
+      headers: { 'Sec-Fetch-Site': 'none' },
       maxRedirects: 0,
     });
     expect(cloned.status()).toBe(302);

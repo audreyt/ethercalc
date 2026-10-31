@@ -14,7 +14,7 @@ import type { Context, Hono } from 'hono';
 import { buildBlockedPathResponse } from '../handlers/blocked-paths.ts';
 import { buildNewRoomRedirect } from '../handlers/new-room.ts';
 import { buildRoomRedirect, type RoomMode } from '../handlers/room-redirects.ts';
-import { verifyAuth } from '../lib/auth.ts';
+import { computeAuth, verifyAuth } from '../lib/auth.ts';
 import { doFetch } from '../lib/do-dispatch.ts';
 import { encodeRoom, encodeRoomPath } from '../lib/room-name.ts';
 import { getSessionPrincipal } from '../lib/session-middleware.ts';
@@ -101,6 +101,16 @@ export function registerStateless(app: Hono<EtherCalcHonoEnv>): void {
         const supplied = c.req.query('auth') ?? '';
         if (await verifyAuth(key, encodeRoom(room), supplied)) {
           authorizedAuth = supplied;
+        } else if (
+          access !== null &&
+          typeof access === 'object' &&
+          'parent' in access &&
+          typeof access.parent === 'string' &&
+          room.startsWith(`${access.parent}.`) &&
+          /^[1-9]\d*$/.test(room.slice(access.parent.length + 1)) &&
+          await verifyAuth(key, encodeRoom(`=${access.parent}`), supplied)
+        ) {
+          authorizedAuth = await computeAuth(key, encodeRoom(room));
         } else if (
           principal &&
           access !== null &&

@@ -20,6 +20,7 @@ import {
   ImportDimensionsTooLargeError,
   ImportArchiveTooLargeError,
   ImportArchiveInvalidError,
+  ImportOdfUnsupportedFeatureError,
   ImportColumnOutOfRangeError,
   ImportRowOutOfRangeError,
   ImportTooLargeError,
@@ -47,6 +48,7 @@ function makeArchiveEntry(
   declaredSize = content.length,
   options: {
     method?: 0 | 8;
+    name?: string;
     localExtra?: Uint8Array;
     centralExtra?: Uint8Array;
     comment?: Uint8Array;
@@ -55,7 +57,7 @@ function makeArchiveEntry(
   bytes: Uint8Array;
   central: number;
 } {
-  const name = new TextEncoder().encode('xl/worksheets/sheet1.xml');
+  const name = new TextEncoder().encode(options.name ?? 'xl/worksheets/sheet1.xml');
   const method = options.method ?? 8;
   const localExtra = options.localExtra ?? new Uint8Array();
   const centralExtra = options.centralExtra ?? new Uint8Array();
@@ -903,6 +905,325 @@ describe('actual archive expansion limit', () => {
     const { bytes } = makeArchiveEntry(new TextEncoder().encode('<sheet/>'));
     expect(() => enforceActualImportArchiveLimit(bytes)).not.toThrow();
     expect(() => enforceActualImportArchiveLimit(new TextEncoder().encode('<xml/>'))).not.toThrow();
+  });
+
+  it('accepts an ordinary ODS archive through the XML preflight', () => {
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['a', 'b'], ['c', 'd']]), 'Sheet1');
+    const bytes = new Uint8Array(XLSX.write(book, { bookType: 'ods', type: 'array' }) as ArrayBufferLike);
+    expect(() => enforceActualImportArchiveLimit(bytes)).not.toThrow();
+    expect(xlsxToSave(bytes)).toContain('cell:B2');
+  });
+
+  it('checks ODF repetition before the workbook parser expands it', () => {
+    const odf = (rows: number, columns: number) => new TextEncoder().encode(
+      `<office:document><table:table><table:table-row table:number-rows-repeated="${rows}">` +
+      `<table:table-cell table:number-columns-repeated="${columns}" office:value-type="string">` +
+      '<text:p>value</text:p></table:table-cell></table:table-row></table:table></office:document>',
+    );
+    expect(() => enforceActualImportArchiveLimit(odf(2, 2))).not.toThrow();
+    expect(() => enforceActualImportArchiveLimit(odf(2, MAX_SOCIALCALC_COL + 1)))
+      .toThrow(ImportDimensionsTooLargeError);
+    expect(() => enforceActualImportArchiveLimit(odf(1000, 1000)))
+      .toThrow(ImportDimensionsTooLargeError);
+    expect(() => enforceActualImportArchiveLimit(odf(MAX_IMPORT_CELLS + 1, 1)))
+      .toThrow(ImportTooLargeError);
+    const alias = new TextDecoder().decode(odf(MAX_IMPORT_CELLS + 1, 1))
+      .replaceAll('table:table-row', '行')
+      .replaceAll('table:table-cell', '数据');
+    expect(() => enforceActualImportArchiveLimit(new TextEncoder().encode(alias)))
+      .toThrow(ImportTooLargeError);
+    const longProlog = new TextEncoder().encode(
+      `<?xml version="1.0"?><!--${'x'.repeat(5000)}-->` +
+      new TextDecoder().decode(odf(MAX_IMPORT_CELLS + 1, 1)),
+    );
+    expect(() => assertWorkbookFormat(longProlog, 'fods')).not.toThrow();
+    expect(() => enforceActualImportArchiveLimit(longProlog)).toThrow(ImportTooLargeError);
+    const packed = makeArchiveEntry(odf(1000, 1000), undefined, { name: './content.xml' });
+    expect(() => enforceActualImportArchiveLimit(packed.bytes))
+      .toThrow(ImportDimensionsTooLargeError);
+    const aliasedPacked = makeArchiveEntry(odf(MAX_IMPORT_CELLS + 1, 1), undefined, {
+      name: 'Root Entry/content.xml',
+    });
+    expect(() => enforceActualImportArchiveLimit(aliasedPacked.bytes))
+      .toThrow(ImportTooLargeError);
+  });
+
+  it('recognizes namespace, duplicate, and normalized repetition attributes', () => {
+    const fods = (rowAttributes: string, cellAttributes = '') => new TextEncoder().encode(
+      `<office:document><table:table><table:table-row ${rowAttributes}>` +
+      `<table:table-cell ${cellAttributes} office:value-type="string"><text:p>x</text:p>` +
+      '</table:table-cell></table:table-row></table:table></office:document>',
+    );
+    for (const rowAttributes of [
+      '語:number-rows-repeated="200001"',
+      'number-rows-repeated_extra="200001"',
+      'number-rows-repeated="1" 語:number-rows-repeated="200001"',
+      'number-rows-repeated=200001 ',
+    ]) {
+      expect(() => enforceActualImportArchiveLimit(fods(rowAttributes)), rowAttributes)
+        .toThrow(ImportTooLargeError);
+    }
+    for (const cellAttributes of [
+      '語:number-columns-repeated="703"',
+      'number-columns-repeated_extra="703"',
+      'number-columns-repeated="1" 語:number-columns-repeated="703"',
+      'number-columns-repeated=703 ',
+    ]) {
+      expect(() => enforceActualImportArchiveLimit(fods('', cellAttributes)), cellAttributes)
+        .toThrow(ImportDimensionsTooLargeError);
+    }
+    expect(() => enforceActualImportArchiveLimit(fods(
+      'data-note="語:number-rows-repeated=200001"',
+      'data-note="語:number-columns-repeated=703"',
+    ))).not.toThrow();
+    const aliasedElements = new TextEncoder().encode(
+      '<office:document><語:table_extra><語:table-row_extra ' +
+      '語:number-rows-repeated="200001"><語:table-cell_extra office:value-type="string">' +
+      '<text:p>x</text:p></語:table-cell_extra></語:table-row_extra>' +
+      '</語:table_extra></office:document>',
+    );
+    expect(() => enforceActualImportArchiveLimit(aliasedElements))
+      .toThrow(ImportTooLargeError);
+  });
+
+  it('accounts for rectangular extent and aggregate cells across ODF tables', () => {
+    const fods = (body: string) => new TextEncoder().encode(`<office:document>${body}</office:document>`);
+    const row = (count: number, width: number) =>
+      `<table:table-row table:number-rows-repeated="${count}">` +
+      `<table:table-cell table:number-columns-repeated="${width}"/></table:table-row>`;
+    expect(() => enforceActualImportArchiveLimit(fods(
+      `<table:table>${row(1000, 1)}${row(1, 300)}</table:table>`,
+    ))).toThrow(ImportDimensionsTooLargeError);
+    expect(() => enforceActualImportArchiveLimit(fods(
+      `<table:table>${row(150_000, 1)}</table:table>` +
+      `<table:table>${row(150_000, 1)}</table:table>`,
+    ))).toThrow(ImportDimensionsTooLargeError);
+    expect(() => enforceActualImportArchiveLimit(fods(
+      '<table:table><table:table-row><table:table-cell/></table:table-row></table:table>',
+    ))).not.toThrow();
+    expect(() => enforceActualImportArchiveLimit(fods(
+      "<table:table><table:table-row table:number-rows-repeated='2'/>" +
+      '</table:table>',
+    ))).not.toThrow();
+  });
+
+  it('rejects malformed ODF repetition and XML boundaries', () => {
+    const enc = (value: string) => new TextEncoder().encode(value);
+    const fods = (body: string) => enc(`<office:document>${body}</office:document>`);
+    expect(() => assertWorkbookFormat(enc('<!--unfinished'), 'fods'))
+      .toThrow(ImportArchiveInvalidError);
+    expect(() => assertWorkbookFormat(enc('<?xml unfinished'), 'fods'))
+      .toThrow(ImportArchiveInvalidError);
+    expect(() => assertWorkbookFormat(enc('<office:document'), 'fods'))
+      .toThrow(ImportArchiveInvalidError);
+    expect(() => assertWorkbookFormat(enc('<office:documentx>'), 'fods'))
+      .toThrow(ImportArchiveInvalidError);
+    expect(() => assertWorkbookFormat(enc('  '), 'fods'))
+      .toThrow(ImportArchiveInvalidError);
+    expect(() => enforceActualImportArchiveLimit(fods(
+      '<table:table><table:table-row table:number-rows-repeated="0"/></table:table>',
+    ))).toThrow(ImportArchiveInvalidError);
+    expect(() => enforceActualImportArchiveLimit(fods('<!--unfinished')))
+      .toThrow(ImportArchiveInvalidError);
+    expect(() => enforceActualImportArchiveLimit(fods('<![CDATA[unfinished')))
+      .toThrow(ImportArchiveInvalidError);
+    expect(() => enforceActualImportArchiveLimit(enc('<office:document><table:table-row')))
+      .toThrow(ImportArchiveInvalidError);
+  });
+
+  it('inspects tag-like content in comments and CDATA', () => {
+    const enc = (value: string) => new TextEncoder().encode(`<office:document>${value}</office:document>`);
+    expect(() => enforceActualImportArchiveLimit(enc(
+      '<!-- <table:table-row table:number-rows-repeated="999999"/> -->',
+    ))).toThrow(ImportTooLargeError);
+    expect(() => enforceActualImportArchiveLimit(enc(
+      '<![CDATA[<table:table-row table:number-rows-repeated="999999"/>]]>',
+    ))).toThrow(ImportTooLargeError);
+    expect(() => enforceActualImportArchiveLimit(enc(
+      '<!-- ordinary note --><![CDATA[ordinary text]]><>' +
+      '<table:table><table:table-row><table:table-cell/></table:table-row></table:table>tail',
+    ))).not.toThrow();
+  });
+
+  it('bounds ODF text-space expansion before reading flat and archived XML', () => {
+    const fods = (spaceAttributes: string, rowRepeat = 1, cellRepeat = 1) =>
+      new TextEncoder().encode(
+        `<office:document><table:table><table:table-row table:number-rows-repeated="${rowRepeat}">` +
+        `<table:table-cell table:number-columns-repeated="${cellRepeat}" office:value-type="string">` +
+        `<text:p><text:s ${spaceAttributes}/></text:p></table:table-cell>` +
+        '</table:table-row></table:table></office:document>',
+      );
+    expect(() => enforceActualImportArchiveLimit(fods('text:c="3"'))).not.toThrow();
+    expect(() => enforceActualImportArchiveLimit(fods('text:c="0"'))).not.toThrow();
+    for (const attribute of [
+      'text:c="1048577"',
+      'text:c="999999999999999999999"',
+      '語:c="1048577"',
+      'c_extra="1048577"',
+      'text:c="1" 語:c="1048577"',
+      'text:c=1048577 ',
+    ]) {
+      expect(() => enforceActualImportArchiveLimit(fods(attribute)), attribute)
+        .toThrow(ImportArchiveTooLargeError);
+    }
+    expect(() => enforceActualImportArchiveLimit(fods('text:c="200"', 150_000)))
+      .toThrow(ImportArchiveTooLargeError);
+    expect(() => enforceActualImportArchiveLimit(fods('text:c="100"', 1000, 500)))
+      .toThrow(ImportArchiveTooLargeError);
+    const archived = makeArchiveEntry(fods('text:c="1048577"'), undefined, {
+      name: 'Root Entry/content.xml',
+    });
+    expect(() => enforceActualImportArchiveLimit(archived.bytes))
+      .toThrow(ImportArchiveTooLargeError);
+    expect(() => enforceActualImportArchiveLimit(fods('text:c="1"', 1, 200_001)))
+      .toThrow(ImportTooLargeError);
+  });
+
+  it('bounds ODF number-format widths and rejects conditional style maps', () => {
+    const enc = (body: string) => new TextEncoder().encode(`<office:document>${body}</office:document>`);
+    expect(() => enforceActualImportArchiveLimit(enc(
+      '<number:number number:decimal-places="2" number:min-integer-digits="1"/>',
+    ))).not.toThrow();
+    for (const attribute of [
+      'number:decimal-places="4097"',
+      'min-integer-digits_extra="4097"',
+      'number:min-numerator-digits="1" 語:min-numerator-digits="4097"',
+      'min-denominator-digits=4097 ',
+    ]) {
+      expect(() => enforceActualImportArchiveLimit(enc(`<number:number ${attribute}/>`)), attribute)
+        .toThrow(ImportArchiveTooLargeError);
+    }
+    const styleChain = Array.from({ length: 9 }, (_, index) =>
+      `<style:style style:name="s${index}">` +
+      `<style:map style:condition="value()>=0" style:apply-style-name="s${index - 1}"/>` +
+      '</style:style>',
+    ).join('');
+    expect(() => enforceActualImportArchiveLimit(enc(styleChain)))
+      .toThrow(ImportOdfUnsupportedFeatureError);
+    expect(() => enforceActualImportArchiveLimit(enc(
+      '<語:map 語:condition="value()>=0" 語:apply-style-name="s0"/>',
+    ))).toThrow(ImportOdfUnsupportedFeatureError);
+    expect(() => enforceActualImportArchiveLimit(enc('<table:table-cell/>'))).not.toThrow();
+  });
+
+  it('accepts the exact ODF expansion ceilings and rejects the first value beyond them', () => {
+    const enc = (body: string) => new TextEncoder().encode(
+      `<office:document><table:table>${body}</table:table></office:document>`,
+    );
+    const row = (rows: number, columns: number, inner = '') =>
+      `<table:table-row table:number-rows-repeated="${rows}">` +
+      `<table:table-cell table:number-columns-repeated="${columns}">${inner}</table:table-cell>` +
+      '</table:table-row>';
+
+    expect(() => enforceActualImportArchiveLimit(enc(row(1000, 200)))).not.toThrow();
+    expect(() => enforceActualImportArchiveLimit(enc(row(1001, 200))))
+      .toThrow(ImportDimensionsTooLargeError);
+    expect(() => enforceActualImportArchiveLimit(enc(row(MAX_IMPORT_CELLS, 1))))
+      .not.toThrow();
+    expect(() => enforceActualImportArchiveLimit(enc(row(1, MAX_IMPORT_CELLS))))
+      .toThrow(ImportDimensionsTooLargeError);
+    expect(() => enforceActualImportArchiveLimit(enc(row(1, MAX_SOCIALCALC_COL))))
+      .not.toThrow();
+    expect(() => enforceActualImportArchiveLimit(enc(row(1, MAX_SOCIALCALC_COL + 1))))
+      .toThrow(ImportDimensionsTooLargeError);
+    expect(() => enforceActualImportArchiveLimit(enc(
+      '<table:table-row><table:table-cell><text:p><text:s text:c="1048576"/></text:p>' +
+      '</table:table-cell></table:table-row>',
+    ))).not.toThrow();
+    expect(() => enforceActualImportArchiveLimit(enc(
+      '<number:number number:decimal-places="4096"/>' +
+      '<number:number number:decimal-places="4097"/>',
+    ))).toThrow(ImportArchiveTooLargeError);
+    expect(() => enforceActualImportArchiveLimit(enc(
+      '<number:number number:decimal-places="4096"/>',
+    ))).not.toThrow();
+
+    const spaces = '<text:s text:c="1048576"/>'.repeat(25);
+    expect(() => enforceActualImportArchiveLimit(enc(row(1, 1, `<text:p>${spaces}</text:p>`))))
+      .not.toThrow();
+    expect(() => enforceActualImportArchiveLimit(enc(row(1, 1, `<text:p>${spaces}<text:s/></text:p>`))))
+      .toThrow(ImportArchiveTooLargeError);
+  });
+
+  it('bounds ODF text expansion using both repeated rows and repeated cells', () => {
+    const enc = (spaces: number) => new TextEncoder().encode(
+      '<office:document><table:table><table:table-row table:number-rows-repeated="1000">' +
+      '<table:table-cell table:number-columns-repeated="200">' +
+      `<text:p><text:s text:c="${spaces}"/></text:p>` +
+      '</table:table-cell></table:table-row></table:table></office:document>',
+    );
+    expect(() => enforceActualImportArchiveLimit(enc(131))).not.toThrow();
+    expect(() => enforceActualImportArchiveLimit(enc(132)))
+      .toThrow(ImportArchiveTooLargeError);
+  });
+
+  it('rejects malformed ODF repetition values before workbook parsing', () => {
+    const enc = (raw: string) => new TextEncoder().encode(
+      '<office:document><table:table>' +
+      `<table:table-row table:number-rows-repeated="${raw}"/>` +
+      '</table:table></office:document>',
+    );
+    for (const raw of ['02', '2x', 'x2', '1.5', '-1', ' 2', '2 ', '']) {
+      expect(() => enforceActualImportArchiveLimit(enc(raw)), raw)
+        .toThrow(ImportArchiveInvalidError);
+    }
+  });
+
+  it('handles quoted attributes and scopes special ODF elements', () => {
+    const enc = (body: string) => new TextEncoder().encode(
+      `<office:document><table:table>${body}</table:table></office:document>`,
+    );
+    for (const attribute of [
+      "table:number-rows-repeated='200001'",
+      'table:number-rows-repeated = "200001"',
+    ]) {
+      expect(() => enforceActualImportArchiveLimit(enc(
+        `<table:table-row ${attribute}/>`,
+      )), attribute).toThrow(ImportTooLargeError);
+    }
+    expect(() => enforceActualImportArchiveLimit(enc(
+      '<text:p text:c="1048577"/>',
+    ))).not.toThrow();
+    expect(() => enforceActualImportArchiveLimit(enc('<other:map/>'))).not.toThrow();
+    expect(() => enforceActualImportArchiveLimit(enc('<style:map/>')))
+      .toThrow(ImportOdfUnsupportedFeatureError);
+    expect(() => enforceActualImportArchiveLimit(enc(
+      '<other:map other:condition="value()>=0"/>',
+    ))).toThrow(ImportOdfUnsupportedFeatureError);
+    expect(() => enforceActualImportArchiveLimit(enc(
+      '<other:map other:apply-style-name="s0"/>',
+    ))).toThrow(ImportOdfUnsupportedFeatureError);
+  });
+
+  it('reports the expanded ODF dimensions at the rejected boundary', () => {
+    const xml = new TextEncoder().encode(
+      '<office:document><table:table>' +
+      '<table:table-row table:number-rows-repeated="1000">' +
+      '<table:table-cell table:number-columns-repeated="703"/>' +
+      '</table:table-row></table:table></office:document>',
+    );
+    let error: unknown;
+    try {
+      enforceActualImportArchiveLimit(xml);
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(ImportDimensionsTooLargeError);
+    expect(error).toMatchObject({ rows: 1000, columns: 703 });
+  });
+
+  it('tracks the aggregate ODF cell budget across individually valid tables', () => {
+    const table = (rows: number, columns: number) =>
+      '<table:table><table:table-row ' +
+      `table:number-rows-repeated="${rows}">` +
+      `<table:table-cell table:number-columns-repeated="${columns}"/>` +
+      '</table:table-row></table:table>';
+    const enc = (body: string) => new TextEncoder().encode(`<office:document>${body}</office:document>`);
+    expect(() => enforceActualImportArchiveLimit(enc(table(100_000, 1) + table(100_000, 1))))
+      .not.toThrow();
+    expect(() => enforceActualImportArchiveLimit(enc(table(100_000, 2) + table(100_000, 2))))
+      .toThrow(ImportDimensionsTooLargeError);
   });
 
   it('rejects an entry whose expanded size differs from its directory metadata', () => {

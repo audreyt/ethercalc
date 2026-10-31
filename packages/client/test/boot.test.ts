@@ -5,6 +5,7 @@ import {
   initializeSpreadsheet,
   installLegacyExportBindings,
   installSocialCalcLogoLink,
+  openLegacyExportDialog,
   type BootHost,
   type DialogHostElement,
 } from '../src/boot.ts';
@@ -297,6 +298,42 @@ describe('legacy export bindings', () => {
     // `openLegacyExportDialog`).
     expect(host.SocialCalc.Keyboard?.passThru).toBe(false);
     expect(dialog?.remove).toHaveBeenCalledTimes(1);
+  });
+
+  it('exports from a cross-origin embed using the current document path', () => {
+    const fakeDocument = makeFakeDialogDocument();
+    const open = vi.fn();
+    const inaccessibleLocation = {
+      get href(): string {
+        throw new DOMException('Cross-origin location', 'SecurityError');
+      },
+      get pathname(): string {
+        throw new DOMException('Cross-origin location', 'SecurityError');
+      },
+    };
+    const host = makeHost({
+      document: {
+        addEventListener: vi.fn(),
+        createElement: fakeDocument.createElement,
+        body: fakeDocument.body,
+      },
+      location: { search: '', hash: '', pathname: '/embedded' },
+      parent: { location: inaccessibleLocation },
+      open,
+    });
+    host.SocialCalc._room = 'embedded';
+
+    openLegacyExportDialog(host);
+    const buttons = fakeDocument.created.filter((el) => el.tag === 'm3e-button');
+    for (const button of buttons.slice(0, 4)) {
+      for (const listener of button.listeners.click ?? []) listener();
+    }
+    expect(open.mock.calls.map(([url]) => url)).toEqual([
+      './embedded.xlsx',
+      './embedded.csv',
+      './embedded.html',
+      './embedded.ods',
+    ]);
   });
 
   it('resets Keyboard.passThru on Cancel without downloading anything', () => {
