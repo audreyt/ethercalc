@@ -166,13 +166,19 @@ describe('buildMultiSheetImport', () => {
 
   it('enforces the cell-limit across the whole workbook', () => {
     const half = Math.ceil(MAX_IMPORT_CELLS / 2) + 1;
-    const aoa = Array.from({ length: half }, (_, i) => [i]);
-    const bytes = workbookBytes([
-      { name: 'A', aoa },
-      { name: 'B', aoa },
-    ]);
-    expect(() => buildMultiSheetImport(bytes, 'big')).toThrow(/exceeds/);
-  });
+    // Keep this test about the aggregate guard; real parser and conversion
+    // paths are exercised above. Serializing a 200K-cell ZIP here makes the
+    // mutation dry run depend on the CI runner's CPU speed.
+    const cells = Object.fromEntries(
+      Array.from({ length: half }, (_, index) => [`A${index + 1}`, { t: 'n', v: index }]),
+    );
+    const readFn = vi.fn(() => ({
+      SheetNames: ['A', 'B'],
+      Sheets: { A: cells, B: cells },
+    })) as unknown as typeof XLSX.read;
+    expect(() => buildMultiSheetImport(new Uint8Array(), 'big', readFn)).toThrow(/exceeds/);
+    expect(readFn).toHaveBeenCalledOnce();
+  }, 15_000);
 
   it('rejects workbook fan-out beyond the shared sheet limit', () => {
     const names = Array.from(
