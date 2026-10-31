@@ -6362,6 +6362,69 @@ describe('RoomDO — fold: inline WS caps', () => {
     expect(fetches).toHaveLength(0);
   });
 
+  it('closes a legacy session-host socket when its claimed identity differs from the session', async () => {
+    const token = await computeAuth('test-key', 'sheet1');
+    const session = sessionFor('verified-user', FUTURE_SESSION_EXP);
+    for (const claimed of [
+      { uid: 'other-user', sessionExp: FUTURE_SESSION_EXP },
+      { uid: 'verified-user', sessionExp: FUTURE_SESSION_EXP - 1 },
+    ]) {
+      const fetches: string[] = [];
+      const env = withSessionAuth({
+        ROOM: makeRoomNamespace(async (input) => {
+          fetches.push(String(input));
+          return new Response('', { status: 202 });
+        }),
+        ETHERCALC_KEY: 'test-key',
+      });
+      const room = new RoomDO(makeState('sid', { map: new Map() }), env);
+      const log: FakeWsLog = { sent: [] };
+      const ws = makeFakeWs(log, {
+        user: '', room: '', auth: token, legacy: true,
+        ...claimed, session,
+      });
+      await room.webSocketMessage(ws, `5:::${JSON.stringify({
+        name: 'data', args: [{
+          type: 'execute', room: 'sheet1', user: 'verified-user', auth: token,
+          cmdstr: 'set A1 value n 1',
+        }],
+      })}`);
+      expect(log.closeCode, JSON.stringify(claimed)).toBe(1008);
+      expect(log.closeReason).toBe('Session invalid');
+      expect(fetches).toHaveLength(0);
+    }
+  });
+
+  it('omits the user header when a legacy session-host socket has no user identity', async () => {
+    const requests: RequestInit[] = [];
+    const env: Env = {
+      ROOM: {
+        idFromName: (name: string) => ({ toString: () => name }) as DurableObjectId,
+        get: () => ({
+          fetch: async (_input: RequestInfo | URL, init?: RequestInit) => {
+            requests.push(init ?? {});
+            return new Response('', { status: 202 });
+          },
+        }) as unknown as DurableObjectStub,
+      } as unknown as DurableObjectNamespace,
+      ETHERCALC_KEY: 'test-key',
+    };
+    const room = new RoomDO(makeState('sid', { map: new Map() }), env);
+    const token = await computeAuth('test-key', 'sheet1');
+    const ws = makeFakeWs({ sent: [] }, {
+      user: '', room: '', auth: token, legacy: true,
+    });
+    await room.webSocketMessage(ws, `5:::${JSON.stringify({
+      name: 'data', args: [{
+        type: 'execute', room: 'sheet1', user: '', auth: token,
+        cmdstr: 'set A1 value n 1',
+      }],
+    })}`);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.method).toBe('POST');
+    expect(new Headers(requests[0]?.headers).has('X-EC-Uid')).toBe(false);
+  });
+
   it('legacy room frames without a user field still dispatch', async () => {
     // `stopHuddle` carries no `user`, so the identity rebind is skipped —
     // the frame must still reach its handler.
@@ -6492,7 +6555,7 @@ describe('RoomDO — fold: inline WS caps', () => {
     const payload = {
       type: 'chat',
       room: 'r',
-      user: 'alice',
+      user: 'forged-user',
       msg: 'hello-legacy',
     };
     const frame = `5:::${JSON.stringify({ name: 'data', args: [payload] })}`;
@@ -6502,6 +6565,8 @@ describe('RoomDO — fold: inline WS caps', () => {
     expect(peerLog.sent.length).toBe(1);
     expect(peerLog.sent[0]!).toMatch(/^5:::/);
     expect(peerLog.sent[0]!).toContain('hello-legacy');
+    expect(peerLog.sent[0]!).toContain('"user":"alice"');
+    expect(peerLog.sent[0]!).not.toContain('forged-user');
     expect(senderLog.sent).toHaveLength(0);
   });
 
@@ -6515,18 +6580,43 @@ describe('RoomDO — fold: inline WS caps', () => {
     };
     const sender = makeFakeWs({ sent: [] }, attachment);
     const peer = makeFakeWs(peerLog, attachment);
-    const { state } = makeWsAwareState('x', { map: new Map() }, [sender, peer]);
+    const record: FakeStorageRecord = { map: new Map() };
+    const { state } = makeWsAwareState('x', record, [sender, peer]);
     const room = new RoomDO(state, makeEnv());
     const payload = {
-      type: 'ask.ecell',
+      type: 'chat',
       room: 'other',
       user: 'alice',
+      msg: 'blocked',
     };
     await room.webSocketMessage(
       sender,
       `5:::${JSON.stringify({ name: 'data', args: [payload] })}`,
     );
+    expect(record.map.has(chatKey(0))).toBe(false);
     expect(peerLog.sent).toHaveLength(0);
+  });
+
+  it('lets a legacy recalc request use its referenced room label', async () => {
+    const record: FakeStorageRecord = {
+      map: new Map([[STORAGE_KEYS.snapshot, 'SAVE']]),
+    };
+    const { state } = makeWsAwareState('legacy-recalc', record, []);
+    const room = new RoomDO(state, makeEnv());
+    const log: FakeWsLog = { sent: [] };
+    const ws = makeFakeWs(log, {
+      user: 'alice', room: 'r', auth: 'r', legacy: true,
+    });
+    await room.webSocketMessage(
+      ws,
+      `5:::${JSON.stringify({
+        name: 'data', args: [{ type: 'ask.recalc', room: 'other' }],
+      })}`,
+    );
+    expect(log.sent).toHaveLength(1);
+    expect(log.sent[0]).toContain('"type":"recalc"');
+    expect(log.sent[0]).toContain('"room":"other"');
+    expect(log.sent[0]).toContain('"snapshot":"SAVE"');
   });
 
   it('legacy room-scoped execute uses per-message auth on the wire frame', async () => {
@@ -7829,8 +7919,9 @@ describe('RoomDO — private WS gating (Phase A)', () => {
     markPrivate(record);
     const { state } = makeWsAwareState('ws-priv-1', record, []);
     const room = new RoomDO(state, makeEnv());
+    const log: FakeWsLog = { sent: [] };
     const writer = makeFakeWs(
-      { sent: [] },
+      log,
       {
         user: 'w',
         room: 'r',
@@ -7850,6 +7941,7 @@ describe('RoomDO — private WS gating (Phase A)', () => {
       }),
     );
     expect(record.map.get(logKey(0))).toBe('set A1 value n 1');
+    expect(log.closed).toBeUndefined();
   });
 
   it('drops any write frame carrying the view-only auth sentinel', async () => {
@@ -7904,6 +7996,43 @@ describe('RoomDO — private WS gating (Phase A)', () => {
     expect(record.map.has(logKey(0))).toBe(false);
   });
 
+  it('keeps a private room unchanged when a writer sends a view-only execute frame', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    markPrivate(record);
+    const { state } = makeWsAwareState('private-view-execute', record, []);
+    const room = new RoomDO(state, makeEnv());
+    const ws = makeFakeWs({ sent: [] }, {
+      user: 'writer', room: 'r', auth: 'r',
+      uid: 'uid-writer', sessionExp: FUTURE_SESSION_EXP,
+    });
+    await room.webSocketMessage(
+      ws,
+      JSON.stringify({
+        type: 'execute', room: 'r', user: 'writer', auth: '0',
+        cmdstr: 'set A1 value n 1',
+      }),
+    );
+    expect(record.map.has(logKey(0))).toBe(false);
+  });
+
+  it('lets a private ACL writer chat without a public room token', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    markPrivate(record);
+    const { state } = makeWsAwareState('private-keyed-chat', record, []);
+    const room = new RoomDO(state, { ...makeEnv(), ETHERCALC_KEY: 'test-key' });
+    const ws = makeFakeWs({ sent: [] }, {
+      user: 'writer', room: 'r', auth: 'not-the-room-token',
+      uid: 'uid-writer', sessionExp: FUTURE_SESSION_EXP,
+    });
+    await room.webSocketMessage(
+      ws,
+      JSON.stringify({
+        type: 'chat', room: 'r', user: 'writer', msg: 'hello',
+      }),
+    );
+    expect(record.map.get(chatKey(0))).toBe('hello');
+  });
+
   it('drops stopHuddle from readers and preserves access metadata for writers', async () => {
     const record: FakeStorageRecord = { map: new Map() };
     markPrivate(record);
@@ -7944,6 +8073,60 @@ describe('RoomDO — private WS gating (Phase A)', () => {
     expect(record.map.has(STORAGE_KEYS.snapshot)).toBe(false);
     expect(record.map.get(STORAGE_KEYS.metaAccess)).toBe('private');
     expect(record.map.get(STORAGE_KEYS.metaAcl)).toEqual(PRIVATE_ACL);
+  });
+
+  it('keeps a private room when its writer sends the view-only token', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    markPrivate(record);
+    record.map.set(STORAGE_KEYS.snapshot, 'SAVE');
+    const { state } = makeWsAwareState('private-view-token', record, []);
+    const room = new RoomDO(state, makeEnv());
+    const ws = makeFakeWs({ sent: [] }, {
+      user: 'writer', room: 'r', auth: 'r',
+      uid: 'uid-writer', sessionExp: FUTURE_SESSION_EXP,
+    });
+    await room.webSocketMessage(
+      ws,
+      JSON.stringify({ type: 'stopHuddle', room: 'r', auth: '0' }),
+    );
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('SAVE');
+    expect(record.map.get(STORAGE_KEYS.metaAcl)).toEqual(PRIVATE_ACL);
+  });
+
+  it('requires the room token for a public room even when the socket has a user identity', async () => {
+    const record: FakeStorageRecord = {
+      map: new Map([[STORAGE_KEYS.snapshot, 'SAVE']]),
+    };
+    const { state } = makeWsAwareState('public-user-delete', record, []);
+    const room = new RoomDO(state, { ...makeEnv(), ETHERCALC_KEY: 'test-key' });
+    const ws = makeFakeWs({ sent: [] }, {
+      user: 'user', room: 'r', auth: 'wrong-token',
+      uid: 'uid-writer', sessionExp: FUTURE_SESSION_EXP,
+    });
+    await room.webSocketMessage(
+      ws,
+      JSON.stringify({ type: 'stopHuddle', room: 'r', auth: 'wrong-token' }),
+    );
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('SAVE');
+  });
+
+  it('keeps a keyed Sandstorm room when the socket lacks modify permission', async () => {
+    const record: FakeStorageRecord = {
+      map: new Map([[STORAGE_KEYS.snapshot, 'SAVE']]),
+    };
+    const { state } = makeWsAwareState('sandstorm-viewer-delete', record, []);
+    const room = new RoomDO(state, {
+      ...makeEnv(), ETHERCALC_KEY: 'test-key', ETHERCALC_SANDSTORM: '1',
+    });
+    const token = await computeAuth('test-key', 'r');
+    const ws = makeFakeWs({ sent: [] }, {
+      user: 'viewer', room: 'r', auth: token, sandstormModify: false,
+    });
+    await room.webSocketMessage(
+      ws,
+      JSON.stringify({ type: 'stopHuddle', room: 'r', auth: token }),
+    );
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('SAVE');
   });
 
   it('forwards the sender uid to a public submitform formdata sibling', async () => {

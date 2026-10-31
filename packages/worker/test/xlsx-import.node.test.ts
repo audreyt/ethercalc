@@ -104,15 +104,20 @@ describe('assertWorkbookFormat', () => {
     expect(() => assertWorkbookFormat(zip, 'ods-or-fods')).not.toThrow();
     expect(() => assertWorkbookFormat(flat, 'ods-or-fods')).not.toThrow();
     expect(() => assertWorkbookFormat(flat, 'fods')).not.toThrow();
+    expect(() => assertWorkbookFormat(new TextEncoder().encode('\uFEFF  <office:document>'), 'fods')).not.toThrow();
   });
 
   it('rejects bodies outside the declared workbook format', () => {
     for (const bytes of [
       new Uint8Array(),
       new Uint8Array([0x50, 0x4b, 0x03]),
+      new Uint8Array([0x00, 0x4b, 0x03, 0x04]),
+      new Uint8Array([0x50, 0x00, 0x03, 0x04]),
+      new Uint8Array([0x50, 0x4b, 0x00, 0x04]),
       new Uint8Array([0x50, 0x4b, 0x03, 0x00]),
       new TextEncoder().encode('a,b\n1,2'),
       new TextEncoder().encode('<html><body></body></html>'),
+      new TextEncoder().encode('<office:document-content>'),
     ]) {
       expect(() => assertWorkbookFormat(bytes, 'xlsx')).toThrow(ImportArchiveInvalidError);
       expect(() => assertWorkbookFormat(bytes, 'ods')).toThrow(ImportArchiveInvalidError);
@@ -956,6 +961,56 @@ describe('actual archive expansion limit', () => {
     extended.set(trailingDirectoryByte.bytes.subarray(oldEnd), oldEnd + 1);
     new DataView(extended.buffer).setUint32(oldEnd + 1 + 12, oldEnd - trailingDirectoryByte.central + 1, true);
     expect(() => enforceActualImportArchiveLimit(extended)).toThrow('invalid workbook archive');
+  });
+
+  it('checks local and directory metadata before reading entries', () => {
+    const cases: Array<[
+      string,
+      (bytes: Uint8Array, central: number, end: number) => void,
+    ]> = [
+      ['disk number', (bytes, _central, end) => new DataView(bytes.buffer).setUint16(end + 4, 1, true)],
+      ['directory disk', (bytes, _central, end) => new DataView(bytes.buffer).setUint16(end + 6, 1, true)],
+      ['disk entry count', (bytes, _central, end) => new DataView(bytes.buffer).setUint16(end + 8, 2, true)],
+      ['total entry count', (bytes, _central, end) => new DataView(bytes.buffer).setUint16(end + 10, 2, true)],
+      ['directory size', (bytes, _central, end) => new DataView(bytes.buffer).setUint32(end + 12, 1, true)],
+      ['directory offset', (bytes, central, end) => new DataView(bytes.buffer).setUint32(end + 16, central + 1, true)],
+      ['central signature', (bytes, central) => { bytes[central] = 0; }],
+      ['local signature', (bytes) => { bytes[2] = 0; }],
+      ['central compressed size', (bytes, central) => new DataView(bytes.buffer).setUint32(central + 20, 0xffffffff, true)],
+      ['central declared size', (bytes, central) => new DataView(bytes.buffer).setUint32(central + 24, 0xffffffff, true)],
+      ['local offset', (bytes, central) => new DataView(bytes.buffer).setUint32(central + 42, 0xffffffff, true)],
+      ['flags', (bytes, central) => new DataView(bytes.buffer).setUint16(central + 8, 1, true)],
+      ['method', (bytes, central) => new DataView(bytes.buffer).setUint16(central + 10, 8, true)],
+      ['central name length', (bytes, central) => new DataView(bytes.buffer).setUint16(central + 28, 100, true)],
+      ['local name length', (bytes) => new DataView(bytes.buffer).setUint16(26, 100, true)],
+      ['central data length', (bytes, central) => new DataView(bytes.buffer).setUint32(central + 20, 100, true)],
+      ['local data length', (bytes) => new DataView(bytes.buffer).setUint32(18, 100, true)],
+      ['local declared length', (bytes) => new DataView(bytes.buffer).setUint32(22, 100, true)],
+      ['central declared length', (bytes, central) => new DataView(bytes.buffer).setUint32(central + 24, 100, true)],
+      ['local name', (bytes) => { bytes[30] = 0; }],
+    ];
+    for (const [name, mutate] of cases) {
+      const { bytes, central } = makeArchiveEntry(new TextEncoder().encode('<sheet/>'), undefined, { method: 0 });
+      expect(() => enforceActualImportArchiveLimit(bytes), name).not.toThrow();
+      mutate(bytes, central, bytes.length - 22);
+      expect(() => enforceActualImportArchiveLimit(bytes), name).toThrow(ImportArchiveInvalidError);
+    }
+  });
+
+  it('checks entries that use deferred local sizes', () => {
+    const { bytes, central } = makeArchiveEntry(new TextEncoder().encode('<sheet/>'), undefined, { method: 0 });
+    const view = new DataView(bytes.buffer);
+    view.setUint16(6, 8, true);
+    view.setUint16(central + 8, 8, true);
+    view.setUint32(18, 0, true);
+    view.setUint32(22, 0, true);
+    expect(() => enforceActualImportArchiveLimit(bytes)).not.toThrow();
+
+    view.setUint32(18, 100, true);
+    expect(() => enforceActualImportArchiveLimit(bytes)).toThrow(ImportArchiveInvalidError);
+    view.setUint32(18, 0, true);
+    view.setUint32(22, 100, true);
+    expect(() => enforceActualImportArchiveLimit(bytes)).toThrow(ImportArchiveInvalidError);
   });
 
   it('rejects malformed extra fields, unsupported methods, and corrupt compressed data', () => {
