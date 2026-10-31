@@ -504,7 +504,7 @@ describe('getMaxSubsheetIndex & rewriteSheetReferences', () => {
 
 describe('prepareAppendImportPlan', () => {
   it('bounds text imports before save materialization', () => {
-    const bytes = new TextEncoder().encode('x,'.repeat(MAX_IMPORT_CELLS + 1));
+    const bytes = new TextEncoder().encode('x,'.repeat(MAX_SOCIALCALC_COL) + 'x');
     expect(() => prepareAppendImportPlan(bytes, 'csv')).toThrow(ImportDimensionsTooLargeError);
     expect(() => enforceTextImportLimits(new TextEncoder().encode('"a,b",c\r\nd,e\n'), 'csv')).not.toThrow();
     expect(() => enforceTextImportLimits(new TextEncoder().encode('"a""b",c\n'), 'csv')).not.toThrow();
