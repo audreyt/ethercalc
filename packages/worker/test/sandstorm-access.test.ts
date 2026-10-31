@@ -31,4 +31,35 @@ describe('Sandstorm room mutations', () => {
     const response = await request('PUT', '/_/sandstorm-editor', 'modify');
     expect(response.status).toBe(201);
   });
+
+  it('lets the grain migrator seed with its bearer while preserving viewer writes', async () => {
+    const context = createExecutionContext();
+    const migrationEnv = {
+      ...env,
+      ETHERCALC_SANDSTORM: '1',
+      ETHERCALC_MIGRATE_TOKEN: 'temporary-test-bearer',
+    };
+    const seed = (authorization?: string, permission?: string) => worker.fetch(
+      new Request('https://example.test/_migrate/seed/sandstorm-migrated', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authorization ? { Authorization: authorization } : {}),
+          ...(permission !== undefined ? { 'X-Sandstorm-Permissions': permission } : {}),
+        },
+        body: JSON.stringify({ snapshot: '', log: ['set A1 text t migrated'] }),
+      }),
+      migrationEnv as never,
+      context,
+    );
+
+    expect((await seed()).status).toBe(401);
+    expect((await seed('Bearer wrong')).status).toBe(401);
+    expect((await seed('Bearer temporary-test-bearer', '')).status).toBe(403);
+    expect((await seed('Bearer temporary-test-bearer', 'modify')).status).toBe(403);
+    expect((await seed('Bearer temporary-test-bearer')).status).toBe(201);
+    const snapshot = await request('GET', '/_/sandstorm-migrated');
+    expect(await snapshot.text()).toContain('migrated');
+    await waitOnExecutionContext(context);
+  });
 });

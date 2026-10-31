@@ -17,10 +17,8 @@
 #   3. Run until Sandstorm signals exit, then shut the worker down
 #      cleanly so DO storage gets a chance to flush.
 #
-# Migrate token (SH-7): the bearer is passed only to the one-shot
-# `ethercalc migrate` subprocess while workerd is briefly started with
-# `ETHERCALC_MIGRATE_TOKEN` set. Normal grain operation runs workerd
-# without the token so `PUT /_migrate/seed/*` returns 404.
+# The one-shot migrator and its temporary workerd share a fresh bearer.
+# Normal grain operation runs workerd without the bearer.
 set -euo pipefail
 
 # Resolve the app directory from the script's own path. Under
@@ -30,7 +28,6 @@ set -euo pipefail
 APP_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$APP_DIR"
 
-MIGRATE_TOKEN="sandstorm-grain-local"
 # Each Sandstorm grain IS one workbook. The legacy client opened `/=sheet`,
 # where `sheet` is the table-of-contents room and `sheet1` is its first
 # worksheet. The root handler classifies `sheet`: migrated TOCs and fresh
@@ -51,7 +48,7 @@ mkdir -p "$HOME" "$TMPDIR" /var/do-storage
 # workerd inside the .spk at the same path via sandstorm-files.list
 # tracing. On the host machine, bun install drops the platform-matched
 # binary package under .bun/@cloudflare+workerd-linux-64@…/.
-WORKERD_BIN="$(find "$APP_DIR/node_modules" -name workerd -type f -executable 2>/dev/null | head -n1)"
+WORKERD_BIN="$(find "$APP_DIR/node_modules" -name workerd -type f -executable -print -quit 2>/dev/null)"
 if [ -z "$WORKERD_BIN" ]; then
   echo "run_grain: ERROR — workerd binary not found under node_modules" >&2
   echo "           run 'bun install' before packaging" >&2
@@ -117,6 +114,11 @@ if [ ! -f /var/.migrated ]; then
   fi
 
   if [ -n "$LEGACY_SOURCE" ]; then
+    MIGRATE_TOKEN="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
+    if [ "${#MIGRATE_TOKEN}" -ne 64 ]; then
+      echo "run_grain: ERROR — could not create migration bearer" >&2
+      exit 1
+    fi
     echo "run_grain: migrating legacy EtherCalc dump at $LEGACY_SOURCE" >&2
     start_workerd "$MIGRATE_TOKEN"
     wait_for_health

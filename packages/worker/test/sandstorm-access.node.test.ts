@@ -61,6 +61,21 @@ describe('sandstormBlocksMutation', () => {
     expect(sandstormBlocksMutation({}, 'POST', '/_/x', viewer)).toBe(false);
     expect(sandstormBlocksMutation(env, 'GET', '/_/x', viewer)).toBe(false);
   });
+
+  it('separates direct migration traffic from bridge requests', () => {
+    const env = { ETHERCALC_SANDSTORM: '1' };
+    const direct = new Headers({ Authorization: 'Bearer temporary-test-bearer' });
+    const viewer = new Headers({ 'X-Sandstorm-Permissions': '' });
+    const editor = new Headers({ 'X-Sandstorm-Permissions': 'modify' });
+    expect(sandstormBlocksMutation(env, 'PUT', '/_migrate/seed/sheet1', direct)).toBe(false);
+    expect(sandstormBlocksMutation(env, 'PUT', '/_migrate/bulk-index', direct)).toBe(false);
+    expect(sandstormBlocksMutation(env, 'PUT', '/_migrate/snapshot-chunk/sheet1', direct)).toBe(false);
+    expect(sandstormBlocksMutation(env, 'PUT', '/_migrate/seed/sheet1', viewer)).toBe(true);
+    expect(sandstormBlocksMutation(env, 'PUT', '/_migrate/seed/sheet1', editor)).toBe(true);
+    expect(sandstormBlocksMutation(env, 'PUT', '/_migrate/other', direct)).toBe(true);
+    expect(sandstormBlocksMutation(env, 'PUT', '/_/sheet1', direct)).toBe(true);
+    expect(sandstormBlocksMutation(env, 'POST', '/_migrate/seed/sheet1', direct)).toBe(true);
+  });
 });
 
 describe('sandstormAllowsWsWrite', () => {
