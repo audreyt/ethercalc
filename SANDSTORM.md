@@ -1,14 +1,13 @@
 # Packaging EtherCalc for Sandstorm
 
 Sandstorm packaging for the TypeScript EtherCalc rewrite lives on `main`
-alongside the worker — four pieces of grain-specific glue:
+alongside the worker:
 
   - `sandstorm-pkgdef.capnp` — the Sandstorm package definition
     (Cap'n Proto), signed with the EtherCalc app ID
     `a0n6hwm32zjsrzes8gnjg734dh6jwt7x83xdgytspe761pe2asw0`.
-  - `pgp-signature`, `pgp-keyring` — PGP material embedded in the
-    pkgdef for market metadata. **Not committed to git** — keep them on
-    the packager's machine next to `sandstorm-pkgdef.capnp`.
+  - `DESCRIPTION.mkdn`, `CHANGELOG.mkdn` — App Market metadata embedded
+    in the package definition.
   - `run_grain.sh` — the grain's boot script. Starts standalone
     `workerd` on port 33411 (the port sandstorm-http-bridge proxies),
     waits for `/_health`, then migrates any legacy `/var/dump*` content
@@ -55,8 +54,7 @@ Market update with its current maintainer and key holder.
 What is **not** automated today:
 
 - No GitHub Actions job builds or uploads `.spk` files.
-- `pgp-signature` / `pgp-keyring` are referenced by `sandstorm-pkgdef.capnp`
-  but intentionally absent from git (author PGP for market metadata only).
+- The app-ID private signing key is held outside the repository.
 
 Release checklist on a machine with Sandstorm + `spk` + the app private key:
 

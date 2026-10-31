@@ -53,10 +53,8 @@ const pkgdef :Spk.PackageDefinition = (
 
       author = (
         contactEmail = "audreyt@audreyt.org",
-        pgpSignature = embed "pgp-signature",
         upstreamAuthor = "Audrey Tang",
       ),
-      pgpKeyring = embed "pgp-keyring",
 
       description = (defaultText = embed "DESCRIPTION.mkdn"),
       shortDescription = (defaultText = "Multi-user Spreadsheet"),
