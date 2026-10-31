@@ -24,6 +24,9 @@ import type { EtherCalcHonoEnv } from '../env.ts';
 import { upsertCronTriggers } from '../handlers/cron.ts';
 import { classifyCommandBody, joinCommands } from '../handlers/post-command.ts';
 import { classifyRequestBody } from '../handlers/rooms.ts';
+import { MAX_SOCIALCALC_COL } from '../lib/command-limits.ts';
+import { allowsCloneNavigation } from '../lib/clone-navigation.ts';
+import { enforceTextImportLimits } from '../lib/multi-sheet-import.ts';
 import { computeAuth, verifyAuth } from '../lib/auth.ts';
 import { parseSettimetrigger } from '../lib/cron.ts';
 import { doFetch } from '../lib/do-dispatch.ts';
@@ -46,6 +49,7 @@ import type { SessionPrincipal } from '../lib/session.ts';
 import {
   assertWorkbookFormat,
   ImportArchiveTooLargeError,
+  ImportOdfUnsupportedFeatureError,
   ImportDimensionsTooLargeError,
   ImportColumnOutOfRangeError,
   ImportRowOutOfRangeError,
@@ -98,6 +102,21 @@ async function allowsHttpMutation(
     'canWrite' in access &&
     access.isPrivate === true &&
     access.canWrite === true;
+}
+
+async function allowsWorkbookParentMutation(
+  c: Context<EtherCalcHonoEnv>,
+  room: string,
+  principal: SessionPrincipal | null,
+): Promise<boolean> {
+  const key = c.env.ETHERCALC_KEY;
+  const supplied = c.req.query('auth') ?? '';
+  if (!key || !isValidRoomName(room) ||
+    !(await verifyAuth(key, encodeRoom(`=${room}`), supplied))) return false;
+  const response = await doFetch(c.env, room, '/_do/workbook-kind', {}, principal);
+  const result: unknown = response.ok ? await response.json().catch(() => null) : null;
+  return result !== null && typeof result === 'object' &&
+    'kind' in result && result.kind === 'multi';
 }
 
 async function redirectToPublicCopy(
@@ -185,8 +204,7 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
   // ─── Template copy ─────────────────────────────────────────────────
   app.get('/_from/:template', async (c) => {
     const template = c.req.param('template') ?? '';
-    const fetchSite = c.req.header('sec-fetch-site');
-    if (fetchSite === 'cross-site' || fetchSite === 'same-site') {
+    if (!allowsCloneNavigation(c.req.header('sec-fetch-site'))) {
       return sizedResponse('Forbidden', 403, TEXT_CT);
     }
     const principal = await getSessionPrincipal(c);
@@ -342,13 +360,24 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
     if (userRoom && !(await allowsHttpMutation(c, room, principal))) {
       return sizedResponse('Forbidden', 403, TEXT_CT);
     }
-    const decoded = classifyRequestBody(ct, bytes);
+    let decoded: ReturnType<typeof classifyRequestBody>;
+    try {
+      decoded = classifyRequestBody(ct, bytes);
+    } catch (err) {
+      if (err instanceof ImportArchiveTooLargeError || err instanceof ImportDimensionsTooLargeError) {
+        return sizedResponse(err.message, 413, TEXT_CT);
+      }
+      throw err;
+    }
     let snapshot: string;
     if (decoded.kind === 'xlsx-deferred') {
       try {
         assertWorkbookFormat(bytes, workbookFormatFromContentType(ct));
         snapshot = xlsxToSave(bytes);
       } catch (err) {
+        if (err instanceof ImportOdfUnsupportedFeatureError) {
+          return sizedResponse(err.message, 400, TEXT_CT);
+        }
         if (
           err instanceof ImportTooLargeError ||
           err instanceof ImportArchiveTooLargeError ||
@@ -391,13 +420,24 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
     }
     const bytes = await readBodyBytes(c.req.raw);
     const ct = c.req.header('content-type') ?? '';
-    const decoded = classifyRequestBody(ct, bytes);
+    let decoded: ReturnType<typeof classifyRequestBody>;
+    try {
+      decoded = classifyRequestBody(ct, bytes);
+    } catch (err) {
+      if (err instanceof ImportArchiveTooLargeError || err instanceof ImportDimensionsTooLargeError) {
+        return sizedResponse(err.message, 413, TEXT_CT);
+      }
+      throw err;
+    }
     let snapshot: string;
     if (decoded.kind === 'xlsx-deferred') {
       try {
         assertWorkbookFormat(bytes, workbookFormatFromContentType(ct));
         snapshot = xlsxToSave(bytes);
       } catch (err) {
+        if (err instanceof ImportOdfUnsupportedFeatureError) {
+          return sizedResponse(err.message, 400, TEXT_CT);
+        }
         if (
           err instanceof ImportTooLargeError ||
           err instanceof ImportArchiveTooLargeError ||
@@ -791,7 +831,8 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
   app.post('/_/:room', async (c) => {
     const room = c.req.param('room') ?? '';
     const principal = await getSessionPrincipal(c);
-    if (!(await allowsHttpMutation(c, room, principal))) {
+    if (!(await allowsHttpMutation(c, room, principal)) &&
+      !(await allowsWorkbookParentMutation(c, room, principal))) {
       return sizedResponse('Forbidden', 403, TEXT_CT);
     }
     const bytes = await readBodyBytes(c.req.raw);
@@ -810,6 +851,9 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
         assertWorkbookFormat(bytes, workbookFormatFromContentType(ct));
         commands = xlsxToLoadClipboardCommands(bytes);
       } catch (err) {
+        if (err instanceof ImportOdfUnsupportedFeatureError) {
+          return sizedResponse(err.message, 400, TEXT_CT);
+        }
         if (
           err instanceof ImportTooLargeError ||
           err instanceof ImportArchiveTooLargeError ||
@@ -860,8 +904,12 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
     if (classified.kind === 'csv-deferred') {
       let csvCommand: string | null;
       try {
+        enforceTextImportLimits(bytes, 'csv');
         csvCommand = workbookToLoadClipboardCommand(bytes);
       } catch (err) {
+        if (err instanceof ImportDimensionsTooLargeError && err.columns > MAX_SOCIALCALC_COL) {
+          return sizedResponse(new ImportColumnOutOfRangeError('AAA1', err.columns).message, 400, TEXT_CT);
+        }
         if (
           err instanceof ImportTooLargeError ||
           err instanceof ImportArchiveTooLargeError ||

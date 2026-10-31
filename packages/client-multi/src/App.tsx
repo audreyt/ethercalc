@@ -17,6 +17,7 @@ export interface AppProps {
   readonly basePath: string;
   readonly suffix: string;
   readonly index: string;
+  readonly auth?: string | null;
   readonly isReadOnly: boolean;
   /** Test seams for browser dialogs and same-origin requests. */
   readonly prompt?: ((message: string, seed: string) => string | null) | undefined;
@@ -30,6 +31,7 @@ export const App: FC<AppProps> = ({
   basePath,
   suffix,
   index,
+  auth,
   isReadOnly,
   prompt: promptImpl,
   confirm: confirmImpl,
@@ -89,6 +91,7 @@ export const App: FC<AppProps> = ({
         foldr,
         index,
         basePath,
+        auth: auth ?? null,
         file,
         fetchImpl: fetchImpl ?? fetch.bind(globalThis),
         alertImpl: alertImpl ?? ((message) => window.alert(message)),
@@ -111,6 +114,7 @@ export const App: FC<AppProps> = ({
         basePath={basePath}
         suffix={suffix}
         index={index}
+        auth={auth ?? null}
         onChange={handleChange}
         onRename={isReadOnly ? undefined : handleRename}
         firstFocusUsed={firstFocusUsed.current}

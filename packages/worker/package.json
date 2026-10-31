@@ -23,7 +23,7 @@
     "@ethercalc/socketio-shim": "workspace:*",
     "@simplewebauthn/server": "^13",
     "entities": "^7.0.1",
-    "hono": "^4.12.27"
+    "hono": "^4.13.14"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.18.0",

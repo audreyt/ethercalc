@@ -15,6 +15,8 @@ export const MAX_SOCIALCALC_ROW = 1_048_576;
 
 /** Shared declared-area, populated-cell, and direct range-operation budget. */
 export const MAX_SHEET_CELLS = 200_000;
+/** Bounded headroom for sheets that were already larger before this limit. */
+export const MAX_LEGACY_SHEET_CELLS = MAX_SHEET_CELLS * 2;
 
 /** Maximum statically visible range work in one command batch. */
 export const MAX_COMMAND_RANGE_WORK = MAX_SHEET_CELLS;
@@ -434,31 +436,76 @@ export function isCommandBatchWithinLimits(
   return true;
 }
 
-/** Validate the canonical declared dimensions in a SocialCalc save. */
-export function isSnapshotWithinSheetLimits(snapshot: string): boolean {
-  for (const sheetLine of snapshot.matchAll(
-    /(?:^|[\r\n])sheet:([^\r\n]*)/g,
-  )) {
-    const payload = sheetLine[1]!;
-    // A bare `sheet:` line is the empty default sheet SocialCalc emits for
-    // new/small saves (no declared c/r yet). It is not an oversize claim.
-    if (payload.length === 0) continue;
-    const dimensions = /^c:(\d+):r:(\d+)(?::|$)/.exec(payload);
-    if (dimensions === null) return false;
-    const columns = Number(dimensions[1]);
-    const rows = Number(dimensions[2]);
-    if (
-      !Number.isSafeInteger(columns) ||
-      columns < 1 ||
-      columns > MAX_SOCIALCALC_COL ||
-      !Number.isSafeInteger(rows) ||
-      rows < 1 ||
-      rows > MAX_SOCIALCALC_ROW ||
-      rows * columns > MAX_SHEET_CELLS
-    ) {
-      return false;
+/**
+ * Validate both the declared dimensions and the coordinates SocialCalc will
+ * use when it next serializes a save. A small `sheet:c/r` claim cannot hide a
+ * distant cell or row/column setting: canonicalization expands the sheet to
+ * include those records, even if the command being applied is innocuous.
+ */
+export function isSnapshotWithinSheetLimits(
+  snapshot: string,
+  maxArea = MAX_SHEET_CELLS,
+): boolean {
+  let declaredRows = 1;
+  let declaredColumns = 1;
+  let actualRows = 1;
+  let actualColumns = 1;
+  for (const record of snapshot.matchAll(/(?:^|[\r\n])(cell|row|col|sheet):([^\r\n]*)/g)) {
+    const kind = record[1]!;
+    const payload = record[2]!;
+    if (kind === 'sheet') {
+      // A bare `sheet:` is the default for an empty sheet. Other sheet
+      // records must begin with the canonical c/r pair.
+      if (payload.length === 0) continue;
+      const dimensions = /^c:(\d+):r:(\d+)(?::|$)/.exec(payload);
+      if (dimensions === null) return false;
+      const columns = Number(dimensions[1]);
+      const rows = Number(dimensions[2]);
+      if (
+        !Number.isSafeInteger(columns) ||
+        columns < 1 ||
+        columns > MAX_SOCIALCALC_COL ||
+        !Number.isSafeInteger(rows) ||
+        rows < 1 ||
+        rows > MAX_SOCIALCALC_ROW ||
+        rows * columns > maxArea
+      ) return false;
+      declaredColumns = columns;
+      declaredRows = rows;
+      continue;
     }
+
+    const coordinate = payload.split(':', 1)[0]!;
+    if (kind === 'row') {
+      if (!/^[1-9][0-9]*$/.test(coordinate)) return false;
+      const row = Number(coordinate);
+      if (!Number.isSafeInteger(row) || row > MAX_SOCIALCALC_ROW) return false;
+      actualRows = Math.max(actualRows, row);
+    } else {
+      const parsed = kind === 'cell'
+        ? /^([A-Za-z]{1,2})([1-9][0-9]*)$/.exec(coordinate)
+        : /^([A-Za-z]{1,2})$/.exec(coordinate);
+      if (parsed === null) return false;
+      const column = columnNumber(parsed[1]!);
+      actualColumns = Math.max(actualColumns, column);
+      if (kind === 'cell') {
+        const row = Number(parsed[2]);
+        if (!Number.isSafeInteger(row) || row > MAX_SOCIALCALC_ROW) return false;
+        actualRows = Math.max(actualRows, row);
+      }
+    }
+    if (actualRows * actualColumns > maxArea) return false;
   }
-  // Empty/log-only rooms legitimately have no sheet line.
-  return true;
+  // Empty/log-only rooms legitimately have no sheet line. In that case the
+  // parser's implicit 1x1 dimensions still constrain any saved coordinates.
+  return actualRows <= declaredRows && actualColumns <= declaredColumns;
+}
+
+/** Permit existing oversized rooms to keep editing within their old area. */
+export function storedSnapshotAreaLimit(snapshot: string): number {
+  let area = MAX_SHEET_CELLS;
+  for (const match of snapshot.matchAll(/(?:^|[\r\n])sheet:c:(\d+):r:(\d+)(?=[:\r\n]|$)/g)) {
+    area = Math.max(MAX_SHEET_CELLS, Math.min(Number(match[1]) * Number(match[2]), MAX_LEGACY_SHEET_CELLS));
+  }
+  return area;
 }

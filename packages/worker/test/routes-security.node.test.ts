@@ -129,6 +129,24 @@ describe("exports — verdict propagation + identity threading", () => {
     expect(await res.text()).toBe("Forbidden");
   });
 
+  it("preserves upstream errors on both HTML export routes", async () => {
+    for (const status of [413, 503]) {
+      for (const path of ["/_/locked/html", "/locked.html"]) {
+        const { env, calls } = makeFakeRoomNamespace(
+          () => new Response("Export unavailable", {
+            status,
+            headers: { "Content-Type": "text/plain; charset=utf-8" },
+          }),
+        );
+        const res = await buildApp().fetch(new Request(`https://t.test${path}`), env as never);
+        expect(res.status, path).toBe(status);
+        expect(res.headers.get("content-type"), path).toBe("text/plain; charset=utf-8");
+        expect(await res.text(), path).toBe("Export unavailable");
+        expect(calls).toHaveLength(1);
+      }
+    }
+  });
+
   it("GET /_/:room/xlsx propagates a DO 401", async () => {
     const { env } = makeFakeRoomNamespace(() => new Response("Unauthorized", { status: 401 }));
     const app = buildApp();
@@ -391,11 +409,28 @@ describe("multi-sheet import — write verdict gating", () => {
 });
 
 describe("/:template/form clone — verdict propagation", () => {
+  it.each(["cross-site", "same-site", "unexpected", undefined])(
+    "rejects %s navigation without cloning",
+    async (site) => {
+      const { env, calls } = makeFakeRoomNamespace(() => new Response("OK", { status: 201 }));
+      const headers = new Headers();
+      if (site !== undefined) headers.set("Sec-Fetch-Site", site);
+      const res = await buildApp().fetch(
+        new Request("https://t.test/tpl/form", { headers, redirect: "manual" }),
+        env as never,
+      );
+      expect(res.status).toBe(403);
+      expect(calls).toHaveLength(0);
+    },
+  );
+
   it("propagates a DO 403 clone verdict instead of redirecting", async () => {
     const { env } = makeFakeRoomNamespace(() => new Response("Forbidden", { status: 403 }));
     const app = buildApp();
     const res = await app.fetch(
-      new Request("https://t.test/tpl/form", { redirect: "manual" }),
+      new Request("https://t.test/tpl/form", {
+        headers: { "Sec-Fetch-Site": "same-origin" }, redirect: "manual",
+      }),
       env as never,
     );
     expect(res.status).toBe(403);
@@ -409,7 +444,7 @@ describe("/:template/form clone — verdict propagation", () => {
     const app = buildApp();
     const res = await app.fetch(
       new Request("https://t.test/tpl/form", {
-        headers: { Cookie: AUTH_COOKIE },
+        headers: { Cookie: AUTH_COOKIE, "Sec-Fetch-Site": "same-origin" },
         redirect: "manual",
       }),
       withAuth(env) as never,
@@ -425,7 +460,9 @@ describe("/:template/form clone — verdict propagation", () => {
     const { env } = makeFakeRoomNamespace(() => new Response("OK", { status: 201 }));
     const app = buildApp();
     const res = await app.fetch(
-      new Request("https://t.test/tpl/form", { redirect: "manual" }),
+      new Request("https://t.test/tpl/form", {
+        headers: { "Sec-Fetch-Site": "same-origin" }, redirect: "manual",
+      }),
       { ...env, ETHERCALC_KEY: "test-key" } as never,
     );
     expect(res.status).toBe(302);
@@ -443,7 +480,9 @@ describe("/:template/form clone — verdict propagation", () => {
   it("returns a failed clone verdict without issuing a room link", async () => {
     const { env } = makeFakeRoomNamespace(() => new Response("Clone unavailable", { status: 502 }));
     const res = await buildApp().fetch(
-      new Request("https://t.test/tpl/form", { redirect: "manual" }), env as never,
+      new Request("https://t.test/tpl/form", {
+        headers: { "Sec-Fetch-Site": "same-origin" }, redirect: "manual",
+      }), env as never,
     );
     expect(res.status).toBe(502);
     expect(res.headers.get("location")).toBeNull();

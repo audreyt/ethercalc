@@ -74,6 +74,34 @@ describe('HackFoldr', () => {
     }
   });
 
+  it('carries a workbook capability through TOC reads and sheet mutations', async () => {
+    const { fetchImpl, calls } = makeFetch([
+      { json: [['#url', '#title'], ['/r.1', 'Sheet1']] },
+      { status: 201, json: { sheet: { subroom: 'r.2', link: '/r.2', title: 'Sheet2', row: 3 } } },
+      { ok: true },
+      { ok: true },
+      { ok: true, json: {} },
+    ]);
+    const foldr = new HackFoldr('http://x', {
+      auth: 'a+b',
+      fetchImpl,
+      requestIdFactory: () => 'keyed_add',
+    });
+    await foldr.fetch('r');
+    await foldr.push({ link: '/r.2', title: 'Sheet2', row: 3 });
+    await foldr.setAt(0, { title: 'Renamed' });
+    await foldr.deleteAt(1);
+    await foldr.postCsv('/r.3', 'Sheet3');
+
+    expect(calls.map((call) => call.url)).toEqual([
+      'http://x/_/r/csv.json?auth=a%2Bb',
+      'http://x/_/=r/sheet?auth=a%2Bb',
+      'http://x/_/r?auth=a%2Bb',
+      'http://x/_/r?auth=a%2Bb',
+      'http://x/_/r?auth=a%2Bb',
+    ]);
+  });
+
   describe('fetch()', () => {
     it('dedupes duplicate links, keeping the last server row (#727)', async () => {
       const { fetchImpl } = makeFetch([

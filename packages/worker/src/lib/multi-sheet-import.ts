@@ -182,13 +182,20 @@ export function buildMultiSheetImport(
   bytes: Uint8Array,
   room: string,
   readFn: typeof XLSX.read = XLSX.read,
+  firstIndex = 1,
 ): MultiSheetImport {
+  if (!Number.isSafeInteger(firstIndex) || firstIndex < 1) {
+    throw new RangeError('firstIndex must be a positive safe integer');
+  }
   enforceImportArchiveLimit(bytes);
   enforceActualImportArchiveLimit(bytes);
   const wb = readFn(bytes, { type: 'array', cellFormula: true });
   const names: string[] = Array.isArray(wb.SheetNames) ? wb.SheetNames : [];
   if (names.length > MAX_MULTI_SHEETS) {
     throw new ImportTooManySheetsError(names.length);
+  }
+  if (!Number.isSafeInteger(firstIndex + (names.length - 1))) {
+    throw new RangeError('child room namespace exhausted');
   }
 
   let totalCells = 0;
@@ -205,7 +212,7 @@ export function buildMultiSheetImport(
     const ws = wb.Sheets[name];
     if (!ws) continue;
     idx++;
-    const subroom = `${room}.${idx}`;
+    const subroom = `${room}.${firstIndex + idx - 1}`;
     subSheets.push({ subroom, save: worksheetToSave(ws) });
     tocRows.push([`/${subroom}`, name]);
   }

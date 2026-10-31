@@ -4,6 +4,7 @@ import { describe, it, expect } from 'vite-plus/test';
 import worker from '../src/index.ts';
 import type { Env } from '../src/env.ts';
 import { computeAuth } from '../src/lib/auth.ts';
+import { doFetch } from '../src/lib/do-dispatch.ts';
 
 /**
  * Integration tests for Phase 4 stateless routes. Runs inside workerd
@@ -116,6 +117,30 @@ describe('GET /:room/app', () => {
 });
 
 describe('keyed room links', () => {
+  it('exchanges a workbook capability only for its managed child', async () => {
+    const base = `frame-${Math.random().toString(36).slice(2, 8)}`;
+    const child = `${base}.1`;
+    const grandchild = `${child}.2`;
+    const workerEnv = env as unknown as Env;
+    expect((await doFetch(workerEnv, child, '/_do/child-snapshot', {
+      method: 'POST',
+      body: JSON.stringify({ parent: base, snapshot: '', mode: 'create' }),
+    })).status).toBe(201);
+    expect((await doFetch(workerEnv, grandchild, '/_do/child-snapshot', {
+      method: 'POST',
+      body: JSON.stringify({ parent: child, snapshot: '', mode: 'create' }),
+    })).status).toBe(201);
+
+    const parentToken = await computeAuth('test-key', `=${base}`);
+    const childToken = await computeAuth('test-key', child);
+    const granted = await callWithKey(`/${child}/edit?auth=${parentToken}`);
+    expect(granted.headers.get('Location')).toBe(`/${child}?auth=${childToken}`);
+    const wrongParent = await callWithKey(`/${grandchild}/edit?auth=${parentToken}`);
+    expect(wrongParent.headers.get('Location')).toBe(`/${grandchild}/view`);
+    const unknown = await callWithKey(`/${base}.9/edit?auth=${parentToken}`);
+    expect(unknown.headers.get('Location')).toBe(`/${base}.9/view`);
+  });
+
   it('does not issue an edit capability through view or app links', async () => {
     const view = await callWithKey('/shared/view');
     const app = await callWithKey('/shared/app');
@@ -151,7 +176,9 @@ describe('room redirects with encoded delimiters', () => {
   );
 
   it('keeps the template clone redirect on the current origin', async () => {
-    const res = await call('/%2Fother.test%23/form');
+    const res = await call('/%2Fother.test%23/form', {
+      headers: { 'Sec-Fetch-Site': 'none' },
+    });
     expect(res.status).toBe(302);
     expect(res.headers.get('Location')).toMatch(/^\/%2Fother\.test%23_[0-9a-z]{12}\/app$/);
   });

@@ -152,10 +152,15 @@ export function openLegacyExportDialog(host: BootHost): void {
   // the current document's location when that happens — the export-URL
   // builder handles both shapes.
   const readParentLocation = (): { href?: string; pathname: string } | undefined => {
-    if (host.parent?.location) return host.parent.location;
-    if (typeof window === 'undefined') return undefined;
     try {
-      return window.parent.location;
+      const location = host.parent?.location ??
+        (typeof window !== 'undefined' ? window.parent.location : undefined);
+      if (!location) return undefined;
+      // A cross-origin Location object can be obtained, but reading any of
+      // its properties throws. Copy the values while still inside the guard.
+      const href = location.href;
+      const pathname = location.pathname;
+      return href === undefined ? { pathname } : { href, pathname };
     } catch {
       return undefined;
     }

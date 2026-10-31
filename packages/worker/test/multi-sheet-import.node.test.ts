@@ -102,6 +102,29 @@ describe('worksheetToSave', () => {
 });
 
 describe('buildMultiSheetImport', () => {
+  it('rejects invalid child numbering before materializing saves', () => {
+    const readFn = (() => ({
+      SheetNames: ['A', 'B'],
+      Sheets: {},
+    })) as unknown as typeof XLSX.read;
+    expect(() => buildMultiSheetImport(new Uint8Array(), 'room', readFn, 0))
+      .toThrow('firstIndex must be a positive safe integer');
+    expect(() => buildMultiSheetImport(new Uint8Array(), 'room', readFn, Number.MAX_SAFE_INTEGER))
+      .toThrow('child room namespace exhausted');
+  });
+
+  it('rejects a compact repeated-row workbook before parsing either import path', () => {
+    const bytes = new TextEncoder().encode(
+      '<office:document><table:table><table:table-row table:number-rows-repeated="200001">' +
+      '<table:table-cell office:value-type="string"><text:p>x</text:p></table:table-cell>' +
+      '</table:table-row></table:table></office:document>',
+    );
+    const readFn = vi.fn(() => { throw new Error('parser should not run'); }) as unknown as typeof XLSX.read;
+    expect(() => buildMultiSheetImport(bytes, 'room', readFn)).toThrow(/exceeds/);
+    expect(() => prepareAppendImportPlan(bytes, 'fods', undefined, readFn)).toThrow(/exceeds/);
+    expect(readFn).not.toHaveBeenCalled();
+  });
+
   it('produces one sub-room per worksheet, named <room>.<N>', () => {
     const bytes = workbookBytes([
       { name: 'Alpha', aoa: [['a']] },

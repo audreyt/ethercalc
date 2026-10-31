@@ -1306,6 +1306,17 @@ describe('RoomDO (unit, direct construction)', () => {
     expect(record.map.size).toBe(0);
   });
 
+  it('PUT /_do/snapshot rejects coordinates outside its declared dimensions', async () => {
+    const res = await room.fetch(
+      new Request('https://do/_do/snapshot', {
+        method: 'PUT',
+        body: 'socialcalc:version:1.5\nsheet:c:2:r:2:tvf:1\ncell:ZZ100000:t:hi\n',
+      }),
+    );
+    expect(res.status).toBe(413);
+    expect(record.map.size).toBe(0);
+  });
+
   it('GET /_do/snapshot returns stored body after PUT', async () => {
     record.map.set(STORAGE_KEYS.snapshot, 'save-text');
     const res = await room.fetch(new Request('https://do/_do/snapshot'));
@@ -1386,6 +1397,41 @@ describe('RoomDO (unit, direct construction)', () => {
     expect(await res.text()).toBe('command exceeds sheet limits');
     expect(mockExec).not.toHaveBeenCalled();
     expect(record.map.size).toBe(0);
+  });
+
+  it('rejects edits against a previously stored snapshot with inconsistent dimensions', async () => {
+    const snapshot = 'socialcalc:version:1.5\nsheet:c:2:r:2:tvf:1\ncell:ZZ100000:t:hi\n';
+    record.map.set(STORAGE_KEYS.snapshot, snapshot);
+    const res = await room.fetch(new Request('https://do/_do/commands', {
+      method: 'POST',
+      body: 'set A1 value n 1',
+    }));
+    expect(res.status).toBe(413);
+    expect(mockExec).not.toHaveBeenCalled();
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe(snapshot);
+  });
+
+  it('rejects an invalid post-command snapshot without persisting the command', async () => {
+    mockSave.mockReturnValueOnce(
+      'socialcalc:version:1.5\nsheet:c:2:r:2:tvf:1\ncell:ZZ100000:t:hi\n',
+    );
+    const rejected = await room.fetch(new Request('https://do/_do/commands', {
+      method: 'POST',
+      body: 'set A1 value n 1',
+    }));
+    expect(rejected.status).toBe(413);
+    expect(await rejected.text()).toBe('command exceeds sheet limits');
+    expect(mockExec).toHaveBeenCalledTimes(1);
+    expect(record.map.has(STORAGE_KEYS.snapshot)).toBe(false);
+    expect(record.map.has(logKey(0))).toBe(false);
+    expect(record.map.has(auditKey(0))).toBe(false);
+
+    const retry = await room.fetch(new Request('https://do/_do/commands', {
+      method: 'POST',
+      body: 'set A1 value n 2',
+    }));
+    expect(retry.status).toBe(202);
+    expect(record.map.get(logKey(0))).toBe('set A1 value n 2');
   });
 
   it('POST /_do/commands appends log+audit, runs through SC, updates snapshot', async () => {
@@ -3118,6 +3164,77 @@ describe('RoomDO — child snapshot initialization', () => {
       canWrite: true,
     });
 
+  it('checks child availability without changing an occupied room', async () => {
+    const pristineRecord: FakeStorageRecord = { map: new Map() };
+    const pristine = new RoomDO(
+      makeState('probe-pristine', pristineRecord),
+      makeEnvWithParentAccess(allowParent),
+    );
+    const body = { parent: 'parent', snapshot: '', mode: 'probe' };
+    const available = await pristine.fetch(childSnapshotRequest('parent.1', body));
+    expect(available.status).toBe(200);
+    expect(pristineRecord.map.size).toBe(0);
+
+    const occupiedRecord: FakeStorageRecord = {
+      map: new Map([[STORAGE_KEYS.snapshot, 'EXISTING']]),
+    };
+    const occupied = new RoomDO(
+      makeState('probe-occupied', occupiedRecord),
+      makeEnvWithParentAccess(allowParent),
+    );
+    expect((await occupied.fetch(childSnapshotRequest('parent.1', body))).status).toBe(409);
+    expect(occupiedRecord.map.get(STORAGE_KEYS.snapshot)).toBe('EXISTING');
+  });
+
+  it('keeps dotted public reads local and checks parent authority on writes', async () => {
+    const record: FakeStorageRecord = { map: new Map([[STORAGE_KEYS.snapshot, 'EXISTING']]) };
+    const parentRequests: Request[] = [];
+    const { state } = makeWsAwareState('dotted-room', record, []);
+    const room = new RoomDO(
+      state,
+      makeEnvWithParentAccess(() => Response.json({
+        isPrivate: true, canRead: false, canWrite: false,
+      }), parentRequests),
+    );
+    const name = 'parent.7';
+    const access = await room.fetch(new Request(`https://do/_do/access?name=${name}`));
+    expect((await access.json()) as { canRead: boolean }).toMatchObject({ canRead: true });
+    const read = await room.fetch(new Request(`https://do/_do/snapshot?name=${name}`));
+    expect(read.status).toBe(200);
+    expect(await read.text()).toBe('EXISTING');
+    expect(parentRequests).toHaveLength(0);
+
+    const write = await room.fetch(new Request(`https://do/_do/snapshot?name=${name}`, {
+      method: 'PUT', body: 'NEW',
+    }));
+    expect(write.status).toBe(403);
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('EXISTING');
+    expect(parentRequests).toHaveLength(1);
+
+    const ws = makeFakeWs({ sent: [] }, { user: 'u', room: name, auth: name });
+    await room.webSocketMessage(ws, JSON.stringify({
+      type: 'execute', room: name, user: 'u', auth: name,
+      cmdstr: 'set A1 value n 1',
+    }));
+    expect(record.map.has(logKey(0))).toBe(false);
+    expect(parentRequests).toHaveLength(2);
+  });
+
+  it('continues to write an independent dotted public room', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(
+      makeState('public-dotted', record),
+      makeEnvWithParentAccess(() => Response.json({
+        isPrivate: false, canRead: true, canWrite: true,
+      })),
+    );
+    const write = await room.fetch(new Request('https://do/_do/snapshot?name=public.2', {
+      method: 'PUT', body: 'SAVE',
+    }));
+    expect(write.status).toBe(201);
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('SAVE');
+  });
+
   it.each([
     [
       'missing room name',
@@ -3312,6 +3429,16 @@ describe('RoomDO — child snapshot initialization', () => {
     expect(replaced.status).toBe(201);
     expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('SAVE-2');
     expect(record.map.get(STORAGE_KEYS.metaParent)).toBe('parent');
+
+    const probed = await room.fetch(
+      childSnapshotRequest('parent.1', {
+        parent: 'parent',
+        snapshot: 'NOT-APPLIED',
+        mode: 'probe',
+      }),
+    );
+    expect(probed.status).toBe(200);
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('SAVE-2');
   });
 
   it('refuses local ACL, a different parent, and occupied unmarked rooms', async () => {
@@ -3347,10 +3474,8 @@ describe('RoomDO — child snapshot initialization', () => {
           mode: 'create',
         }),
       );
-      expect(response.status).toBe(label === 'access only' ? 403 : 409);
-      expect(await response.text()).toBe(
-        label === 'access only' ? 'Forbidden' : 'Child has local access metadata',
-      );
+      expect(response.status).toBe(409);
+      expect(await response.text()).toBe('Child has local access metadata');
       expect(record.map.has(STORAGE_KEYS.metaParent)).toBe(false);
     }
 

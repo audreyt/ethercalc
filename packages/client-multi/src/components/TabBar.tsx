@@ -1,6 +1,7 @@
 import { type FC } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import type { FoldrRow } from '../Foldr.ts';
+import { withAuthQuery } from '../url.ts';
 import { SheetFrame } from './SheetFrame.tsx';
 import styles from '../styles.module.css';
 
@@ -12,6 +13,7 @@ export interface TabBarProps {
   readonly basePath: string;
   readonly suffix: string;
   readonly index: string;
+  readonly auth?: string | null;
   readonly onChange: (idx: number) => void;
   readonly onRename?: ((idx: number) => void) | undefined;
   readonly firstFocusUsed: boolean;
@@ -35,6 +37,7 @@ export const TabBar: FC<TabBarProps> = ({
   basePath,
   suffix,
   index,
+  auth,
   onChange,
   onRename,
   firstFocusUsed,
@@ -74,7 +77,7 @@ export const TabBar: FC<TabBarProps> = ({
         const title = row.title;
         const value = `tab-${i}`;
         const link = row.link || `/${encodeURIComponent(title)}`;
-        const src = `${basePath}${link}${suffix}`;
+        const src = withAuthQuery(`${basePath}${link}${suffix}`, auth);
         return (
           <Tabs.Content
             key={row.link}

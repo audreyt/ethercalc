@@ -352,6 +352,9 @@ async function dispatchExport(
   if (res.status === 404) {
     return new Response('', { status: 404, headers: { 'Content-Type': TEXT_CT } });
   }
+  // Only successful exports get format headers or HTML rewriting. Return an
+  // upstream refusal unchanged so callers can distinguish it from a download.
+  if (res.status !== 200) return res;
   const headers: Record<string, string> = {
     'Content-Type': format.contentType,
     // Stop browsers from MIME-sniffing an export (e.g. a `.csv` whose first
@@ -370,7 +373,6 @@ async function dispatchExport(
   }
   const body = await res.text();
   if (format.sanitizeHtml) {
-    // 200-only: error bodies are plain text the DO never wraps in markup.
     return sanitizeHtmlBody(body, headers);
   }
   return new Response(body, { status: res.status, headers });

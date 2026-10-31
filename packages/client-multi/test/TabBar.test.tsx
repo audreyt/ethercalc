@@ -50,6 +50,43 @@ describe('<TabBar />', () => {
     expect(srcs.some((s) => s.endsWith('/b/edit'))).toBe(true);
   });
 
+  it('passes the parent capability to each child edit redirect', () => {
+    const { container } = render(
+      <TabBar
+        rows={sampleRows}
+        activeIndex={0}
+        rowsRev={0}
+        basePath=".."
+        suffix="/edit"
+        index="room"
+        auth="a+b"
+        onChange={() => {}}
+        firstFocusUsed={false}
+        onFirstFocus={() => {}}
+      />,
+    );
+    const srcs = Array.from(container.querySelectorAll('iframe')).map((f) => f.getAttribute('src'));
+    expect(srcs).toEqual(['../a/edit?auth=a%2Bb', '../b/edit?auth=a%2Bb']);
+  });
+
+  it('keeps view frames read-only with the sentinel', () => {
+    const { container } = render(
+      <TabBar
+        rows={sampleRows}
+        activeIndex={0}
+        rowsRev={0}
+        basePath=".."
+        suffix="/view"
+        index="room"
+        auth="0"
+        onChange={() => {}}
+        firstFocusUsed={false}
+        onFirstFocus={() => {}}
+      />,
+    );
+    expect(container.querySelector('iframe')?.getAttribute('src')).toBe('../a/view?auth=0');
+  });
+
   it('falls back to /encodeURIComponent(title) when link is empty', () => {
     const { container } = render(
       <TabBar

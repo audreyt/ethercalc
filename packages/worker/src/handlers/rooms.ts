@@ -19,6 +19,7 @@
  *                                                   in Phase 8`)
  */
 import { csvToSocialCalc, decodeDoubleEncoded } from '../lib/csv.ts';
+import { enforceTextImportLimits } from '../lib/multi-sheet-import.ts';
 
 /** The two types of payload this layer understands. */
 export type DecodedBody =
@@ -71,9 +72,11 @@ export function classifyRequestBody(
   }
   if (ct === 'text/x-ethercalc-csv-double-encoded') {
     const csv = decodeDoubleEncoded(bytes);
+    enforceTextImportLimits(new TextEncoder().encode(csv), 'csv');
     return { kind: 'save', snapshot: csvToSocialCalc(csv) };
   }
   if (ct === 'text/csv') {
+    enforceTextImportLimits(bytes, 'csv');
     const csv = new TextDecoder('utf-8').decode(bytes);
     return { kind: 'save', snapshot: csvToSocialCalc(csv) };
   }

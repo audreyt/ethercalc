@@ -94,6 +94,26 @@ describe('appendImportedWorkbook', () => {
     expect(alert).not.toHaveBeenCalled();
   });
 
+  it('carries the workbook capability after the import title', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(new Response('OK', { status: 201 }));
+    const foldr = existingFoldr(fetchFn);
+    vi.spyOn(foldr, 'refreshToc').mockResolvedValue(true);
+
+    expect(await appendImportedWorkbook({
+      foldr,
+      index: 'room',
+      basePath: 'http://localhost',
+      auth: 'a+b',
+      file: new File(['a,b'], 'Data.csv'),
+      fetchImpl: fetchFn,
+      alertImpl: vi.fn(),
+    })).toBe(true);
+    expect(fetchFn).toHaveBeenCalledWith('http://localhost/_/=room/csv?title=Data&auth=a%2Bb', {
+      method: 'POST',
+      body: expect.any(File),
+    });
+  });
+
   it('never PUTs a sub-room from the client for text uploads', async () => {
     const alert = vi.fn();
     const fetchFn = vi.fn().mockResolvedValue(new Response('OK', { status: 201 }));

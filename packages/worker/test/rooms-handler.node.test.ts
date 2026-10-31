@@ -6,6 +6,8 @@ vi.mock('@ethercalc/socialcalc-headless', () => ({
 }));
 
 import { classifyRequestBody } from '../src/handlers/rooms.ts';
+import { MAX_SHEET_CELLS } from '../src/lib/command-limits.ts';
+import { ImportDimensionsTooLargeError } from '../src/lib/xlsx-import.ts';
 
 function enc(s: string): Uint8Array {
   return new TextEncoder().encode(s);
@@ -69,6 +71,14 @@ describe('classifyRequestBody', () => {
   it('converts text/csv to save via csvToSave', () => {
     const out = classifyRequestBody('text/csv', enc('a,b\n1,2'));
     expect(out).toEqual({ kind: 'save', snapshot: 'SC:a,b\n1,2' });
+  });
+
+  it('bounds CSV before invoking the conversion for either accepted encoding', () => {
+    const oversized = enc('x\n'.repeat(MAX_SHEET_CELLS + 1));
+    expect(() => classifyRequestBody('text/csv', oversized))
+      .toThrow(ImportDimensionsTooLargeError);
+    expect(() => classifyRequestBody('text/x-ethercalc-csv-double-encoded', oversized))
+      .toThrow(ImportDimensionsTooLargeError);
   });
 
   it('handles text/x-ethercalc-csv-double-encoded', () => {

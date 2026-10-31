@@ -20,13 +20,15 @@
  * on existing rooms.
  *
  * Children are initialized atomically with immutable `meta:parent` before
- * their TOC rows are committed. Existing occupied unmarked private children
- * require explicit operator backfill rather than an unsafe implicit claim.
+ * their TOC rows are committed. Private replacements choose unused child
+ * names when an existing room cannot be safely reused.
  */
 import type { Hono } from "hono";
 
 import type { Env, EtherCalcHonoEnv } from "../env.ts";
+import { verifyAuth } from "../lib/auth.ts";
 import { doFetch } from "../lib/do-dispatch.ts";
+import { encodeRoom, isValidRoomName } from "../lib/room-name.ts";
 import { getSessionPrincipal } from "../lib/session-middleware.ts";
 import type { SessionPrincipal } from "../lib/session.ts";
 import {
@@ -41,6 +43,7 @@ import type { WorkbookImportFormat } from "../lib/multi-sheet-import.ts";
 import {
   assertWorkbookFormat,
   ImportArchiveInvalidError,
+  ImportOdfUnsupportedFeatureError,
   ImportArchiveTooLargeError,
   ImportColumnOutOfRangeError,
   ImportDimensionsTooLargeError,
@@ -92,7 +95,27 @@ async function getParentAccessInfo(
   env: Env,
   base: string,
   principal: SessionPrincipal | null,
+  suppliedAuth: string,
 ): Promise<{ isPrivate?: boolean; errorResponse?: Response }> {
+  if (!isValidRoomName(base) || !isValidRoomName(`=${base}`)) {
+    return {
+      errorResponse: new Response("Invalid room name", {
+        status: 400,
+        headers: { "Content-Type": TEXT_CT },
+      }),
+    };
+  }
+  // Match the legacy write capability on the ordinary room routes. The DO's
+  // public-room ACL deliberately allows anonymous writes, so it cannot by
+  // itself enforce a deployment's ETHERCALC_KEY for workbook operations.
+  if (suppliedAuth === "0") {
+    return {
+      errorResponse: new Response("Forbidden", {
+        status: 403,
+        headers: { "Content-Type": TEXT_CT },
+      }),
+    };
+  }
   let accessRes: Response;
   try {
     accessRes = await doFetch(env, base, "/_do/access", {}, principal);
@@ -135,6 +158,18 @@ async function getParentAccessInfo(
           }),
         };
       }
+      if (
+        !json.isPrivate &&
+        env.ETHERCALC_KEY &&
+        !(await verifyAuth(env.ETHERCALC_KEY, encodeRoom(`=${base}`), suppliedAuth))
+      ) {
+        return {
+          errorResponse: new Response("Forbidden", {
+            status: 403,
+            headers: { "Content-Type": TEXT_CT },
+          }),
+        };
+      }
       return { isPrivate: json.isPrivate };
     }
   } catch {
@@ -162,6 +197,7 @@ function mapImportBuildError(err: unknown): Response | null {
   }
   if (
     err instanceof ImportArchiveInvalidError ||
+    err instanceof ImportOdfUnsupportedFeatureError ||
     err instanceof ImportColumnOutOfRangeError ||
     err instanceof ImportRowOutOfRangeError ||
     err instanceof ImportUnsupportedFormatError
@@ -175,6 +211,76 @@ function mapImportBuildError(err: unknown): Response | null {
 }
 type AllocatedSheet = { subroom: string; link: string; title: string };
 type CommittedSheet = AllocatedSheet & { row: number };
+
+async function preferredPrivateFirstIndex(
+  env: Env,
+  base: string,
+  principal: SessionPrincipal | null,
+): Promise<number | Response> {
+  const toc = await parentedProtocolFetch(env, base, "/_do/csv.json", {}, principal);
+  if (toc === null) return parentedChildSkewResponse();
+  if (toc.status === 404) return 1;
+  const denied = await authVerdict(toc);
+  if (denied) return denied;
+  if (toc.status !== 200) {
+    return new Response("import failed", {
+      status: toc.status >= 400 ? toc.status : 500,
+      headers: { "Content-Type": TEXT_CT },
+    });
+  }
+  const rows: unknown = await toc.json().catch(() => null);
+  if (!Array.isArray(rows)) {
+    return new Response("import failed", { status: 500, headers: { "Content-Type": TEXT_CT } });
+  }
+  const prefix = `/${base}.`;
+  for (const row of rows.slice(1)) {
+    if (!Array.isArray(row) || typeof row[0] !== "string" || !row[0].startsWith(prefix)) continue;
+    const suffix = row[0].slice(prefix.length);
+    if (!/^[1-9]\d*$/.test(suffix)) continue;
+    const index = Number(suffix);
+    if (Number.isSafeInteger(index) && index <= Number.MAX_SAFE_INTEGER - 256) return index;
+  }
+  return 1;
+}
+
+function freshPrivateFirstIndex(): number {
+  const random = crypto.getRandomValues(new Uint32Array(2));
+  return 1_000_000_000_000 + (random[0]! & 0xffff) * 0x1_0000_0000 + random[1]!;
+}
+
+async function probePrivateChildren(
+  env: Env,
+  base: string,
+  principal: SessionPrincipal | null,
+  subSheets: ReadonlyArray<{ readonly subroom: string }>,
+): Promise<"available" | "occupied" | Response> {
+  for (const { subroom } of subSheets) {
+    const probe = await parentedProtocolFetch(
+      env,
+      subroom,
+      "/_do/child-snapshot",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ parent: base, snapshot: "", mode: "probe" }),
+      },
+      principal,
+    );
+    if (probe === null || probe.status === 400 || probe.status === 501) {
+      return parentedChildSkewResponse();
+    }
+    if (probe.status === 409) return "occupied";
+    const denied = await authVerdict(probe);
+    if (denied) return denied;
+    if (probe.status !== 200) {
+      return new Response("import failed", {
+        status: probe.status >= 400 ? probe.status : 500,
+        headers: { "Content-Type": TEXT_CT },
+      });
+    }
+  }
+  return "available";
+}
 
 async function reserveInitializeCommit(
   env: Env,
@@ -385,17 +491,42 @@ async function importWorkbook(
   bytes: Uint8Array,
   principal: SessionPrincipal | null,
   format: WorkbookImportFormat,
+  suppliedAuth: string,
 ): Promise<Response> {
-  const { isPrivate, errorResponse } = await getParentAccessInfo(env, base, principal);
+  const { isPrivate, errorResponse } = await getParentAccessInfo(env, base, principal, suppliedAuth);
   if (errorResponse) return errorResponse;
 
-  let tocSave: string;
-  let subSheets: ReadonlyArray<{ readonly subroom: string; readonly save: string }>;
+  let firstIndex = 1;
+  if (isPrivate) {
+    const preferred = await preferredPrivateFirstIndex(env, base, principal);
+    if (preferred instanceof Response) return preferred;
+    firstIndex = preferred;
+  }
+
+  let tocSave = "";
+  let subSheets: ReadonlyArray<{ readonly subroom: string; readonly save: string }> = [];
   try {
     assertWorkbookFormat(bytes, format);
-    const res = buildMultiSheetImport(bytes, base);
-    tocSave = res.tocSave;
-    subSheets = res.subSheets;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const res = buildMultiSheetImport(bytes, base, undefined, firstIndex);
+      tocSave = res.tocSave;
+      subSheets = res.subSheets;
+      if (!isPrivate) break;
+      const last = subSheets.at(-1)?.subroom;
+      if (last && !isValidRoomName(last)) {
+        return new Response("child room namespace exhausted", { status: 413, headers: { "Content-Type": TEXT_CT } });
+      }
+      const probe = await probePrivateChildren(env, base, principal, subSheets);
+      if (probe instanceof Response) return probe;
+      if (probe === "available") break;
+      if (attempt === 4) {
+        return new Response("Sheet names are unavailable; retry the import", {
+          status: 409,
+          headers: { "Content-Type": TEXT_CT },
+        });
+      }
+      firstIndex = freshPrivateFirstIndex();
+    }
   } catch (err) {
     const mapped = mapImportBuildError(err);
     if (mapped) return mapped;
@@ -416,8 +547,8 @@ async function importWorkbook(
     );
     if (res === null) return parentedChildSkewResponse();
     if (res.status === 501) return parentedChildSkewResponse();
-    // Existing public workbooks predate parent markers. They remain public;
-    // private parents require the explicit, audited backfill.
+    // Existing public workbooks may predate parent markers. Keep their
+    // established write behavior while private replacements use fresh names.
     if (res.status === 409 && !isPrivate) {
       res = await doFetch(env, subroom, "/_do/snapshot", { method: "PUT", body: save }, principal);
     }
@@ -459,8 +590,9 @@ async function appendWorkbook(
   principal: SessionPrincipal | null,
   format: string,
   titleHint?: string,
+  suppliedAuth = "",
 ): Promise<Response> {
-  const { errorResponse } = await getParentAccessInfo(env, base, principal);
+  const { errorResponse } = await getParentAccessInfo(env, base, principal, suppliedAuth);
   if (errorResponse) return errorResponse;
 
   let plan;
@@ -536,7 +668,7 @@ export function registerMultiSheetImport(app: Hono<EtherCalcHonoEnv>): void {
       });
     }
     const principal = await getSessionPrincipal(c);
-    const { errorResponse } = await getParentAccessInfo(c.env, base, principal);
+    const { errorResponse } = await getParentAccessInfo(c.env, base, principal, c.req.query("auth") ?? "");
     if (errorResponse) return errorResponse;
     const result = await reserveInitializeCommit(
       c.env,
@@ -564,7 +696,7 @@ export function registerMultiSheetImport(app: Hono<EtherCalcHonoEnv>): void {
     }
     const base = room.slice(1);
     const bytes = new Uint8Array(await c.req.raw.arrayBuffer());
-    return importWorkbook(c.env, base, bytes, await getSessionPrincipal(c), fmt as WorkbookImportFormat);
+    return importWorkbook(c.env, base, bytes, await getSessionPrincipal(c), fmt as WorkbookImportFormat, c.req.query("auth") ?? "");
   });
 
   // 2. `/=:room.<fmt>` form — suffix form (workbook replace only).
@@ -579,7 +711,7 @@ export function registerMultiSheetImport(app: Hono<EtherCalcHonoEnv>): void {
     }
     const base = room.slice(1, room.length - fmt.length - 1);
     const bytes = new Uint8Array(await c.req.raw.arrayBuffer());
-    return importWorkbook(c.env, base, bytes, await getSessionPrincipal(c), fmt);
+    return importWorkbook(c.env, base, bytes, await getSessionPrincipal(c), fmt, c.req.query("auth") ?? "");
   });
 
   // 3. `POST /_/:room/:fmt` append form — workbook + text formats.
@@ -598,6 +730,7 @@ export function registerMultiSheetImport(app: Hono<EtherCalcHonoEnv>): void {
       await getSessionPrincipal(c),
       fmt,
       titleHintFromRequest(c.req.raw),
+      c.req.query("auth") ?? "",
     );
   });
 
@@ -620,6 +753,7 @@ export function registerMultiSheetImport(app: Hono<EtherCalcHonoEnv>): void {
       await getSessionPrincipal(c),
       fmt,
       titleHintFromRequest(c.req.raw),
+      c.req.query("auth") ?? "",
     );
   });
 }

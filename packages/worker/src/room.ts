@@ -51,7 +51,7 @@ import { verifyAuth } from "./lib/auth.ts";
 import { verifyAuthSession } from "./lib/auth-session.ts";
 import { authorize as authorizeRoom } from "./lib/authorize.ts";
 import { hydrateCrossSheetRefs, readBoundedResponseText } from "./lib/cross-sheet.ts";
-import { isCommandBatchWithinLimits, isSnapshotWithinSheetLimits } from "./lib/command-limits.ts";
+import { isCommandBatchWithinLimits, isSnapshotWithinSheetLimits, storedSnapshotAreaLimit } from "./lib/command-limits.ts";
 import { PARENT_READ_HEADER } from "./lib/do-dispatch.ts";
 import { neutralizeCSVDocument } from "./lib/csv-encode.ts";
 import { parseCSV } from "./lib/csv-parse.ts";
@@ -328,6 +328,8 @@ export class RoomDO implements DurableObject {
     const isGateExemptPath =
       path === "/_do/access" ||
       path === "/_do/ping" ||
+      path === "/_do/child-snapshot" ||
+      path === "/_do/set-parent" ||
       path === "/_do/pitr-restore" ||
       path === "/_do/pitr-touch" ||
       path === "/_do/fire-trigger";
@@ -494,18 +496,20 @@ export class RoomDO implements DurableObject {
 
   async #isAuthorized(request: Request, purpose: "read" | "write"): Promise<boolean> {
     const uid = request.headers.get("X-EC-Uid");
-    const access = await this.#effectiveAccess(uid);
+    const access = await this.#effectiveAccess(uid, purpose === "write");
     return purpose === "read" ? access.canRead : access.canWrite;
   }
 
   async #getAccessVerdict(request: Request): Promise<Response> {
     const uid = request.headers.get("X-EC-Uid");
     const access = await this.#effectiveAccess(uid);
+    const meta = await this.#getAccessMeta();
     return jsonResponse({
       isPrivate: access.isPrivate,
       canRead: access.canRead,
       canWrite: access.canWrite,
       parented: access.parented,
+      parent: meta.hasParent && typeof meta.parent === "string" ? meta.parent : null,
     });
   }
 
@@ -542,7 +546,7 @@ export class RoomDO implements DurableObject {
    * allow; and ignoring the monotonic child index reused `.1` instead of `.2`.
    * Re-run those inversion checks before simplifying any of these guards.
    */
-  async #effectiveAccess(uid: string | null): Promise<{
+  async #effectiveAccess(uid: string | null, forWrite = false): Promise<{
     isPrivate: boolean;
     canRead: boolean;
     canWrite: boolean;
@@ -583,6 +587,19 @@ export class RoomDO implements DurableObject {
         };
       }
       return this.#fetchParentAccess(meta.parent, uid);
+    }
+
+    const name = this.#ownName;
+    if (forWrite && name) {
+      const dot = name.lastIndexOf(".");
+      const suffix = name.slice(dot + 1);
+      if (dot > 0 && /^[1-9]\d*$/.test(suffix)) {
+        const parent = name.slice(0, dot);
+        const parentAccess = await this.#fetchParentAccess(parent, uid);
+        if (parentAccess.isPrivate || !parentAccess.canRead) {
+          return { isPrivate: true, canRead: false, canWrite: false, parented: true };
+        }
+      }
     }
 
     const principal = uid === null ? null : { uid };
@@ -716,7 +733,7 @@ export class RoomDO implements DurableObject {
     if (
       !isValidRoomName(parent) ||
       typeof snapshot !== "string" ||
-      (mode !== "create" && mode !== "replace" && mode !== "verify")
+      (mode !== "create" && mode !== "replace" && mode !== "verify" && mode !== "probe")
     ) {
       return plainResponse("child-snapshot body must be {parent,snapshot,mode}", 400);
     }
@@ -735,6 +752,7 @@ export class RoomDO implements DurableObject {
       | "created"
       | "idempotent"
       | "replace"
+      | "available"
       | "occupied"
       | "unparented"
       | "local-access"
@@ -753,6 +771,7 @@ export class RoomDO implements DurableObject {
           if (stored.get(STORAGE_KEYS.metaParent) !== parent) {
             return "different-parent";
           }
+          if (mode === "probe") return "available";
           return mode === "replace" ? "replace" : "idempotent";
         }
         if (mode === "verify") return "unparented";
@@ -761,6 +780,7 @@ export class RoomDO implements DurableObject {
         if ((await this.#state.storage.list({ limit: 1 })).size > 0) {
           return "occupied";
         }
+        if (mode === "probe") return "available";
         await this.#state.storage.transaction(async (txn) => {
           await putStorageEntriesBatched(txn, {
             ...snapshotEntries(snapshot),
@@ -787,6 +807,9 @@ export class RoomDO implements DurableObject {
           : "Child room is occupied",
         409,
       );
+    }
+    if (outcome === "available") {
+      return jsonResponse({ available: true, parent }, 200);
     }
     if (outcome === "replace") {
       const replaced = await this.#putSnapshot(
@@ -2507,7 +2530,7 @@ export class RoomDO implements DurableObject {
         // absolute veto on both public and private paths.
         if (messageAuth === "0") return false;
         const uid = attachment.uid ?? null;
-        const access = await this.#effectiveAccess(uid);
+        const access = await this.#effectiveAccess(uid, true);
         if (!access.canWrite) return false;
         if (access.isPrivate) {
           // Private access (local or parent-derived) replaces legacy HMAC.
@@ -2523,13 +2546,13 @@ export class RoomDO implements DurableObject {
         if (!sandstormAllowsWsWrite(env, attachment.sandstormModify) || messageAuth === "0") {
           return false;
         }
-        const access = await this.#effectiveAccess(attachment.uid ?? null);
+        const access = await this.#effectiveAccess(attachment.uid ?? null, true);
         if (!access.canWrite) return false;
         if (access.isPrivate) return attachment.uid !== undefined;
         return !!env.ETHERCALC_KEY && await verifyAuth(env.ETHERCALC_KEY, messageRoom, messageAuth);
       },
       allowSubmitForm: async () => {
-        const access = await this.#effectiveAccess(attachment.uid ?? null);
+        const access = await this.#effectiveAccess(attachment.uid ?? null, true);
         return !access.isPrivate && access.canWrite;
       },
       siblingDo: (room: string): WsSiblingDO => {
@@ -2741,6 +2764,11 @@ export class RoomDO implements DurableObject {
     ts: number;
     auditBody: string;
   } | null> {
+    const storedSnapshot = await readSnapshot(this.#state.storage);
+    const permittedArea = storedSnapshot ? storedSnapshotAreaLimit(storedSnapshot) : undefined;
+    if (storedSnapshot && !isSnapshotWithinSheetLimits(storedSnapshot, permittedArea)) {
+      return null;
+    }
     const ss = await this.#getSpreadsheet(uid);
     const attribs = ss.exportSheetData().attribs;
     if (
@@ -2765,6 +2793,12 @@ export class RoomDO implements DurableObject {
     // stored snapshot carries the live value.
     await this.#hydrateCrossSheetRefs(ss, this.#ownName, uid);
     const newSnapshot = ss.createSpreadsheetSave();
+    if (!isSnapshotWithinSheetLimits(newSnapshot, permittedArea)) {
+      // The command has already changed the in-memory sheet. Rebuild it from
+      // storage on the next request instead of retaining an invalid state.
+      this.#ss = null;
+      return null;
+    }
 
     // Build one atomic snapshot/log/audit replacement. Both transitions need
     // cleanup: chunked → single removes meta/chunks, while single → chunked

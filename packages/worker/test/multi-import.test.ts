@@ -2,6 +2,7 @@ import { env } from 'cloudflare:test';
 import * as XLSX from '@e965/xlsx';
 import { describe, expect, it } from 'vite-plus/test';
 import type { Env } from '../src/env.ts';
+import { computeAuth } from '../src/lib/auth.ts';
 import { doFetch } from '../src/lib/do-dispatch.ts';
 import worker from '../src/index.ts';
 const AUTH_UID = 'uid-passkey-1';
@@ -465,6 +466,76 @@ describe('POST multi-sheet append import', () => {
     // Imported subrooms inherit the private parent's access and refuse anonymous access.
     const subRes = await request('GET', `/_/${base}.1`);
     expect(subRes.status).toBe(403);
+  });
+
+  it('requires the issued workbook capability for keyed public writes', async () => {
+    const base = `mkey-${Math.random().toString(36).slice(2, 8)}`;
+    const keyedEnv = { ...(env as unknown as Env), ETHERCALC_KEY: 'test-workbook-key' };
+    const token = await computeAuth('test-workbook-key', `=${base}`);
+    const bytes = twoSheetXlsx();
+
+    expect((await requestWithEnv(keyedEnv, 'PUT', `/=${base}.xlsx`, bytes)).status).toBe(403);
+    expect((await requestWithEnv(keyedEnv, 'PUT', `/=${base}.xlsx?auth=0`, bytes)).status).toBe(403);
+    expect((await request('GET', `/_/${base}`)).status).toBe(404);
+
+    expect((await requestWithEnv(keyedEnv, 'PUT', `/=${base}.xlsx?auth=${token}`, bytes)).status).toBe(201);
+    expect((await requestWithEnv(keyedEnv, 'POST', `/=${base}.xlsx`, bytes)).status).toBe(403);
+    expect((await requestWithEnv(keyedEnv, 'POST', `/_/=${base}/csv`, 'a,b')).status).toBe(403);
+    expect((await requestWithEnv(keyedEnv, 'POST', `/_/=${base}/sheet`, JSON.stringify({ title: 'More', requestId: 'keyed-sheet' }))).status).toBe(403);
+    expect((await requestWithEnv(keyedEnv, 'POST', `/=${base}.xlsx?auth=${token}`, bytes)).status).toBe(201);
+    expect((await requestWithEnv(keyedEnv, 'POST', `/_/=${base}/sheet?auth=${token}`, JSON.stringify({ title: 'More', requestId: 'keyed-sheet' }))).status).toBe(201);
+    expect((await requestWithEnv(keyedEnv, 'POST', `/_/${base}`, 'set B2 text t Renamed')).status).toBe(403);
+    expect((await requestWithEnv(keyedEnv, 'POST', `/_/${base}?auth=${token}`, 'set B2 text t Renamed')).status).toBe(202);
+    const toc = (await (await request('GET', `/_/${base}/csv.json`)).json()) as string[][];
+    expect(toc[1]?.[1]).toBe('Renamed');
+    expect((await requestWithEnv(keyedEnv, 'POST', `/_/${base}?auth=${token}`, 'set A2:B2 empty multi-cascade')).status).toBe(202);
+    const afterDelete = (await (await request('GET', `/_/${base}/csv.json`)).json()) as string[][];
+    expect(afterDelete[1]?.[0]).not.toBe(`/${base}.1`);
+
+    const fresh = `${base}-fresh`;
+    const freshToken = await computeAuth('test-workbook-key', `=${fresh}`);
+    const initialized = await requestWithEnv(keyedEnv, 'POST', `/_/=${fresh}/sheet?auth=${freshToken}`,
+      JSON.stringify({ title: 'First', requestId: 'first-sheet' }));
+    expect(initialized.status).toBe(201);
+    const freshToc = (await (await request('GET', `/_/${fresh}/csv.json`)).json()) as string[][];
+    expect(freshToc[1]).toEqual([`/${fresh}.1`, 'First']);
+
+    const single = `${base}-single`;
+    expect((await request('PUT', `/_/${single}`, 'single sheet')).status).toBe(201);
+    const wrongScope = await computeAuth('test-workbook-key', `=${single}`);
+    expect((await requestWithEnv(keyedEnv, 'POST', `/_/${single}?auth=${wrongScope}`, 'set A1 text t Changed')).status).toBe(403);
+  });
+
+  it('uses available child names when replacing a private workbook', async () => {
+    const base = `moccupied-${Math.random().toString(36).slice(2, 8)}`;
+    expect((await request('PUT', `/_/${base}.1`, 'existing public sheet')).status).toBe(201);
+    const init = await doFetch(
+      env as unknown as Env,
+      base,
+      '/_do/init-private',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          snapshot: '# SocialCalc\n',
+          acl: { owner: AUTH_UID, readers: [], writers: [] },
+        }),
+      },
+      { uid: AUTH_UID, exp: AUTH_EXP },
+    );
+    expect(init.status).toBe(201);
+    expect((await request('PUT', `/_/${base}.2`, 'new public sheet')).status).toBe(403);
+
+    const first = await requestWithAuth('PUT', `/=${base}.xlsx`, twoSheetXlsx());
+    expect(first.status).toBe(201);
+    const firstToc = (await (await requestWithAuth('GET', `/_/${base}/csv.json`)).json()) as string[][];
+    expect(firstToc[1]?.[0]).toMatch(new RegExp(`^/${base}\\.[1-9]\\d*$`));
+    expect(firstToc[1]?.[0]).not.toBe(`/${base}.1`);
+    expect((await request('PUT', `/_/${base}.1`, 'another write')).status).toBe(403);
+
+    const second = await requestWithAuth('PUT', `/=${base}.xlsx`, twoSheetXlsx());
+    expect(second.status).toBe(201);
+    const secondToc = (await (await requestWithAuth('GET', `/_/${base}/csv.json`)).json()) as string[][];
+    expect(secondToc[1]?.[0]).toBe(firstToc[1]?.[0]);
   });
 
   it('POST text formats append one sheet on a public parent and keep it world-readable', async () => {

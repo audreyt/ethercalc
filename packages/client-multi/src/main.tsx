@@ -12,7 +12,7 @@ async function boot(): Promise<void> {
   if (env.pushStatePath !== null) {
     window.history.pushState({}, '', env.pushStatePath);
   }
-  const foldr = new HackFoldr(env.basePath);
+  const foldr = new HackFoldr(env.basePath, { auth: env.auth });
   await foldr.fetch(env.index);
   const root = document.getElementById('root');
   if (!root) throw new Error('missing #root element');
@@ -22,6 +22,7 @@ async function boot(): Promise<void> {
       basePath={env.basePath}
       suffix={env.suffix}
       index={env.index}
+      auth={env.auth}
       isReadOnly={env.isReadOnly}
     />,
   );

@@ -675,6 +675,22 @@ describe('POST /_/:room — command execution', () => {
     expect(calls.find((c) => c.url.includes('/_do/snapshot'))).toBeUndefined();
   });
 
+  it('rejects a large CSV before dispatching a command', async () => {
+    const { env, calls } = makeFakeRoomNamespace(() => {
+      throw new Error('should not reach DO');
+    });
+    const response = await buildApp().fetch(
+      new Request('https://t.test/_/r', {
+        method: 'POST',
+        headers: { 'content-type': 'text/csv' },
+        body: 'x\n'.repeat(200_001),
+      }),
+      env as never,
+    );
+    expect(response.status).toBe(413);
+    expect(calls).toHaveLength(0);
+  });
+
   it('POST text/csv converts to loadclipboard+paste and dispatches enriched array (202)', async () => {
     // Snapshot ends at row 5 → paste at A6.
     const { env, calls } = makeFakeRoomNamespace((call) => {
