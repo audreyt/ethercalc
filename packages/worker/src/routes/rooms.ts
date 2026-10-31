@@ -19,31 +19,32 @@
  * `src/lib/{csv,do-dispatch,room-name,rooms-index}.ts`.
  */
 /* istanbul ignore file */
-import type { Hono } from 'hono';
+import type { Context, Hono } from 'hono';
 import type { EtherCalcHonoEnv } from '../env.ts';
 import { upsertCronTriggers } from '../handlers/cron.ts';
 import { classifyCommandBody, joinCommands } from '../handlers/post-command.ts';
 import { classifyRequestBody } from '../handlers/rooms.ts';
-import { verifyAuth } from '../lib/auth.ts';
+import { computeAuth, verifyAuth } from '../lib/auth.ts';
 import { parseSettimetrigger } from '../lib/cron.ts';
 import { doFetch } from '../lib/do-dispatch.ts';
 import {
   enrichLoadClipboard,
   isBannedWikiFormat,
   isLoadClipboard,
-  isMultiCascade,
 } from '../lib/loadclipboard.ts';
 import { verifyMigrateToken } from '../lib/migrate-auth.ts';
 import { parsePitrRequest } from '../lib/pitr.ts';
 import { shouldDisableRoomIndex } from '../lib/room-index-access.ts';
-import { generateRoomId } from '../lib/room-name.ts';
+import { encodeRoom, encodeRoomPath, generateRoomId, isValidRoomName } from '../lib/room-name.ts';
 import {
   listRooms,
   listRoomTimes,
   renderRoomLinks,
 } from '../lib/rooms-index.ts';
 import { getSessionPrincipal } from '../lib/session-middleware.ts';
+import type { SessionPrincipal } from '../lib/session.ts';
 import {
+  assertWorkbookFormat,
   ImportArchiveTooLargeError,
   ImportDimensionsTooLargeError,
   ImportColumnOutOfRangeError,
@@ -60,6 +61,11 @@ const JSON_CT = 'application/json; charset=utf-8';
 const PITR_POLL_ATTEMPTS = 20;
 const PITR_POLL_INTERVAL_MS = 100;
 
+function workbookFormatFromContentType(contentType: string): 'xlsx' | 'ods-or-fods' {
+  return contentType.split(';')[0]!.trim().toLowerCase() ===
+    'application/vnd.oasis.opendocument.spreadsheet' ? 'ods-or-fods' : 'xlsx';
+}
+
 /**
  * Mirror a DO 401/403 auth verdict to the client verbatim (status +
  * text/plain body). Returns null for any other status so callers fall
@@ -69,6 +75,38 @@ const PITR_POLL_INTERVAL_MS = 100;
 async function authVerdict(res: Response): Promise<Response | null> {
   if (res.status !== 401 && res.status !== 403) return null;
   return sizedResponse(await res.text(), res.status, TEXT_CT);
+}
+
+async function allowsHttpMutation(
+  c: Context<EtherCalcHonoEnv>,
+  room: string,
+  principal: SessionPrincipal | null,
+  destructive = false,
+): Promise<boolean> {
+  if (!isValidRoomName(room)) return false;
+  const supplied = c.req.query('auth') ?? '';
+  if (supplied === '0') return false;
+  const key = c.env.ETHERCALC_KEY;
+  if (key && await verifyAuth(key, encodeRoom(room), supplied)) return true;
+  if (!destructive && !key) return true;
+  if (!principal) return false;
+  const res = await doFetch(c.env, room, '/_do/access', {}, principal);
+  const access: unknown = res.ok ? await res.json().catch(() => null) : null;
+  return access !== null &&
+    typeof access === 'object' &&
+    'isPrivate' in access &&
+    'canWrite' in access &&
+    access.isPrivate === true &&
+    access.canWrite === true;
+}
+
+async function redirectToPublicCopy(
+  c: Context<EtherCalcHonoEnv>,
+  room: string,
+): Promise<Response> {
+  const key = c.env.ETHERCALC_KEY;
+  const auth = key ? `?auth=${await computeAuth(key, encodeRoom(room))}` : '';
+  return c.redirect(`${c.env.BASEPATH ?? ''}/${encodeRoomPath(room)}${auth}`, 302);
 }
 
 /**
@@ -147,13 +185,36 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
   // ─── Template copy ─────────────────────────────────────────────────
   app.get('/_from/:template', async (c) => {
     const template = c.req.param('template') ?? '';
+    const fetchSite = c.req.header('sec-fetch-site');
+    if (fetchSite === 'cross-site' || fetchSite === 'same-site') {
+      return sizedResponse('Forbidden', 403, TEXT_CT);
+    }
     const principal = await getSessionPrincipal(c);
+    const accessRes = await doFetch(c.env, template, '/_do/access');
+    if (!accessRes.ok) {
+      return sizedResponse(await accessRes.text(), accessRes.status, TEXT_CT);
+    }
+    const access: unknown = await accessRes.json().catch(() => null);
+    if (
+      access === null ||
+      typeof access !== 'object' ||
+      !('isPrivate' in access) ||
+      typeof access.isPrivate !== 'boolean' ||
+      !('parented' in access) ||
+      typeof access.parented !== 'boolean' ||
+      !('canRead' in access) ||
+      typeof access.canRead !== 'boolean'
+    ) {
+      return sizedResponse('Template access unavailable', 502, TEXT_CT);
+    }
+    if (access.isPrivate || access.parented || !access.canRead) {
+      return sizedResponse('Protected room copy is not supported', 409, TEXT_CT);
+    }
     const snapshotRes = await doFetch(
       c.env,
       template,
       '/_do/snapshot',
       {},
-      principal,
     );
     const denied = await authVerdict(snapshotRes);
     if (denied) return denied;
@@ -161,10 +222,7 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
       // Template doesn't exist — legacy still redirects into a blank room.
       // Preserve that but note it in FINDINGS for a potential fix later.
       const newRoom = generateRoomId();
-      return c.redirect(
-        `${c.env.BASEPATH ?? ''}/${newRoom}${c.env.ETHERCALC_KEY ? '/edit' : ''}`,
-        302,
-      );
+      return redirectToPublicCopy(c, newRoom);
     }
     const snapshot = await snapshotRes.text();
     const newRoom = generateRoomId();
@@ -180,10 +238,7 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
     if (!putRes.ok) {
       return sizedResponse(await putRes.text(), putRes.status, TEXT_CT);
     }
-    return c.redirect(
-      `${c.env.BASEPATH ?? ''}/${newRoom}${c.env.ETHERCALC_KEY ? '/edit' : ''}`,
-      302,
-    );
+    return redirectToPublicCopy(c, newRoom);
   });
 
   // ─── Private template copy (P7) ────────────────────────────────────
@@ -282,10 +337,16 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
         /* fall through; classifyRequestBody handles bad JSON */
       }
     }
+    const room = userRoom ?? generateRoomId();
+    const principal = await getSessionPrincipal(c);
+    if (userRoom && !(await allowsHttpMutation(c, room, principal))) {
+      return sizedResponse('Forbidden', 403, TEXT_CT);
+    }
     const decoded = classifyRequestBody(ct, bytes);
     let snapshot: string;
     if (decoded.kind === 'xlsx-deferred') {
       try {
+        assertWorkbookFormat(bytes, workbookFormatFromContentType(ct));
         snapshot = xlsxToSave(bytes);
       } catch (err) {
         if (
@@ -301,13 +362,11 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
         ) {
           return sizedResponse(err.message, 400, TEXT_CT);
         }
-        snapshot = '';
+        return sizedResponse('invalid workbook', 400, TEXT_CT);
       }
     } else {
       snapshot = decoded.kind === 'save' ? decoded.snapshot : '';
     }
-    const room = userRoom ?? generateRoomId();
-    const principal = await getSessionPrincipal(c);
     const putRes = await doFetch(
       c.env,
       room,
@@ -326,12 +385,17 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
   // ─── PUT /_/:room (overwrite snapshot) ─────────────────────────────
   app.put('/_/:room', async (c) => {
     const room = c.req.param('room') ?? '';
+    const principal = await getSessionPrincipal(c);
+    if (!(await allowsHttpMutation(c, room, principal))) {
+      return sizedResponse('Forbidden', 403, TEXT_CT);
+    }
     const bytes = await readBodyBytes(c.req.raw);
     const ct = c.req.header('content-type') ?? '';
     const decoded = classifyRequestBody(ct, bytes);
     let snapshot: string;
     if (decoded.kind === 'xlsx-deferred') {
       try {
+        assertWorkbookFormat(bytes, workbookFormatFromContentType(ct));
         snapshot = xlsxToSave(bytes);
       } catch (err) {
         if (
@@ -347,12 +411,11 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
         ) {
           return sizedResponse(err.message, 400, TEXT_CT);
         }
-        snapshot = '';
+        return sizedResponse('invalid workbook', 400, TEXT_CT);
       }
     } else {
       snapshot = decoded.kind === 'save' ? decoded.snapshot : '';
     }
-    const principal = await getSessionPrincipal(c);
     const putRes = await doFetch(
       c.env,
       room,
@@ -378,7 +441,26 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
   app.get('/_/:room/access', async (c) => {
     const room = c.req.param('room') ?? '';
     const principal = await getSessionPrincipal(c);
-    return doFetch(c.env, room, '/_do/access', {}, principal);
+    const res = await doFetch(c.env, room, '/_do/access', {}, principal);
+    if (res.status !== 200) return res;
+    const verdict: unknown = await res.json().catch(() => null);
+    if (
+      verdict === null ||
+      typeof verdict !== 'object' ||
+      !('isPrivate' in verdict) ||
+      typeof verdict.isPrivate !== 'boolean' ||
+      !('canRead' in verdict) ||
+      typeof verdict.canRead !== 'boolean' ||
+      !('canWrite' in verdict) ||
+      typeof verdict.canWrite !== 'boolean'
+    ) {
+      return sizedResponse('Access unavailable', 502, TEXT_CT);
+    }
+    return sizedResponse(JSON.stringify({
+      isPrivate: verdict.isPrivate,
+      canRead: verdict.canRead,
+      canWrite: verdict.canWrite,
+    }), 200, JSON_CT);
   });
 
   // ─── GET /_/:room (raw save) ───────────────────────────────────────
@@ -626,29 +708,9 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
   // ─── DELETE /_/:room ───────────────────────────────────────────────
   app.delete('/_/:room', async (c) => {
     const room = c.req.param('room') ?? '';
-    // H-2: permanently wiping a public room (incl. the never-truncated
-    // audit) needs its per-room HMAC. Private rooms instead use the
-    // RoomDO-owned ACL verdict; their legacy HMAC is intentionally demoted.
-    const authQuery = c.req.query('auth') ?? '';
     const principal = await getSessionPrincipal(c);
-    if (!(await verifyAuth(c.env.ETHERCALC_KEY, room, authQuery))) {
-      // `auth=0` remains an explicit destructive-write veto even for a
-      // private owner. Bare or stale legacy tokens defer to the RoomDO ACL.
-      if (authQuery === '0') return sizedResponse('Forbidden', 403, TEXT_CT);
-      const accessRes = await doFetch(c.env, room, '/_do/access', {}, principal);
-      const access: unknown = accessRes.ok
-        ? await accessRes.json().catch(() => null)
-        : null;
-      if (
-        access === null ||
-        typeof access !== 'object' ||
-        !('isPrivate' in access) ||
-        !('canWrite' in access) ||
-        access.isPrivate !== true ||
-        access.canWrite !== true
-      ) {
-        return sizedResponse('Forbidden', 403, TEXT_CT);
-      }
+    if (!(await allowsHttpMutation(c, room, principal, true))) {
+      return sizedResponse('Forbidden', 403, TEXT_CT);
     }
     const res = await doFetch(
       c.env,
@@ -718,13 +780,9 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
   //        the current snapshot's sheet dimension line
   //        -> [cmd, insertrow A<row>, paste A<row> all] if ?row given
   //        -> [cmd, paste A<row> all] otherwise
-  //   6. if the command matches `^set A\d+:B\d+ empty multi-cascade`,
-  //      read the referenced cell's t:-prefixed content out of the
-  //      current snapshot and rename that foreign room <ref> -> <ref>.bak
-  //      via POST /_do/rename on the source DO.
-  //   7. join the (possibly-array) command with newlines and
+  //   6. join the (possibly-array) command with newlines and
   //      dispatch to POST /_do/commands on the room DO.
-  //   8. reply 202 application/json with body {command} -- command
+  //   7. reply 202 application/json with body {command} -- command
   //      may be a string or an array of strings.
   //
   // The WS broadcast (`{type: execute, cmdstr, room}`) is Phase 7's
@@ -732,6 +790,10 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
   // the change via its own WS fan-out when that layer lands.
   app.post('/_/:room', async (c) => {
     const room = c.req.param('room') ?? '';
+    const principal = await getSessionPrincipal(c);
+    if (!(await allowsHttpMutation(c, room, principal))) {
+      return sizedResponse('Forbidden', 403, TEXT_CT);
+    }
     const bytes = await readBodyBytes(c.req.raw);
     const ct = c.req.header('content-type') ?? '';
     const classified = classifyCommandBody(ct, bytes);
@@ -745,6 +807,7 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
     if (classified.kind === 'xlsx-deferred') {
       let commands: string[];
       try {
+        assertWorkbookFormat(bytes, workbookFormatFromContentType(ct));
         commands = xlsxToLoadClipboardCommands(bytes);
       } catch (err) {
         if (
@@ -760,15 +823,10 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
         ) {
           return sizedResponse(err.message, 400, TEXT_CT);
         }
-        /* istanbul ignore next -- xlsxToLoadClipboardCommands only throws
-           ImportTooLargeError / ImportColumnOutOfRangeError in practice;
-           any other failure (malformed workbook) is swallowed by SheetJS
-           into an empty sheet. */
         return sizedResponse('Could not import workbook', 400, TEXT_CT);
       }
       if (commands.length > 0) {
         const cmdstr = commands.join('\n');
-        const principal = await getSessionPrincipal(c);
         const writeRes = await doFetch(
           c.env,
           room,
@@ -846,55 +904,13 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
       );
     }
 
-    // For plain-text bodies the legacy auto-enriches loadclipboard and
-    // handles multi-cascade renames. Those branches don't apply when
+    // For plain-text bodies the legacy auto-enriches loadclipboard. This branch doesn't apply when
     // the command arrived as JSON -- the client has already composed
     // the array shape it wants.
     let commandOut: string | readonly string[] = command;
-    // Sibling rename target resolved by the multi-cascade read below;
-    // dispatched only after the authorizing DO write succeeds.
-    let cascadeTarget: string | null = null;
-    const principal = await getSessionPrincipal(c);
 
     if (commandKind === 'text-command') {
       const textCmd = command as string;
-
-      // Multi-cascade rename (src/main.ls:425-436). Reads the current
-      // snapshot out of this room's DO and matches the
-      // `cell:<ref>:t:/<foreignRoom>` line. The read MUST happen before
-      // the authorizing write below (the command empties the very cell
-      // the reference lives in), but the rename itself is a side effect
-      // and is DEFERRED until that write returns 2xx. Errors (missing
-      // snapshot, missing cell line, rename 5xx) are swallowed: legacy
-      // proceeds to execute the command regardless.
-      const cascadeRef = isMultiCascade(textCmd);
-      if (cascadeRef !== null) {
-        const snapshotRes = await doFetch(
-          c.env,
-          room,
-          '/_do/snapshot',
-          {},
-          principal,
-        );
-        if (snapshotRes.ok) {
-          const snapshot = await snapshotRes.text();
-          const cellLine = new RegExp(`cell:${cascadeRef}:t:/(.+)`, 'i').exec(snapshot);
-          if (cellLine) {
-            const targetRoom = cellLine[1]!.replace(/\r?$/, '');
-            // SECURITY (H-4): `targetRoom` is read from cell text that any
-            // anonymous writer fully controls. The legitimate use is the
-            // multi-sheet editor cascade-deleting one of its OWN sub-sheets,
-            // which are always named `<room>.<n>` (see client-multi
-            // Foldr.ts — the TOC seeds `/${id}.1`). Restrict the rename to
-            // that namespace so a POST can never move/destroy an unrelated
-            // tenant's room. A foreign target is silently ignored, matching
-            // legacy's "proceed with the command regardless" on a no-match.
-            if (targetRoom.startsWith(`${room}.`)) {
-              cascadeTarget = targetRoom;
-            }
-          }
-        }
-      }
 
       // Loadclipboard auto-enrichment (src/main.ls:414-424).
       if (isLoadClipboard(textCmd)) {
@@ -917,9 +933,16 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
     // single newline-separated batch (matches legacy
     // `cmdstr = command * '\n'`).
     const cmdstr = joinCommands(commandOut);
+    const scheduled = cmdstr.split('\n').map(parseSettimetrigger).filter((value) => value !== null);
+    if (scheduled.length > 0) {
+      const key = c.env.ETHERCALC_KEY;
+      if (!key || !(await verifyAuth(key, room, c.req.query('auth') ?? ''))) {
+        return sizedResponse('Forbidden', 403, TEXT_CT);
+      }
+    }
 
     // The authorizing DO write runs FIRST — every side effect below
-    // (D1 cron upsert, sibling rename) is gated on its verdict. On a
+    // is gated on its verdict. On a
     // 401/403 the verdict propagates verbatim with ZERO side effects.
     const writeRes = await doFetch(
       c.env,
@@ -944,29 +967,10 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
     // Multi-line dispatches (array command or newline-joined text
     // block) can carry several settimetrigger lines; we parse each.
     if (c.env.DB) {
-      for (const line of cmdstr.split('\n')) {
-        const parsed = parseSettimetrigger(line);
-        if (parsed) {
-          await upsertCronTriggers(c.env.DB, room, parsed.cell, parsed.times);
-        }
+      for (const parsed of scheduled) {
+        await upsertCronTriggers(c.env.DB, room, parsed.cell, parsed.times);
       }
     }
-    // Deferred multi-cascade sibling rename (H-4 namespace-guarded
-    // above). Rename failures are swallowed, matching legacy.
-    if (cascadeTarget !== null) {
-      await doFetch(
-        c.env,
-        cascadeTarget,
-        '/_do/rename',
-        {
-          method: 'POST',
-          body: JSON.stringify({ to: `${cascadeTarget}.bak` }),
-          headers: { 'Content-Type': 'application/json' },
-        },
-        principal,
-      );
-    }
-
     // Legacy replies `@response.json 202 {command}` -- `command` is the
     // post-enrichment value (string or array), not the raw body text.
     return new Response(JSON.stringify({ command: commandOut }), {

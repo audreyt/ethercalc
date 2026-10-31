@@ -38,9 +38,10 @@ import type { Hono } from "hono";
 import { buildDynamicAppcache, APPCACHE_CONTENT_TYPE } from "../handlers/manifest-appcache.ts";
 import { buildFormPartPath } from "../handlers/static-form.ts";
 import { buildRoomEntry, buildTemplateFormRedirect } from "../handlers/room-entry.ts";
+import { computeAuth } from "../lib/auth.ts";
 import { doFetch } from "../lib/do-dispatch.ts";
 import { getSessionPrincipal } from "../lib/session-middleware.ts";
-import { encodeRoom, generateRoomId } from "../lib/room-name.ts";
+import { encodeRoom, encodeRoomPath, generateRoomId } from "../lib/room-name.ts";
 import { isSandstormEnforced } from "../lib/sandstorm-access.ts";
 import type { Env, EtherCalcHonoEnv } from "../env.ts";
 
@@ -286,7 +287,7 @@ export function registerAssets(app: Hono<EtherCalcHonoEnv>): void {
   app.get("/:template/form", async (c) => {
     const template = c.req.param("template") ?? "";
     const newId = generateRoomId();
-    const newRoom = `${encodeRoom(template)}_${newId}`;
+    const newRoom = `${template}_${newId}`;
     const principal = await getSessionPrincipal(c);
     try {
       const cloneRes = await doFetch(
@@ -300,22 +301,23 @@ export function registerAssets(app: Hono<EtherCalcHonoEnv>): void {
         },
         principal,
       );
-      // A denial is the DO's verdict, not a clone hiccup — propagate it
-      // verbatim instead of redirecting into a phantom empty room.
-      if (cloneRes.status === 401 || cloneRes.status === 403) {
+      if (cloneRes.status !== 201) {
         return new Response(await cloneRes.text(), {
           status: cloneRes.status,
           headers: { "Content-Type": "text/plain; charset=utf-8" },
         });
       }
     } catch {
-      // Legacy always redirected; clone failure yields an empty new room.
+      return new Response("Clone unavailable", { status: 502 });
     }
     const result = buildTemplateFormRedirect({
       template,
       basepath: c.env.BASEPATH ?? "",
       idGen: () => newId,
       phase5Ready: true,
+      ...(c.env.ETHERCALC_KEY
+        ? { auth: await computeAuth(c.env.ETHERCALC_KEY, encodeRoom(newRoom)) }
+        : {}),
     });
     return new Response(result.body, {
       status: 302,
@@ -377,7 +379,7 @@ export function registerRoomCatchAll(app: Hono<EtherCalcHonoEnv>): void {
         }
       }
       if (redirectMode !== null) {
-        const location = `${c.env.BASEPATH ?? ""}/${encodeRoom(roomParam)}/${redirectMode}`;
+        const location = `${c.env.BASEPATH ?? ""}/${encodeRoomPath(roomParam)}/${redirectMode}`;
         const body = `Found. Redirecting to ${location}`;
         return new Response(body, {
           status: 302,

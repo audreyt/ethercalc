@@ -26,14 +26,16 @@ export function isSandstormMutationRoute(
   method: string,
   pathname: string,
 ): boolean {
-  if (method === 'DELETE') return true;
-  if (method === 'POST') {
-    return pathname === '/_' || pathname.startsWith('/_/');
+  if (method === 'POST' && /^\/socket\.io\/1\/xhr-polling\/[0-9a-f]{32}$/.test(pathname)) {
+    return false;
   }
-  if (method === 'PUT' && pathname.startsWith('/_/')) return true;
+  if (method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE') {
+    return true;
+  }
   if (method === 'GET') {
     if (pathname === '/_new' || pathname === '/=_new') return true;
     if (pathname.startsWith('/_from/')) return true;
+    if (/^\/[^/]+\/form$/.test(pathname)) return true;
   }
   return false;
 }

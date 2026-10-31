@@ -194,6 +194,12 @@ describe('isEventHandlerAttribute', () => {
 });
 
 describe('isUnsafeUrlValue', () => {
+  it('classifies character references as the browser will parse them', () => {
+    expect(isUnsafeUrlValue('javascript&#58;alert(1)')).toBe(true);
+    expect(isUnsafeUrlValue('javascript&colon;alert(1)')).toBe(true);
+    expect(isUnsafeUrlValue('java&#x09;script:alert(1)')).toBe(true);
+    expect(isUnsafeUrlValue('https&#58;//example.test/x')).toBe(false);
+  });
   it('flags javascript:/data:/vbscript: schemes', () => {
     expect(isUnsafeUrlValue('javascript:alert(1)')).toBe(true);
     expect(isUnsafeUrlValue('data:text/html,<script>')).toBe(true);
@@ -239,6 +245,10 @@ describe('isUnsafeUrlValue', () => {
 });
 
 describe('isExternalImageSource', () => {
+  it('rejects character references that resolve to an external source', () => {
+    expect(isExternalImageSource('https&#58;//example.test/pixel')).toBe(true);
+    expect(isExternalImageSource('&#47;&#47;example.test/pixel')).toBe(true);
+  });
   it('blocks network and data sources while keeping local paths', () => {
     expect(isExternalImageSource('https://tracker.test/pixel')).toBe(true);
     expect(isExternalImageSource('//tracker.test/pixel')).toBe(true);
@@ -258,6 +268,9 @@ describe('isExternalImageSource', () => {
 });
 
 describe('isUnsafeInlineStyle', () => {
+  it('rejects character references in fetch-capable CSS', () => {
+    expect(isUnsafeInlineStyle('background:u&#114;l(https://example.test/x)')).toBe(true);
+  });
   it('blocks CSS fetch and legacy execution constructs', () => {
     expect(isUnsafeInlineStyle('background:url(https://tracker.test/pixel)')).toBe(
       true,

@@ -9,14 +9,28 @@ import {
 } from './build-assets.ts';
 
 describe('patchSocialCalcRuntime', () => {
-  test('3.1.0: strips strict-mode, leaves native security model intact (no injection)', () => {
-    const input = `(function (root, factory) {\n  'use strict';\n  factory(root);\n})(this, function (window) {\n  'use strict';\nSC.EscapeUntrustedHtml = function () {};\n});`;
+  test('3.1.0: applies the guarded runtime transform', () => {
+    const input = readFileSync(
+      new URL('../packages/socialcalc-headless/node_modules/socialcalc/dist/SocialCalc.js', import.meta.url),
+      'utf8',
+    );
 
     const patched = patchSocialCalcRuntime(input);
 
-    expect(patched).not.toContain("'use strict'");
+    expect(patched).not.toContain("(function (root, factory) {\n  'use strict';");
     expect(patched).toContain('EscapeUntrustedHtml');
-    expect(patched).not.toContain('SocialCalc.sanitizeHTML');
+    expect(patched).toContain('sheet.cells = Object.create(null);');
+    expect(patched).toContain('return SocialCalc.special_chars(String(displayvalue));');
+    expect(patched).toContain('SocialCalc.special_chars(operandstr)');
+  });
+
+  test('3.1.0: rejects a changed render path', () => {
+    const input = readFileSync(
+      new URL('../packages/socialcalc-headless/node_modules/socialcalc/dist/SocialCalc.js', import.meta.url),
+      'utf8',
+    );
+    const changed = input.replace('result += operandstr;', 'result += operandstr.trim();');
+    expect(() => patchSocialCalcRuntime(changed)).toThrow(/number format literal/);
   });
 
 

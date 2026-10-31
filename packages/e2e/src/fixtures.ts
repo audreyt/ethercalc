@@ -38,11 +38,25 @@ export const test = base.extend<NonNullable<unknown>, WorkerFixtures>({
     // eslint-disable-next-line no-empty-pattern
     async ({}, use) => {
       const port = await pickFreePort();
-      const { process: proc, baseUrl } = await startWrangler({ port });
+      const configName = `.wrangler-e2e-${port}.toml`;
+      const configPath = resolve(WORKER_PKG, configName);
+      writeFileSync(
+        configPath,
+        stripCustomDomainRoutes(readFileSync(resolve(WORKER_PKG, WORKER_SOURCE_CONFIG), 'utf8')),
+      );
+      let proc: ChildProcess | undefined;
       try {
+        const started = await startWrangler({
+          port,
+          config: configName,
+          vars: { ETHERCALC_ORIGIN: `http://127.0.0.1:${port}` },
+        });
+        proc = started.process;
+        const baseUrl = started.baseUrl;
         await use(baseUrl);
       } finally {
-        await killTree(proc);
+        if (proc) await killTree(proc);
+        rmSync(configPath, { force: true });
       }
     },
     // Wrangler 4 + pool-workers 0.14.x can take ≥30s to finish its
@@ -78,9 +92,8 @@ export interface AuthWorkerFixtures {
 }
 
 /**
- * `authTest` boots its OWN `wrangler dev` (separate port/process from
- * `workerBase`) so ordinary specs are unaffected — `test`/`workerBase`
- * above keep booting with wrangler.toml's unmodified defaults.
+ * `authTest` boots its own `wrangler dev` (separate port/process from
+ * `workerBase`) with WebAuthn trust anchors for localhost.
  */
 export const authTest = base.extend<NonNullable<unknown>, AuthWorkerFixtures>({
   authWorkerBase: [

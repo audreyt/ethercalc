@@ -1,3 +1,5 @@
+import { decodeHTMLAttribute } from 'entities';
+
 /**
  * HTML-export sanitisation policy (defence-in-depth for `/:room.html`).
  *
@@ -146,7 +148,7 @@ export function isUnsafeUrlValue(value: string): boolean {
   // is replaced either way) — the quantifier is kept for intent.
   // eslint-disable-next-line no-control-regex
   // Stryker disable next-line Regex
-  const collapsed = value.replace(/[\x00-\x20]+/g, '');
+  const collapsed = decodeHTMLAttribute(value).replace(/[\x00-\x20]+/g, '');
   return !/^(?:(?:https?|mailto|tel|ftp):|[^a-z]|[a-z+.-]+(?:[^a-z+.:-]|$))/i.test(
     collapsed,
   );
@@ -161,7 +163,7 @@ export function isUnsafeUrlValue(value: string): boolean {
 export function isExternalImageSource(value: string): boolean {
   // eslint-disable-next-line no-control-regex
   // Stryker disable next-line Regex
-  const collapsed = value.replace(/[\x00-\x20]+/g, '');
+  const collapsed = decodeHTMLAttribute(value).replace(/[\x00-\x20]+/g, '');
   return /^(?:[a-z][a-z0-9+.-]*:|[\\/]{2})/i.test(collapsed);
 }
 
@@ -173,13 +175,14 @@ export function isExternalImageSource(value: string): boolean {
  * headers are gone.
  */
 export function isUnsafeInlineStyle(value: string): boolean {
+  const decoded = decodeHTMLAttribute(value);
   // Backslash escapes and comments can splice attacker-controlled CSS tokens.
-  if (value.includes('\\') || value.includes('/*') || value.includes('@')) {
+  if (decoded.includes('\\') || decoded.includes('/*') || decoded.includes('@')) {
     return true;
   }
   // eslint-disable-next-line no-control-regex
   // Stryker disable next-line Regex
-  const compact = value.toLowerCase().replace(/[\x00-\x20]+/g, '');
+  const compact = decoded.toLowerCase().replace(/[\x00-\x20]+/g, '');
   return (
     /(?:url|image(?:-set)?|cross-fade|element|paint|expression|behavior|-moz-binding)\s*\(/.test(
       compact,

@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { cp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { patchSocialCalc } from './patch-socialcalc.js';
 
 export const REQUIRED_ICON_FILES = [
   'favicon.ico',
@@ -129,7 +130,7 @@ export function patchSocialCalcRuntime(input: string): string {
   // boot via `installSecurityPolicy` (see packages/client/src/sanitize-html.ts),
   // so no regex-injected sanitiser hook is needed.
   if (stripped.includes('EscapeUntrustedHtml')) {
-    return stripped;
+    return patchSocialCalc(stripped);
   }
 
   // Pre-3.1.0 fallback: inject the SocialCalc.sanitizeHTML hook into the

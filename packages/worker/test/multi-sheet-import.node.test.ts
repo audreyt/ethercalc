@@ -4,6 +4,7 @@ import {
   buildMultiSheetImport,
   buildMultiSheetAppendImport,
   prepareAppendImportPlan,
+  enforceTextImportLimits,
   getMaxSubsheetIndex,
   rewriteSheetReferences,
   ImportTooManySheetsError,
@@ -456,6 +457,15 @@ describe('getMaxSubsheetIndex & rewriteSheetReferences', () => {
 });
 
 describe('prepareAppendImportPlan', () => {
+  it('bounds text imports before save materialization', () => {
+    const bytes = new TextEncoder().encode('x,'.repeat(MAX_IMPORT_CELLS + 1));
+    expect(() => prepareAppendImportPlan(bytes, 'csv')).toThrow(ImportDimensionsTooLargeError);
+    expect(() => enforceTextImportLimits(new TextEncoder().encode('"a,b",c\r\nd,e\n'), 'csv')).not.toThrow();
+    expect(() => enforceTextImportLimits(new TextEncoder().encode('"a""b",c\n'), 'csv')).not.toThrow();
+    expect(() => enforceTextImportLimits(new TextEncoder().encode('a\tb\n'), 'tsv')).not.toThrow();
+    expect(() => enforceTextImportLimits(new TextEncoder().encode('a\r'), 'csv')).not.toThrow();
+    expect(() => enforceTextImportLimits(new Uint8Array(1024 * 1024 + 1).fill(0x78), 'txt')).toThrow(ImportArchiveTooLargeError);
+  });
   it('defers concrete subroom ids until materializeSaves is given firstIndex', () => {
     const plan = prepareAppendImportPlan(
       new TextEncoder().encode('a,b\n1,2'),
@@ -563,10 +573,11 @@ describe('multi-sheet-import mutation pins', () => {
 
   it('mutation pins for upload size boundary and format gates', () => {
     // Equal to limit is allowed; one over throws (kills >= mutant).
+    const atLimit = new Uint8Array(MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES);
     expect(() =>
       prepareAppendImportPlan(
-        new Uint8Array(MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES),
-        'csv',
+        atLimit,
+        'socialcalc',
         'Edge',
       ),
     ).not.toThrow();

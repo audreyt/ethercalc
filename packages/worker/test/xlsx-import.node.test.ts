@@ -2,6 +2,7 @@ import type { WorkBook } from '@e965/xlsx';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as XLSX from '@e965/xlsx';
+import { deflateRawSync } from 'node:zlib';
 import { createSpreadsheet } from '@ethercalc/socialcalc-headless';
 import { describe, expect, it } from 'vite-plus/test';
 import {
@@ -9,13 +10,16 @@ import {
   MAX_SOCIALCALC_ROW,
 } from '../src/lib/command-limits.ts';
 import {
+  assertWorkbookFormat,
   cellToCommand,
   countWorksheetCells,
   enforceImportArchiveLimit,
+  enforceActualImportArchiveLimit,
   enforceImportLimit,
   enforceSocialCalcColumnLimit,
   ImportDimensionsTooLargeError,
   ImportArchiveTooLargeError,
+  ImportArchiveInvalidError,
   ImportColumnOutOfRangeError,
   ImportRowOutOfRangeError,
   ImportTooLargeError,
@@ -37,6 +41,89 @@ function makeXlsx(
     XLSX.write(book, { bookType: 'xlsx', type: 'array' }) as ArrayBufferLike,
   );
 }
+
+function makeArchiveEntry(
+  content: Uint8Array,
+  declaredSize = content.length,
+  options: {
+    method?: 0 | 8;
+    localExtra?: Uint8Array;
+    centralExtra?: Uint8Array;
+    comment?: Uint8Array;
+  } = {},
+): {
+  bytes: Uint8Array;
+  central: number;
+} {
+  const name = new TextEncoder().encode('xl/worksheets/sheet1.xml');
+  const method = options.method ?? 8;
+  const localExtra = options.localExtra ?? new Uint8Array();
+  const centralExtra = options.centralExtra ?? new Uint8Array();
+  const comment = options.comment ?? new Uint8Array();
+  const compressed = method === 8 ? deflateRawSync(content) : content;
+  const central = 30 + name.length + localExtra.length + compressed.length;
+  const bytes = new Uint8Array(central + 46 + name.length + centralExtra.length + 22 + comment.length);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(0, 0x04034b50, true);
+  view.setUint16(8, method, true);
+  view.setUint32(18, compressed.length, true);
+  view.setUint32(22, declaredSize, true);
+  view.setUint16(26, name.length, true);
+  view.setUint16(28, localExtra.length, true);
+  bytes.set(name, 30);
+  bytes.set(localExtra, 30 + name.length);
+  bytes.set(compressed, 30 + name.length + localExtra.length);
+  view.setUint32(central, 0x02014b50, true);
+  view.setUint16(central + 10, method, true);
+  view.setUint32(central + 20, compressed.length, true);
+  view.setUint32(central + 24, declaredSize, true);
+  view.setUint16(central + 28, name.length, true);
+  view.setUint16(central + 30, centralExtra.length, true);
+  bytes.set(name, central + 46);
+  bytes.set(centralExtra, central + 46 + name.length);
+  const end = central + 46 + name.length + centralExtra.length;
+  view.setUint32(end, 0x06054b50, true);
+  view.setUint16(end + 8, 1, true);
+  view.setUint16(end + 10, 1, true);
+  view.setUint32(end + 12, 46 + name.length + centralExtra.length, true);
+  view.setUint32(end + 16, central, true);
+  view.setUint16(end + 20, comment.length, true);
+  bytes.set(comment, end + 22);
+  return { bytes, central };
+}
+
+describe('assertWorkbookFormat', () => {
+  const zip = new Uint8Array([0x50, 0x4b, 0x03, 0x04]);
+  const flat = new TextEncoder().encode(
+    '<?xml version="1.0"?>\n<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0">',
+  );
+
+  it('accepts supported workbook envelopes', () => {
+    expect(() => assertWorkbookFormat(zip, 'xlsx')).not.toThrow();
+    expect(() => assertWorkbookFormat(zip, 'ods')).not.toThrow();
+    expect(() => assertWorkbookFormat(zip, 'ods-or-fods')).not.toThrow();
+    expect(() => assertWorkbookFormat(flat, 'ods-or-fods')).not.toThrow();
+    expect(() => assertWorkbookFormat(flat, 'fods')).not.toThrow();
+  });
+
+  it('rejects bodies outside the declared workbook format', () => {
+    for (const bytes of [
+      new Uint8Array(),
+      new Uint8Array([0x50, 0x4b, 0x03]),
+      new Uint8Array([0x50, 0x4b, 0x03, 0x00]),
+      new TextEncoder().encode('a,b\n1,2'),
+      new TextEncoder().encode('<html><body></body></html>'),
+    ]) {
+      expect(() => assertWorkbookFormat(bytes, 'xlsx')).toThrow(ImportArchiveInvalidError);
+      expect(() => assertWorkbookFormat(bytes, 'ods')).toThrow(ImportArchiveInvalidError);
+      expect(() => assertWorkbookFormat(bytes, 'fods')).toThrow(ImportArchiveInvalidError);
+      expect(() => assertWorkbookFormat(bytes, 'ods-or-fods')).toThrow(ImportArchiveInvalidError);
+    }
+    expect(() => assertWorkbookFormat(zip, 'fods')).toThrow(ImportArchiveInvalidError);
+    expect(() => assertWorkbookFormat(flat, 'xlsx')).toThrow(ImportArchiveInvalidError);
+    expect(() => assertWorkbookFormat(flat, 'ods')).toThrow(ImportArchiveInvalidError);
+  });
+});
 
 describe('cellToCommand', () => {
   it('formula cells emit `set <coord> formula <f>`', () => {
@@ -805,6 +892,93 @@ function makeFakeZipCentralDirectory(
   result.set(eocd, pos);
   return result;
 }
+
+describe('actual archive expansion limit', () => {
+  it('accepts a valid compressed entry and non-archive text', () => {
+    const { bytes } = makeArchiveEntry(new TextEncoder().encode('<sheet/>'));
+    expect(() => enforceActualImportArchiveLimit(bytes)).not.toThrow();
+    expect(() => enforceActualImportArchiveLimit(new TextEncoder().encode('<xml/>'))).not.toThrow();
+  });
+
+  it('rejects an entry whose expanded size differs from its directory metadata', () => {
+    const { bytes } = makeArchiveEntry(new Uint8Array(1024), 0);
+    expect(() => enforceImportArchiveLimit(bytes)).not.toThrow();
+    expect(() => enforceActualImportArchiveLimit(bytes)).toThrow('invalid workbook archive');
+  });
+
+  it('rejects an incomplete archive envelope', () => {
+    expect(() => enforceActualImportArchiveLimit(new Uint8Array([0x50, 0x4b, 0x03, 0x04]))).toThrow(ImportArchiveInvalidError);
+  });
+
+  it('stops expansion before allocating beyond the archive budget', () => {
+    const { bytes } = makeArchiveEntry(new Uint8Array(MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES + 1), 0);
+    expect(() => enforceActualImportArchiveLimit(bytes)).toThrow(ImportArchiveTooLargeError);
+  });
+
+  it('rejects local size disagreement and ZIP64 metadata', () => {
+    const localMismatch = makeArchiveEntry(new Uint8Array(64));
+    new DataView(localMismatch.bytes.buffer).setUint32(22, 1, true);
+    expect(() => enforceActualImportArchiveLimit(localMismatch.bytes)).toThrow('invalid workbook archive');
+
+    const zip64 = makeArchiveEntry(new Uint8Array(64));
+    new DataView(zip64.bytes.buffer).setUint32(zip64.central + 24, 0xffffffff, true);
+    expect(() => enforceActualImportArchiveLimit(zip64.bytes)).toThrow('invalid workbook archive');
+  });
+
+  it('accepts stored entries and archive comments, and enforces the input byte limit', () => {
+    const { bytes } = makeArchiveEntry(new TextEncoder().encode('<sheet/>'), undefined, {
+      method: 0,
+      comment: new Uint8Array([1, 2, 3, 4]),
+      centralExtra: new Uint8Array([2, 0, 0, 0]),
+    });
+    expect(() => enforceActualImportArchiveLimit(bytes)).not.toThrow();
+    expect(() => enforceActualImportArchiveLimit(new Uint8Array(MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES + 1))).toThrow(ImportArchiveTooLargeError);
+  });
+
+  it('rejects inconsistent directory records and archive names', () => {
+    const wrongDisk = makeArchiveEntry(new Uint8Array(4));
+    new DataView(wrongDisk.bytes.buffer).setUint16(wrongDisk.bytes.length - 18, 1, true);
+    expect(() => enforceActualImportArchiveLimit(wrongDisk.bytes)).toThrow('invalid workbook archive');
+
+    const missingRecord = makeArchiveEntry(new Uint8Array(4));
+    new DataView(missingRecord.bytes.buffer).setUint16(missingRecord.bytes.length - 14, 2, true);
+    new DataView(missingRecord.bytes.buffer).setUint16(missingRecord.bytes.length - 12, 2, true);
+    expect(() => enforceActualImportArchiveLimit(missingRecord.bytes)).toThrow('invalid workbook archive');
+
+    const changedName = makeArchiveEntry(new Uint8Array(4));
+    changedName.bytes[changedName.central + 46] = 0x79;
+    expect(() => enforceActualImportArchiveLimit(changedName.bytes)).toThrow('invalid workbook archive');
+
+    const trailingDirectoryByte = makeArchiveEntry(new Uint8Array(4));
+    const extended = new Uint8Array(trailingDirectoryByte.bytes.length + 1);
+    const oldEnd = trailingDirectoryByte.bytes.length - 22;
+    extended.set(trailingDirectoryByte.bytes.subarray(0, oldEnd));
+    extended.set(trailingDirectoryByte.bytes.subarray(oldEnd), oldEnd + 1);
+    new DataView(extended.buffer).setUint32(oldEnd + 1 + 12, oldEnd - trailingDirectoryByte.central + 1, true);
+    expect(() => enforceActualImportArchiveLimit(extended)).toThrow('invalid workbook archive');
+  });
+
+  it('rejects malformed extra fields, unsupported methods, and corrupt compressed data', () => {
+    for (const centralExtra of [
+      new Uint8Array([0]),
+      new Uint8Array([1, 0, 0, 0]),
+      new Uint8Array([2, 0, 8, 0]),
+    ]) {
+      const { bytes } = makeArchiveEntry(new Uint8Array(4), undefined, { centralExtra });
+      expect(() => enforceActualImportArchiveLimit(bytes)).toThrow('invalid workbook archive');
+    }
+
+    const method = makeArchiveEntry(new Uint8Array(4));
+    const methodView = new DataView(method.bytes.buffer);
+    methodView.setUint16(8, 99, true);
+    methodView.setUint16(method.central + 10, 99, true);
+    expect(() => enforceActualImportArchiveLimit(method.bytes)).toThrow('invalid workbook archive');
+
+    const corrupt = makeArchiveEntry(new Uint8Array(4));
+    corrupt.bytes[30 + 24] = 0xff;
+    expect(() => enforceActualImportArchiveLimit(corrupt.bytes)).toThrow(ImportArchiveTooLargeError);
+  });
+});
 
 describe('enforceImportArchiveLimit', () => {
   it('throws ImportArchiveTooLargeError when uncompressed size exceeds limit for relevant files', () => {

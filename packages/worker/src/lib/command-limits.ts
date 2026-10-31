@@ -216,15 +216,15 @@ export function isCommandBatchWithinLimits(
   const counter = { value: 0 };
   let clipboard: TargetAnalysis | null = null;
 
-  for (const line of command.split(/\r\n?|\n/)) {
-    const parts = line.trim().split(/\s+/, 4);
+  for (const line of command.split('\n')) {
+    const parts = line.split(' ', 4);
     // `String.prototype.split` always yields at least one element, so the
     // verb needs no default — the argument positions do.
     const verb = parts[0]!;
     const first = parts[1] ?? '';
     const second = parts[2] ?? '';
     const third = parts[3] ?? '';
-    switch (verb.toLowerCase()) {
+    switch (verb) {
       case 'set': {
         if (first.toLowerCase() === 'sheet') {
           const dimension = second.toLowerCase();
@@ -319,7 +319,7 @@ export function isCommandBatchWithinLimits(
         ) {
           return false;
         }
-        const insertingRows = verb.toLowerCase() === 'insertrow';
+        const insertingRows = verb === 'insertrow';
         const targetRows = Math.abs(target.endRow - target.startRow) + 1;
         const targetColumns =
           Math.abs(target.endColumn - target.startColumn) + 1;
@@ -379,7 +379,7 @@ export function isCommandBatchWithinLimits(
           }
         }
         if (
-          verb.toLowerCase() === 'moveinsert' &&
+          verb === 'moveinsert' &&
           source.endRow > 0 &&
           !setDimensions(
             dimensions,

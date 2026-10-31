@@ -94,12 +94,12 @@ describe('broadcast shapers', () => {
     expect('include_self' in out).toBe(false);
   });
 
-  it('buildExecuteBroadcast preserves auth when supplied', () => {
+  it('buildExecuteBroadcast omits client auth from peer events', () => {
     const out = buildExecuteBroadcast(
       { type: 'execute', room: 'r', user: 'u', cmdstr: 'c', auth: 'h' },
       false,
     );
-    expect(out.auth).toBe('h');
+    expect('auth' in out).toBe(false);
   });
 
   it('buildExecuteBroadcast sets include_self when requested', () => {
@@ -142,7 +142,7 @@ describe('broadcast shapers', () => {
     expect('to' in out).toBe(false);
   });
 
-  it('buildEcellBroadcast preserves original + auth when supplied', () => {
+  it('buildEcellBroadcast preserves original without client auth', () => {
     const out = buildEcellBroadcast({
       type: 'ecell',
       room: 'r',
@@ -152,7 +152,7 @@ describe('broadcast shapers', () => {
       auth: 'h',
     });
     expect(out.original).toBe('B2');
-    expect(out.auth).toBe('h');
+    expect('auth' in out).toBe(false);
   });
 
   it('buildEcellBroadcast preserves `to` for ask.ecell private replies', () => {
@@ -172,16 +172,13 @@ describe('broadcast shapers', () => {
     ).toEqual({ type: 'ask.ecell', room: 'r', user: 'alice' });
   });
 
-  it('buildStopHuddleBroadcast preserves auth only when supplied', () => {
+  it('buildStopHuddleBroadcast omits client auth', () => {
     const without = buildStopHuddleBroadcast({ type: 'stopHuddle', room: 'r' });
     expect(without).toEqual({ type: 'stopHuddle', room: 'r' });
-    // `toEqual` treats {x: undefined} and {} the same. To kill the
-    // "always assign auth" mutant at buildStopHuddleBroadcast line 167,
-    // we must assert the absence of the key explicitly.
     expect('auth' in without).toBe(false);
     expect(
       buildStopHuddleBroadcast({ type: 'stopHuddle', room: 'r', auth: 'h' }),
-    ).toEqual({ type: 'stopHuddle', room: 'r', auth: 'h' });
+    ).toEqual({ type: 'stopHuddle', room: 'r' });
   });
 
   it('buildLogReply assembles the four-field response', () => {

@@ -43,4 +43,23 @@ test.describe('/:template/form clone redirect', () => {
     const body = await snap.text();
     expect(body).toContain('tpl-seed');
   });
+
+  test('uses the same cloned room for a Unicode template', async ({ workerBase, request }) => {
+    const template = `試${crypto.randomUUID().slice(0, 8)}`;
+    const seed = 'SocialCalcSpreadsheetControlSave\nversion:1.5\npart:sheet\nsheet:\ncell:A1:t:unicode-seed:1\nend';
+    const put = await request.put(`${workerBase}/_/${encodeURIComponent(template)}`, {
+      headers: { 'Content-Type': 'text/plain' }, data: seed,
+    });
+    expect(put.status()).toBe(201);
+    const cloned = await request.get(`${workerBase}/${encodeURIComponent(template)}/form`, {
+      maxRedirects: 0,
+    });
+    expect(cloned.status()).toBe(302);
+    const location = cloned.headers()['location'] ?? '';
+    const match = /^\/([^/]+)\/app$/.exec(location);
+    expect(match).not.toBeNull();
+    const copy = await request.get(`${workerBase}/_/${match![1]}`);
+    expect(copy.status()).toBe(200);
+    expect(await copy.text()).toContain('unicode-seed');
+  });
 });

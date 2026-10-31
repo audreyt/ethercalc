@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vite-plus/test';
 import {
   MAX_ROOM_NAME_CHARS,
   encodeRoom,
+  encodeRoomPath,
   generateRoomId,
   isValidRoomName,
 } from '../src/lib/room-name.ts';
@@ -19,6 +20,17 @@ describe('generateRoomId', () => {
     for (let i = 0; i < 16; i++) ids.add(generateRoomId());
     // Birthday collision probability over 36^12 is negligible at 16 draws.
     expect(ids.size).toBe(16);
+  });
+});
+
+describe('encodeRoomPath', () => {
+  it('encodes reserved delimiters within one path segment', () => {
+    expect(encodeRoomPath('/other.test#?')).toBe('%2Fother.test%23%3F');
+    expect(encodeRoomPath('=sheet')).toBe('%3Dsheet');
+  });
+
+  it('rejects invalid names before constructing a URL', () => {
+    expect(() => encodeRoomPath('')).toThrow(RangeError);
   });
 });
 

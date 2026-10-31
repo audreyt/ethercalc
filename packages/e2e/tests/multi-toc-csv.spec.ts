@@ -17,6 +17,7 @@
  * present — an unmarked child would stay public under authorize()).
  */
 import type { Page, Response } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
 
 import { authTest, expect, test } from '../src/fixtures.ts';
 
@@ -103,7 +104,7 @@ test.describe('client-multi TOC lifecycle (guarded sheet create)', () => {
     page,
     request,
   }) => {
-    const room = 'e2e-multi-toc-csv';
+    const room = `e2e-multi-toc-${randomUUID().replace(/-/g, '').slice(0, 12)}`;
     const roomUrl = `${workerBase}/_/${room}`;
     const sheetUrl = sheetCreateUrl(workerBase, room);
     const errors: string[] = [];

@@ -145,6 +145,8 @@ crons = ["*/1 * * * *"]
 # name = "EMAIL"
 # allowed_sender_addresses = ["noreply@example.com"]
 # allowed_destination_addresses = ["alerts@example.com"]
+# Set ETHERCALC_KEY and ETHERCALC_EMAIL_ALLOWED_RECIPIENTS for scheduled delivery.
+# Keep the recipient list aligned with allowed_destination_addresses.
 
 # KV, R2 bindings will be added in subsequent phases as they are used.
 # Scaffolding them eagerly would force empty bindings into the local

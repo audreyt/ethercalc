@@ -22,21 +22,27 @@ describe('buildRoomRedirect — edit/view/app', () => {
     expect(r?.headers.Location).toBe('/some-room?auth=some-room&app=1');
   });
 
-  it('edit under KEY hmacs the room', async () => {
+  it('edit under KEY requires an authorized capability', async () => {
     const r = await buildRoomRedirect({ room: 'room', mode: 'edit', key: 'secret' });
-    expect(r?.headers.Location).toBe(
-      '/room?auth=1f472eb4d4563f45a9c5f97b225ebbb38f39a760ebd63b32db803cc2f3eab116',
-    );
+    expect(r?.headers.Location).toBe('/room?auth=0&view=1');
+    const authorized = await buildRoomRedirect({
+      room: 'room', mode: 'edit', key: 'secret', authorizedAuth: 'valid-token',
+    });
+    expect(authorized?.headers.Location).toBe('/room?auth=valid-token');
   });
 
-  it('view under KEY hmacs + &view=1', async () => {
+  it('view under KEY uses a read-only token', async () => {
     const r = await buildRoomRedirect({ room: 'room', mode: 'view', key: 'secret' });
-    expect(r?.headers.Location).toContain('&view=1');
+    expect(r?.headers.Location).toBe('/room?auth=0&view=1');
   });
 
-  it('app under KEY hmacs + &app=1', async () => {
+  it('app under KEY uses a read-only token unless authorized', async () => {
     const r = await buildRoomRedirect({ room: 'room', mode: 'app', key: 'secret' });
-    expect(r?.headers.Location).toContain('&app=1');
+    expect(r?.headers.Location).toBe('/room?auth=0&app=1');
+    const authorized = await buildRoomRedirect({
+      room: 'room', mode: 'app', key: 'secret', authorizedAuth: 'valid-token',
+    });
+    expect(authorized?.headers.Location).toBe('/room?auth=valid-token&app=1');
   });
 
   it('honors basepath', async () => {
@@ -52,7 +58,12 @@ describe('buildRoomRedirect — edit/view/app', () => {
     // encodeURI turns 試 into %E8%A9%A6. Both the URL and the hmac input
     // use the encoded form so storage keys stay byte-identical.
     const r = await buildRoomRedirect({ room: '試', mode: 'edit' });
-    expect(r?.headers.Location).toBe('/%E8%A9%A6?auth=%E8%A9%A6');
+    expect(r?.headers.Location).toBe('/%E8%A9%A6?auth=%25E8%25A9%25A6');
+  });
+
+  it('keeps reserved path characters inside the room segment', async () => {
+    const r = await buildRoomRedirect({ room: '/other.test#', mode: 'view' });
+    expect(r?.headers.Location).toBe('/%2Fother.test%23?auth=%2Fother.test%23&view=1');
   });
 });
 

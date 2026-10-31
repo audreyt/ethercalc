@@ -6,6 +6,7 @@ import {
 import { beforeAll, describe, it, expect } from 'vite-plus/test';
 
 import worker from '../src/index.ts';
+import { computeAuth } from '../src/lib/auth.ts';
 
 /**
  * Integration: drive the Phase 5 routes through the real Hono app + DO
@@ -16,6 +17,14 @@ async function request(method: string, path: string, opts: RequestInit = {}) {
   const req = new Request(`https://example.test${path}`, { method, ...opts });
   const ctx = createExecutionContext();
   const res = await worker.fetch(req, env as never, ctx);
+  await waitOnExecutionContext(ctx);
+  return res;
+}
+
+async function keyedRequest(method: string, path: string, opts: RequestInit = {}) {
+  const req = new Request(`https://example.test${path}`, { method, ...opts });
+  const ctx = createExecutionContext();
+  const res = await worker.fetch(req, { ...env, ETHERCALC_KEY: 'test-key' } as never, ctx);
   await waitOnExecutionContext(ctx);
   return res;
 }
@@ -85,17 +94,27 @@ describe('Phase 5 routes — full round-trip', () => {
     expect(await res.text()).toBe('');
   });
 
-  it('DELETE /_/:room returns 201 OK and subsequent GET 404s', async () => {
+  it('DELETE /_/:room requires a configured room capability', async () => {
     await request('PUT', '/_/to-delete', {
       headers: { 'content-type': 'text/x-socialcalc' },
       body: 'data',
     });
     const del = await request('DELETE', '/_/to-delete');
-    expect(del.status).toBe(201);
-    expect(await del.text()).toBe('OK');
+    expect(del.status).toBe(403);
 
     const get = await request('GET', '/_/to-delete');
-    expect(get.status).toBe(404);
+    expect(get.status).toBe(200);
+    expect(await get.text()).toBe('data');
+  });
+
+  it('DELETE /_/:room succeeds with the configured room capability', async () => {
+    await request('PUT', '/_/keyed-delete', {
+      headers: { 'content-type': 'text/x-socialcalc' }, body: 'data',
+    });
+    const token = await computeAuth('test-key', 'keyed-delete');
+    const del = await keyedRequest('DELETE', `/_/keyed-delete?auth=${token}`);
+    expect(del.status).toBe(201);
+    expect((await request('GET', '/_/keyed-delete')).status).toBe(404);
   });
 
   it('GET /_exists/:room returns bare JSON boolean', async () => {
@@ -156,7 +175,7 @@ describe('Phase 5 routes — full round-trip', () => {
     expect(times['roomtimes-alpha']).toBeGreaterThan(0);
   });
 
-  it('DELETE /_/:room removes the room from the D1 mirror index', async () => {
+  it('denied room deletion leaves the D1 mirror index intact', async () => {
     await request('POST', '/_', {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ room: 'delete-me-from-index', snapshot: 'x' }),
@@ -167,12 +186,12 @@ describe('Phase 5 routes — full round-trip', () => {
     expect(before).toContain('delete-me-from-index');
 
     const del = await request('DELETE', '/_/delete-me-from-index');
-    expect(del.status).toBe(201);
+    expect(del.status).toBe(403);
 
     const after = JSON.parse(
       await (await request('GET', '/_rooms')).text(),
     ) as string[];
-    expect(after).not.toContain('delete-me-from-index');
+    expect(after).toContain('delete-me-from-index');
   });
 
   it('GET /_from/:template redirects to a new room with copied snapshot', async () => {

@@ -86,7 +86,15 @@ export function upgradeWebSocket(
  * connect ack (`1::`) immediately; subsequent heartbeats (`2::` ↔ `2::`)
  * are handled by `state.setWebSocketAutoResponse` configured on the DO.
  */
-export function upgradeLegacySocketIo(state: DurableObjectState): Response {
+export function upgradeLegacySocketIo(
+  state: DurableObjectState,
+  opts?: {
+    readonly sandstormModify?: boolean;
+    readonly uid?: string;
+    readonly sessionExp?: number;
+    readonly session?: string;
+  },
+): Response {
   const pair = new WebSocketPair();
   const client = pair[0];
   const server = pair[1];
@@ -96,6 +104,10 @@ export function upgradeLegacySocketIo(state: DurableObjectState): Response {
     room: '',
     auth: '',
     legacy: true,
+    ...(opts?.sandstormModify !== undefined ? { sandstormModify: opts.sandstormModify } : {}),
+    ...(opts?.uid !== undefined ? { uid: opts.uid } : {}),
+    ...(opts?.sessionExp !== undefined ? { sessionExp: opts.sessionExp } : {}),
+    ...(opts?.session !== undefined ? { session: opts.session } : {}),
   };
   server.serializeAttachment(attachment);
   // v0.9 clients wait for the connect packet before emitting. Safe to send

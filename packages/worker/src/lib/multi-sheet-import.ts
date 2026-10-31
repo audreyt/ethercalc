@@ -2,12 +2,15 @@ import { MAX_MULTI_SHEETS } from '@ethercalc/shared';
 import * as XLSX from '@e965/xlsx';
 import { csvToSocialCalc } from './csv.ts';
 import { encodeCSV } from './csv-encode.ts';
+import { MAX_SHEET_CELLS, MAX_SOCIALCALC_COL, MAX_SOCIALCALC_ROW } from './command-limits.ts';
 import {
   countWorksheetCells,
   enforceImportLimit,
   enforceImportArchiveLimit,
+  enforceActualImportArchiveLimit,
   enforceSocialCalcColumnLimit,
   ImportArchiveTooLargeError,
+  ImportDimensionsTooLargeError,
   MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES,
   worksheetToSave,
 } from './xlsx-import.ts';
@@ -116,6 +119,52 @@ function enforceImportUploadBytes(bytes: Uint8Array): void {
   }
 }
 
+export function enforceTextImportLimits(bytes: Uint8Array, format: 'csv' | 'tsv' | 'txt'): void {
+  let rows = 0;
+  let columns = 1;
+  let widest = 0;
+  let fieldBytes = 0;
+  let quoted = false;
+  const checkField = (): void => {
+    if (fieldBytes > 1024 * 1024) {
+      throw new ImportArchiveTooLargeError(fieldBytes, 1024 * 1024);
+    }
+    fieldBytes = 0;
+  };
+  const checkRow = (): void => {
+    checkField();
+    rows++;
+    widest = Math.max(widest, columns);
+    if (
+      rows > MAX_SOCIALCALC_ROW || widest > MAX_SOCIALCALC_COL ||
+      rows * widest > MAX_SHEET_CELLS
+    ) {
+      throw new ImportDimensionsTooLargeError(rows, widest);
+    }
+    columns = 1;
+  };
+  for (let i = 0; i < bytes.length; i++) {
+    const byte = bytes[i];
+    if (byte === 0x22) {
+      if (quoted && bytes[i + 1] === 0x22) i++;
+      else quoted = !quoted;
+      fieldBytes++;
+    } else if (!quoted && (byte === 0x2c || (format === 'tsv' && byte === 0x09))) {
+      checkField();
+      columns++;
+    } else if (!quoted && (byte === 0x0a || byte === 0x0d)) {
+      checkRow();
+      if (byte === 0x0d && bytes[i + 1] === 0x0a) i++;
+    } else {
+      fieldBytes++;
+      if (fieldBytes > 1024 * 1024) checkField();
+    }
+  }
+  if (bytes.length > 0 && bytes[bytes.length - 1] !== 0x0a && bytes[bytes.length - 1] !== 0x0d) {
+    checkRow();
+  }
+}
+
 function uniqueTitle(
   preferred: string,
   nextIdx: number,
@@ -135,6 +184,7 @@ export function buildMultiSheetImport(
   readFn: typeof XLSX.read = XLSX.read,
 ): MultiSheetImport {
   enforceImportArchiveLimit(bytes);
+  enforceActualImportArchiveLimit(bytes);
   const wb = readFn(bytes, { type: 'array', cellFormula: true });
   const names: string[] = Array.isArray(wb.SheetNames) ? wb.SheetNames : [];
   if (names.length > MAX_MULTI_SHEETS) {
@@ -187,6 +237,7 @@ export function prepareAppendImportPlan(
 
   if (isTextImportFormat(fmt)) {
     enforceImportUploadBytes(bytes);
+    if (fmt !== 'socialcalc') enforceTextImportLimits(bytes, fmt);
     const preferred =
       (titleHint && titleHint.trim()) ||
       (fmt === 'socialcalc' ? 'SocialCalc' : fmt.toUpperCase());
@@ -212,6 +263,7 @@ export function prepareAppendImportPlan(
   }
 
   enforceImportArchiveLimit(bytes);
+  enforceActualImportArchiveLimit(bytes);
   const wb = readFn(bytes, { type: 'array', cellFormula: true });
   const names: string[] = Array.isArray(wb.SheetNames) ? wb.SheetNames : [];
   const present = names.filter((name) => Boolean(wb.Sheets[name]));

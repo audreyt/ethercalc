@@ -37,7 +37,10 @@ import {
   ImportTooManySheetsError,
   ImportUnsupportedFormatError,
 } from "../lib/multi-sheet-import.ts";
+import type { WorkbookImportFormat } from "../lib/multi-sheet-import.ts";
 import {
+  assertWorkbookFormat,
+  ImportArchiveInvalidError,
   ImportArchiveTooLargeError,
   ImportColumnOutOfRangeError,
   ImportDimensionsTooLargeError,
@@ -158,6 +161,7 @@ function mapImportBuildError(err: unknown): Response | null {
     });
   }
   if (
+    err instanceof ImportArchiveInvalidError ||
     err instanceof ImportColumnOutOfRangeError ||
     err instanceof ImportRowOutOfRangeError ||
     err instanceof ImportUnsupportedFormatError
@@ -380,6 +384,7 @@ async function importWorkbook(
   base: string,
   bytes: Uint8Array,
   principal: SessionPrincipal | null,
+  format: WorkbookImportFormat,
 ): Promise<Response> {
   const { isPrivate, errorResponse } = await getParentAccessInfo(env, base, principal);
   if (errorResponse) return errorResponse;
@@ -387,6 +392,7 @@ async function importWorkbook(
   let tocSave: string;
   let subSheets: ReadonlyArray<{ readonly subroom: string; readonly save: string }>;
   try {
+    assertWorkbookFormat(bytes, format);
     const res = buildMultiSheetImport(bytes, base);
     tocSave = res.tocSave;
     subSheets = res.subSheets;
@@ -459,6 +465,9 @@ async function appendWorkbook(
 
   let plan;
   try {
+    if (format === 'xlsx' || format === 'ods' || format === 'fods') {
+      assertWorkbookFormat(bytes, format);
+    }
     plan = prepareAppendImportPlan(bytes, format, titleHint);
   } catch (err) {
     const mapped = mapImportBuildError(err);
@@ -555,7 +564,7 @@ export function registerMultiSheetImport(app: Hono<EtherCalcHonoEnv>): void {
     }
     const base = room.slice(1);
     const bytes = new Uint8Array(await c.req.raw.arrayBuffer());
-    return importWorkbook(c.env, base, bytes, await getSessionPrincipal(c));
+    return importWorkbook(c.env, base, bytes, await getSessionPrincipal(c), fmt as WorkbookImportFormat);
   });
 
   // 2. `/=:room.<fmt>` form — suffix form (workbook replace only).
@@ -570,7 +579,7 @@ export function registerMultiSheetImport(app: Hono<EtherCalcHonoEnv>): void {
     }
     const base = room.slice(1, room.length - fmt.length - 1);
     const bytes = new Uint8Array(await c.req.raw.arrayBuffer());
-    return importWorkbook(c.env, base, bytes, await getSessionPrincipal(c));
+    return importWorkbook(c.env, base, bytes, await getSessionPrincipal(c), fmt);
   });
 
   // 3. `POST /_/:room/:fmt` append form — workbook + text formats.

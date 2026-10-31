@@ -72,6 +72,14 @@ describe('buildRoomEntry', () => {
     }
   });
 
+  it('keeps path delimiters within the room segment', () => {
+    const r = buildRoomEntry({ room: '/other.test#', key: 'secret' });
+    expect(r.kind).toBe('redirect');
+    if (r.kind === 'redirect') {
+      expect(r.headers.Location).toBe('/%2Fother.test%23?auth=0');
+    }
+  });
+
   it('encoded = prefix still routes to multi/index.html (encodeURI leaves = alone)', () => {
     const d = buildRoomEntry({ room: '=x' });
     expect(d.kind).toBe('serve');
@@ -86,6 +94,13 @@ describe('buildRoomEntry', () => {
 
 describe('buildTemplateFormRedirect', () => {
   const fixedId = () => 'b2wgtc1rmuqu';
+
+  it('keeps template delimiters within the new room segment', () => {
+    const r = buildTemplateFormRedirect({
+      template: '/other.test#', idGen: fixedId, phase5Ready: true,
+    });
+    expect(r.headers.Location).toBe('/%2Fother.test%23_b2wgtc1rmuqu/app');
+  });
 
   it('returns a 503 stub when phase5Ready is false (default)', () => {
     const r = buildTemplateFormRedirect({ template: 'tpl', idGen: fixedId });
@@ -107,6 +122,15 @@ describe('buildTemplateFormRedirect', () => {
     expect(r.body).toBe('Found. Redirecting to /tpl_b2wgtc1rmuqu/app');
     expect(r.headers['Content-Length']).toBe(String(r.body.length));
     expect(r.headers.Vary).toBe('Accept');
+  });
+
+  it('carries a supplied capability through the cloned app link', () => {
+    const r = buildTemplateFormRedirect({
+      template: 'tpl', idGen: fixedId, phase5Ready: true, auth: 'capability',
+    });
+    expect(r.headers.Location).toBe('/tpl_b2wgtc1rmuqu/app?auth=capability');
+    expect(r.body).toContain(r.headers.Location);
+    expect(r.headers['Content-Length']).toBe(String(r.body.length));
   });
 
   it('encodes non-ASCII template names before joining with the new id', () => {

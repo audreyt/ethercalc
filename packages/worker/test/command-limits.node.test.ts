@@ -116,6 +116,9 @@ describe('isCommandBatchWithinLimits', () => {
   it('requires a bounded clipboard in the same command batch', () => {
     expect(isCommandBatchWithinLimits('paste C3 all')).toBe(false);
     expect(isCommandBatchWithinLimits('copy A1:B2\npaste C3 all')).toBe(true);
+    expect(isCommandBatchWithinLimits('COPY A1:B2\npaste C3 all')).toBe(false);
+    expect(isCommandBatchWithinLimits('copy\tA1:B2\npaste C3 all')).toBe(false);
+    expect(isCommandBatchWithinLimits('copy A1:B2\rpaste C3 all')).toBe(true);
     expect(
       isCommandBatchWithinLimits(
         'loadclipboard cell:A1:t:x\\ncopiedfrom\\cA1\\cB2\\n\npaste C3 all',
@@ -354,14 +357,14 @@ describe('isCommandBatchWithinLimits', () => {
     ).toBe(false);
   });
 
-  it('distinguishes row inserts from column inserts, case-insensitively', () => {
+  it('distinguishes executable row and column insert verbs', () => {
     // 199_999 x 1 leaves room for exactly one more row but not one more
     // column, so the two verbs must not be interchangeable.
     const nearlyFull = { rows: 199_999, columns: 1 } as const;
     expect(isCommandBatchWithinLimits('insertrow A1', nearlyFull)).toBe(true);
     expect(isCommandBatchWithinLimits('INSERTROW A1', nearlyFull)).toBe(true);
     expect(isCommandBatchWithinLimits('insertcol A1', nearlyFull)).toBe(false);
-    expect(isCommandBatchWithinLimits('INSERTCOL A1', nearlyFull)).toBe(false);
+    expect(isCommandBatchWithinLimits('INSERTCOL A1', nearlyFull)).toBe(true);
   });
 
   it('applies the structural pre-check to moveinsert only', () => {
@@ -375,7 +378,7 @@ describe('isCommandBatchWithinLimits', () => {
       false,
     );
     expect(isCommandBatchWithinLimits('MOVEINSERT A1:A2 A3 all', oversized)).toBe(
-      false,
+      true,
     );
   });
 

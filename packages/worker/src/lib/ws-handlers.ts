@@ -102,6 +102,7 @@ export interface WsContext {
    * `ctx.auth` (cached at handshake) to avoid a per-frame hash.
    */
   readonly verifyAuth: () => Promise<boolean>;
+  readonly verifyDeleteAuth: () => Promise<boolean>;
   /**
    * Whether this room may forward `submitform` data to its legacy public
    * sibling. Private rooms reject it until sibling ACL initialization is
@@ -163,9 +164,8 @@ export async function handleMyEcell(
 /**
  * `execute` — the heavy path. Four drop conditions (auth fail, text-wiki
  * filter, private submitform, submitform without payload) short-circuit
- * silently. Public submitform forks to the sibling `<room>_formdata` DO with
- * include_self=true per legacy invariant (§7 item 22). Normal commands go
- * through `applyCommand` and broadcast with include_self=false.
+ * silently. Public submitform forks to the sibling `<room>_formdata` DO.
+ * Normal commands go through `applyCommand` and broadcast to peers.
  */
 export async function handleExecute(
   ctx: WsContext,
@@ -194,7 +194,6 @@ export async function handleExecute(
         // Legacy src/main.ls:538 dropped sibling-send failures silently.
       }
     }
-    await ctx.broadcast(buildExecuteBroadcast(msg, true), true);
     return;
   }
 
@@ -255,7 +254,7 @@ export async function handleStopHuddle(
   ctx: WsContext,
   msg: Extract<ClientMessage, { type: 'stopHuddle' }>,
 ): Promise<void> {
-  if (!(await ctx.verifyAuth())) return;
+  if (!(await ctx.verifyDeleteAuth())) return;
   await ctx.storage.deleteAll();
   await ctx.broadcast(buildStopHuddleBroadcast(msg), false);
 }

@@ -71,9 +71,7 @@ export function isSubmitForm(cmdstr: string): boolean {
  *      room (idempotent on sub-submits from a form editor that itself
  *      lives in the sibling). Otherwise append `_formdata`.
  *   3. The remaining body lines become the commands to replay on the
- *      sibling — NOT on the source room. The source room sees only the
- *      header execute broadcast back to all peers with `include_self:
- *      true`.
+ *      sibling, not on the source room.
  */
 export function computeSubmitFormTarget(
   room: string,
@@ -113,7 +111,6 @@ export function buildExecuteBroadcast(
     user: msg.user,
     cmdstr: msg.cmdstr,
   };
-  if (msg.auth !== undefined) base.auth = msg.auth;
   if (includeSelf) base.include_self = true;
   return base;
 }
@@ -152,7 +149,6 @@ export function buildEcellBroadcast(msg: EcellClientMessage): EcellServerMessage
     ecell: msg.ecell,
   };
   if (msg.original !== undefined) out.original = msg.original;
-  if (msg.auth !== undefined) out.auth = msg.auth;
   // `to` targets a single peer (ask.ecell reply path). Must survive the
   // round-trip so the client-side `data.to !== _username` filter works.
   if (msg.to !== undefined) out.to = msg.to;
@@ -163,9 +159,7 @@ export function buildEcellBroadcast(msg: EcellClientMessage): EcellServerMessage
 export function buildStopHuddleBroadcast(
   msg: StopHuddleMessage,
 ): StopHuddleServerMessage {
-  const out: StopHuddleServerMessage = { type: 'stopHuddle', room: msg.room };
-  if (msg.auth !== undefined) out.auth = msg.auth;
-  return out;
+  return { type: 'stopHuddle', room: msg.room };
 }
 
 /** Shape the reply to ask.log. */

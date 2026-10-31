@@ -166,17 +166,23 @@ export interface SendEmailBinding {
 export class BindingEmailSender implements EmailSender {
   readonly #binding: SendEmailBinding;
   readonly #fromAddress: string;
+  readonly #allowedRecipients: ReadonlySet<string>;
 
-  constructor(binding: SendEmailBinding, fromAddress: string) {
+  constructor(binding: SendEmailBinding, fromAddress: string, allowedRecipients: readonly string[]) {
     this.#binding = binding;
     this.#fromAddress = fromAddress;
+    this.#allowedRecipients = new Set(allowedRecipients.map((address) => address.toLowerCase()));
   }
 
   async send(to: string, subject: string, body: string): Promise<SendResult> {
+    const recipient = stripHeaderInjection(to);
+    if (!this.#allowedRecipients.has(recipient.toLowerCase())) {
+      return { message: EMAIL_FAILURE_MESSAGE };
+    }
     try {
       await this.#binding.send({
         from: { email: stripHeaderInjection(this.#fromAddress) },
-        to: stripHeaderInjection(to),
+        to: recipient,
         subject: stripHeaderInjection(subject),
         text: body,
       });

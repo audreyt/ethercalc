@@ -156,7 +156,6 @@ export interface ExecuteServerMessage {
   type: 'execute';
   room: string;
   user: string;
-  auth?: string;
   cmdstr: string;
   include_self?: boolean;
 }
@@ -180,7 +179,6 @@ export interface IgnoreMessage {
 export interface StopHuddleServerMessage {
   type: 'stopHuddle';
   room: string;
-  auth?: string;
 }
 
 export interface EcellServerMessage {
@@ -189,7 +187,6 @@ export interface EcellServerMessage {
   user: string;
   ecell: string;
   original?: string;
-  auth?: string;
   /** See `EcellClientMessage.to` — preserved end-to-end. */
   to?: string;
 }

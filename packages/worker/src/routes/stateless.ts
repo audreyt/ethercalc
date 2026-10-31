@@ -14,8 +14,9 @@ import type { Context, Hono } from 'hono';
 import { buildBlockedPathResponse } from '../handlers/blocked-paths.ts';
 import { buildNewRoomRedirect } from '../handlers/new-room.ts';
 import { buildRoomRedirect, type RoomMode } from '../handlers/room-redirects.ts';
+import { verifyAuth } from '../lib/auth.ts';
 import { doFetch } from '../lib/do-dispatch.ts';
-import { encodeRoom } from '../lib/room-name.ts';
+import { encodeRoom, encodeRoomPath } from '../lib/room-name.ts';
 import { getSessionPrincipal } from '../lib/session-middleware.ts';
 import type { EtherCalcHonoEnv } from '../env.ts';
 
@@ -56,18 +57,18 @@ export function registerStateless(app: Hono<EtherCalcHonoEnv>): void {
   app.get('/var/*', (c: AppContext) => sendBlocked(c));
 
   // `/_new` and `/=_new` — auto-generate a room id and 302 there.
-  app.get('/_new', (c) => {
-    const info = buildNewRoomRedirect({
+  app.get('/_new', async (c) => {
+    const info = await buildNewRoomRedirect({
       basepath: c.env.BASEPATH ?? '',
-      hasKey: Boolean(c.env.ETHERCALC_KEY),
+      key: c.env.ETHERCALC_KEY,
       multi: false,
     });
     return expressRedirect(info.headers.Location);
   });
-  app.get('/=_new', (c) => {
-    const info = buildNewRoomRedirect({
+  app.get('/=_new', async (c) => {
+    const info = await buildNewRoomRedirect({
       basepath: c.env.BASEPATH ?? '',
-      hasKey: Boolean(c.env.ETHERCALC_KEY),
+      key: c.env.ETHERCALC_KEY,
       multi: true,
     });
     return expressRedirect(info.headers.Location);
@@ -77,31 +78,52 @@ export function registerStateless(app: Hono<EtherCalcHonoEnv>): void {
   // URL-decoded by Hono; our `buildRoomRedirect` re-encodes via encodeURI.
   const handleRoomRedirect = (mode: RoomMode) => async (c: AppContext): Promise<Response> => {
     const room = c.req.param('room') ?? '';
+    const key = c.env.ETHERCALC_KEY;
+    let authorizedAuth: string | undefined;
     if (mode === 'edit') {
       const principal = await getSessionPrincipal(c);
       const accessRes = await doFetch(c.env, room, '/_do/access', {}, principal);
       const access: unknown = accessRes.ok
         ? await accessRes.json().catch(() => null)
         : null;
-      if (
+      const canWrite =
         access !== null &&
         typeof access === 'object' &&
         'canRead' in access &&
         'canWrite' in access &&
-        (access.canRead !== true || access.canWrite !== true)
-      ) {
+        access.canRead === true && access.canWrite === true;
+      if (!canWrite) {
         return expressRedirect(
-          `${c.env.BASEPATH ?? ''}/${encodeRoom(room)}/view`,
+          `${c.env.BASEPATH ?? ''}/${encodeRoomPath(room)}/view`,
         );
       }
+      if (key) {
+        const supplied = c.req.query('auth') ?? '';
+        if (await verifyAuth(key, encodeRoom(room), supplied)) {
+          authorizedAuth = supplied;
+        } else if (
+          principal &&
+          access !== null &&
+          typeof access === 'object' &&
+          'isPrivate' in access &&
+          access.isPrivate === true
+        ) {
+          authorizedAuth = '1';
+        } else {
+          return expressRedirect(`${c.env.BASEPATH ?? ''}/${encodeRoomPath(room)}/view`);
+        }
+      }
+    }
+    if (mode === 'app' && key) {
+      const supplied = c.req.query('auth') ?? '';
+      if (await verifyAuth(key, encodeRoom(room), supplied)) authorizedAuth = supplied;
     }
     // `exactOptionalPropertyTypes` forces us to omit `key` when it's
     // undefined (empty string is fine — computeAuth treats it as unset).
-    const key = c.env.ETHERCALC_KEY;
     const redirect = await buildRoomRedirect(
       key === undefined
-        ? { basepath: c.env.BASEPATH ?? '', room, mode }
-        : { basepath: c.env.BASEPATH ?? '', room, mode, key },
+        ? { basepath: c.env.BASEPATH ?? '', room, mode, authorizedAuth }
+        : { basepath: c.env.BASEPATH ?? '', room, mode, key, authorizedAuth },
     );
     // `edit`/`view`/`app` always produce a redirect (never null).
     return expressRedirect(redirect!.headers.Location);

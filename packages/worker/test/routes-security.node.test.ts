@@ -3,6 +3,7 @@ import * as XLSX from "@e965/xlsx";
 
 import { buildApp } from "../src/index.ts";
 import type { Env } from "../src/env.ts";
+import { computeAuth } from "../src/lib/auth.ts";
 
 /**
  * Phase A route-security tests for the DO dispatch surfaces outside
@@ -404,7 +405,7 @@ describe("/:template/form clone — verdict propagation", () => {
   });
 
   it("still redirects (302) when the clone succeeds, threading the principal", async () => {
-    const { env, calls } = makeFakeRoomNamespace(() => new Response("OK", { status: 200 }));
+    const { env, calls } = makeFakeRoomNamespace(() => new Response("OK", { status: 201 }));
     const app = buildApp();
     const res = await app.fetch(
       new Request("https://t.test/tpl/form", {
@@ -418,6 +419,34 @@ describe("/:template/form clone — verdict propagation", () => {
     const clone = calls.find((c) => c.url.includes("/_do/clone"));
     expect(clone).toBeDefined();
     expect(clone!.uid).toBe(AUTH_UID);
+  });
+
+  it("carries a capability only for a newly cloned room under a key", async () => {
+    const { env } = makeFakeRoomNamespace(() => new Response("OK", { status: 201 }));
+    const app = buildApp();
+    const res = await app.fetch(
+      new Request("https://t.test/tpl/form", { redirect: "manual" }),
+      { ...env, ETHERCALC_KEY: "test-key" } as never,
+    );
+    expect(res.status).toBe(302);
+    const location = res.headers.get("location") ?? "";
+    const match = /^\/(tpl_[a-z0-9]{12})\/app\?auth=([a-f0-9]{64})$/.exec(location);
+    expect(match).not.toBeNull();
+    expect(match![2]).toBe(await computeAuth("test-key", match![1]!));
+    const appRes = await app.fetch(
+      new Request(`https://t.test/${match![1]}/app?auth=${match![2]}`, { redirect: "manual" }),
+      { ...env, ETHERCALC_KEY: "test-key" } as never,
+    );
+    expect(appRes.headers.get("location")).toBe(`/${match![1]}?auth=${match![2]}&app=1`);
+  });
+
+  it("returns a failed clone verdict without issuing a room link", async () => {
+    const { env } = makeFakeRoomNamespace(() => new Response("Clone unavailable", { status: 502 }));
+    const res = await buildApp().fetch(
+      new Request("https://t.test/tpl/form", { redirect: "manual" }), env as never,
+    );
+    expect(res.status).toBe(502);
+    expect(res.headers.get("location")).toBeNull();
   });
 });
 

@@ -73,7 +73,7 @@ for i in $(seq 1 "$ATTEMPTS"); do
         fi
       done
 
-      echo "[smoke] checking anonymous create/read/delete still works"
+      echo "[smoke] checking anonymous create/read and protected delete"
       room_path="$(curl -fsS -X POST "$BASE_URL/_")"
       room="${room_path#/}"
       if [ -z "$room" ] || [ "$room" = "$room_path" ]; then
@@ -86,12 +86,14 @@ for i in $(seq 1 "$ATTEMPTS"); do
         echo "[smoke] FAIL — room read did not return the written snapshot"
         exit 1
       fi
-      curl -fsS -X DELETE "$BASE_URL/_/$room" >/dev/null
-      # DELETE returns 201 unconditionally (legacy semantics), so prove
-      # the room is actually gone rather than trusting the status code.
-      gone_code="$(curl -sS -o /dev/null -w '%{http_code}' "$BASE_URL/_/$room")"
-      if [ "$gone_code" != "404" ]; then
-        echo "[smoke] FAIL — room still readable after DELETE (got $gone_code)"
+      delete_code="$(curl -sS -X DELETE -o /dev/null -w '%{http_code}' "$BASE_URL/_/$room")"
+      if [ "$delete_code" != "403" ]; then
+        echo "[smoke] FAIL — expected 403 for anonymous DELETE, got $delete_code"
+        exit 1
+      fi
+      retained_code="$(curl -sS -o /dev/null -w '%{http_code}' "$BASE_URL/_/$room")"
+      if [ "$retained_code" != "200" ]; then
+        echo "[smoke] FAIL — room changed after denied DELETE (got $retained_code)"
         exit 1
       fi
 

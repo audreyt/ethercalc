@@ -19,48 +19,46 @@ async function request(method: string, path: string, opts: RequestInit = {}) {
 function makeFakeZipCentralDirectory(
   entries: Array<{ name: string; compressedSize: number; uncompressedSize: number }>
 ): Uint8Array {
+  const localHeaders: Uint8Array[] = [];
   const cdHeaders: Uint8Array[] = [];
+  let localOffset = 0;
   let cdOffset = 0;
   for (const entry of entries) {
     const nameBytes = new TextEncoder().encode(entry.name);
+    const local = new Uint8Array(30 + nameBytes.length + entry.compressedSize);
+    const localView = new DataView(local.buffer);
+    localView.setUint32(0, 0x04034b50, true);
+    localView.setUint32(18, entry.compressedSize, true);
+    localView.setUint32(22, entry.uncompressedSize, true);
+    localView.setUint16(26, nameBytes.length, true);
+    local.set(nameBytes, 30);
+    localHeaders.push(local);
+
     const header = new Uint8Array(46 + nameBytes.length);
-    header[0] = 0x50;
-    header[1] = 0x4b;
-    header[2] = 0x01;
-    header[3] = 0x02;
-    header[20] = entry.compressedSize & 0xff;
-    header[21] = (entry.compressedSize >> 8) & 0xff;
-    header[22] = (entry.compressedSize >> 16) & 0xff;
-    header[23] = (entry.compressedSize >> 24) & 0xff;
-    header[24] = entry.uncompressedSize & 0xff;
-    header[25] = (entry.uncompressedSize >> 8) & 0xff;
-    header[26] = (entry.uncompressedSize >> 16) & 0xff;
-    header[27] = (entry.uncompressedSize >> 24) & 0xff;
-    header[28] = nameBytes.length & 0xff;
-    header[29] = (nameBytes.length >> 8) & 0xff;
+    const headerView = new DataView(header.buffer);
+    headerView.setUint32(0, 0x02014b50, true);
+    headerView.setUint32(20, entry.compressedSize, true);
+    headerView.setUint32(24, entry.uncompressedSize, true);
+    headerView.setUint16(28, nameBytes.length, true);
+    headerView.setUint32(42, localOffset, true);
     header.set(nameBytes, 46);
     cdHeaders.push(header);
+    localOffset += local.length;
     cdOffset += header.length;
   }
   const eocd = new Uint8Array(22);
-  eocd[0] = 0x50;
-  eocd[1] = 0x4b;
-  eocd[2] = 0x05;
-  eocd[3] = 0x06;
-  eocd[8] = entries.length & 0xff;
-  eocd[9] = (entries.length >> 8) & 0xff;
-  eocd[10] = entries.length & 0xff;
-  eocd[11] = (entries.length >> 8) & 0xff;
-  eocd[12] = cdOffset & 0xff;
-  eocd[13] = (cdOffset >> 8) & 0xff;
-  eocd[14] = (cdOffset >> 16) & 0xff;
-  eocd[15] = (cdOffset >> 24) & 0xff;
-  eocd[16] = 0;
-  eocd[17] = 0;
-  eocd[18] = 0;
-  eocd[19] = 0;
-  const result = new Uint8Array(cdOffset + eocd.length);
+  const eocdView = new DataView(eocd.buffer);
+  eocdView.setUint32(0, 0x06054b50, true);
+  eocdView.setUint16(8, entries.length, true);
+  eocdView.setUint16(10, entries.length, true);
+  eocdView.setUint32(12, cdOffset, true);
+  eocdView.setUint32(16, localOffset, true);
+  const result = new Uint8Array(localOffset + cdOffset + eocd.length);
   let pos = 0;
+  for (const local of localHeaders) {
+    result.set(local, pos);
+    pos += local.length;
+  }
   for (const header of cdHeaders) {
     result.set(header, pos);
     pos += header.length;
@@ -69,7 +67,86 @@ function makeFakeZipCentralDirectory(
   return result;
 }
 
+const workbookTypes = [
+  {
+    name: 'xlsx',
+    contentType:
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  },
+  {
+    name: 'ods',
+    contentType: 'application/vnd.oasis.opendocument.spreadsheet',
+  },
+] as const;
+
 describe('Single-sheet XLSX PUT and POST room routes', () => {
+  for (const { name, contentType } of workbookTypes) {
+    it(`rejects unreadable ${name} on PUT without replacing the snapshot`, async () => {
+      const room = `invalid-put-${name}`;
+      const snapshot = 'socialcalc:version:1.5\n--SocialCalcSpreadsheetControlSave--\n';
+      const seedRes = await request('PUT', `/_/${room}`, {
+        headers: { 'content-type': 'text/x-socialcalc' },
+        body: snapshot,
+      });
+      expect(seedRes.status).toBe(201);
+
+      const putRes = await request('PUT', `/_/${room}`, {
+        headers: { 'content-type': contentType },
+        body: 'item,value\nfirst,second\n',
+      });
+      expect(putRes.status).toBe(400);
+      const getRes = await request('GET', `/_/${room}`);
+      expect(getRes.status).toBe(200);
+      expect(await getRes.text()).toBe(snapshot);
+    });
+
+    it(`rejects unreadable ${name} on room creation`, async () => {
+      const postRes = await request('POST', '/_', {
+        headers: { 'content-type': contentType },
+        body: 'item,value\nfirst,second\n',
+      });
+      expect(postRes.status).toBe(400);
+      expect(postRes.headers.get('location')).toBeNull();
+    });
+
+    it(`rejects unreadable ${name} on command import without changing the room`, async () => {
+      const room = `invalid-command-${name}`;
+      const snapshot = 'socialcalc:version:1.5\n--SocialCalcSpreadsheetControlSave--\n';
+      const seedRes = await request('PUT', `/_/${room}`, {
+        headers: { 'content-type': 'text/x-socialcalc' },
+        body: snapshot,
+      });
+      expect(seedRes.status).toBe(201);
+
+      const postRes = await request('POST', `/_/${room}`, {
+        headers: { 'content-type': contentType },
+        body: 'item,value\nfirst,second\n',
+      });
+      expect(postRes.status).toBe(400);
+      const getRes = await request('GET', `/_/${room}`);
+      expect(getRes.status).toBe(200);
+      expect(await getRes.text()).toBe(snapshot);
+    });
+  }
+
+  it('accepts flat ODS XML with an ODS content type', async () => {
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      book,
+      XLSX.utils.aoa_to_sheet([['flat-ods']]),
+      'Sheet1',
+    );
+    const body = XLSX.write(book, { bookType: 'fods', type: 'string' }) as string;
+    const putRes = await request('PUT', '/_/valid-flat-ods', {
+      headers: { 'content-type': 'application/vnd.oasis.opendocument.spreadsheet' },
+      body,
+    });
+    expect(putRes.status).toBe(201);
+    const getRes = await request('GET', '/_/valid-flat-ods');
+    expect(getRes.status).toBe(200);
+    expect(await getRes.text()).toContain('flat-ods');
+  });
+
   it('PUT /_/:room with xlsx body imports the sheet as a new snapshot', async () => {
     const ws = {
       '!ref': 'A1:A2',

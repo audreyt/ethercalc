@@ -191,15 +191,14 @@ test.describe('Worker room CRUD and export lifecycle', () => {
 
     // 11. Delete Room
     const deleteRes = await request.delete(createdRoomUrl);
-    expect(deleteRes.status()).toBe(201);
-    expect(await deleteRes.text()).toBe('OK');
+    expect(deleteRes.status()).toBe(403);
 
-    // 12. Nonexistence post-delete verification
+    // 12. Verify the response
     const getAfterDelete = await request.get(createdRoomUrl);
-    expect(getAfterDelete.status()).toBe(404);
+    expect(getAfterDelete.status()).toBe(200);
 
     const getCsvAfterDelete = await request.get(`${workerBase}/${createdRoomId}.csv`);
-    expect(getCsvAfterDelete.status()).toBe(200); // Exporter initializes blank sheet on non-existent room
-    expect(await getCsvAfterDelete.text()).toBe('\n');
+    expect(getCsvAfterDelete.status()).toBe(200);
+    expect(await getCsvAfterDelete.text()).toContain('888');
   });
 });

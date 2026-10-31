@@ -32,6 +32,7 @@ export function extractSheetSave(save: string): string {
  */
 export interface CrossSheetSpreadsheet {
   findCrossSheetRefs(limit?: number): readonly string[];
+  resetSiblingSheets(): void;
   addSiblingSheet(name: string, save: string): void;
   recalc(): void;
 }
@@ -76,8 +77,8 @@ export async function readBoundedResponseText(
 /**
  * Walk the spreadsheet's cross-sheet refs, fetch each sibling's save via
  * the caller-supplied `fetchSibling`, and inject into the spreadsheet's
- * formula cache. Calls `recalc()` once at the end iff any sibling was
- * added. Returns the number of siblings added (for metrics / tests).
+ * formula cache. Recalculates referenced cells after rebuilding the cache.
+ * Returns the number of siblings added (for metrics / tests).
  *
  * `ownName` is the current room's name (from the `?name=` query param);
  * it's used to skip self-references which would be re-entrant DO calls.
@@ -94,6 +95,7 @@ export async function hydrateCrossSheetRefs(
   // that's functionally redundant — an empty `refs` makes the for-loop a
   // no-op, so dropping the guard produces identical output.
   if (refs.length === 0) return 0;
+  ss.resetSiblingSheets();
   let added = 0;
   let attempted = 0;
   let totalChars = 0;
@@ -120,8 +122,6 @@ export async function hydrateCrossSheetRefs(
     ss.addSiblingSheet(ref, extractSheetSave(save));
     added++;
   }
-  if (added > 0) {
-    ss.recalc();
-  }
+  ss.recalc();
   return added;
 }

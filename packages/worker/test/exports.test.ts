@@ -224,6 +224,9 @@ describe('Phase 8 exports — HTML XSS sanitisation (text-html cells)', () => {
       'set A9 text th <a href="file:///etc/passwd">file-link</a>',
       'set A10 text th <custom-tag data-x="1">custom-text</custom-tag>',
       'set A11 text th <a href="https://example.test/new" target="_blank">new-tab</a>',
+      'set A12 text th <a href="javascript&#58;alert(1)">encoded-link</a>',
+      'set A13 text th <img src="https&#58;//example.test/pixel" alt="encoded-image">',
+      'set A14 text th <div style="background:u&#114;l(https://example.test/pixel)">encoded-style</div>',
       // Benign markup that MUST survive the sanitiser.
       'set B1 text th <b>bold</b>',
       'set B2 text th <a href="https://example.test">link</a>',
@@ -261,6 +264,9 @@ describe('Phase 8 exports — HTML XSS sanitisation (text-html cells)', () => {
     expect(lower).not.toContain('<button');
     expect(lower).not.toContain('<svg');
     expect(lower).not.toMatch(/<a\b[^>]*\bhref\s*=\s*["']?file:/);
+    expect(lower).not.toMatch(/<a\b[^>]*\bhref\s*=\s*["']?javascript(?:&#58;|&colon;|:)/);
+    expect(lower).not.toMatch(/<img\b[^>]*\bsrc\s*=\s*["']?https(?:&#58;|&colon;|:)/);
+    expect(lower).not.toMatch(/<div\b[^>]*\bstyle\s*=\s*["'][^"']*u(?:&#114;|r)l\(/);
     expect(lower).not.toContain('<custom-tag');
 
     // text-html stays a feature — safe markup and the cell text survive.
@@ -271,6 +277,9 @@ describe('Phase 8 exports — HTML XSS sanitisation (text-html cells)', () => {
     expect(body).toContain('>x</a>');
     expect(body).toContain('file-link');
     expect(body).toContain('custom-text');
+    expect(body).toContain('encoded-link');
+    expect(body).toContain('encoded-image');
+    expect(body).toContain('encoded-style');
     expect(lower).toMatch(
       /<a\b[^>]*href="https:\/\/example\.test\/new"[^>]*target="_blank"[^>]*rel="noopener noreferrer"/,
     );
@@ -498,6 +507,23 @@ describe('Phase 8.1 exports — multi-sheet', () => {
     expect(wb.SheetNames).toEqual(['FirstTab', 'SecondTab']);
     expect(wb.Sheets['FirstTab'].A1.v).toBe(10);
     expect(wb.Sheets['SecondTab'].A1.v).toBe(20);
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+  });
+
+  it('resolves an encoded TOC child to the same room as its browser link', async () => {
+    const workbook = 'book-' + Math.random().toString(36).slice(2, 8);
+    const encodedChild = `%62${workbook.slice(1)}.1`;
+    await seedRoom(`${workbook}.1`, '42');
+    await seedRoom(encodedChild, '99');
+    await seedRoom(workbook, `url,title\n/${encodedChild},EncodedTab`);
+
+    const response = await request('GET', `/_/=${workbook}/xlsx`);
+    expect(response.status).toBe(200);
+    const XLSX = await import('@e965/xlsx');
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const book = (XLSX as any).read(new Uint8Array(await response.arrayBuffer()), { type: 'array' });
+    expect(book.SheetNames).toEqual(['EncodedTab']);
+    expect(book.Sheets['EncodedTab'].A1.v).toBe(42);
     /* eslint-enable @typescript-eslint/no-explicit-any */
   });
 });

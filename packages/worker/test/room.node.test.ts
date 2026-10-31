@@ -486,6 +486,7 @@ const mockCreateSheetHTML = vi.fn<() => string>(
 
 const mockFindRefs = vi.fn<() => string[]>(() => []);
 const mockAddSibling = vi.fn<(name: string, save: string) => void>();
+const mockResetSibling = vi.fn<() => void>();
 const mockRecalc = vi.fn<() => void>();
 
 vi.mock('@ethercalc/socialcalc-headless', () => ({
@@ -506,6 +507,7 @@ vi.mock('@ethercalc/socialcalc-headless', () => ({
       attribs: {},
     }),
     findCrossSheetRefs: () => mockFindRefs(),
+    resetSiblingSheets: () => mockResetSibling(),
     addSiblingSheet: (name: string, save: string) => mockAddSibling(name, save),
     recalc: () => mockRecalc(),
     createSheetHTML: () => mockCreateSheetHTML(),
@@ -1139,27 +1141,28 @@ describe('RoomDO (unit, direct construction)', () => {
     await expect(access('uid-writer')).resolves.toMatchObject({ status: 200 });
     await expect(access('uid-outsider')).resolves.toMatchObject({ status: 200 });
 
-    await expect((await access()).json()).resolves.toEqual({
+    await expect((await access()).json()).resolves.toMatchObject({
       isPrivate: true,
       canRead: false,
       canWrite: false,
+      parented: false,
     });
-    await expect((await access('uid-owner')).json()).resolves.toEqual({
+    await expect((await access('uid-owner')).json()).resolves.toMatchObject({
       isPrivate: true,
       canRead: true,
       canWrite: true,
     });
-    await expect((await access('uid-reader')).json()).resolves.toEqual({
+    await expect((await access('uid-reader')).json()).resolves.toMatchObject({
       isPrivate: true,
       canRead: true,
       canWrite: false,
     });
-    await expect((await access('uid-writer')).json()).resolves.toEqual({
+    await expect((await access('uid-writer')).json()).resolves.toMatchObject({
       isPrivate: true,
       canRead: false,
       canWrite: true,
     });
-    await expect((await access('uid-outsider')).json()).resolves.toEqual({
+    await expect((await access('uid-outsider')).json()).resolves.toMatchObject({
       isPrivate: true,
       canRead: false,
       canWrite: false,
@@ -1443,6 +1446,37 @@ describe('RoomDO (unit, direct construction)', () => {
       user: '',
       cmdstr: 'set A10 text t foo bar',
     });
+  });
+
+  it('POST /_do/commands excludes an expired private peer from the broadcast', async () => {
+    const privateRecord: FakeStorageRecord = { map: new Map() };
+    markPrivate(privateRecord);
+    const expiredLog: FakeWsLog = { sent: [] };
+    const readerLog: FakeWsLog = { sent: [] };
+    const expired = makeFakeWs(expiredLog, {
+      user: 'expired', room: 'private', auth: 'private',
+      uid: 'uid-reader', sessionExp: Date.now() - 1,
+    });
+    const reader = makeFakeWs(readerLog, {
+      user: 'reader', room: 'private', auth: 'private',
+      uid: 'uid-reader', sessionExp: FUTURE_SESSION_EXP,
+    });
+    const { state } = makeWsAwareState('private-broadcast', privateRecord, [expired, reader]);
+    const privateRoom = new RoomDO(state, makeEnv());
+
+    const res = await privateRoom.fetch(
+      new Request('https://do/_do/commands?name=private', {
+        method: 'POST',
+        headers: { 'X-EC-Uid': 'uid-owner' },
+        body: 'set A1 value n 1',
+      }),
+    );
+
+    expect(res.status).toBe(202);
+    expect(privateRecord.map.get(logKey(0))).toBe('set A1 value n 1');
+    expect(expiredLog.closeCode).toBe(1008);
+    expect(expiredLog.sent).toEqual([]);
+    expect(readerLog.sent).toHaveLength(1);
   });
 
   it('POST /_do/commands atomically transitions a small snapshot to chunks', async () => {
@@ -1791,7 +1825,7 @@ describe('RoomDO (unit, direct construction)', () => {
       expect(mockRecalc).toHaveBeenCalled();
     });
 
-    it('treats sibling 404 as no save — skips add/recalc', async () => {
+    it('treats sibling 404 as no save and recalculates the unresolved reference', async () => {
       // Make findCrossSheetRefs return ['missing'] only on this test's
       // first call. A prior test may have consumed its own queue already
       // so this mockReturnValueOnce is always the next outgoing value.
@@ -1818,7 +1852,7 @@ describe('RoomDO (unit, direct construction)', () => {
       expect(res.status).toBe(200);
       expect(fetchCalls).toBe(1); // guard: sibling fetch actually ran
       expect(mockAddSibling).not.toHaveBeenCalled();
-      expect(mockRecalc).not.toHaveBeenCalled();
+      expect(mockRecalc).toHaveBeenCalled();
     });
 
     it('treats empty sibling body as no save', async () => {
@@ -2454,10 +2488,11 @@ describe('RoomDO — effective parent access and trusted reads', () => {
     );
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({
+    expect(await response.json()).toMatchObject({
       isPrivate: true,
       canRead: true,
       canWrite: false,
+      parented: true,
     });
     expect(parentIds).toEqual(['parent']);
     expect(requests).toHaveLength(1);
@@ -2569,7 +2604,7 @@ describe('RoomDO — effective parent access and trusted reads', () => {
       ),
     );
     const response = await room.fetch(new Request('https://do/_do/access?name=anonymous-child'));
-    expect(await response.json()).toEqual({
+    expect(await response.json()).toMatchObject({
       isPrivate: true,
       canRead: false,
       canWrite: false,
@@ -2604,7 +2639,7 @@ describe('RoomDO — effective parent access and trusted reads', () => {
     const response = await room.fetch(
       new Request('https://do/_do/access?name=child'),
     );
-    expect(await response.json()).toEqual({
+    expect(await response.json()).toMatchObject({
       isPrivate: true,
       canRead: false,
       canWrite: false,
@@ -2634,7 +2669,7 @@ describe('RoomDO — effective parent access and trusted reads', () => {
         headers: { 'X-EC-Uid': 'uid-owner' },
       }),
     );
-    expect(await response.json()).toEqual({
+    expect(await response.json()).toMatchObject({
       isPrivate: true,
       canRead: false,
       canWrite: false,
@@ -2726,7 +2761,7 @@ describe('RoomDO — effective parent access and trusted reads', () => {
         headers: { 'X-EC-Uid': 'uid-reader' },
       }),
     );
-    expect(await response.json()).toEqual({
+    expect(await response.json()).toMatchObject({
       isPrivate: true,
       canRead: false,
       canWrite: false,
@@ -2826,7 +2861,7 @@ describe('RoomDO — effective parent access and trusted reads', () => {
     expect(response.status).toBe(403);
   });
 
-  it('forwards the uid and parent-read assertion when hydrating a sibling', async () => {
+  it('reads a public sibling without the requester identity', async () => {
     const record: FakeStorageRecord = { map: new Map() };
     const requests: Request[] = [];
     mockFindRefs.mockReset();
@@ -2851,9 +2886,127 @@ describe('RoomDO — effective parent access and trusted reads', () => {
       const sibling = requests.find(
         (request) => new URL(request.url).pathname === '/_do/snapshot',
       );
-      expect(sibling?.headers.get('X-EC-Uid')).toBe('uid-owner');
-      expect(sibling?.headers.get('X-EC-Parent-Read')).toBe('parent');
+      expect(sibling?.headers.get('X-EC-Uid')).toBeNull();
+      expect(sibling?.headers.get('X-EC-Parent-Read')).toBeNull();
       expect(mockAddSibling).toHaveBeenCalledWith('sibling', 'SIBLING-SAVE');
+    } finally {
+      mockFindRefs.mockReset();
+      mockFindRefs.mockImplementation(() => []);
+    }
+  });
+
+  it('reads a managed child through its parent marker', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    markPrivate(record);
+    const requests: Request[] = [];
+    mockFindRefs.mockReset();
+    mockFindRefs.mockReturnValueOnce(['parent.1']);
+    mockAddSibling.mockClear();
+    try {
+      const room = new RoomDO(
+        makeState('parent', record),
+        makeEnvWithParentAccess((request) => {
+          if (request.headers.get('X-EC-Parent-Read') === 'parent') {
+            return new Response('CHILD-SAVE');
+          }
+          return new Response('Forbidden', { status: 403 });
+        }, requests),
+      );
+      const response = await room.fetch(
+        new Request('https://do/_do/csv?name=parent', {
+          headers: { 'X-EC-Uid': 'uid-owner' },
+        }),
+      );
+      expect(response.status).toBe(200);
+      expect(requests).toHaveLength(2);
+      expect(requests[0]?.headers.get('X-EC-Uid')).toBeNull();
+      expect(requests[1]?.headers.get('X-EC-Parent-Read')).toBe('parent');
+      expect(mockAddSibling).toHaveBeenCalledWith('parent.1', 'CHILD-SAVE');
+    } finally {
+      mockFindRefs.mockReset();
+      mockFindRefs.mockImplementation(() => []);
+    }
+  });
+
+  it('uses the stored parent when a child reads a sibling sheet', async () => {
+    const requests: Request[] = [];
+    mockFindRefs.mockReset();
+    mockFindRefs.mockReturnValueOnce(['parent.2']);
+    mockAddSibling.mockClear();
+    try {
+      const room = new RoomDO(
+        makeState('child', { map: new Map([[STORAGE_KEYS.metaParent, 'parent']]) }),
+        makeEnvWithParentAccess((request) => {
+          if (new URL(request.url).pathname === '/_do/access') {
+            return Response.json(allowReadWrite);
+          }
+          return request.headers.get('X-EC-Parent-Read') === 'parent'
+            ? new Response('SIBLING-SAVE')
+            : new Response('Forbidden', { status: 403 });
+        }, requests),
+      );
+      const response = await room.fetch(
+        new Request('https://do/_do/csv?name=child', {
+          headers: { 'X-EC-Uid': 'uid-owner' },
+        }),
+      );
+      expect(response.status).toBe(200);
+      const snapshots = requests.filter(
+        (request) => new URL(request.url).pathname === '/_do/snapshot',
+      );
+      expect(snapshots).toHaveLength(2);
+      expect(snapshots[1]?.headers.get('X-EC-Parent-Read')).toBe('parent');
+      expect(mockAddSibling).toHaveBeenCalledWith('parent.2', 'SIBLING-SAVE');
+    } finally {
+      mockFindRefs.mockReset();
+      mockFindRefs.mockImplementation(() => []);
+    }
+  });
+
+  it('leaves a sibling unresolved when its parent assertion is refused', async () => {
+    const requests: Request[] = [];
+    mockFindRefs.mockReset();
+    mockFindRefs.mockReturnValueOnce(['parent.2']);
+    mockAddSibling.mockClear();
+    mockRecalc.mockClear();
+    try {
+      const room = new RoomDO(
+        makeState('parent', { map: new Map() }),
+        makeEnvWithParentAccess((request) => {
+          requests.push(request);
+          return new Response('Forbidden', { status: 403 });
+        }),
+      );
+      const response = await room.fetch(new Request('https://do/_do/csv?name=parent'));
+      expect(response.status).toBe(200);
+      expect(requests).toHaveLength(2);
+      expect(requests[1]?.headers.get('X-EC-Parent-Read')).toBe('parent');
+      expect(mockAddSibling).not.toHaveBeenCalled();
+      expect(mockRecalc).toHaveBeenCalled();
+    } finally {
+      mockFindRefs.mockReset();
+      mockFindRefs.mockImplementation(() => []);
+    }
+  });
+
+  it('does not resolve a protected room into an unrelated public room', async () => {
+    const requests: Request[] = [];
+    mockFindRefs.mockReset();
+    mockFindRefs.mockReturnValueOnce(['other']);
+    mockAddSibling.mockClear();
+    try {
+      const room = new RoomDO(
+        makeState('public', { map: new Map() }),
+        makeEnvWithParentAccess((request) => {
+          requests.push(request);
+          return new Response('Forbidden', { status: 403 });
+        }),
+      );
+      const response = await room.fetch(new Request('https://do/_do/csv?name=public'));
+      expect(response.status).toBe(200);
+      expect(requests).toHaveLength(1);
+      expect(requests[0]?.headers.get('X-EC-Uid')).toBeNull();
+      expect(mockAddSibling).not.toHaveBeenCalled();
     } finally {
       mockFindRefs.mockReset();
       mockFindRefs.mockImplementation(() => []);
@@ -4738,23 +4891,37 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
   it('WS stopHuddle drops the room row from D1 (handshake-room path)', async () => {
     const record5: FakeStorageRecord = { map: new Map() };
     const d1Calls5: D1Call[] = [];
-    const env = makeEnvWithDb(d1Calls5);
+    const env: Env = { ...makeEnvWithDb(d1Calls5), ETHERCALC_KEY: 'test-key' };
     const { state } = makeWsAwareState('x', record5, []);
     const wsRoom = new RoomDO(state, env);
     const log: FakeWsLog = { sent: [] };
     const ws = makeFakeWs(log, { user: 'u', room: 'delta', auth: 'h' });
+    const token = await computeAuth('test-key', 'delta');
     await wsRoom.webSocketMessage(
       ws,
       JSON.stringify({
         type: 'stopHuddle',
         room: 'delta',
-        auth: 'delta',
+        auth: token,
       }),
     );
     expect(d1Calls5.find((c) => c.sql.includes('DELETE FROM rooms'))?.params).toEqual([
       'delta',
     ]);
     expect(d1Calls5.some((c) => c.sql.includes('DELETE FROM audit_log'))).toBe(true);
+  });
+
+  it('keeps public room data when no deletion capability is configured', async () => {
+    const record: FakeStorageRecord = {
+      map: new Map([[STORAGE_KEYS.snapshot, 'SAVE']]),
+    };
+    const calls: D1Call[] = [];
+    const { state } = makeWsAwareState('x', record, []);
+    const room = new RoomDO(state, makeEnvWithDb(calls));
+    const ws = makeFakeWs({ sent: [] }, { user: 'u', room: 'r', auth: 'r' });
+    await room.webSocketMessage(ws, JSON.stringify({ type: 'stopHuddle', room: 'r', auth: 'r' }));
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('SAVE');
+    expect(calls).toHaveLength(0);
   });
 
   it('does not unindex a frame room when the attachment is missing', async () => {
@@ -4802,6 +4969,31 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
     );
     expect(record7b.map.has(STORAGE_KEYS.snapshot)).toBe(true);
     expect(d1Calls7b).toHaveLength(0);
+  });
+
+  it('WS execute is blocked for Sandstorm viewers without modify', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const env: Env = { ...makeEnv(), ETHERCALC_SANDSTORM: '1' };
+    const { state } = makeWsAwareState('sandstorm-viewer', record, []);
+    const room = new RoomDO(state, env);
+    const ws = makeFakeWs(
+      { sent: [] },
+      { user: 'viewer', room: 'r', auth: 'r', sandstormModify: false },
+    );
+
+    await room.webSocketMessage(
+      ws,
+      JSON.stringify({
+        type: 'execute',
+        room: 'r',
+        user: 'viewer',
+        auth: 'r',
+        cmdstr: 'set A1 value n 1',
+      }),
+    );
+
+    expect(record.map.has(logKey(0))).toBe(false);
+    expect(record.map.has(STORAGE_KEYS.snapshot)).toBe(false);
   });
 
   it('WS stopHuddle with failed auth does NOT touch D1', async () => {
@@ -6076,7 +6268,7 @@ describe('RoomDO — fold: inline WS caps', () => {
   });
 
   it('legacy session-host execute falls back to the handshake auth token', async () => {
-    const fetches: Array<{ url: string; body: string }> = [];
+    const fetches: Array<{ url: string; body: string; uid: string | null }> = [];
     const env: Env = {
       ROOM: {
         idFromName: (name: string) => ({ toString: () => name }) as DurableObjectId,
@@ -6086,6 +6278,7 @@ describe('RoomDO — fold: inline WS caps', () => {
               fetches.push({
                 url: typeof input === 'string' ? input : String(input),
                 body: typeof init?.body === 'string' ? init.body : '',
+                uid: new Headers(init?.headers).get('X-EC-Uid'),
               });
               return new Response('', { status: 202 });
             },
@@ -6093,7 +6286,7 @@ describe('RoomDO — fold: inline WS caps', () => {
       } as unknown as DurableObjectNamespace,
       ETHERCALC_KEY: 'legacy-secret',
     };
-    const room = new RoomDO(makeState('x', { map: new Map() }), env);
+    const room = new RoomDO(makeState('x', { map: new Map() }), withSessionAuth(env));
     const ws = makeFakeWs(
       { sent: [] },
       {
@@ -6101,6 +6294,8 @@ describe('RoomDO — fold: inline WS caps', () => {
         room: '',
         auth: await computeAuth('legacy-secret', 'sheet1'),
         legacy: true,
+        uid: 'verified-user',
+        sessionExp: FUTURE_SESSION_EXP,
       },
     );
     // No `auth` on the frame — the handshake token is the only credential.
@@ -6116,6 +6311,55 @@ describe('RoomDO — fold: inline WS caps', () => {
     );
     expect(fetches).toHaveLength(1);
     expect(fetches[0]!.body).toBe('set A1 text t hi');
+    expect(fetches[0]!.uid).toBe('verified-user');
+  });
+
+  it('drops legacy writes when the grain role cannot modify', async () => {
+    const fetches: string[] = [];
+    const env: Env = {
+      ROOM: makeRoomNamespace(async (input) => {
+        fetches.push(String(input));
+        return new Response('', { status: 202 });
+      }),
+      ETHERCALC_SANDSTORM: '1',
+    };
+    const room = new RoomDO(makeState('sid', { map: new Map() }), env);
+    const ws = makeFakeWs({ sent: [] }, {
+      user: '', room: '', auth: 'sheet1', legacy: true, sandstormModify: false,
+    });
+    await room.webSocketMessage(ws, `5:::${JSON.stringify({
+      name: 'data', args: [{
+        type: 'execute', room: 'sheet1', user: 'viewer', auth: 'sheet1', cmdstr: 'set A1 value n 1',
+      }],
+    })}`);
+    expect(fetches).toHaveLength(0);
+  });
+
+  it('closes a legacy socket whose session has been revoked', async () => {
+    const fetches: string[] = [];
+    const token = await computeAuth('test-key', 'sheet1');
+    const session = sessionFor('verified-user', FUTURE_SESSION_EXP);
+    const env = withSessionAuth({
+      ROOM: makeRoomNamespace(async (input) => {
+        fetches.push(String(input));
+        return new Response('', { status: 202 });
+      }),
+      ETHERCALC_KEY: 'test-key',
+    }, new Set([session]));
+    const room = new RoomDO(makeState('sid', { map: new Map() }), env);
+    const log: FakeWsLog = { sent: [] };
+    const ws = makeFakeWs(log, {
+      user: '', room: '', auth: token, legacy: true,
+      uid: 'verified-user', sessionExp: FUTURE_SESSION_EXP, session,
+    });
+    await room.webSocketMessage(ws, `5:::${JSON.stringify({
+      name: 'data', args: [{
+        type: 'execute', room: 'sheet1', user: 'verified-user', auth: token,
+        cmdstr: 'set A1 value n 1',
+      }],
+    })}`);
+    expect(log.closeCode).toBe(1008);
+    expect(fetches).toHaveLength(0);
   });
 
   it('legacy room frames without a user field still dispatch', async () => {
@@ -6124,10 +6368,11 @@ describe('RoomDO — fold: inline WS caps', () => {
     const record: FakeStorageRecord = { map: new Map() };
     record.map.set(STORAGE_KEYS.snapshot, 'huddle-save');
     const { state } = makeWsAwareState('x', record, []);
-    const room = new RoomDO(state, makeEnv());
+    const room = new RoomDO(state, { ...makeEnv(), ETHERCALC_KEY: 'test-key' });
+    const token = await computeAuth('test-key', 'r');
     const ws = makeFakeWs(
       { sent: [] },
-      { user: 'alice', room: 'r', auth: 'r', legacy: true },
+      { user: 'alice', room: 'r', auth: token, legacy: true },
     );
     await room.webSocketMessage(
       ws,
@@ -6580,6 +6825,78 @@ describe('RoomDO — fold: inline WS caps', () => {
       ),
     ).rejects.toThrow();
   });
+
+  it('binds trusted legacy upgrade headers and grain permissions to the socket', async () => {
+    const originalPair = (globalThis as unknown as Record<string, unknown>)['WebSocketPair'];
+    const accepted: Array<{ attachment?: unknown; sent: string[] }> = [];
+    class FakeWebSocketPair {
+      readonly 0 = {} as WebSocket;
+      readonly 1: WebSocket;
+
+      constructor() {
+        const socket = { sent: [] as string[], attachment: undefined as unknown };
+        accepted.push(socket);
+        this[1] = {
+          serializeAttachment(value: unknown) {
+            socket.attachment = value;
+          },
+          send(value: string) {
+            socket.sent.push(value);
+          },
+        } as unknown as WebSocket;
+      }
+    }
+    (globalThis as unknown as Record<string, unknown>)['WebSocketPair'] = FakeWebSocketPair;
+    try {
+      const cases: Array<{ env: Env; headers: Record<string, string>; expected: Record<string, unknown> }> = [
+        {
+          env: makeEnv(),
+          headers: {},
+          expected: {},
+        },
+        {
+          env: { ...makeEnv(), ETHERCALC_SANDSTORM: '1' },
+          headers: {
+            'X-Sandstorm-Permissions': 'read, modify',
+            'X-EC-Uid': 'uid-editor',
+            'X-EC-Session-Exp': '12345',
+            'X-EC-Session': 'signed-session',
+          },
+          expected: {
+            sandstormModify: true,
+            uid: 'uid-editor',
+            sessionExp: 12345,
+            session: 'signed-session',
+          },
+        },
+        {
+          env: { ...makeEnv(), ETHERCALC_SANDSTORM: '1' },
+          headers: { 'X-EC-Session-Exp': 'invalid' },
+          expected: { sandstormModify: false },
+        },
+      ];
+      for (const { env, headers, expected } of cases) {
+        const { state, accepted: upgraded } = makeWsAwareState('legacy-upgrade', { map: new Map() });
+        const room = new RoomDO(state, env);
+        await expect(
+          room.fetch(new Request('https://do/_do/legacy-ws', {
+            headers: { Upgrade: 'websocket', ...headers },
+          })),
+        ).rejects.toThrow();
+        expect(upgraded).toHaveLength(1);
+        expect(accepted.at(-1)?.sent).toEqual(['1::']);
+        expect(accepted.at(-1)?.attachment).toEqual({
+          user: '', room: '', auth: '', legacy: true, ...expected,
+        });
+      }
+    } finally {
+      if (originalPair === undefined) {
+        delete (globalThis as unknown as Record<string, unknown>)['WebSocketPair'];
+      } else {
+        (globalThis as unknown as Record<string, unknown>)['WebSocketPair'] = originalPair;
+      }
+    }
+  });
 });
 
 describe('RoomDO — POST /_do/snapshot-chunk (Phase 11b chunked upload)', () => {
@@ -7007,7 +7324,7 @@ describe('RoomDO — WebSocket acceptance (Phase 7)', () => {
     expect(peerLog.sent).toHaveLength(0);
   });
 
-  it('webSocketMessage forwards submitform to sibling DO and broadcasts to all', async () => {
+  it('webSocketMessage forwards submitform to sibling DO without source-room broadcast', async () => {
     const peerLog: FakeWsLog = { sent: [] };
     const peer = makeFakeWs(peerLog);
     const senderLog: FakeWsLog = { sent: [] };
@@ -7050,9 +7367,8 @@ describe('RoomDO — WebSocket acceptance (Phase 7)', () => {
     expect(siblingFetches).toHaveLength(1);
     expect(siblingFetches[0]?.name).toBe('mysheet_formdata');
     expect(siblingFetches[0]?.body).toBe('set B1 value n 7');
-    // Broadcast to all (include_self=true) — peer receives AND sender receives.
-    expect(peerLog.sent).toHaveLength(1);
-    expect(senderLog.sent).toHaveLength(1);
+    expect(peerLog.sent).toHaveLength(0);
+    expect(senderLog.sent).toHaveLength(0);
   });
 
   it('webSocketMessage dispatches stopHuddle which wipes storage and broadcasts', async () => {
@@ -7062,11 +7378,12 @@ describe('RoomDO — WebSocket acceptance (Phase 7)', () => {
     const peerLog: FakeWsLog = { sent: [] };
     const peer = makeFakeWs(peerLog);
     const { state } = makeWsAwareState('x', record, [peer]);
-    const room = new RoomDO(state, makeEnv());
+    const room = new RoomDO(state, { ...makeEnv(), ETHERCALC_KEY: 'test-key' });
     const ws = makeFakeWs({ sent: [] }, { user: 'u', room: 'r', auth: 'h' });
+    const token = await computeAuth('test-key', 'r');
     await room.webSocketMessage(
       ws,
-      JSON.stringify({ type: 'stopHuddle', room: 'r', auth: 'r' }),
+      JSON.stringify({ type: 'stopHuddle', room: 'r', auth: token }),
     );
     expect(record.map.size).toBe(0);
     expect(peerLog.sent).toHaveLength(1);
@@ -7234,7 +7551,7 @@ describe('RoomDO — WebSocket acceptance (Phase 7)', () => {
     );
   });
 
-  it('submitform broadcastAll also swallows a dead-peer send failure', async () => {
+  it('submitform leaves disconnected source peers alone', async () => {
     const flakey = {
       send() {
         throw new Error('gone');
@@ -7261,7 +7578,7 @@ describe('RoomDO — WebSocket acceptance (Phase 7)', () => {
         cmdstr: 'submitform',
       }),
     );
-    expect(healthyLog.sent).toHaveLength(1);
+    expect(healthyLog.sent).toHaveLength(0);
   });
 });
 
@@ -8130,7 +8447,7 @@ describe('RoomDO — private WS gating (Phase A)', () => {
     expect(log.sent).toEqual([]);
   });
 
-  it('closes an expired peer instead of include-self broadcasting public submitform', async () => {
+  it('closes an expired peer before broadcasting a sheet command', async () => {
     const record: FakeStorageRecord = { map: new Map() };
     const peerLog: FakeWsLog = { sent: [] };
     const expiredPeer = makeFakeWs(peerLog, {
@@ -8156,7 +8473,7 @@ describe('RoomDO — private WS gating (Phase A)', () => {
     );
     await room.webSocketMessage(
       sender,
-      JSON.stringify({ type: 'execute', room: 'r', user: 'owner', auth: 'r', cmdstr: 'submitform' }),
+      JSON.stringify({ type: 'execute', room: 'r', user: 'owner', auth: 'r', cmdstr: 'set A1 value n 1' }),
     );
     expect(peerLog.closed).toBe(true);
     expect(peerLog.sent).toEqual([]);
