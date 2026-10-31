@@ -43,12 +43,9 @@ export HOME="/var/home"
 export TMPDIR="/var/tmp"
 mkdir -p "$HOME" "$TMPDIR" /var/do-storage
 
-# Locate workerd. `spk dev` maps the host's filesystem into the grain,
-# so the path under node_modules is reachable. Packaged grains embed
-# workerd inside the .spk at the same path via sandstorm-files.list
-# tracing. On the host machine, bun install drops the platform-matched
-# binary package under .bun/@cloudflare+workerd-linux-64@…/.
-WORKERD_BIN="$(find "$APP_DIR/node_modules" -name workerd -type f -executable -print -quit 2>/dev/null)"
+# Bun may install more than one workerd release through separate build
+# tools. Use the newest Linux binary for the bundled worker.
+WORKERD_BIN="$(find "$APP_DIR/node_modules/.bun" -path '*/@cloudflare/workerd-linux-64/bin/workerd' -type f -executable 2>/dev/null | sort -V | tail -n1)"
 if [ -z "$WORKERD_BIN" ]; then
   echo "run_grain: ERROR — workerd binary not found under node_modules" >&2
   echo "           run 'bun install' before packaging" >&2
@@ -130,6 +127,8 @@ if [ ! -f /var/.migrated ]; then
       touch /var/.migrated
     else
       echo "run_grain: legacy migration FAILED — will retry on next boot" >&2
+      stop_workerd
+      exit 1
     fi
     stop_workerd
   else

@@ -82,8 +82,8 @@ with `OPENSHIFT_DATA_DIR=/var` and no Redis. Per-grain state lived in:
     directory layout, with `\\n`/`\\r`/`\\\\`-escaped audit lines.
 
 On the first boot after upgrade, `run_grain.sh` detects either layout
-and pipes it through `ethercalc migrate --source file:///var… --token
-sandstorm-grain-local`. This is idempotent — re-running would just
+and pipes it through `ethercalc migrate --source file:///var…` with a
+temporary bearer. This is idempotent — re-running would just
 overwrite each room with the same value — but we drop a
 `/var/.migrated` sentinel to avoid paying the per-boot probe cost.
 
@@ -177,10 +177,9 @@ v2017.02.21.0 on Ubuntu 24.04 x86_64:
   - `TMPDIR=/var/tmp` — grain-writable temp, used by bun when running
                         the migrate CLI.
 
-The pkgdef still needs `spk dev --proc` in dev mode so `/proc` is
-mounted inside the sandbox (bun's runtime reads `/proc/self/exe`).
-Packaged grains built with `spk pack` get `/proc` automatically via
-Sandstorm's standard proc mount.
+`spk dev --proc` mounts `/proc` during development, which Bun may need.
+Packaged grains do not get `/proc`; test the installed SPK, including a
+legacy-grain upgrade, before publishing it.
 
 ## Grain-local migrate token
 
