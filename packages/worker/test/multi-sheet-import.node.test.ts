@@ -113,6 +113,22 @@ describe('buildMultiSheetImport', () => {
       .toThrow('child room namespace exhausted');
   });
 
+  it('accepts the last safe child index for a single worksheet', () => {
+    const readFn = (() => ({
+      SheetNames: ['Last'],
+      Sheets: { Last: XLSX.utils.aoa_to_sheet([['x']]) },
+    })) as unknown as typeof XLSX.read;
+    const out = buildMultiSheetImport(
+      new Uint8Array(),
+      'room',
+      readFn,
+      Number.MAX_SAFE_INTEGER,
+    );
+    expect(out.subSheets.map((sheet) => sheet.subroom)).toEqual([
+      `room.${Number.MAX_SAFE_INTEGER}`,
+    ]);
+  });
+
   it('rejects a compact repeated-row workbook before parsing either import path', () => {
     const bytes = new TextEncoder().encode(
       '<office:document><table:table><table:table-row table:number-rows-repeated="200001">' +
@@ -709,6 +725,28 @@ describe('multi-sheet-import mutation pins', () => {
 describe('text import limits', () => {
   const bytes = (text: string): Uint8Array => new TextEncoder().encode(text);
   const maxFieldBytes = 1024 * 1024;
+
+  it('keeps quoted separators in one field and counts escaped quotes once', () => {
+    expect(() => enforceTextImportLimits(
+      bytes(`"x",${'y,'.repeat(MAX_SOCIALCALC_COL)}`),
+      'csv',
+    )).toThrow(ImportDimensionsTooLargeError);
+
+    const quotedAtLimit = `"${'x'.repeat(maxFieldBytes - 3)}"""`;
+    expect(() => enforceTextImportLimits(bytes(quotedAtLimit), 'csv')).not.toThrow();
+  });
+
+  it('treats only tabs as TSV separators', () => {
+    expect(() => enforceTextImportLimits(bytes('x'.repeat(MAX_SOCIALCALC_COL + 1)), 'tsv'))
+      .not.toThrow();
+  });
+
+  it('counts CR-only and LF-only rows', () => {
+    expect(() => enforceTextImportLimits(bytes('x\r'.repeat(MAX_IMPORT_CELLS + 1)), 'csv'))
+      .toThrow(ImportDimensionsTooLargeError);
+    expect(() => enforceTextImportLimits(bytes('\n'.repeat(MAX_IMPORT_CELLS + 1)), 'csv'))
+      .toThrow(ImportDimensionsTooLargeError);
+  });
 
   it('bounds each field independently, including quoted content', () => {
     expect(() => enforceTextImportLimits(new Uint8Array(maxFieldBytes).fill(0x78), 'txt'))

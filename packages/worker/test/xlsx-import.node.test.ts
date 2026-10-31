@@ -1107,6 +1107,125 @@ describe('actual archive expansion limit', () => {
     expect(() => enforceActualImportArchiveLimit(enc('<table:table-cell/>'))).not.toThrow();
   });
 
+  it('accepts the exact ODF expansion ceilings and rejects the first value beyond them', () => {
+    const enc = (body: string) => new TextEncoder().encode(
+      `<office:document><table:table>${body}</table:table></office:document>`,
+    );
+    const row = (rows: number, columns: number, inner = '') =>
+      `<table:table-row table:number-rows-repeated="${rows}">` +
+      `<table:table-cell table:number-columns-repeated="${columns}">${inner}</table:table-cell>` +
+      '</table:table-row>';
+
+    expect(() => enforceActualImportArchiveLimit(enc(row(1000, 200)))).not.toThrow();
+    expect(() => enforceActualImportArchiveLimit(enc(row(1001, 200))))
+      .toThrow(ImportDimensionsTooLargeError);
+    expect(() => enforceActualImportArchiveLimit(enc(row(MAX_IMPORT_CELLS, 1))))
+      .not.toThrow();
+    expect(() => enforceActualImportArchiveLimit(enc(row(1, MAX_IMPORT_CELLS))))
+      .toThrow(ImportDimensionsTooLargeError);
+    expect(() => enforceActualImportArchiveLimit(enc(row(1, MAX_SOCIALCALC_COL))))
+      .not.toThrow();
+    expect(() => enforceActualImportArchiveLimit(enc(row(1, MAX_SOCIALCALC_COL + 1))))
+      .toThrow(ImportDimensionsTooLargeError);
+    expect(() => enforceActualImportArchiveLimit(enc(
+      '<table:table-row><table:table-cell><text:p><text:s text:c="1048576"/></text:p>' +
+      '</table:table-cell></table:table-row>',
+    ))).not.toThrow();
+    expect(() => enforceActualImportArchiveLimit(enc(
+      '<number:number number:decimal-places="4096"/>' +
+      '<number:number number:decimal-places="4097"/>',
+    ))).toThrow(ImportArchiveTooLargeError);
+    expect(() => enforceActualImportArchiveLimit(enc(
+      '<number:number number:decimal-places="4096"/>',
+    ))).not.toThrow();
+
+    const spaces = '<text:s text:c="1048576"/>'.repeat(25);
+    expect(() => enforceActualImportArchiveLimit(enc(row(1, 1, `<text:p>${spaces}</text:p>`))))
+      .not.toThrow();
+    expect(() => enforceActualImportArchiveLimit(enc(row(1, 1, `<text:p>${spaces}<text:s/></text:p>`))))
+      .toThrow(ImportArchiveTooLargeError);
+  });
+
+  it('bounds ODF text expansion using both repeated rows and repeated cells', () => {
+    const enc = (spaces: number) => new TextEncoder().encode(
+      '<office:document><table:table><table:table-row table:number-rows-repeated="1000">' +
+      '<table:table-cell table:number-columns-repeated="200">' +
+      `<text:p><text:s text:c="${spaces}"/></text:p>` +
+      '</table:table-cell></table:table-row></table:table></office:document>',
+    );
+    expect(() => enforceActualImportArchiveLimit(enc(131))).not.toThrow();
+    expect(() => enforceActualImportArchiveLimit(enc(132)))
+      .toThrow(ImportArchiveTooLargeError);
+  });
+
+  it('rejects malformed ODF repetition values before workbook parsing', () => {
+    const enc = (raw: string) => new TextEncoder().encode(
+      '<office:document><table:table>' +
+      `<table:table-row table:number-rows-repeated="${raw}"/>` +
+      '</table:table></office:document>',
+    );
+    for (const raw of ['02', '2x', 'x2', '1.5', '-1', ' 2', '2 ', '']) {
+      expect(() => enforceActualImportArchiveLimit(enc(raw)), raw)
+        .toThrow(ImportArchiveInvalidError);
+    }
+  });
+
+  it('handles quoted attributes and scopes special ODF elements', () => {
+    const enc = (body: string) => new TextEncoder().encode(
+      `<office:document><table:table>${body}</table:table></office:document>`,
+    );
+    for (const attribute of [
+      "table:number-rows-repeated='200001'",
+      'table:number-rows-repeated = "200001"',
+    ]) {
+      expect(() => enforceActualImportArchiveLimit(enc(
+        `<table:table-row ${attribute}/>`,
+      )), attribute).toThrow(ImportTooLargeError);
+    }
+    expect(() => enforceActualImportArchiveLimit(enc(
+      '<text:p text:c="1048577"/>',
+    ))).not.toThrow();
+    expect(() => enforceActualImportArchiveLimit(enc('<other:map/>'))).not.toThrow();
+    expect(() => enforceActualImportArchiveLimit(enc('<style:map/>')))
+      .toThrow(ImportOdfUnsupportedFeatureError);
+    expect(() => enforceActualImportArchiveLimit(enc(
+      '<other:map other:condition="value()>=0"/>',
+    ))).toThrow(ImportOdfUnsupportedFeatureError);
+    expect(() => enforceActualImportArchiveLimit(enc(
+      '<other:map other:apply-style-name="s0"/>',
+    ))).toThrow(ImportOdfUnsupportedFeatureError);
+  });
+
+  it('reports the expanded ODF dimensions at the rejected boundary', () => {
+    const xml = new TextEncoder().encode(
+      '<office:document><table:table>' +
+      '<table:table-row table:number-rows-repeated="1000">' +
+      '<table:table-cell table:number-columns-repeated="703"/>' +
+      '</table:table-row></table:table></office:document>',
+    );
+    let error: unknown;
+    try {
+      enforceActualImportArchiveLimit(xml);
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(ImportDimensionsTooLargeError);
+    expect(error).toMatchObject({ rows: 1000, columns: 703 });
+  });
+
+  it('tracks the aggregate ODF cell budget across individually valid tables', () => {
+    const table = (rows: number, columns: number) =>
+      '<table:table><table:table-row ' +
+      `table:number-rows-repeated="${rows}">` +
+      `<table:table-cell table:number-columns-repeated="${columns}"/>` +
+      '</table:table-row></table:table>';
+    const enc = (body: string) => new TextEncoder().encode(`<office:document>${body}</office:document>`);
+    expect(() => enforceActualImportArchiveLimit(enc(table(100_000, 1) + table(100_000, 1))))
+      .not.toThrow();
+    expect(() => enforceActualImportArchiveLimit(enc(table(100_000, 2) + table(100_000, 2))))
+      .toThrow(ImportDimensionsTooLargeError);
+  });
+
   it('rejects an entry whose expanded size differs from its directory metadata', () => {
     const { bytes } = makeArchiveEntry(new Uint8Array(1024), 0);
     expect(() => enforceImportArchiveLimit(bytes)).not.toThrow();
