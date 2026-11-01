@@ -103,13 +103,30 @@ jobs:
               await page.waitForURL(/\/grain\//);
               const grainId = page.url().split('/grain/')[1].split('/')[0];
               require('node:fs').writeFileSync(process.env.RUNNER_TEMP + '/sandstorm-grain-id', grainId);
-                await page.frameLocator('iframe.grain-frame').locator('#root, #tableeditor').first().waitFor({ state: 'attached', timeout: 15000 });
+                try {
+                  await page.frameLocator('iframe.grain-frame').locator('#root, #tableeditor').first().waitFor({ state: 'attached', timeout: 15000 });
+                } catch (error) {
+                  console.error('Grain frames:', page.frames().map(frame => frame.url()));
+                  await page.screenshot({ path: process.env.RUNNER_TEMP + '/grain.png', fullPage: true });
+                  throw error;
+                }
               console.log('Fresh grain booted with application UI');
             } finally {
               await browser.close();
             }
           })().catch(error => { console.error(error); process.exitCode = 1; });
           JS
+
+      - name: Collect grain diagnostics
+        if: always()
+        run: |
+          sudo journalctl -u sandstorm --no-pager -n 100 > "$RUNNER_TEMP/sandstorm-journal.log" || true
+          sudo tail -n 100 /opt/sandstorm/var/log/sandstorm.log > "$RUNNER_TEMP/sandstorm-server.log" 2>&1 || true
+          if [ -f "$RUNNER_TEMP/sandstorm-grain-id" ]; then
+            grain_id="$(cat "$RUNNER_TEMP/sandstorm-grain-id")"
+            sudo find "/opt/sandstorm/var/sandstorm/grains/$grain_id" -maxdepth 4 -type f -print > "$RUNNER_TEMP/grain-files.log" 2>&1 || true
+            sudo find "/opt/sandstorm/var/sandstorm/grains/$grain_id" -maxdepth 4 -type f -name '*log*' -exec sh -c 'for f; do printf "=== %s ===\n" "$f"; tail -n 100 "$f"; done' sh {} + > "$RUNNER_TEMP/grain-logs.log" 2>&1 || true
+          fi
 
       - name: Inspect dependency trace
         if: always()
@@ -135,4 +152,9 @@ jobs:
           path: |
             sandstorm-files.list
             ${{ runner.temp }}/spk-dev.log
+            ${{ runner.temp }}/sandstorm-journal.log
+            ${{ runner.temp }}/sandstorm-server.log
+            ${{ runner.temp }}/grain-files.log
+            ${{ runner.temp }}/grain-logs.log
+            ${{ runner.temp }}/grain.png
           if-no-files-found: warn
