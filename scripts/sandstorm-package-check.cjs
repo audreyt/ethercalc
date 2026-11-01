@@ -49,7 +49,9 @@ async function uploadAndBoot() {
     await page.locator('#step-confirm').waitFor({ state: 'visible', timeout: 240000 });
     await page.locator('#confirmInstall').click();
     await page.goto(base + '/apps/' + testId);
-    const create = page.getByRole('button', { name: /Create new spreadsheet/ });
+    const intro = page.locator('a.introjs-skipbutton');
+    if (await intro.isVisible()) await intro.click();
+    const create = page.locator('.grain-list-table tr.action button.action').first();
     await create.waitFor({ state: 'visible', timeout: 30000 });
     await create.click();
     await page.waitForURL(/\/grain\//);
