@@ -43,10 +43,10 @@ export HOME="/var/home"
 export TMPDIR="/var/tmp"
 mkdir -p "$HOME" "$TMPDIR" /var/do-storage
 
-# Bun may install more than one workerd release through separate build
-# tools. Use the newest Linux binary for the bundled worker.
-WORKERD_BIN="$(find "$APP_DIR/node_modules/.bun" -path '*/@cloudflare/workerd-linux-64/bin/workerd' -type f -executable 2>/dev/null | sort -V | tail -n1)"
-if [ -z "$WORKERD_BIN" ]; then
+# Match the workerd package used by the standalone config. Other dev tools
+# may install older workerd releases into the same node_modules tree.
+WORKERD_BIN="$APP_DIR/node_modules/.bun/@cloudflare+workerd-linux-64@1.20260714.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd"
+if [ ! -x "$WORKERD_BIN" ]; then
   echo "run_grain: ERROR — workerd binary not found under node_modules" >&2
   echo "           run 'bun install' before packaging" >&2
   exit 127
