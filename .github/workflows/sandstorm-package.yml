@@ -10,6 +10,7 @@ on:
       - run_grain.sh
       - scripts/build-workerd-bundle.sh
       - scripts/build-sandstorm-migrate.sh
+      - scripts/sandstorm-migrate.ts
       - scripts/sandstorm-package-check.cjs
       - packages/worker/**
       - packages/migrate/**
@@ -274,10 +275,11 @@ jobs:
                   colorScheme,
                   sheetStylesheets: await sheet.evaluate(() => [...document.styleSheets].map((s) => s.href || 'inline')),
                   topTabs: await sheet.evaluate(measure, '#tableeditor td[id$="tab"]'),
-                  sheetTabs: await grain.evaluate(measure, '[role=tab], [class*=buttons] button'),
+                  sheetTabs: await grain.evaluate(measure, '[role=tab], [class*=buttons] button, [class*=buttons] [role=button]'),
                 };
                 console.log(JSON.stringify(report, null, 1));
                 await page.screenshot({ path: temp + '/grain-firefox-' + colorScheme + '.png' });
+                if (!report.sheetTabs.some((row) => row.text === 'Import')) failures.push(colorScheme + ' Import control was not measured');
                 for (const row of [...report.topTabs, ...report.sheetTabs]) {
                   if (row.ratio < 4.5) failures.push(colorScheme + ' "' + row.text + '" ' + row.color + ' on ' + row.bg + ' = ' + row.ratio);
                 }
