@@ -20,12 +20,11 @@ async function grainFrame(page) {
 }
 async function shutdown(grainId) {
   await withPage(async page => {
-    await page.goto(base + '/grain/' + grainId);
+    await page.goto(base + '/apps');
     await page.waitForFunction(() => typeof window.Meteor !== 'undefined');
     await page.evaluate(id => new Promise((resolve, reject) => {
       window.Meteor.call('shutdownGrain', id, error => error ? reject(error) : resolve());
     }), grainId);
-    await page.waitForTimeout(3000);
   });
 }
 async function checkMigration(grainId) {
