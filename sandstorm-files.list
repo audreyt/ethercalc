@@ -19,6 +19,7 @@ lib64
 node_modules/.bun/@cloudflare+workerd-linux-64@1.20260714.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd
 packages
 packages/worker/workerd/config.capnp
+packages/worker/workerd/sandstorm.capnp
 packages/worker/workerd/worker/index.js
 run_grain.sh
 sandstorm-http-bridge

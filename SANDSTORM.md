@@ -142,6 +142,13 @@ listens.
 
   - `config.capnp`  — Cap'n Proto config checked in; declares the
                        worker, bindings, DO namespace, HTTP socket.
+  - `sandstorm.capnp` — the grain's config: `config.capnp`'s services
+                       and sockets plus `--no-memory-protection-keys`.
+                       Sandstorm's default seccomp filter allows
+                       `pkey_alloc` but returns ENOSYS for
+                       `pkey_mprotect`, so on CPUs with memory
+                       protection keys V8 would trap (SIGTRAP, exit
+                       133) at startup.
   - `worker/index.js` — bundled worker (built by
                        `wrangler deploy --dry-run --outdir=…`).
   - `assets/`       — symlink to the repo-root `assets/` tree
@@ -153,7 +160,7 @@ listens.
 `@cloudflare/workerd-linux-64` package ships it), then runs:
 
 ```
-workerd serve packages/worker/workerd/config.capnp \
+workerd serve packages/worker/workerd/sandstorm.capnp \
     -ddo=/var/do-storage \
     -dassets=./assets
 ```

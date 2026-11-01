@@ -19,34 +19,40 @@
 using Workerd = import "/workerd/workerd.capnp";
 
 const config :Workerd.Config = (
-  services = [
-    # Main worker. Exports RoomDO + default fetch handler.
-    (name = "main", worker = .mainWorker),
-
-    # Curated static-asset tree — the output of scripts/build-assets.ts.
-    # Default points at the sibling `assets/` dir; override with
-    # `workerd serve config.capnp -dassets=/path/to/assets` at runtime.
-    (name = "assets", disk = (path = "assets", writable = false)),
-
-    # Durable Object on-disk storage. One subdirectory per DO namespace
-    # (keyed by uniqueKey), SQLite files per object. Default is grain-
-    # local `do-storage/`; override with `-ddo=/var/do-storage`.
-    (name = "do", disk = (path = "do-storage", writable = true)),
-
-    # Internet service — left unbound. The worker never makes outbound
-    # fetches (it's all local DO + assets under this standalone config), so no outbound HTTP
-    # egress is needed.
-  ],
-
-  sockets = [
-    (
-      name = "http",
-      address = "*:33411",
-      http = (),
-      service = "main",
-    ),
-  ],
+  services = .services,
+  sockets = .sockets,
 );
+
+# Shared with sandstorm.capnp, which serves the same worker with the V8
+# flags a Sandstorm grain needs. Keep this file's only Config constant
+# `config`, so `workerd serve config.capnp` still needs no constant name.
+const services :List(Workerd.Service) = [
+  # Main worker. Exports RoomDO + default fetch handler.
+  (name = "main", worker = .mainWorker),
+
+  # Curated static-asset tree — the output of scripts/build-assets.ts.
+  # Default points at the sibling `assets/` dir; override with
+  # `workerd serve config.capnp -dassets=/path/to/assets` at runtime.
+  (name = "assets", disk = (path = "assets", writable = false)),
+
+  # Durable Object on-disk storage. One subdirectory per DO namespace
+  # (keyed by uniqueKey), SQLite files per object. Default is grain-
+  # local `do-storage/`; override with `-ddo=/var/do-storage`.
+  (name = "do", disk = (path = "do-storage", writable = true)),
+
+  # Internet service — left unbound. The worker never makes outbound
+  # fetches (it's all local DO + assets under this standalone config), so no outbound HTTP
+  # egress is needed.
+];
+
+const sockets :List(Workerd.Socket) = [
+  (
+    name = "http",
+    address = "*:33411",
+    http = (),
+    service = "main",
+  ),
+];
 
 const mainWorker :Workerd.Worker = (
   modules = [
