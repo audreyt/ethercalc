@@ -25,6 +25,7 @@ async function shutdown(grainId) {
     await page.evaluate(id => new Promise((resolve, reject) => {
       window.Meteor.call('shutdownGrain', id, error => error ? reject(error) : resolve());
     }), grainId);
+    await page.waitForTimeout(3000);
   });
 }
 async function checkMigration(grainId) {

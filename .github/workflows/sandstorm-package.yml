@@ -224,11 +224,15 @@ jobs:
         run: |
           sudo journalctl -u sandstorm --no-pager -n 100 > "$RUNNER_TEMP/sandstorm-journal.log" || true
           sudo tail -n 100 /opt/sandstorm/var/log/sandstorm.log > "$RUNNER_TEMP/sandstorm-server.log" 2>&1 || true
-          if [ -f "$RUNNER_TEMP/sandstorm-grain-id" ]; then
-            grain_id="$(cat "$RUNNER_TEMP/sandstorm-grain-id")"
-            sudo find "/opt/sandstorm/var/sandstorm/grains/$grain_id" -maxdepth 4 -type f -print > "$RUNNER_TEMP/grain-files.log" 2>&1 || true
-            sudo find "/opt/sandstorm/var/sandstorm/grains/$grain_id" -maxdepth 4 -type f -name '*log*' -exec sh -c 'for f; do printf "=== %s ===\n" "$f"; head -n 100 "$f"; tail -n 100 "$f"; done' sh {} + > "$RUNNER_TEMP/grain-logs.log" 2>&1 || true
-          fi
+          : > "$RUNNER_TEMP/grain-files.log"
+          : > "$RUNNER_TEMP/grain-logs.log"
+          for id_file in "$RUNNER_TEMP/sandstorm-grain-id" "$RUNNER_TEMP/sandstorm-packaged-grain-id"; do
+            if [ -f "$id_file" ]; then
+              grain_id="$(cat "$id_file")"
+              sudo find "/opt/sandstorm/var/sandstorm/grains/$grain_id" -maxdepth 4 -type f -print >> "$RUNNER_TEMP/grain-files.log" 2>&1 || true
+              sudo find "/opt/sandstorm/var/sandstorm/grains/$grain_id" -maxdepth 4 -type f -name '*log*' -exec sh -c 'for f; do printf "=== %s ===\n" "$f"; head -n 100 "$f"; tail -n 100 "$f"; done' sh {} + >> "$RUNNER_TEMP/grain-logs.log" 2>&1 || true
+            fi
+          done
 
       - name: Collect test package and trace
         if: always()
