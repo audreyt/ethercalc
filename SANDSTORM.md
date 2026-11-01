@@ -12,6 +12,8 @@ alongside the worker:
     `workerd` on port 33411 (the port sandstorm-http-bridge proxies),
     waits for `/_health`, then migrates any legacy `/var/dump*` content
     into the Worker's Durable Object storage on first boot.
+  - `sandstorm-migrate.mjs` — bundled Node migration entrypoint produced
+    by `scripts/build-sandstorm-migrate.sh`.
   - `sandstorm-files.list` — runtime dependency list traced with
     `spk dev --proc`.
 
@@ -19,19 +21,23 @@ alongside the worker:
 
 On a machine with Sandstorm + `spk` installed:
 
-    # 1. Ensure Bun and Vite+ are available. run_grain.sh assumes
-    #    `/usr/local/bin/bun`.
+    # 1. Ensure Bun, Node, and Vite+ are available. The grain uses
+    #    `/usr/local/bin/node` for the one-shot migrator.
     curl -fsSL https://bun.sh/install | bash
     curl -fsSL https://vite.plus | bash
     export PATH="$HOME/.bun/bin:$HOME/.local/bin:$PATH"
-    sudo install -m 0755 "$HOME/.bun/bin/bun" /usr/local/bin/bun
+    node_source="$(readlink -f "$(command -v node)")"
+    if [ "$node_source" != /usr/local/bin/node ]; then
+      sudo install -m 0755 "$node_source" /usr/local/bin/node
+    fi
 
     # 2. Install workspace deps (one-time).
     vp install
 
-    # 3. Build the client assets and standalone worker bundle.
+    # 3. Build the client assets, worker, and migration bundle.
     vp run build:assets
     bash scripts/build-workerd-bundle.sh
+    bash scripts/build-sandstorm-migrate.sh
 
     # 4. Generate sandstorm-files.list by tracing a dev-mode run.
     spk dev --proc
@@ -65,7 +71,7 @@ Release checklist on a machine with Sandstorm + `spk` + the app private key:
 1. Prepare the release branch, including `appVersion` /
    `appMarketingVersion` in `sandstorm-pkgdef.capnp`.
 2. Install the Linux runtime dependencies and build from that branch.
-3. `vp run build:assets` and `bash scripts/build-workerd-bundle.sh`.
+3. Build assets, worker, and migration bundles with the commands above.
 4. `spk dev --proc` to refresh `sandstorm-files.list`; exercise fresh
    and legacy grains, then review the generated file list.
 5. `spk pack ethercalc.spk` and `spk verify ethercalc.spk`.
@@ -175,17 +181,13 @@ v2017.02.21.0 on Ubuntu 24.04 x86_64:
 
 ### Grain sandbox env vars (applied in run_grain.sh)
 
-  - `HOME=/var/home` — the `bun bin/ethercalc migrate` step still
-                        uses `bunx wrangler` under the hood for the
-                        CF-less `--dry-run` bundle build path, which
-                        calls `os.homedir()`. Set early so nothing
-                        ENOENTs.
-  - `TMPDIR=/var/tmp` — grain-writable temp, used by bun when running
-                        the migrate CLI.
+  - `HOME=/var/home` — writable home for grain-local tools.
+  - `TMPDIR=/var/tmp` — writable temporary directory.
 
-`spk dev --proc` mounts `/proc` during development, which Bun may need.
-Packaged grains do not get `/proc`; test the installed SPK, including a
-legacy-grain upgrade, before publishing it.
+The migration bundle runs on the packaged Node runtime. The CI smoke
+workflow installs a temporary-ID SPK and tests its grain without `/proc`.
+An existing-grain upgrade still needs a package signed with the original
+app key and a test against a legacy grain before App Market publication.
 
 ## Grain-local migrate token
 

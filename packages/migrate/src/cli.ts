@@ -284,6 +284,9 @@ export async function runMigrate(
       `${stats.auditEntries} audit, ${stats.chatEntries} chat, ` +
       `${stats.ecellEntries} ecell)\n`,
   );
+  if (failedRoomCount > 0) {
+    throw new Error(`${failedRoomCount.toLocaleString()} room(s) failed to migrate`);
+  }
   return stats;
 }
 

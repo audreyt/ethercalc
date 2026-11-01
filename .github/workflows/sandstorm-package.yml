@@ -9,6 +9,7 @@ on:
       - sandstorm-files.list
       - run_grain.sh
       - scripts/build-workerd-bundle.sh
+      - scripts/build-sandstorm-migrate.sh
       - scripts/sandstorm-package-check.cjs
       - packages/worker/**
       - packages/migrate/**
@@ -43,6 +44,7 @@ jobs:
           vp run @ethercalc/e2e#install:browsers
           vp run build:assets
           bash scripts/build-workerd-bundle.sh
+          bash scripts/build-sandstorm-migrate.sh
 
       - name: Install Sandstorm development server
         run: |
@@ -65,13 +67,14 @@ jobs:
           sudo journalctl -u sandstorm --no-pager -n 80
           exit 1
 
-      - name: Install grain-local Bun binary
+      - name: Install grain-local Node binary
         run: |
-          curl -fsSL https://bun.sh/install -o "$RUNNER_TEMP/bun-install.sh"
-          bash "$RUNNER_TEMP/bun-install.sh"
-          sudo install -m 0755 "$HOME/.bun/bin/bun" /usr/local/bin/bun
-          test -f /usr/local/bin/bun
-          test ! -L /usr/local/bin/bun
+          node_source="$(readlink -f "$(command -v node)")"
+          if [ "$node_source" != /usr/local/bin/node ]; then
+            sudo install -m 0755 "$node_source" /usr/local/bin/node
+          fi
+          test -x /usr/local/bin/node
+          test ! -L /usr/local/bin/node
 
       - name: Start package dependency trace
         run: |
@@ -167,7 +170,8 @@ jobs:
           grep -Fq 'run_grain.sh' sandstorm-files.list
           grep -Fq 'packages/worker/workerd/worker/index.js' sandstorm-files.list
           grep -Fq '@cloudflare/workerd-linux-64' sandstorm-files.list
-          grep -Fq 'usr/local/bin/bun' sandstorm-files.list
+          grep -Fq 'usr/local/bin/node' sandstorm-files.list
+          grep -Fq 'sandstorm-migrate.mjs' sandstorm-files.list
           grep -Eq '(^|/)od$' sandstorm-files.list
           grep -Eq '(^|/)tr$' sandstorm-files.list
           grep -Eq '(^|/)curl$' sandstorm-files.list
@@ -233,6 +237,16 @@ jobs:
               sudo find "/opt/sandstorm/var/sandstorm/grains/$grain_id" -maxdepth 4 -type f -name '*log*' -exec sh -c 'for f; do printf "=== %s ===\n" "$f"; head -n 100 "$f"; tail -n 100 "$f"; done' sh {} + >> "$RUNNER_TEMP/grain-logs.log" 2>&1 || true
             fi
           done
+          python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+          for name in ('sandstorm-journal.log', 'sandstorm-server.log',
+                       'grain-files.log', 'grain-logs.log', 'spk-dev.log'):
+              path = Path(os.environ['RUNNER_TEMP']) / name
+              if path.exists():
+                  text = path.read_text(errors='replace')
+                  path.write_text(re.sub(r'\b[0-9a-f]{64}\b', '[redacted]', text))
+          PY
 
       - name: Collect test package and trace
         if: always()
