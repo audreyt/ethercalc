@@ -60,4 +60,36 @@ test.describe('client-multi smoke', () => {
       0,
     );
   });
+
+  test('tab and button text stays readable under dark system colors', async ({
+    workerBase,
+    page,
+  }) => {
+    // The strip paints light backgrounds (#ccc/#eee/#fff). Text that falls
+    // back to the system ButtonText colour turns white when the browser
+    // resolves system colours from a dark theme, so force that palette.
+    await page.goto(`${workerBase}/=test-room-contrast`);
+    await expect(page.getByRole('tab').first()).toBeVisible({ timeout: 10_000 });
+    await page.addStyleTag({ content: ':root { color-scheme: dark; }' });
+
+    const ratios = await page.evaluate(() => {
+      const rgb = (c: string) => (c.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
+      const lum = (c: string) => {
+        const [r = 0, g = 0, b = 0] = rgb(c).map((v) => {
+          const s = v / 255;
+          return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+        });
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      };
+      return [...document.querySelectorAll<HTMLElement>('button:not(:disabled)')].map((el) => {
+        const style = getComputedStyle(el);
+        const [hi, lo] = [lum(style.color), lum(style.backgroundColor)].sort((a, b) => b - a);
+        return { text: el.textContent, ratio: (hi! + 0.05) / (lo! + 0.05) };
+      });
+    });
+    expect(ratios.length).toBeGreaterThanOrEqual(2);
+    for (const { text, ratio } of ratios) {
+      expect(ratio, `contrast of "${text}"`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
 });

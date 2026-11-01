@@ -19,6 +19,10 @@ Fixes
   Sandstorm's seccomp filter refuses `pkey_mprotect`, which V8 needs once
   it has allocated a key; the grain now starts workerd with
   `--no-memory-protection-keys` via `packages/worker/workerd/sandstorm.capnp`.
+- Multi-sheet tab labels and the Add/Import/Rename/Delete buttons now set
+  their own text colour. Browsers that take default button text from a dark
+  system theme drew them white on light grey (white on white for the active
+  tab).
 
 ==============================================================================
 0.20261101.1 — 2026-11-01
