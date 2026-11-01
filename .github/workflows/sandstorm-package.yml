@@ -75,25 +75,26 @@ jobs:
           C
           workerd="$(grep -o 'node_modules/[^"]*/bin/workerd' run_grain.sh)"
           boot() {
-            local log="$RUNNER_TEMP/pkey-$1.log" store pid status
+            # workerd's control fd reports the socket once it listens; it
+            # reaches EOF instead if workerd exits first. read -t bounds it.
+            local log="$RUNNER_TEMP/pkey-$1.log" store ctl line port pid status=0
             store="$(mktemp -d)"
-            LD_PRELOAD="$shim" "$workerd" serve "packages/worker/workerd/$1" \
-              -s http=127.0.0.1:33499 -ddo="$store" -dassets="$PWD/assets" > "$log" 2>&1 &
+            ctl="$(mktemp -u)"
+            mkfifo "$ctl"
+            LD_PRELOAD="$shim" "$workerd" serve "packages/worker/workerd/$1" --control-fd=3 \
+              -s http=127.0.0.1:0 -ddo="$store" -dassets="$PWD/assets" 3>"$ctl" > "$log" 2>&1 &
             pid=$!
-            for i in $(seq 1 30); do
-              if curl -fsS -o /dev/null http://127.0.0.1:33499/_health; then
-                kill "$pid"; wait "$pid" || true
-                echo "$1: served /_health"
-                return 0
-              fi
-              if ! kill -0 "$pid" 2>/dev/null; then
-                status=0; wait "$pid" || status=$?
-                echo "$1: workerd exited $status"; cat "$log"
-                return "$status"
-              fi
-              sleep 1
-            done
-            kill "$pid"; cat "$log"; return 1
+            if read -r -t 30 line < "$ctl"; then
+              port="$(printf '%s\n' "$line" | sed -n 's/.*"port":\([0-9]*\).*/\1/p')"
+              status=0; curl -fsS -o /dev/null "http://127.0.0.1:$port/_health" || status=$?
+              kill -KILL "$pid"; wait "$pid" || true
+              echo "$1: /_health on port $port, curl status $status"
+              return "$status"
+            fi
+            kill -KILL "$pid" 2>/dev/null || true
+            wait "$pid" || status=$?
+            echo "$1: workerd ended with $status before listening"; cat "$log"
+            return "$status"
           }
           status=0; boot config.capnp || status=$?
           if [ "$status" -ne 133 ]; then
