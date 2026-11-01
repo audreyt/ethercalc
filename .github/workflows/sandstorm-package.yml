@@ -266,8 +266,10 @@ jobs:
                 const grain = await (await page.locator('iframe.grain-frame').elementHandle()).contentFrame();
                 const sheet = await (await grain.locator('iframe').first().elementHandle()).contentFrame();
                 // Switching tabs makes SocialCalc rewrite each tab's inline style.
-                await sheet.click('#SocialCalc-settingstab');
-                await sheet.click('#SocialCalc-edittab');
+                // dispatchEvent runs the tabs' onclick (SocialCalc.SetTab) even
+                // while Sandstorm's first-grain intro overlay covers the page.
+                await sheet.locator('#SocialCalc-settingstab').dispatchEvent('click');
+                await sheet.locator('#SocialCalc-edittab').dispatchEvent('click');
                 const report = {
                   colorScheme,
                   sheetStylesheets: await sheet.evaluate(() => [...document.styleSheets].map((s) => s.href || 'inline')),
