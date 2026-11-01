@@ -13,6 +13,10 @@ EtherCalc bundles SocialCalc from the audreyt/socialcalc fork; see
 Unreleased
 ==============================================================================
 
+==============================================================================
+0.20261101.2 — 2026-11-01
+==============================================================================
+
 Fixes
 - Sandstorm grains no longer crash at startup with "Trace/breakpoint trap"
   (exit 133) on servers whose CPUs support memory protection keys (PKU).
