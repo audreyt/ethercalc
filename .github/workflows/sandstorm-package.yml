@@ -50,6 +50,15 @@ jobs:
           curl -fsSL https://install.sandstorm.io/ -o "$RUNNER_TEMP/sandstorm-install.sh"
           sudo env REPORT=no bash "$RUNNER_TEMP/sandstorm-install.sh" -d
           sudo systemctl is-active --quiet sandstorm
+          for i in $(seq 1 60); do
+            if [ -S /opt/sandstorm/var/sandstorm/socket/devmode ] &&
+               curl -fsS -o /dev/null http://local.sandstorm.io:6080/; then
+              exit 0
+            fi
+            sleep 1
+          done
+          sudo journalctl -u sandstorm --no-pager -n 80
+          exit 1
 
       - name: Install grain-local Bun binary
         run: |
@@ -64,7 +73,7 @@ jobs:
           sudo bash -c 'echo $$ > "$1"; exec spk dev --proc' _ "$RUNNER_TEMP/spk-dev.pid" > "$RUNNER_TEMP/spk-dev.log" 2>&1 < /dev/null &
           for i in $(seq 1 45); do
             if grep -q 'App is now available' "$RUNNER_TEMP/spk-dev.log"; then exit 0; fi
-            if ! kill -0 "$(cat "$RUNNER_TEMP/spk-dev.pid")"; then
+            if [ -f "$RUNNER_TEMP/spk-dev.pid" ] && ! sudo kill -0 "$(cat "$RUNNER_TEMP/spk-dev.pid")" 2>/dev/null; then
               cat "$RUNNER_TEMP/spk-dev.log"
               exit 1
             fi
