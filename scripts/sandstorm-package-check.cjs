@@ -31,14 +31,24 @@ async function checkMigration(grainId) {
   await withPage(async page => {
     await page.goto(base + '/grain/' + grainId);
     const frame = await grainFrame(page);
-    const response = await frame.locator('body').evaluate(async () => {
-      const result = await fetch('/_/sheet1');
-      return { status: result.status, text: await result.text() };
-    });
-    if (response.status !== 200 || !response.text.includes('CI-MIGRATED')) {
-      throw new Error('Migrated cell was not restored');
+    let last = 'no response';
+    for (let attempt = 0; attempt < 90; attempt++) {
+      try {
+        const response = await frame.locator('body').evaluate(async () => {
+          const result = await fetch('/_/sheet1');
+          return { status: result.status, text: await result.text() };
+        });
+        if (response.status === 200 && response.text.includes('CI-MIGRATED')) {
+          console.log('Grain migration passed');
+          return;
+        }
+        last = `HTTP ${response.status}: ${response.text.slice(0, 120)}`;
+      } catch (error) {
+        last = String(error);
+      }
+      await page.waitForTimeout(1000);
     }
-    console.log('Grain migration passed');
+    throw new Error(`Migrated cell was not restored: ${last}`);
   });
 }
 async function uploadAndBoot() {
