@@ -17,9 +17,9 @@ const pkgdef :Spk.PackageDefinition = (
     # This manifest is included in your app package to tell Sandstorm
     # about your app.
 
-    appVersion = 202611010,  # Increment this for every release.
+    appVersion = 202611011,  # Increment this for every release.
     appTitle = (defaultText = "EtherCalc"),
-    appMarketingVersion = (defaultText = "2026.11.01.0"),
+    appMarketingVersion = (defaultText = "2026.11.01.1"),
 
     actions = [
       # Define your "new document" handlers here.
@@ -53,10 +53,8 @@ const pkgdef :Spk.PackageDefinition = (
 
       author = (
         contactEmail = "audreyt@audreyt.org",
-        pgpSignature = embed "pgp-signature",
         upstreamAuthor = "Audrey Tang",
       ),
-      pgpKeyring = embed "pgp-keyring",
 
       description = (defaultText = embed "DESCRIPTION.mkdn"),
       shortDescription = (defaultText = "Multi-user Spreadsheet"),
@@ -89,7 +87,8 @@ const pkgdef :Spk.PackageDefinition = (
   # `spk dev` will write a list of all the files your app uses to this file.
   # You should review it later, before shipping your app.
 
-  alwaysInclude = [],
+  alwaysInclude = ["assets", "sandstorm-migrate.mjs", "usr/local/bin/node",
+                   "usr/bin/od", "usr/bin/tr"],
   # Fill this list with more names of files or directories that should be
   # included in your package, even if not listed in sandstorm-files.list.
   # Use this to force-include stuff that you know you need but which may

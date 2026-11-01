@@ -1,0 +1,8 @@
+# EtherCalc for Sandstorm
+
+EtherCalc is a collaborative spreadsheet. Each Sandstorm grain contains a
+workbook that can be edited together in real time and shared through
+Sandstorm's permissions.
+
+Create sheets, import and export common spreadsheet formats, and keep the
+workbook in your own Sandstorm instance.

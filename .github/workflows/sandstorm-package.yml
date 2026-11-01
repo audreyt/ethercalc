@@ -1,0 +1,273 @@
+name: Sandstorm package smoke
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/sandstorm-package.yml
+      - sandstorm-pkgdef.capnp
+      - sandstorm-files.list
+      - run_grain.sh
+      - scripts/build-workerd-bundle.sh
+      - scripts/build-sandstorm-migrate.sh
+      - scripts/sandstorm-package-check.cjs
+      - packages/worker/**
+      - packages/migrate/**
+      - packages/cli/**
+      - DESCRIPTION.mkdn
+      - CHANGELOG.mkdn
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sandstorm-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  grain:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@e1609b468742ba9232ce5e12b3a77bdf14495277 # v1.1.0
+        with:
+          cache: true
+
+      - name: Setup packaged Node runtime
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24.13.0'
+
+      - name: Install application and browser dependencies
+        run: |
+          vp install --frozen-lockfile
+          vp run @ethercalc/e2e#install:browsers
+          vp run build:assets
+          bash scripts/build-workerd-bundle.sh
+          bash scripts/build-sandstorm-migrate.sh
+
+      - name: Install Sandstorm development server
+        run: |
+          test "$(uname -m)" = x86_64
+          test -c /dev/fuse
+          curl -fsSL https://install.sandstorm.io/ -o "$RUNNER_TEMP/sandstorm-install.sh"
+          sudo env REPORT=no bash "$RUNNER_TEMP/sandstorm-install.sh" -d
+          sudo systemctl is-active --quiet sandstorm
+          if sysctl -n kernel.apparmor_restrict_unprivileged_userns >/dev/null 2>&1; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+            sudo systemctl restart sandstorm
+          fi
+          for i in $(seq 1 60); do
+            if [ -S /opt/sandstorm/var/sandstorm/socket/devmode ] &&
+               curl -fsS -o /dev/null http://local.sandstorm.io:6080/; then
+              exit 0
+            fi
+            sleep 1
+          done
+          sudo journalctl -u sandstorm --no-pager -n 80
+          exit 1
+
+      - name: Install grain-local Node binary
+        run: |
+          node_source="$(readlink -f "$(command -v node)")"
+          file "$node_source" | grep -q 'ELF 64-bit'
+          test "$(node --version)" = v24.13.0
+          if [ "$node_source" != /usr/local/bin/node ]; then
+            sudo install -m 0755 "$node_source" /usr/local/bin/node
+          fi
+          test -x /usr/local/bin/node
+          test ! -L /usr/local/bin/node
+
+      - name: Start package dependency trace
+        run: |
+          sudo bash -c 'echo $$ > "$1"; exec spk dev --proc' _ "$RUNNER_TEMP/spk-dev.pid" > "$RUNNER_TEMP/spk-dev.log" 2>&1 < /dev/null &
+          for i in $(seq 1 45); do
+            if grep -q 'App is now available' "$RUNNER_TEMP/spk-dev.log"; then exit 0; fi
+            if [ -f "$RUNNER_TEMP/spk-dev.pid" ] && ! sudo kill -0 "$(cat "$RUNNER_TEMP/spk-dev.pid")" 2>/dev/null; then
+              cat "$RUNNER_TEMP/spk-dev.log"
+              exit 1
+            fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/spk-dev.log"
+          exit 1
+
+      - name: Boot a fresh grain
+        working-directory: packages/e2e
+        run: |
+          node - <<'JS'
+          const { chromium } = require('@playwright/test');
+          (async () => {
+            const browser = await chromium.launch({ headless: true });
+            try {
+              const page = await browser.newPage();
+              await page.goto('http://local.sandstorm.io:6080/');
+                await page.waitForFunction(() => typeof window.loginDevAccountFast === 'function');
+                await page.evaluate(() => window.loginDevAccountFast('Alice', true));
+                await page.goto('http://local.sandstorm.io:6080/apps');
+                await page.locator('.app-list').waitFor({ state: 'visible' });
+              await page.goto('http://local.sandstorm.io:6080/apps/a0n6hwm32zjsrzes8gnjg734dh6jwt7x83xdgytspe761pe2asw0');
+              const intro = page.locator('a.introjs-skipbutton');
+              if (await intro.isVisible()) await intro.click();
+                await page.locator('.grain-list-table tr.action button.action').first().click();
+              await page.waitForURL(/\/grain\//);
+              const grainId = page.url().split('/grain/')[1].split('/')[0];
+              require('node:fs').writeFileSync(process.env.RUNNER_TEMP + '/sandstorm-grain-id', grainId);
+                try {
+                  await page.frameLocator('iframe.grain-frame').locator('#root, #tableeditor').first().waitFor({ state: 'attached', timeout: 15000 });
+                await page.context().storageState({ path: process.env.RUNNER_TEMP + '/sandstorm-browser.json' });
+                } catch (error) {
+                  console.error('Grain frames:', page.frames().map(frame => frame.url()));
+                  await page.screenshot({ path: process.env.RUNNER_TEMP + '/grain.png', fullPage: true });
+                  throw error;
+                }
+              console.log('Fresh grain booted with application UI');
+            } finally {
+              await browser.close();
+            }
+          })().catch(error => { console.error(error); process.exitCode = 1; });
+          JS
+
+      - name: Trace legacy migration
+        run: |
+          node scripts/sandstorm-package-check.cjs dev-shutdown
+          sudo env RUNNER_TEMP="$RUNNER_TEMP" python3 - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          grain_id = (Path(os.environ['RUNNER_TEMP']) / 'sandstorm-grain-id').read_text().strip()
+          assert re.fullmatch(r'[A-Za-z0-9]+', grain_id)
+          sandbox = Path('/opt/sandstorm/var/sandstorm/grains') / grain_id / 'sandbox'
+          assert sandbox.is_dir()
+          (sandbox / 'dump.json').write_text(json.dumps({
+              'log-sheet1': ['set A1 text t CI-MIGRATED'],
+          }))
+          (sandbox / '.migrated').unlink(missing_ok=True)
+          PY
+          node scripts/sandstorm-package-check.cjs dev-check
+          grain_id="$(cat "$RUNNER_TEMP/sandstorm-grain-id")"
+          sudo test -f "/opt/sandstorm/var/sandstorm/grains/$grain_id/sandbox/.migrated"
+
+      - name: Finish and inspect package trace
+        run: |
+          pid="$(cat "$RUNNER_TEMP/spk-dev.pid")"
+          sudo kill -INT "$pid"
+          for i in $(seq 1 30); do
+            if ! sudo kill -0 "$pid" 2>/dev/null; then break; fi
+            sleep 1
+          done
+          if sudo kill -0 "$pid" 2>/dev/null; then
+            echo 'spk dev did not stop after SIGINT' >&2
+            exit 1
+          fi
+          sudo chown "$USER:$USER" sandstorm-files.list
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('sandstorm-files.list')
+          lines = path.read_text().splitlines()
+          excluded = ('proc/', 'run/systemd/', 'run/userdb/')
+          kept = [line for line in lines if not line.lstrip('/').startswith(excluded)]
+          path.write_text('\n'.join(kept) + '\n')
+          print(f'Package trace: {len(kept)} entries; removed {len(lines) - len(kept)} transient entries')
+          PY
+          grep -Fq 'run_grain.sh' sandstorm-files.list
+          grep -Fq 'packages/worker/workerd/worker/index.js' sandstorm-files.list
+          grep -Fq '@cloudflare/workerd-linux-64' sandstorm-files.list
+          grep -Fq 'usr/local/bin/node' sandstorm-files.list
+          grep -Fq 'sandstorm-migrate.mjs' sandstorm-files.list
+          grep -Eq '(^|/)od$' sandstorm-files.list
+          grep -Eq '(^|/)tr$' sandstorm-files.list
+          grep -Eq '(^|/)curl$' sandstorm-files.list
+
+      - name: Pack and verify temporary-ID SPK
+        run: |
+          umask 077
+          keyring="$RUNNER_TEMP/sandstorm-test-keyring"
+          : > "$keyring"
+          test_id="$(spk keygen -q --keyring="$keyring" | tail -n 1)"
+          [[ "$test_id" =~ ^[a-z0-9]{52}$ ]]
+          printf '%s' "$test_id" > "$RUNNER_TEMP/sandstorm-test-app-id"
+          cp sandstorm-pkgdef.capnp sandstorm-test-pkgdef.capnp
+          TEST_APP_ID="$test_id" python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+          path = Path('sandstorm-test-pkgdef.capnp')
+          text, count = re.subn(
+              r'(?m)^  id = "[a-z0-9]{52}",$',
+              '  id = "' + os.environ['TEST_APP_ID'] + '",',
+              path.read_text(),
+          )
+          assert count == 1
+          path.write_text(text)
+          PY
+          spk pack --pkg-def=sandstorm-test-pkgdef.capnp:pkgdef --keyring="$keyring" "$RUNNER_TEMP/ethercalc-test.spk"
+          verified="$(spk verify "$RUNNER_TEMP/ethercalc-test.spk")"
+          [[ "$verified" == *"$test_id"* ]]
+          sha256sum "$RUNNER_TEMP/ethercalc-test.spk"
+          du -h "$RUNNER_TEMP/ethercalc-test.spk"
+
+      - name: Boot installed package and test migration
+        run: |
+          node scripts/sandstorm-package-check.cjs upload-boot
+          node scripts/sandstorm-package-check.cjs packaged-shutdown
+          sudo env RUNNER_TEMP="$RUNNER_TEMP" python3 - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          grain_id = (Path(os.environ['RUNNER_TEMP']) / 'sandstorm-packaged-grain-id').read_text().strip()
+          assert re.fullmatch(r'[A-Za-z0-9]+', grain_id)
+          sandbox = Path('/opt/sandstorm/var/sandstorm/grains') / grain_id / 'sandbox'
+          assert sandbox.is_dir()
+          (sandbox / 'dump.json').write_text(json.dumps({
+              'log-sheet1': ['set A1 text t CI-MIGRATED'],
+          }))
+          (sandbox / '.migrated').unlink(missing_ok=True)
+          PY
+          node scripts/sandstorm-package-check.cjs packaged-check
+          grain_id="$(cat "$RUNNER_TEMP/sandstorm-packaged-grain-id")"
+          sudo test -f "/opt/sandstorm/var/sandstorm/grains/$grain_id/sandbox/.migrated"
+
+      - name: Collect grain diagnostics
+        if: always()
+        run: |
+          sudo journalctl -u sandstorm --no-pager -n 100 > "$RUNNER_TEMP/sandstorm-journal.log" || true
+          sudo tail -n 100 /opt/sandstorm/var/log/sandstorm.log > "$RUNNER_TEMP/sandstorm-server.log" 2>&1 || true
+          : > "$RUNNER_TEMP/grain-files.log"
+          : > "$RUNNER_TEMP/grain-logs.log"
+          for id_file in "$RUNNER_TEMP/sandstorm-grain-id" "$RUNNER_TEMP/sandstorm-packaged-grain-id"; do
+            if [ -f "$id_file" ]; then
+              grain_id="$(cat "$id_file")"
+              sudo find "/opt/sandstorm/var/sandstorm/grains/$grain_id" -maxdepth 4 -type f -print >> "$RUNNER_TEMP/grain-files.log" 2>&1 || true
+              sudo find "/opt/sandstorm/var/sandstorm/grains/$grain_id" -maxdepth 4 -type f -name '*log*' -exec sh -c 'for f; do printf "=== %s ===\n" "$f"; head -n 100 "$f"; tail -n 100 "$f"; done' sh {} + >> "$RUNNER_TEMP/grain-logs.log" 2>&1 || true
+            fi
+          done
+          python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+          for name in ('sandstorm-journal.log', 'sandstorm-server.log',
+                       'grain-files.log', 'grain-logs.log', 'spk-dev.log'):
+              path = Path(os.environ['RUNNER_TEMP']) / name
+              if path.exists():
+                  text = path.read_text(errors='replace')
+                  path.write_text(re.sub(r'\b[0-9a-f]{64}\b', '[redacted]', text))
+          PY
+
+      - name: Collect test package and trace
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: sandstorm-test-package
+          path: |
+            sandstorm-files.list
+            ${{ runner.temp }}/ethercalc-test.spk
+            ${{ runner.temp }}/spk-dev.log
+            ${{ runner.temp }}/sandstorm-journal.log
+            ${{ runner.temp }}/sandstorm-server.log
+            ${{ runner.temp }}/grain-files.log
+            ${{ runner.temp }}/grain-logs.log
+            ${{ runner.temp }}/grain.png
+          if-no-files-found: warn
+          retention-days: 7

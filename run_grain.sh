@@ -17,10 +17,8 @@
 #   3. Run until Sandstorm signals exit, then shut the worker down
 #      cleanly so DO storage gets a chance to flush.
 #
-# Migrate token (SH-7): the bearer is passed only to the one-shot
-# `ethercalc migrate` subprocess while workerd is briefly started with
-# `ETHERCALC_MIGRATE_TOKEN` set. Normal grain operation runs workerd
-# without the token so `PUT /_migrate/seed/*` returns 404.
+# The one-shot migrator and its temporary workerd share a fresh bearer.
+# Normal grain operation runs workerd without the bearer.
 set -euo pipefail
 
 # Resolve the app directory from the script's own path. Under
@@ -30,7 +28,6 @@ set -euo pipefail
 APP_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$APP_DIR"
 
-MIGRATE_TOKEN="sandstorm-grain-local"
 # Each Sandstorm grain IS one workbook. The legacy client opened `/=sheet`,
 # where `sheet` is the table-of-contents room and `sheet1` is its first
 # worksheet. The root handler classifies `sheet`: migrated TOCs and fresh
@@ -38,23 +35,25 @@ MIGRATE_TOKEN="sandstorm-grain-local"
 export ETHERCALC_DEFAULT_ROOM="sheet"
 # SH-6: honour Sandstorm viewer vs editor roles via bridge headers.
 export ETHERCALC_SANDSTORM="1"
-# Wrangler/Bun used to need HOME/TMPDIR set in the grain sandbox; now
-# that we run workerd directly neither is load-bearing, but keep them
-# exported — bunx is still invoked by the `ethercalc migrate` CLI for
-# post-boot seeding and wants HOME.
+# Keep writable home and temporary directories for the packaged
+# migration runtime and other grain-local tools.
 export HOME="/var/home"
 export TMPDIR="/var/tmp"
 mkdir -p "$HOME" "$TMPDIR" /var/do-storage
 
-# Locate workerd. `spk dev` maps the host's filesystem into the grain,
-# so the path under node_modules is reachable. Packaged grains embed
-# workerd inside the .spk at the same path via sandstorm-files.list
-# tracing. On the host machine, bun install drops the platform-matched
-# binary package under .bun/@cloudflare+workerd-linux-64@…/.
-WORKERD_BIN="$(find "$APP_DIR/node_modules" -name workerd -type f -executable 2>/dev/null | head -n1)"
-if [ -z "$WORKERD_BIN" ]; then
+# Match the workerd package used by the standalone config. Other dev tools
+# may install older workerd releases into the same node_modules tree.
+WORKERD_BIN="$APP_DIR/node_modules/.bun/@cloudflare+workerd-linux-64@1.20260714.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd"
+if [ ! -x "$WORKERD_BIN" ]; then
   echo "run_grain: ERROR — workerd binary not found under node_modules" >&2
   echo "           run 'bun install' before packaging" >&2
+  exit 127
+fi
+
+NODE_BIN="/usr/local/bin/node"
+MIGRATOR="$APP_DIR/sandstorm-migrate.mjs"
+if [ ! -x "$NODE_BIN" ] || [ ! -f "$MIGRATOR" ]; then
+  echo "run_grain: ERROR — packaged migration runtime is missing" >&2
   exit 127
 fi
 
@@ -117,17 +116,23 @@ if [ ! -f /var/.migrated ]; then
   fi
 
   if [ -n "$LEGACY_SOURCE" ]; then
+    MIGRATE_TOKEN="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
+    if [ "${#MIGRATE_TOKEN}" -ne 64 ]; then
+      echo "run_grain: ERROR — could not create migration bearer" >&2
+      exit 1
+    fi
     echo "run_grain: migrating legacy EtherCalc dump at $LEGACY_SOURCE" >&2
     start_workerd "$MIGRATE_TOKEN"
     wait_for_health
-    if bun "$APP_DIR"/bin/ethercalc migrate \
+    if ETHERCALC_MIGRATE_TOKEN="$MIGRATE_TOKEN" "$NODE_BIN" "$MIGRATOR" \
         --source "$LEGACY_SOURCE" \
-        --target http://127.0.0.1:33411 \
-        --token "$MIGRATE_TOKEN"; then
+        --target http://127.0.0.1:33411; then
       echo "run_grain: legacy migration complete" >&2
       touch /var/.migrated
     else
       echo "run_grain: legacy migration FAILED — will retry on next boot" >&2
+      stop_workerd
+      exit 1
     fi
     stop_workerd
   else

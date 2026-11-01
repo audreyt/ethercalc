@@ -47,6 +47,16 @@ export function sandstormBlocksMutation(
   headers: Headers,
 ): boolean {
   if (!isSandstormEnforced(env)) return false;
+  // The one-shot migrator connects directly to workerd, without bridge
+  // headers. Keep browser traffic away from the operator-only routes;
+  // the route itself verifies the temporary bearer.
+  if (
+    method === 'PUT' &&
+    (pathname === '/_migrate/bulk-index' ||
+      /^\/_migrate\/(?:seed|snapshot-chunk)\/[^/]+$/.test(pathname))
+  ) {
+    return headers.has('X-Sandstorm-Permissions');
+  }
   if (sandstormCanModify(headers)) return false;
   return isSandstormMutationRoute(method, pathname);
 }

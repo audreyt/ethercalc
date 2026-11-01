@@ -40,6 +40,9 @@ packages/worker/workerd/do-storage/
 packages/worker/workerd/config.runtime.capnp
 packages/worker/workerd/override.capnp
 
+# Sandstorm migration bundle (scripts/build-sandstorm-migrate.sh regenerates)
+/sandstorm-migrate.mjs
+
 # Docker-compose bind-mount volume
 ethercalc-data/
 legacy-redis-data/

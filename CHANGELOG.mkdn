@@ -1,0 +1,4 @@
+# 2026.11.01.1
+
+- Updated EtherCalc and its Sandstorm package for the current release.
+- Improved grain startup and upgrade behavior.

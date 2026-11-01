@@ -521,13 +521,13 @@ describe('runMigrate — end to end with in-memory deps', () => {
     expect(client.closeSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('surfaces per-room errors via ROOM ERROR + end-of-run note', async () => {
+  it('surfaces per-room errors and rejects after processing other rooms', async () => {
     // Failing target that 500s deterministically on one specific room.
     // onRoomError wires the CLI's stderr hook; the migrator continues
     // past the failure and reports a summary note at the end.
     const client = fakeClient(['a', 'b', 'c']);
     let seen = 0;
-    const { deps, stderr } = makeDeps({
+    const { deps, stderr, stdout } = makeDeps({
       connectRedis: async () => client,
       fetch: async (url) => {
         const u = String(url);
@@ -540,7 +540,7 @@ describe('runMigrate — end to end with in-memory deps', () => {
       now: () => 0,
       sleep: async () => undefined,
     });
-    const stats = await runMigrate(
+    await expect(runMigrate(
       {
         source: 'redis://127.0.0.1:6379',
         target: 'http://127.0.0.1:8000',
@@ -550,12 +550,13 @@ describe('runMigrate — end to end with in-memory deps', () => {
         skipBulkIndex: false,
       },
       deps,
-    );
-    expect(stats.rooms).toBe(2); // a and c succeeded
+    )).rejects.toThrow('1 room(s) failed to migrate');
+    expect(stdout.join('')).toContain('migrated 2 rooms');
     expect(seen).toBeGreaterThanOrEqual(3); // all retries exhausted
     const err = stderr.join('');
     expect(err).toMatch(/ROOM ERROR: b — seed b failed: 500/);
     expect(err).toMatch(/1 room\(s\) failed all retries and were skipped/);
+    expect(client.closeSpy).toHaveBeenCalledTimes(1);
   });
 
   it('logs oversized-entry warnings to stderr', async () => {
@@ -703,6 +704,41 @@ describe('main — argv orchestrator', () => {
     );
     expect(code).toBe(0);
     expect(stdout.join('')).toContain('migrated 1 rooms');
+  });
+
+  it('returns 0 when a live source has no rooms', async () => {
+    const client = fakeClient([]);
+    const { deps, stdout } = makeDeps({
+      connectRedis: async () => client,
+      fetch: async () => new Response('OK', { status: 200 }),
+    });
+    const code = await main(
+      ['--source', 'redis://x', '--target', 'http://127.0.0.1:8000', '--token', 'abc'],
+      deps,
+    );
+    expect(code).toBe(0);
+    expect(stdout.join('')).toContain('migrated 0 rooms');
+    expect(client.closeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns 1 when one live room fails after all retries', async () => {
+    const client = fakeClient(['a', 'b']);
+    const { deps, stderr, stdout } = makeDeps({
+      connectRedis: async () => client,
+      fetch: async (url) => new Response('failed', {
+        status: String(url).includes('/_migrate/seed/b') ? 503 : 200,
+      }),
+      sleep: async () => undefined,
+    });
+    const code = await main(
+      ['--source', 'redis://x', '--target', 'http://127.0.0.1:8000', '--token', 'abc'],
+      deps,
+    );
+    expect(code).toBe(1);
+    expect(stdout.join('')).toContain('migrated 1 rooms');
+    expect(stderr.join('')).toContain('ROOM ERROR: b');
+    expect(stderr.join('')).toContain('migrate failed: 1 room(s) failed to migrate');
+    expect(client.closeSpy).toHaveBeenCalledTimes(1);
   });
 
   it('returns 1 when connectRedis throws (Error subclass)', async () => {
