@@ -2,7 +2,8 @@
 #
 # Produce a self-contained workerd deployable tree at
 # packages/worker/workerd/. This is the artifact that Sandstorm's
-# run_grain.sh launches via `workerd serve config.capnp`, bypassing
+# run_grain.sh launches via `workerd serve sandstorm.capnp` (config.capnp
+# plus Sandstorm's V8 flags), bypassing
 # wrangler dev's Cloudflare-metadata fetch (which fails in
 # network-sandboxed grains).
 #
