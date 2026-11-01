@@ -50,6 +50,10 @@ jobs:
           curl -fsSL https://install.sandstorm.io/ -o "$RUNNER_TEMP/sandstorm-install.sh"
           sudo env REPORT=no bash "$RUNNER_TEMP/sandstorm-install.sh" -d
           sudo systemctl is-active --quiet sandstorm
+          if sysctl -n kernel.apparmor_restrict_unprivileged_userns >/dev/null 2>&1; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+            sudo systemctl restart sandstorm
+          fi
           for i in $(seq 1 60); do
             if [ -S /opt/sandstorm/var/sandstorm/socket/devmode ] &&
                curl -fsS -o /dev/null http://local.sandstorm.io:6080/; then
@@ -125,7 +129,7 @@ jobs:
           if [ -f "$RUNNER_TEMP/sandstorm-grain-id" ]; then
             grain_id="$(cat "$RUNNER_TEMP/sandstorm-grain-id")"
             sudo find "/opt/sandstorm/var/sandstorm/grains/$grain_id" -maxdepth 4 -type f -print > "$RUNNER_TEMP/grain-files.log" 2>&1 || true
-            sudo find "/opt/sandstorm/var/sandstorm/grains/$grain_id" -maxdepth 4 -type f -name '*log*' -exec sh -c 'for f; do printf "=== %s ===\n" "$f"; tail -n 100 "$f"; done' sh {} + > "$RUNNER_TEMP/grain-logs.log" 2>&1 || true
+            sudo find "/opt/sandstorm/var/sandstorm/grains/$grain_id" -maxdepth 4 -type f -name '*log*' -exec sh -c 'for f; do printf "=== %s ===\n" "$f"; head -n 100 "$f"; tail -n 100 "$f"; done' sh {} + > "$RUNNER_TEMP/grain-logs.log" 2>&1 || true
           fi
 
       - name: Inspect dependency trace
