@@ -227,6 +227,11 @@ jobs:
                   viewport: { width: 1280, height: 900 },
                 });
                 const page = await context.newPage();
+                const events = [];
+                page.on('console', (msg) => events.push('console.' + msg.type() + ' ' + msg.location().url + ' ' + msg.text()));
+                page.on('pageerror', (err) => events.push('pageerror ' + err.message));
+                page.on('requestfailed', (req) => events.push('requestfailed ' + req.method() + ' ' + req.url() + ' ' + (req.failure() || {}).errorText));
+                page.on('response', (res) => { if (res.status() >= 400) events.push('http ' + res.status() + ' ' + res.request().method() + ' ' + res.url()); });
                 try {
                   await page.goto('http://local.sandstorm.io:6080/grain/' + grainId);
                   const grainFrame = page.frameLocator('iframe.grain-frame');
@@ -239,6 +244,7 @@ jobs:
                     const text = await frame.evaluate(() => document.body ? document.body.innerText.slice(0, 300) : '(no body)').catch((e) => '(unreadable: ' + e.message + ')');
                     console.error('frame', frame.url(), JSON.stringify(text));
                   }
+                  for (const line of events) console.error(line.slice(0, 400));
                   await page.screenshot({ path: temp + '/grain-firefox-error-' + colorScheme + '.png' });
                   throw error;
                 }
