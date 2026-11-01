@@ -238,6 +238,28 @@ describe('HackFoldr', () => {
       });
     });
 
+    it('seeds on plain-HTTP pages, where crypto.randomUUID is unavailable', async () => {
+      // Browsers expose randomUUID only in secure contexts; getRandomValues stays.
+      const realCrypto = globalThis.crypto;
+      vi.stubGlobal('crypto', { getRandomValues: realCrypto.getRandomValues.bind(realCrypto) });
+      try {
+        const { fetchImpl, calls } = makeFetch([
+          { json: [['#url', '#title']] },
+          {
+            status: 201,
+            json: { sheet: { subroom: 'r.1', link: '/r.1', title: 'Sheet1', row: 2 } },
+          },
+        ]);
+        const f = new HackFoldr('http://x', { fetchImpl });
+        await f.fetch('r');
+
+        expect(f.rows).toEqual([{ link: '/r.1', title: 'Sheet1', row: 2 }]);
+        expect(JSON.parse(calls[1]?.body ?? '').requestId).toMatch(/^[0-9a-f]{32}$/);
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+
     it('survives a thrown TOC fetch and seeds through the guarded route', async () => {
       const { fetchImpl } = makeFetch([
         { throwError: true },

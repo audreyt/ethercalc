@@ -298,7 +298,13 @@ export class HackFoldr {
 const REQUEST_ID_RE = /^[A-Za-z0-9_-]+$/;
 
 function defaultRequestId(): string {
-  return globalThis.crypto.randomUUID();
+  const { crypto } = globalThis;
+  // randomUUID exists only in secure contexts; a Sandstorm grain or self-host
+  // served over plain HTTP still has getRandomValues.
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) =>
+    b.toString(16).padStart(2, '0'),
+  ).join('');
 }
 
 function parseCreatedSheet(body: unknown, workbook: string): FoldrRow | null {

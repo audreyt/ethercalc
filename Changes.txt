@@ -13,6 +13,12 @@ EtherCalc bundles SocialCalc from the audreyt/socialcalc fork; see
 Unreleased
 ==============================================================================
 
+Fixes
+- A new multi-sheet workbook served over plain HTTP (for example a Sandstorm
+  server or self-host without TLS) no longer opens empty with no tabs. The
+  client asked for `crypto.randomUUID()`, which browsers only provide on
+  secure pages; it now falls back to `crypto.getRandomValues()`.
+
 ==============================================================================
 0.20261101.2 — 2026-11-01
 ==============================================================================
