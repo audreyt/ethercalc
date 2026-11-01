@@ -185,6 +185,114 @@ jobs:
           })().catch(error => { console.error(error); process.exitCode = 1; });
           JS
 
+      - name: Check tab readability in Firefox inside the grain
+        working-directory: packages/e2e
+        run: |
+          vp exec playwright install --with-deps firefox
+          node - <<'JS'
+          const { firefox } = require('@playwright/test');
+          const fs = require('node:fs');
+          const temp = process.env.RUNNER_TEMP;
+          // WCAG contrast of each element's text against the first opaque
+          // background behind it.
+          const measure = (selector) => [...document.querySelectorAll(selector)]
+            .filter((el) => !el.disabled)
+            .map((el) => {
+              const rgb = (c) => (c.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+              const lum = (c) => {
+                const [r, g, b] = rgb(c).map((v) => {
+                  const s = v / 255;
+                  return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+                });
+                return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+              };
+              let bg = 'rgb(255, 255, 255)';
+              for (let e = el; e; e = e.parentElement) {
+                const c = getComputedStyle(e).backgroundColor;
+                if (!/rgba\(0, 0, 0, 0\)|transparent/.test(c)) { bg = c; break; }
+              }
+              const color = getComputedStyle(el).color;
+              const [hi, lo] = [lum(color), lum(bg)].sort((a, b) => b - a);
+              return { text: el.textContent.trim(), color, bg, ratio: +((hi + 0.05) / (lo + 0.05)).toFixed(2) };
+            });
+          (async () => {
+            const grainId = fs.readFileSync(temp + '/sandstorm-grain-id', 'utf8').trim();
+            const browser = await firefox.launch();
+            const failures = [];
+            try {
+              for (const colorScheme of ['light', 'dark']) {
+                const context = await browser.newContext({
+                  colorScheme,
+                  storageState: temp + '/sandstorm-browser.json',
+                  viewport: { width: 1280, height: 900 },
+                });
+                const page = await context.newPage();
+                const events = [];
+                page.on('console', (msg) => events.push('console.' + msg.type() + ' ' + msg.location().url + ' ' + msg.text()));
+                page.on('pageerror', (err) => events.push('pageerror ' + err.message));
+                page.on('requestfailed', (req) => events.push('requestfailed ' + req.method() + ' ' + req.url() + ' ' + (req.failure() || {}).errorText));
+                page.on('response', (res) => { if (res.status() >= 400) events.push('http ' + res.status() + ' ' + res.request().method() + ' ' + res.url()); });
+                try {
+                  await page.goto('http://local.sandstorm.io:6080/grain/' + grainId);
+                  const grainFrame = page.frameLocator('iframe.grain-frame');
+                  await grainFrame.locator('#root, #tableeditor').first().waitFor({ state: 'attached', timeout: 60000 });
+                  await grainFrame.locator('[role=tab]').first().waitFor({ timeout: 30000 });
+                  const sheetFrame = grainFrame.frameLocator('iframe').first();
+                  await sheetFrame.locator('#tableeditor td[id$="tab"]').first().waitFor({ timeout: 30000 });
+                } catch (error) {
+                  for (const frame of page.frames()) {
+                    const text = await frame.evaluate(() => document.body ? document.body.innerText.slice(0, 300) : '(no body)').catch((e) => '(unreadable: ' + e.message + ')');
+                    console.error('frame', frame.url(), JSON.stringify(text));
+                  }
+                  for (const line of events) console.error(line.slice(0, 400));
+                  const grainEl = await page.$('iframe.grain-frame');
+                  const grainCtx = grainEl && await grainEl.contentFrame();
+                  if (grainCtx) {
+                    const probe = await grainCtx.evaluate(async () => {
+                      const resources = performance.getEntriesByType('resource').map((r) => r.name.replace(location.origin, '') + ' ' + Math.round(r.duration) + 'ms ' + (r.responseStatus || ''));
+                      const tablist = document.querySelector('[role=tablist]');
+                      let direct;
+                      try {
+                        const res = await fetch('/_/sheet/csv.json', { signal: AbortSignal.timeout(10000) });
+                        direct = res.status + ' ' + (await res.text()).slice(0, 200);
+                      } catch (e) { direct = 'error ' + e.name + ': ' + e.message; }
+                      return { href: location.href, tablist: tablist ? tablist.outerHTML.slice(0, 200) : null, resources, direct };
+                    }).catch((e) => ({ probeError: e.message }));
+                    console.error('grain probe', JSON.stringify(probe, null, 1));
+                  }
+                  await page.screenshot({ path: temp + '/grain-firefox-error-' + colorScheme + '.png' });
+                  throw error;
+                }
+                const grain = await (await page.locator('iframe.grain-frame').elementHandle()).contentFrame();
+                const sheet = await (await grain.locator('iframe').first().elementHandle()).contentFrame();
+                // Switching tabs makes SocialCalc rewrite each tab's inline style.
+                // dispatchEvent runs the tabs' onclick (SocialCalc.SetTab) even
+                // while Sandstorm's first-grain intro overlay covers the page.
+                await sheet.locator('#SocialCalc-settingstab').dispatchEvent('click');
+                await sheet.locator('#SocialCalc-edittab').dispatchEvent('click');
+                const report = {
+                  colorScheme,
+                  sheetStylesheets: await sheet.evaluate(() => [...document.styleSheets].map((s) => s.href || 'inline')),
+                  topTabs: await sheet.evaluate(measure, '#tableeditor td[id$="tab"]'),
+                  sheetTabs: await grain.evaluate(measure, '[role=tab], [class*=buttons] button'),
+                };
+                console.log(JSON.stringify(report, null, 1));
+                await page.screenshot({ path: temp + '/grain-firefox-' + colorScheme + '.png' });
+                for (const row of [...report.topTabs, ...report.sheetTabs]) {
+                  if (row.ratio < 4.5) failures.push(colorScheme + ' "' + row.text + '" ' + row.color + ' on ' + row.bg + ' = ' + row.ratio);
+                }
+                await context.close();
+              }
+            } finally {
+              await browser.close();
+            }
+            if (failures.length) {
+              console.error('Unreadable tab text in Firefox:\n' + failures.join('\n'));
+              process.exitCode = 1;
+            }
+          })().catch((error) => { console.error(error); process.exitCode = 1; });
+          JS
+
       - name: Trace legacy migration
         run: |
           node scripts/sandstorm-package-check.cjs dev-shutdown
@@ -322,5 +430,6 @@ jobs:
             ${{ runner.temp }}/grain-files.log
             ${{ runner.temp }}/grain-logs.log
             ${{ runner.temp }}/grain.png
+            ${{ runner.temp }}/grain-firefox-*.png
           if-no-files-found: warn
           retention-days: 7
