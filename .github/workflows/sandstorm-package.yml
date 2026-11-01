@@ -245,6 +245,21 @@ jobs:
                     console.error('frame', frame.url(), JSON.stringify(text));
                   }
                   for (const line of events) console.error(line.slice(0, 400));
+                  const grainEl = await page.$('iframe.grain-frame');
+                  const grainCtx = grainEl && await grainEl.contentFrame();
+                  if (grainCtx) {
+                    const probe = await grainCtx.evaluate(async () => {
+                      const resources = performance.getEntriesByType('resource').map((r) => r.name.replace(location.origin, '') + ' ' + Math.round(r.duration) + 'ms ' + (r.responseStatus || ''));
+                      const tablist = document.querySelector('[role=tablist]');
+                      let direct;
+                      try {
+                        const res = await fetch('/_/sheet/csv.json', { signal: AbortSignal.timeout(10000) });
+                        direct = res.status + ' ' + (await res.text()).slice(0, 200);
+                      } catch (e) { direct = 'error ' + e.name + ': ' + e.message; }
+                      return { href: location.href, tablist: tablist ? tablist.outerHTML.slice(0, 200) : null, resources, direct };
+                    }).catch((e) => ({ probeError: e.message }));
+                    console.error('grain probe', JSON.stringify(probe, null, 1));
+                  }
                   await page.screenshot({ path: temp + '/grain-firefox-error-' + colorScheme + '.png' });
                   throw error;
                 }
