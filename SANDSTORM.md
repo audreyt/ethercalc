@@ -22,6 +22,8 @@ On a machine with Sandstorm + `spk` installed:
     #    `/usr/local/bin/bun`.
     curl -fsSL https://bun.sh/install | bash
     curl -fsSL https://vite.plus | bash
+    export PATH="$HOME/.bun/bin:$HOME/.local/bin:$PATH"
+    sudo install -m 0755 "$HOME/.bun/bin/bun" /usr/local/bin/bun
 
     # 2. Install workspace deps (one-time).
     vp install
@@ -58,15 +60,17 @@ What is **not** automated today:
 
 Release checklist on a machine with Sandstorm + `spk` + the app private key:
 
-1. Check out the release tag on `main`.
-2. Bump `appVersion` / `appMarketingVersion` in `sandstorm-pkgdef.capnp`.
+1. Prepare the release branch, including `appVersion` /
+   `appMarketingVersion` in `sandstorm-pkgdef.capnp`.
+2. Install the Linux runtime dependencies and build from that branch.
 3. `vp run build:assets` and `bash scripts/build-workerd-bundle.sh`.
 4. `spk dev --proc` to refresh `sandstorm-files.list`; exercise fresh
    and legacy grains, then review the generated file list.
 5. `spk pack ethercalc.spk` and `spk verify ethercalc.spk`.
 6. Upload the SPK to a test server and exercise the packaged grain,
    including a restart and a legacy-grain upgrade. Coordinate App
-   Market submission with the maintainer who holds the signing key.
+   Market submission with the maintainer who holds the signing key. Tag
+   the tested source commit before publishing the other release channels.
 
 If `spk pack` fails with a signing/keyring error, the private key is not
 on that machine — recover it from your Sandstorm key backup or the
