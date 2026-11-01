@@ -70,6 +70,7 @@ test.describe('client-multi smoke', () => {
     // resolves system colours from a dark theme, so force that palette.
     await page.goto(`${workerBase}/=test-room-contrast`);
     await expect(page.getByRole('tab').first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('button', { name: 'Import' })).toBeVisible();
     await page.addStyleTag({ content: ':root { color-scheme: dark; }' });
 
     const ratios = await page.evaluate(() => {
@@ -81,13 +82,16 @@ test.describe('client-multi smoke', () => {
         });
         return 0.2126 * r + 0.7152 * g + 0.0722 * b;
       };
-      return [...document.querySelectorAll<HTMLElement>('button:not(:disabled)')].map((el) => {
-        const style = getComputedStyle(el);
-        const [hi, lo] = [lum(style.color), lum(style.backgroundColor)].sort((a, b) => b - a);
-        return { text: el.textContent, ratio: (hi! + 0.05) / (lo! + 0.05) };
-      });
+      return [...document.querySelectorAll<HTMLElement>('button:not(:disabled), [role="button"]:not([aria-disabled="true"])')]
+        .filter((el) => el.getClientRects().length > 0)
+        .map((el) => {
+          const style = getComputedStyle(el);
+          const [hi, lo] = [lum(style.color), lum(style.backgroundColor)].sort((a, b) => b - a);
+          return { text: el.textContent, ratio: (hi! + 0.05) / (lo! + 0.05) };
+        });
     });
     expect(ratios.length).toBeGreaterThanOrEqual(2);
+    expect(ratios.map(({ text }) => text?.trim())).toContain('Import');
     for (const { text, ratio } of ratios) {
       expect(ratio, `contrast of "${text}"`).toBeGreaterThanOrEqual(4.5);
     }
