@@ -19,6 +19,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: sandstorm-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   grain:
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
@@ -79,21 +83,18 @@ jobs:
             try {
               const page = await browser.newPage();
               await page.goto('http://local.sandstorm.io:6080/');
-              await page.getByRole('button', { name: /with a Dev account/ }).click();
-              await page.getByRole('button', { name: /Alice/ }).click();
-              const profile = page.getByRole('button', { name: 'Continue' });
-              if (await profile.isVisible()) await profile.click();
+                await page.waitForFunction(() => typeof window.loginDevAccountFast === 'function');
+                await page.evaluate(() => window.loginDevAccountFast('Alice', true));
+                await page.goto('http://local.sandstorm.io:6080/apps');
+                await page.locator('.app-list').waitFor({ state: 'visible' });
               await page.goto('http://local.sandstorm.io:6080/apps/a0n6hwm32zjsrzes8gnjg734dh6jwt7x83xdgytspe761pe2asw0');
               const intro = page.locator('a.introjs-skipbutton');
               if (await intro.isVisible()) await intro.click();
-              await page.getByRole('button', { name: '(Dev) Create new spreadsheet' }).click();
+                await page.locator('.grain-list-table tr.action button.action').first().click();
               await page.waitForURL(/\/grain\//);
               const grainId = page.url().split('/grain/')[1].split('/')[0];
               require('node:fs').writeFileSync(process.env.RUNNER_TEMP + '/sandstorm-grain-id', grainId);
-              await page.waitForTimeout(3000);
-              const grain = page.frames().find(frame => frame !== page.mainFrame() && /^https?:/.test(frame.url()));
-              if (!grain) throw new Error('Grain iframe did not load');
-              await grain.locator('#root, #tableeditor').first().waitFor({ state: 'attached', timeout: 15000 });
+                await page.frameLocator('iframe.grain-frame').locator('#root, #tableeditor').first().waitFor({ state: 'attached', timeout: 15000 });
               console.log('Fresh grain booted with application UI');
             } finally {
               await browser.close();
