@@ -3,8 +3,8 @@
 # the app runs in dev mode. You may manually add or remove files, but don't
 # expect comments or ordering to be retained.
 assets
-assets/multi/assets/index-AUzFcCLK.js
-assets/multi/assets/index-Bcg0cqAG.css
+assets/multi/assets/index-7217WWX2.js
+assets/multi/assets/index-Ct9ccA74.css
 assets/multi/index.html
 bin
 bin/bash
@@ -19,6 +19,7 @@ lib64
 node_modules/.bun/@cloudflare+workerd-linux-64@1.20260714.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd
 packages
 packages/worker/workerd/config.capnp
+packages/worker/workerd/sandstorm.capnp
 packages/worker/workerd/worker/index.js
 run_grain.sh
 sandstorm-http-bridge

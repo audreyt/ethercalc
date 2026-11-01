@@ -51,6 +51,58 @@ jobs:
           bash scripts/build-workerd-bundle.sh
           bash scripts/build-sandstorm-migrate.sh
 
+      - name: Check workerd under Sandstorm's pkey filter
+        run: |
+          # Sandstorm's default seccomp filter allows pkey_alloc but returns
+          # ENOSYS for pkey_mprotect. On CPUs with memory protection keys, V8
+          # then traps (SIGTRAP, exit 133) unless sandstorm.capnp turns its
+          # PKU use off. Runners usually lack PKU, so the grain boots below
+          # never reach that path; a preloaded shim reproduces it here.
+          grep -m1 -o -w pku /proc/cpuinfo || echo 'runner CPU does not report pku'
+          shim="$RUNNER_TEMP/sandstorm-pkey.so"
+          cc -shared -fPIC -O2 -x c -o "$shim" - <<'C'
+          #include <errno.h>
+          #include <stddef.h>
+          int pkey_alloc(unsigned int flags, unsigned int access) { (void)flags; (void)access; return 1; }
+          int pkey_free(int pkey) { (void)pkey; return 0; }
+          int pkey_get(int pkey) { (void)pkey; return 0; }
+          int pkey_set(int pkey, unsigned int rights) { (void)pkey; (void)rights; return 0; }
+          int pkey_mprotect(void *addr, size_t len, int prot, int pkey) {
+            (void)addr; (void)len; (void)prot; (void)pkey;
+            errno = ENOSYS;
+            return -1;
+          }
+          C
+          workerd="$(grep -o 'node_modules/[^"]*/bin/workerd' run_grain.sh)"
+          boot() {
+            # workerd's control fd reports the socket once it listens; it
+            # reaches EOF instead if workerd exits first. read -t bounds it.
+            local log="$RUNNER_TEMP/pkey-$1.log" store ctl line port pid status=0
+            store="$(mktemp -d)"
+            ctl="$(mktemp -u)"
+            mkfifo "$ctl"
+            LD_PRELOAD="$shim" "$workerd" serve "packages/worker/workerd/$1" --control-fd=3 \
+              -s http=127.0.0.1:0 -ddo="$store" -dassets="$PWD/assets" 3>"$ctl" > "$log" 2>&1 &
+            pid=$!
+            if read -r -t 30 line < "$ctl"; then
+              port="$(printf '%s\n' "$line" | sed -n 's/.*"port":\([0-9]*\).*/\1/p')"
+              status=0; curl -fsS -o /dev/null "http://127.0.0.1:$port/_health" || status=$?
+              kill -KILL "$pid"; wait "$pid" || true
+              echo "$1: /_health on port $port, curl status $status"
+              return "$status"
+            fi
+            kill -KILL "$pid" 2>/dev/null || true
+            wait "$pid" || status=$?
+            echo "$1: workerd ended with $status before listening"; cat "$log"
+            return "$status"
+          }
+          status=0; boot config.capnp || status=$?
+          if [ "$status" -ne 133 ]; then
+            echo "config.capnp under the pkey shim ended with $status, not 133 (SIGTRAP): the shim no longer reaches V8's pkey path" >&2
+            exit 1
+          fi
+          boot sandstorm.capnp
+
       - name: Install Sandstorm development server
         run: |
           test "$(uname -m)" = x86_64
@@ -176,6 +228,7 @@ jobs:
           PY
           grep -Fq 'run_grain.sh' sandstorm-files.list
           grep -Fq 'packages/worker/workerd/worker/index.js' sandstorm-files.list
+          grep -Fq 'packages/worker/workerd/sandstorm.capnp' sandstorm-files.list
           grep -Fq '@cloudflare/workerd-linux-64' sandstorm-files.list
           grep -Fq 'usr/local/bin/node' sandstorm-files.list
           grep -Fq 'sandstorm-migrate.mjs' sandstorm-files.list

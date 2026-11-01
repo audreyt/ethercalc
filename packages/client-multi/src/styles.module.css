@@ -66,6 +66,9 @@
 .importButton {
   font-family: Helvetica, sans-serif;
   background: #eee;
+  /* Explicit text colour: the system ButtonText turns white under a dark
+   * system palette, which is unreadable on these light backgrounds. */
+  color: #000;
   font-size: 14px;
   height: 22px;
   border-radius: 3px;
@@ -83,6 +86,10 @@
 .importButton:hover {
   border: 1px solid #ccc;
   background: #fff;
+}
+
+.buttons button:disabled {
+  color: rgba(16, 16, 16, 0.3);
 }
 
 .buttons button:disabled:hover {
@@ -111,6 +118,7 @@
 
 .tabTitle {
   background: #ccc;
+  color: #000;
   border: 1px solid black;
   border-top: none;
   padding: 2px 10px 2px 10px;

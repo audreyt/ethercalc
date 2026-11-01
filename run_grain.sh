@@ -65,9 +65,11 @@ start_workerd() {
   if [ -n "$migrate_token" ]; then
     extra_env+=(ETHERCALC_MIGRATE_TOKEN="$migrate_token")
   fi
+  # sandstorm.capnp = config.capnp plus the V8 flags Sandstorm's seccomp
+  # filter needs (see the comment in that file).
   env "${extra_env[@]}" \
     "$WORKERD_BIN" serve \
-    "$APP_DIR/packages/worker/workerd/config.capnp" \
+    "$APP_DIR/packages/worker/workerd/sandstorm.capnp" \
     -ddo="/var/do-storage" \
     -dassets="$APP_DIR/assets" \
     &
