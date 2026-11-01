@@ -13,6 +13,10 @@ EtherCalc bundles SocialCalc from the audreyt/socialcalc fork; see
 Unreleased
 ==============================================================================
 
+==============================================================================
+0.20261101.3 — 2026-11-01
+==============================================================================
+
 Fixes
 - A new multi-sheet workbook served over plain HTTP (for example a Sandstorm
   server or self-host without TLS) no longer opens empty with no tabs. The

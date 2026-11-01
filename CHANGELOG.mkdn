@@ -1,4 +1,4 @@
-# 2026.11.01.2
+# 2026.11.01.3
 
-- Updated EtherCalc and its Sandstorm package for the current release.
+- New spreadsheets now open with their first sheet on servers reached over plain HTTP.
 - Improved compatibility and the multi-sheet interface.
