@@ -227,11 +227,21 @@ jobs:
                   viewport: { width: 1280, height: 900 },
                 });
                 const page = await context.newPage();
-                await page.goto('http://local.sandstorm.io:6080/grain/' + grainId);
-                const grainFrame = page.frameLocator('iframe.grain-frame');
-                await grainFrame.locator('[role=tab]').first().waitFor({ timeout: 30000 });
-                const sheetFrame = grainFrame.frameLocator('iframe').first();
-                await sheetFrame.locator('#tableeditor td[id$="tab"]').first().waitFor({ timeout: 30000 });
+                try {
+                  await page.goto('http://local.sandstorm.io:6080/grain/' + grainId);
+                  const grainFrame = page.frameLocator('iframe.grain-frame');
+                  await grainFrame.locator('#root, #tableeditor').first().waitFor({ state: 'attached', timeout: 60000 });
+                  await grainFrame.locator('[role=tab]').first().waitFor({ timeout: 30000 });
+                  const sheetFrame = grainFrame.frameLocator('iframe').first();
+                  await sheetFrame.locator('#tableeditor td[id$="tab"]').first().waitFor({ timeout: 30000 });
+                } catch (error) {
+                  for (const frame of page.frames()) {
+                    const text = await frame.evaluate(() => document.body ? document.body.innerText.slice(0, 300) : '(no body)').catch((e) => '(unreadable: ' + e.message + ')');
+                    console.error('frame', frame.url(), JSON.stringify(text));
+                  }
+                  await page.screenshot({ path: temp + '/grain-firefox-error-' + colorScheme + '.png' });
+                  throw error;
+                }
                 const grain = await (await page.locator('iframe.grain-frame').elementHandle()).contentFrame();
                 const sheet = await (await grain.locator('iframe').first().elementHandle()).contentFrame();
                 // Switching tabs makes SocialCalc rewrite each tab's inline style.
