@@ -18,6 +18,8 @@ export interface TabBarProps {
   readonly onRename?: ((idx: number) => void) | undefined;
   readonly firstFocusUsed: boolean;
   readonly onFirstFocus: () => void;
+  readonly pivotLink?: string | undefined;
+  readonly pivotSource?: { headers: string[]; rows: string[][]; rawRows: string[][] } | undefined;
 }
 
 /**
@@ -42,6 +44,8 @@ export const TabBar: FC<TabBarProps> = ({
   onRename,
   firstFocusUsed,
   onFirstFocus,
+  pivotLink,
+  pivotSource,
 }) => {
   const clampedIndex = Math.max(0, Math.min(activeIndex, rows.length - 1));
   const activeValue = `tab-${clampedIndex}`;
@@ -92,6 +96,7 @@ export const TabBar: FC<TabBarProps> = ({
               rowsRev={rowsRev}
               index={index}
               isFirst={i === 0}
+              pivotSource={row.link === pivotLink ? pivotSource : undefined}
               firstFocusUsed={firstFocusUsed}
               onFirstFocus={onFirstFocus}
             />
