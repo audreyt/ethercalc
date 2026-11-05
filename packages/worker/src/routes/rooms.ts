@@ -81,6 +81,13 @@ async function authVerdict(res: Response): Promise<Response | null> {
   return sizedResponse(await res.text(), res.status, TEXT_CT);
 }
 
+/**
+ * Public writes follow `verifyAuth`. An unset key is the anonymous
+ * identity path for non-destructive writes (`auth=0` stays a veto).
+ * DELETE still needs a configured room HMAC or a private-room writer:
+ * wiping a public room is not anonymous. The RoomDO denies private
+ * and parented rooms either way.
+ */
 async function allowsHttpMutation(
   c: Context<EtherCalcHonoEnv>,
   room: string,

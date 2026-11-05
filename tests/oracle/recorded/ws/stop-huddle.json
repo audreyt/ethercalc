@@ -72,8 +72,7 @@
         "id": "b",
         "msg": {
           "type": "stopHuddle",
-          "room": "oracle-phase3-ws",
-          "auth": "harness"
+          "room": "oracle-phase3-ws"
         },
         "match": "partial"
       },

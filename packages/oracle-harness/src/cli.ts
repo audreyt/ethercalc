@@ -9,7 +9,8 @@ import type { WsTransport } from './ws-transport.ts';
 /**
  * Parse argv of the shape:
  *   oracle-harness record [--target http://...] [--out path]
- *   oracle-harness replay [--target http://...] [--recorded path] [--ws-transport native|socketio]
+ *   oracle-harness replay [--target http://...] [--recorded path]
+ *     [--ws-transport native|socketio] [--worker-divergences]
  *
  * Returns a normalized object; throws on unknown subcommand or flag.
  * Sensible defaults match the repo layout (oracle on :8000, recordings
@@ -23,6 +24,8 @@ export interface CliOptions {
   readonly dir: string;
   /** WS wire transport; oracle replay uses socket.io 1.x, worker uses native. */
   readonly wsTransport?: WsTransport;
+  /** Worker replay accepts anonymous-delete and stopHuddle divergences. */
+  readonly workerDivergences?: boolean;
 }
 
 export const DEFAULT_TARGET = 'http://127.0.0.1:8000';
@@ -42,6 +45,7 @@ export function parseArgs(argv: readonly string[]): CliOptions {
   let targetUrl = DEFAULT_TARGET;
   let dir = DEFAULT_RECORDED_DIR;
   let wsTransport: WsTransport | undefined;
+  let workerDivergences = false;
   for (let i = 0; i < rest.length; i++) {
     const flag = rest[i];
     const value = rest[i + 1];
@@ -65,6 +69,13 @@ export function parseArgs(argv: readonly string[]): CliOptions {
       i++;
       continue;
     }
+    if (flag === '--worker-divergences') {
+      if (raw !== 'replay') {
+        throw new Error('--worker-divergences is only valid for replay');
+      }
+      workerDivergences = true;
+      continue;
+    }
     throw new Error(`unknown flag: ${JSON.stringify(flag)}`);
   }
   return {
@@ -72,6 +83,7 @@ export function parseArgs(argv: readonly string[]): CliOptions {
     targetUrl,
     dir,
     ...(wsTransport !== undefined ? { wsTransport } : {}),
+    ...(workerDivergences ? { workerDivergences: true } : {}),
   };
 }
 
@@ -107,6 +119,7 @@ export async function main(
     recordedDir: opts.dir,
     log,
     ...(opts.wsTransport !== undefined ? { wsTransport: opts.wsTransport } : {}),
+    ...(opts.workerDivergences ? { workerDivergences: true } : {}),
   });
   const failed = results.filter((r) => !r.ok);
   log(`replay: ${results.length - failed.length}/${results.length} passed`);

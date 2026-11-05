@@ -1,7 +1,7 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import type { HttpScenario, WsScenario } from '@ethercalc/shared/oracle-scenarios';
+import type { HttpScenario, WsScenario, WsStep } from '@ethercalc/shared/oracle-scenarios';
 
 import { diffHeaders, headersToRecord, normalizeHeaders } from './headers.ts';
 import { dispatchMatcher } from './matchers.ts';
@@ -23,6 +23,12 @@ export interface ReplayOptions {
   readonly wsTransport?: import('./ws-transport.ts').WsTransport;
   readonly wsFactory?: import('./ws-transport.ts').WsFactory;
   readonly ioClientFactory?: import('./ws-transport.ts').IoClientFactory;
+  /**
+   * Accept intentional worker divergences from the legacy oracle: anonymous
+   * DELETE is 403, and `stopHuddle` does not broadcast without a room key.
+   * Legacy replay must leave this unset.
+   */
+  readonly workerDivergences?: boolean;
 }
 
 export interface ReplayResult {
@@ -66,6 +72,46 @@ function hasRecordedWsExpectations(scenario: WsScenario): boolean {
 }
 
 /**
+ * Rewrite recorded expectations that the keyless worker deliberately does
+ * not match. Legacy EtherCalc deletes anonymously and echoes `stopHuddle`;
+ * the worker refuses both unless a room key or private writer is present.
+ */
+export function applyWorkerDivergences<T extends HttpScenario | WsScenario>(scenario: T): T {
+  if (scenario.kind === 'http') {
+    if (!scenario.name.startsWith('room-crud/delete-') || !scenario.expect) return scenario;
+    return {
+      ...scenario,
+      expect: {
+        ...scenario.expect,
+        status: 403,
+        bodyMatcher: 'ignore',
+        headers: {
+          ...scenario.expect.headers,
+          'content-length': 're:^\\d+$',
+        },
+      },
+    };
+  }
+  if (scenario.name !== 'ws/stop-huddle') return scenario;
+  return {
+    ...scenario,
+    steps: scenario.steps.filter((step) => !isStopHuddleExpect(step)),
+  };
+}
+
+function isStopHuddleExpect(step: WsStep): boolean {
+  if (
+    step.type !== 'expect' ||
+    step.msg === null ||
+    typeof step.msg !== 'object' ||
+    Array.isArray(step.msg)
+  ) {
+    return false;
+  }
+  return (step.msg as { type?: unknown }).type === 'stopHuddle';
+}
+
+/**
  * Replay a single recorded scenario. Returns `{ok:true}` on match,
  * `{ok:false, error}` on any divergence. Does not throw on assertion
  * failure — the caller decides whether to abort the whole run.
@@ -75,7 +121,8 @@ export async function replayOne(
   opts: ReplayOptions,
 ): Promise<ReplayResult> {
   const fetcher = opts.fetcher ?? defaultFetcher;
-  const normalized = applyNormalizer(scenario);
+  const adjusted = opts.workerDivergences ? applyWorkerDivergences(scenario) : scenario;
+  const normalized = applyNormalizer(adjusted);
   if (!normalized.expect) {
     return { scenario, ok: false, error: 'scenario has no `expect` — re-record against the oracle' };
   }
@@ -128,7 +175,8 @@ export async function replayWsOne(
   scenario: WsScenario,
   opts: ReplayOptions,
 ): Promise<ReplayResult> {
-  const result = await runWsScenario(scenario, {
+  const adjusted = opts.workerDivergences ? applyWorkerDivergences(scenario) : scenario;
+  const result = await runWsScenario(adjusted, {
     targetUrl: opts.targetUrl,
     transport: opts.wsTransport ?? 'native',
     mode: 'replay',

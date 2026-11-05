@@ -429,9 +429,18 @@ describe("GET /:template/form", () => {
     expect(await res.text()).toContain(loc);
   });
 
-  it.each(["cross-site", "same-site", "unexpected", undefined])("rejects %s navigation before cloning", async (site) => {
+  it("302 redirects for a client that sends no Fetch Metadata", async () => {
+    const req = new Request("https://example.test/tpl/form", { redirect: "manual" });
+    const ctx = createExecutionContext();
+    const res = await worker.fetch(req, env as never, ctx);
+    await waitOnExecutionContext(ctx);
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location") ?? "").toMatch(/\/tpl_[0-9a-z]{12}\/app$/);
+  });
+
+  it.each(["cross-site", "same-site", "unexpected"])("rejects %s navigation before cloning", async (site) => {
     const req = new Request("https://example.test/tpl/form", {
-      ...(site === undefined ? {} : { headers: { "Sec-Fetch-Site": site } }),
+      headers: { "Sec-Fetch-Site": site },
       redirect: "manual",
     });
     const ctx = createExecutionContext();

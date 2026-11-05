@@ -64,6 +64,47 @@ describe('diffWsMessage', () => {
 });
 
 describe('runWsScenario', () => {
+  it('accepts an ecell broadcast that does not echo auth', async () => {
+    const sockets: MockWebSocket[] = [];
+    const scenario: WsScenario = {
+      name: 'ws/ecell',
+      kind: 'ws',
+      steps: [
+        { type: 'connect', id: 'b', url: '/_ws/r?user=peer&auth=harness' },
+        {
+          type: 'expect',
+          id: 'b',
+          match: 'partial',
+          msg: { type: 'ecell', room: 'r', user: 'u', ecell: 'C3', auth: 'harness' },
+        },
+      ],
+    };
+    const omitted = runWsScenario(scenario, {
+      targetUrl: 'http://host.test',
+      transport: 'native',
+      mode: 'replay',
+      wsFactory: wsFactory(sockets),
+    });
+    queueMicrotask(() => {
+      sockets[0]!.emit(JSON.stringify({ type: 'ecell', room: 'r', user: 'u', ecell: 'C3' }));
+    });
+    expect((await omitted).ok).toBe(true);
+
+    const echoedSockets: MockWebSocket[] = [];
+    const echoed = runWsScenario(scenario, {
+      targetUrl: 'http://host.test',
+      transport: 'native',
+      mode: 'replay',
+      wsFactory: wsFactory(echoedSockets),
+    });
+    queueMicrotask(() => {
+      echoedSockets[0]!.emit(JSON.stringify({
+        type: 'ecell', room: 'r', user: 'u', ecell: 'C3', auth: 'harness',
+      }));
+    });
+    expect((await echoed).ok).toBe(true);
+  });
+
   it('records connect/close over socket.io 1.x transport', async () => {
     const stub = stubIoClient();
     const scenario: WsScenario = {

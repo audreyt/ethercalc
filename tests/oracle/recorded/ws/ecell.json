@@ -76,8 +76,7 @@
           "type": "ecell",
           "room": "oracle-phase3-ws",
           "user": "oracle-harness",
-          "ecell": "C3",
-          "auth": "harness"
+          "ecell": "C3"
         },
         "match": "partial"
       },
