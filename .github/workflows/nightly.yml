@@ -264,7 +264,9 @@ jobs:
             curl -sf http://127.0.0.1:8787/_health >/dev/null 2>&1 && break
             sleep 2
           done
-          vp run @ethercalc/oracle-harness#replay --target http://127.0.0.1:8787
+          # Anonymous DELETE is 403 and stopHuddle does not broadcast without
+          # a room key. Legacy replay (above) still expects the oracle's 201.
+          vp run @ethercalc/oracle-harness#replay --target http://127.0.0.1:8787 --worker-divergences
           kill $pid || true
 
       - name: Tear down oracle

@@ -455,7 +455,7 @@ describe('route glue — env.ROOM dispatch shapes', () => {
     expect(await res.text()).toBe('OK');
   });
 
-  it('DELETE /_/:room deletes a public room when no key is configured', async () => {
+  it('DELETE /_/:room rejects a public room when no key is configured', async () => {
     const { env, calls } = makeFakeRoomNamespace(
       () => new Response('OK', { status: 201 }),
     );
@@ -463,9 +463,8 @@ describe('route glue — env.ROOM dispatch shapes', () => {
       new Request('https://t.test/_/r', { method: 'DELETE' }),
       env as never,
     );
-    expect(res.status).toBe(201);
-    expect(calls[0]!.method).toBe('DELETE');
-    expect(calls[0]!.url).toBe('https://do.local/_do/all?name=r');
+    expect(res.status).toBe(403);
+    expect(calls).toHaveLength(0);
   });
 
   it('DELETE /_/:room rejects a public room when a key is set and auth is missing', async () => {

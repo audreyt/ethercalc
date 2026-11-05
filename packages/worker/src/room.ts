@@ -2549,9 +2549,9 @@ export class RoomDO implements DurableObject {
         const access = await this.#effectiveAccess(attachment.uid ?? null, true);
         if (!access.canWrite) return false;
         if (access.isPrivate) return attachment.uid !== undefined;
-        // Same identity path as other public writes: an unset key accepts
-        // any token other than the view-only sentinel already rejected above.
-        return await verifyAuth(env.ETHERCALC_KEY, messageRoom, messageAuth);
+        // Public wipe needs a configured room key. An unset key accepts
+        // other writes, but stopHuddle stays refused.
+        return !!env.ETHERCALC_KEY && await verifyAuth(env.ETHERCALC_KEY, messageRoom, messageAuth);
       },
       allowSubmitForm: async () => {
         const access = await this.#effectiveAccess(attachment.uid ?? null, true);

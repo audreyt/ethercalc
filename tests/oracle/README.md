@@ -80,11 +80,16 @@ When adding a new scenario:
 # Terminal 2 — diff it against recordings.
 vp run @ethercalc/oracle-harness#replay \
   --target http://127.0.0.1:8787 \
-  --recorded tests/oracle/recorded
+  --recorded tests/oracle/recorded \
+  --worker-divergences
 ```
 
 Pinning `wrangler.toml` keeps a prior Vite deploy redirect from serving a stale
-`dist/` bundle during local replay.
+`dist/` bundle during local replay. `--worker-divergences` accepts the keyless
+worker's anonymous `DELETE` 403 and the missing `stopHuddle` broadcast. Leave
+it off when replaying against the legacy oracle.
+
+
 
 Replay asserts status, non-volatile headers, and the body per the
 recorded `bodyMatcher` (`exact` / `json` / `scsave` / `ignore` /

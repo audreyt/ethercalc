@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
 import { encodeBase64 } from '../src/matchers.ts';
 import {
+  applyWorkerDivergences,
   listRecordedFiles,
   parseRecordedFile,
   parseRecordedFileName,
@@ -294,7 +295,113 @@ describe('replayOne', () => {
   });
 });
 
+describe('applyWorkerDivergences', () => {
+  it('accepts a 403 for anonymous room deletes and ignores the body', () => {
+    const scenario = mkRecording({
+      name: 'room-crud/delete-export-room',
+      expect: {
+        status: 201,
+        headers: { 'content-type': 'text/plain; charset=utf-8', 'content-length': '2' },
+        bodyBase64: encodeBase64(new TextEncoder().encode('OK')),
+        bodyMatcher: 'exact',
+      },
+    });
+    const out = applyWorkerDivergences(scenario);
+    expect(out.expect).toMatchObject({
+      status: 403,
+      bodyMatcher: 'ignore',
+      headers: { 'content-length': 're:^\\d+$' },
+    });
+  });
+
+  it('leaves non-delete HTTP and missing expectations unchanged', () => {
+    const plain = mkRecording();
+    expect(applyWorkerDivergences(plain)).toBe(plain);
+    const bare: HttpScenario = {
+      name: 'room-crud/delete-export-room',
+      kind: 'http',
+      request: { method: 'DELETE', path: '/_/r' },
+    };
+    expect(applyWorkerDivergences(bare)).toBe(bare);
+  });
+
+  it('drops only the stopHuddle expectation', () => {
+    const scenario: WsScenario = {
+      name: 'ws/stop-huddle',
+      kind: 'ws',
+      steps: [
+        { type: 'send', msg: { type: 'stopHuddle', auth: 'h' } },
+        { type: 'expect', msg: { type: 'stopHuddle', room: 'r' } },
+        { type: 'expect', msg: null },
+        { type: 'expect', msg: ['auth'] },
+        { type: 'expect', msg: { type: 'log', room: 'r' } },
+      ],
+    };
+    const out = applyWorkerDivergences(scenario);
+    expect(out.steps).toEqual([
+      scenario.steps[0],
+      scenario.steps[2],
+      scenario.steps[3],
+      scenario.steps[4],
+    ]);
+    const other: WsScenario = { name: 'ws/ecell', kind: 'ws', steps: scenario.steps };
+    expect(applyWorkerDivergences(other)).toBe(other);
+  });
+});
+
 describe('replayWsOne', () => {
+  it('accepts a worker delete 403 and a missing stopHuddle broadcast', async () => {
+    const deleted = await replayOne(
+      mkRecording({
+        name: 'room-crud/delete-export-room',
+        request: { method: 'DELETE', path: '/_/r' },
+        expect: {
+          status: 201,
+          headers: { 'content-type': 'text/plain; charset=utf-8', 'content-length': '2' },
+          bodyBase64: encodeBase64(new TextEncoder().encode('OK')),
+          bodyMatcher: 'exact',
+        },
+      }),
+      {
+        targetUrl: 'http://target.test',
+        recordedDir: '',
+        workerDivergences: true,
+        fetcher: async () =>
+          new Response('Forbidden', {
+            status: 403,
+            headers: { 'content-type': 'text/plain; charset=utf-8' },
+          }),
+      },
+    );
+    expect(deleted.ok).toBe(true);
+
+    const kept = await replayOne(mkRecording(), {
+      targetUrl: 'http://target.test',
+      recordedDir: '',
+      workerDivergences: true,
+      fetcher: async () =>
+        new Response('hi', { status: 200, headers: { 'content-type': 'text/plain' } }),
+    });
+    expect(kept.ok).toBe(true);
+
+    const huddle: WsScenario = {
+      name: 'ws/stop-huddle',
+      kind: 'ws',
+      steps: [
+        { type: 'connect', id: 'b', url: '/_ws/r?user=u&auth=0' },
+        { type: 'expect', id: 'b', msg: { type: 'stopHuddle', room: 'r' }, timeoutMs: 20 },
+        { type: 'close', id: 'b' },
+      ],
+    };
+    const quiet = await replayWsOne(huddle, {
+      targetUrl: 'http://target.test',
+      recordedDir: '',
+      workerDivergences: true,
+      wsFactory: stubWsFactory(),
+    });
+    expect(quiet.ok).toBe(true);
+  });
+
   it('replays a ws scenario via the runner', async () => {
     const scenario: WsScenario = {
       name: 'ws/connect',

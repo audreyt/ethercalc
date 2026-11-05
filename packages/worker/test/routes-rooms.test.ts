@@ -94,16 +94,17 @@ describe('Phase 5 routes — full round-trip', () => {
     expect(await res.text()).toBe('');
   });
 
-  it('DELETE /_/:room removes a public room when no key is configured', async () => {
+  it('DELETE /_/:room requires a configured room capability', async () => {
     await request('PUT', '/_/to-delete', {
       headers: { 'content-type': 'text/x-socialcalc' },
       body: 'data',
     });
     const del = await request('DELETE', '/_/to-delete');
-    expect(del.status).toBe(201);
+    expect(del.status).toBe(403);
 
     const get = await request('GET', '/_/to-delete');
-    expect(get.status).toBe(404);
+    expect(get.status).toBe(200);
+    expect(await get.text()).toBe('data');
   });
 
   it('DELETE /_/:room succeeds with the configured room capability', async () => {
@@ -184,7 +185,7 @@ describe('Phase 5 routes — full round-trip', () => {
     ) as string[];
     expect(before).toContain('delete-me-from-index');
 
-    const del = await keyedRequest('DELETE', '/_/delete-me-from-index?auth=0');
+    const del = await request('DELETE', '/_/delete-me-from-index');
     expect(del.status).toBe(403);
 
     const after = JSON.parse(

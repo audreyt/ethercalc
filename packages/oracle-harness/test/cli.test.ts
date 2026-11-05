@@ -41,6 +41,13 @@ describe('parseArgs', () => {
     expect(parseArgs(['replay', '--recorded', 'custom']).dir).toBe('custom');
   });
 
+  it('parses --worker-divergences for replay only', () => {
+    expect(parseArgs(['replay', '--worker-divergences']).workerDivergences).toBe(true);
+    expect(() => parseArgs(['record', '--worker-divergences'])).toThrow(
+      /only valid for replay/,
+    );
+  });
+
   it('parses --ws-transport', () => {
     expect(parseArgs(['replay', '--ws-transport', 'socketio']).wsTransport).toBe('socketio');
     expect(parseArgs(['replay', '--ws-transport', 'native']).wsTransport).toBe('native');
@@ -125,6 +132,18 @@ describe('main', () => {
       },
       replay: async () => [],
       scenarios: [],
+    });
+    expect(code).toBe(0);
+  });
+
+  it('replay forwards --worker-divergences to the replayer', async () => {
+    const code = await main(['replay', '--worker-divergences'], {
+      log: () => {},
+      record: async () => [],
+      replay: async (opts) => {
+        expect(opts.workerDivergences).toBe(true);
+        return [{ scenario, ok: true }] as ReplayResult[];
+      },
     });
     expect(code).toBe(0);
   });
