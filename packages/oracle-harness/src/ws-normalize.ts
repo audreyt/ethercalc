@@ -26,9 +26,27 @@ export const WS_NORMALIZERS: Readonly<Record<string, WsNormalizeHook>> = {
   'ws/ask-recalc': (scenario) => normalizeAskRecalcExpect(scenario),
   'ws/chat': (scenario) => normalizeAskLogExpect(scenario),
   'ws/ask-ecell': (scenario) => normalizeAskLogExpect(scenario),
-  'ws/stop-huddle': (scenario) => normalizeAskLogExpect(scenario),
-  'ws/ecell': (scenario) => normalizeAskLogExpect(scenario),
+  // Legacy rebroadcasts the caller's auth token. The worker omits it so a
+  // room capability is not handed to every peer. Partial match ignores the
+  // extra legacy field once the expectation no longer requires it.
+  'ws/stop-huddle': (scenario) => omitExpectedAuth(normalizeAskLogExpect(scenario)),
+  'ws/ecell': (scenario) => omitExpectedAuth(normalizeAskLogExpect(scenario)),
 };
+
+function omitExpectedAuth(scenario: WsScenario): WsScenario {
+  return {
+    ...scenario,
+    steps: scenario.steps.map((step) => {
+      if (step.type !== 'expect' || !isAuthRecord(step.msg)) return step;
+      const { auth: _auth, ...msg } = step.msg;
+      return { ...step, msg };
+    }),
+  };
+}
+
+function isAuthRecord(value: unknown): value is Record<string, unknown> & { auth: unknown } {
+  return value !== null && typeof value === 'object' && !Array.isArray(value) && 'auth' in value;
+}
 
 export function getWsNormalizer(name: string): WsNormalizeHook | null {
   return WS_NORMALIZERS[name] ?? null;

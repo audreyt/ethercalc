@@ -41,11 +41,12 @@ export async function runWsScenario(
   const fetcher = opts.fetcher ?? fetch;
   const sessions = new Map<string, WsSession>();
   const recordedSteps: WsStep[] = [];
+  const activeScenario = opts.mode === 'replay' ? applyWsNormalizer(scenario) : scenario;
 
   try {
-    for (const step of scenario.steps) {
+    for (const step of activeScenario.steps) {
       const outcome = await runStep(step, {
-        scenario,
+        scenario: activeScenario,
         opts,
         fetcher,
         sessions,

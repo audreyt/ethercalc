@@ -81,18 +81,23 @@ async function authVerdict(res: Response): Promise<Response | null> {
   return sizedResponse(await res.text(), res.status, TEXT_CT);
 }
 
+/**
+ * Public writes, including DELETE, follow `verifyAuth`. An unset key is
+ * the anonymous identity path (`auth=0` stays a veto). A configured key
+ * requires that room's HMAC unless the caller is a private-room writer.
+ * The RoomDO still denies private and parented rooms.
+ */
 async function allowsHttpMutation(
   c: Context<EtherCalcHonoEnv>,
   room: string,
   principal: SessionPrincipal | null,
-  destructive = false,
 ): Promise<boolean> {
   if (!isValidRoomName(room)) return false;
   const supplied = c.req.query('auth') ?? '';
   if (supplied === '0') return false;
   const key = c.env.ETHERCALC_KEY;
   if (key && await verifyAuth(key, encodeRoom(room), supplied)) return true;
-  if (!destructive && !key) return true;
+  if (!key) return true;
   if (!principal) return false;
   const res = await doFetch(c.env, room, '/_do/access', {}, principal);
   const access: unknown = res.ok ? await res.json().catch(() => null) : null;
@@ -749,7 +754,7 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
   app.delete('/_/:room', async (c) => {
     const room = c.req.param('room') ?? '';
     const principal = await getSessionPrincipal(c);
-    if (!(await allowsHttpMutation(c, room, principal, true))) {
+    if (!(await allowsHttpMutation(c, room, principal))) {
       return sizedResponse('Forbidden', 403, TEXT_CT);
     }
     const res = await doFetch(

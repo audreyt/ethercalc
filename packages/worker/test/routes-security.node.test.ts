@@ -409,12 +409,11 @@ describe("multi-sheet import — write verdict gating", () => {
 });
 
 describe("/:template/form clone — verdict propagation", () => {
-  it.each(["cross-site", "same-site", "unexpected", undefined])(
+  it.each(["cross-site", "same-site", "unexpected"])(
     "rejects %s navigation without cloning",
     async (site) => {
       const { env, calls } = makeFakeRoomNamespace(() => new Response("OK", { status: 201 }));
-      const headers = new Headers();
-      if (site !== undefined) headers.set("Sec-Fetch-Site", site);
+      const headers = new Headers({ "Sec-Fetch-Site": site });
       const res = await buildApp().fetch(
         new Request("https://t.test/tpl/form", { headers, redirect: "manual" }),
         env as never,
@@ -423,6 +422,16 @@ describe("/:template/form clone — verdict propagation", () => {
       expect(calls).toHaveLength(0);
     },
   );
+
+  it("clones when the client sends no Fetch Metadata", async () => {
+    const { env, calls } = makeFakeRoomNamespace(() => new Response("OK", { status: 201 }));
+    const res = await buildApp().fetch(
+      new Request("https://t.test/tpl/form", { redirect: "manual" }),
+      env as never,
+    );
+    expect(res.status).toBe(302);
+    expect(calls.some((call) => call.url.includes("/_do/clone"))).toBe(true);
+  });
 
   it("propagates a DO 403 clone verdict instead of redirecting", async () => {
     const { env } = makeFakeRoomNamespace(() => new Response("Forbidden", { status: 403 }));

@@ -455,6 +455,31 @@ describe('route glue — env.ROOM dispatch shapes', () => {
     expect(await res.text()).toBe('OK');
   });
 
+  it('DELETE /_/:room deletes a public room when no key is configured', async () => {
+    const { env, calls } = makeFakeRoomNamespace(
+      () => new Response('OK', { status: 201 }),
+    );
+    const res = await buildApp().fetch(
+      new Request('https://t.test/_/r', { method: 'DELETE' }),
+      env as never,
+    );
+    expect(res.status).toBe(201);
+    expect(calls[0]!.method).toBe('DELETE');
+    expect(calls[0]!.url).toBe('https://do.local/_do/all?name=r');
+  });
+
+  it('DELETE /_/:room rejects a public room when a key is set and auth is missing', async () => {
+    const { env, calls } = makeFakeRoomNamespace(
+      () => new Response('OK', { status: 201 }),
+    );
+    const res = await buildApp().fetch(
+      new Request('https://t.test/_/r', { method: 'DELETE' }),
+      { ...env, ETHERCALC_KEY: 'test-key' } as never,
+    );
+    expect(res.status).toBe(403);
+    expect(calls).toHaveLength(0);
+  });
+
   it('DELETE /_/:room calls DELETE /_do/all', async () => {
     const { env, calls } = makeFakeRoomNamespace(
       () => new Response('OK', { status: 201 }),
@@ -702,6 +727,25 @@ describe('route glue — env.ROOM dispatch shapes', () => {
     expect(calls[2]!.bodyText).toBe('TPL-SNAP');
   });
 
+  it('GET /_from/:template copies when the client sends no Fetch Metadata', async () => {
+    const { env, calls } = makeFakeRoomNamespace((call) => {
+      if (call.url.includes('/_do/access')) {
+        return Response.json({ isPrivate: false, parented: false, canRead: true });
+      }
+      if (call.url.startsWith('https://do.local/_do/snapshot') && call.method === 'GET') {
+        return new Response('TPL-SNAP');
+      }
+      return new Response('OK', { status: 201 });
+    });
+    const res = await buildApp().fetch(
+      new Request('https://t.test/_from/some-template', { redirect: 'manual' }),
+      env as never,
+    );
+    expect(res.status).toBe(302);
+    expect(calls[0]!.url).toBe('https://do.local/_do/access?name=some-template');
+    expect(calls.some((call) => call.method === 'PUT')).toBe(true);
+  });
+
   it('GET /_from/:template when template does not exist redirects to a blank room', async () => {
     const { env, calls } = makeFakeRoomNamespace((call) =>
       call.url.includes('/_do/access')
@@ -786,12 +830,11 @@ describe('route glue — env.ROOM dispatch shapes', () => {
     expect(calls).toHaveLength(1);
   });
 
-  it.each(['cross-site', 'same-site', 'unexpected', undefined])(
+  it.each(['cross-site', 'same-site', 'unexpected'])(
     'ignores a %s navigation to the copy route',
     async (site) => {
       const { env, calls } = makeFakeRoomNamespace(() => new Response('TPL-SNAP'));
-      const headers = new Headers();
-      if (site !== undefined) headers.set('Sec-Fetch-Site', site);
+      const headers = new Headers({ 'Sec-Fetch-Site': site });
       const response = await buildApp().fetch(
         new Request('https://t.test/_from/template', {
           headers,

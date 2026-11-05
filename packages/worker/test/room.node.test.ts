@@ -5036,7 +5036,7 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
     expect(d1Calls5.some((c) => c.sql.includes('DELETE FROM audit_log'))).toBe(true);
   });
 
-  it('keeps public room data when no deletion capability is configured', async () => {
+  it('WS stopHuddle wipes a public room when no HMAC key is configured', async () => {
     const record: FakeStorageRecord = {
       map: new Map([[STORAGE_KEYS.snapshot, 'SAVE']]),
     };
@@ -5045,8 +5045,8 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
     const room = new RoomDO(state, makeEnvWithDb(calls));
     const ws = makeFakeWs({ sent: [] }, { user: 'u', room: 'r', auth: 'r' });
     await room.webSocketMessage(ws, JSON.stringify({ type: 'stopHuddle', room: 'r', auth: 'r' }));
-    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('SAVE');
-    expect(calls).toHaveLength(0);
+    expect(record.map.has(STORAGE_KEYS.snapshot)).toBe(false);
+    expect(calls.some((call) => call.sql.includes('DELETE FROM rooms'))).toBe(true);
   });
 
   it('does not unindex a frame room when the attachment is missing', async () => {

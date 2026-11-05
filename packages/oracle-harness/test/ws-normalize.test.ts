@@ -217,4 +217,34 @@ describe('WS_NORMALIZERS', () => {
   it('returns null for unknown scenarios', () => {
     expect(getWsNormalizer('ws/connect')).toBeNull();
   });
+
+  it('drops echoed auth from ecell and stopHuddle expectations', () => {
+    for (const name of ['ws/ecell', 'ws/stop-huddle'] as const) {
+      const scenario: WsScenario = {
+        name,
+        kind: 'ws',
+        steps: [
+          { type: 'send', msg: { type: 'ecell', auth: 'harness' } },
+          {
+            type: 'expect',
+            match: 'partial',
+            msg: { type: 'ecell', room: 'r', auth: 'harness' },
+          },
+          { type: 'expect', msg: { type: 'log', room: 'r' } },
+          { type: 'expect', msg: 'plain' },
+          { type: 'expect', msg: ['auth'] },
+        ],
+      };
+      const out = applyWsNormalizer(scenario);
+      expect(out.steps[0]).toEqual(scenario.steps[0]);
+      expect(out.steps[1]).toEqual({
+        type: 'expect',
+        match: 'partial',
+        msg: { type: 'ecell', room: 'r' },
+      });
+      expect(out.steps[2]).toEqual(scenario.steps[2]);
+      expect(out.steps[3]).toEqual(scenario.steps[3]);
+      expect(out.steps[4]).toEqual(scenario.steps[4]);
+    }
+  });
 });
