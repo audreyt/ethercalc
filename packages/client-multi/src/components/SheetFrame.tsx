@@ -11,6 +11,7 @@ export interface SheetFrameProps {
   /** Called the first time *any* frame receives focus — matches legacy boot. */
   readonly onFirstFocus?: () => void;
   readonly firstFocusUsed: boolean;
+  readonly pivotSource?: { headers: string[]; rows: string[][]; rawRows: string[][] } | undefined;
 }
 
 /**
@@ -33,6 +34,7 @@ export const SheetFrame: FC<SheetFrameProps> = ({
   isFirst,
   onFirstFocus,
   firstFocusUsed,
+  pivotSource,
 }) => {
   const ref = useRef<HTMLIFrameElement | null>(null);
 
@@ -57,9 +59,10 @@ export const SheetFrame: FC<SheetFrameProps> = ({
         const win = node.contentWindow;
         if (!win) return;
         win.postMessage(
-          JSON.stringify({ type: 'multi', rows, index }, null, 2),
+          JSON.stringify({ type: 'multi', rows, index }),
           new URL(node.src, window.location.href).origin,
         );
+        if (pivotSource) win.postMessage({ type: 'ethercalc:pivot-data', source: pivotSource }, new URL(node.src, window.location.href).origin);
         if (isFirst && !firstFocusUsed) {
           win.focus();
           onFirstFocus?.();
@@ -74,7 +77,7 @@ export const SheetFrame: FC<SheetFrameProps> = ({
       // explicit null-check and keep the cleanup straight-line.
       clearTimeout(timeoutHandle as ReturnType<typeof setTimeout>);
     };
-  }, [src, rows, rowsRev, index, isFirst, firstFocusUsed, onFirstFocus]);
+  }, [src, rows, rowsRev, index, isFirst, firstFocusUsed, onFirstFocus, pivotSource]);
 
   return <iframe ref={ref} key={src} src={src} />;
 };
