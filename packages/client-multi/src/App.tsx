@@ -66,7 +66,9 @@ export const App: FC<AppProps> = ({
     if (idx !== clampedIndex) {
       handleChange(idx);
     }
-    const current = foldr.rows[idx]!;
+    // A room that is not a workbook opens with no tabs (`HackFoldr.fetch`).
+    const current = foldr.rows[idx];
+    if (!current) return;
     const seed = current.title;
     const promptFn = promptImpl ?? ((m, s) => window.prompt(m, s));
     const title = promptFn('Rename Sheet', seed);

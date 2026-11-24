@@ -32,7 +32,9 @@ export function isSandstormMutationRoute(
   if (method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE') {
     return true;
   }
-  if (method === 'GET') {
+  // Hono answers HEAD by running the matching GET handler, so a HEAD to a
+  // state-changing GET route mutates exactly like the GET does.
+  if (method === 'GET' || method === 'HEAD') {
     if (pathname === '/_new' || pathname === '/=_new') return true;
     if (pathname.startsWith('/_from/')) return true;
     if (/^\/[^/]+\/form$/.test(pathname)) return true;

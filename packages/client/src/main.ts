@@ -29,6 +29,7 @@ import type {
   ServerMessage,
   SnapshotServerMessage,
 } from '@ethercalc/shared/messages';
+import { MAX_CROSS_SHEET_TOTAL_CHARS } from '@ethercalc/shared/messages';
 import { parseQuery, installCallbacks, installBroadcast, installRecalcLoader } from './socialcalc-callbacks.ts';
 import { createWsAdapter, type CreateWsAdapterOptions, type WsAdapter } from './ws-adapter.ts';
 
@@ -286,6 +287,17 @@ function applyAskEcell(
   SocialCalc.Callbacks.broadcast?.('ecell', payload);
 }
 
+/**
+ * Class suffix marking a cell as a peer's cursor. The username is chosen
+ * by the peer (`/_ws/:room?user=`), so it is folded into one inert,
+ * `peer-`-prefixed class token and matched as a literal string — never
+ * compiled as a RegExp (ReDoS / SyntaxError in every collaborator's tab)
+ * and never able to add stylesheet classes of its own to the cell.
+ */
+function peerClassFor(user: string): string {
+  return ` peer-${user.replace(/[^\w.-]/g, '_')} defaultPeer`;
+}
+
 function applyEcells(
   SocialCalc: SocialCalcGlobal,
   target: SpreadsheetLike,
@@ -294,12 +306,11 @@ function applyEcells(
   const editor = target.editor;
   for (const [user, ecell] of Object.entries(msg.ecells)) {
     if (user === SocialCalc._username) continue;
-    const peerClass = ` ${user} defaultPeer`;
-    const find = new RegExp(peerClass, 'g');
+    const peerClass = peerClassFor(user);
     const cr = SocialCalc.coordToCr?.(ecell);
     if (!cr) continue;
     const cell = SocialCalc.GetEditorCellElement?.(editor, cr.row, cr.col);
-    if (cell && cell.element.className.search(find) === -1) {
+    if (cell && !cell.element.className.includes(peerClass)) {
       cell.element.className += peerClass;
     }
   }
@@ -311,14 +322,13 @@ function applyEcell(
   msg: EcellServerMessage,
 ): void {
   const editor = target.editor;
-  const peerClass = ` ${msg.user} defaultPeer`;
-  const find = new RegExp(peerClass, 'g');
+  const peerClass = peerClassFor(msg.user);
   if (msg.original) {
     const origCR = SocialCalc.coordToCr?.(msg.original);
     if (origCR) {
       const origCell = SocialCalc.GetEditorCellElement?.(editor, origCR.row, origCR.col);
       if (origCell) {
-        origCell.element.className = origCell.element.className.replace(find, '');
+        origCell.element.className = origCell.element.className.replaceAll(peerClass, '');
       }
     }
     if (msg.original === editor.ecell.coord || msg.ecell === editor.ecell.coord) {
@@ -332,7 +342,7 @@ function applyEcell(
   const cr = SocialCalc.coordToCr?.(msg.ecell);
   if (!cr) return;
   const cell = SocialCalc.GetEditorCellElement?.(editor, cr.row, cr.col);
-  if (cell && cell.element.className.search(find) === -1) {
+  if (cell && !cell.element.className.includes(peerClass)) {
     cell.element.className += peerClass;
   }
 }
@@ -415,6 +425,15 @@ function applySnapshot(
   }
 }
 
+/** Sibling sheet text already kept for cross-sheet formulas, not counting `room`'s own. */
+function crossSheetCharsKept(cache: Record<string, string> | undefined, room: string): number {
+  let kept = 0;
+  for (const [name, sheetdata] of Object.entries(cache ?? {})) {
+    if (name !== room) kept += sheetdata.length;
+  }
+  return kept;
+}
+
 function applyRecalc(
   SocialCalc: SocialCalcGlobal,
   target: SpreadsheetLike,
@@ -428,8 +447,16 @@ function applyRecalc(
   const parts = msg.snapshot ? target.DecodeSpreadsheetSave(msg.snapshot) : undefined;
   if (parts?.sheet) {
     const sheetdata = msg.snapshot.substring(parts.sheet.start, parts.sheet.end);
-    SocialCalc.RecalcLoadedSheet?.(msg.room, sheetdata, true);
     const cache = SocialCalc.RecalcInfo.LoadSheetCache;
+    // Every reply becomes one more parsed sheet in `Formula.SheetCache`.
+    // Keep at most `MAX_CROSS_SHEET_TOTAL_CHARS` of sibling sheet text, the
+    // server's bound in `hydrateCrossSheetRefs`. A reply past it is ignored:
+    // SocialCalc already cached an empty sheet for the name when it asked,
+    // so the reference stays unresolved and is not requested again.
+    if (crossSheetCharsKept(cache, msg.room) + sheetdata.length > MAX_CROSS_SHEET_TOTAL_CHARS) {
+      return;
+    }
+    SocialCalc.RecalcLoadedSheet?.(msg.room, sheetdata, true);
     if (cache && cache[msg.room] !== sheetdata) {
       cache[msg.room] = sheetdata;
       target.context.sheetobj.ScheduleSheetCommands('recalc\n', false, true);

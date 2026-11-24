@@ -122,7 +122,8 @@ test.describe('Worker room CRUD and export lifecycle', () => {
     expect(jsonFormB).toEqual(jsonFormA);
 
     // 8. Export HTML (Both route forms) and validate CSP
-    const expectedCsp = "default-src 'none'; style-src 'unsafe-inline'";
+    const expectedCsp =
+      "default-src 'none'; style-src 'unsafe-inline'; form-action 'none'; base-uri 'none'";
     // Form A: GET /_/:room/html
     const htmlFormARes = await request.get(`${createdRoomUrl}/html`);
     expect(htmlFormARes.status()).toBe(200);

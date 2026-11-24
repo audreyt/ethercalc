@@ -1,5 +1,5 @@
 import { STORAGE_KEYS } from '@ethercalc/shared/storage-keys';
-import { describe, expect, it } from 'vite-plus/test';
+import { describe, expect, it, vi } from 'vite-plus/test';
 
 /**
  * Node-env tests for the route glue at src/routes/rooms.ts.
@@ -16,6 +16,8 @@ import { describe, expect, it } from 'vite-plus/test';
 import type { Env } from '../src/env.ts';
 import { buildApp } from '../src/index.ts';
 import { computeAuth } from '../src/lib/auth.ts';
+import { resetLiveRooms } from '../src/lib/live-rooms.ts';
+import { MAX_SNAPSHOT_BYTES_IN_FLIGHT, withSnapshotBody } from '../src/lib/snapshot-budget.ts';
 import { RoomDO } from '../src/room.ts';
 
 interface Call {
@@ -155,14 +157,21 @@ function makePrivateRoomDoNamespace(snapshot = 'PRIVATE-SECRET'): {
     async deleteAll(): Promise<void> {
       record.map.clear();
     },
-    async list(opts?: { prefix?: string }): Promise<Map<string, unknown>> {
+    async list(opts?: {
+      prefix?: string;
+      end?: string;
+      reverse?: boolean;
+      limit?: number;
+    }): Promise<Map<string, unknown>> {
       const out = new Map<string, unknown>();
       const prefix = opts?.prefix ?? '';
-      for (const k of Array.from(record.map.keys())
-        .filter((key) => key.startsWith(prefix))
-        .sort()) {
-        out.set(k, record.map.get(k)!);
-      }
+      const end = opts?.end;
+      let keys = Array.from(record.map.keys())
+        .filter((key) => key.startsWith(prefix) && (end === undefined || key < end))
+        .sort();
+      if (opts?.reverse) keys.reverse();
+      if (opts?.limit !== undefined) keys = keys.slice(0, opts.limit);
+      for (const k of keys) out.set(k, record.map.get(k)!);
       return out;
     },
     async getAlarm(): Promise<number | null> {
@@ -745,6 +754,39 @@ describe('route glue — env.ROOM dispatch shapes', () => {
     expect(calls.some((call) => call.method === 'PUT')).toBe(true);
   });
 
+  it('GET /_from/:template pipes the template into the new room and relays a busy target', async () => {
+    // The route must hand the template's body stream over unread: a copy
+    // collected here would be a whole save per request that nothing bounds.
+    const template = new Response('TPL-SNAP');
+    let forwarded: unknown;
+    const env = {
+      ROOM: {
+        idFromName: (n: string) => ({ n }) as unknown as DurableObjectId,
+        get: () =>
+          ({
+            async fetch(url: string, init?: RequestInit): Promise<Response> {
+              if (url.includes('/_do/access')) {
+                return Response.json({ isPrivate: false, parented: false, canRead: true });
+              }
+              if (init?.method !== 'PUT') return template;
+              forwarded = init.body;
+              return new Response('Server is busy storing other saves', { status: 503 });
+            },
+          }) as unknown as DurableObjectStub,
+      } as unknown as DurableObjectNamespace,
+    } as Env;
+    const res = await buildApp().fetch(
+      new Request('https://t.test/_from/some-template', { redirect: 'manual' }),
+      env as never,
+    );
+    expect(forwarded).toBeInstanceOf(ReadableStream);
+    expect(forwarded).toBe(template.body);
+    expect(template.bodyUsed).toBe(false);
+    expect(res.status).toBe(503);
+    expect(res.headers.get('location')).toBeNull();
+    expect(await res.text()).toBe('Server is busy storing other saves');
+  });
+
   it('GET /_from/:template when template does not exist redirects to a blank room', async () => {
     const { env, calls } = makeFakeRoomNamespace((call) =>
       call.url.includes('/_do/access')
@@ -811,6 +853,55 @@ describe('route glue — env.ROOM dispatch shapes', () => {
     expect(response.status).toBe(409);
     expect(calls[0]?.uid).toBeNull();
     expect(calls.filter((call) => call.method === 'PUT')).toHaveLength(0);
+  });
+
+  // A cell `<img>` (or a script fetch) on one of our own sheets.
+  it.each([
+    ['no-cors', 'image'],
+    ['cors', 'empty'],
+  ])(
+    'ignores a same-origin %s load of the copy route as %s',
+    async (mode, dest) => {
+      const { env, calls } = makeFakeRoomNamespace(() => new Response('TPL-SNAP'));
+      const headers = new Headers({
+        'Sec-Fetch-Site': 'same-origin',
+        'Sec-Fetch-Mode': mode,
+        'Sec-Fetch-Dest': dest,
+      });
+      const response = await buildApp().fetch(
+        new Request('https://t.test/_from/template', {
+          headers,
+          redirect: 'manual',
+        }),
+        env as never,
+      );
+      expect(response.status).toBe(403);
+      expect(calls).toHaveLength(0);
+    },
+  );
+
+  it('copies on a same-origin navigation to the copy route', async () => {
+    const { env } = makeFakeRoomNamespace((call) => {
+      if (call.url.includes('/_do/access')) {
+        return Response.json({ isPrivate: false, parented: false, canRead: true });
+      }
+      if (call.url.startsWith('https://do.local/_do/snapshot') && call.method === 'GET') {
+        return new Response('TPL-SNAP');
+      }
+      return new Response('OK', { status: 201 });
+    });
+    const response = await buildApp().fetch(
+      new Request('https://t.test/_from/template', {
+        headers: {
+          'Sec-Fetch-Site': 'same-origin',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Dest': 'document',
+        },
+        redirect: 'manual',
+      }),
+      env as never,
+    );
+    expect(response.status).toBe(302);
   });
 
   it('does not publish a parented template', async () => {
@@ -1362,6 +1453,63 @@ describe('private create/copy routes (P7)', () => {
     });
   });
 
+  it('POST /_from/:template/private pipes the template into the init body without collecting it', async () => {
+    // Quotes, escapes, control characters and multi-byte characters, the
+    // last of them cut by every read (one byte each after the byte order
+    // mark): the piped body must still be the JSON the route used to build
+    // from the collected text.
+    const save = '\uFEFFcell:A1:t:say "hi"\\n\n\ttab \u0001 h\u00e9llo \u{1F600} \u4e16\u754c';
+    const bytes = new TextEncoder().encode(save);
+    let sent = 0;
+    const template = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          const end = sent + (sent === 0 ? 3 : 1);
+          if (sent === bytes.length) controller.close();
+          else controller.enqueue(bytes.subarray(sent, end));
+          sent = end;
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    let initBody: unknown;
+    const { env, calls } = makeFakeRoomNamespace((call) =>
+      call.method === 'GET' ? new Response(template) : new Response('', { status: 201 }),
+    );
+    // Same fake, but noting what the route hands over before it is read.
+    const stub = env.ROOM.get({} as DurableObjectId);
+    const recordingEnv = {
+      ...env,
+      ROOM: {
+        ...env.ROOM,
+        get: () =>
+          ({
+            fetch(input: string, init?: RequestInit) {
+              if (init?.method === 'POST') initBody = init.body;
+              return stub.fetch(input, init);
+            },
+          }) as unknown as DurableObjectStub,
+      } as unknown as DurableObjectNamespace,
+    };
+    const res = await buildApp().fetch(
+      new Request('https://t.test/_from/tpl/private', {
+        method: 'POST',
+        headers: { Cookie: AUTH_COOKIE },
+        redirect: 'manual',
+      }),
+      withAuth(recordingEnv) as never,
+    );
+    expect(res.status).toBe(302);
+    expect(initBody).toBeInstanceOf(ReadableStream);
+    expect(calls[1]!.bodyText).toBe(
+      JSON.stringify({
+        // `Response.text()` drops the byte order mark, and so does the pipe.
+        snapshot: save.slice(1),
+        acl: { owner: AUTH_UID, readers: [], writers: [] },
+      }),
+    );
+  });
+
   it('POST /_from/:template/private honours BASEPATH in the redirect', async () => {
     const { env } = makeFakeRoomNamespace((call) =>
       call.method === 'GET'
@@ -1482,6 +1630,116 @@ describe('unreachable RoomDO maps to a retryable 503 (#862)', () => {
     const res = await buildApp().request('/_/r/csv.json', {}, env);
     expect(res.status).toBe(500);
     expect(calls).toHaveLength(1);
+  });
+});
+
+describe('live-room budget (ETHERCALC_LIVE_ROOM_LIMIT)', () => {
+  it('answers 503 for a room beyond the viewer budget without waking it or logging, while reserving headroom for writers', async () => {
+    resetLiveRooms();
+    const woken: string[] = [];
+    const env: Env = {
+      ETHERCALC_LIVE_ROOM_LIMIT: '3',
+      ROOM: {
+        idFromName: (name: string) => ({ toString: () => name }) as DurableObjectId,
+        get: (id: DurableObjectId) => ({
+          fetch: async () => {
+            woken.push(id.toString());
+            return new Response('', { status: 404 });
+          },
+        }),
+      } as unknown as DurableObjectNamespace,
+    };
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const app = buildApp();
+      expect((await app.request('/_/nosuchsheet0', {}, env)).status).toBe(404);
+      expect((await app.request('/_/nosuchsheet1', {}, env)).status).toBe(404);
+      for (const path of ['/_/nosuchsheet2', '/nosuchsheet3.csv', '/_exists/nosuchsheet4']) {
+        const res = await app.request(path, {}, env);
+        expect(res.status).toBe(503);
+        expect(res.headers.get('Retry-After')).toBe('1');
+      }
+      // A room that is already awake keeps answering.
+      expect((await app.request('/_/nosuchsheet0', {}, env)).status).toBe(404);
+      // A write or Sandstorm-modify request still uses the slot reserved beyond viewerRoomLimit (2 of 3).
+      const sandstormEnv: Env = { ...env, ETHERCALC_SANDSTORM: '1' };
+      expect((await app.request('/_/nosuchsheet-sv', {}, sandstormEnv)).status).toBe(503);
+      expect(
+        (
+          await app.request(
+            '/_/nosuchsheet2',
+            { headers: { 'X-Sandstorm-Permissions': 'modify' } },
+            sandstormEnv,
+          )
+        ).status,
+      ).toBe(404);
+      expect(woken).toEqual(['nosuchsheet0', 'nosuchsheet1', 'nosuchsheet0', 'nosuchsheet2']);
+      expect(logged).not.toHaveBeenCalled();
+    } finally {
+      logged.mockRestore();
+      resetLiveRooms();
+    }
+  });
+});
+
+describe('GET /_/:room forwards Content-Length', () => {
+  it('preserves DO Content-Length on streamed snapshot responses', async () => {
+    const { env } = makeFakeRoomNamespace((call) =>
+      call.url.includes('/_do/snapshot')
+        ? new Response('SNAP', {
+            status: 200,
+            headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Content-Length': '4' },
+          })
+        : new Response('OK', { status: 200 }),
+    );
+    const res = await buildApp().request('/_/r', {}, env);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Length')).toBe('4');
+    expect(await res.text()).toBe('SNAP');
+  });
+
+  it('returns 503 on POST /_/:room loadclipboard when snapshot budget is full', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let held!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      held = resolve;
+    });
+    const blocker = withSnapshotBody(
+      new Request('https://do/_do/snapshot', {
+        method: 'PUT',
+        body: new Uint8Array(MAX_SNAPSHOT_BYTES_IN_FLIGHT),
+      }),
+      async () => {
+        held();
+        await gate;
+        return new Response('OK', { status: 201 });
+      },
+    );
+    await entered;
+    try {
+      const { env } = makeFakeRoomNamespace((call) =>
+        call.url.includes('/_do/snapshot')
+          ? new Response('cell:A1:t:hi\n')
+          : new Response('OK', { status: 200 }),
+      );
+      const res = await buildApp().request(
+        '/_/r',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/csv' },
+          body: 'a,b\n',
+        },
+        env,
+      );
+      expect(res.status).toBe(503);
+      expect(res.headers.get('Retry-After')).toBe('5');
+    } finally {
+      release();
+      await blocker;
+    }
   });
 });
 

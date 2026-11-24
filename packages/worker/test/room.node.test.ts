@@ -1,4 +1,4 @@
-import { MAX_COMMAND_UTF8_BYTES } from '@ethercalc/shared/messages';
+import { MAX_COMMAND_UTF8_BYTES, MAX_WS_FRAME_CHARS } from '@ethercalc/shared/messages';
 import {
   auditKey,
   chatKey,
@@ -11,7 +11,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import type { Env } from '../src/env.ts';
 import { computeAuth } from '../src/lib/auth.ts';
 import { AUDIT_HISTORY_KEEP, CHAT_HISTORY_KEEP } from '../src/lib/seq-store.ts';
-import { SNAPSHOT_CHUNK_BYTES } from '../src/lib/snapshot-storage.ts';
+import { MAX_SNAPSHOT_BYTES_IN_FLIGHT, withSnapshotBody } from '../src/lib/snapshot-budget.ts';
+import { MAX_SNAPSHOT_BYTES, SNAPSHOT_CHUNK_BYTES } from '../src/lib/snapshot-storage.ts';
 import { MAX_MULTI_SHEETS, MAX_MULTI_SHEET_TITLE_LENGTH } from '@ethercalc/shared';
 import { RoomDO } from '../src/room.ts';
 
@@ -101,10 +102,20 @@ function fakeStorage(record: FakeStorageRecord): DurableObjectStorage {
     async deleteAll(): Promise<void> {
       m.clear();
     },
-    async list(opts?: { prefix?: string }): Promise<Map<string, unknown>> {
+    async list(opts?: {
+      prefix?: string;
+      end?: string;
+      reverse?: boolean;
+      limit?: number;
+    }): Promise<Map<string, unknown>> {
       const out = new Map<string, unknown>();
       const prefix = opts?.prefix ?? '';
-      const keys = Array.from(m.keys()).filter((k) => k.startsWith(prefix)).sort();
+      const end = opts?.end;
+      let keys = Array.from(m.keys())
+        .filter((k) => k.startsWith(prefix) && (end === undefined || k < end))
+        .sort();
+      if (opts?.reverse) keys.reverse();
+      if (opts?.limit !== undefined) keys = keys.slice(0, opts.limit);
       for (const k of keys) out.set(k, m.get(k)!);
       return out;
     },
@@ -473,14 +484,18 @@ function operatorRequest(
  */
 
 
-const mockExec = vi.fn<(cmd: string) => void>();
+const mockCreate = vi.fn<(opts?: unknown) => void>();
+const mockExec = vi.fn<(cmd: string) => boolean | void>();
 const mockSave = vi.fn<() => string>(() => 'SNAP');
+const mockSaveDimensions = vi.fn<() => { rows: number; columns: number }>(
+  () => ({ rows: 1, columns: 1 }),
+);
 const mockExportCells = vi.fn<() => Record<string, unknown>>(() => ({ A1: 1 }));
 const mockExportCell = vi.fn<(coord: string) => unknown>((coord) =>
   coord === 'A1' ? { v: 1 } : null,
 );
 const mockExportCSV = vi.fn<() => string>(() => 'a,b\n1,2\n');
-const mockCreateSheetHTML = vi.fn<() => string>(
+const mockCreateSheetHTML = vi.fn<(limit?: number) => string>(
   () => '<table><tr><td>1</td></tr></table>',
 );
 
@@ -491,39 +506,46 @@ const mockRecalc = vi.fn<() => void>();
 
 vi.mock('@ethercalc/socialcalc-headless', () => ({
   HeadlessSpreadsheet: class MockSS {},
-  createSpreadsheet: () => ({
-    executeCommand: (cmd: string) => {
-      mockExec(cmd);
-      return true;
-    },
-    createSpreadsheetSave: () => mockSave(),
-    exportCells: () => mockExportCells(),
-    exportCell: (coord: string) => mockExportCell(coord),
-    exportCSV: () => mockExportCSV(),
-    exportSheetData: () => ({
-      cells: mockExportCells(),
-      valueformats: [],
-      cellformats: [],
-      attribs: {},
-    }),
-    findCrossSheetRefs: () => mockFindRefs(),
-    resetSiblingSheets: () => mockResetSibling(),
-    addSiblingSheet: (name: string, save: string) => mockAddSibling(name, save),
-    recalc: () => mockRecalc(),
-    createSheetHTML: () => mockCreateSheetHTML(),
-  }),
+  HtmlSizeError: class HtmlSizeError extends Error {},
+  createSpreadsheet: (opts?: unknown) => {
+    mockCreate(opts);
+    return {
+      // `.call(this)` records which sheet instance served the call
+      // (`mock.contexts`), for tests about the DO's cached sheet.
+      executeCommand(this: unknown, cmd: string) {
+        return mockExec.call(this, cmd) !== false;
+      },
+      createSpreadsheetSave: () => mockSave(),
+      saveDimensions: () => mockSaveDimensions(),
+      exportCells: () => mockExportCells(),
+      exportCell: (coord: string) => mockExportCell(coord),
+      exportCSV(this: unknown) {
+        return mockExportCSV.call(this);
+      },
+      exportSheetData: () => ({
+        cells: mockExportCells(),
+        valueformats: [],
+        cellformats: [],
+        attribs: {},
+      }),
+      findCrossSheetRefs: () => mockFindRefs(),
+      resetSiblingSheets: () => mockResetSibling(),
+      addSiblingSheet: (name: string, save: string) => mockAddSibling(name, save),
+      recalc: () => mockRecalc(),
+      createSheetHTML: (limit?: number) => mockCreateSheetHTML(limit),
+    };
+  },
 }));
 
 vi.mock('../src/lib/xlsx-import.ts', () => ({
-  workbookToLoadClipboardCommand: (bytes: Uint8Array) => {
+  textRowsToLoadClipboardCommand: (rows: readonly (readonly string[])[]) => {
     const g = globalThis as {
       __loadClipboardForceNull?: boolean;
       __loadClipboardHuge?: boolean;
     };
     if (g.__loadClipboardForceNull) return null;
     if (g.__loadClipboardHuge) return `set A1 text t ${'x'.repeat(200_000)}`;
-    const text = new TextDecoder().decode(bytes);
-    return `loadclipboard ${text}`;
+    return `loadclipboard ${JSON.stringify(rows)}`;
   },
 }));
 async function appendTocTwoPhase(
@@ -1350,6 +1372,33 @@ describe('RoomDO (unit, direct construction)', () => {
     await expect(res.text()).rejects.toThrow(/snapshot chunk 1 missing/);
   });
 
+  it('GET /_do/snapshot stream fails when the save is replaced mid-download', async () => {
+    // The reader paces the stream, and chunk keys are reused by every
+    // save. A response admitted for one save must not go on to serve a
+    // later one (e.g. after the reader's session was revoked).
+    record.map.set(STORAGE_KEYS.snapshotMeta, { chunks: 4, bytes: 24 });
+    record.map.set(STORAGE_KEYS.metaUpdatedAt, 1);
+    for (let i = 0; i < 4; i++) record.map.set(snapshotChunkKey(i), 'before');
+    const res = await room.fetch(new Request('https://do/_do/snapshot'));
+    expect(res.headers.get('Content-Length')).toBe('24');
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    expect(decoder.decode((await reader.read()).value)).toBe('before');
+    // The reader stalls here while the room is saved again.
+    record.map.set(STORAGE_KEYS.metaUpdatedAt, 2);
+    for (let i = 0; i < 4; i++) record.map.set(snapshotChunkKey(i), 'after');
+    const received: string[] = [];
+    const drain = async (): Promise<void> => {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) return;
+        received.push(decoder.decode(value));
+      }
+    };
+    await expect(drain()).rejects.toThrow(/snapshot changed during download/);
+    expect(received).not.toContain('after');
+  });
+
   it('PUT /_do/snapshot clears prior log/audit/chat/ecell', async () => {
     record.map.set(logKey(0), 'set A1 value n 1');
     record.map.set(auditKey(0), 'set A1 value n 1');
@@ -1399,6 +1448,94 @@ describe('RoomDO (unit, direct construction)', () => {
     expect(record.map.size).toBe(0);
   });
 
+  it('POST /_do/commands charges whole-sheet verbs for the cells the engine holds', async () => {
+    // attribs are empty here, so the declared area is 1x1: only the live
+    // cell count can tell the preflight how much each `copy` walks.
+    const cells = Object.fromEntries(
+      Array.from({ length: 1000 }, (_, index) => [`A${index + 1}`, 1]),
+    );
+    const copies = (count: number) => Array<string>(count).fill('copy A1 all').join('\n');
+    mockExportCells.mockReturnValueOnce(cells);
+    const rejected = await room.fetch(
+      new Request('https://do/_do/commands', { method: 'POST', body: copies(2001) }),
+    );
+    expect(rejected.status).toBe(413);
+    expect(await rejected.text()).toBe('command exceeds sheet limits');
+    expect(mockExec).not.toHaveBeenCalled();
+    expect(record.map.size).toBe(0);
+
+    mockExportCells.mockReturnValueOnce(cells);
+    const accepted = await room.fetch(
+      new Request('https://do/_do/commands', { method: 'POST', body: copies(2000) }),
+    );
+    expect(accepted.status).toBe(202);
+    expect(mockExec).toHaveBeenCalledTimes(1);
+  });
+
+  it('POST /_do/commands charges whole-sheet verbs for what the stored snapshot holds', async () => {
+    // The mocked engine reports one cell and no dimensions; the saved area
+    // and named range are only visible in the snapshot.
+    const snapshot = 'socialcalc:version:1.5\nsheet:c:1:r:999:tvf:1\nname:TOTAL::A1\n';
+    record.map.set(STORAGE_KEYS.snapshot, snapshot);
+    const copies = (count: number) => Array<string>(count).fill('copy A1 all').join('\n');
+    const rejected = await room.fetch(
+      new Request('https://do/_do/commands', { method: 'POST', body: copies(2001) }),
+    );
+    expect(rejected.status).toBe(413);
+    expect(await rejected.text()).toBe('command exceeds sheet limits');
+    expect(mockExec).not.toHaveBeenCalled();
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe(snapshot);
+
+    const accepted = await room.fetch(
+      new Request('https://do/_do/commands', { method: 'POST', body: copies(2000) }),
+    );
+    expect(accepted.status).toBe(202);
+    expect(mockExec).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a command that stretches the canonical sheet before serializing it', async () => {
+    // 200_000 rows x 2 columns: each axis is legal alone, the save is not.
+    mockSaveDimensions.mockReturnValueOnce({ rows: 200_000, columns: 2 });
+    const rejected = await room.fetch(new Request('https://do/_do/commands', {
+      method: 'POST',
+      body: 'set B width 20',
+    }));
+    expect(rejected.status).toBe(413);
+    expect(await rejected.text()).toBe('command exceeds sheet limits');
+    expect(mockExec).toHaveBeenCalledTimes(1);
+    expect(mockSave).not.toHaveBeenCalled();
+    expect(record.map.size).toBe(0);
+
+    // The mutated sheet was dropped, and an exactly-full rectangle still saves.
+    mockSaveDimensions.mockReturnValueOnce({ rows: 200_000, columns: 1 });
+    const retry = await room.fetch(new Request('https://do/_do/commands', {
+      method: 'POST',
+      body: 'set A1 value n 2',
+    }));
+    expect(retry.status).toBe(202);
+    expect(mockSave).toHaveBeenCalledTimes(1);
+    expect(record.map.get(logKey(0))).toBe('set A1 value n 2');
+  });
+
+  it('holds an existing oversized sheet to its own area before serializing', async () => {
+    record.map.set(STORAGE_KEYS.snapshot, 'sheet:c:500:r:500\ncell:SF500:t:old\n');
+    mockSaveDimensions.mockReturnValueOnce({ rows: 500, columns: 500 });
+    const kept = await room.fetch(new Request('https://do/_do/commands', {
+      method: 'POST',
+      body: 'set A1 value n 1',
+    }));
+    expect(kept.status).toBe(202);
+
+    mockSave.mockClear();
+    mockSaveDimensions.mockReturnValueOnce({ rows: 501, columns: 500 });
+    const grown = await room.fetch(new Request('https://do/_do/commands', {
+      method: 'POST',
+      body: 'set 501 height 20',
+    }));
+    expect(grown.status).toBe(413);
+    expect(mockSave).not.toHaveBeenCalled();
+  });
+
   it('rejects edits against a previously stored snapshot with inconsistent dimensions', async () => {
     const snapshot = 'socialcalc:version:1.5\nsheet:c:2:r:2:tvf:1\ncell:ZZ100000:t:hi\n';
     record.map.set(STORAGE_KEYS.snapshot, snapshot);
@@ -1431,6 +1568,71 @@ describe('RoomDO (unit, direct construction)', () => {
       body: 'set A1 value n 2',
     }));
     expect(retry.status).toBe(202);
+    expect(record.map.get(logKey(0))).toBe('set A1 value n 2');
+  });
+
+  it('rejects a command whose serialized snapshot exceeds MAX_SNAPSHOT_BYTES', async () => {
+    mockSave.mockReturnValueOnce('x'.repeat(MAX_SNAPSHOT_BYTES + 1));
+    const rejected = await room.fetch(
+      new Request('https://do/_do/commands', {
+        method: 'POST',
+        body: 'set A1 text t big',
+      }),
+    );
+    expect(rejected.status).toBe(413);
+    expect(await rejected.text()).toBe('command exceeds sheet limits');
+    expect(record.map.has(STORAGE_KEYS.snapshot)).toBe(false);
+    expect(record.map.has(logKey(0))).toBe(false);
+  });
+
+  it('POST /_do/commands fans out a frame of at most the inbound frame limit', async () => {
+    // One accepted command becomes a frame for every socket in the room,
+    // so a frame no socket could have sent is applied but not pushed: a
+    // body of control characters JSON-encodes to six times its size.
+    const envelope = JSON.stringify({ type: 'execute', room: 'draft', user: '', cmdstr: '' }).length;
+    const largest = `set A1 text t ${'x'.repeat(MAX_WS_FRAME_CHARS - envelope - 14)}`;
+    const cases: Array<[string, number]> = [
+      [largest, 1],
+      [`${largest}x`, 0],
+      [`set A1 text t ${'\u0001'.repeat(200_000)}`, 0],
+    ];
+    for (const [body, delivered] of cases) {
+      const peerLog: FakeWsLog = { sent: [] };
+      const peer = makeFakeWs(peerLog, { user: 'bob', room: 'draft', auth: '' });
+      const { state } = makeWsAwareState('commands-broadcast-cap', record, [peer]);
+      const broadcastRoom = new RoomDO(state, makeEnv());
+
+      const res = await broadcastRoom.fetch(
+        new Request('https://do/_do/commands?name=draft', { method: 'POST', body }),
+      );
+
+      expect(res.status).toBe(202);
+      expect(mockExec).toHaveBeenLastCalledWith(body);
+      expect(peerLog.sent).toHaveLength(delivered);
+      expect(peerLog.sent.every((frame) => frame.length <= MAX_WS_FRAME_CHARS)).toBe(true);
+      expect(peerLog.closed).toBeUndefined();
+    }
+  });
+
+  it('rejects a command the engine abandons over its formula or batch text limits', async () => {
+    mockExec.mockReturnValueOnce(false);
+    const rejected = await room.fetch(new Request('https://do/_do/commands', {
+      method: 'POST',
+      body: 'set A1:A190000 formula 1+1',
+    }));
+    expect(rejected.status).toBe(413);
+    expect(await rejected.text()).toBe('command exceeds sheet limits');
+    expect(mockExec).toHaveBeenCalledTimes(1);
+    expect(mockSave).not.toHaveBeenCalled();
+    expect(record.map.size).toBe(0);
+
+    mockCreate.mockClear();
+    const retry = await room.fetch(new Request('https://do/_do/commands', {
+      method: 'POST',
+      body: 'set A1 value n 2',
+    }));
+    expect(retry.status).toBe(202);
+    expect(mockCreate).toHaveBeenCalledTimes(1);
     expect(record.map.get(logKey(0))).toBe('set A1 value n 2');
   });
 
@@ -1541,7 +1743,7 @@ describe('RoomDO (unit, direct construction)', () => {
     );
     expect(res.status).toBe(202);
     expect(record.map.has(STORAGE_KEYS.snapshot)).toBe(false);
-    expect(record.map.get(STORAGE_KEYS.snapshotMeta)).toEqual({ chunks: 3 });
+    expect(record.map.get(STORAGE_KEYS.snapshotMeta)).toEqual({ chunks: 3, bytes: big.length });
     expect(record.map.has(`snapshot:chunk:${String(0).padStart(16, '0')}`)).toBe(true);
     expect(record.map.has(`snapshot:chunk:${String(2).padStart(16, '0')}`)).toBe(true);
     const stored = await room.fetch(new Request('https://do/_do/snapshot'));
@@ -1564,7 +1766,7 @@ describe('RoomDO (unit, direct construction)', () => {
       }),
     );
     expect(res.status).toBe(202);
-    expect(record.map.get(STORAGE_KEYS.snapshotMeta)).toEqual({ chunks: 2 });
+    expect(record.map.get(STORAGE_KEYS.snapshotMeta)).toEqual({ chunks: 2, bytes: twoChunks.length });
     // Overwritten, not stale-deleted.
     expect(record.map.get(`snapshot:chunk:${String(0).padStart(16, '0')}`)).not.toBe('old0');
   });
@@ -1645,6 +1847,49 @@ describe('RoomDO (unit, direct construction)', () => {
     const res = await room.fetch(new Request('https://do/_do/cells/A1'));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ v: 1 });
+  });
+
+  it('cell JSON leaves out the formula tokens SocialCalc caches as parseinfo', async () => {
+    // Recalculation stores one `{text,type,opcode}` object per formula
+    // token on the cell; serialized, that is ~34 bytes per token and not
+    // covered by any save-size limit.
+    const formulaCell = () => ({
+      coord: 'A1',
+      datavalue: 2,
+      datatype: 'f',
+      formula: '1+1',
+      valuetype: 'n',
+      readonly: false,
+      parseinfo: [
+        { text: '1', type: 1, opcode: 0 },
+        { text: '+', type: 3, opcode: '+' },
+        { text: '1', type: 1, opcode: 0 },
+      ],
+    });
+    const exported = {
+      coord: 'A1',
+      datavalue: 2,
+      datatype: 'f',
+      formula: '1+1',
+      valuetype: 'n',
+      readonly: false,
+    };
+
+    mockExportCells.mockReturnValueOnce({ A1: formulaCell() });
+    const all = await room.fetch(new Request('https://do/_do/cells'));
+    expect(all.headers.get('Content-Type')).toContain('application/json');
+    expect(await all.text()).toBe(JSON.stringify({ A1: exported }));
+
+    mockExportCell.mockReturnValueOnce(formulaCell());
+    const one = await room.fetch(new Request('https://do/_do/cells/A1'));
+    expect(one.headers.get('Content-Type')).toContain('application/json');
+    expect(await one.text()).toBe(JSON.stringify(exported));
+
+    mockExportCells.mockReturnValueOnce({ A1: formulaCell() });
+    const view = await room.fetch(new Request('https://do/_do/sheet-data'));
+    expect(((await view.json()) as { cells: unknown }).cells).toEqual({
+      A1: exported,
+    });
   });
 
   it('GET /_do/cells/:cell returns null for unknown coord', async () => {
@@ -1769,7 +2014,23 @@ describe('RoomDO (unit, direct construction)', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('Content-Type')).toBe('text/html; charset=utf-8');
     expect(await res.text()).toBe('<table><tr><td>1</td></tr></table>');
-    expect(mockCreateSheetHTML).toHaveBeenCalled();
+    expect(mockCreateSheetHTML).toHaveBeenCalledWith(64 * 1024 * 1024);
+  });
+
+  it('GET /_do/html answers 413 when the export exceeds its size limit', async () => {
+    const { HtmlSizeError } = await import('@ethercalc/socialcalc-headless');
+    mockCreateSheetHTML.mockImplementationOnce(() => {
+      throw new HtmlSizeError();
+    });
+    const res = await room.fetch(new Request('https://do/_do/html'));
+    expect(res.status).toBe(413);
+    expect(res.headers.get('Content-Type')).toBe('text/plain; charset=utf-8');
+    expect(await res.text()).toBe('html export exceeds resource limits');
+
+    mockCreateSheetHTML.mockImplementationOnce(() => {
+      throw new Error('render failed');
+    });
+    await expect(room.fetch(new Request('https://do/_do/html'))).rejects.toThrow('render failed');
   });
 
   it('GET /_do/csv returns exportCSV with text/csv', async () => {
@@ -1794,6 +2055,56 @@ describe('RoomDO (unit, direct construction)', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('Content-Type')).toBe('text/x-markdown; charset=utf-8');
     expect(await res.text()).toBe('| a | b |\n| --- | --- |\n| 1 | 2 |');
+  });
+
+  it('GET /_do/fods returns 413 when the written text would exceed the size limit', async () => {
+    const cell = { valuetype: 't', datatype: 't', datavalue: '\t'.repeat(3200) };
+    const cells = Object.fromEntries(
+      Array.from({ length: 1024 }, (_, row) => [`A${row + 1}`, cell]),
+    );
+    mockExportCells.mockReturnValueOnce(cells);
+    const res = await room.fetch(new Request('https://do/_do/fods'));
+    expect(res.status).toBe(413);
+    expect(res.headers.get('Content-Type')).toBe('text/plain; charset=utf-8');
+    expect(await res.text()).toBe('fods export exceeds resource limits');
+
+    // The XLSX writer leaves a tab as it is, so the same sheet still exports.
+    mockExportCells.mockReturnValueOnce(cells);
+    expect((await room.fetch(new Request('https://do/_do/xlsx'))).status).toBe(200);
+  });
+
+  it('GET /_do/xlsx lets a writer failure that is not the size limit through', async () => {
+    mockExportCells.mockReturnValueOnce({
+      A1: { valuetype: 't', datatype: 't', datavalue: 'a'.repeat(32_768) },
+    });
+    await expect(room.fetch(new Request('https://do/_do/xlsx'))).rejects.toThrow(
+      'Text length must not exceed 32767 characters',
+    );
+  });
+
+  it('GET /_do/ods and /_do/fods return 413 when merges exceed the ODS writer budget', async () => {
+    const cells: Record<string, unknown> = {};
+    for (let r = 1; r <= 20_001; r++) {
+      cells[`A${r}`] = { valuetype: 'n', datatype: 'v', datavalue: 1, colspan: 2 };
+    }
+    for (const format of ['ods', 'fods']) {
+      mockExportCells.mockReturnValueOnce(cells);
+      const res = await room.fetch(new Request(`https://do/_do/${format}`));
+      expect(res.status).toBe(413);
+      expect(res.headers.get('Content-Type')).toBe('text/plain; charset=utf-8');
+      expect(await res.text()).toBe(
+        'ods/fods export exceeds 400000000 merge lookups (400040001); export as xlsx instead',
+      );
+    }
+    mockExportCells.mockReturnValueOnce(cells);
+    const xlsx = await room.fetch(new Request('https://do/_do/xlsx'));
+    expect(xlsx.status).toBe(200);
+    expect(xlsx.headers.get('Content-Type')).toContain('spreadsheetml');
+  });
+
+  it('GET /_do/ods rethrows exporter failures other than the merge/size budgets', async () => {
+    mockExportCells.mockReturnValueOnce(null as unknown as Record<string, unknown>);
+    await expect(room.fetch(new Request('https://do/_do/ods'))).rejects.toThrow(TypeError);
   });
 
   it('GET /_do/xlsx returns binary with xlsx content type', async () => {
@@ -1920,6 +2231,317 @@ describe('RoomDO (unit, direct construction)', () => {
       const res = await freshRoom.fetch(new Request('https://do/_do/csv'));
       expect(res.status).toBe(200);
       expect(mockAddSibling).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('#getSpreadsheet (requests that arrive during a hydrate)', () => {
+    const siblingMissing = () => new Response('', { status: 404 });
+    let held: Array<(res: Response) => void>;
+    let holdFetches: number;
+    let slowRecord: FakeStorageRecord;
+    let slowRoom: RoomDO;
+    const read = () => slowRoom.fetch(new Request('https://do/_do/cells'));
+    const heldFetches = (count: number) =>
+      vi.waitFor(() => expect(held).toHaveLength(count));
+
+    beforeEach(() => {
+      held = [];
+      holdFetches = Infinity;
+      mockFindRefs.mockReset();
+      mockFindRefs.mockImplementation(() => ['neighbor']);
+      mockCreate.mockClear();
+      const env: Env = {
+        ROOM: {
+          idFromName: (n: string) => ({ toString: () => `id:${n}` } as unknown as DurableObjectId),
+          get: () => ({
+            fetch: () =>
+              holdFetches-- > 0
+                ? new Promise<Response>((resolve) => held.push(resolve))
+                : Promise.resolve(siblingMissing()),
+          } as unknown as DurableObjectStub),
+        } as unknown as DurableObjectNamespace,
+      } as Env;
+      slowRecord = { map: new Map() };
+      slowRoom = new RoomDO(makeState('id:slow', slowRecord), env);
+    });
+
+    afterEach(() => {
+      mockFindRefs.mockReset();
+      mockFindRefs.mockImplementation(() => []);
+      mockCreate.mockReset();
+      mockRecalc.mockReset();
+    });
+
+    it('shares one hydrate between concurrent reads', async () => {
+      const reads = [read(), read(), read()];
+      await heldFetches(1);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(mockCreate).toHaveBeenCalledTimes(1);
+      expect(held).toHaveLength(1);
+      held[0]!(siblingMissing());
+      for (const res of await Promise.all(reads)) expect(res.status).toBe(200);
+      expect((await read()).status).toBe(200);
+      expect(mockCreate).toHaveBeenCalledTimes(1);
+    });
+
+    it('lets a command hydrate on its own instead of waiting for a read', async () => {
+      holdFetches = 1;
+      const pendingRead = read();
+      await heldFetches(1);
+      // This command does not create a cross-sheet ref; let its own
+      // post-exec check see no refs so it commits in one pass.
+      mockFindRefs.mockReturnValueOnce([]);
+      const command = await slowRoom.fetch(
+        new Request('https://do/_do/commands', { method: 'POST', body: 'set A1 value n 1' }),
+      );
+      expect(command.status).toBe(202);
+      expect(mockCreate).toHaveBeenCalledTimes(2);
+      held[0]!(siblingMissing());
+      expect((await pendingRead).status).toBe(200);
+      expect((await read()).status).toBe(200);
+      expect(mockCreate).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not cache a hydrate that a write overtook', async () => {
+      slowRecord.map.set(STORAGE_KEYS.snapshot, 'OLD');
+      const pendingRead = read();
+      await heldFetches(1);
+      expect(mockCreate).toHaveBeenLastCalledWith({ snapshot: 'OLD' });
+      const put = await slowRoom.fetch(
+        new Request('https://do/_do/snapshot', { method: 'PUT', body: 'NEW' }),
+      );
+      expect(put.status).toBe(201);
+      held[0]!(siblingMissing());
+      expect((await pendingRead).status).toBe(200);
+      holdFetches = 0;
+      expect((await read()).status).toBe(200);
+      expect(mockCreate).toHaveBeenCalledTimes(2);
+      expect(mockCreate).toHaveBeenLastCalledWith({ snapshot: 'NEW' });
+    });
+
+    it('does not cache a failed hydrate', async () => {
+      holdFetches = 0;
+      mockCreate.mockImplementationOnce(() => {
+        throw new Error('hydrate failed');
+      });
+      await expect(read()).rejects.toThrow('hydrate failed');
+      expect((await read()).status).toBe(200);
+      expect(mockCreate).toHaveBeenCalledTimes(2);
+    });
+
+    it('keeps the current hydrate when one a write overtook fails', async () => {
+      const overtaken = read();
+      await heldFetches(1);
+      const put = await slowRoom.fetch(
+        new Request('https://do/_do/snapshot', { method: 'PUT', body: 'NEW' }),
+      );
+      expect(put.status).toBe(201);
+      const current = read();
+      await heldFetches(2);
+      mockRecalc.mockImplementationOnce(() => {
+        throw new Error('recalc failed');
+      });
+      held[0]!(siblingMissing());
+      await expect(overtaken).rejects.toThrow('recalc failed');
+      held[1]!(siblingMissing());
+      expect((await current).status).toBe(200);
+      expect((await read()).status).toBe(200);
+      expect(mockCreate).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('cross-sheet siblings and blockConcurrencyWhile', () => {
+    const SIBLING_SAVE = 'version:1.5\ncell:A1:v:42\n';
+
+    function makeProbedRoom(
+      name: string,
+      siblingFetch: () => Response | Promise<Response> = () => new Response(SIBLING_SAVE),
+    ) {
+      const probeRecord: FakeStorageRecord = { map: new Map() };
+      const probe = { held: 0, heldAtFetch: [] as number[], record: probeRecord };
+      const state = makeState(name, probeRecord);
+      Object.assign(state, {
+        async blockConcurrencyWhile<T>(cb: () => Promise<T>): Promise<T> {
+          probe.held++;
+          try {
+            return await cb();
+          } finally {
+            probe.held--;
+          }
+        },
+      });
+      const env = withSessionAuth({
+        ROOM: makeRoomNamespace((request, roomName) => {
+          if (new URL(request.url).pathname !== '/_do/snapshot') {
+            return defaultRoomFetch(request, roomName);
+          }
+          probe.heldAtFetch.push(probe.held);
+          return siblingFetch();
+        }),
+      });
+      const probed = new RoomDO(state, env);
+      const post = (body: string): Promise<Response> =>
+        probed.fetch(
+          new Request(`https://do/_do/commands?name=${name}`, { method: 'POST', body }),
+        );
+      return { room: probed, state, probe, post };
+    }
+
+    beforeEach(() => {
+      mockFindRefs.mockReset();
+      mockFindRefs.mockImplementation(() => ['right']);
+      mockAddSibling.mockClear();
+      mockExec.mockClear();
+      mockExportCSV.mockClear();
+    });
+
+    afterEach(() => {
+      mockFindRefs.mockReset();
+      mockFindRefs.mockImplementation(() => []);
+    });
+
+    it('lets two rooms that refer to each other run a command at the same time', async () => {
+      const rooms = new Map<string, { room?: RoomDO; locked: Promise<unknown> | null }>();
+      const namespace = makeRoomNamespace(async (request, roomName) => {
+        const target = rooms.get(roomName)!;
+        while (target.locked) await target.locked;
+        return target.room!.fetch(request);
+      });
+      for (const name of ['left', 'right']) {
+        const entry: { room?: RoomDO; locked: Promise<unknown> | null } = { locked: null };
+        const state = makeState(name, { map: new Map() });
+        Object.assign(state, {
+          async blockConcurrencyWhile<T>(cb: () => Promise<T>): Promise<T> {
+            const running = cb();
+            entry.locked = running.catch(() => undefined);
+            try {
+              return await running;
+            } finally {
+              entry.locked = null;
+            }
+          },
+        });
+        entry.room = new RoomDO(state, withSessionAuth({ ROOM: namespace }));
+        rooms.set(name, entry);
+      }
+      mockFindRefs.mockImplementation(() => ['left', 'right']);
+      const post = (name: string): Promise<Response> =>
+        rooms.get(name)!.room!.fetch(
+          new Request(`https://do/_do/commands?name=${name}`, {
+            method: 'POST',
+            body: 'set D1 value n 1',
+          }),
+        );
+      for (let round = 0; round < 2; round++) {
+        const answers = await Promise.all([post('left'), post('right')]);
+        expect(answers.map((answer) => answer.status)).toEqual([202, 202]);
+      }
+      expect(mockAddSibling).toHaveBeenCalledWith('right', 'SNAP');
+      expect(mockAddSibling).toHaveBeenCalledWith('left', 'SNAP');
+    });
+
+    it('fetches the siblings a command needs before taking the lock', async () => {
+      const { probe, post } = makeProbedRoom('left');
+      const formula = 'set A1 formula "right"!A1';
+      expect((await post(formula)).status).toBe(202);
+      expect(mockExec.mock.calls).toEqual([[formula], [formula]]);
+      expect(mockExec.mock.contexts[1]).not.toBe(mockExec.mock.contexts[0]);
+      expect(mockAddSibling).toHaveBeenCalledExactlyOnceWith('right', SIBLING_SAVE);
+      expect((await post('set B1 value n 3')).status).toBe(202);
+      expect(mockExec).toHaveBeenCalledTimes(3);
+      expect(mockExec.mock.contexts[2]).toBe(mockExec.mock.contexts[1]);
+      expect(mockAddSibling).toHaveBeenCalledTimes(2);
+      expect(probe.heldAtFetch).toEqual([0, 0]);
+      expect(probe.record.map.get(logKey(0))).toBe(formula);
+      expect(probe.record.map.get(logKey(1))).toBe('set B1 value n 3');
+      expect(probe.record.map.has(logKey(2))).toBe(false);
+    });
+
+    it('runs a command on a sheet without cross-sheet formulas once, as before', async () => {
+      mockFindRefs.mockImplementation(() => []);
+      mockResetSibling.mockClear();
+      mockRecalc.mockClear();
+      const { probe, post } = makeProbedRoom('left');
+      expect((await post('set A1 value n 1')).status).toBe(202);
+      expect(mockExec).toHaveBeenCalledTimes(1);
+      expect(probe.heldAtFetch).toEqual([]);
+      expect(mockResetSibling).not.toHaveBeenCalled();
+      expect(mockRecalc).not.toHaveBeenCalled();
+    });
+
+    it('keeps commands in arrival order while one waits for a sibling', async () => {
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let fetches = 0;
+      const { probe, post } = makeProbedRoom('left', async () => {
+        if (fetches++ === 0) await gate;
+        return new Response(SIBLING_SAVE);
+      });
+      const first = post('set A1 formula "right"!A1');
+      const second = post('set A1 value n 2');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(probe.record.map.has(logKey(0))).toBe(false);
+      release();
+      expect((await first).status).toBe(202);
+      expect((await second).status).toBe(202);
+      expect(probe.record.map.get(logKey(0))).toBe('set A1 formula "right"!A1');
+      expect(probe.record.map.get(logKey(1))).toBe('set A1 value n 2');
+      expect(probe.heldAtFetch).toEqual([0, 0]);
+    });
+
+    it('runs the next command after one that failed', async () => {
+      const { state, probe, post } = makeProbedRoom('left');
+      const transaction = state.storage.transaction.bind(state.storage);
+      let failures = 1;
+      Object.assign(state.storage, {
+        async transaction<T>(cb: (txn: DurableObjectTransaction) => Promise<T>): Promise<T> {
+          if (failures-- > 0) throw new Error('storage transaction failed');
+          return transaction(cb);
+        },
+      });
+      const first = post('set A1 value n 1');
+      const second = post('set A1 value n 2');
+      await expect(first).rejects.toThrow('storage transaction failed');
+      expect((await second).status).toBe(202);
+      expect(probe.record.map.get(logKey(0))).toBe('set A1 value n 2');
+      expect(probe.record.map.has(logKey(1))).toBe(false);
+    });
+
+    it('commits a TOC append on a sheet with cross-sheet formulas the same way', async () => {
+      const { room: toc, probe } = makeProbedRoom('toc');
+      mockFindRefs.mockReturnValueOnce([]);
+      const { commit } = await appendTocTwoPhase(toc, 'toc', ['Added']);
+      expect(commit?.status).toBe(201);
+      expect(mockExec).toHaveBeenCalledTimes(2);
+      expect(mockAddSibling).toHaveBeenCalledExactlyOnceWith('right', SIBLING_SAVE);
+      expect(probe.heldAtFetch).toEqual([0]);
+      expect(probe.record.map.has(logKey(0))).toBe(true);
+      expect(probe.record.map.has(logKey(1))).toBe(false);
+    });
+
+    it('serves a read between the two rounds from the stored sheet', async () => {
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let fetches = 0;
+      const { room: left, probe, post } = makeProbedRoom('left', async () => {
+        if (fetches++ === 0) await gate;
+        return new Response(SIBLING_SAVE);
+      });
+      const command = post('set A1 formula "right"!A1');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(mockExec).toHaveBeenCalledTimes(1);
+      const read = await left.fetch(new Request('https://do/_do/csv?name=left'));
+      expect(read.status).toBe(200);
+      expect(probe.heldAtFetch).toEqual([0]);
+      expect(mockExportCSV.mock.contexts[0]).not.toBe(mockExec.mock.contexts[0]);
+      release();
+      expect((await command).status).toBe(202);
+      expect(mockExec).toHaveBeenCalledTimes(2);
+      expect(mockExec.mock.contexts[1]).toBe(mockExportCSV.mock.contexts[0]);
     });
   });
 
@@ -2183,7 +2805,7 @@ describe('RoomDO (unit, direct construction)', () => {
       expect(json.sheets[0]?.title).toBe('Added');
       expect(json.sheets[0]?.title).not.toContain('Stryker');
       const command = String(mockExec.mock.calls[0]?.[0]);
-      expect(command).not.toContain('loadclipboard "#url","#title"');
+      expect(command).not.toContain('#url');
       expect(command).toContain('paste A4 all');
     } finally {
       mockSave.mockReset();
@@ -2209,15 +2831,19 @@ describe('RoomDO (unit, direct construction)', () => {
     }
   });
 
-  it('POST /_do/import-append-toc escapes quotes in TOC paste CSV bodies', async () => {
+  it('POST /_do/import-append-toc hands TOC rows to the text-cell importer as written', async () => {
     mockExportCSV.mockReturnValue('#url,#title\n');
     mockSave.mockReturnValueOnce('TOC');
     mockExec.mockClear();
     try {
-      const { commit } = await appendTocTwoPhase(room, 'quote', ['He said "hi"']);
+      // Neither CSV-quoted nor typed: a title that looks like a formula, a
+      // number or a quoted field is still the title.
+      const titles = ['He said "hi"', "='other-room'!A1", '007'];
+      const { commit } = await appendTocTwoPhase(room, 'quote', titles);
       expect(commit?.status).toBe(201);
-      const cmd = String(mockExec.mock.calls[0]?.[0]);
-      expect(cmd).toContain('""hi""');
+      expect(mockExec.mock.calls[0]?.[0]).toBe(
+        `loadclipboard ${JSON.stringify(titles.map((title, i) => [`/quote.${i + 1}`, title]))}\npaste A2 all`,
+      );
     } finally {
       mockSave.mockReset();
       mockSave.mockImplementation(() => 'SNAP');
@@ -2350,7 +2976,7 @@ describe('RoomDO (unit, direct construction)', () => {
     const json = (await commit.json()) as { sheets: Array<{ row: number }> };
     expect(json.sheets[0]?.row).toBe(2);
     expect(mockExec.mock.calls[0]?.[0]).toBe(
-      'loadclipboard "#url","#title"\n' + '"/empty-toc-parent.1","First"\n' + 'paste A1 all',
+      'loadclipboard [["#url","#title"],["/empty-toc-parent.1","First"]]\n' + 'paste A1 all',
     );
   });
 
@@ -2635,6 +3261,139 @@ describe('RoomDO — effective parent access and trusted reads', () => {
     expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('SECRET-SAVE');
   });
 
+  it.each([
+    ['answered', () => Response.json(allowReadWrite)],
+    ['failed', () => {
+      throw new Error('parent unavailable');
+    }],
+  ])('leaves no deadline timer armed once the parent has %s', async (_label, parentFetch) => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const uncancellable = vi.spyOn(AbortSignal, 'timeout');
+    vi.useFakeTimers();
+    try {
+      const room = new RoomDO(
+        makeState(`deadline-released-${_label}`, {
+          map: new Map([[STORAGE_KEYS.metaParent, 'parent']]),
+        }),
+        makeEnvWithParentAccess(parentFetch),
+      );
+      for (let i = 0; i < 3; i += 1) {
+        await room.fetch(new Request('https://do/_do/access?name=child'));
+      }
+      expect(vi.getTimerCount()).toBe(0);
+      expect(uncancellable).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+      uncancellable.mockRestore();
+      consoleError.mockRestore();
+    }
+  });
+
+  it('fails closed when the parent has not answered within 5 seconds', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.useFakeTimers();
+    try {
+      const room = new RoomDO(
+        makeState('deadline-elapsed', {
+          map: new Map([[STORAGE_KEYS.metaParent, 'parent']]),
+        }),
+        makeEnvWithParentAccess(
+          (request) =>
+            new Promise<Response>((_resolve, reject) => {
+              request.signal.addEventListener('abort', () => {
+                reject(request.signal.reason);
+              });
+            }),
+        ),
+      );
+      let settled = false;
+      const pending = room
+        .fetch(new Request('https://do/_do/access?name=child'))
+        .finally(() => {
+          settled = true;
+        });
+      await vi.advanceTimersByTimeAsync(4_999);
+      expect(settled).toBe(false);
+      expect(vi.getTimerCount()).toBe(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(await (await pending).json()).toMatchObject({
+        isPrivate: true,
+        canRead: false,
+        canWrite: false,
+      });
+      expect(consoleError).toHaveBeenCalledWith(
+        'room-parent-access-failed',
+        expect.objectContaining({ reason: 'The operation timed out' }),
+      );
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+      consoleError.mockRestore();
+    }
+  });
+
+  it('asks the parent once per distinct uid when relaying a frame to peers', async () => {
+    const record: FakeStorageRecord = {
+      map: new Map([[STORAGE_KEYS.metaParent, 'parent']]),
+    };
+    const sessionExp = Date.now() + 60_000;
+    const peerLogs: FakeWsLog[] = [];
+    const peer = (uid?: string): WebSocket => {
+      const log: FakeWsLog = { sent: [] };
+      peerLogs.push(log);
+      return makeFakeWs(log, {
+        user: 'peer',
+        room: 'child',
+        auth: '',
+        ...(uid === undefined ? {} : { uid, sessionExp }),
+      });
+    };
+    const peers = [
+      peer(),
+      peer(),
+      peer('uid-reader'),
+      peer('uid-reader'),
+      peer('uid-revoked'),
+      peer('uid-revoked'),
+    ];
+    const { state } = makeWsAwareState('fan-out-child', record, peers);
+    const requests: Request[] = [];
+    const room = new RoomDO(
+      state,
+      makeEnvWithParentAccess(
+        (request) =>
+          Response.json(
+            request.headers.get('X-EC-Uid') === 'uid-revoked'
+              ? { isPrivate: true, canRead: false, canWrite: false }
+              : { isPrivate: false, canRead: true, canWrite: true },
+          ),
+        requests,
+      ),
+    );
+    const senderLog: FakeWsLog = { sent: [] };
+    await room.webSocketMessage(
+      makeFakeWs(senderLog, { user: 'sender', room: 'child', auth: '' }),
+      JSON.stringify({ type: 'ask.ecell', room: 'child', user: 'sender' }),
+    );
+
+    expect(requests.map((request) => request.headers.get('X-EC-Uid'))).toEqual([
+      null,
+      null,
+      null,
+      'uid-reader',
+      'uid-revoked',
+    ]);
+    expect(peerLogs.map((log) => log.sent.length)).toEqual([1, 1, 1, 1, 0, 0]);
+    expect(peerLogs.map((log) => log.closed === true)).toEqual([
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+    ]);
+  });
+
   it('does not synthesize a uid for an anonymous parent lookup', async () => {
     const requests: Request[] = [];
     const room = new RoomDO(
@@ -2721,6 +3480,153 @@ describe('RoomDO — effective parent access and trusted reads', () => {
       canWrite: false,
     });
     expect(requests).toHaveLength(0);
+  });
+
+  it.each([
+    ['a direct lookup', '', '1'],
+    ['a lookup two markers down the chain', '&depth=2', '3'],
+    ['the last allowed lookup', '&depth=3', '4'],
+  ])('counts the parent marker it follows for %s', async (_label, query, forwarded) => {
+    const requests: Request[] = [];
+    const room = new RoomDO(
+      makeState('child', { map: new Map([[STORAGE_KEYS.metaParent, 'parent']]) }),
+      makeEnvWithParentAccess(() => Response.json(allowReadWrite), requests),
+    );
+    const response = await room.fetch(
+      new Request(`https://do/_do/access?name=child${query}`),
+    );
+    expect(await response.json()).toMatchObject({ canRead: true, canWrite: true });
+    expect(requests).toHaveLength(1);
+    expect(new URL(requests[0]!.url).searchParams.get('depth')).toBe(forwarded);
+  });
+
+  it.each([
+    ['at the limit', 'name=child&depth=4', 'child'],
+    ['past the limit', 'name=child&depth=400', 'child'],
+    ['negative', 'name=child&depth=-1', 'child'],
+    ['not a number', 'name=child&depth=deep', 'child'],
+    ['at the limit in an unnamed room', 'depth=4', null],
+  ])('stops a parent chain whose depth is %s without querying further', async (
+    _label,
+    query,
+    name,
+  ) => {
+    const requests: Request[] = [];
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const room = new RoomDO(
+      makeState('child', { map: new Map([[STORAGE_KEYS.metaParent, 'parent']]) }),
+      makeEnvWithParentAccess(() => Response.json(allowReadWrite), requests),
+    );
+    try {
+      const response = await room.fetch(new Request(`https://do/_do/access?${query}`));
+      expect(await response.json()).toEqual({
+        isPrivate: true,
+        canRead: false,
+        canWrite: false,
+        parented: true,
+        parent: 'parent',
+      });
+      expect(requests).toHaveLength(0);
+      expect(consoleError).toHaveBeenCalledWith('room-parent-depth-exceeded', { room: name });
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('answers a chained lookup from its own ACL when it has no parent marker', async () => {
+    const requests: Request[] = [];
+    const room = new RoomDO(
+      makeState('workbook', { map: new Map() }),
+      makeEnvWithParentAccess(() => Response.json(allowReadWrite), requests),
+    );
+    const response = await room.fetch(
+      new Request('https://do/_do/access?name=workbook&depth=4'),
+    );
+    expect(await response.json()).toMatchObject({
+      isPrivate: false,
+      canRead: true,
+      canWrite: true,
+      parented: false,
+    });
+    expect(requests).toHaveLength(0);
+  });
+
+  it('bounds a chain of nested sheets at four markers, on lookup and on creation', async () => {
+    const sheet = (level: number) => `book${'.1'.repeat(level)}`;
+    const requests: Request[] = [];
+    const rooms = new Map<string, RoomDO>();
+    const env = makeEnvWithParentAccess(
+      (request) => rooms.get(new URL(request.url).searchParams.get('name')!)!.fetch(request),
+      requests,
+    );
+    for (let level = 0; level <= 6; level++) {
+      const map = new Map<string, unknown>();
+      if (level > 0) map.set(STORAGE_KEYS.metaParent, sheet(level - 1));
+      rooms.set(sheet(level), new RoomDO(makeState(sheet(level), { map }), env));
+    }
+    const verdict = async (level: number): Promise<unknown> => {
+      requests.length = 0;
+      const response = await rooms
+        .get(sheet(level))!
+        .fetch(new Request(`https://do/_do/access?name=${sheet(level)}`));
+      return response.json();
+    };
+    const create = async (level: number): Promise<number> => {
+      const child = new RoomDO(makeState(`new-${level}`, { map: new Map() }), env);
+      const response = await child.fetch(
+        childSnapshotRequest(
+          `${sheet(level - 1)}.2`,
+          { parent: sheet(level - 1), snapshot: '', mode: 'create' },
+          null,
+        ),
+      );
+      return response.status;
+    };
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(await verdict(4)).toMatchObject({ isPrivate: false, canRead: true, canWrite: true });
+      expect(requests.map((request) => new URL(request.url).searchParams.get('name'))).toEqual([
+        sheet(3),
+        sheet(2),
+        sheet(1),
+        sheet(0),
+      ]);
+      expect(consoleError).not.toHaveBeenCalled();
+      expect(await create(4)).toBe(201);
+
+      for (const level of [5, 6]) {
+        expect(await verdict(level)).toMatchObject({
+          isPrivate: true,
+          canRead: false,
+          canWrite: false,
+        });
+        expect(requests).toHaveLength(4);
+      }
+      expect(await create(5)).toBe(403);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('counts the marker a new child would carry, but not a dotted name', async () => {
+    const requests: Request[] = [];
+    const env = makeEnvWithParentAccess(
+      () => Response.json({ isPrivate: false, canRead: true, canWrite: true }),
+      requests,
+    );
+    const child = new RoomDO(makeState('new-child', { map: new Map() }), env);
+    const created = await child.fetch(
+      childSnapshotRequest('parent.1', { parent: 'parent', snapshot: '', mode: 'create' }),
+    );
+    expect(created.status).toBe(201);
+    expect(new URL(requests[0]!.url).searchParams.get('depth')).toBe('1');
+
+    const dotted = new RoomDO(makeState('dotted', { map: new Map() }), env);
+    const write = await dotted.fetch(new Request('https://do/_do/snapshot?name=public.2', {
+      method: 'PUT', body: 'SAVE',
+    }));
+    expect(write.status).toBe(201);
+    expect(new URL(requests.at(-1)!.url).searchParams.get('depth')).toBe('0');
   });
 
   it.each([
@@ -3141,7 +4047,7 @@ describe('RoomDO — effective parent access and trusted reads', () => {
         );
         const log: FakeWsLog = { sent: [] };
         await room.webSocketMessage(
-          makeFakeWs(log, { user: 'u', room: 'r', auth: 'r' }),
+          makeFakeWs(log, { user: 'u', room: '', auth: '' }),
           '{}',
         );
         expect(log.closed).toBe(true);
@@ -3220,6 +4126,32 @@ describe('RoomDO — child snapshot initialization', () => {
     expect(parentRequests).toHaveLength(2);
   });
 
+  it.each(['parent.7', 'pärent 表.7'])(
+    'checks parent authority on a WebSocket frame before any named request: %s',
+    async (name) => {
+      const record: FakeStorageRecord = { map: new Map() };
+      const parentRequests: Request[] = [];
+      const { state } = makeWsAwareState('ws-only-dotted', record, []);
+      const room = new RoomDO(
+        state,
+        makeEnvWithParentAccess(() => Response.json({
+          isPrivate: true, canRead: false, canWrite: false,
+        }), parentRequests),
+      );
+      const encoded = encodeURI(name);
+      const ws = makeFakeWs({ sent: [] }, { user: 'u', room: encoded, auth: encoded });
+      await room.webSocketMessage(ws, JSON.stringify({
+        type: 'execute', room: encoded, user: 'u', auth: encoded,
+        cmdstr: 'set A1 value n 1',
+      }));
+      expect(record.map.has(logKey(0))).toBe(false);
+      expect(parentRequests).toHaveLength(1);
+      expect(new URL(parentRequests[0]!.url).searchParams.get('name')).toBe(
+        name.slice(0, -2),
+      );
+    },
+  );
+
   it('continues to write an independent dotted public room', async () => {
     const record: FakeStorageRecord = { map: new Map() };
     const room = new RoomDO(
@@ -3233,6 +4165,89 @@ describe('RoomDO — child snapshot initialization', () => {
     }));
     expect(write.status).toBe(201);
     expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('SAVE');
+  });
+
+  it('answers a write lookup from below with its own dotted write gate', async () => {
+    const parentRequests: Request[] = [];
+    const room = new RoomDO(
+      makeState('future-sheet', { map: new Map() }),
+      makeEnvWithParentAccess(() => Response.json({
+        isPrivate: true, canRead: false, canWrite: false,
+      }), parentRequests),
+    );
+    const read = await room.fetch(new Request('https://do/_do/access?name=parent.7'));
+    expect(await read.json()).toMatchObject({ isPrivate: false, canRead: true, canWrite: true });
+    expect(parentRequests).toHaveLength(0);
+
+    const write = await room.fetch(new Request('https://do/_do/access?name=parent.7&write=1'));
+    expect(await write.json()).toMatchObject({ isPrivate: true, canRead: false, canWrite: false });
+    expect(parentRequests).toHaveLength(1);
+    const asked = new URL(parentRequests[0]!.url).searchParams;
+    expect(asked.get('name')).toBe('parent');
+    expect(asked.get('write')).toBe('1');
+  });
+
+  it('asks the parent for a write verdict before initializing a child below it', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const parentRequests: Request[] = [];
+    const room = new RoomDO(
+      makeState('planted-child', record),
+      makeEnvWithParentAccess((request) => Response.json(
+        new URL(request.url).searchParams.get('write') === '1'
+          ? { isPrivate: true, canRead: false, canWrite: false }
+          : { isPrivate: false, canRead: true, canWrite: true },
+      ), parentRequests),
+    );
+    const planted = await room.fetch(childSnapshotRequest(
+      'parent.7.1',
+      { parent: 'parent.7', snapshot: 'PLANTED', mode: 'create' },
+      null,
+    ));
+    expect(planted.status).toBe(403);
+    expect(record.map.size).toBe(0);
+    expect(parentRequests).toHaveLength(1);
+    expect(new URL(parentRequests[0]!.url).searchParams.get('name')).toBe('parent.7');
+  });
+
+  it.each([
+    ['a write', '&write=1', '1'],
+    ['a read', '', null],
+    ['any other value', '&write=true', null],
+  ])('forwards the purpose of %s lookup along its parent marker', async (_label, query, forwarded) => {
+    const parentRequests: Request[] = [];
+    const room = new RoomDO(
+      makeState('marked-child', { map: new Map([[STORAGE_KEYS.metaParent, 'parent.7']]) }),
+      makeEnvWithParentAccess(() => Response.json({
+        isPrivate: false, canRead: true, canWrite: true,
+      }), parentRequests),
+    );
+    const response = await room.fetch(
+      new Request(`https://do/_do/access?name=parent.7.1${query}`),
+    );
+    expect(await response.json()).toMatchObject({ canRead: true, canWrite: true });
+    expect(parentRequests).toHaveLength(1);
+    expect(new URL(parentRequests[0]!.url).searchParams.get('write')).toBe(forwarded);
+  });
+
+  it.each([
+    ['follows a name with eight dotted levels', 8, 201, 1],
+    ['refuses a name with nine dotted levels unasked', 9, 403, 0],
+  ])('%s on a write', async (_label, levels, status, lookups) => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const parentRequests: Request[] = [];
+    const room = new RoomDO(
+      makeState(`dotted-${levels}`, record),
+      makeEnvWithParentAccess(() => Response.json({
+        isPrivate: false, canRead: true, canWrite: true,
+      }), parentRequests),
+    );
+    const name = `public.x${'.1'.repeat(levels)}`;
+    const write = await room.fetch(new Request(`https://do/_do/snapshot?name=${name}`, {
+      method: 'PUT', body: 'SAVE',
+    }));
+    expect(write.status).toBe(status);
+    expect(record.map.has(STORAGE_KEYS.snapshot)).toBe(status === 201);
+    expect(parentRequests).toHaveLength(lookups);
   });
 
   it.each([
@@ -3440,6 +4455,38 @@ describe('RoomDO — child snapshot initialization', () => {
     expect(probed.status).toBe(200);
     expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('SAVE-2');
   });
+
+  it.each(['create', 'replace'] as const)(
+    'rehydrates a sheet cached before the child was initialized (%s)',
+    async (mode) => {
+      const record: FakeStorageRecord = { map: new Map() };
+      const room = new RoomDO(
+        makeState(`cached-before-${mode}`, record),
+        makeEnvWithParentAccess(allowParent),
+      );
+      const readCsv = (uid: string | null) =>
+        room.fetch(
+          new Request('https://do/_do/csv?name=parent.1', {
+            headers: uid === null ? {} : { 'X-EC-Uid': uid },
+          }),
+        );
+      mockFindRefs.mockClear();
+      expect((await readCsv(null)).status).toBe(200);
+      expect((await readCsv(null)).status).toBe(200);
+      expect(mockFindRefs).toHaveBeenCalledTimes(1);
+      expect(record.map.size).toBe(0);
+
+      const created = await room.fetch(
+        childSnapshotRequest('parent.1', { parent: 'parent', snapshot: 'IMPORTED', mode }),
+      );
+      expect(created.status).toBe(201);
+      expect(await created.json()).toEqual({ created: true, parent: 'parent' });
+      expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('IMPORTED');
+
+      expect((await readCsv('uid-owner')).status).toBe(200);
+      expect(mockFindRefs).toHaveBeenCalledTimes(2);
+    },
+  );
 
   it('refuses local ACL, a different parent, and occupied unmarked rooms', async () => {
     const localRecord: FakeStorageRecord = { map: new Map() };
@@ -3744,6 +4791,33 @@ describe('RoomDO — parent metadata management', () => {
     expect(d1Calls.some((call) => call.sql.includes('DELETE FROM rooms'))).toBe(
       true,
     );
+  });
+
+  it.each([
+    ['approved', () => approved('parent.1'), 200],
+    ['refused', () => new Response('no', { status: 403 }), 403],
+  ])('leaves no deadline timer armed once the owner proof is %s', async (_label, parentFetch, status) => {
+    const uncancellable = vi.spyOn(AbortSignal, 'timeout');
+    vi.useFakeTimers();
+    try {
+      const room = new RoomDO(
+        makeState(`set-parent-deadline-${_label}`, { map: new Map() }),
+        migrateEnv(parentFetch),
+      );
+      const response = await room.fetch(
+        operatorRequest('/_do/set-parent', 'parent.1', {
+          parent: 'parent',
+          approved: true,
+          dryRun: true,
+        }),
+      );
+      expect(response.status).toBe(status);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(uncancellable).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+      uncancellable.mockRestore();
+    }
   });
 
   it('reports already-parented, different-parent, and local-access conflicts', async () => {
@@ -4296,6 +5370,51 @@ describe('RoomDO — managed-child reservation edges', () => {
     if (status === 503) expect(commit.headers.get('Retry-After')).toBe('5');
   });
 
+  it.each([
+    ['verified', () => Response.json({ created: false }, { status: 201 }), 201],
+    ['unavailable', () => {
+      throw new Error('child unavailable');
+    }, 503],
+  ])('leaves no deadline timer armed once each child is %s', async (_label, childFetch, status) => {
+    const room = new RoomDO(
+      makeState(`reservation-deadline-${_label}`, { map: new Map() }),
+      makeEnvWithParentAccess((request) => {
+        if (new URL(request.url).pathname === '/_do/child-snapshot') {
+          return childFetch();
+        }
+        return Response.json({
+          isPrivate: true,
+          canRead: true,
+          canWrite: true,
+        });
+      }),
+    );
+    const reserve = await room.fetch(
+      reserveRequest(
+        `deadline-${_label}`,
+        'deadline-id',
+        [{ title: 'One' }, { title: 'Two' }],
+      ),
+    );
+    expect(reserve.status).toBe(201);
+    const uncancellable = vi.spyOn(AbortSignal, 'timeout');
+    vi.useFakeTimers();
+    try {
+      const commit = await room.fetch(
+        appendTocRequest(`deadline-${_label}`, {
+          phase: 'commit',
+          requestId: 'deadline-id',
+        }),
+      );
+      expect(commit.status).toBe(status);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(uncancellable).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+      uncancellable.mockRestore();
+    }
+  });
+
   it('returns reservation-not-found when the marker vanishes during commit', async () => {
     const record: FakeStorageRecord = { map: new Map() };
     const state = makeState('reservation-race', record);
@@ -4782,9 +5901,10 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
     expect(d1Calls.find((c) => c.sql.includes('DELETE FROM rooms'))?.params).toEqual([
       'gone',
     ]);
-    // The room's durable audit + chat rows are dropped too.
+    // The room's durable audit, chat, and cron trigger rows are dropped too.
     expect(d1Calls.some((c) => c.sql.includes('DELETE FROM audit_log'))).toBe(true);
     expect(d1Calls.some((c) => c.sql.includes('DELETE FROM chat_log'))).toBe(true);
+    expect(d1Calls.some((c) => c.sql.includes('DELETE FROM cron_triggers'))).toBe(true);
   });
 
   it('DELETE /_do/all cascades to the submitform sibling DO (#442)', async () => {
@@ -5036,6 +6156,67 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
     expect(d1Calls5.some((c) => c.sql.includes('DELETE FROM audit_log'))).toBe(true);
   });
 
+  it('WS stopHuddle cleans up under the raw room name', async () => {
+    const calls: D1Call[] = [];
+    const siblingCalls: { id: string; method: string; url: string }[] = [];
+    const env: Env = {
+      ...makeEnvWithDb(calls),
+      ETHERCALC_KEY: 'test-key',
+      ROOM: makeRoomNamespace((request, id) => {
+        siblingCalls.push({ id, method: request.method, url: request.url });
+        return new Response('OK', { status: 201 });
+      }),
+    };
+    const { state } = makeWsAwareState('x', { map: new Map() }, []);
+    const wsRoom = new RoomDO(state, env);
+    const token = await computeAuth('test-key', 'Q3%20budget');
+    const ws = makeFakeWs({ sent: [] }, { user: 'u', room: 'Q3%20budget', auth: token });
+    await wsRoom.webSocketMessage(
+      ws,
+      JSON.stringify({ type: 'stopHuddle', room: 'Q3%20budget', auth: token }),
+    );
+    expect(siblingCalls).toEqual([
+      {
+        id: 'Q3%20budget_formdata',
+        method: 'DELETE',
+        url: 'https://do.local/_do/all?name=Q3%20budget_formdata',
+      },
+    ]);
+    for (const table of ['rooms', 'audit_log', 'chat_log']) {
+      expect(
+        calls.find((c) => c.sql.includes(`DELETE FROM ${table}`))?.params,
+        table,
+      ).toEqual(['Q3 budget']);
+    }
+  });
+
+  it('WS execute and chat frames mirror to D1 under the raw room name', async () => {
+    const calls: D1Call[] = [];
+    const { state } = makeWsAwareState('x', { map: new Map() }, []);
+    const wsRoom = new RoomDO(state, makeEnvWithDb(calls));
+    const ws = makeFakeWs({ sent: [] }, { user: 'u', room: 'Q3%20budget', auth: 'h' });
+    await wsRoom.webSocketMessage(
+      ws,
+      JSON.stringify({
+        type: 'execute',
+        room: 'Q3%20budget',
+        user: 'u',
+        auth: 'Q3%20budget',
+        cmdstr: 'set A1 value n 1',
+      }),
+    );
+    await wsRoom.webSocketMessage(
+      ws,
+      JSON.stringify({ type: 'chat', room: 'Q3%20budget', user: 'u', msg: 'hello' }),
+    );
+    for (const table of ['rooms', 'audit_log', 'chat_log']) {
+      expect(
+        calls.find((c) => c.sql.includes(`INSERT INTO ${table}`))?.params[0],
+        table,
+      ).toBe('Q3 budget');
+    }
+  });
+
   it('keeps public room data when no deletion capability is configured', async () => {
     const record: FakeStorageRecord = {
       map: new Map([[STORAGE_KEYS.snapshot, 'SAVE']]),
@@ -5119,6 +6300,55 @@ describe('RoomDO — D1 rooms-index mirror (Phase 5.1)', () => {
 
     expect(record.map.has(logKey(0))).toBe(false);
     expect(record.map.has(STORAGE_KEYS.snapshot)).toBe(false);
+  });
+
+  it('WS ask.ecell is relayed for Sandstorm editors but not for viewers', async () => {
+    const peerLog: FakeWsLog = { sent: [] };
+    const peer = makeFakeWs(peerLog);
+    const env: Env = { ...makeEnv(), ETHERCALC_SANDSTORM: '1' };
+    const { state } = makeWsAwareState('sandstorm-poll', { map: new Map() }, [peer]);
+    const room = new RoomDO(state, env);
+    const poll = (user: string): string =>
+      JSON.stringify({ type: 'ask.ecell', room: 'r', user });
+
+    const viewer = makeFakeWs(
+      { sent: [] },
+      { user: 'viewer', room: 'r', auth: '', sandstormModify: false },
+    );
+    await room.webSocketMessage(viewer, poll('viewer'));
+    expect(peerLog.sent).toHaveLength(0);
+
+    const editor = makeFakeWs(
+      { sent: [] },
+      { user: 'editor', room: 'r', auth: '', sandstormModify: true },
+    );
+    await room.webSocketMessage(editor, poll('editor'));
+    expect(peerLog.sent.map((frame) => JSON.parse(frame))).toEqual([
+      { type: 'ask.ecell', room: 'r', user: 'editor' },
+    ]);
+  });
+
+  it('WS ask.ecell on a keyed room is relayed only with the handshake token', async () => {
+    const peerLog: FakeWsLog = { sent: [] };
+    const peer = makeFakeWs(peerLog);
+    const env: Env = { ...makeEnv(), ETHERCALC_KEY: 'test-key' };
+    const { state } = makeWsAwareState('keyed-poll', { map: new Map() }, [peer]);
+    const room = new RoomDO(state, env);
+    const token = await computeAuth('test-key', 'r');
+    const poll = (user: string): string =>
+      JSON.stringify({ type: 'ask.ecell', room: 'r', user });
+
+    for (const auth of ['', '0']) {
+      const visitor = makeFakeWs({ sent: [] }, { user: 'visitor', room: 'r', auth });
+      await room.webSocketMessage(visitor, poll('visitor'));
+    }
+    expect(peerLog.sent).toHaveLength(0);
+
+    const editor = makeFakeWs({ sent: [] }, { user: 'editor', room: 'r', auth: token });
+    await room.webSocketMessage(editor, poll('editor'));
+    expect(peerLog.sent.map((frame) => JSON.parse(frame))).toEqual([
+      { type: 'ask.ecell', room: 'r', user: 'editor' },
+    ]);
   });
 
   it('WS stopHuddle with failed auth does NOT touch D1', async () => {
@@ -5380,9 +6610,28 @@ describe('RoomDO — cross-DO rename primitives (Phase 6)', () => {
     expect(res.status).toBe(201);
     expect(siblingCalls).toHaveLength(1);
     expect(siblingCalls[0]?.init?.method).toBe('PUT');
-    expect(String(siblingCalls[0]?.init?.body)).toBe('TPL-SNAP');
+    expect(await new Response(siblingCalls[0]?.init?.body).text()).toBe('TPL-SNAP');
     expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('TPL-SNAP');
     expect(record.map.get(logKey(0))).toBe('set A1 value n 1');
+  });
+
+  it('POST /_do/clone streams a chunked snapshot to the target instead of collecting it', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    record.map.set(STORAGE_KEYS.snapshotMeta, { chunks: 2 });
+    record.map.set(snapshotChunkKey(0), 'TPL-');
+    record.map.set(snapshotChunkKey(1), 'SNAP');
+    const siblingCalls: SiblingCall[] = [];
+    const room = new RoomDO(makeState('x', record), makeRenameEnv(siblingCalls));
+    const res = await room.fetch(
+      new Request('https://do/_do/clone', {
+        method: 'POST',
+        body: JSON.stringify({ to: 'tpl_chunked' }),
+      }),
+    );
+    expect(res.status).toBe(201);
+    const body = siblingCalls[0]?.init?.body;
+    expect(body).toBeInstanceOf(ReadableStream);
+    expect(await new Response(body).text()).toBe('TPL-SNAP');
   });
 
   it('POST /_do/clone returns 502 when target PUT fails', async () => {
@@ -5917,8 +7166,8 @@ describe('RoomDO — fold: housekeeping alarm', () => {
   });
 
   it('alarm() leaves chat untouched at EXACTLY CHAT_KEEP (boundary)', async () => {
-    // Exactly 500 entries → `keys.length <= CHAT_KEEP` is true, no trim.
-    // Pinning the boundary kills the `<=`→`<` and `<=`→false mutants.
+    // Exactly 500 entries → next seq 500, nothing lies below the keep
+    // window, no trim. Pins the boundary of the early return.
     const record: FakeStorageRecord = { map: new Map(), alarm: null };
     for (let i = 0; i < 500; i++) record.map.set(chatKey(i), `m${i}`);
     const room = new RoomDO(makeState('x', record), makeEnv());
@@ -5931,7 +7180,7 @@ describe('RoomDO — fold: housekeeping alarm', () => {
 
   it('alarm() trims exactly one when CHAT_KEEP + 1 entries exist (boundary)', async () => {
     // 501 entries → trims the single oldest, leaving 500. Pins the
-    // `keys.length - CHAT_KEEP` slice arithmetic and the `<=` boundary.
+    // `nextSeq - CHAT_KEEP` window arithmetic and the `<=` boundary.
     const record: FakeStorageRecord = { map: new Map(), alarm: null };
     for (let i = 0; i < 501; i++) record.map.set(chatKey(i), `m${i}`);
     const room = new RoomDO(makeState('x', record), makeEnv());
@@ -5959,6 +7208,22 @@ describe('RoomDO — fold: housekeeping alarm', () => {
     // Whole room wiped — no snapshot, no chat — and NOT re-armed.
     expect(record.map.size).toBe(0);
     expect(record.alarm).toBeNull();
+  });
+
+  it('alarm() TTL expiry does NOT cascade to the formdata sibling', async () => {
+    const record: FakeStorageRecord = { map: new Map(), alarm: null };
+    record.map.set(STORAGE_KEYS.snapshot, 'SAVE');
+    record.map.set(STORAGE_KEYS.metaUpdatedAt, Date.now() - 120_000);
+    const roomIds: string[] = [];
+    const env: Env = {
+      ROOM: makeRoomNamespace(() => new Response('OK', { status: 201 }), roomIds),
+      ETHERCALC_EXPIRE: '60',
+    };
+    const room = new RoomDO(makeState('x', record), env);
+    await room.fetch(new Request('https://do/_do/exists?name=form'));
+    await room.alarm();
+    expect(record.map.size).toBe(0);
+    expect(roomIds).toEqual([]);
   });
 
   it('alarm() keeps a fresh room when ETHERCALC_EXPIRE is set but TTL not exceeded', async () => {
@@ -5992,18 +7257,45 @@ describe('RoomDO — fold: housekeeping alarm', () => {
     }
   });
 
-  it('alarm() skips TTL expiry when meta:updated_at is missing', async () => {
-    // ETHERCALC_EXPIRE set, but no stored timestamp → the `typeof number`
-    // guard short-circuits and the room is preserved + chat trimmed.
+  it('alarm() starts the TTL of an occupied room whose meta:updated_at is missing', async () => {
     const record: FakeStorageRecord = { map: new Map(), alarm: null };
-    record.map.set(STORAGE_KEYS.snapshot, 'SAVE');
     const env: Env = {
       ROOM: {} as DurableObjectNamespace,
       ETHERCALC_EXPIRE: '60',
     };
     const room = new RoomDO(makeState('x', record), env);
-    await room.alarm();
-    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('SAVE');
+    await room.appendChat('m0');
+    await room.putEcell('u', 'A1');
+    const now = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now);
+    try {
+      record.alarm = null;
+      await room.alarm();
+      expect(record.map.get(chatKey(0))).toBe('m0');
+      expect(record.map.get(STORAGE_KEYS.metaUpdatedAt)).toBe(now);
+      expect(typeof record.alarm).toBe('number');
+      clock.mockReturnValue(now + 59_999);
+      await room.alarm();
+      expect(record.map.get(chatKey(0))).toBe('m0');
+      expect(record.map.get(STORAGE_KEYS.metaUpdatedAt)).toBe(now);
+      clock.mockReturnValue(now + 60_000);
+      record.alarm = null;
+      await room.alarm();
+    } finally {
+      clock.mockRestore();
+    }
+    expect(record.map.size).toBe(0);
+    expect(record.alarm).toBeNull();
+  });
+
+  it('alarm() leaves an empty room empty when a TTL is configured', async () => {
+    const record: FakeStorageRecord = { map: new Map(), alarm: null };
+    const env: Env = {
+      ROOM: {} as DurableObjectNamespace,
+      ETHERCALC_EXPIRE: '60',
+    };
+    await new RoomDO(makeState('x', record), env).alarm();
+    expect(record.map.size).toBe(0);
   });
 
   it('alarm() does not re-arm when idle: no sockets, no TTL, nothing trimmed', async () => {
@@ -6154,9 +7446,98 @@ describe('RoomDO — fold: seq counters survive a trim + isolate restart', () =>
   });
 });
 
+describe('RoomDO — retained history is not read to find or drop keys', () => {
+  function trackListSizes(state: DurableObjectState): number[] {
+    const sizes: number[] = [];
+    const list = state.storage.list.bind(state.storage) as (
+      opts?: unknown,
+    ) => Promise<Map<string, unknown>>;
+    Object.assign(state.storage, {
+      async list(opts?: unknown) {
+        const rows = await list(opts);
+        sizes.push(rows.size);
+        return rows;
+      },
+    });
+    return sizes;
+  }
+
+  async function roomWithFullHistory(): Promise<FakeStorageRecord> {
+    const record: FakeStorageRecord = { map: new Map(), alarm: null };
+    const seeded = new RoomDO(makeState('x', record), makeEnv());
+    await seeded.fetch(
+      new Request('https://do/_do/snapshot', {
+        method: 'PUT',
+        body: 'socialcalc:version:1.5\nsheet:c:1:r:1:tvf:1\ncell:A1:t:hi',
+      }),
+    );
+    for (let i = 0; i < 1024; i++) {
+      record.map.set(logKey(i), `set A1 text t ${i}`);
+      record.map.set(auditKey(i), `set A1 text t ${i}`);
+    }
+    for (let i = 0; i < CHAT_HISTORY_KEEP; i++) record.map.set(chatKey(i), `m${i}`);
+    record.alarm = null;
+    return record;
+  }
+
+  it('the first command after a cold start reads one row per sequence prefix', async () => {
+    const record = await roomWithFullHistory();
+    const state = makeState('x', record);
+    const sizes = trackListSizes(state);
+    const room = new RoomDO(state, makeEnv());
+    const res = await room.fetch(
+      new Request('https://do/_do/commands', {
+        method: 'POST',
+        body: 'set A1 text t x',
+      }),
+    );
+    expect(res.status).toBe(202);
+    expect(record.map.get(logKey(1024))).toBe('set A1 text t x');
+    expect(record.map.get(auditKey(1024))).toBe('set A1 text t x');
+    expect(Math.max(...sizes)).toBe(1);
+  });
+
+  it('the first chat message after a cold start reads one row per sequence prefix', async () => {
+    const record = await roomWithFullHistory();
+    const state = makeState('x', record);
+    const sizes = trackListSizes(state);
+    const room = new RoomDO(state, makeEnv());
+    expect(await room.appendChat('NEW')).toBe(CHAT_HISTORY_KEEP);
+    expect(Math.max(...sizes)).toBe(1);
+  });
+
+  it('alarm() on full tails reads only the newest row of each', async () => {
+    const record = await roomWithFullHistory();
+    const state = makeState('x', record);
+    const sizes = trackListSizes(state);
+    const room = new RoomDO(state, makeEnv());
+    await room.alarm();
+    expect(record.map.has(chatKey(0))).toBe(true);
+    expect(record.map.has(auditKey(0))).toBe(true);
+    expect(sizes).toEqual([1, 1]);
+    expect(record.alarm).toBeNull();
+  });
+
+  it('alarm() reads the overflow of a tail in batches, not the rows it keeps', async () => {
+    const record: FakeStorageRecord = { map: new Map(), alarm: null };
+    for (let i = 0; i < CHAT_HISTORY_KEEP + 300; i++) record.map.set(chatKey(i), `m${i}`);
+    const state = makeState('x', record);
+    const sizes = trackListSizes(state);
+    const room = new RoomDO(state, makeEnv());
+    await room.alarm();
+    const chatKeys = Array.from(record.map.keys()).filter((k) =>
+      k.startsWith(STORAGE_KEYS.chatPrefix),
+    );
+    expect(chatKeys.length).toBe(CHAT_HISTORY_KEEP);
+    expect(record.map.has(chatKey(299))).toBe(false);
+    expect(record.map.has(chatKey(300))).toBe(true);
+    expect(Math.max(...sizes)).toBe(128);
+    expect(sizes.reduce((total, size) => total + size, 0)).toBe(301);
+  });
+});
+
 describe('RoomDO — fold: inline WS caps', () => {
   it('rejects a WS upgrade with 503 once the connection cap is reached', async () => {
-    // 128 peers already connected (MAX_CONN). getWebSockets() returns them.
     const peers = Array.from({ length: 128 }, () =>
       makeFakeWs({ sent: [] }),
     );
@@ -6170,6 +7551,82 @@ describe('RoomDO — fold: inline WS caps', () => {
     );
     expect(res.status).toBe(503);
     expect(await res.text()).toBe('Too many connections');
+  });
+
+  it('does not count sockets that lost access to a private child against the cap', async () => {
+    const logs = Array.from({ length: 128 }, (): FakeWsLog => ({ sent: [] }));
+    const strangers = logs.map((log) =>
+      makeFakeWs(log, { user: 'stranger', room: 'parent.2', auth: '' }),
+    );
+    const record: FakeStorageRecord = {
+      map: new Map([[STORAGE_KEYS.metaParent, 'parent']]),
+    };
+    const { state } = makeWsAwareState('private-child-cap', record, strangers);
+    const parentLookups: Request[] = [];
+    const room = new RoomDO(
+      state,
+      makeEnvWithParentAccess((request) => {
+        const isOwner = request.headers.get('X-EC-Uid') === 'uid-owner';
+        return Response.json({ isPrivate: true, canRead: isOwner, canWrite: isOwner });
+      }, parentLookups),
+    );
+    const ownerUpgrade = (): Promise<Response> =>
+      room.fetch(
+        new Request('https://do/_do/ws?name=parent.2', {
+          headers: { Upgrade: 'websocket', 'X-EC-Uid': 'uid-owner' },
+        }),
+      );
+    await expect(ownerUpgrade()).rejects.toThrow();
+    expect(logs.every((log) => log.closeCode === 1008)).toBe(true);
+    expect(logs.every((log) => log.closeReason === 'Session invalid')).toBe(true);
+    // Two lookups for the owner (read gate + WS write check) plus one coalesced
+    // anonymous lookup shared across all 128 stranger sockets.
+    expect(parentLookups).toHaveLength(3);
+    expect(
+      parentLookups.filter((request) => request.headers.get('X-EC-Uid') === null),
+    ).toHaveLength(1);
+    // The closed sockets are still listed, but are not looked up again.
+    await expect(ownerUpgrade()).rejects.toThrow();
+    expect(parentLookups).toHaveLength(5);
+    expect(
+      parentLookups.filter((request) => request.headers.get('X-EC-Uid') === null),
+    ).toHaveLength(1);
+  });
+
+  it('keeps the cap for authorized sockets, including one accepted during the re-check', async () => {
+    const strangerLog: FakeWsLog = { sent: [] };
+    const memberLogs = Array.from({ length: 128 }, (): FakeWsLog => ({ sent: [] }));
+    const members = memberLogs.map((log) =>
+      makeFakeWs(log, {
+        user: 'owner', room: 'parent.2', auth: '',
+        uid: 'uid-owner', sessionExp: FUTURE_SESSION_EXP,
+      }),
+    );
+    const peers = [
+      makeFakeWs(strangerLog, { user: 'stranger', room: 'parent.2', auth: '' }),
+      ...members.slice(0, 127),
+    ];
+    const record: FakeStorageRecord = {
+      map: new Map([[STORAGE_KEYS.metaParent, 'parent']]),
+    };
+    const { state } = makeWsAwareState('private-child-cap-race', record, peers);
+    const room = new RoomDO(
+      state,
+      makeEnvWithParentAccess((request) => {
+        const isOwner = request.headers.get('X-EC-Uid') === 'uid-owner';
+        if (!isOwner && peers.length === 128) peers.push(members[127]!);
+        return Response.json({ isPrivate: true, canRead: isOwner, canWrite: isOwner });
+      }),
+    );
+    const res = await room.fetch(
+      new Request('https://do/_do/ws?name=parent.2', {
+        headers: { Upgrade: 'websocket', 'X-EC-Uid': 'uid-owner' },
+      }),
+    );
+    expect(res.status).toBe(503);
+    expect(await res.text()).toBe('Too many connections');
+    expect(strangerLog.closeReason).toBe('Session invalid');
+    expect(memberLogs.every((log) => log.closed === undefined)).toBe(true);
   });
 
   it('still 426s a non-upgrade request before the connection-cap check', async () => {
@@ -6282,6 +7739,215 @@ describe('RoomDO — fold: inline WS caps', () => {
     expect(log.closeReason).toBe('Message rate exceeded');
   });
 
+  it('registers no WebSocket auto-response, so heartbeats reach the frame limits', async () => {
+    vi.stubGlobal('WebSocketRequestResponsePair', class {});
+    try {
+      const setWebSocketAutoResponse = vi.fn();
+      const record: FakeStorageRecord = { map: new Map() };
+      const { state } = makeWsAwareState('x', record, []);
+      const room = new RoomDO(Object.assign(state, { setWebSocketAutoResponse }), makeEnv());
+      expect(setWebSocketAutoResponse).not.toHaveBeenCalled();
+      const log: FakeWsLog = { sent: [] };
+      const ws = makeFakeWs(log, { user: 'alice', room: 'r', auth: 'h' });
+      for (let index = 0; index <= 300; index++) {
+        await room.webSocketMessage(ws, '2::');
+      }
+      expect(log.sent).toHaveLength(0);
+      expect(log.closeCode).toBe(1008);
+      expect(log.closeReason).toBe('Message rate exceeded');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('charges each broadcast to the receiving socket inside its rolling window, encoding once per framing', async () => {
+    const start = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(start);
+    try {
+      const record: FakeStorageRecord = { map: new Map() };
+      const senderLog: FakeWsLog = { sent: [] };
+      const sender = makeFakeWs(senderLog, { user: 'alice', room: 'r', auth: '' });
+      const logs: FakeWsLog[] = Array.from({ length: 5 }, () => ({ sent: [] }));
+      const peers = [
+        makeFakeWs(logs[0]!, { user: 'n1', room: 'r', auth: '' }),
+        makeFakeWs(logs[1]!, { user: 'n2', room: 'r', auth: '', outWindowStartedAt: start, outWindowChars: 7 }),
+        makeFakeWs(logs[2]!, { user: 'l1', room: 'r', auth: '', legacy: true }),
+        makeFakeWs(logs[3]!, { user: 'l2', room: 'r', auth: '', legacy: true }),
+        makeFakeWs(logs[4]!),
+      ];
+      const { state } = makeWsAwareState('x', record, [sender, ...peers]);
+      const room = new RoomDO(state, makeEnv());
+      const ask = JSON.stringify({ type: 'ask.ecell', room: 'r', user: 'alice' });
+      const stringify = vi.spyOn(JSON, 'stringify');
+      try {
+        await room.webSocketMessage(sender, ask);
+        expect(stringify).toHaveBeenCalledTimes(2);
+      } finally {
+        stringify.mockRestore();
+      }
+
+      const native = JSON.stringify({ type: 'ask.ecell', room: 'r', user: 'alice' });
+      expect(senderLog.sent).toEqual([]);
+      expect(senderLog.serializedAttachment).not.toHaveProperty('outWindowChars');
+      expect(logs[0]!.sent).toEqual([native]);
+      expect(logs[1]!.sent).toEqual([native]);
+      expect(logs[2]!.sent).toEqual(logs[3]!.sent);
+      expect(logs[2]!.sent[0]!.startsWith('5:::')).toBe(true);
+      expect(logs[4]!.sent).toEqual([native]);
+      expect(logs[0]!.serializedAttachment).toEqual({
+        user: 'n1', room: 'r', auth: '', outWindowStartedAt: start, outWindowChars: native.length,
+      });
+      expect(logs[1]!.serializedAttachment).toMatchObject({
+        outWindowStartedAt: start,
+        outWindowChars: 7 + native.length,
+      });
+      expect(logs[2]!.serializedAttachment).toMatchObject({
+        legacy: true,
+        outWindowStartedAt: start,
+        outWindowChars: logs[2]!.sent[0]!.length,
+      });
+      expect(logs[4]!.serializedAttachment).toEqual({
+        user: '', room: '', auth: '', outWindowStartedAt: start, outWindowChars: native.length,
+      });
+      expect(logs.some((log) => log.closed)).toBe(false);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it('closes a socket whose outbound window is spent, resets after 60 s, and gates ask.log bursts', async () => {
+    const budget = 2 * 1024 * 1024;
+    const frame = JSON.stringify({ type: 'ask.ecell', room: 'r', user: 'alice' });
+    const start = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(start);
+    try {
+      const record: FakeStorageRecord = { map: new Map() };
+      const bigSnap = 'x'.repeat(budget + 100);
+      const senderLog: FakeWsLog = { sent: [] };
+      const sender = makeFakeWs(senderLog, { user: 'alice', room: 'r', auth: '' });
+      const nearLog: FakeWsLog = { sent: [] };
+      const lastLog: FakeWsLog = { sent: [] };
+      const freshLog: FakeWsLog = { sent: [] };
+      const { state } = makeWsAwareState('x', record, [
+        sender,
+        makeFakeWs(nearLog, { user: 'near', room: 'r', auth: '', outWindowStartedAt: start, outWindowChars: budget - frame.length - 1 }),
+        makeFakeWs(lastLog, { user: 'last', room: 'r', auth: '', outWindowStartedAt: start, outWindowChars: budget - frame.length }),
+        makeFakeWs(freshLog, { user: 'fresh', room: 'r', auth: '' }),
+      ]);
+      const room = new RoomDO(state, makeEnv());
+      const ask = JSON.stringify({ type: 'ask.ecell', room: 'r', user: 'alice' });
+
+      await room.webSocketMessage(sender, ask);
+      expect(nearLog.sent).toEqual([frame]);
+      expect(nearLog.closed).toBeUndefined();
+      expect(lastLog.sent).toEqual([frame]);
+      expect(lastLog.serializedAttachment).toMatchObject({ outWindowChars: budget });
+      expect(lastLog.closeCode).toBe(1008);
+      expect(lastLog.closeReason).toBe('Broadcast budget exceeded');
+
+      delete lastLog.closed;
+      await room.webSocketMessage(sender, ask);
+      await room.fetch(
+        new Request('https://do/_do/commands?name=r', { method: 'POST', body: 'set A1 value n 1' }),
+      );
+      expect(lastLog.sent).toEqual([frame]);
+      expect(lastLog.closed).toBe(true);
+      expect(nearLog.sent).toHaveLength(2);
+      expect(nearLog.closeReason).toBe('Broadcast budget exceeded');
+      expect(freshLog.sent).toHaveLength(3);
+      expect(freshLog.closed).toBeUndefined();
+
+      // Direct large snapshot reply (#sendTo allowInitialBurst): first >2 MiB
+      // ask.log on a fresh window succeeds and charges half the window (1 MiB);
+      // a second ask.log within 60 s closes 1008 before sending.
+      record.map.set(STORAGE_KEYS.snapshot, bigSnap);
+      const readerLog: FakeWsLog = { sent: [] };
+      const reader = makeFakeWs(readerLog, { user: 'reader', room: 'r', auth: '' });
+      const askLog = JSON.stringify({ type: 'ask.log', room: 'r', user: 'reader' });
+      await room.webSocketMessage(reader, askLog);
+      expect(readerLog.sent).toHaveLength(1);
+      expect(readerLog.closed).toBeUndefined();
+      expect(readerLog.serializedAttachment).toMatchObject({
+        outWindowStartedAt: start,
+        outWindowChars: budget / 2,
+      });
+      await room.webSocketMessage(reader, askLog);
+      expect(readerLog.sent).toHaveLength(1);
+      expect(readerLog.closeCode).toBe(1008);
+      expect(readerLog.closeReason).toBe('Broadcast budget exceeded');
+
+      // After the 60 s window elapses, both sockets start a fresh window.
+      delete lastLog.closed;
+      delete lastLog.closeCode;
+      delete lastLog.closeReason;
+      delete readerLog.closed;
+      delete readerLog.closeCode;
+      delete readerLog.closeReason;
+      clock.mockReturnValue(start + 60_000);
+      await room.webSocketMessage(sender, ask);
+      expect(lastLog.sent).toHaveLength(2);
+      expect(lastLog.closed).toBeUndefined();
+      await room.webSocketMessage(reader, askLog);
+      expect(readerLog.sent).toHaveLength(2);
+      expect(readerLog.closed).toBeUndefined();
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it.each([
+    ['missing window start', { outWindowStartedAt: undefined, outWindowChars: 999 }],
+    ['NaN window start', { outWindowStartedAt: Number.NaN, outWindowChars: 999 }],
+    ['future window start', { outWindowStartedAt: 9_999_999_999_999, outWindowChars: 999 }],
+    ['non-numeric chars', { outWindowChars: 'lots' }],
+    ['NaN chars', { outWindowChars: Number.NaN }],
+    ['infinite chars', { outWindowChars: Number.POSITIVE_INFINITY }],
+    ['negative chars', { outWindowChars: -1 }],
+  ])('treats %s as an unspent outbound window', async (_label, extra) => {
+    const now = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now);
+    try {
+      const record: FakeStorageRecord = { map: new Map() };
+      const sender = makeFakeWs({ sent: [] }, { user: 'alice', room: 'r', auth: '' });
+      const log: FakeWsLog = { sent: [] };
+      const peer = makeFakeWs(log, { user: 'bob', room: 'r', auth: '', outWindowStartedAt: now, ...extra });
+      const { state } = makeWsAwareState('x', record, [sender, peer]);
+      const room = new RoomDO(state, makeEnv());
+
+      await room.webSocketMessage(sender, JSON.stringify({ type: 'ask.ecell', room: 'r', user: 'alice' }));
+
+      expect(log.sent).toHaveLength(1);
+      expect(log.serializedAttachment).toMatchObject({ outWindowStartedAt: now, outWindowChars: log.sent[0]!.length });
+      expect(log.closed).toBeUndefined();
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it('does not queue a broadcast it cannot charge to the attachment', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const sender = makeFakeWs({ sent: [] }, { user: 'alice', room: 'r', auth: '' });
+    const log: FakeWsLog = { sent: [] };
+    const base = makeFakeWs(log, { user: 'bob', room: 'r', auth: '' });
+    const unchargeable = {
+      ...base,
+      serializeAttachment() {
+        throw new Error('attachment too large');
+      },
+    } as unknown as WebSocket;
+    const nextLog: FakeWsLog = { sent: [] };
+    const next = makeFakeWs(nextLog, { user: 'carol', room: 'r', auth: '' });
+    const { state } = makeWsAwareState('x', record, [sender, unchargeable, next]);
+    const room = new RoomDO(state, makeEnv());
+
+    await room.webSocketMessage(sender, JSON.stringify({ type: 'ask.ecell', room: 'r', user: 'alice' }));
+
+    expect(log.sent).toHaveLength(0);
+    expect(log.closeCode).toBe(1011);
+    expect(log.closeReason).toBe('Attachment state unavailable');
+    expect(nextLog.sent).toHaveLength(1);
+  });
+
   it('restores the aggregate room-rate window after hibernation', async () => {
     const now = Date.now();
     const peers = Array.from({ length: 5 }, (_, index) =>
@@ -6372,6 +8038,187 @@ describe('RoomDO — fold: inline WS caps', () => {
     }
   });
 
+  it('ignores frames that arrive on a socket the room already closed', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const { state } = makeWsAwareState('x', record, []);
+    const room = new RoomDO(state, makeEnv());
+    const floodLog: FakeWsLog = { sent: [] };
+    const open = makeFakeWs(floodLog, { user: 'mallory', room: 'r', auth: 'h' });
+    let readyState = 1;
+    const flooder = {
+      ...open,
+      get readyState() {
+        return readyState;
+      },
+      close(code?: number, reason?: string) {
+        readyState = 2;
+        open.close(code, reason);
+      },
+    } as unknown as WebSocket;
+    for (let index = 0; index < 1500; index++) {
+      await room.webSocketMessage(flooder, 'x');
+    }
+    expect(floodLog.closeReason).toBe('Message rate exceeded');
+    expect(floodLog.serializedAttachment).toMatchObject({ rateMessageCount: 301 });
+
+    const log: FakeWsLog = { sent: [] };
+    const ws = makeFakeWs(log, { user: 'alice', room: 'r', auth: 'h' });
+    await room.webSocketMessage(
+      ws,
+      JSON.stringify({ type: 'chat', room: 'r', user: 'alice', msg: 'hi' }),
+    );
+    expect(log.closed).toBeUndefined();
+    expect(record.map.get(chatKey(0))).toBe('hi');
+  });
+
+  it('charges view-only sockets to a room window of their own', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const { state } = makeWsAwareState('x', record, []);
+    const room = new RoomDO(state, { ...makeEnv(), ETHERCALC_KEY: 'test-key' });
+    const viewerLogs = Array.from({ length: 5 }, (): FakeWsLog => ({ sent: [] }));
+    for (const [index, viewerLog] of viewerLogs.entries()) {
+      const viewer = makeFakeWs(viewerLog, {
+        user: `viewer-${index}`,
+        room: 'r',
+        auth: '0',
+        viewOnly: true,
+      });
+      for (let frame = 0; frame < 300; frame++) {
+        await room.webSocketMessage(viewer, 'x');
+      }
+    }
+    expect(viewerLogs.map((viewerLog) => viewerLog.closed)).toEqual(Array(5).fill(undefined));
+
+    const token = await computeAuth('test-key', 'r');
+    const editorLog: FakeWsLog = { sent: [] };
+    const editor = makeFakeWs(editorLog, { user: 'alice', room: 'r', auth: token });
+    await room.webSocketMessage(
+      editor,
+      JSON.stringify({ type: 'chat', room: 'r', user: 'alice', auth: token, msg: 'hi' }),
+    );
+    expect(editorLog.closed).toBeUndefined();
+    expect(record.map.get(chatKey(0))).toBe('hi');
+
+    const lateLog: FakeWsLog = { sent: [] };
+    const late = makeFakeWs(lateLog, { user: 'late', room: 'r', auth: '0', viewOnly: true });
+    await room.webSocketMessage(late, JSON.stringify({ type: 'ask.log', room: 'r', user: 'late' }));
+    expect(lateLog.sent).toHaveLength(0);
+    expect(lateLog.closeCode).toBe(1008);
+    expect(lateLog.closeReason).toBe('Room message rate exceeded');
+  });
+
+  it.each([
+    ['view-only peers do not fill the writer window', true],
+    ['writer peers do not fill the view-only window', false],
+  ])('restores each capability class separately after hibernation: %s', async (_label, peersViewOnly) => {
+    const now = Date.now();
+    const klass = (viewOnly: boolean) => (viewOnly ? { viewOnly: true } : {});
+    const peers = Array.from({ length: 5 }, (_unused, index) =>
+      makeFakeWs(
+        { sent: [] },
+        {
+          user: `p${index}`,
+          room: 'r',
+          auth: 'h',
+          rateWindowStartedAt: now,
+          rateMessageCount: 300,
+          ...klass(peersViewOnly),
+        },
+      ),
+    );
+    const record: FakeStorageRecord = { map: new Map() };
+    const { state } = makeWsAwareState('x', record, peers);
+    const room = new RoomDO(state, makeEnv());
+
+    const otherLog: FakeWsLog = { sent: [] };
+    const other = makeFakeWs(otherLog, { user: 'o', room: 'r', auth: 'h', ...klass(!peersViewOnly) });
+    await room.webSocketMessage(other, '{}');
+    expect(otherLog.closed).toBeUndefined();
+
+    const sameLog: FakeWsLog = { sent: [] };
+    const same = makeFakeWs(sameLog, { user: 's', room: 'r', auth: 'h', ...klass(peersViewOnly) });
+    await room.webSocketMessage(same, '{}');
+    expect(sameLog.closeReason).toBe('Room message rate exceeded');
+  });
+
+  it('marks a handshake without write capability as view-only', async () => {
+    const originalPair = (globalThis as unknown as Record<string, unknown>)['WebSocketPair'];
+    const attachments: unknown[] = [];
+    class FakeWebSocketPair {
+      readonly 0 = {} as WebSocket;
+      readonly 1 = {
+        serializeAttachment(value: unknown) {
+          attachments.push(value);
+        },
+      } as unknown as WebSocket;
+    }
+    (globalThis as unknown as Record<string, unknown>)['WebSocketPair'] = FakeWebSocketPair;
+    try {
+      const keyed: Env = { ...makeEnv(), ETHERCALC_KEY: 'test-key' };
+      const grain: Env = { ...makeEnv(), ETHERCALC_SANDSTORM: '1' };
+      const token = await computeAuth('test-key', 'r');
+      const cases: Array<{
+        env: Env;
+        auth: string;
+        headers?: Record<string, string>;
+        isPrivate?: boolean;
+        expected: Record<string, unknown>;
+      }> = [
+        { env: makeEnv(), auth: '', expected: {} },
+        { env: makeEnv(), auth: '0', expected: { viewOnly: true } },
+        { env: keyed, auth: token, expected: {} },
+        { env: keyed, auth: 'f'.repeat(64), expected: { viewOnly: true } },
+        {
+          env: grain,
+          auth: '',
+          headers: { 'X-Sandstorm-Permissions': 'modify' },
+          expected: { sandstormModify: true },
+        },
+        {
+          env: grain,
+          auth: '',
+          headers: { 'X-Sandstorm-Permissions': 'view' },
+          expected: { sandstormModify: false, viewOnly: true },
+        },
+        {
+          env: makeEnv(),
+          auth: '',
+          headers: { 'X-EC-Uid': 'uid-owner' },
+          isPrivate: true,
+          expected: { uid: 'uid-owner' },
+        },
+        {
+          env: makeEnv(),
+          auth: '',
+          headers: { 'X-EC-Uid': 'uid-reader' },
+          isPrivate: true,
+          expected: { uid: 'uid-reader', viewOnly: true },
+        },
+      ];
+      for (const { env, auth, headers, isPrivate, expected } of cases) {
+        const record: FakeStorageRecord = { map: new Map() };
+        if (isPrivate) markPrivate(record);
+        const { state, accepted } = makeWsAwareState('x', record);
+        const room = new RoomDO(state, env);
+        await room
+          .fetch(
+            new Request(`https://do/_do/ws?user=u&auth=${auth}&room=r`, {
+              headers: { Upgrade: 'websocket', ...headers },
+            }),
+          )
+          .catch(() => undefined);
+        expect(accepted).toHaveLength(1);
+        expect(attachments.at(-1)).toEqual({ user: 'u', room: 'r', auth, ...expected });
+      }
+    } finally {
+      if (originalPair === undefined) {
+        delete (globalThis as unknown as Record<string, unknown>)['WebSocketPair'];
+      } else {
+        (globalThis as unknown as Record<string, unknown>)['WebSocketPair'] = originalPair;
+      }
+    }
+  });
+
   it('rejects a legacy-ws upgrade with 426 without Upgrade header', async () => {
     const record: FakeStorageRecord = { map: new Map() };
     const room = new RoomDO(makeState('x', record), makeEnv());
@@ -6390,6 +8237,28 @@ describe('RoomDO — fold: inline WS caps', () => {
       }),
     );
     expect(res.status).toBe(503);
+  });
+
+  it('legacy-ws does not count a socket whose session expired against the cap', async () => {
+    const expiredLog: FakeWsLog = { sent: [] };
+    const peers = [
+      makeFakeWs(expiredLog, {
+        user: '', room: '', auth: '', legacy: true,
+        uid: 'uid-reader', sessionExp: Date.now() - 1,
+      }),
+      ...Array.from({ length: 127 }, () => makeFakeWs({ sent: [] })),
+    ];
+    const record: FakeStorageRecord = { map: new Map() };
+    const { state } = makeWsAwareState('x', record, peers);
+    const room = new RoomDO(state, makeEnv());
+    await expect(
+      room.fetch(
+        new Request('https://do/_do/legacy-ws', {
+          headers: { Upgrade: 'websocket' },
+        }),
+      ),
+    ).rejects.toThrow();
+    expect(expiredLog.closeReason).toBe('Session expired');
   });
 
   it('legacy session-host execute falls back to the handshake auth token', async () => {
@@ -6437,6 +8306,26 @@ describe('RoomDO — fold: inline WS caps', () => {
     expect(fetches).toHaveLength(1);
     expect(fetches[0]!.body).toBe('set A1 text t hi');
     expect(fetches[0]!.uid).toBe('verified-user');
+    // The HMAC signs the encoded name that keys the target DO: the token
+    // of "Q3 budget" signs "Q3%20budget" and must not open the distinct
+    // room whose literal name is "Q3%20budget" (DO key "Q3%2520budget").
+    const q3Auth = await computeAuth('legacy-secret', 'Q3%20budget');
+    await room.webSocketMessage(
+      ws,
+      `5:::${JSON.stringify({ name: 'data', args: [{ ...payload, room: 'Q3%20budget', auth: q3Auth }] })}`,
+    );
+    expect(fetches).toHaveLength(1);
+    await room.webSocketMessage(
+      ws,
+      `5:::${JSON.stringify({ name: 'data', args: [{ ...payload, room: 'Q3 budget', auth: q3Auth }] })}`,
+    );
+    expect(fetches).toHaveLength(2);
+    expect(fetches[1]!.url).toContain('name=Q3%20budget');
+    await room.webSocketMessage(
+      ws,
+      `5:::${JSON.stringify({ name: 'data', args: [{ ...payload, room: 'bad\u0000name', auth: q3Auth }] })}`,
+    );
+    expect(fetches).toHaveLength(2);
   });
 
   it('drops legacy writes when the grain role cannot modify', async () => {
@@ -6550,6 +8439,67 @@ describe('RoomDO — fold: inline WS caps', () => {
     expect(new Headers(requests[0]?.headers).has('X-EC-Uid')).toBe(false);
   });
 
+  it('charges a forwarded legacy execute frame to the room it edits', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const target = new RoomDO(makeState('sheet1', record), makeEnv());
+    const env: Env = {
+      ROOM: makeRoomNamespace((request) => target.fetch(request)),
+    };
+    const frame = `5:::${JSON.stringify({
+      name: 'data',
+      args: [{ type: 'execute', room: 'sheet1', user: 'u', cmdstr: 'set A1 value n 1' }],
+    })}`;
+    const closed: Array<string | undefined> = [];
+    for (let host = 0; host < 6; host += 1) {
+      const sessionHost = new RoomDO(makeState(`sio:${host}`, { map: new Map() }), env);
+      const log: FakeWsLog = { sent: [] };
+      const ws = makeFakeWs(log, { user: '', room: '', auth: '', legacy: true });
+      for (let sent = 0; sent < 300; sent += 1) await sessionHost.webSocketMessage(ws, frame);
+      closed.push(log.closeCode === undefined ? undefined : `${log.closeCode} ${log.closeReason}`);
+    }
+    expect(closed).toEqual([
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      '1008 Room message rate exceeded',
+    ]);
+    expect(record.map.get(logKey(1499))).toBe('set A1 value n 1');
+    expect(record.map.has(logKey(1500))).toBe(false);
+  });
+
+  it('counts a forwarded legacy execute frame in the window restored after hibernation', async () => {
+    const now = Date.now();
+    const peers = Array.from({ length: 5 }, (_unused, index) =>
+      makeFakeWs(
+        { sent: [] },
+        {
+          user: `user-${index}`,
+          room: 'r',
+          auth: 'h',
+          rateWindowStartedAt: now,
+          rateMessageCount: 300,
+        },
+      ),
+    );
+    const record: FakeStorageRecord = { map: new Map() };
+    const { state } = makeWsAwareState('x', record, peers);
+    const room = new RoomDO(state, makeEnv());
+
+    const res = await room.fetch(
+      new Request('https://do/_do/commands?name=r', {
+        method: 'POST',
+        body: 'set A1 value n 1',
+        headers: { 'X-EC-Legacy-Frame': '1' },
+      }),
+    );
+
+    expect(res.status).toBe(429);
+    expect(await res.text()).toBe('Room message rate exceeded');
+    expect(record.map.has(logKey(0))).toBe(false);
+  });
+
   it('legacy room frames without a user field still dispatch', async () => {
     // `stopHuddle` carries no `user`, so the identity rebind is skipped —
     // the frame must still reach its handler.
@@ -6602,6 +8552,84 @@ describe('RoomDO — fold: inline WS caps', () => {
     expect(log.sent).toEqual([]);
     expect(log.closeCode).toBe(1008);
     expect(log.closeReason).toBe('Session expired');
+  });
+
+  it('drops reply and fan-out safely when attachment becomes unreadable right before charging', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    let peerReads = 0;
+    const peerLog: FakeWsLog = { sent: [] };
+    const peer = {
+      send(data: string) {
+        peerLog.sent.push(data);
+      },
+      serializeAttachment() {},
+      deserializeAttachment() {
+        peerReads += 1;
+        if (peerReads > 2) throw new Error('peer attachment unreadable');
+        return { user: 'bob', room: 'r', auth: 'h' };
+      },
+      close(code?: number, reason?: string) {
+        peerLog.closed = true;
+        if (code !== undefined) peerLog.closeCode = code;
+        if (reason !== undefined) peerLog.closeReason = reason;
+      },
+    } as unknown as WebSocket;
+
+    let senderReads = 0;
+    const senderLog: FakeWsLog = { sent: [] };
+    const sender = {
+      send(data: string) {
+        senderLog.sent.push(data);
+      },
+      serializeAttachment() {},
+      deserializeAttachment() {
+        senderReads += 1;
+        if (senderReads > 2) throw new Error('sender attachment unreadable');
+        return { user: 'alice', room: 'r', auth: 'h' };
+      },
+      close(code?: number, reason?: string) {
+        senderLog.closed = true;
+        if (code !== undefined) senderLog.closeCode = code;
+        if (reason !== undefined) senderLog.closeReason = reason;
+      },
+    } as unknown as WebSocket;
+
+    const { state } = makeWsAwareState('x', record, [peer]);
+    const room = new RoomDO(state, makeEnv());
+
+    await room.webSocketMessage(
+      sender,
+      JSON.stringify({ type: 'ask.log', room: 'r', user: 'alice' }),
+    );
+    expect(senderLog.sent).toEqual([]);
+    expect(senderLog.closed).toBeUndefined();
+
+    senderReads = 0;
+    await room.webSocketMessage(
+      sender,
+      JSON.stringify({ type: 'ask.ecell', room: 'r', user: 'alice' }),
+    );
+    expect(peerLog.sent).toEqual([]);
+    expect(peerLog.closed).toBeUndefined();
+
+    let nullReads = 0;
+    const vanishLog: FakeWsLog = { sent: [] };
+    const vanish = {
+      send(data: string) {
+        vanishLog.sent.push(data);
+      },
+      serializeAttachment() {},
+      deserializeAttachment() {
+        nullReads += 1;
+        return nullReads > 2 ? null : { user: 'alice', room: 'r', auth: 'h' };
+      },
+      close() {},
+    } as unknown as WebSocket;
+    await room.webSocketMessage(
+      vanish,
+      JSON.stringify({ type: 'ask.log', room: 'r', user: 'alice' }),
+    );
+    expect(vanishLog.sent).toHaveLength(1);
   });
 
   it('legacy session-host execute requires the configured room HMAC', async () => {
@@ -7602,6 +9630,29 @@ describe('RoomDO — WebSocket acceptance (Phase 7)', () => {
     );
     expect(record.map.size).toBe(0);
     expect(peerLog.sent).toHaveLength(1);
+  });
+
+  it('webSocketMessage stopHuddle cascades to the formdata sibling (#442)', async () => {
+    const fdRecord: FakeStorageRecord = { map: new Map([[STORAGE_KEYS.snapshot, 'SAVE']]) };
+    const { state } = makeWsAwareState('x', fdRecord, []);
+    const siblingDeletes: string[] = [];
+    const env: Env = {
+      ...makeEnv(),
+      ETHERCALC_KEY: 'test-key',
+      ROOM: makeRoomNamespace((request, roomName) => {
+        if (request.method === 'DELETE') siblingDeletes.push(roomName);
+        return new Response('OK', { status: 201 });
+      }),
+    };
+    const room = new RoomDO(state, env);
+    const ws = makeFakeWs({ sent: [] }, { user: 'u', room: 'r', auth: 'h' });
+    const token = await computeAuth('test-key', 'r');
+    await room.webSocketMessage(
+      ws,
+      JSON.stringify({ type: 'stopHuddle', room: 'r', auth: token }),
+    );
+    expect(fdRecord.map.size).toBe(0);
+    expect(siblingDeletes).toEqual(['r_formdata']);
   });
 
   it('webSocketMessage dispatches ecell (broadcast-only, no persistence)', async () => {
@@ -8936,7 +10987,7 @@ describe('RoomDO — POST /_do/init-private (Phase A)', () => {
     );
     expect(created.status).toBe(201);
 
-    expect(record.map.get(STORAGE_KEYS.snapshotMeta)).toEqual({ chunks: 2 });
+    expect(record.map.get(STORAGE_KEYS.snapshotMeta)).toEqual({ chunks: 2, bytes: SNAPSHOT_CHUNK_BYTES + 1 });
     expect(record.map.get(snapshotChunkKey(0))).toBe('x'.repeat(SNAPSHOT_CHUNK_BYTES));
     expect(record.map.get(snapshotChunkKey(1))).toBe('x');
     expect(record.map.get(STORAGE_KEYS.metaAccess)).toBe('private');
@@ -9405,5 +11456,140 @@ describe('RoomDO — attachment-derived decisions', () => {
     );
     expect(res.status).toBe(403);
     expect(record.map.size).toBe(0);
+  });
+});
+
+describe('RoomDO — save bodies in flight across the isolate', () => {
+  async function fillSnapshotBudget(): Promise<() => Promise<void>> {
+    let finish!: () => void;
+    const storing = new Promise<Response>((resolve) => {
+      finish = () => resolve(new Response('OK', { status: 201 }));
+    });
+    let held!: () => void;
+    const reached = new Promise<void>((resolve) => {
+      held = resolve;
+    });
+    const other = withSnapshotBody(
+      new Request('https://do/_do/snapshot', {
+        method: 'PUT',
+        body: new Uint8Array(MAX_SNAPSHOT_BYTES_IN_FLIGHT),
+      }),
+      () => {
+        held();
+        return storing;
+      },
+    );
+    await reached;
+    return async () => {
+      finish();
+      await other;
+    };
+  }
+
+  async function expectBusy(res: Response): Promise<void> {
+    expect(res.status).toBe(503);
+    expect(res.headers.get('Retry-After')).toBe('5');
+    expect(await res.text()).toBe('Server is busy storing other saves');
+  }
+
+  it('PUT /_do/snapshot answers 503 instead of holding a save past the budget', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('budget-put', record), makeEnv());
+    const put = () =>
+      room.fetch(
+        new Request('https://do/_do/snapshot', {
+          method: 'PUT',
+          body: 'socialcalc:version:1.5\nsheet:c:1:r:1:tvf:1\ncell:A1:t:hi',
+        }),
+      );
+    const release = await fillSnapshotBudget();
+    try {
+      await expectBusy(await put());
+      expect(record.map.size).toBe(0);
+    } finally {
+      await release();
+    }
+    expect((await put()).status).toBe(201);
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toContain('cell:A1:t:hi');
+  });
+
+  it('POST /_do/init-private draws on the same budget', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(makeState('budget-init-private', record), makeEnv());
+    const init = () =>
+      room.fetch(
+        new Request('https://do/_do/init-private', {
+          method: 'POST',
+          headers: { 'X-EC-Uid': 'uid-owner' },
+          body: JSON.stringify({ snapshot: 'SAVE', acl: PRIVATE_ACL }),
+        }),
+      );
+    const release = await fillSnapshotBudget();
+    try {
+      await expectBusy(await init());
+      expect(record.map.size).toBe(0);
+    } finally {
+      await release();
+    }
+    expect((await init()).status).toBe(201);
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('SAVE');
+    expect(record.map.get(STORAGE_KEYS.metaAccess)).toBe('private');
+  });
+
+  it('keeps holding a save until it is stored', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const state = makeState('budget-held-while-storing', record);
+    let stored!: () => void;
+    const storing = new Promise<void>((resolve) => {
+      stored = resolve;
+    });
+    let entered!: () => void;
+    const reached = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const blockConcurrencyWhile = state.blockConcurrencyWhile.bind(state);
+    state.blockConcurrencyWhile = async <T>(cb: () => Promise<T>): Promise<T> => {
+      entered();
+      await storing;
+      return blockConcurrencyWhile(cb);
+    };
+    const room = new RoomDO(state, makeEnv());
+    const first = room.fetch(
+      new Request('https://do/_do/snapshot', {
+        method: 'PUT',
+        body: new Uint8Array(MAX_SNAPSHOT_BYTES_IN_FLIGHT).fill(0x20),
+      }),
+    );
+    await reached;
+    const otherRecord: FakeStorageRecord = { map: new Map() };
+    const other = new RoomDO(makeState('budget-other-room', otherRecord), makeEnv());
+    const put = () =>
+      other.fetch(new Request('https://do/_do/snapshot', { method: 'PUT', body: 'NEW' }));
+    await expectBusy(await put());
+    expect(otherRecord.map.size).toBe(0);
+    stored();
+    expect((await first).status).toBe(201);
+    expect((await put()).status).toBe(201);
+    expect(otherRecord.map.get(STORAGE_KEYS.snapshot)).toBe('NEW');
+  });
+
+  it('replaces a managed child from the body it already parsed', async () => {
+    const record: FakeStorageRecord = { map: new Map() };
+    const room = new RoomDO(
+      makeState('budget-managed-child', record),
+      makeEnvWithParentAccess(() =>
+        Response.json({ isPrivate: true, canRead: true, canWrite: true })),
+    );
+    const write = (snapshot: string, mode: 'create' | 'replace') =>
+      room.fetch(childSnapshotRequest('parent.1', { parent: 'parent', snapshot, mode }));
+    expect((await write('SAVE-1', 'create')).status).toBe(201);
+    const release = await fillSnapshotBudget();
+    try {
+      expect((await write('SAVE-2', 'replace')).status).toBe(201);
+    } finally {
+      await release();
+    }
+    expect(record.map.get(STORAGE_KEYS.snapshot)).toBe('SAVE-2');
+    expect(record.map.get(STORAGE_KEYS.metaParent)).toBe('parent');
   });
 });

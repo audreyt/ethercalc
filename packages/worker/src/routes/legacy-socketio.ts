@@ -28,6 +28,8 @@ import { validateSid } from '@ethercalc/socketio-shim/sid';
 import type { Hono } from 'hono';
 
 import type { Env, EtherCalcHonoEnv } from '../env.ts';
+import { roomStubForId } from '../lib/do-dispatch.ts';
+import { isViewerRequest } from '../lib/live-rooms.ts';
 import { getSessionPrincipal } from '../lib/session-middleware.ts';
 import { parseSessionCookie } from '../lib/session.ts';
 import { isAllowedWebSocketOrigin } from '../lib/ws-origin.ts';
@@ -56,9 +58,13 @@ function ensureShim(): SocketIoShim {
 }
 
 /** Sid-keyed RoomDO that hosts one hibernatable legacy socket.io session. */
-function legacySidStub(env: Env, sid: string): DurableObjectStub {
+function legacySidStub(
+  env: Env,
+  sid: string,
+  viewer = false,
+): DurableObjectStub {
   const id = env.ROOM.idFromName(`${LEGACY_SID_PREFIX}${sid}`);
-  return env.ROOM.get(id);
+  return roomStubForId(env, id, viewer);
 }
 
 export function registerLegacySocketIo(app: Hono<EtherCalcHonoEnv>): void {
@@ -98,11 +104,12 @@ export function registerLegacySocketIo(app: Hono<EtherCalcHonoEnv>): void {
     // Forward the upgrade to a sid-keyed RoomDO. The DO accepts via the
     // hibernation API (`upgradeLegacySocketIo`) so the socket does not pin
     // any room DO — or this Worker isolate — awake between frames.
-    const stub = legacySidStub(c.env, sid);
+    const principal = await getSessionPrincipal(c);
+    const viewer = isViewerRequest(c.env, c.req.raw.headers, principal);
+    const stub = legacySidStub(c.env, sid, viewer);
     const headers = new Headers({ Upgrade: 'websocket' });
     const sandstormPerms = c.req.header('X-Sandstorm-Permissions');
     if (sandstormPerms) headers.set('X-Sandstorm-Permissions', sandstormPerms);
-    const principal = await getSessionPrincipal(c);
     if (principal) {
       headers.set('X-EC-Uid', principal.uid);
       headers.set('X-EC-Session-Exp', String(principal.exp));

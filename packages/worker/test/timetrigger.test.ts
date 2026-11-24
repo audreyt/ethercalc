@@ -6,6 +6,14 @@ import {
 import { beforeAll, beforeEach, describe, it, expect } from 'vite-plus/test';
 
 import worker from '../src/index.ts';
+import {
+  deleteCronTriggers,
+  upsertCronTriggers,
+} from '../src/handlers/cron.ts';
+import {
+  MAX_CRON_ROWS_PER_ROOM,
+  MAX_CRON_TIMES_PER_CELL,
+} from '../src/lib/cron.ts';
 import { runScheduled } from '../src/scheduled.ts';
 
 /**
@@ -159,5 +167,46 @@ describe('GET /_timetrigger', () => {
     const res = await request('GET', '/_timetrigger');
     const body = (await res.json()) as Record<string, string>;
     expect(body['r!A1']).toBe('99999998,99999999');
+  });
+});
+
+describe('upsertCronTriggers room quota and deletion', () => {
+  it('stops adding rows once the room holds its quota, then clears them on delete', async () => {
+    const db = (env as unknown as { DB: D1Database }).DB;
+    const rowsOf = async (room: string) =>
+      (
+        await db
+          .prepare('SELECT COUNT(*) AS count FROM cron_triggers WHERE room = ?1')
+          .bind(room)
+          .first<{ count: number }>()
+      )?.count;
+    const times = Array.from(
+      { length: MAX_CRON_TIMES_PER_CELL },
+      (_, index) => 99999000 + index,
+    );
+    // One full cell more than the quota has room for.
+    const cells = MAX_CRON_ROWS_PER_ROOM / MAX_CRON_TIMES_PER_CELL + 1;
+    for (let row = 1; row <= cells; row++) {
+      await upsertCronTriggers(db, 'full', `A${row}`, times);
+    }
+    expect(await rowsOf('full')).toBe(MAX_CRON_ROWS_PER_ROOM);
+
+    // The quota is per room: another room is unaffected.
+    await upsertCronTriggers(db, 'other', 'A1', times);
+    expect(await rowsOf('other')).toBe(MAX_CRON_TIMES_PER_CELL);
+
+    // A cell of the full room can still be rescheduled, because its old
+    // rows are deleted before the new ones are counted.
+    await upsertCronTriggers(db, 'full', 'A1', [99999999]);
+    const rescheduled = await db
+      .prepare('SELECT fire_at FROM cron_triggers WHERE room = ?1 AND cell = ?2')
+      .bind('full', 'A1')
+      .all<{ fire_at: number }>();
+    expect(rescheduled.results.map((r) => r.fire_at)).toEqual([99999999]);
+
+    // Deleting a room drops all of its scheduled trigger rows without touching other rooms.
+    await deleteCronTriggers(db, 'full');
+    expect(await rowsOf('full')).toBe(0);
+    expect(await rowsOf('other')).toBe(MAX_CRON_TIMES_PER_CELL);
   });
 });

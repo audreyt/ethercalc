@@ -1,9 +1,10 @@
-import { describe, it, expect } from "vite-plus/test";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vite-plus/test";
 import * as XLSX from "@e965/xlsx";
 
 import { buildApp } from "../src/index.ts";
 import type { Env } from "../src/env.ts";
 import { computeAuth } from "../src/lib/auth.ts";
+import { SESSION_REVERIFY_TTL_MS } from "../src/lib/session-middleware.ts";
 
 /**
  * Phase A route-security tests for the DO dispatch surfaces outside
@@ -99,6 +100,37 @@ function withAuth(env: Env, uid: string = AUTH_UID): Env {
           fetch: async () => Response.json({ uid, exp: AUTH_EXP }),
         }) as unknown as DurableObjectStub,
     } as unknown as DurableObjectNamespace,
+  };
+}
+
+/**
+ * Like `withAuth`, until `signOut()` is called: from then on AuthDO refuses
+ * the token, as it does after a logout or once the session has expired.
+ * `asked()` counts the verifications AuthDO has answered.
+ */
+function withRevocableAuth(env: Env): { env: Env; signOut: () => void; asked: () => number } {
+  let live = true;
+  let asked = 0;
+  return {
+    env: {
+      ...withAuth(env),
+      AUTH: {
+        idFromName: () => ({}) as DurableObjectId,
+        get: () =>
+          ({
+            fetch: async () => {
+              asked++;
+              return live
+                ? Response.json({ uid: AUTH_UID, exp: AUTH_EXP })
+                : new Response("Invalid session", { status: 401 });
+            },
+          }) as unknown as DurableObjectStub,
+      } as unknown as DurableObjectNamespace,
+    },
+    signOut: () => {
+      live = false;
+    },
+    asked: () => asked,
   };
 }
 
@@ -244,6 +276,93 @@ describe("exports — verdict propagation + identity threading", () => {
     expect(res.status).toBe(413);
     expect(calls).toHaveLength(1);
     expect(await res.text()).toBe("multi-sheet export exceeds resource limits");
+  });
+
+  it("budgets text by what the writer makes of it, not by what the children store", async () => {
+    const child = { cells: { A1: { datavalue: "\t".repeat(1_000_000), valuetype: "t" } } };
+    const exportWorkbook = async (sheets: number, format: string) => {
+      const { env } = makeFakeRoomNamespace((call) => {
+        if (call.url.includes("/_do/csv.json")) {
+          return Response.json([
+            ["#url", "#title"],
+            ...Array.from({ length: sheets }, (_, i) => ["/book.1", `S${i}`]),
+          ]);
+        }
+        return Response.json(child);
+      });
+      return buildApp().fetch(new Request(`https://t.test/_/=book/${format}`), env as never);
+    };
+
+    expect((await exportWorkbook(3, "fods")).status).toBe(200);
+    const over = await exportWorkbook(4, "fods");
+    expect(over.status).toBe(413);
+    expect(await over.text()).toBe("multi-sheet export exceeds resource limits");
+
+    const failed = await exportWorkbook(1, "xlsx");
+    expect(failed.status).toBe(500);
+  });
+
+  it("yields to the event loop before each child room of an export", async () => {
+    let timerTurns = 0;
+    let stop = false;
+    const tick = (): void => {
+      if (stop) return;
+      timerTurns += 1;
+      setTimeout(tick, 0);
+    };
+    setTimeout(tick, 0);
+    const turnsAtChild: number[] = [];
+    const { env } = makeFakeRoomNamespace((call) => {
+      if (call.url.includes("/_do/csv.json")) {
+        return Response.json([
+          ["#url", "#title"],
+          ["/book.1", "A"],
+          ["/book.2", "B"],
+          ["/book.3", "C"],
+        ]);
+      }
+      turnsAtChild.push(timerTurns);
+      return Response.json({ cells: {} });
+    });
+    try {
+      const res = await buildApp().fetch(new Request("https://t.test/_/=book/xlsx"), env as never);
+      expect(res.status).toBe(200);
+    } finally {
+      stop = true;
+    }
+    expect(turnsAtChild).toHaveLength(3);
+    expect(turnsAtChild[1]!).toBeGreaterThan(turnsAtChild[0]!);
+    expect(turnsAtChild[2]!).toBeGreaterThan(turnsAtChild[1]!);
+  });
+
+  it("budgets sparse sheets by the grid the writers walk, not by stored cells", async () => {
+    const sparse = {
+      cells: {
+        A1: { datavalue: "x", valuetype: "t" },
+        A200000: { datavalue: "y", valuetype: "t" },
+      },
+    };
+    const exportWorkbook = async (sheets: number) => {
+      const { env, calls } = makeFakeRoomNamespace((call) => {
+        if (call.url.includes("/_do/csv.json")) {
+          return Response.json([
+            ["#url", "#title"],
+            ...Array.from({ length: sheets }, (_, i) => ["/book.1", `S${i}`]),
+          ]);
+        }
+        return Response.json(sparse);
+      });
+      const res = await buildApp().fetch(new Request("https://t.test/_/=book/ods"), env as never);
+      return { res, calls };
+    };
+
+    const within = await exportWorkbook(2);
+    expect(within.res.status).toBe(200);
+
+    const over = await exportWorkbook(256);
+    expect(over.res.status).toBe(413);
+    expect(await over.res.text()).toBe("multi-sheet export exceeds resource limits");
+    expect(over.calls).toHaveLength(4);
   });
 
   it("does not dispatch unsafe persisted TOC links", async () => {
@@ -406,6 +525,350 @@ describe("multi-sheet import — write verdict gating", () => {
       requestId: reserve.requestId,
     });
   });
+
+  it("POST /_/=:room/socialcalc answers 413 when rewritten references outgrow the import limit", async () => {
+    const room = "r".repeat(2000);
+    const { env, calls } = makeFakeRoomNamespace((req) => {
+      if (req.url.includes("/_do/access")) {
+        return Response.json({ isPrivate: false, canRead: true, canWrite: true });
+      }
+      if (req.url.includes("/_do/import-append-toc")) {
+        const body: unknown = JSON.parse(req.bodyText ?? "null");
+        const requestId: unknown = body && typeof body === "object" ? Reflect.get(body, "requestId") : null;
+        const sheet = { subroom: `${room}.1`, link: `/${room}.1`, title: "Imported" };
+        return Response.json(
+          { requestId, firstIndex: 1, sheets: [{ ...sheet, row: 2 }] },
+          { status: 201 },
+        );
+      }
+      if (req.url.includes("/_do/child-snapshot")) {
+        return new Response("Created", { status: 201 });
+      }
+      return new Response("unexpected DO call", { status: 500 });
+    });
+    // 40 KB uploaded; each `a!` would become the 2,005-character `'rrr….1'!`.
+    const upload = `version:1.5\ncell:A1:t:${"a!".repeat(20_000)}\nsheet:c:1:r:1\n`;
+    const post = (title: string): Promise<Response> =>
+      Promise.resolve(
+        buildApp().fetch(
+          new Request(`https://t.test/_/=${room}/socialcalc?title=${title}`, {
+            method: "POST",
+            body: upload,
+          }),
+          env as never,
+        ),
+      );
+
+    const refused = await post("a");
+    expect(refused.status).toBe(413);
+    expect(calls.map((call) => new URL(call.url).pathname)).toEqual([
+      "/_do/access",
+      "/_do/import-append-toc",
+    ]);
+
+    // Control: the same bytes under a title they do not mention go through unchanged.
+    calls.length = 0;
+    const accepted = await post("b");
+    expect(accepted.status).toBe(201);
+    expect(calls.map((call) => new URL(call.url).pathname)).toEqual([
+      "/_do/access",
+      "/_do/import-append-toc",
+      "/_do/child-snapshot",
+      "/_do/import-append-toc",
+    ]);
+    expect(JSON.parse(calls[2]!.bodyText ?? "null")).toEqual({
+      parent: room,
+      snapshot: upload,
+      mode: "create",
+    });
+  });
+});
+
+describe("workbook fan-out — a session that ends while the route waits", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ now: 1_700_000_000_000, toFake: ["Date"] });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** A busy room: it answers only after the principal memo has gone stale. */
+  function keptWaiting(): void {
+    vi.setSystemTime(Date.now() + SESSION_REVERIFY_TTL_MS);
+  }
+
+  function makeWorkbookXlsx(names: readonly string[]): Uint8Array {
+    const book = XLSX.utils.book_new();
+    for (const name of names) {
+      XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([[name]]), name);
+    }
+    return new Uint8Array(XLSX.write(book, { bookType: "xlsx", type: "array" }) as ArrayBuffer);
+  }
+
+  it("GET /_/=:room/xlsx stops reading as the owner", async () => {
+    // The first sheet keeps the export waiting while the owner signs out.
+    let signOut = (): void => {};
+    const { env, calls } = makeFakeRoomNamespace((call) => {
+      if (call.url.includes("/_do/csv.json")) {
+        return Response.json([
+          ["#url", "#title"],
+          ["/book.1", "First"],
+          ["/book.2", "Second"],
+        ]);
+      }
+      if (call.uid === null) return new Response("Forbidden", { status: 403 });
+      signOut();
+      keptWaiting();
+      return Response.json({ cells: {}, valueformats: {} });
+    });
+    const auth = withRevocableAuth(env);
+    signOut = auth.signOut;
+    const res = await buildApp().fetch(
+      new Request("https://t.test/_/=book/xlsx", { headers: { Cookie: AUTH_COOKIE } }),
+      auth.env as never,
+    );
+    expect(res.status).toBe(403);
+    expect(await res.text()).toBe("Forbidden");
+    expect(calls.map((call) => [new URL(call.url).searchParams.get("name"), call.uid])).toEqual([
+      ["book", AUTH_UID],
+      ["book.1", AUTH_UID],
+      ["book.2", null],
+    ]);
+  });
+
+  it("PUT /_/=:room/xlsx stops writing as the owner", async () => {
+    // The first sheet keeps the import waiting while the owner signs out.
+    let signOut = (): void => {};
+    const { env, calls } = makeFakeRoomNamespace((req) => {
+      if (req.url.includes("/_do/access")) {
+        return Response.json({ isPrivate: true, canRead: true, canWrite: true });
+      }
+      if (req.url.includes("/_do/csv.json")) return new Response("", { status: 404 });
+      if (req.uid === null) return new Response("Forbidden", { status: 403 });
+      if (req.bodyText?.includes('"mode":"probe"')) return new Response("OK");
+      signOut();
+      keptWaiting();
+      return new Response("OK", { status: 201 });
+    });
+    const auth = withRevocableAuth(env);
+    signOut = auth.signOut;
+    const res = await buildApp().fetch(
+      new Request("https://t.test/_/=book/xlsx", {
+        method: "PUT",
+        headers: { Cookie: AUTH_COOKIE, Origin: "https://t.test" },
+        body: makeWorkbookXlsx(["First", "Second", "Third"]) as unknown as BodyInit,
+      }),
+      auth.env as never,
+    );
+    expect(res.status).toBe(403);
+    expect(await res.text()).toBe("Forbidden");
+    const writes = calls.filter((call) => call.method !== "GET" && !call.bodyText?.includes('"mode":"probe"'));
+    // The sheet already sent, then one refused attempt: no third sheet, no TOC.
+    expect(writes.map((call) => [new URL(call.url).searchParams.get("name"), call.uid])).toEqual([
+      ["book.1", AUTH_UID],
+      ["book.2", null],
+    ]);
+  });
+
+  it("PUT /_/=:room/xlsx stops writing as the owner when the probes were kept waiting", async () => {
+    let signOut = (): void => {};
+    const { env, calls } = makeFakeRoomNamespace((req) => {
+      if (req.url.includes("/_do/access")) {
+        return Response.json({ isPrivate: true, canRead: true, canWrite: true });
+      }
+      if (req.url.includes("/_do/csv.json")) return new Response("", { status: 404 });
+      if (req.uid === null) return new Response("Forbidden", { status: 403 });
+      signOut();
+      keptWaiting();
+      return new Response("OK");
+    });
+    const auth = withRevocableAuth(env);
+    signOut = auth.signOut;
+    const res = await buildApp().fetch(
+      new Request("https://t.test/_/=book/xlsx", {
+        method: "PUT",
+        headers: { Cookie: AUTH_COOKIE, Origin: "https://t.test" },
+        body: makeWorkbookXlsx(["First", "Second"]) as unknown as BodyInit,
+      }),
+      auth.env as never,
+    );
+    expect(res.status).toBe(403);
+    // Nothing but probes went out as the owner: no sheet was replaced.
+    expect(calls.filter((call) => call.uid !== null && call.bodyText?.includes('"mode":"replace"'))).toEqual([]);
+    expect(calls.at(-1)!.uid).toBeNull();
+  });
+
+  it("PUT /_/=:room/xlsx drops the uid from the legacy fallback and the TOC of a public workbook", async () => {
+    let signOut = (): void => {};
+    const { env, calls } = makeFakeRoomNamespace((req) => {
+      if (req.url.includes("/_do/access")) {
+        return Response.json({ isPrivate: false, canRead: true, canWrite: true });
+      }
+      if (req.url.includes("/_do/child-snapshot")) {
+        signOut();
+        keptWaiting();
+        return new Response("Conflict", { status: 409 });
+      }
+      return new Response("OK", { status: 201 });
+    });
+    const auth = withRevocableAuth(env);
+    signOut = auth.signOut;
+    const res = await buildApp().fetch(
+      new Request("https://t.test/_/=book/xlsx", {
+        method: "PUT",
+        headers: { Cookie: AUTH_COOKIE, Origin: "https://t.test" },
+        body: makeOneSheetXlsx() as unknown as BodyInit,
+      }),
+      auth.env as never,
+    );
+    // A public workbook takes anonymous writes; only the uid is dropped.
+    expect(res.status).toBe(201);
+    expect(calls.map((call) => [new URL(call.url).pathname, call.uid])).toEqual([
+      ["/_do/access", AUTH_UID],
+      ["/_do/child-snapshot", AUTH_UID],
+      ["/_do/snapshot", null],
+      ["/_do/snapshot", null],
+    ]);
+  });
+
+  it("POST text append stops acting as the owner", async () => {
+    const sheets = [{ subroom: "book.1", link: "/book.1", title: "Alpha" }];
+    const owner = (path: string): [string, string | null] => [path, AUTH_UID];
+    const sent: Record<string, Array<[string, string | null]>> = {
+      "/_do/access": [owner("/_do/access"), ["/_do/import-append-toc", null]],
+      "/_do/import-append-toc": [
+        owner("/_do/access"),
+        owner("/_do/import-append-toc"),
+        ["/_do/child-snapshot", null],
+      ],
+      "/_do/child-snapshot": [
+        owner("/_do/access"),
+        owner("/_do/import-append-toc"),
+        owner("/_do/child-snapshot"),
+        ["/_do/import-append-toc", null],
+      ],
+    };
+    for (const [endsAt, expected] of Object.entries(sent)) {
+      let signOut = (): void => {};
+      const { env, calls } = makeFakeRoomNamespace((req) => {
+        if (req.uid === null) return new Response("Forbidden", { status: 403 });
+        if (req.url.includes(endsAt)) {
+          signOut();
+          keptWaiting();
+        }
+        if (req.url.includes("/_do/access")) {
+          return Response.json({ isPrivate: true, canRead: true, canWrite: true });
+        }
+        if (req.url.includes("/_do/child-snapshot")) return new Response("Created", { status: 201 });
+        const requestId: unknown = JSON.parse(req.bodyText ?? "{}").requestId;
+        return Response.json({ requestId, firstIndex: 1, sheets }, { status: 201 });
+      });
+      const auth = withRevocableAuth(env);
+      signOut = auth.signOut;
+      const res = await buildApp().fetch(
+        new Request("https://t.test/=book.csv?title=Alpha", {
+          method: "POST",
+          headers: { Cookie: AUTH_COOKIE, Origin: "https://t.test" },
+          body: "a,b\n1,2",
+        }),
+        auth.env as never,
+      );
+      expect(res.status, endsAt).toBe(403);
+      expect(await res.text(), endsAt).toBe("Forbidden");
+      // Whatever is sent after the sign-out does not carry the owner's uid.
+      expect(calls.map((call) => [new URL(call.url).pathname, call.uid]), endsAt).toEqual(expected);
+    }
+  });
+
+  it("asks AuthDO once for an import that no room keeps waiting", async () => {
+    const { env, calls } = makeFakeRoomNamespace((req) => {
+      if (req.url.includes("/_do/access")) {
+        return Response.json({ isPrivate: false, canRead: true, canWrite: true });
+      }
+      return new Response("OK", { status: 201 });
+    });
+    const auth = withRevocableAuth(env);
+    const res = await buildApp().fetch(
+      new Request("https://t.test/_/=book/xlsx", {
+        method: "PUT",
+        headers: { Cookie: AUTH_COOKIE, Origin: "https://t.test" },
+        body: makeWorkbookXlsx(["First", "Second", "Third"]) as unknown as BodyInit,
+      }),
+      auth.env as never,
+    );
+    expect(res.status).toBe(201);
+    // Access check, three sheets and the TOC on one verification.
+    expect(calls.map((call) => call.uid)).toEqual(Array(5).fill(AUTH_UID));
+    expect(auth.asked()).toBe(1);
+  });
+
+  it("PUT /_/:room drops the signed-out uid after waiting for access/body", async () => {
+    let signOut = (): void => {};
+    const { env, calls } = makeFakeRoomNamespace((req) => {
+      if (req.url.includes("/_do/access")) {
+        signOut();
+        keptWaiting();
+        return Response.json({ isPrivate: true, canRead: true, canWrite: true });
+      }
+      if (req.uid === null) return new Response("Forbidden", { status: 403 });
+      return new Response("OK", { status: 201 });
+    });
+    const auth = withRevocableAuth(env);
+    signOut = auth.signOut;
+    const res = await buildApp().fetch(
+      new Request("https://t.test/_/priv-room", {
+        method: "PUT",
+        headers: {
+          Cookie: AUTH_COOKIE,
+          Origin: "https://t.test",
+          "content-type": "text/x-socialcalc",
+        },
+        body: "version:1.5\n",
+      }),
+      { ...auth.env, ETHERCALC_KEY: "operator-key" } as never,
+    );
+    expect(res.status).toBe(403);
+    expect(calls.map((call) => [new URL(call.url).pathname, call.uid])).toEqual([
+      ["/_do/access", AUTH_UID],
+      ["/_do/snapshot", null],
+    ]);
+  });
+
+  it("POST /_/:room drops the signed-out uid after waiting on loadclipboard snapshot", async () => {
+    let signOut = (): void => {};
+    const { env, calls } = makeFakeRoomNamespace((req) => {
+      if (req.url.includes("/_do/access")) {
+        return Response.json({ isPrivate: true, canRead: true, canWrite: true });
+      }
+      if (req.url.includes("/_do/snapshot")) {
+        signOut();
+        keptWaiting();
+        return new Response("version:1.5\n");
+      }
+      if (req.uid === null) return new Response("Forbidden", { status: 403 });
+      return new Response(null, { status: 202 });
+    });
+    const auth = withRevocableAuth(env);
+    signOut = auth.signOut;
+    const res = await buildApp().fetch(
+      new Request("https://t.test/_/priv-room", {
+        method: "POST",
+        headers: {
+          Cookie: AUTH_COOKIE,
+          Origin: "https://t.test",
+          "content-type": "text/x-socialcalc",
+        },
+        body: "loadclipboard version\\c1.5\\ncell\\cA1\\ct\\chi",
+      }),
+      { ...auth.env, ETHERCALC_KEY: "operator-key" } as never,
+    );
+    expect(res.status).toBe(403);
+    expect(calls.map((call) => [new URL(call.url).pathname, call.uid])).toEqual([
+      ["/_do/access", AUTH_UID],
+      ["/_do/snapshot", AUTH_UID],
+      ["/_do/commands", null],
+    ]);
+  });
 });
 
 describe("/:template/form clone — verdict propagation", () => {
@@ -422,6 +885,45 @@ describe("/:template/form clone — verdict propagation", () => {
       expect(calls).toHaveLength(0);
     },
   );
+
+  // A cell `<img>` (or a script fetch) on one of our own sheets.
+  it.each([
+    ["no-cors", "image"],
+    ["cors", "empty"],
+  ])(
+    "rejects a same-origin %s load as %s without cloning",
+    async (mode, dest) => {
+      const { env, calls } = makeFakeRoomNamespace(() => new Response("OK", { status: 201 }));
+      const headers = new Headers({
+        "Sec-Fetch-Site": "same-origin",
+        "Sec-Fetch-Mode": mode,
+        "Sec-Fetch-Dest": dest,
+      });
+      const res = await buildApp().fetch(
+        new Request("https://t.test/tpl/form", { headers, redirect: "manual" }),
+        env as never,
+      );
+      expect(res.status).toBe(403);
+      expect(calls).toHaveLength(0);
+    },
+  );
+
+  it("clones on a same-origin navigation", async () => {
+    const { env, calls } = makeFakeRoomNamespace(() => new Response("OK", { status: 201 }));
+    const res = await buildApp().fetch(
+      new Request("https://t.test/tpl/form", {
+        headers: {
+          "Sec-Fetch-Site": "same-origin",
+          "Sec-Fetch-Mode": "navigate",
+          "Sec-Fetch-Dest": "document",
+        },
+        redirect: "manual",
+      }),
+      env as never,
+    );
+    expect(res.status).toBe(302);
+    expect(calls).toHaveLength(1);
+  });
 
   it("clones when the client sends no Fetch Metadata", async () => {
     const { env, calls } = makeFakeRoomNamespace(() => new Response("OK", { status: 201 }));
@@ -495,6 +997,76 @@ describe("/:template/form clone — verdict propagation", () => {
     );
     expect(res.status).toBe(502);
     expect(res.headers.get("location")).toBeNull();
+  });
+});
+
+describe("HEAD on the room-minting GET routes", () => {
+  // Hono serves HEAD from the GET handler, so the policy gates in front of
+  // these routes must classify HEAD the way they classify GET.
+  const templateResponder = (call: Call): Response => {
+    if (call.url.includes("/_do/access")) {
+      return Response.json({ isPrivate: false, parented: false, canRead: true });
+    }
+    if (call.url.includes("/_do/snapshot") && call.method === "GET") {
+      return new Response("TPL-SNAP");
+    }
+    return new Response("OK", { status: 201 });
+  };
+
+  it.each([
+    ["GET", "/_from/tpl"],
+    ["HEAD", "/_from/tpl"],
+    ["GET", "/tpl/form"],
+    ["HEAD", "/tpl/form"],
+  ])("refuses a Sandstorm viewer's %s %s before any room dispatch", async (method, path) => {
+    const { env, calls } = makeFakeRoomNamespace(templateResponder);
+    const res = await buildApp().fetch(
+      new Request(`https://t.test${path}`, {
+        method,
+        headers: { "X-Sandstorm-Permissions": "" },
+        redirect: "manual",
+      }),
+      { ...env, ETHERCALC_SANDSTORM: "1" } as never,
+    );
+    expect(res.status).toBe(403);
+    expect(res.headers.get("location")).toBeNull();
+    expect(calls).toHaveLength(0);
+  });
+
+  it.each(["/_from/tpl", "/tpl/form"])(
+    "still lets a Sandstorm editor's HEAD %s run the copy",
+    async (path) => {
+      const { env, calls } = makeFakeRoomNamespace(templateResponder);
+      const res = await buildApp().fetch(
+        new Request(`https://t.test${path}`, {
+          method: "HEAD",
+          headers: { "X-Sandstorm-Permissions": "modify" },
+          redirect: "manual",
+        }),
+        { ...env, ETHERCALC_SANDSTORM: "1" } as never,
+      );
+      expect(res.status).toBe(302);
+      expect(calls.some((call) => call.method === "PUT" || call.method === "POST")).toBe(true);
+    },
+  );
+
+  it("counts HEAD against the room-creation limit", async () => {
+    const { env, calls } = makeFakeRoomNamespace(templateResponder);
+    const app = buildApp();
+    const head = async (): Promise<Response> =>
+      app.fetch(
+        new Request("https://t.test/tpl/form", {
+          method: "HEAD",
+          headers: { "CF-Connecting-IP": "203.0.113.77" },
+          redirect: "manual",
+        }),
+        { ...env, ETHERCALC_ROOM_CREATE_LIMIT: "3600:1" } as never,
+      );
+    expect((await head()).status).toBe(302);
+    const limited = await head();
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("Retry-After")).not.toBeNull();
+    expect(calls.filter((call) => call.url.includes("/_do/clone"))).toHaveLength(1);
   });
 });
 

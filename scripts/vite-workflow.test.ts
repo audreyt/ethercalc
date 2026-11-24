@@ -455,6 +455,25 @@ test('standalone compatibility date does not exceed the pinned workerd release',
   expect(Number(configuredDate)).toBeLessThanOrEqual(Number(workerdDate));
 });
 
+test('every deployment config turns WebSocket compression off', () => {
+  // RoomDO's 1 MiB frame cap (MAX_WS_FRAME_CHARS) is compared with a message
+  // after the runtime has inflated it, so permessage-deflate must not be
+  // negotiated: standalone workerd and the Cloudflare deploy both need the flag.
+  const root = resolve(import.meta.dir, '..');
+  const capnp = readFileSync(
+    resolve(root, 'packages/worker/workerd/config.capnp'),
+    'utf8',
+  );
+  const wrangler = readFileSync(
+    resolve(root, 'packages/worker/wrangler.toml'),
+    'utf8',
+  );
+  const capnpFlags = capnp.match(/^\s*compatibilityFlags = \[(.*)\],$/m)?.[1];
+  const wranglerFlags = wrangler.match(/^compatibility_flags = \[(.*)\]$/m)?.[1];
+  expect(capnpFlags).toContain('"no_web_socket_compression"');
+  expect(wranglerFlags).toContain('"no_web_socket_compression"');
+});
+
 test('nightly staging validation bypasses the generated production config', () => {
   const root = resolve(import.meta.dir, '..');
   const workflow = readFileSync(
@@ -467,4 +486,14 @@ test('nightly staging validation bypasses the generated production config', () =
   expect(workflow).not.toContain(
     'run: vp exec wrangler deploy --dry-run --env staging',
   );
+});
+
+test('single-sheet client bundle uses IIFE output so minified locals do not overwrite globals', async () => {
+  const result = await loadConfigFromFile(
+    { command: 'build', mode: 'production', isSsrBuild: false, isPreview: false },
+    resolve(import.meta.dir, '..', 'packages/client/vite.config.ts'),
+  );
+  expect(result).not.toBeNull();
+  const output = (result!.config.build?.rollupOptions?.output ?? {}) as { format?: string };
+  expect(output.format).toBe('iife');
 });

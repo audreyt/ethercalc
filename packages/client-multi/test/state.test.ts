@@ -134,6 +134,38 @@ describe('computeNextRow', () => {
     expect(r.link).toBe('/room.2');
   });
 
+  it('counts up from the largest number that stays exact', () => {
+    // 2^53 - 1 - 2 * size: both steps the loop can take are still safe integers.
+    const f = makeFoldr([{ link: '/room.1', title: 'Sheet9007199254740989', row: 2 }]);
+    const r = computeNextRow(f, 'room');
+    expect(r.title).toBe('Sheet9007199254740990');
+    expect(r.link).toBe('/room.9007199254740990');
+  });
+
+  it('falls back to the defaults when the last title number cannot be counted up exactly', () => {
+    // From 2^53 on, n + 1 === n: counting up from the title would never
+    // leave the taken name. Each call must return, with an unused title.
+    for (const title of [
+      'Sheet9007199254740990', // 2^53 - 2: one step short of the margin
+      'Sheet9007199254740992', // 2^53
+      'Sheet100000000000000000000',
+      `Sheet${'9'.repeat(250)}`,
+    ]) {
+      const f = makeFoldr([{ link: '/room.1', title, row: 2 }]);
+      const r = computeNextRow(f, 'room');
+      expect(r).toEqual({ link: '/room.2', title: 'Sheet2', row: 0 });
+    }
+  });
+
+  it('terminates when the numbers just below 2^53 are all taken', () => {
+    const f = makeFoldr([
+      { link: '/room.1', title: 'Sheet9007199254740992', row: 2 },
+      { link: '/room.2', title: 'Sheet9007199254740991', row: 3 },
+    ]);
+    const r = computeNextRow(f, 'room');
+    expect(r).toEqual({ link: '/room.3', title: 'Sheet3', row: 0 });
+  });
+
   it('bumps when both title and link conflict', () => {
     const f = makeFoldr([
       { link: '/x.', title: 'Sheet1', row: 2 },

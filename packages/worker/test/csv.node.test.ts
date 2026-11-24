@@ -10,6 +10,12 @@ describe('csvToSocialCalc', () => {
   it('delegates to csvToSave', () => {
     expect(csvToSocialCalc('a,b\n1,2')).toBe('WRAPPED:a,b\n1,2');
   });
+
+  it('ends records at a lone CR like the import size preflight does', () => {
+    expect(csvToSocialCalc('a,b\r1,2\r\n3,4\r\r\n"x\ry"\r')).toBe(
+      'WRAPPED:a,b\n1,2\n3,4\n\n"x\ny"\n',
+    );
+  });
 });
 
 describe('decodeDoubleEncoded', () => {

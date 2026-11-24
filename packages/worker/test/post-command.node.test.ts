@@ -2,10 +2,12 @@ import { describe, it, expect } from 'vite-plus/test';
 
 import {
   classifyCommandBody,
+  echoCommand,
   joinCommands,
+  MAX_COMMAND_ECHO_CHARS,
 } from '../src/handlers/post-command.ts';
 
-/** Pure-logic tests for classifyCommandBody and joinCommands. 100% gated. */
+/** Pure-logic tests for classifyCommandBody, joinCommands and echoCommand. 100% gated. */
 
 function enc(s: string): Uint8Array {
   return new TextEncoder().encode(s);
@@ -166,5 +168,38 @@ describe('joinCommands', () => {
   });
   it('handles an empty array', () => {
     expect(joinCommands([])).toBe('');
+  });
+});
+
+describe('echoCommand', () => {
+  it('echoes a string command as-is', () => {
+    expect(echoCommand('set A1 value n 1')).toBe('set A1 value n 1');
+  });
+  it('echoes an array command member by member', () => {
+    expect(echoCommand(['loadclipboard foo', 'paste A2 all'])).toEqual([
+      'loadclipboard foo',
+      'paste A2 all',
+    ]);
+    expect(echoCommand([])).toEqual([]);
+  });
+  it('echoes in full every command a client can post', () => {
+    const longest = `set A1 text t ${'x'.repeat(MAX_COMMAND_ECHO_CHARS)}`.slice(
+      0,
+      MAX_COMMAND_ECHO_CHARS,
+    );
+    expect(echoCommand(longest)).toBe(longest);
+    expect(echoCommand([longest])).toEqual([longest]);
+  });
+  it('echoes a longer, generated command by its verb alone', () => {
+    // One control character is six bytes of JSON (`\u0001`).
+    const generated = `loadclipboard ${'\x01'.repeat(MAX_COMMAND_ECHO_CHARS)}`;
+    expect(echoCommand(generated)).toBe('loadclipboard');
+    expect(echoCommand([generated, 'paste A1 all'])).toEqual([
+      'loadclipboard',
+      'paste A1 all',
+    ]);
+  });
+  it('echoes nothing of an over-long command without a verb', () => {
+    expect(echoCommand('x'.repeat(MAX_COMMAND_ECHO_CHARS + 1))).toBe('');
   });
 });

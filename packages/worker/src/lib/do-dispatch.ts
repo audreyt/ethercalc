@@ -3,19 +3,55 @@
  * Object. Keeps the route layer free of `env.ROOM.get(idFromName(…))`
  * boilerplate and makes it trivial to stub `ROOM` in route tests.
  */
+import { admitRoom } from "./live-rooms.ts";
 import { encodeRoom, isValidRoomName } from "./room-name.ts";
 import type { SessionPrincipal } from "./session.ts";
 import type { Env } from "../env.ts";
 
-function roomStubForValidName(env: Env, room: string): DurableObjectStub {
-  const id = env.ROOM.idFromName(encodeRoom(room));
-  return env.ROOM.get(id);
+function unavailableResponse(): Response {
+  return new Response("Service temporarily unavailable", {
+    status: 503,
+    headers: { "Content-Type": "text/plain; charset=utf-8", "Retry-After": "1" },
+  });
+}
+
+/** Stands in for a room that may not be woken now: every fetch is a 503. */
+const BUSY_STUB = {
+  fetch: async (): Promise<Response> => unavailableResponse(),
+} as unknown as DurableObjectStub;
+
+/**
+ * The stub for a RoomDO id. Every stub in the `ROOM` namespace is obtained
+ * here, so that the rooms awake at once stay within the live-room budget
+ * (`lib/live-rooms.ts`): a room beyond it is not woken, and its stand-in
+ * answers 503 to whatever is sent to it. When `viewer` is true, waking a
+ * new room stops at the viewer sub-budget so anonymous read floods cannot
+ * lock editors out.
+ */
+export function roomStubForId(
+  env: Env,
+  id: DurableObjectId,
+  viewer = false,
+): DurableObjectStub {
+  return admitRoom(env, id, Date.now(), viewer) ? env.ROOM.get(id) : BUSY_STUB;
+}
+
+function roomStubForValidName(
+  env: Env,
+  room: string,
+  viewer: boolean,
+): DurableObjectStub {
+  return roomStubForId(env, env.ROOM.idFromName(encodeRoom(room)), viewer);
 }
 
 /** Return the DO stub for `room`, keyed by its legacy-encoded form. */
-export function roomStub(env: Env, room: string): DurableObjectStub {
+export function roomStub(
+  env: Env,
+  room: string,
+  viewer = false,
+): DurableObjectStub {
   if (!isValidRoomName(room)) throw new RangeError("Invalid room name");
-  return roomStubForValidName(env, room);
+  return roomStubForValidName(env, room, viewer);
 }
 
 export const PARENT_READ_HEADER = "X-EC-Parent-Read";
@@ -30,6 +66,18 @@ export class DoUnavailableError extends Error {
   constructor(cause: unknown) {
     super("Durable Object unavailable", { cause });
     this.name = "DoUnavailableError";
+  }
+}
+
+/**
+ * The live-room budget (`lib/live-rooms.ts`) did not let the room wake.
+ * Answered like any `DoUnavailableError`, but it is load shedding rather
+ * than a fault, so `index.ts` does not log one stack trace per request.
+ */
+export class RoomBusyError extends DoUnavailableError {
+  constructor() {
+    super("Too many rooms awake");
+    this.name = "RoomBusyError";
   }
 }
 
@@ -49,10 +97,7 @@ const IDEMPOTENT_METHODS = new Set(["GET", "HEAD"]);
 /** 503 for an uncaught `DoUnavailableError`; null for any other error. */
 export function doUnavailableResponse(error: unknown): Response | null {
   if (!(error instanceof DoUnavailableError)) return null;
-  return new Response("Service temporarily unavailable", {
-    status: 503,
-    headers: { "Content-Type": "text/plain; charset=utf-8", "Retry-After": "1" },
-  });
+  return unavailableResponse();
 }
 
 /**
@@ -77,6 +122,7 @@ export function doUnavailableResponse(error: unknown): Response | null {
  * runtime marks `retryable` (and not `overloaded`) is retried once on a
  * fresh stub; writes are never retried because the DO may have applied
  * them. Any remaining infrastructure failure throws `DoUnavailableError`.
+ * A room that the live-room budget does not let wake throws `RoomBusyError`.
  */
 export async function doFetch(
   env: Env,
@@ -84,6 +130,7 @@ export async function doFetch(
   path: string,
   init: RequestInit = {},
   principal: SessionPrincipal | null = null,
+  viewer?: boolean,
 ): Promise<Response> {
   if (!isValidRoomName(room)) {
     return new Response("Invalid room name", {
@@ -97,15 +144,21 @@ export async function doFetch(
   headers.delete("X-EC-Uid");
   headers.delete(PARENT_READ_HEADER);
   if (principal) headers.set("X-EC-Uid", principal.uid);
+  const method = (init.method ?? "GET").toUpperCase();
+  const isViewer =
+    viewer ?? (IDEMPOTENT_METHODS.has(method) && principal === null);
   // A fresh stub per attempt: a stub can stay broken after some failures.
-  const send = (): Promise<Response> =>
-    roomStubForValidName(env, room).fetch(url, { ...init, headers });
+  const send = (): Promise<Response> => {
+    const stub = roomStubForValidName(env, room, isViewer);
+    if (stub === BUSY_STUB) throw new RoomBusyError();
+    return stub.fetch(url, { ...init, headers });
+  };
   try {
     return await send();
   } catch (first) {
+    if (first instanceof RoomBusyError) throw first;
     const flags = errorFlags(first);
     if (flags.remote === true) throw first;
-    const method = (init.method ?? "GET").toUpperCase();
     if (
       !IDEMPOTENT_METHODS.has(method) ||
       flags.retryable !== true ||

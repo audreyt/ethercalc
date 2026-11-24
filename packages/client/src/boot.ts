@@ -9,6 +9,7 @@
 
 import DOMPurify from 'dompurify';
 
+import { installFormulaLimits } from '../../socialcalc-headless/src/formula-limits.ts';
 import { runMain, type MainHost } from './main.ts';
 import { installGraph } from './graph.ts';
 import { installSecurityPolicy } from './sanitize-html.ts';
@@ -134,6 +135,24 @@ export function buildLegacyExportUrl(
   return `${relBase}/${room}.${format}`;
 }
 
+/**
+ * File name for a fetched export: the server's `Content-Disposition`
+ * `filename`, else the last path segment of the URL.
+ *
+ * The Worker sends the name as a quoted-string (`attachmentHeader` in
+ * worker/src/routes/exports.ts). Inside the quotes `;` is an ordinary
+ * character, and room names may contain it, so a quoted value runs to
+ * its closing quote; only a bare token ends at `;`. Cutting a quoted
+ * name at `;` would drop the extension the server appended and let the
+ * room name pick the saved file's type (`x.hta;y` -> `x.hta`).
+ */
+export function deriveExportFilename(url: string, contentDisposition: string | null): string {
+  const match = /filename\*?=(?:"([^"]*)"|([^";]+))/i.exec(contentDisposition ?? '');
+  const name = match?.[1] || match?.[2];
+  if (name) return name;
+  return url.split('?')[0]?.split('/').pop() ?? 'export';
+}
+
 export function openLegacyExportDialog(host: BootHost): void {
   const room = host.SocialCalc._room ?? '';
   if (!room) return;
@@ -198,12 +217,6 @@ export function openLegacyExportDialog(host: BootHost): void {
   // local data, not a new navigation. This works uniformly for all
   // four formats (xlsx/ods are binary, csv/html are text) and
   // honors the server's Content-Disposition filename.
-  const deriveFilename = (url: string, cd: string | null): string => {
-    const match = cd && /filename\*?="?([^";]+)"?/i.exec(cd);
-    if (match?.[1]) return match[1];
-    const tail = url.split('?')[0]?.split('/').pop() ?? 'export';
-    return tail;
-  };
   const open =
     host.__exportOpen ??
     (typeof document !== 'undefined' && typeof fetch !== 'undefined'
@@ -214,7 +227,7 @@ export function openLegacyExportDialog(host: BootHost): void {
             const objectUrl = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = objectUrl;
-            a.download = deriveFilename(url, res.headers.get('Content-Disposition'));
+            a.download = deriveExportFilename(url, res.headers.get('Content-Disposition'));
             a.rel = 'noopener';
             document.body.appendChild(a);
             a.click();
@@ -486,6 +499,11 @@ async function autoBoot(): Promise<void> {
   // model and wire DOMPurify as the sanitiser callback before any sheet data
   // is parsed (see packages/client/src/sanitize-html.ts).
   installSecurityPolicy(w.SocialCalc, DOMPurify);
+  // Formulas are room data too, and this page evaluates them with the same
+  // SocialCalc as the RoomDO: give it the same bounds before the first
+  // recalculation, or one formula the server shrugs off (`SUBSTITUTE("x","","")`,
+  // `REPT("x",1e99)`) hangs the tab of everyone who opens the sheet.
+  installFormulaLimits(w.SocialCalc);
   installGraph({
     SocialCalc: w.SocialCalc,
     win: window as unknown as Parameters<typeof installGraph>[0]['win'],

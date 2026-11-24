@@ -180,7 +180,8 @@ describe('HackFoldr', () => {
 
     it('auto-seeds a non-existent workbook through the guarded sheet route', async () => {
       const { fetchImpl, calls } = makeFetch([
-        { json: [] },
+        { json: [['']] },
+        { json: {} },
         {
           status: 201,
           json: {
@@ -197,8 +198,9 @@ describe('HackFoldr', () => {
       expect(f.rows).toEqual([{ link: '/r.4', title: 'Server Seed', row: 5 }]);
       expect(f.wasNonExistent).toBe(false);
       expect(f.wasEmpty).toBe(false);
-      expect(calls).toHaveLength(2);
-      expect(calls[1]).toMatchObject({
+      expect(calls).toHaveLength(3);
+      expect(calls[1]).toMatchObject({ url: 'http://x/_/r/cells', method: 'GET' });
+      expect(calls[2]).toMatchObject({
         url: 'http://x/_/=r/sheet',
         method: 'POST',
         headers: {
@@ -206,10 +208,71 @@ describe('HackFoldr', () => {
           accept: 'application/json',
         },
       });
-      expect(JSON.parse(calls[1]?.body ?? '')).toEqual({
+      expect(JSON.parse(calls[2]?.body ?? '')).toEqual({
         title: 'Sheet1',
         requestId: 'seed_nonexistent',
       });
+    });
+
+    it('never seeds a room that holds an ordinary sheet', async () => {
+      // Opening `/=room` is a plain navigation (a cross-site link is enough),
+      // so it must not write into a room that is not an unused workbook.
+      const bodies: unknown[] = [
+        [['Name', 'Salary'], ['Ann', '10']],
+        [['#url', '#title'], ['/other', 'Elsewhere']],
+        [['#url', '#title'], 'not-a-row'],
+        [['#url', '#title', 'note']],
+        [['#url']],
+        ['not-a-row'],
+      ];
+      for (const json of bodies) {
+        const { fetchImpl, calls } = makeFetch([{ json }, { json: { A1: { datavalue: 'x' } } }]);
+        const f = new HackFoldr('http://x', { auth: 'k', fetchImpl });
+        await f.fetch('r');
+
+        expect(f.rows).toEqual([]);
+        expect(f.wasNonExistent).toBe(false);
+        expect(f.wasEmpty).toBe(false);
+        expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+          'GET http://x/_/r/csv.json?auth=k',
+          'GET http://x/_/r/cells?auth=k',
+        ]);
+      }
+    });
+
+    it('never seeds a sheet whose stored cells only render blank', async () => {
+      // csv.json is display text: unfilled formulas look like an empty grid.
+      const { fetchImpl, calls } = makeFetch([
+        { json: [['', '']] },
+        { json: { A1: { formula: 'IF(D1>0,D1*2,"")', datavalue: '' } } },
+      ]);
+      const f = new HackFoldr('http://x', { fetchImpl });
+      await f.fetch('r');
+
+      expect(f.rows).toEqual([]);
+      expect(f.wasEmpty).toBe(false);
+      expect(calls.every((call) => call.method === 'GET')).toBe(true);
+    });
+
+    it('never seeds when the room cannot be shown to be unused', async () => {
+      const unverified: Array<Parameters<typeof makeFetch>[0]> = [
+        [{ throwError: true }, { throwError: true }],
+        [{ ok: false, status: 403 }, { ok: false, status: 403 }],
+        [{ json: [] }, { json: null }],
+        [{ json: [['']] }, { json: [] }],
+        [{ json: [['']] }, { json: 'cells' }],
+      ];
+      for (const responses of unverified) {
+        const { fetchImpl, calls } = makeFetch(responses);
+        const f = new HackFoldr('http://x', { fetchImpl });
+        await f.fetch('r');
+
+        expect(f.rows).toEqual([]);
+        expect(f.wasNonExistent).toBe(false);
+        expect(f.wasEmpty).toBe(false);
+        expect(calls).toHaveLength(2);
+        expect(calls.every((call) => call.method === 'GET')).toBe(true);
+      }
     });
 
     it('auto-seeds a header-only workbook through the guarded sheet route', async () => {
@@ -260,9 +323,10 @@ describe('HackFoldr', () => {
       }
     });
 
-    it('survives a thrown TOC fetch and seeds through the guarded route', async () => {
+    it('survives a thrown TOC fetch and seeds a room with no cells', async () => {
       const { fetchImpl } = makeFetch([
         { throwError: true },
+        { json: {} },
         {
           status: 201,
           json: { sheet: { subroom: 'r.1', link: '/r.1', title: 'Sheet1', row: 2 } },
@@ -276,9 +340,10 @@ describe('HackFoldr', () => {
       expect(f.rows).toEqual([{ link: '/r.1', title: 'Sheet1', row: 2 }]);
     });
 
-    it('survives a rejected TOC fetch and seeds through the guarded route', async () => {
+    it('survives a rejected TOC fetch and seeds a room with no cells', async () => {
       const { fetchImpl } = makeFetch([
         { ok: false },
+        { json: {} },
         {
           status: 201,
           json: { sheet: { subroom: 'r.1', link: '/r.1', title: 'Sheet1', row: 2 } },
@@ -293,7 +358,7 @@ describe('HackFoldr', () => {
     });
 
     it('keeps empty rows and init flags when automatic seeding fails', async () => {
-      const rejected = makeFetch([{ json: [] }, { ok: false, status: 409 }]);
+      const rejected = makeFetch([{ json: [] }, { json: {} }, { ok: false, status: 409 }]);
       const rejectedFoldr = new HackFoldr('http://x', {
         fetchImpl: rejected.fetchImpl,
         requestIdFactory: () => 'seed_rejected',

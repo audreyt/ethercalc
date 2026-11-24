@@ -1060,7 +1060,7 @@ More comments yet to come...
     sheet.recalcchangedavalue = false;
     sheet.hiddencolrow = '';
     sheet.sci = new SocialCalc.SheetCommandInfo(sheet);
-    sheet.ioEventTree = {};
+    sheet.ioEventTree = Object.create(null);
     sheet.ioParameterList = {};
   };
   SC.Sheet.prototype.ResetSheet = function () {
@@ -1266,28 +1266,34 @@ More comments yet to come...
           sheetobj.names[name].definition = SocialCalc.decodeFromSave(parts[3]);
           break;
         case 'layout':
+          if (parts[1] - 0 > (sheetobj.layouts.length || 1)) break;
           parts = lines[i].match(/^layout:(\d+):(.+)$/);
           sheetobj.layouts[parts[1] - 0] = parts[2];
           sheetobj.layouthash[parts[2]] = parts[1] - 0;
           break;
         case 'font':
-          sheetobj.fonts[parts[1] - 0] = parts[2];
-          sheetobj.fonthash[parts[2]] = parts[1] - 0;
+          if (parts[1] - 0 > (sheetobj.fonts.length || 1)) break;
+          sheetobj.fonts[parts[1] - 0] = parts[2] || '';
+          sheetobj.fonthash[parts[2] || ''] = parts[1] - 0;
           break;
         case 'color':
+          if (parts[1] - 0 > (sheetobj.colors.length || 1)) break;
           sheetobj.colors[parts[1] - 0] = parts[2];
           sheetobj.colorhash[parts[2]] = parts[1] - 0;
           break;
         case 'border':
+          if (parts[1] - 0 > (sheetobj.borderstyles.length || 1)) break;
           sheetobj.borderstyles[parts[1] - 0] = parts[2];
           sheetobj.borderstylehash[parts[2]] = parts[1] - 0;
           break;
         case 'cellformat':
+          if (parts[1] - 0 > (sheetobj.cellformats.length || 1)) break;
           v = SocialCalc.decodeFromSave(parts[2]);
           sheetobj.cellformats[parts[1] - 0] = v;
           sheetobj.cellformathash[v] = parts[1] - 0;
           break;
         case 'valueformat':
+          if (parts[1] - 0 > (sheetobj.valueformats.length || 1)) break;
           v = SocialCalc.decodeFromSave(parts[2]);
           sheetobj.valueformats[parts[1] - 0] = v;
           sheetobj.valueformathash[v] = parts[1] - 0;
@@ -1309,6 +1315,12 @@ More comments yet to come...
       parts = null;
     }
   };
+  SC.SafeValueType = function (type) {
+    if (!type) return '';
+    return /^(?:coord|range|name|start)$/.test(type) || /[:\r\n]/.test(type)
+      ? 'e#VALUE!'
+      : type;
+  };
   SC.CellFromStringParts = function (sheet, cell, parts, j) {
     var t, v, ro;
     while ((t = parts[j++])) {
@@ -1324,7 +1336,7 @@ More comments yet to come...
           cell.valuetype = SocialCalc.Constants.textdatadefaulttype;
           break;
         case 'vt':
-          v = parts[j++];
+          v = SocialCalc.SafeValueType(parts[j++] || '');
           cell.valuetype = v;
           if (v.charAt(0) == 'n') {
             cell.datatype = 'v';
@@ -1335,7 +1347,7 @@ More comments yet to come...
           }
           break;
         case 'vtf':
-          v = parts[j++];
+          v = SocialCalc.SafeValueType(parts[j++] || '');
           cell.valuetype = v;
           if (v.charAt(0) == 'n') {
             cell.datavalue = +SocialCalc.decodeFromSave(parts[j++]);
@@ -1346,7 +1358,7 @@ More comments yet to come...
           cell.datatype = 'f';
           break;
         case 'vtc':
-          v = parts[j++];
+          v = SocialCalc.SafeValueType(parts[j++] || '');
           cell.valuetype = v;
           if (v.charAt(0) == 'n') {
             cell.datavalue = +SocialCalc.decodeFromSave(parts[j++]);
@@ -1801,9 +1813,10 @@ More comments yet to come...
     }
     InitAttribs(['alignvert', 'padtop', 'padright', 'padbottom', 'padleft']);
     if (cell.layout) {
-      parts = sheet.layouts[cell.layout].match(
+      parts = (sheet.layouts[cell.layout] || '').match(
         /^padding:\s*(\S+)\s+(\S+)\s+(\S+)\s+(\S+);vertical-align:\s*(\S+);/,
       );
+      if (!parts) parts = ['', '*', '*', '*', '*', '*'];
       SetAttribStar('padtop', parts[1]);
       SetAttribStar('padright', parts[2]);
       SetAttribStar('padbottom', parts[3]);
@@ -1812,7 +1825,8 @@ More comments yet to come...
     }
     InitAttribs(['fontfamily', 'fontlook', 'fontsize']);
     if (cell.font) {
-      parts = sheet.fonts[cell.font].match(/^(\*|\S+? \S+?) (\S+?) (\S.*)$/);
+      parts = (sheet.fonts[cell.font] || '').match(/^(\*|\S+? \S+?) (\S+?) (\S.*)$/);
+      if (!parts) parts = ['', '*', '*', '*'];
       SetAttribStar('fontfamily', parts[3]);
       SetAttribStar('fontsize', parts[2]);
       SetAttribStar('fontlook', parts[1]);
@@ -1896,9 +1910,10 @@ More comments yet to come...
     }
     InitAttribs(['alignvert', 'padtop', 'padright', 'padbottom', 'padleft']);
     if (attribs.defaultlayout) {
-      parts = sheet.layouts[attribs.defaultlayout].match(
+      parts = (sheet.layouts[attribs.defaultlayout] || '').match(
         /^padding:\s*(\S+)\s+(\S+)\s+(\S+)\s+(\S+);vertical-align:\s*(\S+);/,
       );
+      if (!parts) parts = ['', '*', '*', '*', '*', '*'];
       SetAttribStar('padtop', parts[1]);
       SetAttribStar('padright', parts[2]);
       SetAttribStar('padbottom', parts[3]);
@@ -1907,7 +1922,8 @@ More comments yet to come...
     }
     InitAttribs(['fontfamily', 'fontlook', 'fontsize']);
     if (attribs.defaultfont) {
-      parts = sheet.fonts[attribs.defaultfont].match(/^(\*|\S+? \S+?) (\S+?) (\S.*)$/);
+      parts = (sheet.fonts[attribs.defaultfont] || '').match(/^(\*|\S+? \S+?) (\S+?) (\S.*)$/);
+      if (!parts) parts = ['', '*', '*', '*'];
       SetAttribStar('fontfamily', parts[3]);
       SetAttribStar('fontsize', parts[2]);
       SetAttribStar('fontlook', parts[1]);
@@ -2430,7 +2446,7 @@ More comments yet to come...
                 cell.datavalue = SocialCalc.decodeFromSave(rest.substring(pos + 1));
                 delete cell.errors;
                 cell.datatype = 't';
-                cell.valuetype = rest.substring(0, pos);
+                cell.valuetype = SocialCalc.SafeValueType(rest.substring(0, pos));
                 delete cell.displaystring;
                 delete cell.parseinfo;
                 attribs.needsrecalc = 'yes';
@@ -2449,7 +2465,7 @@ More comments yet to come...
                 pos = rest.indexOf(' ');
                 pos2 = rest.substring(pos + 1).indexOf(' ');
                 cell.datavalue = rest.substring(pos + 1, pos + 1 + pos2) - 0;
-                cell.valuetype = rest.substring(0, pos);
+                cell.valuetype = SocialCalc.SafeValueType(rest.substring(0, pos));
                 if (cell.valuetype.charAt(0) == 'e') {
                   cell.errors = cell.valuetype.substring(1);
                 } else {
@@ -2778,8 +2794,15 @@ More comments yet to come...
         if (!SocialCalc.Clipboard.clipboard) {
           break;
         }
-        clipsheet = new SocialCalc.Sheet();
-        clipsheet.ParseSheetSave(SocialCalc.Clipboard.clipboard);
+        if (SocialCalc.Clipboard.parsedText !== SocialCalc.Clipboard.clipboard) {
+          SocialCalc.Clipboard.parsedText = SocialCalc.Clipboard.clipboard;
+          SocialCalc.Clipboard.parsedSheet = null;
+          clipsheet = new SocialCalc.Sheet();
+          clipsheet.ParseSheetSave(SocialCalc.Clipboard.clipboard);
+          SocialCalc.Clipboard.parsedSheet = clipsheet;
+        }
+        clipsheet = SocialCalc.Clipboard.parsedSheet;
+        if (!clipsheet) break;
         cliprange = SocialCalc.ParseRange(clipsheet.copiedfrom);
         numcols = Math.max(cr2.col - cr1.col + 1, cliprange.cr2.col - cliprange.cr1.col + 1);
         numrows = Math.max(cr2.row - cr1.row + 1, cliprange.cr2.row - cliprange.cr1.row + 1);
@@ -2876,12 +2899,14 @@ More comments yet to come...
         for (i = 0; i <= 3; i++) {
           cols[i] = cmd.NextToken();
           dirs[i] = cmd.NextToken();
+          if (cols[i] && !/^[A-Za-z]{1,2}$/.test(cols[i])) throw new Error('Invalid sort column');
           if (cols[i]) lastsortcol = i;
         }
         sortcells = {};
         sortlist = [];
         sortvalues = [];
         sorttypes = [];
+        var sortkeys = new Map();
         for (row = cr1.row; row <= cr2.row; row++) {
           for (col = cr1.col; col <= cr2.col; col++) {
             cr = SocialCalc.crToCoord(col, row);
@@ -2902,7 +2927,10 @@ More comments yet to come...
             cell = sheet.GetAssuredCell(cr);
             val = cell.datavalue;
             valtype = cell.valuetype.charAt(0) || 'b';
-            if (valtype == 't') val = val.toLowerCase();
+            if (valtype == 't') {
+              if (!sortkeys.has(val)) sortkeys.set(val, val.toLowerCase());
+              val = sortkeys.get(val);
+            }
             sortvalues[slast].push(val);
             sorttypes[slast].push(valtype);
           }
@@ -3633,6 +3661,7 @@ More comments yet to come...
           while (editor.context.sheetobj.rowattribs.hide[row] == 'yes') {
             row++;
           }
+          row = Math.min(row, editor.context.rowpanes[0].first + 200);
           if (
             (!row || row <= editor.context.rowpanes[0].first) &&
             editor.context.rowpanes.length > 1
@@ -3661,9 +3690,10 @@ More comments yet to come...
             undoNum = editor.context.colpanes[1].first;
           }
           if (saveundo) changes.AddUndo('pane col ' + undoNum);
-          while (editor.context.sheetobj.colattribs.hide[SocialCalc.rcColname(col)] == 'yes') {
+          while (col > 0 && col < 702 && editor.context.sheetobj.colattribs.hide[SocialCalc.rcColname(col)] == 'yes') {
             col++;
           }
+          col = Math.min(col, editor.context.colpanes[0].first + 50);
           if (
             (!col || col <= editor.context.colpanes[0].first) &&
             editor.context.colpanes.length > 1
@@ -3894,7 +3924,11 @@ More comments yet to come...
     if (scri.currentState == scri.state.order) {
       while (recalcdata.celllistitem < recalcdata.celllist.length) {
         coord = recalcdata.celllist[recalcdata.celllistitem++];
-        SocialCalc.RecalcCheckCell(sheet, coord);
+        try {
+          SocialCalc.RecalcCheckCell(sheet, coord);
+        } catch (e) {
+          delete sheet.checknamecirc;
+        }
         if (Date.now() - starttime.getTime() >= scri.maxtimeslice) {
           do_statuscallback('calcorder', {
             coord,
@@ -3931,7 +3965,12 @@ More comments yet to come...
     while (coord) {
       cell = sheet.cells[coord];
       cell.parseinfo.coord = coord;
-      eresult = scf.evaluate_parsed_formula(cell.parseinfo, sheet, false);
+      try {
+        eresult = scf.evaluate_parsed_formula(cell.parseinfo, sheet, false);
+      } catch (e) {
+        delete sheet.checknamecirc;
+        eresult = { value: 0, type: 'e#VALUE!', error: 'Formula failed' };
+      }
       if (scf.SheetCache.waitingForLoading) {
         if (scri.firstRenderScheduled != true) {
           var editor = SocialCalc.GetSpreadsheetControlObject().editor;
@@ -4050,6 +4089,10 @@ More comments yet to come...
             }
             coordvals.r = coordvals.r1;
             coordvals.inrangestart = false;
+            if (SocialCalc.RecalcRangeAllowed && !SocialCalc.RecalcRangeAllowed(coordvals, parseinfo)) {
+              coordvals.inrange = false;
+              continue;
+            }
           } else {
           }
           coordvals.c += 1;
@@ -4452,22 +4495,26 @@ More comments yet to come...
     var sheetobj = context.sheetobj;
     var attribs = sheetobj.attribs;
     if (attribs.defaultfont) {
-      defaultfont = sheetobj.fonts[attribs.defaultfont];
+      defaultfont = sheetobj.fonts[attribs.defaultfont] || '';
       defaultfont = defaultfont.replace(/^\*/, SocialCalc.Constants.defaultCellFontStyle);
       defaultfont = defaultfont.replace(
-        /(.+)\*(.+)/,
+        /^(.+)\*(.+)/,
         '$1' + SocialCalc.Constants.defaultCellFontSize + '$2',
       );
       defaultfont = defaultfont.replace(/\*$/, SocialCalc.Constants.defaultCellFontFamily);
       parts = defaultfont.match(/^(\S+? \S+?) (\S+?) (\S.*)$/);
-      context.defaultfontstyle = parts[1];
-      context.defaultfontsize = parts[2];
-      context.defaultfontfamily = parts[3];
+      if (parts) {
+        context.defaultfontstyle = parts[1];
+        context.defaultfontsize = parts[2];
+        context.defaultfontfamily = parts[3];
+      }
     }
-    for (num = 1; num < sheetobj.fonts.length; num++) {
+    for (num in sheetobj.fonts) {
+      if (!Object.prototype.hasOwnProperty.call(sheetobj.fonts, num) || !(num >= 1)) continue;
       s = sheetobj.fonts[num];
+      if (!s) continue;
       s = s.replace(/^\*/, context.defaultfontstyle);
-      s = s.replace(/(.+)\*(.+)/, '$1' + context.defaultfontsize + '$2');
+      s = s.replace(/^(.+)\*(.+)/, '$1' + context.defaultfontsize + '$2');
       s = s.replace(/\*$/, context.defaultfontfamily);
       parts = s.match(/^(\S+?) (\S+?) (\S+?) (\S.*)$/);
       if (!parts) continue;
@@ -4481,12 +4528,15 @@ More comments yet to come...
     layoutre = /^padding:\s*(\S+)\s+(\S+)\s+(\S+)\s+(\S+);vertical-align:\s*(\S+);/;
     dparts = SocialCalc.Constants.defaultCellLayout.match(layoutre);
     if (attribs.defaultlayout) {
-      sparts = sheetobj.layouts[attribs.defaultlayout].match(layoutre);
-    } else {
+      sparts = (sheetobj.layouts[attribs.defaultlayout] || '').match(layoutre);
+    }
+    if (!sparts) {
       sparts = ['', '*', '*', '*', '*', '*'];
     }
-    for (num = 1; num < sheetobj.layouts.length; num++) {
+    for (num in sheetobj.layouts) {
+      if (!Object.prototype.hasOwnProperty.call(sheetobj.layouts, num) || !(num >= 1)) continue;
       s = sheetobj.layouts[num];
+      if (!s) continue;
       parts = s.match(layoutre);
       if (!parts) continue;
       for (i = 1; i <= 5; i++) {
@@ -4515,6 +4565,9 @@ More comments yet to come...
     context.maxrow = 0;
     context.maxcol = 0;
     context.cellskip = {};
+    context.coordToCR = {};
+    var spancells;
+    var skipbudget = 400000;
     for (row = 1; row <= sheetobj.attribs.lastrow; row++) {
       for (col = 1; col <= sheetobj.attribs.lastcol; col++) {
         coord = SocialCalc.crToCoord(col, row);
@@ -4523,6 +4576,9 @@ More comments yet to come...
         colspan = cell.colspan || 1;
         rowspan = cell.rowspan || 1;
         if (colspan > 1 || rowspan > 1) {
+          spancells = Math.max(colspan, 1) * Math.max(rowspan, 1);
+          if (!(spancells <= skipbudget)) continue;
+          skipbudget -= spancells;
           for (skiprow = row; skiprow < row + rowspan; skiprow++) {
             for (skipcol = col; skipcol < col + colspan; skipcol++) {
               skipcoord = SocialCalc.crToCoord(skipcol, skiprow);
@@ -4907,7 +4963,7 @@ More comments yet to come...
     }
     sheetattribs = sheetobj.attribs;
     scc = SocialCalc.Constants;
-    if (cell.colspan > 1) {
+    if (cell.colspan > 1 && context.coordToCR[coord]) {
       span = 1;
       for (num = 1; num < cell.colspan; num++) {
         if (
@@ -4919,7 +4975,7 @@ More comments yet to come...
       }
       result.colSpan = span;
     }
-    if (cell.rowspan > 1) {
+    if (cell.rowspan > 1 && context.coordToCR[coord]) {
       span = 1;
       for (num = 1; num < cell.rowspan; num++) {
         if (
@@ -5024,6 +5080,7 @@ More comments yet to come...
     num = cell.bl;
     if (num && typeof sheetobj.borderstyles[num] !== 'undefined')
       stylestr += 'border-left:' + sheetobj.borderstyles[num] + ';';
+    stylestr = SocialCalc.SafeCellStyle(stylestr);
     if (cell.comment) {
       result.title = cell.comment;
       if (context.showGrid) {
@@ -5081,6 +5138,16 @@ More comments yet to come...
     }
     return result;
   };
+  SC.SafeCellStyle = function (style) {
+    var declarations = style.split(';');
+    var safe = '';
+    for (var i = 0; i < declarations.length; i++) {
+      if (/^\s*(?:padding|vertical-align|font-(?:style|weight|size|family)|color|background-color|text-align|border-(?:top|right|bottom|left))\s*:[^{}\\]*$/i.test(declarations[i])) {
+        safe += declarations[i] + ';';
+      }
+    }
+    return safe;
+  };
   SC.CoordInPane = function (context, coord, rowpane, colpane) {
     var coordToCR = context.coordToCR[coord];
     if (!coordToCR || !coordToCR.row || !coordToCR.col) throw 'Bad coordToCR for ' + coord;
@@ -5103,6 +5170,7 @@ More comments yet to come...
     };
   };
   SC.decodeFromSave = function (s) {
+    if (s === undefined) return '';
     if (typeof s != 'string') return s;
     if (s.indexOf('\\') == -1) return s;
     var r = s.replace(/\\c/g, ':');
@@ -5121,8 +5189,15 @@ More comments yet to come...
     if (typeof s != 'string') return s;
     if (s.indexOf('\\') != -1) s = s.replace(/\\/g, '\\b');
     if (s.indexOf(':') != -1) s = s.replace(/:/g, '\\c');
-    if (s.indexOf('\n') != -1) s = s.replace(/\n/g, '\\n');
+    if (/[\n\r\u2028\u2029]/.test(s)) s = s.replace(/\r\n?|[\n\u2028\u2029]/g, '\\n');
     return s;
+  };
+  SC.ExecAtSaveLineStart = function (regex, str) {
+    var match;
+    do {
+      match = regex.exec(str);
+    } while (match && match.index > 0 && str.charAt(match.index - 1) != '\n');
+    return match;
   };
   SC.SafeUrlForRender = function (rawurl, policy = SocialCalc.Callbacks.securityPolicy) {
     const noTabsOrNewlines = rawurl.replace(/[\t\n\r]/g, '');
@@ -5179,7 +5254,7 @@ More comments yet to come...
     if (declarations.length === 0 || declarations.length > 4) return '';
     var safe = [];
     for (var i = 0; i < declarations.length; i++) {
-      var match = /^\s*([a-z-]+)\s*:\s*([^;]+?)\s*$/.exec(declarations[i]);
+      var match = /^([a-z-]+)\s*:\s*(\S[^;]*)$/.exec(declarations[i].trim());
       if (!match) return '';
       var property = match[1].toLowerCase();
       var value = match[2].toLowerCase();
@@ -5336,10 +5411,12 @@ More comments yet to come...
     if (valueformat == null || valueformat == 'none') {
       valueformat = '';
     }
-    return SocialCalc.format_number_for_display(cell.datavalue, valuetype, valueformat)
-      .replace(/&(amp|lt|gt|quot);/g, function (_match, entity) {
-        return { amp: '&', lt: '<', gt: '>', quot: '"' }[entity];
-      });
+    SocialCalc.FormatNumber.plain_text = true;
+    try {
+      return SocialCalc.format_number_for_display(cell.datavalue, valuetype, valueformat);
+    } finally {
+      SocialCalc.FormatNumber.plain_text = false;
+    }
   };
   SC.FormatValueForDisplay = function (sheetobj, value, cr, linkstyle) {
     var valueformat, valuetype, valuesubtype;
@@ -5435,10 +5512,12 @@ More comments yet to come...
       var formula_details = SocialCalc.Formula.FunctionList[formula_name];
       if (formula_details) {
         var cell_html = formula_details[5];
-        var checkedValue = html_display_value == 0 ? '' : 'checked';
-        cell_html = cell_html.replace(/<%=checked%>/g, checkedValue);
-        cell_html = cell_html.replace(/<%=formated_value%>/g, html_formated_value);
-        cell_html = cell_html.replace(/<%=display_value%>/g, html_display_value);
+        var widgetValues = {
+          checked: html_display_value == 0 ? '' : 'checked',
+          formated_value: html_formated_value,
+          display_value: html_display_value,
+          cell_reference: cr,
+        };
         var parameterValue;
         if (parameters) {
           for (var index = 0; index < parameters.length; index++) {
@@ -5447,20 +5526,23 @@ More comments yet to come...
             } else {
               parameterValue = parameters[index].value;
             }
-            var paramRegExp = new RegExp('<%=parameter' + index + '_value%>', 'g');
-            cell_html = cell_html.replace(paramRegExp, parameterValue);
+            widgetValues['parameter' + index + '_value'] = parameterValue;
           }
           if (parameters.html) {
             for (var htmlIndex = 0; htmlIndex < parameters.html.length; htmlIndex++) {
-              var paramRegExp = new RegExp('<%=html' + htmlIndex + '_value%>', 'g');
-              cell_html = cell_html.replace(paramRegExp, parameters.html[htmlIndex]);
+              widgetValues['html' + htmlIndex + '_value'] = parameters.html[htmlIndex];
             }
           }
           if (parameters.css) {
-            cell_html = cell_html.replace(/^(<\w+)(\W)/, "$1 style='" + parameters.css + "'$2");
+            widgetValues.css = parameters.css;
+            cell_html = cell_html.replace(/^(<\w+)(\W)/, "$1 style='<%=css%>'$2");
           }
         }
-        return cell_html.replace(/<%=cell_reference%>/g, cr);
+        return cell_html.replace(/<%=(\w+)%>/g, function (placeholder, name) {
+          return Object.prototype.hasOwnProperty.call(widgetValues, name)
+            ? widgetValues[name]
+            : placeholder;
+        });
       }
       return 'error:Widget HTML missing';
     }
@@ -5617,6 +5699,24 @@ More comments yet to come...
     }
     return SocialCalc.FormatNumber.formatNumberWithFormat(rawvalue, valueformat, '');
   };
+  SC.ContainsHtmlElement = function (text) {
+    var closeTag = /<\/([A-Z][A-Z0-9]*)>/gi;
+    var openTag = /<([A-Z][A-Z0-9]*)\b/gi;
+    var lastClose = Object.create(null);
+    var tagEnd = -1;
+    var match;
+    while ((match = closeTag.exec(text))) {
+      lastClose[match[1].toLowerCase()] = match.index;
+    }
+    while ((match = openTag.exec(text))) {
+      if (tagEnd < openTag.lastIndex) {
+        tagEnd = text.indexOf('>', openTag.lastIndex);
+        if (tagEnd < 0) break;
+      }
+      if (lastClose[match[1].toLowerCase()] > tagEnd) return true;
+    }
+    return false;
+  };
   SC.DetermineValueType = function (rawvalue) {
     var value = rawvalue + '';
     var type = 't';
@@ -5630,31 +5730,30 @@ More comments yet to come...
     var num;
     var intgr;
     var constr;
-    tvalue = value.replace(/^\s+/, '');
-    tvalue = tvalue.replace(/\s+$/, '');
+    tvalue = value.trim();
     if (value.length == 0) {
       type = '';
     } else if (value.match(/^\s+$/)) {
-    } else if (tvalue.match(/^[-+]?\d*(?:\.)?\d*(?:[eE][-+]?\d+)?$/)) {
+    } else if (tvalue.match(/^[-+]?\d*(?:\.\d*)?(?:[eE][-+]?\d+)?$/)) {
       value = tvalue - 0;
       if (isNaN(value)) {
         value = rawvalue + '';
       } else {
         type = 'n';
       }
-    } else if (tvalue.match(/^[-+]?\d*(?:\.)?\d*\s*%$/)) {
+    } else if (tvalue.match(/^[-+]?\d*(?:\.\d*)?\s*%$/)) {
       value = (tvalue.slice(0, -1) - 0) / 100;
       type = 'n%';
-    } else if (tvalue.match(/^[-+]?\$\s*\d*(?:\.)?\d*\s*$/) && tvalue.match(/\d/)) {
+    } else if (tvalue.match(/^[-+]?\$\s*\d*(?:\.\d*)?$/) && tvalue.match(/\d/)) {
       value = tvalue.replace(/\$/, '') - 0;
       type = 'n$';
-    } else if (tvalue.match(/^[-+]?(\d*,\d*)+(?:\.)?\d*$/)) {
+    } else if (tvalue.match(/^[-+]?\d*(?:,\d*)+(?:\.\d*)?$/)) {
       value = tvalue.replace(/,/g, '') - 0;
       type = 'n';
-    } else if (tvalue.match(/^[-+]?(\d*,\d*)+(?:\.)?\d*\s*%$/)) {
+    } else if (tvalue.match(/^[-+]?\d*(?:,\d*)+(?:\.\d*)?\s*%$/)) {
       value = (tvalue.replace(/[%,]/g, '') - 0) / 100;
       type = 'n%';
-    } else if (tvalue.match(/^[-+]?\$\s*(\d*,\d*)+(?:\.)?\d*$/) && tvalue.match(/\d/)) {
+    } else if (tvalue.match(/^[-+]?\$\s*\d*(?:,\d*)+(?:\.\d*)?$/) && tvalue.match(/\d/)) {
       value = tvalue.replace(/[$,]/g, '') - 0;
       type = 'n$';
     } else if ((matches = value.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{1,4})\s*$/))) {
@@ -5755,7 +5854,7 @@ More comments yet to come...
     } else if (tvalue.length > 7 && tvalue.substring(0, 7).toLowerCase() == 'http://') {
       value = tvalue;
       type = 'tl';
-    } else if (tvalue.match(/<([A-Z][A-Z0-9]*)\b[^>]*>[\s\S]*?<\/\1>/i)) {
+    } else if (SocialCalc.ContainsHtmlElement(tvalue)) {
       value = tvalue;
       type = 'th';
     }
@@ -5963,7 +6062,7 @@ More comments yet to come...
           if (str.indexOf('"') != -1) {
             str = str.replace(/"/g, '""');
           }
-          if (/[, \n"]/.test(str)) {
+          if (/[, \r\n"]/.test(str)) {
             str = '"' + str + '"';
           }
           if (col > clipextents.cr1.col) {
@@ -6295,7 +6394,7 @@ More comments yet to come...
             if (editor.range.hasrange) {
               var clipsheet = new TableEditorSC.Sheet();
               clipsheet.ParseSheetSave(TableEditorSC.Clipboard.clipboard);
-              var matches = clipsheet.copiedfrom.match(/(.+):(.+)/);
+              var matches = clipsheet.copiedfrom.match(/^(.+):(.+)/);
               if (matches !== null && matches[1] === matches[2]) {
                 cr =
                   TableEditorSC.crToCoord(editor.range.left, editor.range.top) +
@@ -6684,6 +6783,29 @@ More comments yet to come...
     }
     return result;
   };
+  TableEditorSC.SavedEditorSpan = function (first, last, maximum) {
+    if (!/^[1-9][0-9]{0,6}$/.test(first || '') || !/^[1-9][0-9]{0,6}$/.test(last || '')) {
+      return 0;
+    }
+    first = first - 0;
+    last = last - 0;
+    if (first < 1 || first > last || last > maximum) return 0;
+    return last - first + 1;
+  };
+  TableEditorSC.IsSavedEditorPane = function (parts, maximum) {
+    return (
+      parts.length === 4 &&
+      (parts[1] === '0' || parts[1] === '1') &&
+      TableEditorSC.SavedEditorSpan(parts[2], parts[3], maximum) >= 1
+    );
+  };
+  TableEditorSC.IsSavedEditorRange = function (parts) {
+    if (parts.length !== 6 || !/^[A-Za-z]+[1-9][0-9]*$/.test(parts[1] || '')) return false;
+    var cells =
+      TableEditorSC.SavedEditorSpan(parts[2], parts[3], 1048576) *
+      TableEditorSC.SavedEditorSpan(parts[4], parts[5], 702);
+    return cells >= 1 && cells <= 200000;
+  };
   TableEditorSC.LoadEditorSettings = function (editor, str, flags) {
     var lines = str.split(/\r\n|\n/);
     var parts = [];
@@ -6716,23 +6838,27 @@ More comments yet to come...
         case 'version':
           break;
         case 'rowpane':
+          if (!TableEditorSC.IsSavedEditorPane(parts, 1048576)) break;
           context.rowpanes[parts[1] - 0] = {
             first: parts[2] - 0,
-            last: parts[3] - 0,
+            last: Math.min(parts[3] - 0, parts[2] - 0 + 199),
           };
           break;
         case 'colpane':
+          if (!TableEditorSC.IsSavedEditorPane(parts, 702)) break;
           context.colpanes[parts[1] - 0] = {
             first: parts[2] - 0,
-            last: parts[3] - 0,
+            last: Math.min(parts[3] - 0, parts[2] - 0 + 49),
           };
           break;
         case 'ecell':
+          if (!/^[A-Za-z]+[1-9][0-9]*$/.test(parts[1] || '')) parts[1] = 'A1';
           editor.ecell = TableEditorSC.coordToCr(parts[1]);
           editor.ecell.coord = parts[1];
           highlights[parts[1]] = 'cursor';
           break;
         case 'range':
+          if (range.hasrange || !TableEditorSC.IsSavedEditorRange(parts)) break;
           range.hasrange = true;
           range.anchorcoord = parts[1];
           cr = TableEditorSC.coordToCr(range.anchorcoord);
@@ -6888,7 +7014,7 @@ More comments yet to come...
         if (sheetobj.hiddencolrow == 'col') {
           if (editor.ecell !== null) {
             var col = editor.ecell.col;
-            while (sheetobj.colattribs.hide[TableEditorSC.rcColname(col)] == 'yes') {
+            while (col < 702 && sheetobj.colattribs.hide[TableEditorSC.rcColname(col)] == 'yes') {
               col++;
             }
             var coord = TableEditorSC.crToCoord(col, editor.ecell.row);
@@ -7090,7 +7216,7 @@ More comments yet to come...
         ' ' +
         progress;
     }
-    sstr = (editor.ecell || {}).coord + ' &nbsp; ' + progress;
+    sstr = SocialCalc.special_chars(String((editor.ecell || {}).coord)) + ' &nbsp; ' + progress;
     if (!params.calculating && editor.context.sheetobj.attribs.needsrecalc == 'yes') {
       sstr += ' &nbsp; ' + scc.s_statusline_recalcneeded;
     }
@@ -7371,7 +7497,7 @@ More comments yet to come...
         (editor.context.colwidth[mouseinfo.mouseresizecolnum] - 2) +
         'px;">&nbsp;</td>' +
         '<td><div style="font-size:small;color:white;background-color:gray;padding:4px;">' +
-        editor.context.colwidth[mouseinfo.mouseresizecolnum] +
+        SocialCalc.special_chars(String(editor.context.colwidth[mouseinfo.mouseresizecolnum])) +
         '</div></td></tr></table>';
       var szTarget =
         sizedisplay.firstChild &&
@@ -7584,7 +7710,7 @@ More comments yet to come...
         (editor.context.rowheight[mouseinfo.mouseresizerownum] - 2) +
         'px;">&nbsp;</td>' +
         '<td><div style="font-size:small;color:white;background-color:gray;padding:4px;">' +
-        editor.context.rowheight[mouseinfo.mouseresizerownum] +
+        SocialCalc.special_chars(String(editor.context.rowheight[mouseinfo.mouseresizerownum])) +
         '</div></td></tr></table>';
       var szTarget2 =
         sizedisplay.firstChild &&
@@ -8362,7 +8488,7 @@ More comments yet to come...
       col = Math.min(editor.context.sheetobj.attribs.usermaxcol, col);
     if (editor.context.sheetobj.attribs.usermaxrow)
       row = Math.min(editor.context.sheetobj.attribs.usermaxrow, row);
-    while (editor.context.sheetobj.colattribs.hide[TableEditorSC.rcColname(col)] == 'yes') {
+    while (col < 702 && editor.context.sheetobj.colattribs.hide[TableEditorSC.rcColname(col)] == 'yes') {
       col += delta;
       if (col < 1) {
         delta = -delta;
@@ -8508,7 +8634,7 @@ More comments yet to come...
     var colindex = 0;
     var headercell;
     if (!ecell) return;
-    while (context.sheetobj.colattribs.hide[TableEditorSC.rcColname(ecell.col)] == 'yes') {
+    while (ecell.col < 702 && context.sheetobj.colattribs.hide[TableEditorSC.rcColname(ecell.col)] == 'yes') {
       ecell.col++;
     }
     while (context.sheetobj.rowattribs.hide[ecell.row] == 'yes') {
@@ -8831,10 +8957,7 @@ More comments yet to come...
         ? editor.context.rowpanes[editor.context.rowpanes.length - 2].last
         : 0;
     editor.firstscrollingcol = editor.context.colpanes[editor.context.colpanes.length - 1].first;
-    while (
-      editor.context.sheetobj.colattribs.hide[TableEditorSC.rcColname(editor.firstscrollingcol)] ==
-      'yes'
-    ) {
+    while (editor.firstscrollingcol < 702 && editor.context.sheetobj.colattribs.hide[TableEditorSC.rcColname(editor.firstscrollingcol)] == 'yes') {
       editor.firstscrollingcol++;
     }
     editor.firstscrollingcolleft =
@@ -8959,11 +9082,7 @@ More comments yet to come...
     if (context.colpanes[hplen - 1].first + hamount < hlimit) {
       hamount = -context.colpanes[hplen - 1].first + hlimit;
     }
-    while (
-      context.sheetobj.colattribs.hide[
-        TableEditorSC.rcColname(context.colpanes[hplen - 1].first + hamount)
-      ] == 'yes'
-    ) {
+    while (context.colpanes[hplen - 1].first + hamount < 702 && context.sheetobj.colattribs.hide[TableEditorSC.rcColname(context.colpanes[hplen - 1].first + hamount)] == 'yes') {
       hamount += dh;
       if (hamount < 1) {
         hamount = 0;
@@ -9517,9 +9636,7 @@ More comments yet to come...
       if (col >= editor.lastvisiblecol) break showCellHandlesBlock;
       if (row < editor.firstscrollingrow) break showCellHandlesBlock;
       if (col < editor.firstscrollingcol) break showCellHandlesBlock;
-      while (
-        editor.context.sheetobj.colattribs.hide[TableEditorSC.rcColname(col + colinc)] == 'yes'
-      ) {
+      while (col + colinc < 702 && editor.context.sheetobj.colattribs.hide[TableEditorSC.rcColname(col + colinc)] == 'yes') {
         colinc++;
       }
       while (editor.context.sheetobj.rowattribs.hide[row + rowinc] == 'yes') {
@@ -10476,7 +10593,7 @@ More comments yet to come...
       min = editor.headposition.left - sliderthickness - draginfo.offsetX;
       if (draginfo.clientX < min) draginfo.clientX = min;
       col = TableEditorSC.Lookup(draginfo.clientX + sliderthickness, editor.colpositions);
-      while (editor.context.sheetobj.colattribs.hide[TableEditorSC.rcColname(col)] == 'yes') {
+      while (col < 702 && editor.context.sheetobj.colattribs.hide[TableEditorSC.rcColname(col)] == 'yes') {
         col++;
       }
       draginfo.trackingline.style.left =
@@ -10509,7 +10626,7 @@ More comments yet to come...
       col = TableEditorSC.Lookup(draginfo.clientX + sliderthickness, editor.colpositions);
       if (col > editor.context.sheetobj.attribs.lastcol)
         col = editor.context.sheetobj.attribs.lastcol;
-      while (editor.context.sheetobj.colattribs.hide[TableEditorSC.rcColname(col)] == 'yes') {
+      while (col < 702 && editor.context.sheetobj.colattribs.hide[TableEditorSC.rcColname(col)] == 'yes') {
         col++;
       }
       editor.EditorScheduleSheetCommands('pane col ' + col, true, false);
@@ -11197,6 +11314,7 @@ More comments yet to come...
   SocialCalc.FormatNumber = {};
   const FormatNumberMut = SocialCalc.FormatNumber;
   FormatNumberMut.format_definitions = {};
+  FormatNumberMut.format_definitions_size = 0;
   FormatNumberMut.separatorchar = ',';
   FormatNumberMut.decimalchar = '.';
   FormatNumberMut.daynames = [
@@ -11546,7 +11664,7 @@ More comments yet to come...
     while ((op = thisformat.operators[oppos])) {
       operandstr = thisformat.operands[oppos++];
       if (op == scfn.commands.copy) {
-        result += operandstr === '&nbsp;' ? '&nbsp;' : SocialCalc.special_chars(operandstr);
+        result += scfn.plain_text || operandstr === '&nbsp;' ? operandstr : SocialCalc.special_chars(operandstr);
       } else if (op == scfn.commands.color) {
         textcolor = operandstr;
       } else if (op == scfn.commands.style) {
@@ -11613,7 +11731,8 @@ More comments yet to come...
           result += '-';
           negativevalue = 0;
         }
-        result += SocialCalc.special_chars(String((operandstr === '$' ? currency_char : operandstr) || operandstr));
+        operandstr = String((operandstr === '$' ? currency_char : operandstr) || operandstr);
+        result += scfn.plain_text ? operandstr : SocialCalc.special_chars(operandstr);
       } else if (op == scfn.commands.general) {
         if (value != 0) {
           var factor = Math.floor(Math.LOG10E * Math.log(value));
@@ -11754,7 +11873,7 @@ More comments yet to come...
     } else if (section == 3) {
       section = 3;
     } else {
-      return SocialCalc.special_chars(value);
+      return scfn.plain_text ? value : SocialCalc.special_chars(value);
     }
     sectioninfo = thisformat.sectioninfo[section];
     oppos = sectioninfo.sectionstart || 0;
@@ -11762,9 +11881,9 @@ More comments yet to come...
       operandstr = thisformat.operands[oppos++];
       if (op == scfn.commands.copy) {
         if (operandstr == '@') {
-          result += SocialCalc.special_chars(value);
+          result += scfn.plain_text ? value : SocialCalc.special_chars(value);
         } else {
-          result += operandstr === '&nbsp;' ? '&nbsp;' : SocialCalc.special_chars(operandstr).replace(/ /g, '&nbsp;');
+          result += operandstr === '&nbsp;' ? '&nbsp;' : (scfn.plain_text ? operandstr : SocialCalc.special_chars(operandstr)).replace(/ /g, '&nbsp;');
         }
       } else if (op == scfn.commands.color) {
         textcolor = operandstr;
@@ -11802,6 +11921,11 @@ More comments yet to come...
     var chpos;
     var ch;
     if (format_defs[format_string]) return;
+    scfn.format_definitions_size += format_string.length + 32;
+    if (scfn.format_definitions_size > 32768) {
+      for (var cached in format_defs) delete format_defs[cached];
+      scfn.format_definitions_size = format_string.length + 32;
+    }
     thisformat = {
       operators: [],
       operands: [],
@@ -12546,8 +12670,8 @@ More comments yet to come...
               value2.value = '';
             }
             cond = 0;
-            value1.value = value1.value.toLowerCase();
-            value2.value = value2.value.toLowerCase();
+            value1.value = String(value1.value).toLowerCase();
+            value2.value = String(value2.value).toLowerCase();
             if (ttext == '<') {
               cond = value1.value < value2.value ? 1 : 0;
             } else if (ttext == 'L') {
@@ -12824,7 +12948,7 @@ More comments yet to come...
     SocialCalc.Formula.Clone(operand, operand_reverse);
     operand.reverse();
     if (operand.length == 0) return;
-    if (typeof sheet.ioEventTree === 'undefined') sheet.ioEventTree = {};
+    if (typeof sheet.ioEventTree === 'undefined') sheet.ioEventTree = Object.create(null);
     if (typeof sheet.ioParameterList === 'undefined') sheet.ioParameterList = {};
     if (typeof sheet.ioTimeTriggerList === 'undefined') sheet.ioTimeTriggerList = {};
     if (typeof sheet.radioGroupList === 'undefined') sheet.radioGroupList = {};
@@ -12838,7 +12962,10 @@ More comments yet to come...
           list.push(cell.datavalue);
         }
       };
-      var triggerTimeCellId = SocialCalc.Formula.PlainCoord(operand[0].value);
+      var triggerTimeCellId =
+        operand[0].type == 'coord' || operand[0].type == 'range'
+          ? SocialCalc.Formula.PlainCoord(operand[0].value)
+          : '';
       var currentTriggerTimeList = [];
       if (operand[0].type == 'range') {
         let rangeinfo = SocialCalc.Formula.DecodeRangeParts(sheet, triggerTimeCellId);
@@ -12881,7 +13008,7 @@ More comments yet to come...
     ) {
       var triggerCellId = operand[0].value.replace(/\$/g, '');
       var PushTriggerCord = function (list, index, v) {
-        if (typeof list[index] === 'undefined') list[index] = {};
+        if (typeof list[index] === 'undefined') list[index] = Object.create(null);
         list[index][v] = v;
       };
       if (operand[0].type == 'range') {
@@ -12894,7 +13021,8 @@ More comments yet to come...
         }
       }
       if (operand[0].type == 'coord') {
-        PushTriggerCord(sheet.ioEventTree, triggerCellId, coord);
+        if (/^[A-Za-z]+[1-9][0-9]*$/.test(triggerCellId))
+          PushTriggerCord(sheet.ioEventTree, triggerCellId, coord);
       }
     }
     if (io_parameters == 'Input') {
@@ -13725,6 +13853,10 @@ More comments yet to come...
         return;
       }
       offsetvalue = Math.floor(offsetvalue.value);
+      if (!isFinite(offsetvalue)) {
+        PushOperand(offsetvalue > 0 ? 'e#REF!' : 'e#VALUE!', 0);
+        return;
+      }
       if (foperand.length) {
         rangelookup = scf.OperandAsNumber(sheet, foperand);
         if (rangelookup.type.charAt(0) != 'n') {
@@ -14596,9 +14728,9 @@ More comments yet to come...
         break;
       case 'TRIM':
         result = operand_value[1];
-        result = result.replace(/^ */, '');
-        result = result.replace(/ *$/, '');
         result = result.replace(/ +/g, ' ');
+        result = result.replace(/^ /, '');
+        result = result.replace(/ $/, '');
         resulttype = 't';
         break;
       case 'HEXCODE':
@@ -14863,7 +14995,7 @@ More comments yet to come...
         case 'FACT':
           f = 1;
           value = Math.floor(value);
-          for (; value > 0; value--) {
+          for (; value > 0 && isFinite(f); value--) {
             f *= value;
           }
           value = f;
@@ -15961,11 +16093,13 @@ More comments yet to come...
         parameters.html[1] = operand_value[3] ? '' + operand_value[3] : '1';
         if (optionSource.length > 0) {
           var options = '<option>' + optionSource.join('</option><option>') + '</option>';
-          var optionRegExp = new RegExp('<option>' + operand_value[1], '');
-          parameters.html[2] = options.replace(
-            optionRegExp,
-            '<option selected>' + operand_value[1],
-          );
+          var selectedOption = options.indexOf('<option>' + operand_value[1]);
+          parameters.html[2] =
+            selectedOption < 0
+              ? options
+              : options.slice(0, selectedOption) +
+                '<option selected>' +
+                options.slice(selectedOption + '<option>'.length);
         }
         result = operand_value[1];
         resulttype = 'ti' + fname;
@@ -17002,6 +17136,47 @@ More comments yet to come...
     }
     return result;
   };
+  FormulaMut.WildcardMatch = function (text, pattern) {
+    var end, reached, next, swap, i, p, ch, code, wild;
+    var tokens = [];
+    var reach = function (positions, position) {
+      while (positions[position] === 0) {
+        positions[position] = 1;
+        if (position == end || tokens[position] >= 0) return;
+        position++;
+      }
+    };
+    if (pattern == '*') return /^.+$/.test(text);
+    for (i = 0; i < pattern.length; i++) {
+      ch = pattern.charAt(i);
+      if (ch == '~' && /^[*?]$/.test(pattern.charAt(i + 1))) {
+        tokens.push(pattern.charCodeAt(++i));
+      } else {
+        tokens.push(ch == '*' ? -1 : ch == '?' ? -2 : pattern.charCodeAt(i));
+      }
+    }
+    end = tokens.length;
+    reached = new Uint8Array(end + 1);
+    next = new Uint8Array(end + 1);
+    reach(reached, 0);
+    for (i = 0; i < text.length; i++) {
+      code = text.charCodeAt(i);
+      wild = code != 10 && code != 13 && code != 8232 && code != 8233;
+      next.fill(0);
+      for (p = 0; p < end; p++) {
+        if (reached[p] === 0) continue;
+        if (tokens[p] == -1) {
+          if (wild) reach(next, p);
+        } else if (tokens[p] == -2 ? wild : tokens[p] == code) {
+          reach(next, p + 1);
+        }
+      }
+      swap = reached;
+      reached = next;
+      next = swap;
+    }
+    return reached[end] === 1;
+  };
   FormulaMut.TestCriteria = function (value, type, criteria) {
     var comparitor, basestring, basevalue, cond, testvalue;
     if (criteria == null) {
@@ -17116,11 +17291,7 @@ More comments yet to come...
           cond = value != basevalue.value;
           break;
         case 'regex':
-          try {
-            cond = value.search(new RegExp(basevalue.value)) != -1;
-          } catch {
-            cond = false;
-          }
+          cond = SocialCalc.Formula.WildcardMatch(value, criteria.toLowerCase());
           break;
       }
     }
@@ -17290,8 +17461,8 @@ More comments yet to come...
         }
       } else if (state == parsestate.specialvalue) {
         if (
-          str.charAt(str.length - 1) == '!' ||
-          (scf.SpecialConstants && scf.SpecialConstants[str.toUpperCase()])
+          line.charAt(i - 1) == '!' ||
+          (str.length <= 7 && scf.SpecialConstants && scf.SpecialConstants[str.toUpperCase()])
         ) {
           pushtoken(parseinfo, str.toUpperCase(), tokentype.name, 0);
           state = 0;
@@ -17466,7 +17637,9 @@ More comments yet to come...
   };
   FormulaParseMut.LookupResultType = function (type1, type2, typelookup) {
     var pos1, pos2, result;
-    var table1 = typelookup[type1];
+    var table1 = Object.prototype.hasOwnProperty.call(typelookup, type1)
+      ? typelookup[type1]
+      : undefined;
     if (!table1) {
       table1 = typelookup[type1.charAt(0) + '*'];
       if (!table1) {
@@ -17906,16 +18079,7 @@ More comments yet to come...
     }
     return FormulaRefRoot.letters[collow] + r;
   };
-  FormulaRefRoot.coordToCol = {};
-  FormulaRefRoot.coordToRow = {};
   FormulaRefRoot.coordToCr = function (cr) {
-    const cachedRow = FormulaRefRoot.coordToRow[cr];
-    if (cachedRow) {
-      return {
-        row: cachedRow,
-        col: FormulaRefRoot.coordToCol[cr],
-      };
-    }
     let c = 0;
     let r = 0;
     for (let i = 0; i < cr.length; i++) {
@@ -17930,8 +18094,6 @@ More comments yet to come...
       }
     }
     if (c > 702) c = 0;
-    FormulaRefRoot.coordToCol[cr] = c;
-    FormulaRefRoot.coordToRow[cr] = r;
     return {
       row: r,
       col: c,
@@ -17988,6 +18150,7 @@ More comments yet to come...
     const token_coord = tokentype.coord;
     const tokenOpExpansion = scf.TokenOpExpansion;
     const parseinfo = scf.ParseFormulaIntoTokens(formula);
+    if (parseinfo.some((token) => token.type === tokentype.error)) return formula;
     let updatedformula = '';
     let sheetref = false;
     for (let i = 0; i < parseinfo.length; i++) {
@@ -18064,6 +18227,7 @@ More comments yet to come...
     const token_coord = tokentype.coord;
     const tokenOpExpansion = scf.TokenOpExpansion;
     const parseinfo = scf.ParseFormulaIntoTokens(formula);
+    if (parseinfo.some((token) => token.type === tokentype.error)) return formula;
     let updatedformula = '';
     let sheetref = false;
     for (let i = 0; i < parseinfo.length; i++) {
@@ -18126,6 +18290,7 @@ More comments yet to come...
     const token_coord = tokentype.coord;
     const tokenOpExpansion = scf.TokenOpExpansion;
     const parseinfo = scf.ParseFormulaIntoTokens(formula);
+    if (parseinfo.some((token) => token.type === tokentype.error)) return formula;
     let updatedformula = '';
     let sheetref = false;
     for (let i = 0; i < parseinfo.length; i++) {
@@ -18919,7 +19084,7 @@ More comments yet to come...
     str =
       '<div style="white-space:nowrap;"><br>' +
       '#<input id="customvalue" style="width:75px;" value="' +
-      spcdata.value +
+      SocialCalc.special_chars(spcdata.value) +
       '"><br><br>' +
       '<input ' +
       style +
@@ -22244,17 +22409,17 @@ not governed by the terms of the CPAL.
     mpregex.lastIndex = pos1;
     searchinfo = mpregex.exec(str);
     if (!searchinfo || mpregex.lastIndex <= 0) return parts;
-    boundary = searchinfo[1];
+    boundary = searchinfo[1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     boundaryregex = new RegExp('^--' + boundary + '(?:\r\n|\n)', 'mg');
     boundaryregex.lastIndex = mpregex.lastIndex;
-    searchinfo = boundaryregex.exec(str);
+    searchinfo = SocialCalc.ExecAtSaveLineStart(boundaryregex, str);
     blanklineregex = /(?:\r\n|\n)(?:\r\n|\n)/gm;
     blanklineregex.lastIndex = boundaryregex.lastIndex;
     searchinfo = blanklineregex.exec(str);
     if (!searchinfo) return parts;
     start = blanklineregex.lastIndex;
     boundaryregex.lastIndex = start;
-    searchinfo = boundaryregex.exec(str);
+    searchinfo = SocialCalc.ExecAtSaveLineStart(boundaryregex, str);
     if (!searchinfo) return parts;
     ending = searchinfo.index;
     lines = str.substring(start, ending).split(/\r\n|\n/);
@@ -22278,7 +22443,7 @@ not governed by the terms of the CPAL.
         boundaryregex = new RegExp('^--' + boundary + '--$', 'mg');
       }
       boundaryregex.lastIndex = start;
-      searchinfo = boundaryregex.exec(str);
+      searchinfo = SocialCalc.ExecAtSaveLineStart(boundaryregex, str);
       if (!searchinfo) return parts;
       ending = searchinfo.index;
       parts[partlist[pnum]] = {
@@ -22646,13 +22811,13 @@ not governed by the terms of the CPAL.
       'position:absolute;z-index:500;width:300px;height:300px;left:100px;top:200px;border:1px solid black;background-color:#EEE;text-align:center;';
     editbox.id = 'socialcalc-editbox';
     editbox.innerHTML =
-      whichpart +
+      SocialCalc.special_chars(whichpart) +
       '<br><br><textarea id="socialcalc-editbox-textarea" style="width:250px;height:200px;">' +
       strtoedit +
-      '</textarea><br><br><input type=button ' +
-      "onclick=\"SocialCalc.CtrlSEditorDone ('socialcalc-editbox', '" +
-      whichpart +
-      '\');" value="OK">';
+      '</textarea><br><br><input type=button value="OK">';
+    editbox.lastChild.onclick = function () {
+      SocialCalc.CtrlSEditorDone('socialcalc-editbox', whichpart);
+    };
     document.body.appendChild(editbox);
     var ebta = document.getElementById('socialcalc-editbox-textarea');
     ebta.focus();
@@ -23052,17 +23217,17 @@ not governed by the terms of the CPAL.
     mpregex.lastIndex = pos1;
     searchinfo = mpregex.exec(str);
     if (!searchinfo || mpregex.lastIndex <= 0) return parts;
-    boundary = searchinfo[1];
+    boundary = searchinfo[1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     boundaryregex = new RegExp('^--' + boundary + '(?:\r\n|\n)', 'mg');
     boundaryregex.lastIndex = mpregex.lastIndex;
-    searchinfo = boundaryregex.exec(str);
+    searchinfo = SocialCalc.ExecAtSaveLineStart(boundaryregex, str);
     blanklineregex = /(?:\r\n|\n)(?:\r\n|\n)/gm;
     blanklineregex.lastIndex = boundaryregex.lastIndex;
     searchinfo = blanklineregex.exec(str);
     if (!searchinfo) return parts;
     start = blanklineregex.lastIndex;
     boundaryregex.lastIndex = start;
-    searchinfo = boundaryregex.exec(str);
+    searchinfo = SocialCalc.ExecAtSaveLineStart(boundaryregex, str);
     if (!searchinfo) return parts;
     ending = searchinfo.index;
     lines = str.substring(start, ending).split(/\r\n|\n/);
@@ -23086,7 +23251,7 @@ not governed by the terms of the CPAL.
         boundaryregex = new RegExp('^--' + boundary + '--$', 'mg');
       }
       boundaryregex.lastIndex = start;
-      searchinfo = boundaryregex.exec(str);
+      searchinfo = SocialCalc.ExecAtSaveLineStart(boundaryregex, str);
       if (!searchinfo) return parts;
       ending = searchinfo.index;
       parts[partlist[pnum]] = {

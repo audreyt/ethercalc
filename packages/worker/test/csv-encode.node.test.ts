@@ -77,8 +77,41 @@ describe('neutralizeCSVFormula', () => {
     expect(neutralizeCSVFormula('=HYPERLINK("http://x","go")')).toBe(
       '\'=HYPERLINK("http://x","go")',
     );
-    expect(neutralizeCSVFormula('\t=evil')).toBe("'\t=evil");
-    expect(neutralizeCSVFormula('\r=evil')).toBe("'\r=evil");
+    // Tab/CR are trimmed by comma-splitting apps (hence the leading quote)
+    // and are field/record breaks for others (hence the inner one).
+    expect(neutralizeCSVFormula('\t=evil')).toBe("'\t'=evil");
+    expect(neutralizeCSVFormula('\r=evil')).toBe("'\r'=evil");
+  });
+
+  it('prefixes triggers that a non-comma delimiter would make field-leading', () => {
+    expect(neutralizeCSVFormula("x;=cmd|' /C calc'!A0")).toBe("x;'=cmd|' /C calc'!A0");
+    expect(neutralizeCSVFormula('x\t+cmd')).toBe("x\t'+cmd");
+    expect(neutralizeCSVFormula('x|@SUM(A1)')).toBe("x|'@SUM(A1)");
+    expect(neutralizeCSVFormula('x\n=A5')).toBe("x\n'=A5");
+    expect(neutralizeCSVFormula('x\r\n-A5')).toBe("x\r\n'-A5");
+    expect(neutralizeCSVFormula('x;"=A5"')).toBe('x;"\'=A5"');
+    expect(neutralizeCSVFormula('x;\uFEFF=A5')).toBe("x;'\uFEFF=A5");
+    expect(neutralizeCSVFormula('=a;=b|=c')).toBe("'=a;'=b|'=c");
+  });
+
+  it('leaves inner plain numbers and mid-run trigger characters untouched', () => {
+    expect(neutralizeCSVFormula('x;-5;+3.14|-1e9')).toBe('x;-5;+3.14|-1e9');
+    expect(neutralizeCSVFormula('x;\uFEFF-5')).toBe('x;\uFEFF-5');
+    expect(neutralizeCSVFormula('x;-5;-y')).toBe("x;-5;'-y");
+    expect(neutralizeCSVFormula('a;b=c;d-e')).toBe('a;b=c;d-e');
+    expect(neutralizeCSVFormula('a; =b')).toBe('a; =b');
+  });
+
+  it('looks past a leading U+FEFF, which readers drop as a BOM', () => {
+    expect(neutralizeCSVFormula('\uFEFF=1+1')).toBe("'\uFEFF=1+1");
+    expect(neutralizeCSVFormula('\uFEFF\uFEFF=1+1')).toBe("'\uFEFF\uFEFF=1+1");
+    expect(neutralizeCSVFormula('\uFEFF-5+cmd')).toBe("'\uFEFF-5+cmd");
+    expect(neutralizeCSVFormula('\uFEFF\t=evil')).toBe("'\uFEFF\t'=evil");
+    // A number or plain text behind the BOM is still just that.
+    expect(neutralizeCSVFormula('\uFEFF-5')).toBe('\uFEFF-5');
+    expect(neutralizeCSVFormula('\uFEFFhello')).toBe('\uFEFFhello');
+    // Only a leading run is skipped — a trigger further in is not a lead.
+    expect(neutralizeCSVFormula('a\uFEFF=1+1')).toBe('a\uFEFF=1+1');
   });
 
   it('leaves plain numbers (including signed/scientific) untouched', () => {
@@ -134,5 +167,33 @@ describe('neutralizeCSVDocument', () => {
     // neutralization, and the embedded comma then forces RFC-4180 quoting of
     // the now-`'=`-prefixed value.
     expect(neutralizeCSVDocument('"=A,B"\n')).toBe("\"'=A,B\"\n");
+  });
+
+  it('defangs a formula hidden behind a BOM at the start of the document', () => {
+    expect(neutralizeCSVDocument("\uFEFF=cmd|'/C calc'!A0,-5\n")).toBe(
+      "'\uFEFF=cmd|'/C calc'!A0,-5\n",
+    );
+  });
+
+  it('defangs triggers that a delimiter other than the comma would expose', () => {
+    expect(neutralizeCSVDocument("x;=cmd|' /C calc'!A0\n")).toBe("x;'=cmd|' /C calc'!A0\n");
+    expect(neutralizeCSVDocument('a,"x;""=A5"""\n')).toBe('a,"x;""\'=A5"""\n');
+    expect(neutralizeCSVDocument('a,"x\n=A5"\n')).toBe('a,"x\n\'=A5"\n');
+  });
+
+  it('quotes a leading sep= directive so the document cannot pick its delimiter', () => {
+    expect(neutralizeCSVDocument('sep=;\nx;=A5\n')).toBe("'sep=;\nx;'=A5\n");
+    expect(neutralizeCSVDocument('sep=Z\nxZ=A5\n')).toBe("'sep=Z\nxZ=A5\n");
+    expect(neutralizeCSVDocument('SEP=|,b\n')).toBe("'SEP=|,b\n");
+    expect(neutralizeCSVDocument('"sep=;\nx"\n')).toBe('"\'sep=;\nx"\n');
+    expect(neutralizeCSVDocument('\ufeffsep=;\n')).toBe("'\ufeffsep=;\n");
+    expect(neutralizeCSVDocument(' sep=;\n')).toBe("' sep=;\n");
+  });
+
+  it('only treats sep= as a directive at the very start of the document', () => {
+    expect(neutralizeCSVDocument('a,sep=;\nsep=;\n')).toBe('a,sep=;\nsep=;\n');
+    expect(neutralizeCSVDocument('\nsep=;\n')).toBe('\nsep=;\n');
+    expect(neutralizeCSVDocument('my sep=;\n')).toBe('my sep=;\n');
+    expect(neutralizeCSVDocument('separator\n')).toBe('separator\n');
   });
 });

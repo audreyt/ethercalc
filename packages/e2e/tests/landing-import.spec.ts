@@ -253,6 +253,47 @@ test.describe('landing page import', () => {
     });
   });
 
+  test('imports an unparsable SpreadsheetML DateTime cell as one text cell', async ({
+    workerBase,
+    page,
+    request,
+  }) => {
+    // SheetJS types a DateTime it cannot parse as `n` but keeps the cell's
+    // raw text in `v`. Written unescaped into the line-based SocialCalc
+    // save, every line of that text would become a record of its own —
+    // here a `B1` the file never declared. C1 only widens the sheet range
+    // so the server would accept that coordinate.
+    await openLanding(workerBase, page);
+    const room = 'e2e-import-datetime-text';
+    await importNamedFile({
+      page,
+      room,
+      file: {
+        name: 'datetime-text.xls',
+        mimeType: 'application/vnd.ms-excel',
+        buffer: Buffer.from(
+          [
+            '<?xml version="1.0"?>',
+            '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"',
+            ' xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">',
+            '<Worksheet ss:Name="Sheet1"><Table><Row>',
+            '<Cell><Data ss:Type="DateTime">1\ncell:B1:t:Z</Data></Cell>',
+            '<Cell ss:Index="3"><Data ss:Type="String">end</Data></Cell>',
+            '</Row></Table></Worksheet>',
+            '</Workbook>',
+          ].join('\n'),
+          'utf8',
+        ),
+      },
+    });
+    await expectGrid({
+      workerBase,
+      request,
+      room,
+      expected: [['1\ncell:B1:t:Z', '', 'end']],
+    });
+  });
+
   test('named import accepts overwrite confirm and lands in the named room', async ({
     workerBase,
     page,

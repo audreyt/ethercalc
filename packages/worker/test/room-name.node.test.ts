@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vite-plus/test';
 
 import {
   MAX_ROOM_NAME_CHARS,
+  decodeRoom,
   encodeRoom,
   encodeRoomPath,
   generateRoomId,
@@ -101,5 +102,30 @@ describe('encodeRoom', () => {
   it('throws before deriving an unsafe room identifier', () => {
     expect(() => encodeRoom('room\u0000name')).toThrow(RangeError);
     expect(() => encodeRoom('\ud800')).toThrow(RangeError);
+  });
+});
+
+describe('decodeRoom', () => {
+  it('is the inverse of encodeRoom', () => {
+    // Includes names that already look encoded (`Q3%20budget`, `a%23b`)
+    // and the reserved characters encodeURI leaves alone.
+    const names = [
+      'some-room',
+      '=mysheet',
+      'Q3 budget',
+      'Q3%20budget',
+      '試算表',
+      'a/b#c?d',
+      'a%23b',
+      '100%',
+      ";/?:@&=+$,#-_.!~*'()",
+    ];
+    for (const raw of names) {
+      expect(decodeRoom(encodeRoom(raw)), raw).toBe(raw);
+    }
+  });
+
+  it('throws on a malformed escape, which encodeRoom never produces', () => {
+    expect(() => decodeRoom('100%')).toThrow(URIError);
   });
 });

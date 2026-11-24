@@ -43,6 +43,36 @@ class ShimClassList {
   }
 }
 
+/** Thrown by `outerHTML` once a `withHtmlLimit` render has used up its allowance. */
+export class HtmlSizeError extends Error {
+  constructor() {
+    super('HTML export exceeds resource limits');
+    this.name = 'HtmlSizeError';
+  }
+}
+
+// Serialization is synchronous, so one module-level allowance is enough: it
+// is set for the duration of a single `withHtmlLimit` call and unlimited
+// outside of it.
+let htmlCharsLeft = Infinity;
+
+/**
+ * Run a synchronous render whose nodes may serialize to about `limit`
+ * characters of markup: each node is charged for its tags, its escaped
+ * attributes and its own content. A sheet stores a style string once but
+ * writes it into every cell, so the size of the result is not bounded by the
+ * size of the sheet; an over-size render is stopped with `HtmlSizeError`
+ * instead of building the whole string first.
+ */
+export function withHtmlLimit<T>(limit: number, render: () => T): T {
+  htmlCharsLeft = limit;
+  try {
+    return render();
+  } finally {
+    htmlCharsLeft = Infinity;
+  }
+}
+
 export class ShimNode {
   tag: string;
   attrs: Record<string, string> = {};
@@ -116,6 +146,10 @@ export class ShimNode {
     const attrStr = Object.entries(this.attrs)
       .map(([k, v]) => ` ${k}="${escapeAttr(v)}"`)
       .join('');
+    // Charge this node before its children are serialized, so an over-size
+    // render stops at the first node past the allowance.
+    htmlCharsLeft -= 2 * this.tag.length + 5 + attrStr.length + (this.text ?? this.raw).length;
+    if (htmlCharsLeft < 0) throw new HtmlSizeError();
     return `<${this.tag}${attrStr}>${this.innerHTML}</${this.tag}>`;
   }
 

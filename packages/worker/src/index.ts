@@ -13,7 +13,7 @@ import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
 
 import { websocketAuthority } from './lib/csp.ts';
-import { doUnavailableResponse } from './lib/do-dispatch.ts';
+import { RoomBusyError, doUnavailableResponse } from './lib/do-dispatch.ts';
 import {
   isIndexablePath,
   ROBOTS_NOINDEX,
@@ -74,7 +74,8 @@ export function buildApp(): Hono<EtherCalcHonoEnv> {
   // (`DoUnavailableError` from `doFetch`) is a retryable 503, not a 500.
   app.onError((err, c) => {
     if (err instanceof HTTPException) return err.getResponse();
-    console.error(err);
+    // A room the live-room budget refused is load shedding, not a fault.
+    if (!(err instanceof RoomBusyError)) console.error(err);
     return doUnavailableResponse(err) ?? c.text('Internal Server Error', 500);
   });
   // APIs remain CORS-friendly for external embeds and dashboards.

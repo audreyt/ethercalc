@@ -91,6 +91,7 @@ Override defaults by exporting these before `docker compose up`:
 | `ETHERCALC_EXPIRE`    | *(unset)*   | Seconds of inactivity before a room is pruned.    |
 | `ETHERCALC_RATELIMIT` | *(unset)*   | Optional in-Worker per-IP limit (off by default). `1` or `10` = 10 req/s; `60:600` = 600 per minute. Belt-and-suspenders behind nginx — not a substitute for the proxy. |
 | `ETHERCALC_ROOM_CREATE_LIMIT` | *(unset)* | Optional per-IP cap on room creation (`POST /_`, `/_new`, `/_from`, `PUT /_/room`). `1` = 6/min. Proxy compose defaults this on. |
+| `ETHERCALC_LIVE_ROOM_LIMIT` | *(from `ulimit -n`)* | Most rooms awake at once; further ones answer `503` until a room has been idle for 20 s. Each awake room holds three file descriptors of the server process, so the entrypoint raises the soft descriptor limit to the hard one and allows 3 rooms per 10 descriptors. Raise the container's `nofile` limit rather than this value. |
 | `ETHERCALC_AUTH` | *(unset)* | Set `1` to enable passkey accounts/private rooms; requires the three trust anchors below. |
 | `ETHERCALC_RP_ID` | *(unset)* | WebAuthn RP domain, e.g. `sheets.example.com`. |
 | `ETHERCALC_RP_NAME` | *(unset)* | Passkey display name, e.g. `EtherCalc`. |

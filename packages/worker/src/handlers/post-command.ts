@@ -54,9 +54,9 @@ const XLSX_MIMES: readonly string[] = [
  *   - json-command  (JSON with a non-empty .command; forward as-is)
  *   - text-command  (plain text / text/x-socialcalc; subject to
  *                    isLoadClipboard / isMultiCascade checks in the glue)
- *   - csv-deferred  (text/csv body; the glue decodes it via SheetJS into a
- *                    loadclipboard command and feeds it through the
- *                    text-command enrichment path)
+ *   - csv-deferred  (text/csv body; the glue converts it with SocialCalc's
+ *                    CSV converter into a loadclipboard command and feeds
+ *                    it through the text-command enrichment path)
  *   - xlsx-deferred (binary workbook; the glue decodes it into a
  *                    loadclipboard+paste command pair and replies 202)
  *
@@ -93,12 +93,11 @@ export function classifyCommandBody(
     return { kind: 'empty' };
   }
 
-  // CSV body: SheetJS auto-detects CSV format via XLSX.read(bytes, {type:'array'}),
-  // producing a single-sheet workbook. Defer to the glue layer which converts
-  // it to a loadclipboard command and feeds it through the existing
+  // CSV body: defer to the glue layer, which converts it to a loadclipboard
+  // command with SocialCalc's CSV converter (never SheetJS, which would
+  // sniff the format from the bytes) and feeds it through the existing
   // text-command enrichment path (paste A2 all for cold rooms, paste A<N+1>
-  // all for existing sheets). Legacy routed text/csv through its J-library
-  // decoder the same way.
+  // all for existing sheets).
   if (ct === 'text/csv') {
     if (bodyText.length === 0) return { kind: 'empty' };
     return { kind: 'csv-deferred' };
@@ -121,4 +120,31 @@ export function classifyCommandBody(
  */
 export function joinCommands(command: string | readonly string[]): string {
   return Array.isArray(command) ? command.join('\n') : (command as string);
+}
+
+/**
+ * Longest command, in characters, that the 202 reply echoes in full. This
+ * is the command body limit (`MAX_COMMAND_BODY_BYTES` in `src/index.ts`):
+ * a command the client posted as text or JSON is never longer, so it is
+ * always echoed verbatim.
+ */
+export const MAX_COMMAND_ECHO_CHARS = 1024 * 1024;
+
+/**
+ * The `command` member of the 202 reply. Only a command generated from an
+ * import body (xlsx/ods/csv -> `loadclipboard <save>`) can outgrow
+ * {@link MAX_COMMAND_ECHO_CHARS}: the save is up to the 25 MiB import
+ * budget whatever the size of the upload (a workbook is compressed), and
+ * JSON escaping can grow it sixfold again. The reply body is held in
+ * memory until the client has read it, so such a command is echoed as its
+ * verb alone -- the client never sent the rest and has no use for it.
+ */
+export function echoCommand(
+  command: string | readonly string[],
+): string | readonly string[] {
+  const echo = (one: string): string =>
+    one.length > MAX_COMMAND_ECHO_CHARS
+      ? one.slice(0, Math.max(0, one.indexOf(' ')))
+      : one;
+  return typeof command === 'string' ? echo(command) : command.map(echo);
 }

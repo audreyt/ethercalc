@@ -8,9 +8,11 @@ import { describe, it, expect } from 'vite-plus/test';
 
 import { STORAGE_KEYS, snapshotChunkKey } from '@ethercalc/shared/storage-keys';
 import {
+  MAX_SNAPSHOT_BYTES,
   MAX_SNAPSHOT_CHUNKS,
   SNAPSHOT_CHUNK_BYTES,
   hasSnapshot,
+  isSnapshotWithinSizeLimit,
   readSnapshot,
   readSnapshotMeta,
   snapshotEntries,
@@ -241,7 +243,7 @@ describe('snapshotEntries', () => {
     const chunk = 'x'.repeat(SNAPSHOT_CHUNK_BYTES);
     const entries = snapshotEntries(chunk + chunk);
     expect(entries).toStrictEqual({
-      [STORAGE_KEYS.snapshotMeta]: { chunks: 2 },
+      [STORAGE_KEYS.snapshotMeta]: { chunks: 2, bytes: SNAPSHOT_CHUNK_BYTES * 2 },
       [snapshotChunkKey(0)]: chunk,
       [snapshotChunkKey(1)]: chunk,
     });
@@ -255,7 +257,10 @@ describe('snapshotEntries', () => {
   ] as const)('fills a chunk using the encoded width of the %s', (_label, scalar, width) => {
     const perChunk = Math.floor(SNAPSHOT_CHUNK_BYTES / width);
     const entries = snapshotEntries(scalar.repeat(perChunk + 1));
-    expect(entries[STORAGE_KEYS.snapshotMeta]).toEqual({ chunks: 2 });
+    expect(entries[STORAGE_KEYS.snapshotMeta]).toEqual({
+      chunks: 2,
+      bytes: (perChunk + 1) * width,
+    });
     expect(entries[snapshotChunkKey(0)]).toBe(scalar.repeat(perChunk));
     expect(entries[snapshotChunkKey(1)]).toBe(scalar);
   });
@@ -269,12 +274,47 @@ describe('snapshotEntries', () => {
     'bounds chunks when an invalid surrogate sequence follows: %s',
     (_label, suffix, headroom, expectedTail) => {
       const prefix = 'a'.repeat(SNAPSHOT_CHUNK_BYTES - headroom);
-      const entries = snapshotEntries(prefix + suffix);
-      expect(entries[STORAGE_KEYS.snapshotMeta]).toEqual({ chunks: 2 });
+      const input = prefix + suffix;
+      const entries = snapshotEntries(input);
+      expect(entries[STORAGE_KEYS.snapshotMeta]).toEqual({
+        chunks: 2,
+        bytes: new TextEncoder().encode(input).byteLength,
+      });
       expect(entries[snapshotChunkKey(0)]).toBe(prefix + expectedTail);
       expect(entries[snapshotChunkKey(1)]).toBe(suffix.slice(expectedTail.length));
     },
   );
+});
+
+describe('isSnapshotWithinSizeLimit', () => {
+  it('pins the ceiling to the 25 MiB request-body cap', () => {
+    expect(MAX_SNAPSHOT_BYTES).toBe(26_214_400);
+  });
+
+  it('accepts a new room up to the ceiling and refuses one byte more', () => {
+    const atLimit = 'x'.repeat(MAX_SNAPSHOT_BYTES);
+    expect(isSnapshotWithinSizeLimit(atLimit, null)).toBe(true);
+    expect(isSnapshotWithinSizeLimit(`${atLimit}x`, null)).toBe(false);
+  });
+
+  it('measures UTF-8 bytes rather than UTF-16 code units', () => {
+    // é = 2 UTF-8 bytes: half as many code units already fill the ceiling.
+    const atLimit = 'é'.repeat(MAX_SNAPSHOT_BYTES / 2);
+    expect(isSnapshotWithinSizeLimit(atLimit, null)).toBe(true);
+    expect(isSnapshotWithinSizeLimit(`${atLimit}x`, null)).toBe(false);
+  });
+
+  it('lets a room that is already over the ceiling edit or shrink, not grow', () => {
+    const stored = 'x'.repeat(MAX_SNAPSHOT_BYTES + 2);
+    expect(isSnapshotWithinSizeLimit(stored, stored)).toBe(true);
+    expect(isSnapshotWithinSizeLimit(stored.slice(1), stored)).toBe(true);
+    expect(isSnapshotWithinSizeLimit(`${stored}x`, stored)).toBe(false);
+  });
+
+  it('does not extend that allowance to a room below the ceiling', () => {
+    const next = 'x'.repeat(MAX_SNAPSHOT_BYTES + 1);
+    expect(isSnapshotWithinSizeLimit(next, 'small')).toBe(false);
+  });
 });
 
 describe('readSnapshot', () => {
@@ -368,11 +408,11 @@ describe('readSnapshotMeta', () => {
     expect(await readSnapshotMeta(fakeStorage())).toBeNull();
   });
 
-  it('returns the {chunks} object for chunked rooms', async () => {
+  it('returns the {chunks, bytes} object for chunked rooms', async () => {
     const s = fakeStorage();
     await s.put(snapshotEntries('p'.repeat(SNAPSHOT_CHUNK_BYTES * 2 + 1)));
     const meta = await readSnapshotMeta(s);
-    expect(meta).toEqual({ chunks: 3 });
+    expect(meta).toEqual({ chunks: 3, bytes: SNAPSHOT_CHUNK_BYTES * 2 + 1 });
   });
 });
 
@@ -409,12 +449,17 @@ describe('chunk metadata validation boundaries', () => {
       }
     };
     expect(await accept({ chunks: 1 })).toBe(true);
+    expect(await accept({ chunks: 1, bytes: 0 })).toBe(true);
+    expect(await accept({ chunks: 1, bytes: undefined })).toBe(true);
     expect(await accept({ chunks: MAX_SNAPSHOT_CHUNKS })).toBe(true);
     expect(await accept({ chunks: 0 })).toBe(false);
     expect(await accept({ chunks: MAX_SNAPSHOT_CHUNKS + 1 })).toBe(false);
     expect(await accept({ chunks: 1.5 })).toBe(false);
     expect(await accept({ chunks: '2' })).toBe(false);
     expect(await accept({ chunks: Number.MAX_SAFE_INTEGER + 2 })).toBe(false);
+    expect(await accept({ chunks: 1, bytes: -1 })).toBe(false);
+    expect(await accept({ chunks: 1, bytes: 1.5 })).toBe(false);
+    expect(await accept({ chunks: 1, bytes: '10' })).toBe(false);
     expect(await accept({})).toBe(false);
     expect(await accept('meta')).toBe(false);
     expect(await accept([])).toBe(false);
@@ -447,7 +492,10 @@ describe('chunk metadata validation boundaries', () => {
     const exact = 'a'.repeat(SNAPSHOT_CHUNK_BYTES);
     expect(Object.keys(snapshotEntries(exact))).toEqual([STORAGE_KEYS.snapshot]);
     const overflow = snapshotEntries(`${exact}b`);
-    expect(overflow[STORAGE_KEYS.snapshotMeta]).toEqual({ chunks: 2 });
+    expect(overflow[STORAGE_KEYS.snapshotMeta]).toEqual({
+      chunks: 2,
+      bytes: SNAPSHOT_CHUNK_BYTES + 1,
+    });
     expect(overflow[snapshotChunkKey(0)]).toBe(exact);
     expect(overflow[snapshotChunkKey(1)]).toBe('b');
     // A 4-byte code point straddling the boundary moves whole to chunk 2.

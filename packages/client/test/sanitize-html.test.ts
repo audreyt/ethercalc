@@ -3,7 +3,12 @@ import { JSDOM } from 'jsdom';
 import createDOMPurify from 'dompurify';
 
 import {
+  exceedsHtmlSanitizeCost,
   installSecurityPolicy,
+  MAX_FORMATTING_REOPEN_WORK,
+  MAX_TEXT_HTML_LENGTH,
+  MAX_TEXT_HTML_NODES,
+  MAX_UNLISTED_UNWRAP_WORK,
   TEXT_HTML_SANITIZE_CONFIG,
   type PurifyLike,
   type SecurityPolicyHost,
@@ -83,6 +88,79 @@ describe('installSecurityPolicy', () => {
   });
 });
 
+describe('exceedsHtmlSanitizeCost', () => {
+  it('accepts benign markup, comments, math, quotes, void tags, and closing tags', () => {
+    expect(exceedsHtmlSanitizeCost('plain text')).toBe(false);
+    expect(exceedsHtmlSanitizeCost('<p>a<br>b</p><!-- <x><y> --> 1 < 2 <')).toBe(false);
+    expect(exceedsHtmlSanitizeCost('<!-- unclosed')).toBe(false);
+    expect(exceedsHtmlSanitizeCost('<a href="x>y" title=\'a>b\'>ok</a><b/><b x="1')).toBe(false);
+    expect(exceedsHtmlSanitizeCost('<x>1</x></neveropened>')).toBe(false);
+    expect(exceedsHtmlSanitizeCost('<table><tr><td>1</td></tr></table>')).toBe(false);
+  });
+
+  it('caps total length and total tag count', () => {
+    expect(exceedsHtmlSanitizeCost(`<b>${'x'.repeat(MAX_TEXT_HTML_LENGTH - 3)}`)).toBe(false);
+    expect(exceedsHtmlSanitizeCost(`<b>${'x'.repeat(MAX_TEXT_HTML_LENGTH - 2)}`)).toBe(true);
+    expect(exceedsHtmlSanitizeCost('<a>'.repeat(MAX_TEXT_HTML_NODES))).toBe(false);
+    expect(exceedsHtmlSanitizeCost('<a>'.repeat(MAX_TEXT_HTML_NODES + 1))).toBe(true);
+  });
+
+  it('caps cumulative unwrap work across nested unlisted tags', () => {
+    // 32 nested <x> hits sum(0..31) = 496 <= 512; a 33rd reaches 528 > 512.
+    expect(exceedsHtmlSanitizeCost('<x>'.repeat(32))).toBe(false);
+    expect(exceedsHtmlSanitizeCost('<x>'.repeat(33))).toBe(true);
+
+    // 16 nested <x> already accrue sum(0..15) = 120 unwrap work, leaving budget for 24 <br>.
+    const innerCount = Math.floor((MAX_UNLISTED_UNWRAP_WORK - 120) / 16);
+    const fits = '<x>'.repeat(16) + '<br>'.repeat(innerCount);
+    expect(exceedsHtmlSanitizeCost(fits)).toBe(false);
+    expect(exceedsHtmlSanitizeCost(`${fits}<br>`)).toBe(true);
+  });
+
+  it('caps attribute-bearing formatting reconstruction across block boundaries', () => {
+    // Closed formatting tags reset the stack: 100-link lists and tables pass.
+    const links = `<ul>${'<li><a href="https://example.com">link</a></li>'.repeat(100)}</ul>`;
+    expect(exceedsHtmlSanitizeCost(links)).toBe(false);
+
+    // Unclosed attribute-bearing formatting tags accumulate work on block tags.
+    const count = 40;
+    const blocks = Math.floor(MAX_FORMATTING_REOPEN_WORK / count);
+    const fits = '<a href="https://x">'.repeat(count) + '<p>'.repeat(blocks);
+    expect(exceedsHtmlSanitizeCost(fits)).toBe(false);
+    expect(exceedsHtmlSanitizeCost(`${fits}<p>`)).toBe(true);
+  });
+});
+
+describe('installSecurityPolicy — cell HTML the sanitiser is not asked to handle', () => {
+  function recordingSanitizer(): { sanitize: (html: string) => string; seen: unknown[] } {
+    const seen: unknown[] = [];
+    const host: SecurityPolicyHost = {};
+    installSecurityPolicy(host, {
+      sanitize: (dirty) => {
+        seen.push(dirty);
+        return 'CLEAN';
+      },
+    });
+    return { sanitize: host.Callbacks!.securityPolicy!.sanitizeHtml!, seen };
+  }
+
+  it('shows over-budget HTML as escaped source without invoking DOMPurify', () => {
+    const { sanitize, seen } = recordingSanitizer();
+    const html = '<x y="1">&amp;</x>'.repeat(200);
+    // 200 sequential closed <x> pairs stay depth 1, total work = 200 <= 512.
+    expect(sanitize(html)).toBe('CLEAN');
+    const nested = '<x y="1">&amp;'.repeat(33);
+    expect(sanitize(nested)).toBe('&lt;x y=&quot;1&quot;&gt;&amp;amp;'.repeat(33));
+    expect(seen).toEqual([html]);
+  });
+
+  it('leaves a value that is not a string to DOMPurify', () => {
+    const { sanitize, seen } = recordingSanitizer();
+    expect(sanitize(42 as unknown as string)).toBe('CLEAN');
+    expect(seen).toEqual([42]);
+  });
+});
+
 describe('TEXT_HTML_SANITIZE_CONFIG with real DOMPurify (stored-XSS payloads)', () => {
   const host: SecurityPolicyHost = {};
   installSecurityPolicy(host, realPurify());
@@ -145,5 +223,32 @@ describe('TEXT_HTML_SANITIZE_CONFIG with real DOMPurify (stored-XSS payloads)', 
     const out = sanitize('<img src="https://x/y.png" alt="pic">');
     expect(out).toContain('src="https://x/y.png"');
     expect(out).toContain('alt="pic"');
+  });
+
+  it('still unwraps tags outside the allowlist, keeps a large table and 100-link list', () => {
+    expect(sanitize('<center><label>a</label> <tt>b</tt></center>')).toBe('a b');
+    const row = '<tr><td><b>1</b></td><td><i>2</i></td><td><a href="https://x">3</a></td></tr>';
+    const table = `<table><tbody>${row.repeat(40)}</tbody></table>`;
+    expect(sanitize(table)).toBe(table);
+    const links = `<ul>${'<li><a href="https://example.com">link</a></li>'.repeat(100)}</ul>`;
+    expect(sanitize(links)).toBe(links);
+  });
+
+  it('does not sanitise nested unknown tags around a long run of elements', () => {
+    // DOMPurify would copy the 2,500 <br> once for each of the 150 levels.
+    const html = '<x>'.repeat(150) + '<br>'.repeat(2500);
+    expect(sanitize(html)).toBe('&lt;x&gt;'.repeat(150) + '&lt;br&gt;'.repeat(2500));
+    // The same cell with a tag from the allowlist is copied once and still drawn.
+    const listed = sanitize('<b>'.repeat(150) + '<br>'.repeat(2500));
+    expect(listed.startsWith('<b>'.repeat(150) + '<br>')).toBe(true);
+    expect(listed.split('<br>')).toHaveLength(2501);
+  });
+
+  it('does not sanitise unclosed formatting tags the parser would repeat in every block', () => {
+    let open = '';
+    for (let i = 0; i < 40; i++) open += `<a href="https://x?i=${i}">`;
+    const out = sanitize(`<p>${open}${'x<p>'.repeat(40)}`);
+    expect(out.startsWith('&lt;p&gt;&lt;a href=&quot;https://x?i=0&quot;&gt;')).toBe(true);
+    expect(out).not.toContain('<');
   });
 });

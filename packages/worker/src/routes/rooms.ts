@@ -22,19 +22,20 @@
 import type { Context, Hono } from 'hono';
 import type { EtherCalcHonoEnv } from '../env.ts';
 import { upsertCronTriggers } from '../handlers/cron.ts';
-import { classifyCommandBody, joinCommands } from '../handlers/post-command.ts';
-import { classifyRequestBody } from '../handlers/rooms.ts';
+import {
+  classifyCommandBody,
+  echoCommand,
+  joinCommands,
+} from '../handlers/post-command.ts';
+import { classifyRequestBody, requestedRoom } from '../handlers/rooms.ts';
 import { MAX_SOCIALCALC_COL } from '../lib/command-limits.ts';
 import { allowsCloneNavigation } from '../lib/clone-navigation.ts';
 import { enforceTextImportLimits } from '../lib/multi-sheet-import.ts';
 import { computeAuth, verifyAuth } from '../lib/auth.ts';
-import { parseSettimetrigger } from '../lib/cron.ts';
+import { MAX_CRON_ROWS_PER_ROOM, parseSettimetrigger } from '../lib/cron.ts';
 import { doFetch } from '../lib/do-dispatch.ts';
-import {
-  enrichLoadClipboard,
-  isBannedWikiFormat,
-  isLoadClipboard,
-} from '../lib/loadclipboard.ts';
+import { enrichLoadClipboard, isBannedWikiFormat, isLoadClipboard } from '../lib/loadclipboard.ts';
+import { isViewerRequest } from '../lib/live-rooms.ts';
 import { verifyMigrateToken } from '../lib/migrate-auth.ts';
 import { parsePitrRequest } from '../lib/pitr.ts';
 import { shouldDisableRoomIndex } from '../lib/room-index-access.ts';
@@ -44,17 +45,18 @@ import {
   listRoomTimes,
   renderRoomLinks,
 } from '../lib/rooms-index.ts';
-import { getSessionPrincipal } from '../lib/session-middleware.ts';
+import { getFreshSessionPrincipal, getSessionPrincipal } from '../lib/session-middleware.ts';
+import { withSnapshotBody } from '../lib/snapshot-budget.ts';
 import type { SessionPrincipal } from '../lib/session.ts';
 import {
   assertWorkbookFormat,
+  csvToLoadClipboardCommand,
   ImportArchiveTooLargeError,
   ImportOdfUnsupportedFeatureError,
   ImportDimensionsTooLargeError,
   ImportColumnOutOfRangeError,
   ImportRowOutOfRangeError,
   ImportTooLargeError,
-  workbookToLoadClipboardCommand,
   xlsxToLoadClipboardCommands,
   xlsxToSave,
 } from '../lib/xlsx-import.ts';
@@ -101,7 +103,14 @@ async function allowsHttpMutation(
   if (key && await verifyAuth(key, encodeRoom(room), supplied)) return true;
   if (!destructive && !key) return true;
   if (!principal) return false;
-  const res = await doFetch(c.env, room, '/_do/access', {}, principal);
+  const res = await doFetch(
+    c.env,
+    room,
+    '/_do/access',
+    {},
+    principal,
+    false,
+  );
   const access: unknown = res.ok ? await res.json().catch(() => null) : null;
   return access !== null &&
     typeof access === 'object' &&
@@ -120,7 +129,14 @@ async function allowsWorkbookParentMutation(
   const supplied = c.req.query('auth') ?? '';
   if (!key || !isValidRoomName(room) ||
     !(await verifyAuth(key, encodeRoom(`=${room}`), supplied))) return false;
-  const response = await doFetch(c.env, room, '/_do/workbook-kind', {}, principal);
+  const response = await doFetch(
+    c.env,
+    room,
+    '/_do/workbook-kind',
+    {},
+    principal,
+    false,
+  );
   const result: unknown = response.ok ? await response.json().catch(() => null) : null;
   return result !== null && typeof result === 'object' &&
     'kind' in result && result.kind === 'multi';
@@ -161,6 +177,42 @@ function sizedResponse(
 
 async function readBodyBytes(request: Request): Promise<Uint8Array> {
   return new Uint8Array(await request.arrayBuffer());
+}
+
+/**
+ * `/_do/init-private` body `{"snapshot":…,"acl":…}` with the template's
+ * save piped into the `snapshot` string rather than collected here first
+ * (see the public copy route). Decodes the save as `Response.text()` does.
+ */
+function privateInitBody(
+  snapshot: ReadableStream<Uint8Array> | null,
+  acl: { owner: string; readers: string[]; writers: string[] },
+): BodyInit {
+  if (snapshot === null) return JSON.stringify({ snapshot: '', acl });
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  // A streaming decode never splits a character, so each piece can be
+  // escaped on its own.
+  const escaped = (text: string): string => JSON.stringify(text).slice(1, -1);
+  return snapshot.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('{"snapshot":"'));
+      },
+      transform(chunk, controller) {
+        controller.enqueue(
+          encoder.encode(escaped(decoder.decode(chunk, { stream: true }))),
+        );
+      },
+      flush(controller) {
+        controller.enqueue(
+          encoder.encode(
+            `${escaped(decoder.decode())}","acl":${JSON.stringify(acl)}}`,
+          ),
+        );
+      },
+    }),
+  );
 }
 
 /**
@@ -211,11 +263,12 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
   // ─── Template copy ─────────────────────────────────────────────────
   app.get('/_from/:template', async (c) => {
     const template = c.req.param('template') ?? '';
-    if (!allowsCloneNavigation(c.req.header('sec-fetch-site'))) {
+    if (!allowsCloneNavigation(c.req.header('sec-fetch-site'), c.req.header('sec-fetch-mode'))) {
       return sizedResponse('Forbidden', 403, TEXT_CT);
     }
     const principal = await getSessionPrincipal(c);
-    const accessRes = await doFetch(c.env, template, '/_do/access');
+    const viewer = isViewerRequest(c.env, c.req.raw.headers, principal);
+    const accessRes = await doFetch(c.env, template, '/_do/access', {}, null, viewer);
     if (!accessRes.ok) {
       return sizedResponse(await accessRes.text(), accessRes.status, TEXT_CT);
     }
@@ -240,6 +293,8 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
       template,
       '/_do/snapshot',
       {},
+      null,
+      viewer,
     );
     const denied = await authVerdict(snapshotRes);
     if (denied) return denied;
@@ -249,13 +304,15 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
       const newRoom = generateRoomId();
       return redirectToPublicCopy(c, newRoom);
     }
-    const snapshot = await snapshotRes.text();
+    // Pipe the template straight into the new room instead of collecting
+    // it here first: the target RoomDO has to hold the save anyway, and it
+    // bounds what is held across the isolate (lib/snapshot-budget.ts).
     const newRoom = generateRoomId();
     const putRes = await doFetch(
       c.env,
       newRoom,
       '/_do/snapshot',
-      { method: 'PUT', body: snapshot },
+      { method: 'PUT', body: snapshotRes.body },
       principal,
     );
     const putDenied = await authVerdict(putRes);
@@ -287,13 +344,13 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
       '/_do/snapshot',
       {},
       principal,
+      isViewerRequest(c.env, c.req.raw.headers, principal),
     );
     const denied = await authVerdict(snapshotRes);
     if (denied) return denied;
     // A missing template still yields a private room, matching the
     // blank-room fallback of the public copy route above.
-    const snapshot =
-      snapshotRes.status === 404 ? '' : await snapshotRes.text();
+    const snapshot = snapshotRes.status === 404 ? null : snapshotRes.body;
     const newRoom = generateRoomId();
     const initRes = await doFetch(
       c.env,
@@ -301,9 +358,10 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
       '/_do/init-private',
       {
         method: 'POST',
-        body: JSON.stringify({
-          snapshot,
-          acl: { owner: principal.uid, readers: [], writers: [] },
+        body: privateInitBody(snapshot, {
+          owner: principal.uid,
+          readers: [],
+          writers: [],
         }),
         headers: { 'Content-Type': 'application/json' },
       },
@@ -329,7 +387,14 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
     }
     const room = c.req.param('room') ?? '';
     const principal = await getSessionPrincipal(c);
-    const res = await doFetch(c.env, room, '/_do/exists', {}, principal);
+    const res = await doFetch(
+      c.env,
+      room,
+      '/_do/exists',
+      {},
+      principal,
+      isViewerRequest(c.env, c.req.raw.headers, principal),
+    );
     // A denial must propagate as a denial — folding it into the boolean
     // would leak (or fabricate) existence for rooms the caller may not
     // probe.
@@ -348,20 +413,9 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
     const ct = c.req.header('content-type') ?? '';
     // For POST `/_`, a JSON body can carry `{room?, snapshot}` — pull the
     // room out before the generic body classifier consumes it. The
-    // classifier also handles the snapshot part.
-    let userRoom: string | undefined;
-    if (ct.split(';')[0]!.trim().toLowerCase() === 'application/json') {
-      try {
-        const parsed = JSON.parse(new TextDecoder('utf-8').decode(bytes)) as {
-          room?: unknown;
-        };
-        if (typeof parsed.room === 'string' && parsed.room.length > 0) {
-          userRoom = parsed.room;
-        }
-      } catch {
-        /* fall through; classifyRequestBody handles bad JSON */
-      }
-    }
+    // classifier also handles the snapshot part. Keep no parsed value in
+    // this scope: an async handler holds its locals until the DO answers.
+    const userRoom = requestedRoom(ct, bytes);
     const room = userRoom ?? generateRoomId();
     const principal = await getSessionPrincipal(c);
     if (userRoom && !(await allowsHttpMutation(c, room, principal))) {
@@ -403,12 +457,14 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
     } else {
       snapshot = decoded.kind === 'save' ? decoded.snapshot : '';
     }
+    // Re-confirm the session right before writing if earlier DO/decode work waited.
+    const freshPrincipal = await getFreshSessionPrincipal(c);
     const putRes = await doFetch(
       c.env,
       room,
       '/_do/snapshot',
       { method: 'PUT', body: snapshot },
-      principal,
+      freshPrincipal,
     );
     const denied = await authVerdict(putRes);
     if (denied) return denied;
@@ -463,12 +519,15 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
     } else {
       snapshot = decoded.kind === 'save' ? decoded.snapshot : '';
     }
+    // Reading/decoding a slow PUT body can outlast a sign-out or short session
+    // TTL: confirm the session again before forwarding the DO snapshot write.
+    const freshPrincipal = await getFreshSessionPrincipal(c);
     const putRes = await doFetch(
       c.env,
       room,
       '/_do/snapshot',
       { method: 'PUT', body: snapshot },
-      principal,
+      freshPrincipal,
     );
     const denied = await authVerdict(putRes);
     if (denied) return denied;
@@ -488,7 +547,14 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
   app.get('/_/:room/access', async (c) => {
     const room = c.req.param('room') ?? '';
     const principal = await getSessionPrincipal(c);
-    const res = await doFetch(c.env, room, '/_do/access', {}, principal);
+    const res = await doFetch(
+      c.env,
+      room,
+      '/_do/access',
+      {},
+      principal,
+      isViewerRequest(c.env, c.req.raw.headers, principal),
+    );
     if (res.status !== 200) return res;
     const verdict: unknown = await res.json().catch(() => null);
     if (
@@ -514,7 +580,14 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
   app.get('/_/:room', async (c) => {
     const room = c.req.param('room') ?? '';
     const principal = await getSessionPrincipal(c);
-    const res = await doFetch(c.env, room, '/_do/snapshot', {}, principal);
+    const res = await doFetch(
+      c.env,
+      room,
+      '/_do/snapshot',
+      {},
+      principal,
+      isViewerRequest(c.env, c.req.raw.headers, principal),
+    );
     const denied = await authVerdict(res);
     if (denied) return denied;
     if (res.status === 404) {
@@ -525,11 +598,17 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
     // Content-Length header — fine for the common small-snapshot case,
     // but breaks for chunked snapshots over workerd's ~96 MB
     // DO-response ceiling (the DO delivers those as a streamed body;
-    // collapsing back to text would defeat the point). Browsers and
-    // curl handle chunked transfer encoding fine.
+    // collapsing back to text would defeat the point). Preserve any
+    // DO-declared Content-Length so incomplete streamed snapshots fail
+    // framing rather than looking complete to callers.
+    const headers: Record<string, string> = { 'Content-Type': TEXT_CT };
+    const contentLength = res.headers.get('Content-Length');
+    if (contentLength !== null) {
+      headers['Content-Length'] = contentLength;
+    }
     return new Response(res.body, {
       status: 200,
-      headers: { 'Content-Type': TEXT_CT },
+      headers,
     });
   });
 
@@ -542,7 +621,14 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
   app.get('/_/:room/cells', async (c) => {
     const room = c.req.param('room') ?? '';
     const principal = await getSessionPrincipal(c);
-    const res = await doFetch(c.env, room, '/_do/cells', {}, principal);
+    const res = await doFetch(
+      c.env,
+      room,
+      '/_do/cells',
+      {},
+      principal,
+      isViewerRequest(c.env, c.req.raw.headers, principal),
+    );
     const denied = await authVerdict(res);
     if (denied) return denied;
     const body = await res.text();
@@ -563,6 +649,7 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
       `/_do/cells/${encodeURIComponent(cell)}`,
       {},
       principal,
+      isViewerRequest(c.env, c.req.raw.headers, principal),
     );
     const denied = await authVerdict(res);
     if (denied) return denied;
@@ -680,7 +767,7 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
         await promise;
       }
       try {
-        const pingResponse = await doFetch(c.env, room, '/_do/ping');
+        const pingResponse = await doFetch(c.env, room, '/_do/ping', {}, null, false);
         if (!pingResponse.ok) continue;
         const pingBody = (await pingResponse.json()) as { nonce?: unknown };
         if (
@@ -700,9 +787,14 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
 
     let touchResponse: Response;
     try {
-      touchResponse = await doFetch(c.env, room, '/_do/pitr-touch', {
-        method: 'POST',
-      });
+      touchResponse = await doFetch(
+        c.env,
+        room,
+        '/_do/pitr-touch',
+        { method: 'POST' },
+        null,
+        false,
+      );
     } catch {
       return acceptedFailure('PITR restore finalization failed', 502);
     }
@@ -878,12 +970,13 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
       }
       if (commands.length > 0) {
         const cmdstr = commands.join('\n');
+        const freshPrincipal = await getFreshSessionPrincipal(c);
         const writeRes = await doFetch(
           c.env,
           room,
           '/_do/commands',
           { method: 'POST', body: cmdstr },
-          principal,
+          freshPrincipal,
         );
         const denied = await authVerdict(writeRes);
         if (denied) return denied;
@@ -891,7 +984,7 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
           return sizedResponse(await writeRes.text(), writeRes.status, TEXT_CT);
         }
       }
-      return new Response(JSON.stringify({ command: commands }), {
+      return new Response(JSON.stringify({ command: echoCommand(commands) }), {
         status: 202,
         headers: { 'Content-Type': JSON_CT },
       });
@@ -900,11 +993,12 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
       return sizedResponse('Please send command', 400, TEXT_CT);
     }
 
-    // CSV body: convert to a loadclipboard command via SheetJS (which
-    // auto-detects CSV format), then feed it through the existing
-    // text-command enrichment path — the loadclipboard enricher adds
-    // `paste A<N> all` (A2 for cold rooms, A<lastrow+1> for existing
-    // sheets). This mirrors the legacy J-library decode path.
+    // CSV body: convert to a loadclipboard command via SocialCalc's CSV
+    // converter (the parser `enforceTextImportLimits` preflights, same as
+    // PUT), then feed it through the existing text-command enrichment
+    // path — the loadclipboard enricher adds `paste A<N> all` (A2 for cold
+    // rooms, A<lastrow+1> for existing sheets). The body is never handed
+    // to SheetJS, whose format sniffing would read it as SYLK/DIF/XLS/...
     let commandKind: 'json-command' | 'text-command';
     let command: string | readonly string[];
 
@@ -912,7 +1006,7 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
       let csvCommand: string | null;
       try {
         enforceTextImportLimits(bytes, 'csv');
-        csvCommand = workbookToLoadClipboardCommand(bytes);
+        csvCommand = csvToLoadClipboardCommand(new TextDecoder('utf-8').decode(bytes));
       } catch (err) {
         if (err instanceof ImportDimensionsTooLargeError && err.columns > MAX_SOCIALCALC_COL) {
           return sizedResponse(new ImportColumnOutOfRangeError('AAA1', err.columns).message, 400, TEXT_CT);
@@ -978,9 +1072,18 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
           '/_do/snapshot',
           {},
           principal,
+          false,
         );
-        const snapshot = snapshotRes.ok ? await snapshotRes.text() : '';
-        commandOut = enrichLoadClipboard(textCmd, { rowQueryParam, snapshot });
+        if (!snapshotRes.ok) {
+          await snapshotRes.body?.cancel().catch(() => undefined);
+          commandOut = enrichLoadClipboard(textCmd, { rowQueryParam, snapshot: '' });
+        } else {
+          const readRes = await withSnapshotBody(snapshotRes, async (snapshot) => {
+            commandOut = enrichLoadClipboard(textCmd, { rowQueryParam, snapshot });
+            return new Response(null, { status: 200 });
+          });
+          if (!readRes.ok) return readRes;
+        }
       }
     }
 
@@ -988,23 +1091,52 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
     // single newline-separated batch (matches legacy
     // `cmdstr = command * '\n'`).
     const cmdstr = joinCommands(commandOut);
-    const scheduled = cmdstr.split('\n').map(parseSettimetrigger).filter((value) => value !== null);
-    if (scheduled.length > 0) {
+    // `settimetrigger` replaces a cell's whole list, so of several lines
+    // naming one cell only the last one takes effect: keep that one.
+    const scheduled = new Map<string, readonly number[]>();
+    for (const line of cmdstr.split('\n')) {
+      const parsed = parseSettimetrigger(line);
+      if (parsed) scheduled.set(parsed.cell, parsed.times);
+    }
+    if (scheduled.size > 0) {
+      // Scheduled mail spends the operator's sender address, quota and
+      // recipients, so scheduling needs the operator bearer token, like the
+      // `/_timetrigger` route that fires it. The room HMAC alone only proves
+      // edit rights, and `/_new` and the template copies hand every visitor
+      // one for a fresh room.
+      const operator = verifyMigrateToken(
+        c.env.ETHERCALC_MIGRATE_TOKEN,
+        c.req.header('Authorization') ?? null,
+      );
       const key = c.env.ETHERCALC_KEY;
-      if (!key || !(await verifyAuth(key, room, c.req.query('auth') ?? ''))) {
+      // The room HMAC signs the encoded name, which also keys the target DO.
+      if (
+        operator.kind !== 'ok' ||
+        !key ||
+        !(await verifyAuth(key, encodeRoom(room), c.req.query('auth') ?? ''))
+      ) {
         return sizedResponse('Forbidden', 403, TEXT_CT);
+      }
+      // Every cell is its own D1 batch below, and a room cannot hold more
+      // rows than this, so a longer list is refused before anything is
+      // written rather than replayed against D1 cell by cell.
+      if (scheduled.size > MAX_CRON_ROWS_PER_ROOM) {
+        return sizedResponse('Too many settimetrigger cells', 413, TEXT_CT);
       }
     }
 
     // The authorizing DO write runs FIRST — every side effect below
     // is gated on its verdict. On a
     // 401/403 the verdict propagates verbatim with ZERO side effects.
+    // Re-confirm the session right before writing if body read / snapshot
+    // enrichment waited long enough for logout or session expiry.
+    const freshPrincipal = await getFreshSessionPrincipal(c);
     const writeRes = await doFetch(
       c.env,
       room,
       '/_do/commands',
       { method: 'POST', body: cmdstr },
-      principal,
+      freshPrincipal,
     );
     const denied = await authVerdict(writeRes);
     if (denied) return denied;
@@ -1022,13 +1154,13 @@ export function registerRoomRoutes(app: Hono<EtherCalcHonoEnv>): void {
     // Multi-line dispatches (array command or newline-joined text
     // block) can carry several settimetrigger lines; we parse each.
     if (c.env.DB) {
-      for (const parsed of scheduled) {
-        await upsertCronTriggers(c.env.DB, room, parsed.cell, parsed.times);
+      for (const [cell, times] of scheduled) {
+        await upsertCronTriggers(c.env.DB, room, cell, times);
       }
     }
     // Legacy replies `@response.json 202 {command}` -- `command` is the
     // post-enrichment value (string or array), not the raw body text.
-    return new Response(JSON.stringify({ command: commandOut }), {
+    return new Response(JSON.stringify({ command: echoCommand(commandOut) }), {
       status: 202,
       headers: { 'Content-Type': JSON_CT },
     });

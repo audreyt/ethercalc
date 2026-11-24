@@ -57,8 +57,31 @@ describe('renderMarkdownTable', () => {
         ['<script>alert(1)</script>', '![track](https://evil.test/pixel)', '&lt;b&gt;'],
       ]),
     ).toBe(
-      '| &lt;script&gt;alert(1)&lt;/script&gt; | !\\[track\\](https://evil.test/pixel) | &amp;lt;b&amp;gt; |\n' +
+      '| &lt;script&gt;alert(1)&lt;/script&gt; | !\\[track\\](https:<wbr/>//evil.test/pixel) | &amp;lt;b&amp;gt; |\n' +
         '| --- | --- | --- |',
+    );
+  });
+
+  it('splits GFM autolink literals so bare URLs and addresses stay text', () => {
+    expect(
+      renderMarkdownTable([
+        ['see https://a.test/x', 'WWW.a.test', 'mailto:u@a.test', 'ask @team'],
+      ]),
+    ).toBe(
+      '| see https:<wbr/>//a.test/x | WWW<wbr/>.a.test | mailto:u<wbr/>@a.test | ask @team |\n' +
+        '| --- | --- | --- | --- |',
+    );
+  });
+
+  it('escapes emphasis marks', () => {
+    expect(renderMarkdownTable([['*a* _b_ ~~c~~']])).toBe(
+      '| \\*a\\* \\_b\\_ \\~\\~c\\~\\~ |\n| --- |',
+    );
+  });
+
+  it('encodes braces so MDX and template expressions stay text', () => {
+    expect(renderMarkdownTable([['{1+1}', '{{ site.title }}']])).toBe(
+      '| &#123;1+1&#125; | &#123;&#123; site.title &#125;&#125; |\n| --- | --- |',
     );
   });
 

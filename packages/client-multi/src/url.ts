@@ -9,7 +9,11 @@
  *     If any `?auth=` param exists and BasePath is `.`, it is bumped to `..`
  *     (the page moves one path segment deeper once we push history).
  *
- *   Index (room name) = capture from `/=<index>` URL; fallback `foobar`.
+ *   Index (room name) = capture from the `/=<index>` URL path; fallback
+ *     `foobar`. A `/=` in the query or fragment is not the workbook. The
+ *     server decodes the path before it picks this page (and its own
+ *     redirects emit `/%3D<index>`), so an encoded `=` names the same
+ *     workbook and must not reach the fallback.
  *
  *   IsReadOnly = true when `auth=0` appears anywhere in the href.
  *     When `auth` is present in the query, IsReadOnly matches only `auth=0`.
@@ -34,7 +38,7 @@ export interface MultiEnv {
 export const DEFAULT_INDEX = 'foobar';
 
 const DEV_HOST_RE = /(?:127\.0\.0\.1|localhost|\.local):8080(?!\d)/;
-const INDEX_RE = /\/=([^_][^/?]*)(?:\?.*)?$/;
+const INDEX_RE = /^[^?#]*\/(?:=|%3[Dd])([^_/?#][^/?#]*)(?:[?#].*)?$/;
 const AUTH_IN_HREF_RE = /auth=0/;
 
 /** Keep the room capability on same-origin requests and navigation links. */

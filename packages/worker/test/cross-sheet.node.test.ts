@@ -1,11 +1,14 @@
 import { describe, it, expect, vi } from 'vite-plus/test';
+import { createSpreadsheet } from '@ethercalc/socialcalc-headless';
 
 import {
   MAX_CROSS_SHEET_NAME_CHARS,
   MAX_CROSS_SHEET_REFS,
   MAX_CROSS_SHEET_SAVE_BYTES,
   MAX_CROSS_SHEET_TOTAL_CHARS,
+  applySiblingSaves,
   extractSheetSave,
+  fetchSiblingSaves,
   hydrateCrossSheetRefs,
   readBoundedResponseText,
   type CrossSheetSpreadsheet,
@@ -88,6 +91,23 @@ describe('extractSheetSave', () => {
     // mid-line `--SocialCalc…` substring, dropping the `sheet:` line.
     expect(out).toContain('sheet:c:1:r:1:needsrecalc:no');
   });
+
+  it('takes only LF (or CRLF) for a line end, not CR, U+2028 or U+2029 inside a field', () => {
+    for (const separator of ['\r', '\u2028', '\u2029']) {
+      const body =
+        'version:1.5\n' +
+        `cell:A1:vtf:e${separator}--SocialCalcSpreadsheetControlSave:0:B1\n` +
+        `cell:A2:t:x${separator}version:1.5\n` +
+        `cell:A3:t:y${separator}--SocialCalcSpreadsheetControlSave\n` +
+        'sheet:c:1:r:3\n';
+      const full = `part:sheet\n\n${body}--SocialCalcSpreadsheetControlSave\nmore:stuff`;
+      expect(extractSheetSave(full)).toBe(body);
+      const headless = `cell:A1:t:x${separator}version:1.5\ncell:A2:t:y\n`;
+      expect(extractSheetSave(headless)).toBe(headless);
+    }
+    const crlf = 'version:1.5\r\ncell:A1:v:1\r\n';
+    expect(extractSheetSave(`part:sheet\r\n\r\n${crlf}--SocialCalcSpreadsheetControlSave\r\n`)).toBe(crlf);
+  });
 });
 
 describe('readBoundedResponseText', () => {
@@ -157,7 +177,29 @@ describe('hydrateCrossSheetRefs', () => {
     expect(added).toBe(2);
     expect(ss.added).toEqual(['alpha', 'beta']);
     expect(ss.recalced).toBe(1);
-    expect(ss.resets).toBe(1);
+    expect(ss.resets).toBe(2);
+  });
+
+  it('releases the parsed siblings once the recalc has used them', async () => {
+    const events: string[] = [];
+    const ss: CrossSheetSpreadsheet = {
+      findCrossSheetRefs: () => ['alpha', 'beta'],
+      resetSiblingSheets: () => { events.push('reset'); },
+      addSiblingSheet: (name: string) => { events.push(`add ${name}`); },
+      recalc: () => { events.push('recalc'); },
+    };
+    await hydrateCrossSheetRefs(ss, async () => 'version:1.5\ncell:A1:v:1\n');
+    expect(events).toEqual(['reset', 'add alpha', 'add beta', 'recalc', 'reset']);
+  });
+
+  it('keeps the resolved values after releasing the siblings', async () => {
+    const ss = createSpreadsheet();
+    ss.executeCommand("set A1 formula 'source'!A1+1");
+    const sibling = 'version:1.5\ncell:A1:v:41\nsheet:c:1:r:1\n';
+    expect(await hydrateCrossSheetRefs(ss, async () => sibling)).toBe(1);
+    expect(ss.exportCSV()).toBe('42\n');
+    ss.recalc();
+    expect(ss.exportCSV()).not.toContain('42');
   });
 
   it('caps sibling subrequests even when a spreadsheet advertises more refs', async () => {
@@ -220,7 +262,7 @@ describe('hydrateCrossSheetRefs', () => {
   it('recalculates after a reference is no longer available', async () => {
     const ss = makeSS(['unavailable']);
     expect(await hydrateCrossSheetRefs(ss, async () => null)).toBe(0);
-    expect(ss.resets).toBe(1);
+    expect(ss.resets).toBe(2);
     expect(ss.recalced).toBe(1);
   });
 
@@ -235,11 +277,87 @@ describe('hydrateCrossSheetRefs', () => {
     expect(ss.added).toEqual(['ok']);
   });
 
+  it('skips a sibling whose save SocialCalc refuses to parse', async () => {
+    const ss = makeSS(['broken', 'ok']);
+    const addSiblingSheet = ss.addSiblingSheet;
+    ss.addSiblingSheet = (name: string, save: string) => {
+      // ParseSheetSave throws bare strings, not Error instances.
+      if (name === 'broken') throw "Unknown line type 'nosuchlinetype'";
+      addSiblingSheet(name, save);
+    };
+    const fetchSibling = vi.fn(async () => 'version:1.5\ncell:A1:v:1\n');
+    const added = await hydrateCrossSheetRefs(ss, fetchSibling);
+    expect(added).toBe(1);
+    expect(ss.added).toEqual(['ok']);
+    expect(ss.recalced).toBe(1);
+  });
+
+  it('keeps a room usable when a referenced room holds an unparseable save', async () => {
+    // Real engine: PUT stores a room's save verbatim, and each of these
+    // makes SocialCalc's ParseSheetSave throw.
+    const unparseable = [
+      'nosuchlinetype:1\n',
+      'version:1.5\ncol:A:bogus:1\n',
+      'version:1.5\nrow:1:bogus:1\n',
+      'version:1.5\ncell:A1:bogus:1\n',
+    ];
+    for (const broken of unparseable) {
+      const ss = createSpreadsheet();
+      ss.executeCommand("set A1 formula 'broken'!A1*6\nset B1 formula 'ok'!A1*6");
+      const added = await hydrateCrossSheetRefs(ss, async (name) =>
+        name === 'broken' ? broken : 'version:1.5\ncell:A1:v:7\nsheet:c:1:r:1\n',
+      );
+      expect(added).toBe(1);
+      expect(ss.exportCSV()).toBe('"Sheet unavailable: broken",42\n');
+    }
+  });
+
   it('recalculates unresolved references', async () => {
     const ss = makeSS(['all-missing']);
     const fetchSibling = vi.fn(async () => null);
     const added = await hydrateCrossSheetRefs(ss, fetchSibling);
     expect(added).toBe(0);
+    expect(ss.recalced).toBe(1);
+  });
+
+  it('leaves the spreadsheet alone until every sibling has been fetched', async () => {
+    // The fetch half runs with the DO's lock released and the apply half
+    // under it, so nothing may be reset or recalculated in between.
+    const ss = makeSS(['alpha', 'beta']);
+    const seen: Array<[number, number]> = [];
+    await hydrateCrossSheetRefs(ss, async () => {
+      seen.push([ss.resets, ss.recalced]);
+      return 'version:1.5\n';
+    });
+    expect(seen).toEqual([[0, 0], [0, 0]]);
+    expect(ss.resets).toBe(2);
+    expect(ss.recalced).toBe(1);
+  });
+
+  it('fetchSiblingSaves records every name it was asked for', async () => {
+    const saves = await fetchSiblingSaves(
+      ['self', '', 'gone', 'there'],
+      async (name) => (name === 'there' ? 'version:1.5\n' : null),
+      'self',
+    );
+    expect([...saves]).toEqual([
+      ['self', null],
+      ['', null],
+      ['gone', null],
+      ['there', 'version:1.5\n'],
+    ]);
+  });
+
+  it('applySiblingSaves loads only the sheets that are still referenced', () => {
+    const ss = makeSS([]);
+    const saves = new Map<string, string | null>([
+      ['kept', 'version:1.5\n'],
+      ['gone', null],
+      ['dropped', 'version:1.5\n'],
+    ]);
+    expect(applySiblingSaves(ss, ['kept', 'gone', 'new'], saves)).toBe(1);
+    expect(ss.added).toEqual(['kept']);
+    expect(ss.resets).toBe(2);
     expect(ss.recalced).toBe(1);
   });
 });

@@ -1,11 +1,19 @@
 import { describe, it, expect, vi } from 'vite-plus/test';
 
-import { buildEmailSender, upsertCronTriggers } from '../src/handlers/cron.ts';
+import {
+  buildEmailSender,
+  deleteCronTriggers,
+  upsertCronTriggers,
+} from '../src/handlers/cron.ts';
 import {
   BindingEmailSender,
   DisabledEmailSender,
 } from '../src/lib/email.ts';
-import { MAX_CRON_TIMES_PER_CELL } from '../src/lib/cron.ts';
+import {
+  MAX_CRON_ROWS_GLOBAL,
+  MAX_CRON_ROWS_PER_ROOM,
+  MAX_CRON_TIMES_PER_CELL,
+} from '../src/lib/cron.ts';
 import type { Env } from '../src/env.ts';
 
 /**
@@ -92,9 +100,27 @@ describe('upsertCronTriggers', () => {
     expect(batch[0]!.sql).toMatch(/DELETE FROM cron_triggers/);
     expect(batch[0]!.params).toEqual(['room1', 'A1']);
     expect(batch[1]!.sql).toMatch(/INSERT OR IGNORE INTO cron_triggers/);
-    expect(batch[1]!.params).toEqual(['room1', 'A1', 100]);
-    expect(batch[2]!.params).toEqual(['room1', 'A1', 200]);
-    expect(batch[3]!.params).toEqual(['room1', 'A1', 300]);
+    expect(batch[1]!.params).toEqual([
+      'room1',
+      'A1',
+      100,
+      MAX_CRON_ROWS_PER_ROOM,
+      MAX_CRON_ROWS_GLOBAL,
+    ]);
+    expect(batch[2]!.params).toEqual([
+      'room1',
+      'A1',
+      200,
+      MAX_CRON_ROWS_PER_ROOM,
+      MAX_CRON_ROWS_GLOBAL,
+    ]);
+    expect(batch[3]!.params).toEqual([
+      'room1',
+      'A1',
+      300,
+      MAX_CRON_ROWS_PER_ROOM,
+      MAX_CRON_ROWS_GLOBAL,
+    ]);
   });
 
   it('deduplicates repeated times before insert', async () => {
@@ -103,8 +129,20 @@ describe('upsertCronTriggers', () => {
     const batch = batchCalls[0]!;
     // delete + two inserts (deduped: 50, 60)
     expect(batch).toHaveLength(3);
-    expect(batch[1]!.params).toEqual(['r', 'B2', 50]);
-    expect(batch[2]!.params).toEqual(['r', 'B2', 60]);
+    expect(batch[1]!.params).toEqual([
+      'r',
+      'B2',
+      50,
+      MAX_CRON_ROWS_PER_ROOM,
+      MAX_CRON_ROWS_GLOBAL,
+    ]);
+    expect(batch[2]!.params).toEqual([
+      'r',
+      'B2',
+      60,
+      MAX_CRON_ROWS_PER_ROOM,
+      MAX_CRON_ROWS_GLOBAL,
+    ]);
   });
 
   it('caps direct callers below the D1 batch ceiling', async () => {
@@ -117,6 +155,18 @@ describe('upsertCronTriggers', () => {
     expect(batchCalls[0]).toHaveLength(MAX_CRON_TIMES_PER_CELL + 1);
   });
 
+  it('inserts a time only while the room and global table are below their quotas', async () => {
+    const { db, batchCalls } = makeFakeDb();
+    await upsertCronTriggers(db, 'r', 'A1', [1]);
+    const insert = batchCalls[0]![1]!;
+    // Both counts live inside the INSERT itself so they cannot be raced.
+    expect(insert.sql).toMatch(
+      /SELECT \?1, \?2, \?3 WHERE \(SELECT COUNT\(\*\) FROM cron_triggers WHERE room = \?1\) < \?4 AND \(SELECT COUNT\(\*\) FROM cron_triggers\) < \?5$/,
+    );
+    expect(insert.params[3]).toBe(MAX_CRON_ROWS_PER_ROOM);
+    expect(insert.params[4]).toBe(MAX_CRON_ROWS_GLOBAL);
+  });
+
   it('delete-only path when times is empty', async () => {
     const { db, calls, batchCalls } = makeFakeDb();
     await upsertCronTriggers(db, 'r', 'C3', []);
@@ -125,6 +175,17 @@ describe('upsertCronTriggers', () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]!.sql).toMatch(/DELETE FROM cron_triggers/);
     expect(calls[0]!.params).toEqual(['r', 'C3']);
+  });
+});
+
+describe('deleteCronTriggers', () => {
+  it('deletes all scheduled trigger rows for a deleted room', async () => {
+    const { db, calls, batchCalls } = makeFakeDb();
+    await deleteCronTriggers(db, 'gone');
+    expect(batchCalls).toHaveLength(0);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.sql).toBe('DELETE FROM cron_triggers WHERE room = ?1');
+    expect(calls[0]!.params).toEqual(['gone']);
   });
 });
 

@@ -159,11 +159,23 @@ export function createSocketIoShim(opts: SocketIoShimOptions): SocketIoShim {
 
   const sessions = new Map<string, Session>();
 
-  function ensureSession(sid: string): Session | null {
+  /** Record liveness; keeps `sessions` ordered least-recently-seen first. */
+  function touch(session: Session): void {
+    session.lastSeenAt = now();
+    sessions.delete(session.sid);
+    sessions.set(session.sid, session);
+  }
+
+  function ensureSession(sid: string): Session {
     pruneExpiredSessions();
     let session = sessions.get(sid);
     if (!session) {
-      if (sessions.size >= MAX_SOCKET_IO_SESSIONS) return null;
+      // Any unauthenticated request can create a session, so a full table
+      // must not lock newcomers out: recycle the least recently seen entry
+      // (the head of the map) instead of refusing. The cap still holds.
+      if (sessions.size >= MAX_SOCKET_IO_SESSIONS) {
+        closeSession(sessions.keys().next().value!, 'session recycled');
+      }
       session = {
         sid,
         ws: null,
@@ -175,7 +187,7 @@ export function createSocketIoShim(opts: SocketIoShimOptions): SocketIoShim {
       };
       sessions.set(sid, session);
     } else {
-      session.lastSeenAt = now();
+      touch(session);
     }
     return session;
   }
@@ -232,7 +244,7 @@ export function createSocketIoShim(opts: SocketIoShimOptions): SocketIoShim {
     // socket close is asynchronous). Without a live session there is no
     // liveness to record and no client to answer, so drop it.
     if (!session) return;
-    session.lastSeenAt = now();
+    touch(session);
     const packet = decodeFrame(raw);
     if (!packet) return;
     switch (packet.type) {
@@ -320,15 +332,7 @@ export function createSocketIoShim(opts: SocketIoShimOptions): SocketIoShim {
       // improbable) collision rather than aliasing an existing sid.
       /* istanbul ignore next -- @preserve: needs a randomUUID collision */
       while (sessions.has(sid)) sid = generateSid();
-      // `ensureSession` is the single enforcement point for the session
-      // cap — a duplicate pre-check here would be dead code.
-      const session = ensureSession(sid);
-      if (!session) {
-        return new Response('Service Unavailable', {
-          status: 503,
-          headers: { 'Retry-After': String(closeTimeoutSec) },
-        });
-      }
+      ensureSession(sid);
       const body = buildHandshakeResponse({
         sid,
         hbTimeoutSec,
@@ -348,7 +352,6 @@ export function createSocketIoShim(opts: SocketIoShimOptions): SocketIoShim {
       if (!validateSid(sid)) return null;
 
       const session = ensureSession(sid);
-      if (!session) return null;
       // Per §7.23: fresh connect-ack on both first accept and reconnects.
       // Legacy clients rely on the `.on('connect')` handler re-firing so
       // we always emit a `1::` frame, whether or not we've seen this sid
@@ -383,9 +386,6 @@ export function createSocketIoShim(opts: SocketIoShimOptions): SocketIoShim {
         return new Response('Bad Request', { status: 400 });
       }
       const session = ensureSession(sid);
-      if (!session) {
-        return new Response('Service Unavailable', { status: 503 });
-      }
 
       if (request.method === 'POST') {
         const body = await readBoundedBody(request);

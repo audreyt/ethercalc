@@ -70,6 +70,19 @@ export function encodeRoom(raw: string): string {
   return encodeURI(raw);
 }
 
+/**
+ * Inverse of `encodeRoom`. A WebSocket attachment names its room in the
+ * encoded form (the string frames carry and edit tokens sign); decode it
+ * before handing it to anything that takes the raw name — the D1 mirror,
+ * `?name=`, or a helper that calls `encodeRoom` itself. Exact for every
+ * `encodeRoom` output: `encodeURI` escapes `%` and never escapes the
+ * reserved characters `decodeURI` refuses to restore. Throws `URIError`
+ * on a malformed escape, which `encodeRoom` never produces.
+ */
+export function decodeRoom(encoded: string): string {
+  return decodeURI(encoded);
+}
+
 /** Encode one URL path segment while keeping the room's storage key unchanged. */
 export function encodeRoomPath(raw: string): string {
   if (!isValidRoomName(raw)) throw new RangeError('Invalid room name');

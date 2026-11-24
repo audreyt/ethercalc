@@ -100,7 +100,9 @@ To find out which command corresponds to which spreadsheet actions,
 perform the actions on the web interface and check the _Audit_ tab
 for the recorded commands.
 
-Command batches that would push the sheet's declared area past the 200,000-cell limit are rejected with `413`. The same limit applies over WebSocket, where the connection closes with code `1008` and reason `Command exceeds sheet limits`.
+Command batches that would push the sheet's declared area past the 200,000-cell limit are rejected with `413`. So are batches whose whole-sheet commands (`copy`, `cut`, `paste`, `pane`, row and column inserts and deletes, moves, default value formats) would together walk more than ten full sheets: ten such commands on a 200,000-cell sheet, proportionally more on a smaller one. The same limits apply over WebSocket, where the connection closes with code `1008` and reason `Command exceeds sheet limits`.
+
+Scheduling (`settimetrigger` on `POST /_/:room`) requires `Authorization: Bearer $ETHERCALC_MIGRATE_TOKEN` in addition to the room's `?auth=` HMAC. A room keeps at most 256 `settimetrigger` times across all of its cells (and at most 10,000 rows deployment-wide); times beyond that are not stored. A batch that schedules more than 256 cells is rejected with `413`.
 
 + Request (application/json)
 + Response 202
@@ -219,7 +221,14 @@ Returns a JSON representation of a single cell in the page.
 
 Returns a HTML rendering of the page. (GET `/_/{id}/html` also works.)
 
+A rendering of more than 64 MiB of markup is refused with `413`.
+
 + Response 200 (text/html)
++ Response 413 (text/plain)
+
+    ```text
+    html export exceeds resource limits
+    ```
 
 # CSV Export [/{id}.csv]
 

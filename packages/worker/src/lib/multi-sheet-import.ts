@@ -1,20 +1,28 @@
-import { MAX_MULTI_SHEETS } from '@ethercalc/shared';
+import { MAX_MULTI_SHEETS, MAX_MULTI_SHEET_TITLE_LENGTH } from '@ethercalc/shared';
+import { newSocialCalcNamespace, withSharedRecalcBudget } from '@ethercalc/socialcalc-headless';
 import * as XLSX from '@e965/xlsx';
 import { csvToSocialCalc } from './csv.ts';
-import { encodeCSV } from './csv-encode.ts';
 import { MAX_SHEET_CELLS, MAX_SOCIALCALC_COL, MAX_SOCIALCALC_ROW } from './command-limits.ts';
 import {
   countWorksheetCells,
+  countWorksheetMergedCells,
+  countWorksheetText,
   enforceImportLimit,
+  enforceImportTextLimit,
   enforceImportArchiveLimit,
   enforceActualImportArchiveLimit,
   enforceSocialCalcColumnLimit,
   ImportArchiveTooLargeError,
   ImportDimensionsTooLargeError,
   MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES,
+  readBoundedWorkbook,
+  sheetReferences,
+  textRowsToSave,
   worksheetToSave,
 } from './xlsx-import.ts';
 const TOC_HEADER: readonly string[] = ['#url', '#title'];
+export const MAX_WORKBOOK_GRID_POSITIONS = 2_000_000;
+const WORKBOOK_RECALC_MULTIPLIER = 4;
 
 /** Binary multi-sheet workbook formats (PUT replace + POST append). */
 export const WORKBOOK_IMPORT_FORMATS = ['xlsx', 'ods', 'fods'] as const;
@@ -85,24 +93,144 @@ export function getMaxSubsheetIndex(links: readonly string[], room: string): num
   return max;
 }
 
+/** Whether a UTF-16 code unit can be part of an unquoted sheet name. */
+function isBareSheetNameCode(code: number): boolean {
+  return (
+    code > 0x7f || // any non-ASCII character
+    (code >= 0x61 && code <= 0x7a) || // a-z
+    (code >= 0x41 && code <= 0x5a) || // A-Z
+    (code >= 0x30 && code <= 0x39) || // 0-9
+    code === 0x5f || // _
+    code === 0x2e // .
+  );
+}
+
+/**
+ * Where the sheet name written before the `!` at `bang` starts, or -1 when
+ * there is none. `'…'!` holds a quoted name, in which `''` is one apostrophe;
+ * otherwise the name is the run of name characters that ends at the `!`.
+ */
+function sheetReferenceStart(body: string, bang: number): number {
+  let at = bang - 1;
+  if (body[at] !== "'") {
+    while (isBareSheetNameCode(body.charCodeAt(at))) at--;
+    return at + 1 < bang ? at + 1 : -1;
+  }
+  for (at--; at >= 0; at -= 2) {
+    at = body.lastIndexOf("'", at);
+    if (at === -1 || body[at - 1] !== "'") return at;
+  }
+  return -1;
+}
+
+function sheetReferenceRewriter(
+  sheetNames: readonly string[],
+  room: string,
+  firstIndex: number,
+  priorGrowth = 0,
+): (body: string) => string {
+  if (sheetNames.length === 0) return (body) => body;
+  const targets = new Map(
+    sheetNames.map((name, offset) => [name, `'${room}.${firstIndex + offset}'!`]),
+  );
+  let growth = priorGrowth;
+  return (body) => {
+    const pieces: string[] = [];
+    let copied = body.length;
+    let bang = body.lastIndexOf('!');
+    while (bang > 0) {
+      const start = sheetReferenceStart(body, bang);
+      const target =
+        start === -1
+          ? undefined
+          : targets.get(
+              body[start] === "'"
+                ? body.slice(start + 1, bang - 1).replace(/''/g, "'")
+                : body.slice(start, bang),
+            );
+      if (target === undefined) {
+        bang = body.lastIndexOf('!', bang - 1);
+        continue;
+      }
+      growth += target.length - (bang + 1 - start);
+      if (growth > MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES) {
+        throw new ImportArchiveTooLargeError(body.length + growth);
+      }
+      pieces.push(body.slice(bang + 1, copied), target);
+      copied = start;
+      bang = body.lastIndexOf('!', start - 1);
+    }
+    pieces.push(body.slice(0, copied));
+    return pieces.reverse().join('');
+  };
+}
+
+/**
+ * Replace `<sheet>!` references with the quoted child room name in linear time.
+ */
 export function rewriteSheetReferences(
   body: string,
   sheetNames: readonly string[],
   room: string,
   firstIndex: number,
+  priorGrowth = 0,
 ): string {
-  if (sheetNames.length === 0) return body;
-  const escapedNames = sheetNames.map((name) =>
-    name.replace(/'/g, "''").replace(/(\W)/g, '\\$1'),
+  return sheetReferenceRewriter(sheetNames, room, firstIndex, priorGrowth)(body);
+}
+
+function workbookSheetsToSaves(
+  wb: XLSX.WorkBook,
+  sheetNames: readonly string[],
+  room: string,
+  firstIndex: number,
+): string[] {
+  const childRooms = new Set(sheetNames.map((_, offset) => `${room}.${firstIndex + offset}`));
+  const toChildRooms = sheetReferenceRewriter(sheetNames, room, firstIndex);
+  const importSheetRef = (formula: string): string | null => {
+    const rewritten = toChildRooms(formula);
+    const inside = sheetReferences(rewritten).every(
+      (name) => name !== null && childRooms.has(name),
+    );
+    return inside ? rewritten : null;
+  };
+  const sc = newSocialCalcNamespace();
+  let totalSaveBytes = 0;
+  return withSharedRecalcBudget(
+    sc,
+    () =>
+      sheetNames.map((name) => {
+        const save = worksheetToSave(wb.Sheets[name]!, importSheetRef, sc);
+        totalSaveBytes += save.length;
+        if (totalSaveBytes > MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES) {
+          throw new ImportArchiveTooLargeError(totalSaveBytes);
+        }
+        return save;
+      }),
+    WORKBOOK_RECALC_MULTIPLIER,
   );
-  const targets = new Map(
-    sheetNames.map((name, offset) => [name, `${room}.${firstIndex + offset}`]),
-  );
-  return body.replace(
-    new RegExp(`('?)\\b(${escapedNames.join('|')})\\1!`, 'g'),
-    (_match, _quote: string, reference: string) =>
-      `'${targets.get(reference.replace(/''/g, "'"))}'!`,
-  );
+}
+
+function enforceWorkbookSheetBudgets(
+  wb: XLSX.WorkBook,
+  names: readonly string[],
+): void {
+  let totalCells = 0;
+  let totalMergedCells = 0;
+  let totalText = 0;
+  let totalArea = 0;
+  for (const name of names) {
+    const ws = wb.Sheets[name]!;
+    totalArea += enforceSocialCalcColumnLimit(ws);
+    totalCells += countWorksheetCells(ws);
+    totalMergedCells += countWorksheetMergedCells(ws);
+    totalText += countWorksheetText(ws);
+  }
+  enforceImportLimit(totalCells);
+  enforceImportLimit(totalMergedCells);
+  enforceImportTextLimit(totalText);
+  if (totalArea > MAX_WORKBOOK_GRID_POSITIONS) {
+    throw new ImportDimensionsTooLargeError(totalArea, 1);
+  }
 }
 
 function isTextImportFormat(format: string): format is TextImportFormat {
@@ -160,7 +288,12 @@ export function enforceTextImportLimits(bytes: Uint8Array, format: 'csv' | 'tsv'
       if (fieldBytes > 1024 * 1024) checkField();
     }
   }
-  if (bytes.length > 0 && bytes[bytes.length - 1] !== 0x0a && bytes[bytes.length - 1] !== 0x0d) {
+  // A line ending inside an unterminated quote is field content, not the end
+  // of the final record, so that record still has to be counted.
+  if (
+    bytes.length > 0 &&
+    (quoted || (bytes[bytes.length - 1] !== 0x0a && bytes[bytes.length - 1] !== 0x0d))
+  ) {
     checkRow();
   }
 }
@@ -188,8 +321,8 @@ export function buildMultiSheetImport(
     throw new RangeError('firstIndex must be a positive safe integer');
   }
   enforceImportArchiveLimit(bytes);
-  enforceActualImportArchiveLimit(bytes);
-  const wb = readFn(bytes, { type: 'array', cellFormula: true });
+  const readable = enforceActualImportArchiveLimit(bytes);
+  const wb = readBoundedWorkbook(readable, readFn, { type: 'array', cellFormula: true });
   const names: string[] = Array.isArray(wb.SheetNames) ? wb.SheetNames : [];
   if (names.length > MAX_MULTI_SHEETS) {
     throw new ImportTooManySheetsError(names.length);
@@ -198,26 +331,46 @@ export function buildMultiSheetImport(
     throw new RangeError('child room namespace exhausted');
   }
 
-  let totalCells = 0;
-  for (const name of names) {
-    const ws = wb.Sheets[name];
-    if (ws) totalCells += countWorksheetCells(ws);
-  }
-  enforceImportLimit(totalCells);
+  const present = names.filter((name) => Boolean(wb.Sheets[name]));
+  enforceWorkbookSheetBudgets(wb, present);
 
+  const saves = workbookSheetsToSaves(wb, present, room, firstIndex);
   const subSheets: Array<{ subroom: string; save: string }> = [];
   const tocRows: string[][] = [[...TOC_HEADER]];
-  let idx = 0;
-  for (const name of names) {
-    const ws = wb.Sheets[name];
-    if (!ws) continue;
-    idx++;
-    const subroom = `${room}.${firstIndex + idx - 1}`;
-    subSheets.push({ subroom, save: worksheetToSave(ws) });
-    tocRows.push([`/${subroom}`, name]);
-  }
+  present.forEach((name, offset) => {
+    const subroom = `${room}.${firstIndex + offset}`;
+    subSheets.push({ subroom, save: saves[offset]! });
+    tocRows.push([`/${subroom}`, name.slice(0, MAX_MULTI_SHEET_TITLE_LENGTH)]);
+  });
 
-  return { tocSave: csvToSocialCalc(encodeCSV(tocRows)), subSheets };
+  return { tocSave: textRowsToSave(tocRows), subSheets };
+}
+
+/**
+ * The two fields `POST /_/=:room/sheet` reads from its JSON body, or `null`
+ * when they are missing or malformed; invalid JSON throws. Synchronous on
+ * purpose: the parsed body is attacker-shaped and can take 25 times its size
+ * in memory, so only these strings may outlive the call. A caller that parsed
+ * inline would keep the whole tree reachable across its `await`s.
+ */
+export function parseAddSheetRequest(
+  text: string,
+): { readonly title: string; readonly requestId: string } | null {
+  const raw: unknown = JSON.parse(text);
+  if (
+    raw === null ||
+    typeof raw !== 'object' ||
+    !('title' in raw) ||
+    typeof raw.title !== 'string' ||
+    !('requestId' in raw) ||
+    typeof raw.requestId !== 'string' ||
+    raw.requestId.length === 0 ||
+    raw.requestId.length > 128 ||
+    !/^[A-Za-z0-9_-]+$/.test(raw.requestId)
+  ) {
+    return null;
+  }
+  return { title: raw.title, requestId: raw.requestId };
 }
 
 /**
@@ -270,32 +423,22 @@ export function prepareAppendImportPlan(
   }
 
   enforceImportArchiveLimit(bytes);
-  enforceActualImportArchiveLimit(bytes);
-  const wb = readFn(bytes, { type: 'array', cellFormula: true });
+  const readable = enforceActualImportArchiveLimit(bytes);
+  const wb = readBoundedWorkbook(readable, readFn, { type: 'array', cellFormula: true });
   const names: string[] = Array.isArray(wb.SheetNames) ? wb.SheetNames : [];
   const present = names.filter((name) => Boolean(wb.Sheets[name]));
   if (present.length > MAX_MULTI_SHEETS) {
     throw new ImportTooManySheetsError(present.length);
   }
 
-  let totalCells = 0;
-  for (const name of present) {
-    const ws = wb.Sheets[name]!;
-    enforceSocialCalcColumnLimit(ws);
-    totalCells += countWorksheetCells(ws);
-  }
-  enforceImportLimit(totalCells);
+  enforceWorkbookSheetBudgets(wb, present);
 
   return {
     count: present.length,
     referenceNames: present,
     preferredTitles: present.map((name) => name),
     materializeSaves(room: string, firstIndex: number): readonly string[] {
-      return present.map((name) => {
-        const ws = wb.Sheets[name]!;
-        const save = worksheetToSave(ws);
-        return rewriteSheetReferences(save, present, room, firstIndex);
-      });
+      return workbookSheetsToSaves(wb, present, room, firstIndex);
     },
   };
 }

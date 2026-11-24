@@ -166,18 +166,14 @@ describe('handleHandshake', () => {
     expect(shim.sessionCount).toBe(1);
   });
 
-  it('bounds unclaimed handshake sessions', () => {
+  it('bounds unclaimed handshake sessions without refusing newcomers', () => {
     const { shim } = makeShim();
-    for (let index = 0; index < MAX_SOCKET_IO_SESSIONS; index++) {
+    for (let index = 0; index <= MAX_SOCKET_IO_SESSIONS; index++) {
       expect(
         shim.handleHandshake(new Request('https://x/socket.io/1/')).status,
       ).toBe(200);
     }
-    const rejected = shim.handleHandshake(
-      new Request('https://x/socket.io/1/'),
-    );
-    expect(rejected.status).toBe(503);
-    expect(rejected.headers.get('retry-after')).toBe('60');
+    expect(shim.sessionCount).toBe(MAX_SOCKET_IO_SESSIONS);
   });
 
   it('releases an unused handshake breadcrumb', async () => {
@@ -811,28 +807,77 @@ describe('frame decoding robustness', () => {
 });
 
 describe('session cap and teardown edges', () => {
-  function fillSessions(shim: ReturnType<typeof createSocketIoShim>): void {
-    for (let index = 0; index < MAX_SOCKET_IO_SESSIONS; index++) {
+  const STALE_SID = '1'.repeat(32);
+  const ACTIVE_SID = '2'.repeat(32);
+
+  function fillSessions(
+    shim: ReturnType<typeof createSocketIoShim>,
+    count = MAX_SOCKET_IO_SESSIONS,
+  ): void {
+    for (let index = 0; index < count; index++) {
       shim.handleHandshake(new Request('https://x/socket.io/1/'));
     }
   }
 
-  it('refuses a poll for an unseen sid once the session table is full', async () => {
-    const { shim } = makeShim();
-    fillSessions(shim);
-    const response = await shim.handleXhrPoll(
-      new Request(`https://x/socket.io/1/xhr-polling/${VALID_SID}`),
-      VALID_SID,
+  function poll(
+    shim: ReturnType<typeof createSocketIoShim>,
+    sid: string,
+    method = 'GET',
+  ): Promise<Response> {
+    return shim.handleXhrPoll(
+      new Request(`https://x/socket.io/1/xhr-polling/${sid}`, { method }),
+      sid,
     );
-    expect(response.status).toBe(503);
+  }
+
+  it('recycles the least recently seen session for a poll once the table is full', async () => {
+    const { shim } = makeShim();
+    expect(await (await poll(shim, ACTIVE_SID)).text()).toBe('1::');
+    expect(await (await poll(shim, STALE_SID)).text()).toBe('1::');
+    // A later request makes the older session the more recently seen one.
+    await poll(shim, ACTIVE_SID, 'POST');
+    fillSessions(shim, MAX_SOCKET_IO_SESSIONS - 2);
+
+    const response = await poll(shim, VALID_SID);
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe('1::');
+    expect(shim.sessionCount).toBe(MAX_SOCKET_IO_SESSIONS);
+    // The active session survived: its next poll parks instead of getting
+    // the fresh connect ack a recycled (unseen) sid is greeted with.
+    const parked = poll(shim, ACTIVE_SID);
+    shim.sendToClient(ACTIVE_SID, { type: 'ignore' });
+    expect(await (await parked).text()).not.toBe('1::');
+    expect(await (await poll(shim, STALE_SID)).text()).toBe('1::');
   });
 
-  it('refuses a websocket upgrade for an unseen sid once the table is full', () => {
+  it('accepts a websocket upgrade for an unseen sid once the table is full', () => {
     const { shim } = makeShim();
     fillSessions(shim);
-    expect(
-      shim.handleWebSocketUpgrade(new Request('https://x/'), VALID_SID),
-    ).toBeNull();
+    const ws = new FakeWebSocket();
+    shim.handleWebSocketUpgrade(new Request('https://x/'), VALID_SID)!.accept(ws);
+    expect(ws.sent).toEqual(['1::']);
+    expect(shim.sessionCount).toBe(MAX_SOCKET_IO_SESSIONS);
+  });
+
+  it('counts an inbound websocket frame as recent use when recycling', async () => {
+    const { shim } = makeShim();
+    const ws = new FakeWebSocket();
+    shim.handleWebSocketUpgrade(new Request('https://x/'), ACTIVE_SID)!.accept(ws);
+    await poll(shim, STALE_SID);
+    const parked = poll(shim, STALE_SID);
+    ws.emit('message', { data: encodeFrame({ type: PacketType.Heartbeat }) });
+    fillSessions(shim, MAX_SOCKET_IO_SESSIONS - 2);
+
+    // The idle poller goes first and is told to tear down…
+    fillSessions(shim, 1);
+    expect(ws.closed).toBeNull();
+    expect(await (await parked).text()).toBe(
+      encodeFrame({ type: PacketType.Disconnect }),
+    );
+    // …and only then the socket that spoke after it.
+    fillSessions(shim, 1);
+    expect(ws.closed).toEqual({ code: 1000, reason: 'session recycled' });
+    expect(shim.sessionCount).toBe(MAX_SOCKET_IO_SESSIONS);
   });
 
   it('ignores frames that arrive after the session is torn down', () => {
@@ -910,15 +955,6 @@ describe('error responses and close reasons are stable', () => {
     );
     expect(notFound.status).toBe(404);
     expect(await notFound.text()).toBe('Not Found');
-
-    for (let index = 0; index < MAX_SOCKET_IO_SESSIONS; index++) {
-      shim.handleHandshake(new Request('https://x/socket.io/1/'));
-    }
-    const full = shim.handleHandshake(new Request('https://x/socket.io/1/'));
-    expect(full.status).toBe(503);
-    expect(await full.text()).toBe('Service Unavailable');
-    // Clients back off for the advertised close timeout, not immediately.
-    expect(full.headers.get('Retry-After')).toBe('60');
   });
 
   it('pins the xhr-poll rejection bodies and content types', async () => {

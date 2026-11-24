@@ -2,6 +2,8 @@ import { Hono } from 'hono';
 import { describe, expect, it, vi } from 'vite-plus/test';
 
 import {
+  SESSION_REVERIFY_TTL_MS,
+  getFreshSessionPrincipal,
   getSessionPrincipal,
   type EtherCalcHonoEnv,
 } from '../src/lib/session-middleware.ts';
@@ -115,6 +117,138 @@ describe('session middleware', () => {
       second: 'uid-cached',
     });
     expect(verifier).toHaveBeenCalledOnce();
+  });
+
+  it('asks AuthDO again once the memo is stale and remembers a session that has ended', async () => {
+    const t0 = 1_700_000_000_000;
+    vi.useFakeTimers({ now: t0 });
+    try {
+      const verifier = vi
+        .fn()
+        .mockResolvedValueOnce({ uid: 'uid-owner', exp: Number.MAX_SAFE_INTEGER })
+        .mockResolvedValueOnce({ uid: 'uid-owner', exp: Number.MAX_SAFE_INTEGER })
+        .mockResolvedValue(null);
+      const app = new Hono<EtherCalcHonoEnv>();
+      app.get('/who', async (context) => {
+        const first = await getSessionPrincipal(context, verifier);
+        vi.setSystemTime(t0 + SESSION_REVERIFY_TTL_MS - 1);
+        const fresh = await getFreshSessionPrincipal(context, verifier);
+        const asked = verifier.mock.calls.length;
+        vi.setSystemTime(t0 + SESSION_REVERIFY_TTL_MS);
+        const live = await getFreshSessionPrincipal(context, verifier);
+        // Signed out while the route waited: it must stop using the uid.
+        vi.setSystemTime(t0 + 2 * SESSION_REVERIFY_TTL_MS);
+        const ended = await getFreshSessionPrincipal(context, verifier);
+        const memo = await getSessionPrincipal(context, verifier);
+        // Anonymous now, so there is nothing left to ask AuthDO about.
+        vi.setSystemTime(t0 + 3 * SESSION_REVERIFY_TTL_MS);
+        const after = await getFreshSessionPrincipal(context, verifier);
+        return context.json({
+          first: first?.uid ?? null,
+          fresh: fresh?.uid ?? null,
+          asked,
+          live: live?.uid ?? null,
+          ended,
+          memo,
+          after,
+        });
+      });
+
+      const response = await app.fetch(
+        new Request('https://test.local/who', {
+          headers: { Cookie: '__Host-ec_sess=signed.token' },
+        }),
+        env,
+      );
+
+      expect(await response.json()).toEqual({
+        first: 'uid-owner',
+        fresh: 'uid-owner',
+        asked: 1,
+        live: 'uid-owner',
+        ended: null,
+        memo: null,
+        after: null,
+      });
+      expect(verifier).toHaveBeenCalledTimes(3);
+      expect(verifier).toHaveBeenLastCalledWith(env, 'signed.token');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('asks AuthDO again as soon as the memoized session has expired', async () => {
+    const t0 = 1_700_000_000_000;
+    vi.useFakeTimers({ now: t0 });
+    try {
+      const verifier = vi
+        .fn()
+        .mockResolvedValueOnce({ uid: 'uid-owner', exp: t0 + 1_000 })
+        .mockResolvedValue(null);
+      const app = new Hono<EtherCalcHonoEnv>();
+      app.get('/who', async (context) => {
+        const first = await getSessionPrincipal(context, verifier);
+        vi.setSystemTime(t0 + 999);
+        const live = await getFreshSessionPrincipal(context, verifier);
+        vi.setSystemTime(t0 + 1_000);
+        const expired = await getFreshSessionPrincipal(context, verifier);
+        return context.json({
+          first: first?.uid ?? null,
+          live: live?.uid ?? null,
+          expired,
+        });
+      });
+
+      const response = await app.fetch(
+        new Request('https://test.local/who', {
+          headers: { Cookie: '__Host-ec_sess=signed.token' },
+        }),
+        env,
+      );
+
+      expect(await response.json()).toEqual({
+        first: 'uid-owner',
+        live: 'uid-owner',
+        expired: null,
+      });
+      expect(verifier).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a fresh principal resolves an unresolved one and fails closed', async () => {
+    const app = new Hono<EtherCalcHonoEnv>();
+    app.get('/default', async (context) =>
+      context.json({ principal: await getFreshSessionPrincipal(context) }),
+    );
+    const failing = vi.fn().mockRejectedValue(new Error('AuthDO unavailable'));
+    app.get('/failing', async (context) =>
+      context.json({
+        principal: await getFreshSessionPrincipal(context, failing),
+        memo: await getSessionPrincipal(context, failing),
+      }),
+    );
+    const headers = { Cookie: '__Host-ec_sess=signed.token' };
+
+    // No AUTH binding: the default AuthDO verifier refuses the cookie.
+    const byDefault = await app.fetch(
+      new Request('https://test.local/default', { headers }),
+      env,
+    );
+    const whenFailing = await app.fetch(
+      new Request('https://test.local/failing', { headers }),
+      env,
+    );
+    const withoutCookie = await app.fetch(
+      new Request('https://test.local/failing'),
+      env,
+    );
+
+    expect(await byDefault.json()).toEqual({ principal: null });
+    expect(await withoutCookie.json()).toEqual({ principal: null, memo: null });
+    expect(await whenFailing.json()).toEqual({ principal: null, memo: null });
+    expect(failing).toHaveBeenCalledOnce();
   });
 
   it('does not contact AuthDO for health or static asset requests', async () => {

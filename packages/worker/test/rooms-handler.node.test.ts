@@ -5,7 +5,7 @@ vi.mock('@ethercalc/socialcalc-headless', () => ({
   csvToSave: (csv: string) => `SC:${csv}`,
 }));
 
-import { classifyRequestBody } from '../src/handlers/rooms.ts';
+import { classifyRequestBody, requestedRoom } from '../src/handlers/rooms.ts';
 import { MAX_SHEET_CELLS } from '../src/lib/command-limits.ts';
 import { ImportDimensionsTooLargeError } from '../src/lib/xlsx-import.ts';
 
@@ -104,5 +104,25 @@ describe('classifyRequestBody', () => {
       enc('not a real xlsx'),
     );
     expect(out).toEqual({ kind: 'xlsx-deferred' });
+  });
+});
+
+describe('requestedRoom', () => {
+  it('returns the room a JSON body names', () => {
+    expect(
+      requestedRoom('Application/JSON; charset=utf-8', enc('{"room":"r","snapshot":"s"}')),
+    ).toBe('r');
+  });
+
+  it.each(['{"room":""}', '{"room":1}', '{}', '[]', 'null', '{not json'])(
+    'returns undefined for %s',
+    (text) => {
+      expect(requestedRoom('application/json', enc(text))).toBeUndefined();
+    },
+  );
+
+  it('ignores other content types', () => {
+    expect(requestedRoom('text/plain', enc('{"room":"r"}'))).toBeUndefined();
+    expect(requestedRoom('', enc('{"room":"r"}'))).toBeUndefined();
   });
 });

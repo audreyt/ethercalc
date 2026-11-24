@@ -21,14 +21,50 @@ export const MAX_LEGACY_SHEET_CELLS = MAX_SHEET_CELLS * 2;
 /** Maximum statically visible range work in one command batch. */
 export const MAX_COMMAND_RANGE_WORK = MAX_SHEET_CELLS;
 
+/** Maximum entries whole-sheet verbs may walk in one command batch. */
+export const MAX_COMMAND_SHEET_WORK = MAX_SHEET_CELLS * 10;
+
+/**
+ * Verbs SocialCalc runs over the whole sheet whatever their target. `copy`
+ * and `cut` canonicalize it to serialize a clipboard that carries every named
+ * range and row setting, which each `paste` parses again; structural edits
+ * shift the declared area and rewrite every formula and named range; `pane`
+ * steps over every hidden row.
+ */
+const WHOLE_SHEET_VERBS: ReadonlySet<string> = new Set([
+  'copy',
+  'cut',
+  'paste',
+  'insertrow',
+  'insertcol',
+  'deleterow',
+  'deletecol',
+  'movepaste',
+  'moveinsert',
+  'pane',
+]);
+
 export interface SheetDimensions {
   readonly rows: number;
   readonly columns: number;
+  /**
+   * Entries the sheet already holds: cells, named ranges, saved area. The
+   * declared rows and columns alone do not bound them, because
+   * `set sheet lastrow 1` shrinks the area without dropping anything.
+   */
+  readonly entries?: number;
 }
 
 interface MutableDimensions {
   rows: number;
   columns: number;
+}
+
+interface SheetWork {
+  /** High-water mark of the entries one whole-sheet verb walks. */
+  size: number;
+  /** Whole-sheet work charged so far. */
+  value: number;
 }
 
 interface TargetAnalysis {
@@ -65,14 +101,27 @@ function isValidDimension(value: string, maximum: number): boolean {
   );
 }
 
-function initialDimension(value: number | undefined, maximum: number): number {
-  return Number.isSafeInteger(value) && value !== undefined && value >= 1 && value <= maximum
+/**
+ * Seed the model from the size the sheet reports. A size past the addressable
+ * maximum is kept, not reset: `paste` and `movepaste` at ZZ leave `lastcol`
+ * beyond 702, SocialCalc's loops run to that value, and judging the sheet as
+ * one column wide would multiply the area limit by it.
+ */
+function initialDimension(value: number | undefined): number {
+  return Number.isSafeInteger(value) && value !== undefined && value >= 1
     ? value
     : 1;
 }
 
-/** Parse one command target without looking at payload text or formulas. */
-function analyzeTarget(rawTarget: string): TargetAnalysis | null {
+/**
+ * Parse one command target without looking at payload text or formulas.
+ * `unrecognized` is the result for a token that is not a coordinate; only a
+ * verb whose SocialCalc branch ignores such a token may pass OPAQUE_TARGET.
+ */
+function analyzeTarget(
+  rawTarget: string,
+  unrecognized: TargetAnalysis | null = null,
+): TargetAnalysis | null {
   const target = rawTarget.replaceAll('$', '');
   const cells =
     /^([a-z]{1,2})([0-9]+)(?::([a-z]{1,2})([0-9]+))?$/i.exec(target);
@@ -140,9 +189,11 @@ function analyzeTarget(rawTarget: string): TargetAnalysis | null {
     };
   }
 
-  // Named ranges are resolved by SocialCalc. They cannot be bounded lexically,
-  // but rejecting them would break a documented spreadsheet feature.
-  return OPAQUE_TARGET;
+  // SocialCalc does not resolve defined names in command targets. ParseRange
+  // and coordToCr read whatever token they are given and skip characters they
+  // do not know, so `A1:@ZZ1048576` executes as A1:ZZ1048576. A target that
+  // cannot be bounded lexically is therefore never free.
+  return unrecognized;
 }
 
 function declaredArea(dimensions: MutableDimensions): number {
@@ -184,17 +235,31 @@ function chargeTarget(
   return true;
 }
 
+function chargeSheet(sheet: SheetWork): boolean {
+  if (sheet.size > MAX_COMMAND_SHEET_WORK - sheet.value) return false;
+  sheet.value += sheet.size;
+  return true;
+}
+
+/**
+ * Range declared by a `loadclipboard` save, read the way `paste` reads it:
+ * decodeFromSave, then ParseSheetSave's last `copiedfrom:<from>:<to>` record
+ * handed to ParseRange, which takes a missing range as A1:A1.
+ */
 function parseClipboardRange(line: string): TargetAnalysis | null {
-  const matches = line.matchAll(
-    /copiedfrom(?::|\\c)([a-z]{1,2}[0-9]+)(?::|\\c)([a-z]{1,2}[0-9]+)/gi,
-  );
-  let found: TargetAnalysis | null = null;
-  for (const match of matches) {
-    const parsed = analyzeTarget(`${match[1]}:${match[2]}`);
-    if (parsed === null || parsed.work > MAX_SHEET_CELLS) return null;
-    found = parsed;
+  const save = line
+    .slice(line.indexOf(' ') + 1)
+    .replace(/\\c/g, ':')
+    .replace(/\\n/g, '\n')
+    .replace(/\\b/g, '\\');
+  let found = analyzeTarget('A1');
+  for (const record of save.split(/\r\n|\n/)) {
+    const parts = record.split(':');
+    if (parts[0] !== 'copiedfrom') continue;
+    found = analyzeTarget(`${parts[1]}:${parts[2]}`);
+    if (found === null || found.work > MAX_SHEET_CELLS) return null;
   }
-  return found ?? OPAQUE_TARGET;
+  return found;
 }
 
 function boundedStructuralSheet(dimensions: MutableDimensions): boolean {
@@ -212,10 +277,14 @@ export function isCommandBatchWithinLimits(
   initial?: SheetDimensions,
 ): boolean {
   const dimensions: MutableDimensions = {
-    rows: initialDimension(initial?.rows, MAX_SOCIALCALC_ROW),
-    columns: initialDimension(initial?.columns, MAX_SOCIALCALC_COL),
+    rows: initialDimension(initial?.rows),
+    columns: initialDimension(initial?.columns),
   };
   const counter = { value: 0 };
+  const sheet: SheetWork = {
+    size: Math.max(initial?.entries ?? 0, declaredArea(dimensions)),
+    value: 0,
+  };
   let clipboard: TargetAnalysis | null = null;
 
   for (const line of command.split('\n')) {
@@ -228,8 +297,12 @@ export function isCommandBatchWithinLimits(
     const third = parts[3] ?? '';
     switch (verb) {
       case 'set': {
-        if (first.toLowerCase() === 'sheet') {
-          const dimension = second.toLowerCase();
+        // SocialCalc matches `sheet` and its attribute names exactly. Any
+        // other spelling is a no-op there, so folding case here would let
+        // `set sheet LASTROW 1` shrink this model while the engine keeps its
+        // real dimensions.
+        if (first === 'sheet') {
+          const dimension = second;
           if (dimension === 'lastrow') {
             if (!isValidDimension(third, MAX_SOCIALCALC_ROW)) return false;
             if (
@@ -262,15 +335,26 @@ export function isCommandBatchWithinLimits(
             !isValidDimension(third, MAX_SOCIALCALC_COL)
           ) {
             return false;
+          } else if (
+            // A default value format drops every cell's cached display string.
+            (dimension === 'defaulttextvalueformat' ||
+              dimension === 'defaultnontextvalueformat') &&
+            !chargeSheet(sheet)
+          ) {
+            return false;
           }
           break;
         }
-        const target = analyzeTarget(first);
-        if (target === null || !chargeTarget(target, counter)) return false;
-        // Only cell targets use ParseRange and mutate lastrow/lastcol in this
-        // branch. Whole-row height/hide and whole-column width/hide do not.
-        if (/^[a-z]{1,2}[0-9]/i.test(first.replaceAll('$', '')) &&
-            !expandForTarget(dimensions, target)) {
+        // SocialCalc's `set` matches its target against anchored coordinate
+        // patterns and ignores any other token, so unrecognized names cost 0.
+        // Whole-row height/hide and whole-column width/hide still extend the
+        // canonical sheet rectangle and count toward sheet dimensions.
+        const target = analyzeTarget(first, OPAQUE_TARGET);
+        if (
+          target === null ||
+          !chargeTarget(target, counter) ||
+          !expandForTarget(dimensions, target)
+        ) {
           return false;
         }
         break;
@@ -290,23 +374,31 @@ export function isCommandBatchWithinLimits(
         // A server clipboard is isolate-global and non-durable. Requiring the
         // same batch to establish it prevents cross-room/stale clipboard use.
         if (destination === null || clipboard === null) return false;
-        if (!chargeTarget(clipboard, counter)) return false;
-        if (destination.startRow > 0 && clipboard.endRow > 0) {
-          const rows = Math.abs(clipboard.endRow - clipboard.startRow) + 1;
-          const columns =
-            Math.abs(clipboard.endColumn - clipboard.startColumn) + 1;
-          if (
-            !setDimensions(
-              dimensions,
-              Math.max(dimensions.rows, destination.startRow + rows - 1),
-              Math.max(
-                dimensions.columns,
-                destination.startColumn + columns - 1,
-              ),
-            )
-          ) {
-            return false;
-          }
+        // SocialCalc tiles the clipboard over the destination range: on each
+        // axis it writes the larger of the two extents, starting from the
+        // destination's first corner.
+        const rows = Math.max(
+          Math.abs(destination.endRow - destination.startRow) + 1,
+          Math.abs(clipboard.endRow - clipboard.startRow) + 1,
+        );
+        const columns = Math.max(
+          Math.abs(destination.endColumn - destination.startColumn) + 1,
+          Math.abs(clipboard.endColumn - clipboard.startColumn) + 1,
+        );
+        if (!chargeTarget({ ...destination, work: rows * columns }, counter)) {
+          return false;
+        }
+        if (
+          !setDimensions(
+            dimensions,
+            Math.max(dimensions.rows, destination.startRow + rows - 1),
+            Math.max(
+              dimensions.columns,
+              destination.startColumn + columns - 1,
+            ),
+          )
+        ) {
+          return false;
         }
         break;
       }
@@ -340,8 +432,14 @@ export function isCommandBatchWithinLimits(
       case 'deleterow': {
         if (!boundedStructuralSheet(dimensions)) return false;
         const target = analyzeTarget(first);
+        // SocialCalc shifts by `start - end - 1` without ordering the corners,
+        // so a reversed range adds rows/columns (`deleterow A284:A1` inserts
+        // 282) that this model never sees.
         if (
           target === null ||
+          (verb === 'deleterow'
+            ? target.endRow < target.startRow
+            : target.endColumn < target.startColumn) ||
           !chargeTarget(target, counter) ||
           !expandForTarget(dimensions, target)
         ) {
@@ -355,7 +453,9 @@ export function isCommandBatchWithinLimits(
           return false;
         }
         const source = analyzeTarget(first);
-        const destination = analyzeTarget(second);
+        // The destination goes to coordToCr alone, which skips the colon and
+        // reads a range as one coordinate (`A1:Z9` is AZ19).
+        const destination = second.includes(':') ? null : analyzeTarget(second);
         if (
           source === null ||
           destination === null ||
@@ -364,31 +464,26 @@ export function isCommandBatchWithinLimits(
         ) {
           return false;
         }
-        if (destination.startRow > 0 && source.endRow > 0) {
-          const rows = Math.abs(source.endRow - source.startRow) + 1;
-          const columns = Math.abs(source.endColumn - source.startColumn) + 1;
-          if (
-            !setDimensions(
-              dimensions,
-              Math.max(dimensions.rows, destination.startRow + rows - 1),
-              Math.max(
-                dimensions.columns,
-                destination.startColumn + columns - 1,
-              ),
-            )
-          ) {
-            return false;
-          }
+        const rows = Math.abs(source.endRow - source.startRow) + 1;
+        const columns = Math.abs(source.endColumn - source.startColumn) + 1;
+        if (
+          !setDimensions(
+            dimensions,
+            Math.max(dimensions.rows, destination.startRow + rows - 1),
+            Math.max(
+              dimensions.columns,
+              destination.startColumn + columns - 1,
+            ),
+          )
+        ) {
+          return false;
         }
         if (
           verb === 'moveinsert' &&
-          source.endRow > 0 &&
           !setDimensions(
             dimensions,
-            dimensions.rows + Math.abs(source.endRow - source.startRow) + 1,
-            dimensions.columns +
-              Math.abs(source.endColumn - source.startColumn) +
-              1,
+            dimensions.rows + rows,
+            dimensions.columns + columns,
           )
         ) {
           return false;
@@ -410,8 +505,24 @@ export function isCommandBatchWithinLimits(
         ) {
           return false;
         }
+        // `sort` goes on with up to four `<column> <direction>` pairs and
+        // looks up the cell `<column><row>` for every row of the range, so a
+        // key that is not a column multiplies its own length by the rows.
+        if (verb === 'sort') {
+          const keys = line.split(' ', 10);
+          for (let index = 2; index < keys.length; index += 2) {
+            if (!/^[a-z]{0,2}$/i.test(keys[index]!)) return false;
+          }
+        }
+        // SocialCalc's `cut` saves its range to the clipboard before erasing
+        // it, exactly as `copy` does, so a later `paste` expands this range.
+        if (verb === 'cut') clipboard = target;
         break;
       }
+      case 'name':
+        // A definition is one more entry for structural verbs to rewrite.
+        sheet.size += 1;
+        break;
       case 'pane': {
         const kind = first.toLowerCase();
         if (
@@ -431,9 +542,27 @@ export function isCommandBatchWithinLimits(
       default:
         break;
     }
+    // Measure the sheet at its high-water mark: a later `set sheet lastrow 1`
+    // shrinks the declared area but keeps every cell the batch has stored.
+    sheet.size = Math.max(sheet.size, declaredArea(dimensions));
+    if (WHOLE_SHEET_VERBS.has(verb) && !chargeSheet(sheet)) return false;
   }
 
   return true;
+}
+
+/**
+ * Bound the rectangle SocialCalc is about to serialize. Canonicalization
+ * derives it from the sheet's content rather than from the declared
+ * dimensions the command preflight tracks, and the save visits every
+ * coordinate in it, so this has to hold before the save is created rather
+ * than be discovered from its `sheet:c:r` line afterwards.
+ */
+export function isSaveAreaWithinLimits(
+  dimensions: SheetDimensions,
+  maxArea = MAX_SHEET_CELLS,
+): boolean {
+  return dimensions.rows * dimensions.columns <= maxArea;
 }
 
 /**
@@ -450,15 +579,23 @@ export function isSnapshotWithinSheetLimits(
   let declaredColumns = 1;
   let actualRows = 1;
   let actualColumns = 1;
-  for (const record of snapshot.matchAll(/(?:^|[\r\n])(cell|row|col|sheet):([^\r\n]*)/g)) {
+  // Records are the lines SocialCalc's ParseSheetSave sees: it splits on LF
+  // or CRLF only, so a bare CR inside a field stays on the same record line.
+  for (const record of snapshot.matchAll(/(?:^|\n)(cell|row|col|sheet):([^\n]*)/g)) {
     const kind = record[1]!;
-    const payload = record[2]!;
+    const payload = record[2]!.replace(/\r$/, '');
     if (kind === 'sheet') {
       // A bare `sheet:` is the default for an empty sheet. Other sheet
       // records must begin with the canonical c/r pair.
       if (payload.length === 0) continue;
       const dimensions = /^c:(\d+):r:(\d+)(?::|$)/.exec(payload);
       if (dimensions === null) return false;
+      // The rest of the line is name:value fields as well, and a later `c`
+      // or `r` replaces the leading one, so that pair must be the only one.
+      const fields = payload.split(':');
+      for (let i = 4; i < fields.length; i += 2) {
+        if (fields[i] === 'c' || fields[i] === 'r') return false;
+      }
       const columns = Number(dimensions[1]);
       const rows = Number(dimensions[2]);
       if (
@@ -501,10 +638,25 @@ export function isSnapshotWithinSheetLimits(
   return actualRows <= declaredRows && actualColumns <= declaredColumns;
 }
 
+/**
+ * Entries a stored save gives whole-sheet verbs to walk: its declared area,
+ * which contains every saved cell and row or column setting, plus its named
+ * ranges.
+ */
+export function storedSnapshotEntries(snapshot: string): number {
+  let area = 0;
+  let names = 0;
+  for (const match of snapshot.matchAll(/(?:^|[\r\n])(?:name:|sheet:c:(\d+):r:(\d+)(?=[:\r\n]|$))/g)) {
+    if (match[1] === undefined) names += 1;
+    else area = Math.max(area, Number(match[1]) * Number(match[2]));
+  }
+  return area + names;
+}
+
 /** Permit existing oversized rooms to keep editing within their old area. */
 export function storedSnapshotAreaLimit(snapshot: string): number {
   let area = MAX_SHEET_CELLS;
-  for (const match of snapshot.matchAll(/(?:^|[\r\n])sheet:c:(\d+):r:(\d+)(?=[:\r\n]|$)/g)) {
+  for (const match of snapshot.matchAll(/(?:^|\n)sheet:c:(\d+):r:(\d+)(?=[:\r\n]|$)/g)) {
     area = Math.max(MAX_SHEET_CELLS, Math.min(Number(match[1]) * Number(match[2]), MAX_LEGACY_SHEET_CELLS));
   }
   return area;

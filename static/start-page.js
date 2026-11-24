@@ -95,9 +95,30 @@ var sheet_to_socialcalc = (function() {
 
         var scencode = function(s) { return s.replace(/\\/g, "\\b").replace(/:/g, "\\c").replace(/\n/g,"\\n"); }
 
-        var scsave = function scsave(ws) {
+        // A sheet name in a stored formula is a room name, and anyone may write
+        // the public room of that name, so no name is stored as the file has it.
+        // `refs` maps each sheet title of the workbook to what replaces `title!`
+        // (Sheet1!A1, 'My Sheet'!A1). Returns null when any other `!` is left:
+        // a link to another file ('[1]Prices'!B2), a sheet that is gone, a `!`
+        // in a string. SocialCalc closes a string at either kind of quote, so
+        // what is one to the file's author need not be one to it. The caller
+        // then keeps the cell's value.
+        var sheetref = /"[^"]*"|'((?:[^']|'')*)'(!?)|([\w.\[\]\u0080-\uffff]+)(!?)/g;
+        var rewriterefs = function(f, refs) {
+                if (!refs) return f;
+                var written = 0;
+                var out = f.replace(sheetref, function(match, quoted, quotedref, bare, bareref) {
+                        var name = quotedref ? quoted.replace(/''/g, "'") : bareref ? bare : null;
+                        if(name === null || !Object.prototype.hasOwnProperty.call(refs, name)) return match;
+                        if(refs[name]) written++;
+                        return refs[name];
+                });
+                return out.split('!').length - 1 === written ? out : null;
+        };
+
+        var scsave = function scsave(ws, refs) {
                 if(!ws || !ws['!ref']) return "";
-                var o = [], oo = [], cell, coord;
+                var o = [], oo = [], cell, coord, formula;
                 var r = XLSX.utils.decode_range(ws['!ref']);
                 for(var R = r.s.r; R <= r.e.r; ++R) {
                         for(var C = r.s.c; C <= r.e.c; ++C) {
@@ -107,11 +128,16 @@ var sheet_to_socialcalc = (function() {
                                 switch(cell.t) {
                                         case 's': case 'str': oo.push(scencode(cell.v)); break;
                                         case 'n':
-                                                if(cell.f) {
+                                                // SheetJS keeps the text of a date it cannot parse (SpreadsheetML
+                                                // DateTime) under the type of a number. Only a real number may go
+                                                // into the line-based save unescaped; anything else is text.
+                                                if(typeof cell.v !== 'number') { oo.push(scencode(String(cell.v))); break; }
+                                                formula = cell.f ? rewriterefs(cell.f, refs) : null;
+                                                if(formula) {
                                                         oo[2] = 'vtf';
                                                         oo.push('n');
                                                         oo.push(cell.v);
-                                                        oo.push(scencode(cell.f));
+                                                        oo.push(scencode(formula));
                                                 }
                                                 else {
                                                         oo[2] = 'v';
@@ -127,8 +153,8 @@ var sheet_to_socialcalc = (function() {
                 return o.join("\n");
         };
 
-        return function socialcalcify(ws, opts) {
-                return [header, sep, meta, sep, scsave(ws), end].join("\n");
+        return function socialcalcify(ws, refs) {
+                return [header, sep, meta, sep, scsave(ws, refs), end].join("\n");
         };
 })();
 
@@ -163,27 +189,24 @@ function putSheet(id, contentType, body) {
 
 function process_wb(wb, id) {
 	var output = "";
+	// Sheet title -> what replaces `title!` in the formulas of this workbook.
+	var refs = Object.create(null);
 	if (wb.SheetNames.length > 1) {
 		var toc = '"#url","#title"\n';
 		var names = [].concat(wb.SheetNames);
 		var idx = 0;
-		var res = [];
-		var sheetsToIdx = {}
-		for (var i = 0; i < names.length; i++) {
-			sheetsToIdx[names[i]] = i+1;
-			res.push(names[i].replace(/'/g, "''").replace(/(\W)/g, '\\$1'));
+		// Each sheet becomes the room id.N. A room name holding a quote or
+		// `!` cannot be written as a reference.
+		if (!/['"!]/.test(id)) {
+			for (var i = 0; i < names.length; i++) refs[names[i]] = "'" + id + '.' + (i+1) + "'!";
 		}
 		var step = function(){
 			if (names.length) {
 				idx++;
 				var k = names.shift();
-				output = sheet_to_socialcalc(wb.Sheets[k]);
+				output = sheet_to_socialcalc(wb.Sheets[k], refs);
 				toc += '"/' + id + '.' + idx + '",';
 				toc += '"' + k.replace(/"/g, '""') + '"\n';
-				output = output.replace(
-					RegExp('(\'?)\\b(' + res.join('|') + ')\\1!', 'g'),
-					function(_0, _1, ref){ return "'" + id + "." + sheetsToIdx[ref.replace(/''/g, "'")] + "'!"; }
-				);
 				putSheet(id + '.' + idx, 'text/x-socialcalc; charset=utf-8', output).then(step, importFailed);
 			}
 			else {
@@ -195,7 +218,9 @@ function process_wb(wb, id) {
 		step();
 		return;
 	}
-	output = sheet_to_socialcalc(wb.Sheets[wb.SheetNames[0]]);
+	// A lone sheet that names itself means its own cells.
+	refs[wb.SheetNames[0]] = '';
+	output = sheet_to_socialcalc(wb.Sheets[wb.SheetNames[0]], refs);
 	putSheet(id, 'text/x-socialcalc; charset=utf-8', output).then(function () {
 		location.href = './' + id;
 	}, importFailed);

@@ -91,3 +91,29 @@ export function classifyRequestBody(
     snapshot: new TextDecoder('utf-8').decode(bytes),
   };
 }
+
+/**
+ * The room a JSON `POST /_` body names, if any. Synchronous on purpose: the
+ * parsed body is attacker-shaped and can take 25 times its size in memory, so
+ * only the name may outlive this call. A caller that parsed inline would keep
+ * the whole tree reachable across its `await`s, once per request in flight.
+ */
+export function requestedRoom(
+  contentType: string,
+  bytes: Uint8Array,
+): string | undefined {
+  if (contentType.split(';')[0]!.trim().toLowerCase() !== 'application/json') {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(new TextDecoder('utf-8').decode(bytes)) as {
+      room?: unknown;
+    };
+    return typeof parsed.room === 'string' && parsed.room.length > 0
+      ? parsed.room
+      : undefined;
+  } catch {
+    // `classifyRequestBody` handles bad JSON.
+    return undefined;
+  }
+}

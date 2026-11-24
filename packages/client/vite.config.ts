@@ -21,7 +21,11 @@ export default defineConfig({
     rollupOptions: {
       input: resolve(__dirname, 'src/boot.ts'),
       output: {
-        format: 'esm',
+        // Side-effect-only entry with no imports/exports: wrapping in an IIFE
+        // keeps minified top-level locals (such as `$`) from shadowing globals
+        // like jQuery `window.$` when executed as a classic script, while
+        // working identically under `<script type="module">`.
+        format: 'iife',
         entryFileNames: 'player.js',
         chunkFileNames: 'player-[name].js',
         assetFileNames: (asset) =>

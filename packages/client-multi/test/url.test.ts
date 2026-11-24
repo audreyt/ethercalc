@@ -32,6 +32,27 @@ describe('parseMultiEnv', () => {
     expect(env.index).toBe('foo');
   });
 
+  it('reads a percent-encoded `=` as the workbook prefix, as the server does', () => {
+    expect(parseMultiEnv(loc('https://x.com/%3Droom123')).index).toBe('room123');
+    expect(parseMultiEnv(loc('https://x.com/base/%3droom123#tab')).index).toBe('room123');
+    // What the server's own `/=foo/edit` redirect lands on.
+    const env = parseMultiEnv(loc('https://x.com/%3Dfoo?auth=%3Dfoo', '?auth=%3Dfoo'));
+    expect(env.index).toBe('foo');
+    expect(env.pushStatePath).toBe('./=foo/edit?auth=%3Dfoo');
+    // The legacy `_` rule still applies, and a doubly encoded `=` is not a workbook.
+    expect(parseMultiEnv(loc('https://x.com/%3D_new')).index).toBe(DEFAULT_INDEX);
+    expect(parseMultiEnv(loc('https://x.com/%253Droom123')).index).toBe(DEFAULT_INDEX);
+  });
+
+  it('does not take the index from the query or fragment', () => {
+    expect(parseMultiEnv(loc('https://x.com/=room#/')).index).toBe('room');
+    expect(parseMultiEnv(loc('https://x.com/=room#/=other')).index).toBe('room');
+    expect(parseMultiEnv(loc('https://x.com/=room?x=/=other', '?x=/=other')).index).toBe('room');
+    expect(parseMultiEnv(loc('https://x.com/%3Droom?x=/=other', '?x=/=other')).index).toBe('room');
+    expect(parseMultiEnv(loc('https://x.com/a?next=/=b', '?next=/=b')).index).toBe(DEFAULT_INDEX);
+    expect(parseMultiEnv(loc('https://x.com/a#/%3Db')).index).toBe(DEFAULT_INDEX);
+  });
+
   it('flips basePath to http://127.0.0.1:8000 on localhost:8080 in Vite dev', () => {
     const env = parseMultiEnv(loc('http://localhost:8080/=r'), undefined, true);
     expect(env.basePath).toBe('http://127.0.0.1:8000');

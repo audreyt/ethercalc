@@ -30,6 +30,21 @@ describe('session cookies', () => {
     }
   });
 
+  it('trims only cookie whitespace, so look-alike names stay distinct', () => {
+    expect(parseSessionCookie('a=1;\t __Host-ec_sess \t= own\t ')).toBe('own');
+    expect(parseSessionCookie(' \t=own; \t')).toBeNull();
+    for (const space of ['\u00a0', '\u2000', '\u2028', '\u3000', '\ufeff', '\v', '\f']) {
+      // A name a sibling subdomain can set: it does not start with `__Host-`.
+      expect(parseSessionCookie(`${space}__Host-ec_sess=planted`)).toBeNull();
+      expect(parseSessionCookie(`__Host-ec_sess${space}=planted`)).toBeNull();
+      expect(
+        parseSessionCookie(`__Host-ec_sess=own; ${space}__Host-ec_sess=planted`),
+      ).toBe('own');
+      expect(parseSessionCookie(`__Host-ec_sess=${space}own`)).toBeNull();
+      expect(parseSessionCookie(`__Host-ec_sess=own${space}`)).toBeNull();
+    }
+  });
+
   it('builds a host-only secure HttpOnly session cookie', () => {
     expect(createSessionCookie('token.payload.signature')).toBe(
       '__Host-ec_sess=token.payload.signature; Path=/; Max-Age=2592000; HttpOnly; Secure; SameSite=Lax',

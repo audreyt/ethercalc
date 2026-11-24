@@ -47,7 +47,10 @@ export type WsFactory = (url: string) => WsLike;
 // ─── Public options / return shape ────────────────────────────────────────
 
 export interface CreateWsAdapterOptions {
-  /** Spreadsheet id. */
+  /**
+   * Spreadsheet id in the page's spelling: the room's segment of the page
+   * URL (`SocialCalc._room`), percent-escapes included.
+   */
   room: string;
   /** Presence identifier (randomly generated per tab in the legacy client). */
   user: string;
@@ -146,6 +149,32 @@ export function toWsUrl(raw: string): string {
 }
 
 /**
+ * The room as it goes into the socket URL. `room` is the page's own URL
+ * segment, and the server decodes `/_ws/:room` exactly as it decoded that
+ * segment for the page, so its percent-escapes are passed through as they
+ * stand: escaping them again names another room (`%2561bc` is the room
+ * literally called `%61bc`, not `abc`). Only characters a browser never
+ * leaves bare in a path segment are escaped.
+ */
+function roomSegment(room: string): string {
+  return room.replace(/[^\w.~!$&'()*+,;=:@%|[\]^-]+/g, encodeURIComponent);
+}
+
+/**
+ * The room's label inside frames: `encodeURI` of the decoded name. The
+ * server binds that form to the socket (`encodeRoom`) and drops every frame
+ * labelled otherwise, whatever spelling the page URL used.
+ */
+function wireRoomLabel(room: string): string {
+  try {
+    return encodeURI(decodeURIComponent(room));
+  } catch {
+    // A stray `%` (`/50%`) does not decode; the server keeps it literally.
+    return encodeURI(room);
+  }
+}
+
+/**
  * Build `wss://<base>/_ws/:room?user=…&auth=…` from the options.
  * Exported so the main entry can display it for debugging.
  */
@@ -159,9 +188,7 @@ export function buildWsEndpoint(opts: {
   const params = new URLSearchParams();
   params.set('user', opts.user);
   if (opts.auth !== undefined) params.set('auth', opts.auth);
-  // `:room` is URL-encoded — matches the server-side `encodeURI` rule
-  // (AGENTS.md §7 item 15).
-  return `${base}/_ws/${encodeURIComponent(opts.room)}?${params.toString()}`;
+  return `${base}/_ws/${roomSegment(opts.room)}?${params.toString()}`;
 }
 
 /**
@@ -188,6 +215,10 @@ export function createWsAdapter(opts: CreateWsAdapterOptions): WsAdapter {
   const setTimeoutFn = opts.setTimeoutFn ?? defaultSetTimeout;
   const clearTimeoutFn = opts.clearTimeoutFn ?? defaultClearTimeout;
   const endpoint = buildWsEndpoint(opts);
+  // Frames carry the server's label for the room; the page keeps its own
+  // spelling (`SocialCalc._room`), so the two are translated here.
+  const wireRoom = wireRoomLabel(opts.room);
+  const wireOpts = { room: wireRoom, user: opts.user, auth: opts.auth };
 
   const subscribers = new Set<(msg: ServerMessage) => void>();
   const queue: string[] = [];
@@ -244,6 +275,10 @@ export function createWsAdapter(opts: CreateWsAdapterOptions): WsAdapter {
     if (typeof ev.data !== 'string') return;
     const parsed = parseServerMessage(ev.data);
     if (!parsed) return;
+    // `recalc` is exempt: its room names a cross-sheet reference.
+    if (parsed.type !== 'recalc' && 'room' in parsed && parsed.room === wireRoom) {
+      parsed.room = opts.room;
+    }
     for (const cb of subscribers) cb(parsed);
   }
 
@@ -273,7 +308,7 @@ export function createWsAdapter(opts: CreateWsAdapterOptions): WsAdapter {
 
   function broadcast(type: string, data: Record<string, unknown> = {}): void {
     if (closed) return;
-    const enveloped = envelope(type, data, opts);
+    const enveloped = envelope(type, data, wireOpts);
     // Cast is safe — we accept arbitrary `type` strings at the broadcast
     // surface for parity (`ask.ecell` is emitted internally and isn't in the
     // `ClientMessage` union), but the JSON shape is a superset.

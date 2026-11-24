@@ -1,4 +1,4 @@
-import { type FC } from 'react';
+import { useRef, type FC } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import type { FoldrRow } from '../Foldr.ts';
 import { withAuthQuery } from '../url.ts';
@@ -21,14 +21,25 @@ export interface TabBarProps {
 }
 
 /**
+ * How many sheets keep a running editor at once: the visible one and the
+ * most recently shown before it. Each frame is a complete single-sheet
+ * client (its own document, grid and WebSocket), while the rows are text
+ * that every writer of the workbook controls, so the number of frames must
+ * not follow the number of rows.
+ */
+export const MAX_MOUNTED_SHEETS = 8;
+
+/**
  * Renders a Radix Tabs.Root with one tab per TOC row, plus one TabsContent
- * (iframe) per row. `activeIndex` drives `value`; clicking a trigger bubbles
- * back through `onChange(nextIndex)`.
+ * per row. `activeIndex` drives `value`; clicking a trigger bubbles back
+ * through `onChange(nextIndex)`.
  *
  * The iframe-per-tab rendering mirrors the legacy `Nav`/`Frame` component
- * split: every tab's frame is kept mounted (Radix TabsContent has
- * `forceMount` for this so the iframe state survives tab switches), and
- * `visibility: hidden` in CSS hides non-active ones.
+ * split, except that a row gets its frame only once its tab is shown. From
+ * then on the frame is kept mounted (Radix TabsContent has `forceMount` for
+ * this so the iframe state survives tab switches) while it is among the
+ * `MAX_MOUNTED_SHEETS` most recently shown, and `visibility: hidden` in CSS
+ * hides non-active ones.
  */
 export const TabBar: FC<TabBarProps> = ({
   rows,
@@ -45,6 +56,17 @@ export const TabBar: FC<TabBarProps> = ({
 }) => {
   const clampedIndex = Math.max(0, Math.min(activeIndex, rows.length - 1));
   const activeValue = `tab-${clampedIndex}`;
+
+  // Links of the rows that have a frame, most recently shown first. Rows that
+  // left the TOC drop out; `shown` is empty only when there are no rows.
+  // Updating it here is idempotent, so a repeated render (StrictMode) is safe.
+  const mounted = useRef<readonly string[]>([]);
+  const links = rows.map((row) => row.link);
+  const shown = links.slice(clampedIndex, clampedIndex + 1);
+  mounted.current = [
+    ...shown,
+    ...mounted.current.filter((link) => links.includes(link) && !shown.includes(link)),
+  ].slice(0, MAX_MOUNTED_SHEETS);
 
   return (
     <Tabs.Root
@@ -86,15 +108,17 @@ export const TabBar: FC<TabBarProps> = ({
             className={`${styles['tabItem']} ${styles['wrapper']}`}
             data-state={i === clampedIndex ? 'active' : 'inactive'}
           >
-            <SheetFrame
-              src={src}
-              rows={rows}
-              rowsRev={rowsRev}
-              index={index}
-              isFirst={i === 0}
-              firstFocusUsed={firstFocusUsed}
-              onFirstFocus={onFirstFocus}
-            />
+            {mounted.current.includes(row.link) ? (
+              <SheetFrame
+                src={src}
+                rows={rows}
+                rowsRev={rowsRev}
+                index={index}
+                isFirst={i === 0}
+                firstFocusUsed={firstFocusUsed}
+                onFirstFocus={onFirstFocus}
+              />
+            ) : null}
           </Tabs.Content>
         );
       })}

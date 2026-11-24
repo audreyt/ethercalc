@@ -122,6 +122,15 @@ export const MAX_WS_CHAT_CHARS = 16 * 1024;
 export const MAX_WS_CELL_CHARS = 64;
 /** Durable Object values must stay below 128 KiB including key overhead. */
 export const MAX_COMMAND_UTF8_BYTES = 120 * 1024;
+/**
+ * Cross-sheet formulas (`'other'!A1`) pull sibling sheets into
+ * `SocialCalc.Formula.SheetCache`: one full snapshot fetch plus one parsed
+ * copy per distinct name. Sheet content is untrusted, so the Worker's
+ * server-side recalc and the browser's `ask.recalc` loader share these
+ * bounds on how many names are followed and how much sheet text is kept.
+ */
+export const MAX_CROSS_SHEET_REFS = 16;
+export const MAX_CROSS_SHEET_TOTAL_CHARS = 4 * 1024 * 1024;
 
 // ─── Server → Client ───────────────────────────────────────────────────────
 

@@ -13,6 +13,7 @@
  */
 import {
   isSafeMultiSheetLink,
+  MAX_CROSS_SHEET_REFS,
   MAX_MULTI_SHEET_TITLE_LENGTH,
 } from '@ethercalc/shared';
 import type {
@@ -154,6 +155,14 @@ export function installCallbacks(
   SocialCalc.ScheduleSheetCommands = (sheet, cmdstr, saveundo, isRemote) => {
     let cmd = cmdstr.replace(/\n\n+/g, '\n');
     if (!/\S/.test(cmd)) return;
+    // `settimetrigger` (EMAILAT/EMAILATIF) and `sendemail` (EMAILONEDIT) are
+    // emitted by recalculation based on sheet formulas, not user edits:
+    // running them locally generates `cmdend`/`ask.ecell` floods while
+    // scheduling/sending is handled server-side. Keep remote playback and
+    // multi-line batches intact.
+    if (!isRemote && !cmd.includes('\n') && /^(?:settimetrigger|sendemail)(?:\s|$)/.test(cmd)) {
+      return;
+    }
     const isLocalMutation =
       !isRemote && cmd !== 'redisplay' && cmd !== 'recalc';
     // A viewer may still receive remote snapshot/log commands, but it must
@@ -268,18 +277,34 @@ export function installBroadcast(
 /**
  * Wire `SocialCalc.RecalcInfo.LoadSheet(ref)` → `ask.recalc` broadcast.
  * Matches the clause in `player.ls:84`.
+ *
+ * SocialCalc calls the loader once per distinct sheet name it meets in a
+ * formula and does not wait for the reply, and every reply is a full
+ * snapshot that gets parsed into its own `Formula.SheetCache` entry. Sheet
+ * content is untrusted, so the number of distinct names is capped at
+ * `MAX_CROSS_SHEET_REFS` — the bound the server's `hydrateCrossSheetRefs`
+ * applies to the same work. Names past the cap are not requested; SocialCalc
+ * keeps the empty sheet it cached for them, i.e. the reference stays
+ * unresolved, which is also what the server computes. A name that was
+ * already admitted may be asked for again (forced recalc). Like
+ * `SheetCache`, the admitted set lasts as long as the page.
  */
 export function installRecalcLoader(
   SocialCalc: SocialCalcGlobal,
   broadcast: BroadcastFn,
 ): void {
   SocialCalc.RecalcInfo.LoadSheetCache = {};
+  const requested = new Set<string>();
   SocialCalc.RecalcInfo.LoadSheet = (ref: string): void => {
     // Legacy guard — the LS source checked `ref is /[^.=_a-zA-Z0-9]/`; in
     // JS `is` always yields false against a regex object, so the clause was
     // a dead-code no-op.  We preserve the _actual_ legacy behavior by never
-    // rejecting, but we still lowercase.
+    // rejecting on the name's characters, but we still lowercase.
     const normalized = ref.toLowerCase();
+    if (!requested.has(normalized)) {
+      if (requested.size >= MAX_CROSS_SHEET_REFS) return;
+      requested.add(normalized);
+    }
     broadcast('ask.recalc', { room: normalized });
   };
 }

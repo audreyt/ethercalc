@@ -26,7 +26,11 @@ import {
   DisabledEmailSender,
   type EmailSender,
 } from '../lib/email.ts';
-import { MAX_CRON_TIMES_PER_CELL } from '../lib/cron.ts';
+import {
+  MAX_CRON_ROWS_GLOBAL,
+  MAX_CRON_ROWS_PER_ROOM,
+  MAX_CRON_TIMES_PER_CELL,
+} from '../lib/cron.ts';
 import { withCronSchema } from '../lib/d1-schema.ts';
 import type { Env } from '../env.ts';
 
@@ -35,6 +39,8 @@ import type { Env } from '../env.ts';
  * legacy behavior treats a `settimetrigger` command as "set" semantics
  * — previously stored times for that cell are dropped and the new
  * list takes their place. Empty `times` clears the cell entirely.
+ * A room holds at most `MAX_CRON_ROWS_PER_ROOM` rows over all its cells,
+ * and the table holds at most `MAX_CRON_ROWS_GLOBAL` rows total.
  *
  * Implementation: two statements, batched so a partial failure doesn't
  * leave the table half-updated. The DELETE + INSERT ordering matches
@@ -63,13 +69,34 @@ export async function upsertCronTriggers(
       return;
     }
     const insertStmt = db.prepare(
-      'INSERT OR IGNORE INTO cron_triggers (room, cell, fire_at) VALUES (?1, ?2, ?3)',
+      'INSERT OR IGNORE INTO cron_triggers (room, cell, fire_at) ' +
+        'SELECT ?1, ?2, ?3 WHERE ' +
+        '(SELECT COUNT(*) FROM cron_triggers WHERE room = ?1) < ?4 ' +
+        'AND (SELECT COUNT(*) FROM cron_triggers) < ?5',
     );
     const batch: D1PreparedStatement[] = [del];
     for (const t of uniqueTimes) {
-      batch.push(insertStmt.bind(room, cell, t));
+      batch.push(
+        insertStmt.bind(
+          room,
+          cell,
+          t,
+          MAX_CRON_ROWS_PER_ROOM,
+          MAX_CRON_ROWS_GLOBAL,
+        ),
+      );
     }
     await db.batch(batch);
+  });
+}
+
+/** Drop a room's scheduled `cron_triggers` rows when the room is deleted. */
+export async function deleteCronTriggers(
+  db: D1Database,
+  room: string,
+): Promise<void> {
+  await withCronSchema(db, async () => {
+    await db.prepare('DELETE FROM cron_triggers WHERE room = ?1').bind(room).run();
   });
 }
 

@@ -37,6 +37,15 @@ export interface SettimetriggerParsed {
 
 /** Keeps one D1 batch below the platform's 100-statement ceiling. */
 export const MAX_CRON_TIMES_PER_CELL = 64;
+/**
+ * Rows one room may hold in `cron_triggers` across all of its cells.
+ */
+export const MAX_CRON_ROWS_PER_ROOM = 256;
+/**
+ * Deployment-wide cap on rows in `cron_triggers` so creating fresh rooms
+ * cannot exhaust D1 table storage or bury other rooms' triggers.
+ */
+export const MAX_CRON_ROWS_GLOBAL = 10_000;
 const MAX_CRON_ROW = 1_048_576;
 
 /** Restrict scheduled cells to SocialCalc's A1:ZZ1048576 address space. */

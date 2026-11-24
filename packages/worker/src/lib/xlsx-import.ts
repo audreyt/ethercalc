@@ -16,7 +16,7 @@
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as XLSX from '@e965/xlsx';
-import { loadSocialCalc } from '@ethercalc/socialcalc-headless';
+import { loadSocialCalc, newSocialCalcNamespace } from '@ethercalc/socialcalc-headless';
 import { inflateRawSync } from 'node:zlib';
 import { encodeColumn, parseCoord } from './xlsx-build.ts';
 import {
@@ -95,6 +95,7 @@ export class ImportDimensionsTooLargeError extends Error {
 }
 
 export const MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES = 25 * 1024 * 1024;
+export const MAX_WORKBOOK_READ_BYTES = 100 * 1024 * 1024;
 
 export class ImportArchiveTooLargeError extends Error {
   readonly byteCount: number;
@@ -132,8 +133,32 @@ const ODF_FORMAT_WIDTH_ATTRIBUTES = new Set([
   'min-denominator-digits',
 ]);
 
-/** Find the flat ODF root after XML declarations and comments of any length. */
-function isFlatOdf(xml: string): boolean {
+/**
+ * The flat ODF root tag in the one shape SheetJS's tag pattern (`xlmlregex`)
+ * matches: whitespace-separated `name="value"` attributes, double-quoted,
+ * with no `<` in a value. SheetJS skips a root it does not match, and the
+ * first tag behind it then picks the reader.
+ */
+const FLAT_ODF_ROOT = /^<office:document(?:\s+[^<>=?"'\s]+="[^"<]*")*\s*>/;
+
+/**
+ * `XLSX.read` ignores the caller's format. For text it sniffs the first
+ * 1,024 characters (`,` or `;` ahead of the first `>` selects delimited
+ * text; `<table`, `<div`... without `<?xml` selects HTML) and then takes the
+ * first tag it matches anywhere, inside a processing instruction too. Only
+ * `<office:document>` there selects the ODF reader. This declaration directly
+ * in front of the root tag settles all three.
+ */
+const FLAT_ODF_DECLARATION = '<?xml version="1.0"?>';
+
+/**
+ * Find the flat ODF root after XML declarations and comments of any length.
+ * Returns the document from its root tag on, behind
+ * {@link FLAT_ODF_DECLARATION}, or `null` when `xml` is not flat ODF. That
+ * text is what gets checked and what gets read, so SheetJS never sees the
+ * skipped prolog and cannot read the upload as anything but ODF.
+ */
+function flatOdfDocument(xml: string): string | null {
   // TextDecoder strips a UTF-8 BOM, if present.
   let offset = 0;
   while (offset < xml.length) {
@@ -144,18 +169,42 @@ function isFlatOdf(xml: string): boolean {
     }
     if (xml.startsWith('<!--', offset)) {
       const end = xml.indexOf('-->', offset + 4);
-      if (end < 0) return false;
+      if (end < 0) return null;
       offset = end + 3;
     } else if (xml.startsWith('<?', offset)) {
       const end = xml.indexOf('?>', offset + 2);
-      if (end < 0) return false;
+      if (end < 0) return null;
       offset = end + 2;
     } else {
-      return xml.startsWith('<office:document', offset) &&
-        /[\s>]/.test(xml[offset + '<office:document'.length] ?? '');
+      const fromRoot = xml.slice(offset);
+      return FLAT_ODF_ROOT.test(fromRoot) ? FLAT_ODF_DECLARATION + fromRoot : null;
     }
   }
-  return false;
+  return null;
+}
+
+/**
+ * Rewrite ODF XML the way SheetJS does before it looks for tags: comments
+ * go first, then a leading DOCTYPE up to the first element. Either step can
+ * hide a tag from the reader or splice one together.
+ */
+function normalizeOdfXml(xml: string): string {
+  let stripped = '';
+  let last = 0;
+  for (let start = xml.indexOf('<!--'); start >= 0; start = xml.indexOf('<!--', last)) {
+    const end = xml.indexOf('-->', start + 4);
+    if (end < 0) throw new ImportArchiveInvalidError();
+    stripped += xml.slice(last, start);
+    last = end + 3;
+  }
+  stripped += xml.slice(last);
+  // Flat files are stripped twice; the first pass must leave nothing for the second.
+  if (stripped.includes('<!--')) throw new ImportArchiveInvalidError();
+  // A DOCTYPE in the first 1024 characters is cut out up to the first `<\w`;
+  // if that lies ahead of it, the text between the two is read twice instead.
+  const doctype = stripped.slice(0, 1024).indexOf('<!DOCTYPE');
+  const element = doctype < 0 ? -1 : stripped.search(/<\w/);
+  return element < 0 ? stripped : stripped.slice(0, doctype) + stripped.slice(element);
 }
 
 /**
@@ -163,7 +212,11 @@ function isFlatOdf(xml: string): boolean {
  * expanded rectangular extent first, while the representation is still
  * small. This covers flat FODS and an ODS archive's content.xml alike.
  */
-function enforceOdfXmlLimits(xml: string): void {
+function enforceOdfXmlLimits(source: string): void {
+  const xml = normalizeOdfXml(source);
+  // SheetJS's ODF tokenizer (`xlmlregex`), anchored. The reader expands only
+  // what this matches, so the preflight must split tags the same way.
+  const tagAt = /<(\/?)([^\s?><!/:"]*:|)([^\s?<>:/"]+)(?:\s+[^<>=?"'\s]+="[^"]*?")*\s*\/?>/y;
   // Match SheetJS's attribute grammar. Its parser removes any namespace
   // prefix, truncates an unprefixed name at `_`, and keeps the last duplicate.
   // Checking every recognized occurrence also handles duplicates safely.
@@ -175,7 +228,9 @@ function enforceOdfXmlLimits(xml: string): void {
   let rowRepeat = 0;
   let rowColumns = 0;
   let cellRepeat = 1;
+  let cellOpen = false;
   let expandedText = 0;
+  let cdataEnd = -1;
 
   const parseCount = (raw: string, allowZero: boolean): number => {
     if (!/^[0-9]+$/.test(raw) || (!allowZero && raw[0] === '0')) {
@@ -193,6 +248,7 @@ function enforceOdfXmlLimits(xml: string): void {
   };
   const finishRow = (): void => {
     if (rowRepeat === 0) return;
+    if (cellOpen) throw new ImportArchiveInvalidError();
     tableRows += rowRepeat;
     tableColumns = Math.max(tableColumns, Math.max(1, rowColumns));
     totalCells += rowRepeat * Math.max(1, rowColumns);
@@ -207,38 +263,28 @@ function enforceOdfXmlLimits(xml: string): void {
   while (offset < xml.length) {
     const start = xml.indexOf('<', offset);
     if (start < 0) break;
-    if (xml.startsWith('<!--', start)) {
-      const end = xml.indexOf('-->', start + 4);
-      if (end < 0) throw new ImportArchiveInvalidError();
-      // Inspect tag-like content too: the underlying reader is permissive.
-      offset = start + 4;
-      continue;
-    }
-    if (xml.startsWith('<![CDATA[', start)) {
-      const end = xml.indexOf(']]>', start + 9);
-      if (end < 0) throw new ImportArchiveInvalidError();
-      offset = start + 9;
-      continue;
-    }
-    let quote = '';
-    let end = start + 1;
-    for (; end < xml.length; end++) {
-      const char = xml[end]!;
-      if (quote) {
-        if (char === quote) quote = '';
-      } else if (char === '"' || char === "'") {
-        quote = char;
-      } else if (char === '>') {
-        break;
+    // The archive limit covers literal text once; a repeated row or cell
+    // copies it per repetition.
+    chargeText((start - offset) * (Math.max(1, rowRepeat) * cellRepeat - 1));
+    tagAt.lastIndex = start;
+    const element = tagAt.exec(xml);
+    if (!element) {
+      if (xml.startsWith('<![CDATA[', start)) {
+        if (cdataEnd < start + 9) cdataEnd = xml.indexOf(']]>', start + 9);
+        if (cdataEnd < 0) throw new ImportArchiveInvalidError();
+      } else {
+        const end = xml.indexOf('>', start);
+        const next = xml.indexOf('<', start + 1);
+        if (end < 0 || (next >= 0 && next < end)) throw new ImportArchiveInvalidError();
       }
+      offset = start + 1;
+      continue;
     }
-    if (end >= xml.length) throw new ImportArchiveInvalidError();
-    offset = end + 1;
-    const tag = xml.slice(start, offset);
-    const element = /^<\s*(\/?)\s*([^\s/>]+)/.exec(tag);
-    if (!element) continue;
-    // SheetJS removes an underscore suffix from element names before dispatch.
-    const name = element[2]!.split(':').at(-1)!.replace(/_.*/, '').toLowerCase();
+    const tag = element[0];
+    offset = start + tag.length;
+    // SheetJS removes an underscore suffix from element names before dispatch,
+    // and matches them case-sensitively.
+    const name = element[3]!.replace(/_.*/, '');
     const closing = element[1] === '/';
     const selfClosing = /\/\s*>$/.test(tag);
     const isRow = name === 'table-row' || name === '行';
@@ -248,6 +294,7 @@ function enforceOdfXmlLimits(xml: string): void {
     let repeatedRows = 1;
     let repeatedColumns = 1;
     let spaces = 1;
+    let cellText = 0;
     for (const match of tag.matchAll(attributes)) {
       const rawName = match[1]!;
       const colon = rawName.indexOf(':');
@@ -277,6 +324,8 @@ function enforceOdfXmlLimits(xml: string): void {
           throw new ImportArchiveTooLargeError(count, MAX_ODF_FORMAT_WIDTH);
         }
         chargeText(count);
+      } else if (isCell && !closing && (key === 'string-value' || key === 'formula')) {
+        cellText += raw.length;
       }
     }
     if (name === 'map' && !closing &&
@@ -300,13 +349,18 @@ function enforceOdfXmlLimits(xml: string): void {
         if (selfClosing) finishRow();
       }
     } else if (isCell) {
-      if (closing) cellRepeat = 1;
-      else if (rowRepeat > 0) {
+      if (rowRepeat === 0 || closing !== cellOpen) throw new ImportArchiveInvalidError();
+      if (closing) {
+        cellOpen = false;
+        cellRepeat = 1;
+      } else {
         rowColumns += repeatedColumns;
+        cellOpen = !selfClosing;
         cellRepeat = selfClosing ? 1 : repeatedColumns;
         if (rowColumns > MAX_SOCIALCALC_COL) {
           throw new ImportDimensionsTooLargeError(Math.max(1, tableRows + rowRepeat), rowColumns);
         }
+        chargeText(cellText * (rowRepeat * cellRepeat - 1));
       }
     }
   }
@@ -323,7 +377,7 @@ export function assertWorkbookFormat(
     bytes[2] === 0x03 && bytes[3] === 0x04;
   if (zip && format !== 'fods') return;
   if (format === 'fods' || format === 'ods-or-fods') {
-    if (isFlatOdf(new TextDecoder('utf-8').decode(bytes))) return;
+    if (flatOdfDocument(new TextDecoder('utf-8').decode(bytes)) !== null) return;
   }
   throw new ImportArchiveInvalidError();
 }
@@ -441,16 +495,167 @@ export function enforceImportArchiveLimit(bytes: Uint8Array): void {
   }
 }
 
-export function enforceActualImportArchiveLimit(bytes: Uint8Array): void {
+/**
+ * SheetJS's worksheet reader walks every address of each hyperlink range
+ * while parsing and creates a cell wherever none exists, so the post-read
+ * limits come too late. Charge one range the way that walk runs it: the row
+ * loop turns even when the column span is empty, and it never ends once a row
+ * index passes 2^53. Corners are zero-based, -1 for a missing part.
+ */
+function countHyperlinkRangeCells(
+  start: { r: number; c: number },
+  end: { r: number; c: number },
+): number {
+  if (start.r > end.r) return 0;
+  if (end.r > MAX_SOCIALCALC_ROW - 1) {
+    throw new ImportRowOutOfRangeError(`hyperlink:e.r=${end.r}`, end.r + 1);
+  }
+  if (start.c > end.c) return end.r - start.r + 1;
+  if (end.c > MAX_SOCIALCALC_COL - 1) {
+    throw new ImportColumnOutOfRangeError(`hyperlink:e.c=${end.c}`, end.c + 1);
+  }
+  return (end.r - start.r + 1) * (end.c - start.c + 1);
+}
+
+/** One corner of a range as SheetJS's `safe_decode_range` accumulates it. */
+function decodeHyperlinkCorner(letters: string, digits: string): { r: number; c: number } {
+  let column = 0;
+  for (let i = 0; i < letters.length; i++) {
+    column = 26 * column + letters.charCodeAt(i) - 64;
+  }
+  return { r: Number(digits) - 1, c: column - 1 };
+}
+
+/** SpreadsheetML worksheets: the `ref` of every `<hyperlink>` tag. */
+function countXmlHyperlinkCells(xml: string): number {
+  let cells = 0;
+  for (const [tag] of xml.matchAll(/<(?:\w+:)?hyperlink [^<>]*>/g)) {
+    for (const [attribute] of tag.matchAll(/\s[^"\s?>/]+\s*=\s*(?:"[^"]*"|'[^']*'|[^'">\s]+)/g)) {
+      const equals = attribute.indexOf('=');
+      const rawName = attribute.slice(1, equals).trim();
+      const colon = rawName.indexOf(':');
+      const underscore = rawName.indexOf('_');
+      const key = (colon >= 0
+        ? rawName.slice(colon + 1)
+        : underscore > 0 ? rawName.slice(0, underscore) : rawName).toLowerCase();
+      if (key !== 'ref') continue;
+      let at = equals + 1;
+      while (attribute[at] === ' ') at++;
+      const quoted = attribute[at] === '"' || attribute[at] === "'";
+      const ref = quoted ? attribute.slice(at + 1, -1) : attribute.slice(at);
+      const corners = /^([A-Z]*)([0-9]*)(?::([A-Z]*)([0-9]*))?/.exec(ref)!;
+      const start = decodeHyperlinkCorner(corners[1]!, corners[2]!);
+      const end = corners[3] === undefined
+        ? start
+        : decodeHyperlinkCorner(corners[3], corners[4]!);
+      cells += countHyperlinkRangeCells(start, end);
+    }
+  }
+  return cells;
+}
+
+/**
+ * The text SheetJS may read from an archive entry: UTF-8, or UTF-16 behind a
+ * byte-order mark. Its Buffer path looks for the big-endian mark one byte late.
+ */
+function decodeArchiveEntryTexts(content: Uint8Array): string[] {
+  const texts = [new TextDecoder('utf-8').decode(content)];
+  if (content[0] === 0xff && content[1] === 0xfe) {
+    texts.push(new TextDecoder('utf-16le').decode(content.subarray(2)));
+  }
+  if (
+    (content[0] === 0xfe && content[1] === 0xff) ||
+    (content[1] === 0xfe && content[2] === 0xff)
+  ) {
+    texts.push(new TextDecoder('utf-16be').decode(content.subarray(2)));
+  }
+  return texts;
+}
+
+/**
+ * A ZIP member's name as SheetJS compares it when it looks a member up: under
+ * its `Root Entry/` container root, case-insensitive, with `\` for `/`.
+ */
+function sheetJsMemberName(name: string): string {
+  const path = name.startsWith('Root Entry/')
+    ? name
+    : `Root Entry/${name}`.replace('//', '/');
+  return path.slice('Root Entry/'.length).toLowerCase().replace(/\\/g, '/');
+}
+
+function encodedTextLength(text: string): number {
+  let n = text.length;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code === 0x5c || code === 0x3a || code === 0x0a) n += 2;
+  }
+  return n;
+}
+
+/**
+ * Charge OOXML `<f t="shared" si="N">` expansion before SheetJS copies the
+ * base formula into every referencing cell.
+ */
+function enforceOoxmlSharedFormulaLimit(xml: string): void {
+  const formulaOpen = /<(?:[A-Za-z_][\w.-]*:)?f(?=[\s>/])([^>]*)>/g;
+  const baseLength = new Map<string, number>();
+  const refCount = new Map<string, number>();
+  let match: RegExpExecArray | null;
+  while ((match = formulaOpen.exec(xml)) !== null) {
+    const rawAttrs = match[1]!;
+    const selfClosing = rawAttrs.endsWith('/');
+    const attrs = selfClosing ? rawAttrs.slice(0, -1) : rawAttrs;
+    let isShared = false;
+    let si = '';
+    for (const attr of attrs.matchAll(/\s([^"\s?>/]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^'">\s]+))/g)) {
+      const rawName = attr[1]!;
+      const colon = rawName.indexOf(':');
+      const key = (colon >= 0 ? rawName.slice(colon + 1) : rawName).toLowerCase();
+      const val = attr[2] ?? attr[3] ?? attr[4]!;
+      if (key === 't' && val === 'shared') isShared = true;
+      else if (key === 'si') si = val;
+    }
+    if (!isShared || !si) continue;
+    refCount.set(si, (refCount.get(si) ?? 0) + 1);
+    if (!selfClosing) {
+      const bodyStart = match.index + match[0].length;
+      const closeAt = xml.indexOf('</', bodyStart);
+      if (closeAt > bodyStart) {
+        const len = encodedTextLength(xml.slice(bodyStart, closeAt));
+        baseLength.set(si, Math.max(baseLength.get(si) ?? 0, len));
+      }
+    }
+  }
+  let expanded = 0;
+  for (const [si, count] of refCount) {
+    expanded += (baseLength.get(si) ?? 0) * count;
+    if (expanded > MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES) {
+      throw new ImportArchiveTooLargeError(expanded);
+    }
+  }
+}
+
+/**
+ * Check what a workbook really expands to. Returns the bytes to hand to the
+ * workbook reader: the input itself, or a copy in which the reader cannot
+ * find XLSB parts.
+ */
+export function enforceActualImportArchiveLimit(bytes: Uint8Array): Uint8Array {
   if (bytes.length > MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES) {
     throw new ImportArchiveTooLargeError(bytes.length);
   }
   if (bytes.length < 2 || bytes[0] !== 0x50 || bytes[1] !== 0x4b) {
-    const xml = new TextDecoder('utf-8').decode(bytes);
-    if (isFlatOdf(xml)) {
-      enforceOdfXmlLimits(xml);
+    if (
+      bytes[0] === 0xff && bytes[1] === 0xfe &&
+      /^[\n\r ]*</.test(new TextDecoder('utf-16le').decode(bytes.subarray(2)))
+    ) {
+      throw new ImportArchiveInvalidError();
     }
-    return;
+    const odf = flatOdfDocument(new TextDecoder('utf-8').decode(bytes));
+    if (odf !== null) {
+      enforceOdfXmlLimits(odf);
+    }
+    return bytes;
   }
 
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -460,7 +665,8 @@ export function enforceActualImportArchiveLimit(bytes: Uint8Array): void {
   const u32 = (at: number): number => view.getUint32(at, true);
   const invalid = (): never => { throw new ImportArchiveInvalidError(); };
   let end = -1;
-  for (let at = bytes.length - 22; at >= Math.max(0, bytes.length - 22 - 0xffff); at--) {
+  // Start where SheetJS does, at the last four bytes, so both read the same record.
+  for (let at = bytes.length - 4; at >= Math.max(0, bytes.length - 22 - 0xffff); at--) {
     if (u32(at) === 0x06054b50) { end = at; break; }
   }
   if (end < 0 || !validSpan(end, 22) || end + 22 + u16(end + 20) !== bytes.length) invalid();
@@ -477,6 +683,13 @@ export function enforceActualImportArchiveLimit(bytes: Uint8Array): void {
 
   let offset = cdStart;
   let total = 0;
+  let storedTotal = 0;
+  let hyperlinkCells = 0;
+  let readable = bytes;
+  let localEnd = 0;
+  let inOrder = true;
+  let renamed = false;
+  const members = new Set<string>();
   for (let index = 0; index < count; index++) {
     if (!validSpan(offset, 46) || offset + 46 > cdEnd || u32(offset) !== 0x02014b50) invalid();
     const flags = u16(offset + 8);
@@ -511,9 +724,16 @@ export function enforceActualImportArchiveLimit(bytes: Uint8Array): void {
       (localDeclaredSize !== 0 && localDeclaredSize !== declaredSize) ||
       ((flags & 8) === 0 && (localCompressedSize !== compressedSize || localDeclaredSize !== declaredSize))
     ) invalid();
+    storedTotal += dataStart - localOffset + compressedSize;
+    if (storedTotal > cdStart) invalid();
+    let member = '';
     for (let i = 0; i < nameLength; i++) {
       if (bytes[offset + 46 + i] !== bytes[localOffset + 30 + i]) invalid();
+      member += String.fromCharCode(bytes[offset + 46 + i]!);
     }
+    members.add(sheetJsMemberName(member));
+    if (localOffset < localEnd) inOrder = false;
+    localEnd = dataStart + compressedSize;
     for (const [start, length] of [
       [offset + 46 + nameLength, extraLength],
       [localOffset + 30 + localNameLength, localExtraLength],
@@ -549,14 +769,94 @@ export function enforceActualImportArchiveLimit(bytes: Uint8Array): void {
     }
     if (actualSize !== declaredSize) invalid();
     const name = new TextDecoder('utf-8').decode(bytes.subarray(offset + 46, offset + 46 + nameLength));
-    // ODF readers accept aliases such as `Root Entry/content.xml`. Every XML
-    // entry is already bounded by the archive limit, so scan them all.
+    const texts = decodeArchiveEntryTexts(content);
+    for (const xml of texts) hyperlinkCells += countXmlHyperlinkCells(xml);
+    if (hyperlinkCells > MAX_IMPORT_CELLS) throw new ImportTooLargeError(hyperlinkCells);
+    if (/(?:^|[\\/])xl[\\/]workbook\.bin$/i.test(name)) invalid();
+    if (name.toLowerCase().endsWith('.bin')) {
+      if (readable === bytes) readable = new Uint8Array(bytes);
+      readable[offset + 46 + nameLength - 1] = 0x5f;
+      readable[localOffset + 30 + nameLength - 1] = 0x5f;
+      renamed = true;
+    }
     if (name.toLowerCase().endsWith('.xml')) {
-      enforceOdfXmlLimits(new TextDecoder('utf-8').decode(content));
+      const canonical = sheetJsMemberName(name);
+      const fatal = !canonical.startsWith('customxml/') || canonical.endsWith('/content.xml');
+      let xml: string;
+      try {
+        xml = new TextDecoder('utf-8', { fatal }).decode(content);
+      } catch {
+        throw new ImportArchiveInvalidError();
+      }
+      if (xml.includes('shared')) enforceOoxmlSharedFormulaLimit(xml);
+      enforceOdfXmlLimits(xml);
     }
     offset = entryEnd;
   }
   if (offset !== cdEnd) invalid();
+  if (
+    !members.has('meta-inf/manifest.xml') &&
+    (!members.has('[content_types].xml') ||
+      members.has('objectdata.xml') ||
+      members.has('index/document.iwa'))
+  ) invalid();
+  if (renamed && !inOrder) return enforceActualImportArchiveLimit(readable);
+  return readable;
+}
+
+/**
+ * The bytes to hand `XLSX.read` for a workbook that passed
+ * {@link enforceActualImportArchiveLimit}. A ZIP archive is read as it is.
+ * Flat ODF is read in the form that check scanned (see
+ * {@link flatOdfDocument}), so SheetJS cannot take the same bytes for Excel
+ * 2003 XML, HTML or delimited text, whose readers no ODF limit covers.
+ */
+export function workbookReadBytes(bytes: Uint8Array): Uint8Array {
+  if (bytes[0] === 0x50 && bytes[1] === 0x4b) return bytes;
+  const odf = flatOdfDocument(new TextDecoder('utf-8').decode(bytes));
+  return odf === null ? bytes : new TextEncoder().encode(odf);
+}
+
+/**
+ * Parse a pre-checked workbook while capping how many bytes SheetJS may read
+ * across repeated archive member references (e.g. 256 `<sheet>` aliases,
+ * repeated `externalLink` or case-variant `comments`).
+ */
+export function readBoundedWorkbook(
+  bytes: Uint8Array,
+  readFn: typeof XLSX.read = XLSX.read,
+  opts: Record<string, unknown> = { type: 'array', cellFormula: true },
+): XLSX.WorkBook {
+  const target = workbookReadBytes(bytes);
+  if ((readFn as unknown) === XLSX.read) {
+    const readOpts = { ...opts, cellText: false };
+    if (target.length >= 2 && target[0] === 0x50 && target[1] === 0x4b) {
+      const cfb = (XLSX as any).CFB.read(target, { type: 'array' });
+      let reads = 0;
+      let exceeded = false;
+      for (const entry of cfb.FileIndex) {
+        if (!entry.content || entry.type !== 2) continue;
+        const raw = entry.content;
+        const size = raw.length;
+        Object.defineProperty(entry, 'content', {
+          configurable: true,
+          get() {
+            reads += size;
+            if (reads > MAX_WORKBOOK_READ_BYTES) {
+              exceeded = true;
+              throw new ImportArchiveTooLargeError(reads, MAX_WORKBOOK_READ_BYTES);
+            }
+            return raw;
+          },
+        });
+      }
+      const wb = (XLSX as any).parse_zip(cfb, readOpts) as XLSX.WorkBook;
+      if (exceeded) throw new ImportArchiveTooLargeError(reads, MAX_WORKBOOK_READ_BYTES);
+      return wb;
+    }
+    return readFn(target, readOpts as any);
+  }
+  return readFn(target, opts as any);
 }
 
 /**
@@ -569,29 +869,55 @@ export function countWorksheetCells(ws: Record<string, unknown>): number {
 }
 
 /**
- * Throw {@link ImportTooLargeError} when an import would replay more than
- * {@link MAX_IMPORT_CELLS} cells. Called before the per-cell replay loop so
- * an oversized/zip-bombed workbook can't pin the worker isolate.
+ * Sum the areas of a SheetJS worksheet's `!merges`: the number of cells the
+ * replayed SocialCalc `merge` commands will visit. Ranges are not
+ * deduplicated (repeated or overlapping merges each pay their full area), so
+ * this is the merge work and not the merged extent. Call only after
+ * {@link enforceSocialCalcColumnLimit} has validated the merge endpoints.
  */
+export function countWorksheetMergedCells(ws: Record<string, unknown>): number {
+  const merges: Array<{
+    s: { r: number; c: number };
+    e: { r: number; c: number };
+  }> = Array.isArray(ws['!merges']) ? ws['!merges'] : [];
+  let total = 0;
+  for (const { s, e } of merges) {
+    total += (Math.abs(e.r - s.r) + 1) * (Math.abs(e.c - s.c) + 1);
+  }
+  return total;
+}
+
+/**
+ * Count the characters of cell text the import replay will inline into
+ * SocialCalc commands (including `:` / `\` / `\n` save escaping overhead).
+ */
+export function countWorksheetText(ws: Record<string, unknown>): number {
+  const length = (text: unknown): number =>
+    typeof text === 'string' ? encodedTextLength(text) : 0;
+  let chars = 0;
+  for (const addr of Object.keys(ws)) {
+    if (addr.startsWith('!')) continue;
+    const cell = ws[addr] as SheetJSCell;
+    chars += Math.max(length(cell.f), length(cell.v), length(cell.w));
+  }
+  return chars;
+}
+
+export function enforceImportTextLimit(textLength: number): void {
+  if (textLength > MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES) {
+    throw new ImportArchiveTooLargeError(textLength);
+  }
+}
+
 export function enforceImportLimit(cellCount: number): void {
   if (cellCount > MAX_IMPORT_CELLS) {
     throw new ImportTooLargeError(cellCount);
   }
 }
 
-/**
- * Reject worksheets outside SocialCalc's ZZ (702) column grammar or the
- * maintained row ceiling. Sparse far-away cells and merges are dangerous even
- * when the populated-cell count is small: rendering/recalculation walks the
- * declared dimensions synchronously.
- *
- * Fail closed before replay for unparseable cell keys and malformed merge
- * endpoints. `encodeColumn` is only invoked after the column endpoint has
- * passed its finite, non-negative integer checks.
- */
 export function enforceSocialCalcColumnLimit(
   ws: Record<string, unknown>,
-): void {
+): number {
   let maxRow = 1;
   let maxColumn = 1;
 
@@ -695,6 +1021,7 @@ export function enforceSocialCalcColumnLimit(
   if (maxRow * maxColumn > MAX_SHEET_CELLS) {
     throw new ImportDimensionsTooLargeError(maxRow, maxColumn);
   }
+  return maxRow * maxColumn;
 }
 
 interface SheetJSCell {
@@ -724,13 +1051,53 @@ function encodeCellTextForCommand(value: unknown): string {
   return SC.encodeForSave(String(value ?? ''));
 }
 
+/**
+ * The sheet named before each `!` of a formula, as SocialCalc reads it: the
+ * text of a quoted name (`'My Sheet'!A1`), or `null` where anything else
+ * stands there — a bare name, which SocialCalc may resolve further, a cell,
+ * a closing parenthesis, nothing. SocialCalc's own tokenizer decides, so a
+ * `!` inside a string literal or an error value (`#REF!`) does not count.
+ */
+export function sheetReferences(formula: string): Array<string | null> {
+  // Stryker disable next-line ConditionalExpression,StringLiteral : fast path
+  // only — without a `!` the tokenizer finds no sheet operator either.
+  if (!formula.includes('!')) return [];
+  const SC = loadSocialCalc() as any;
+  const tokens: Array<{ text: string; type: unknown; opcode: unknown }> =
+    SC.Formula.ParseFormulaIntoTokens(formula);
+  const names: Array<string | null> = [];
+  tokens.forEach((token, index) => {
+    if (token.opcode !== '!') return;
+    const name = tokens[index - 1];
+    names.push(name && name.type === SC.Formula.TokenType.string ? name.text : null);
+  });
+  return names;
+}
+
+/**
+ * What a formula that refers to another sheet is imported as: the formula
+ * to store, or `null` for the value the file carries for the cell.
+ */
+export type SheetRefImport = (formula: string) => string | null;
+
+/** A single-sheet import brings along none of the sheets such a formula names. */
+const importSheetRefAsValue: SheetRefImport = () => null;
+
 // Stryker disable all
-export function cellToCommand(coord: string, cell: SheetJSCell): string | null {
+export function cellToCommand(
+  coord: string,
+  cell: SheetJSCell,
+  importSheetRef?: SheetRefImport,
+): string | null {
   // Formulas take priority — the cached value is kept by recalc.
-  if (typeof cell.f === 'string' && cell.f.length > 0) {
+  let formula = typeof cell.f === 'string' && cell.f.length > 0 ? cell.f : null;
+  if (formula !== null && importSheetRef && sheetReferences(formula).length > 0) {
+    formula = importSheetRef(formula);
+  }
+  if (formula !== null) {
     // SocialCalc's `set A1 formula FOO(…)` stores without leading `=`,
     // which is already the shape SheetJS uses.
-    return `set ${coord} formula ${cell.f}`;
+    return `set ${coord} formula ${formula}`;
   }
   switch (cell.t) {
     case 'n': {
@@ -763,20 +1130,12 @@ export function cellToCommand(coord: string, cell: SheetJSCell): string | null {
   }
 }
 
-/**
- * Replay an xlsx/ods/fods workbook's first sheet into a fresh
- * `SpreadsheetControl` and return both the control and its sheet object.
- *
- * Shared by `xlsxToSave` (full-snapshot import on PUT) and
- * `xlsxToLoadClipboardCommands` (paste-into-room import on POST). When the
- * workbook is empty the returned sheet simply has no cells, which both
- * callers handle gracefully (empty save / empty clipboard).
- *
- * Throws {@link ImportTooLargeError} when the workbook declares more than
- * {@link MAX_IMPORT_CELLS} populated cells, and
- * {@link ImportColumnOutOfRangeError} when any cell/merge is beyond ZZ.
- */
-function replayWorksheetCells(SC: any, sheet: any, ws: Record<string, unknown>): void {
+function replayWorksheetCells(
+  SC: any,
+  sheet: any,
+  ws: Record<string, unknown>,
+  importSheetRef?: SheetRefImport,
+): void {
   const merges: Array<{
     s: { r: number; c: number };
     e: { r: number; c: number };
@@ -785,21 +1144,14 @@ function replayWorksheetCells(SC: any, sheet: any, ws: Record<string, unknown>):
   for (const addr of Object.keys(ws)) {
     if (addr.startsWith('!')) continue;
     const cell = ws[addr] as SheetJSCell;
-    const cmd = cellToCommand(addr, cell);
+    const cmd = cellToCommand(addr, cell, importSheetRef);
     if (!cmd) continue;
     try {
       const parse = new SC.Parse(cmd);
       // Stryker disable next-line BooleanLiteral
       SC.ExecuteSheetCommand(sheet, parse, false);
     } catch {
-      /* istanbul ignore next -- defensive fallback; SocialCalc's Parse
-         is permissive and doesn't throw on any formulas encountered in
-         practice, but when it does we drop the formula and seed the
-         cached value so the cell isn't empty. */
-      // Stryker disable all : istanbul-ignored fallback that only runs when
-      // SC.Parse throws, which doesn't happen under any fixture we've seen.
-      // Mutating this code can't change observable behavior without a mock
-      // that forces the throw — not worth the test-doubles maintenance.
+      /* istanbul ignore next -- defensive fallback */
       if (typeof cell.f === 'string' && cell.v !== undefined) {
         const fallback =
           typeof cell.v === 'number'
@@ -812,12 +1164,9 @@ function replayWorksheetCells(SC: any, sheet: any, ws: Record<string, unknown>):
           // Give up on this cell.
         }
       }
-      // Stryker restore all
     }
   }
 
-  // Merges: `set A1:B2 colspan …` isn't exactly how SocialCalc spells it;
-  // the built-in command is `merge A1:B2`. Dispatch one per merged range.
   for (const m of merges) {
     const top = `${colLetters(m.s.c)}${m.s.r + 1}`;
     const bot = `${colLetters(m.e.c)}${m.e.r + 1}`;
@@ -840,118 +1189,119 @@ function replayWorksheetCells(SC: any, sheet: any, ws: Record<string, unknown>):
   }
 }
 
-function replayWorkbook(bytes: Uint8Array): { ss: any; sheet: any } {
-  const SC = loadSocialCalc() as any;
+function replayWorkbook(
+  bytes: Uint8Array,
+  importSheetRef?: SheetRefImport,
+): { ss: any; sheet: any } {
+  const SC = newSocialCalcNamespace() as any;
   const ss = new SC.SpreadsheetControl();
   const sheet = ss.context.sheetobj;
 
   enforceImportArchiveLimit(bytes);
-  enforceActualImportArchiveLimit(bytes);
+  const readable = enforceActualImportArchiveLimit(bytes);
 
-  // Stryker disable next-line ObjectLiteral,StringLiteral : @e965/xlsx
-  // auto-infers `type` from a Uint8Array and defaults `cellFormula:true`
-  // for xlsx/ods reads, so mutations to this options object produce
-  // byte-identical workbooks. Equivalent mutants at 92:40 / 92:48.
-  const wb = (XLSX as any).read(bytes, { type: 'array', cellFormula: true, sheets: 0 });
+  const wb = readBoundedWorkbook(readable, XLSX.read, { type: 'array', cellFormula: true, sheets: 0 });
   const firstName = (wb.SheetNames as string[])[0];
-  /* istanbul ignore next -- SheetJS always populates SheetNames[0]
-     (defaulting to "Sheet1") even for empty input. Defensive guard. */
+  /* istanbul ignore next -- SheetJS always populates SheetNames[0] */
   if (!firstName) return { ss, sheet };
   const ws = wb.Sheets[firstName];
-  /* istanbul ignore next -- SheetJS guarantees Sheets[SheetNames[0]]
-     exists. Defensive guard against malformed workbook shapes. */
+  /* istanbul ignore next -- SheetJS guarantees Sheets[SheetNames[0]] */
   if (!ws) return { ss, sheet };
 
-  // Bail before the expensive per-cell SocialCalc replay if the workbook
-  // declares an unreasonable number of cells (zip-bomb / oversized used
-  // range). Counting keys is O(cells) but cheap relative to the replay.
   enforceImportLimit(countWorksheetCells(ws));
   enforceSocialCalcColumnLimit(ws);
+  enforceImportLimit(countWorksheetMergedCells(ws));
+  enforceImportTextLimit(countWorksheetText(ws));
 
-  replayWorksheetCells(SC, sheet, ws);
+  replayWorksheetCells(SC, sheet, ws, importSheetRef);
 
   return { ss, sheet };
 }
 
-/**
- * Convert a binary workbook (xlsx / ods / fods bytes) into a full
- * SocialCalc spreadsheet save. Only the first sheet is imported — the
- * multi-sheet import path (`PUT /=:room.xlsx`, see `routes/multi-import.ts`) handles fan-out to
- * per-sub-sheet DOs separately.
- */
 export function xlsxToSave(bytes: Uint8Array): string {
-  const { ss } = replayWorkbook(bytes);
+  const { ss } = replayWorkbook(bytes, importSheetRefAsValue);
   return ss.CreateSpreadsheetSave();
 }
 
-/**
- * Convert a single SheetJS worksheet object into a SocialCalc spreadsheet save
- * string. Does NOT enforce cell-count limits (callers must check), but does
- * reject columns beyond SocialCalc's ZZ via {@link enforceSocialCalcColumnLimit}.
- */
-export function worksheetToSave(ws: Record<string, unknown>): string {
+export function worksheetToSave(
+  ws: Record<string, unknown>,
+  importSheetRef?: SheetRefImport,
+  namespace?: unknown,
+): string {
   enforceSocialCalcColumnLimit(ws);
-  const SC = loadSocialCalc() as any;
+  const SC = (namespace ?? newSocialCalcNamespace()) as any;
   const ss = new SC.SpreadsheetControl();
-  replayWorksheetCells(SC, ss.context.sheetobj, ws);
+  replayWorksheetCells(SC, ss.context.sheetobj, ws, importSheetRef);
   return ss.CreateSpreadsheetSave();
 }
 
-/**
- * Convert a binary workbook (xlsx / ods / fods / csv bytes) into a single
- * `loadclipboard <encoded-clipboard-save>` command. SheetJS auto-detects
- * CSV format via `XLSX.read(bytes, {type:'array'})`, so the same path
- * handles both binary spreadsheets and CSV text.
- *
- * Returns `null` when the workbook has no cells to paste — the caller
- * treats that as a no-op import. Throws {@link ImportTooLargeError} for
- * oversized workbooks and {@link ImportColumnOutOfRangeError} when any
- * cell/merge is beyond SocialCalc ZZ, via {@link replayWorkbook}.
- */
-export function workbookToLoadClipboardCommand(bytes: Uint8Array): string | null {
-  const SC = loadSocialCalc() as any;
-  const { sheet } = replayWorkbook(bytes);
+export function workbookToLoadClipboardCommand(
+  bytes: Uint8Array,
+  importSheetRef?: SheetRefImport,
+): string | null {
+  return sheetToLoadClipboardCommand(replayWorkbook(bytes, importSheetRef).sheet);
+}
 
-  // Nothing populated → no-op import. `attribs.lastrow`/`lastcol` default
-  // to 1 even for an empty sheet, so they can't distinguish "one cell" from
-  // "zero cells"; the populated `cells` map can.
+/**
+ * Convert CSV text into a single `loadclipboard <encoded-clipboard-save>`
+ * command with SocialCalc's own CSV converter.
+ */
+export function csvToLoadClipboardCommand(csv: string): string | null {
+  const SC = loadSocialCalc() as any;
+  const clipboardSave: string = SC.ConvertOtherFormatToSave(csv, 'csv');
+  if (clipboardSave === '') return null;
+  const encoded: string = SC.encodeForSave(clipboardSave);
+  const command = `loadclipboard ${encoded}`;
+  if (command.length > MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES) {
+    throw new ImportArchiveTooLargeError(command.length);
+  }
+  return command;
+}
+
+function replayTextRows(rows: readonly (readonly string[])[]): { ss: any; sheet: any } {
+  const SC = newSocialCalcNamespace() as any;
+  const ss = new SC.SpreadsheetControl();
+  const sheet = ss.context.sheetobj;
+  replayWorksheetCells(SC, sheet, (XLSX as any).utils.aoa_to_sheet(rows));
+  return { ss, sheet };
+}
+
+/** Rows of literal text as a full SocialCalc spreadsheet save of text cells. */
+export function textRowsToSave(rows: readonly (readonly string[])[]): string {
+  return replayTextRows(rows).ss.CreateSpreadsheetSave();
+}
+
+/**
+ * Rows of literal text as a single `loadclipboard <encoded-clipboard-save>`
+ * command of text cells. Returns `null` when there is nothing to paste.
+ */
+export function textRowsToLoadClipboardCommand(
+  rows: readonly (readonly string[])[],
+): string | null {
+  return sheetToLoadClipboardCommand(replayTextRows(rows).sheet);
+}
+
+function sheetToLoadClipboardCommand(sheet: any): string | null {
+  const SC = loadSocialCalc() as any;
+
   if (Object.keys(sheet.cells as Record<string, unknown>).length === 0) {
     return null;
   }
 
-  // A range argument makes CreateSheetSave emit a `copiedfrom:` trailer,
-  // which the `paste` executor reads to size the destination range. Use
-  // the populated extent (A1 → last col/row) so the clipboard covers
-  // exactly the imported cells.
   const lastCol = colLetters((sheet.attribs.lastcol as number) - 1);
   const lastRow = sheet.attribs.lastrow as number;
   const range = `A1:${lastCol}${lastRow}`;
   const clipboardSave: string = sheet.CreateSheetSave(range);
   const encoded: string = SC.encodeForSave(clipboardSave);
-  return `loadclipboard ${encoded}`;
+  const command = `loadclipboard ${encoded}`;
+  if (command.length > MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES) {
+    throw new ImportArchiveTooLargeError(command.length);
+  }
+  return command;
 }
 
-/**
- * Convert a binary workbook into the pair of SocialCalc commands a
- * `POST /_/:room` runs to *paste* the imported cells into an existing
- * room without clobbering its other content:
- *
- *   ['loadclipboard <encoded-clipboard-save>', 'paste A1 all']
- *
- * This mirrors the legacy server's xlsx-POST path, which decoded the body
- * through the `J` library into exactly this loadclipboard+paste pair and
- * replied `202 {command}`. Going through commands (rather than replacing
- * the whole snapshot, like PUT does) preserves the room's pre-existing
- * cells and emits a WS-broadcastable edit.
- *
- * Returns an empty array when the workbook has no cells to paste — the
- * caller treats that as a no-op import rather than dispatching a `paste`
- * of an empty clipboard. Throws {@link ImportTooLargeError} for oversized
- * workbooks and {@link ImportColumnOutOfRangeError} when any cell/merge is
- * beyond SocialCalc ZZ, via {@link replayWorkbook}.
- */
 export function xlsxToLoadClipboardCommands(bytes: Uint8Array): string[] {
-  const command = workbookToLoadClipboardCommand(bytes);
+  const command = workbookToLoadClipboardCommand(bytes, importSheetRefAsValue);
   return command === null ? [] : [command, 'paste A1 all'];
 }
 

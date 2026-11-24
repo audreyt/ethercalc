@@ -221,6 +221,37 @@ describe('runScheduled', () => {
     expect(state.batchCalls[0]).toHaveLength(1);
   });
 
+  it('does not let one busy room hold up the triggers of other rooms', async () => {
+    const { db } = makeFakeDb([
+      { room: 'busy', cell: 'A1', fire_at: 1 },
+      { room: 'other', cell: 'B2', fire_at: 50 },
+    ]);
+    let answerBusyRoom!: (response: Response) => void;
+    const dispatched: string[] = [];
+    const namespace = {
+      idFromName: (name: string) => name,
+      get: (name: string) => ({
+        fetch: () => {
+          dispatched.push(name);
+          if (name !== 'busy') return Promise.resolve(new Response(''));
+          return new Promise<Response>((resolve) => {
+            answerBusyRoom = resolve;
+          });
+        },
+      }),
+    } as unknown as DurableObjectNamespace;
+    const env = { DB: db, ROOM: namespace } as unknown as Env;
+    const run = runScheduled({ env, nowMinutes: 100 });
+    // The busy room has not answered, yet the other room is already called.
+    await vi.waitFor(() => expect(dispatched).toEqual(['busy', 'other']));
+    answerBusyRoom(new Response(''));
+    // `fired` keeps the claimed order, not the order the rooms answered in.
+    expect((await run).fired).toEqual([
+      { room: 'busy', cell: 'A1' },
+      { room: 'other', cell: 'B2' },
+    ]);
+  });
+
   it('does not dispatch a row claimed by a concurrent invocation', async () => {
     const { db, state } = makeFakeDb(
       [{ room: 'lost-race', cell: 'A1', fire_at: 100 }],

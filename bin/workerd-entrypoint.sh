@@ -12,6 +12,8 @@
 #   ETHERCALC_DATA_DIR      — persistent root (default /data) — the DO
 #                             service writes SQLite files under $DIR/do/
 #   ETHERCALC_ASSETS_DIR    — curated asset tree (default /app/assets)
+#   ETHERCALC_LIVE_ROOM_LIMIT — most rooms awake at once (default: what
+#                             `ulimit -n` has room for, see below)
 #   ETHERCALC_MIGRATE_TOKEN, ETHERCALC_KEY,
 #   ETHERCALC_DISABLE_ROOM_INDEX, ETHERCALC_CORS, …
 #     — forwarded to the worker via `fromEnvironment` bindings in
@@ -91,6 +93,17 @@ is_loopback_host() {
 echo "workerd-entrypoint: binding $HOST:$PORT  DO=$DO_DIR  assets=$ASSETS_DIR" >&2
 if [[ -z "${ETHERCALC_KEY:-}" ]] && ! is_loopback_host "$HOST"; then
   echo "workerd-entrypoint: WARNING: no ETHERCALC_KEY set; anonymous read/write/delete is open. Restrict ingress or set ETHERCALC_KEY." >&2
+fi
+
+# Every awake room holds three file descriptors (config.capnp:
+# durableObjectStorage) and workerd exits when accept() finds none left.
+# Take all the hard limit allows, then tell the Worker how many rooms fit:
+# nine tenths of the descriptors, three per room.
+ulimit -Sn "$(ulimit -Hn)" 2>/dev/null || true
+if [[ -z "${ETHERCALC_LIVE_ROOM_LIMIT:-}" ]]; then
+  nofile="$(ulimit -Sn)"
+  if [[ "$nofile" == "unlimited" ]]; then nofile=1048576; fi
+  export ETHERCALC_LIVE_ROOM_LIMIT="$(( nofile * 3 / 10 ))"
 fi
 
 # Privilege drop (SH-8). The image deliberately has no `USER` directive:

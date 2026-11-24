@@ -16,6 +16,7 @@ import { buildNewRoomRedirect } from '../handlers/new-room.ts';
 import { buildRoomRedirect, type RoomMode } from '../handlers/room-redirects.ts';
 import { computeAuth, verifyAuth } from '../lib/auth.ts';
 import { doFetch } from '../lib/do-dispatch.ts';
+import { isViewerRequest } from '../lib/live-rooms.ts';
 import { encodeRoom, encodeRoomPath } from '../lib/room-name.ts';
 import { getSessionPrincipal } from '../lib/session-middleware.ts';
 import type { EtherCalcHonoEnv } from '../env.ts';
@@ -82,7 +83,14 @@ export function registerStateless(app: Hono<EtherCalcHonoEnv>): void {
     let authorizedAuth: string | undefined;
     if (mode === 'edit') {
       const principal = await getSessionPrincipal(c);
-      const accessRes = await doFetch(c.env, room, '/_do/access', {}, principal);
+      const accessRes = await doFetch(
+        c.env,
+        room,
+        '/_do/access',
+        {},
+        principal,
+        isViewerRequest(c.env, c.req.raw.headers, principal),
+      );
       const access: unknown = accessRes.ok
         ? await accessRes.json().catch(() => null)
         : null;

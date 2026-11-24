@@ -53,7 +53,8 @@ export function reducer(state: AppState, action: AppAction): AppState {
  *
  *   prefix     — default "Sheet"; if the last row's title is `([_a-zA-Z]+)(\d+)`,
  *                the captured word becomes the prefix and the digit the
- *                starting number.
+ *                starting number, unless that number is too large to count
+ *                up from exactly (then the defaults are kept).
  *   linkPrefix — default `/{Index}.`; if the last row's link matches
  *                `^(\/[^=]+\.|\/sheet(?=\d))`, that match becomes the link
  *                prefix.
@@ -71,8 +72,14 @@ export function computeNextRow(foldr: HackFoldr, index: string): FoldrRow {
   const lastLink = last.link ?? '';
   const titleMatch = /^([_a-zA-Z]+)(\d+)$/.exec(lastTitle);
   if (titleMatch && titleMatch[1] !== undefined && titleMatch[2] !== undefined) {
-    prefix = titleMatch[1];
-    nextSheet = parseInt(titleMatch[2], 10);
+    const start = parseInt(titleMatch[2], 10);
+    // The loop below takes at most one step per existing title or link. Only
+    // count up from the title's number while every such step stays exact:
+    // from 2^53 on, `n + 1 === n` and the loop would never leave a taken name.
+    if (start <= Number.MAX_SAFE_INTEGER - 2 * foldr.size()) {
+      prefix = titleMatch[1];
+      nextSheet = start;
+    }
   }
   const linkMatch = /^(\/[^=]+\.|\/sheet(?=\d))/.exec(lastLink);
   if (linkMatch && linkMatch[1] !== undefined) {

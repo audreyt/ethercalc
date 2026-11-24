@@ -57,6 +57,17 @@ if [ ! -x "$NODE_BIN" ] || [ ! -f "$MIGRATOR" ]; then
   exit 127
 fi
 
+# Every awake room holds three file descriptors (config.capnp:
+# durableObjectStorage) and workerd exits when accept() finds none left.
+# Take all the hard limit allows, then tell the Worker how many rooms fit:
+# nine tenths of the descriptors, three per room.
+ulimit -Sn "$(ulimit -Hn)" 2>/dev/null || true
+if [ -z "${ETHERCALC_LIVE_ROOM_LIMIT:-}" ]; then
+  nofile="$(ulimit -Sn)"
+  if [ "$nofile" = "unlimited" ]; then nofile=1048576; fi
+  export ETHERCALC_LIVE_ROOM_LIMIT="$(( nofile * 3 / 10 ))"
+fi
+
 WORKER_PID=""
 
 start_workerd() {

@@ -15,8 +15,10 @@ import { withAuthQuery } from './url.ts';
  *     builds `rows = [{link, title, row}]` for each body row where `link` is
  *     non-empty and not `#…`-prefixed. Missing titles become `SheetN` where
  *     `N = idx+2` in the source sheet (row `2` onwards, matching legacy).
- *   - If the TOC is empty, seeds the first sheet through the guarded
- *     `POST /_/=:room/sheet` endpoint.
+ *   - If the TOC is empty and the room is unused (no stored cells, or only
+ *     the `#url/#title` header), seeds the first sheet through the guarded
+ *     `POST /_/=:room/sheet` endpoint. A room that holds anything else is
+ *     somebody's sheet: loading the page never writes to it.
  *   - `push(row)` asks that endpoint to allocate and initialize the child
  *     sheet, then mounts only the authoritative row returned by the server.
  *   - `setAt(idx, {title})` sends `set B{row} text t {title}` via POST.
@@ -103,7 +105,7 @@ export class HackFoldr {
    */
   async fetch(id: string): Promise<this> {
     this.id = id;
-    const body = await this.loadTocJson();
+    const body = await this.loadJson('csv.json');
     if (Array.isArray(body) && body.length > 0) {
       this.rows = parseTocBody(body, this.id);
     } else {
@@ -111,6 +113,14 @@ export class HackFoldr {
     }
 
     if (this.rows.length === 0) {
+      // No sheet rows is not proof of a new workbook: an ordinary sheet has
+      // none either. Loading the page is a plain navigation, so it may only
+      // initialize a room that verifiably holds nobody's data. Otherwise
+      // leave it alone, lazy `initIfNeeded` included.
+      if (!isHeaderOnlyToc(body) && !(await this.hasNoCells())) {
+        this.wasNonExistent = false;
+        return this;
+      }
       this.wasEmpty = true;
       const seed: FoldrRow = { link: `/${this.id}.1`, title: 'Sheet1', row: 2 };
       this.rows = [];
@@ -125,7 +135,7 @@ export class HackFoldr {
    */
   async refreshToc(): Promise<boolean> {
     if (!this.id) return false;
-    const body = await this.loadTocJson();
+    const body = await this.loadJson('csv.json');
     if (!Array.isArray(body) || body.length === 0) return false;
     const next = parseTocBody(body, this.id);
     if (tocRowsEqual(this.rows, next)) return false;
@@ -133,8 +143,22 @@ export class HackFoldr {
     return true;
   }
 
-  private async loadTocJson(): Promise<unknown> {
-    const url = withAuthQuery(`${this.base}/_/${this.id}/csv.json`, this.auth);
+  /**
+   * `csv.json` carries display text only, so a sheet of formulas that
+   * currently render blank looks empty there. The stored cell map does not.
+   */
+  private async hasNoCells(): Promise<boolean> {
+    const cells = await this.loadJson('cells');
+    return (
+      cells !== null &&
+      typeof cells === 'object' &&
+      !Array.isArray(cells) &&
+      Object.keys(cells).length === 0
+    );
+  }
+
+  private async loadJson(resource: 'csv.json' | 'cells'): Promise<unknown> {
+    const url = withAuthQuery(`${this.base}/_/${this.id}/${resource}`, this.auth);
     try {
       const res = await this.fetchImpl(url);
       return res.ok ? await res.json() : null;
@@ -338,6 +362,19 @@ function parseCreatedSheet(body: unknown, workbook: string): FoldrRow | null {
     return null;
   }
   return { link: sheet.link, title: sheet.title, row: sheet.row };
+}
+
+/** A workbook whose sheet rows were all removed: only `#url/#title` is left. */
+function isHeaderOnlyToc(body: unknown): boolean {
+  if (!Array.isArray(body)) return false;
+  const [header, ...rest] = body as unknown[];
+  return (
+    Array.isArray(header) &&
+    header[0] === '#url' &&
+    header[1] === '#title' &&
+    header.slice(2).every((cell) => cell === '') &&
+    rest.every((row) => Array.isArray(row) && row.every((cell) => cell === ''))
+  );
 }
 
 /**

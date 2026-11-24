@@ -11,9 +11,13 @@ Recorded while porting `multi/` (React 0.12 + LiveScript + Stylus) to
 - Exposes `data-state="active|inactive"` on triggers/content — lets the port
   reuse the legacy `.basic-tabs-item.active` CSS rules verbatim (selector is
   now `[data-state="active"]` but the visual output is byte-identical).
-- `forceMount` on `Tabs.Content` keeps every iframe mounted across tab
-  switches, matching the legacy `react-basic-tabs` behavior where all frames
-  were in the DOM and hidden with `visibility: hidden`.
+- `forceMount` on `Tabs.Content` keeps an iframe mounted across tab
+  switches, matching the legacy `react-basic-tabs` behavior where frames
+  stayed in the DOM and were hidden with `visibility: hidden`. Unlike legacy,
+  a frame is only created when its tab is first shown, and only the
+  `MAX_MOUNTED_SHEETS` most recently shown ones are kept: TOC rows are
+  writable by anyone who can edit the workbook, and each frame is a full
+  editor with its own WebSocket.
 - Radix doesn't ship CSS, so the Stylus port in `src/styles.module.css` is
   the only visual source. See "Pixel-perfect preservation" below.
 

@@ -7,6 +7,7 @@ import { describe, it, expect, beforeAll } from 'vite-plus/test';
 
 import worker from '../src/index.ts';
 import type { Env } from '../src/env.ts';
+import { MAX_HTML_EXPORT_ELEMENTS } from '../src/lib/html-sanitize.ts';
 
 /**
  * Phase 8 integration test — end-to-end exports through workerd.
@@ -123,6 +124,9 @@ describe('Phase 8 exports — GET /_/:room/<format>', () => {
     expect(res.headers.get('x-content-type-options')).toBe('nosniff');
     const csp = res.headers.get('content-security-policy');
     expect(csp).toContain("default-src 'none'");
+    // Not covered by the `default-src` fallback, so named explicitly.
+    expect(csp).toContain("form-action 'none'");
+    expect(csp).toContain("base-uri 'none'");
     // Must stay embeddable — no frame-ancestors lockdown.
     expect(csp).not.toContain('frame-ancestors');
   });
@@ -227,9 +231,22 @@ describe('Phase 8 exports — HTML XSS sanitisation (text-html cells)', () => {
       'set A12 text th <a href="javascript&#58;alert(1)">encoded-link</a>',
       'set A13 text th <img src="https&#58;//example.test/pixel" alt="encoded-image">',
       'set A14 text th <div style="background:u&#114;l(https://example.test/pixel)">encoded-style</div>',
+      // Text the rewriter copies through but a browser parses as markup:
+      // spliced around a removed element, or a CDATA section after `<svg/>`.
+      'set A15 text th <<svg></svg>script>alert(1)</script>spliced-text',
+      'set A16 text th <svg/><![CDATA[><form action="/_/other-room"><input name=x><button>cdata-text</button></form><script>alert(1)</script>]]>',
+      // A rejected value hiding behind a harmless attribute of the same name.
+      'set A17 text th <a href="dup-ok" href="javascript:alert(1)" HREF="dup-ok">dup-link</a>',
+      'set A18 text th <img src="dup-ok" src="https://evil.test/pixel" alt="dup-image">',
+      'set A19 text th <div style="color:red" style="background:url(https://evil.test/pixel)">dup-style</div>',
+      // Attribute flood: stripping one by one is quadratic in HTMLRewriter,
+      // so an element past MAX_ELEMENT_ATTRIBUTES (64) is unwrapped instead.
+      `set A20 text th <i ${'x '.repeat(64)}title="flood-title">flood-text</i>`,
+      `set A21 text th <i ${'x '.repeat(63)}title="brim-title">brim-text</i>`,
       // Benign markup that MUST survive the sanitiser.
       'set B1 text th <b>bold</b>',
       'set B2 text th <a href="https://example.test">link</a>',
+      'set B4 text th 1 < 2 <i>italic</i>',
       'set B3 text t styled',
       'set B3 cssc candidate-export-class',
     ];
@@ -268,9 +285,20 @@ describe('Phase 8 exports — HTML XSS sanitisation (text-html cells)', () => {
     expect(lower).not.toMatch(/<img\b[^>]*\bsrc\s*=\s*["']?https(?:&#58;|&colon;|:)/);
     expect(lower).not.toMatch(/<div\b[^>]*\bstyle\s*=\s*["'][^"']*u(?:&#114;|r)l\(/);
     expect(lower).not.toContain('<custom-tag');
+    // Every `<` in passed-through text is escaped, so neither payload's
+    // markup reaches the browser (the `<script`/`<form`/`<input`/`<button`
+    // checks above); what is left is inert text.
+    expect(body).toContain('&lt;script>alert(1)</script>spliced-text');
+    expect(body).toContain('&lt;form action="/_/other-room">');
+    expect(body).toContain('cdata-text');
+    // A rejected duplicate takes every attribute of that name with it.
+    expect(body).toContain('<a>dup-link</a>');
+    expect(body).toContain('<img alt="dup-image">');
+    expect(body).toContain('<div>dup-style</div>');
 
     // text-html stays a feature — safe markup and the cell text survive.
     expect(lower).toContain('<b>bold</b>');
+    expect(body).toContain('1 &lt; 2 <i>italic</i>');
     expect(body).toContain('https://example.test');
     expect(body).toContain('>link</a>');
     // Anchor text from the javascript: payload is kept; only the href dies.
@@ -287,6 +315,17 @@ describe('Phase 8 exports — HTML XSS sanitisation (text-html cells)', () => {
     expect(lower).toContain('<table');
   });
 
+  it('unwraps an element with more attributes than the sanitiser strips in place', async () => {
+    const res = await request('GET', `/_/${XSS_ROOM}/html`);
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    // Past the cap: the tag and every attribute go, the text stays.
+    expect(body).toContain('flood-text');
+    expect(body).not.toMatch(/<i\b[^>]*>flood-text/);
+    // At the cap the element is still sanitised attribute by attribute.
+    expect(body).toContain('<i title="brim-title">brim-text</i>');
+  });
+
   it('preserves a custom cell class through the headless DOM shim', async () => {
     const res = await request('GET', `/_/${XSS_ROOM}/html`);
     expect(res.status).toBe(200);
@@ -299,6 +338,60 @@ describe('Phase 8 exports — HTML XSS sanitisation (text-html cells)', () => {
     const res = await request('GET', `/_/${XSS_ROOM}/html`);
     expect(res.headers.get('x-content-type-options')).toBe('nosniff');
     expect(res.headers.get('content-security-policy')).toContain("default-src 'none'");
+  });
+});
+
+describe('Phase 8 exports — HTML sanitiser work limit', () => {
+  const TAGS_ROOM = 'html-tags-' + Math.random().toString(36).slice(2, 8);
+
+  /** Reset the room, then store each value as a text-html cell in column A. */
+  async function setHtmlCells(cells: readonly string[]): Promise<void> {
+    const e = env as unknown as Env;
+    const stub = e.ROOM.get(e.ROOM.idFromName(encodeURI(TAGS_ROOM)));
+    await stub.fetch('https://do/_do/all', { method: 'DELETE' });
+    await stub.fetch('https://do/_do/snapshot', { method: 'PUT', body: '' });
+    for (const [row, html] of cells.entries()) {
+      const res = await stub.fetch('https://do/_do/commands', {
+        method: 'POST',
+        body: `set A${row + 1} text th ${html}`,
+      });
+      expect(res.status).toBe(202);
+    }
+  }
+
+  async function expectTooLarge(res: Response): Promise<void> {
+    expect(res.status).toBe(413);
+    expect(res.headers.get('content-type')).toBe('text/plain; charset=utf-8');
+    expect(await res.text()).toBe('HTML export exceeds resource limits');
+  }
+
+  it('sends a cell of many elements whole, with the export headers', async () => {
+    await setHtmlCells(['<hr>'.repeat(2000)]);
+    const res = await request('GET', `/_/${TAGS_ROOM}/html`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('text/html; charset=utf-8');
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(res.headers.get('content-security-policy')).toContain("default-src 'none'");
+    const body = await res.text();
+    expect(body.split('<hr>').length - 1).toBe(2000);
+    expect(body.endsWith('</table>')).toBe(true);
+  });
+
+  it('refuses a document with more elements than the sanitiser may handle', async () => {
+    // Four cells that together reach the limit; the table around them passes it.
+    const quarter = '<hr>'.repeat(MAX_HTML_EXPORT_ELEMENTS / 4);
+    await setHtmlCells([quarter, quarter, quarter, quarter]);
+    const res = await request('GET', `/_/${TAGS_ROOM}/html`);
+    await expectTooLarge(res);
+    // Only the HTML export runs the sanitiser; the data stays downloadable.
+    const csv = await request('GET', `/_/${TAGS_ROOM}/csv`);
+    expect(csv.status).toBe(200);
+  });
+
+  it('refuses markup nested past the parser memory limit', async () => {
+    await setHtmlCells(['<b>'.repeat(100_000)]);
+    const res = await request('GET', `/_/${TAGS_ROOM}/html`);
+    await expectTooLarge(res);
   });
 });
 
@@ -525,5 +618,41 @@ describe('Phase 8.1 exports — multi-sheet', () => {
     expect(book.SheetNames).toEqual(['EncodedTab']);
     expect(book.Sheets['EncodedTab'].A1.v).toBe(42);
     /* eslint-enable @typescript-eslint/no-explicit-any */
+  });
+
+  it('answers 413 for ods/fods when merges exceed the ODS writer budget', async () => {
+    // SheetJS's ODS writer rescans the merge list for every cell, so
+    // `MAX_ODS_MERGE_WORK` bounds cells x merges. xlsx is not affected.
+    const e = env as unknown as Env;
+    const fill = async (name: string, rows: number): Promise<void> => {
+      const stub = e.ROOM.get(e.ROOM.idFromName(encodeURI(name)));
+      await stub.fetch('https://do/_do/all', { method: 'DELETE' });
+      await stub.fetch('https://do/_do/snapshot', { method: 'PUT', body: '' });
+      const res = await stub.fetch('https://do/_do/commands', {
+        method: 'POST',
+        body: `set A1:A${rows} all :v:1:colspan:2`,
+      });
+      expect(res.status).toBe(202);
+    };
+
+    // Single sheet: 20,001 cells x 20,001 merges is one row past the budget.
+    const single = 'merge-budget-' + Math.random().toString(36).slice(2, 8);
+    await fill(single, 20_001);
+    expect((await request('GET', `/_/${single}/ods`)).status).toBe(413);
+    expect((await request('GET', `/${single}.fods`)).status).toBe(413);
+    expect((await request('GET', `/_/${single}/xlsx`)).status).toBe(200);
+
+    // Workbook: each 15,000-row child fits alone, the two together do not.
+    const workbook = 'merge-budget-' + Math.random().toString(36).slice(2, 8);
+    await fill(`${workbook}.1`, 15_000);
+    await fill(`${workbook}.2`, 15_000);
+    await seedRoom(workbook, `url,title\n/${workbook}.1,One\n/${workbook}.2,Two`);
+    expect((await request('GET', `/_/${workbook}.1/ods`)).status).toBe(200);
+    for (const path of [`/_/=${workbook}/ods`, `/=${workbook}.fods`]) {
+      const res = await request('GET', path);
+      expect(res.status).toBe(413);
+      expect(await res.text()).toBe('multi-sheet export exceeds resource limits');
+    }
+    expect((await request('GET', `/_/=${workbook}/xlsx`)).status).toBe(200);
   });
 });

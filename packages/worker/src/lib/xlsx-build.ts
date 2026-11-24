@@ -34,10 +34,27 @@
 // liberally in the library than what we actually hit.
 import * as XLSX from '@e965/xlsx';
 
+import { MAX_SHEET_CELLS } from './command-limits.ts';
 import { parseCSV } from './csv-parse.ts';
 
 /** Binary workbook formats we support (single-sheet for Phase 8). */
 export type BinaryFormat = 'xlsx' | 'ods' | 'fods';
+
+/**
+ * SheetJS keeps its number-format table in a module variable that every
+ * `XLSX.read` / `XLSX.write` extends; capture the built-in table once at module
+ * load so every exported workbook gets a pristine copy.
+ */
+const BUILTIN_NUMBER_FORMATS: Readonly<Record<number, string>> = {
+  ...(XLSX as any).SSF.get_table(),
+};
+
+/** `XLSX.utils.book_new()` with a pristine number-format table. */
+function newExportWorkbook(): any {
+  const book = (XLSX as any).utils.book_new();
+  book.SSF = { ...BUILTIN_NUMBER_FORMATS };
+  return book;
+}
 
 // ─── Cells-based high-fidelity exporter ───────────────────────────────────
 //
@@ -95,6 +112,21 @@ export function parseCoord(coord: string): { r: number; c: number } | null {
   return { r: row, c: col - 1 };
 }
 
+/**
+ * Grid positions a workbook writer visits for a sheet that stores `coords`.
+ */
+export function exportGridArea(coords: Iterable<string>): number {
+  let rows = 0;
+  let columns = 0;
+  for (const coord of coords) {
+    const rc = parseCoord(coord);
+    if (!rc) continue;
+    rows = Math.max(rows, rc.r + 1);
+    columns = Math.max(columns, rc.c + 1);
+  }
+  return rows * columns;
+}
+
 /** Inverse of `parseCoord` for the column part. */
 export function encodeColumn(c: number): string {
   let out = '';
@@ -107,6 +139,12 @@ export function encodeColumn(c: number): string {
 }
 
 /**
+ * Longest number format the exporters pass on, which is also the longest
+ * Excel accepts.
+ */
+export const MAX_NUMBER_FORMAT_CHARS = 255;
+
+/**
  * Translate one SocialCalc cell into a SheetJS cell object. Returns `null`
  * when the cell should be omitted (truly blank — `valuetype` starts with
  * 'b' AND no formula). Rules:
@@ -115,9 +153,9 @@ export function encodeColumn(c: number): string {
  *     - `nl` → `t: 'b'` (logical / boolean)
  *     - anything else → `t: 'n'` with `cell.datavalue` as the value
  *     - `nontextvalueformat` pointing at a non-'General' / non-`text-*`
- *       entry → `z: <format string>` (SocialCalc's format dialect already
- *       matches Excel's for the common subset: decimals, percents,
- *       currency, dates)
+ *       entry of at most `MAX_NUMBER_FORMAT_CHARS` → `z: <format string>`
+ *       (SocialCalc's format dialect already matches Excel's for the
+ *       common subset: decimals, percents, currency, dates)
  * - Text (`valuetype[0] === 't'`): `t: 's'`, `v: datavalue`. Subtypes
  *   (`th`/`tl`/`tw`) degrade to plain text — the raw markup survives.
  * - Error (`valuetype[0] === 'e'`): `t: 'e'`, `v: 0x2A` (#N/A).
@@ -182,7 +220,12 @@ export function translateCell(
   const fmtIdx = cell.nontextvalueformat;
   if (typeof fmtIdx === 'number' && fmtIdx > 0) {
     const fmt = valueformats[fmtIdx];
-    if (fmt && fmt !== 'General' && !fmt.startsWith('text-')) {
+    if (
+      fmt &&
+      fmt !== 'General' &&
+      !fmt.startsWith('text-') &&
+      fmt.length <= MAX_NUMBER_FORMAT_CHARS
+    ) {
       out.z = fmt;
     }
   }
@@ -253,21 +296,146 @@ export function sheetViewToWorksheet(view: SocialCalcSheetView): Record<string, 
   return ws;
 }
 
-/** Single-sheet high-fidelity exporter. Replaces the CSV-based pipeline. */
+/**
+ * Most text a workbook may hold, in the UTF-16 code units the writer turns it
+ * into.
+ */
+export const MAX_WORKBOOK_TEXT_CHARS = 32 * 1024 * 1024;
+
+/** Thrown instead of writing a workbook over {@link MAX_WORKBOOK_TEXT_CHARS}. */
+export class WorkbookTooLargeError extends Error {
+  constructor() {
+    super(`workbook export exceeds ${MAX_WORKBOOK_TEXT_CHARS} characters of text`);
+    this.name = 'WorkbookTooLargeError';
+  }
+}
+
+/**
+ * Merge-list comparisons one ods/fods export may cost.
+ */
+export const MAX_ODS_MERGE_WORK = MAX_SHEET_CELLS * 2_000;
+
+/** Thrown by the ods/fods exporters when a workbook exceeds {@link MAX_ODS_MERGE_WORK}. */
+export class ExportMergeWorkTooLargeError extends Error {
+  readonly work: number;
+  constructor(work: number) {
+    super(`ods/fods export exceeds ${MAX_ODS_MERGE_WORK} merge lookups (${work}); export as xlsx instead`);
+    this.name = 'ExportMergeWorkTooLargeError';
+    this.work = work;
+  }
+}
+
+/**
+ * Length of `text` once SheetJS has written it, without building the result.
+ */
+export function writtenTextChars(text: string, odsParagraph = false): number {
+  let chars = 0;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code === 0x26) {
+      chars += 5; // &amp;
+    } else if (code === 0x3c || code === 0x3e) {
+      chars += 4; // &lt; &gt;
+    } else if (code === 0x22 || code === 0x27) {
+      chars += 6; // &quot; &apos;
+    } else if (code === 0x09 || code === 0x0a) {
+      // <text:tab/> and </text:p><text:p>; left alone everywhere else.
+      chars += !odsParagraph ? 1 : code === 0x09 ? 11 : 17;
+    } else if (code < 0x20 || code >= 0xfffe) {
+      chars += 7; // _x0001_
+    } else if (code === 0x20 && odsParagraph) {
+      let end = i + 1;
+      while (text.charCodeAt(end) === 0x20) end++;
+      const run = end - i;
+      if (run > 1) {
+        chars += 19 + String(run).length; // <text:s text:c="2"/>
+      } else {
+        chars += i === 0 || end === text.length ? 9 : 1; // <text:s/>
+      }
+      i = end - 1;
+    } else {
+      chars += 1;
+    }
+  }
+  return chars;
+}
+
+const ODS_FORMULA_REFERENCE = /[A-Z]\$?\d/g;
+
+function writtenCellChars(
+  cell: { readonly v?: unknown; readonly f?: unknown; readonly c?: ReadonlyArray<{ readonly t?: unknown }> },
+  format: BinaryFormat,
+): number {
+  const ods = format !== 'xlsx';
+  let chars = 0;
+  if (typeof cell.v === 'string') chars += writtenTextChars(cell.v, ods);
+  if (typeof cell.f === 'string') {
+    chars += writtenTextChars(cell.f);
+    if (ods) {
+      ODS_FORMULA_REFERENCE.lastIndex = 0;
+      while (ODS_FORMULA_REFERENCE.test(cell.f)) chars += 3;
+    }
+  }
+  for (const comment of cell.c ?? []) {
+    chars += writtenTextChars(String(comment.t), ods);
+  }
+  return chars;
+}
+
+function assertOdsMergeWork(book: any, format: BinaryFormat): void {
+  if (format === 'xlsx') return;
+  let work = 0;
+  for (const name of book.SheetNames as string[]) {
+    const ws = book.Sheets[name];
+    const merges = ws['!merges'] as unknown[] | undefined;
+    if (!merges) continue;
+    const { s, e } = (XLSX as any).utils.decode_range(ws['!ref']);
+    work += (e.r - s.r + 1) * (e.c - s.c + 1) * merges.length;
+  }
+  if (work > MAX_ODS_MERGE_WORK) throw new ExportMergeWorkTooLargeError(work);
+}
+
+/**
+ * Enforce export text & merge bounds, suppress SheetJS ODS format console
+ * diagnostics, and serialize `book` into `format`.
+ */
+function writeWorkbook(book: any, format: BinaryFormat): Uint8Array {
+  let chars = 0;
+  for (const name of book.SheetNames as string[]) {
+    for (const [ref, cell] of Object.entries(book.Sheets[name] as Record<string, any>)) {
+      if (ref.startsWith('!')) continue;
+      chars += writtenCellChars(cell, format);
+      if (chars > MAX_WORKBOOK_TEXT_CHARS) throw new WorkbookTooLargeError();
+    }
+  }
+  assertOdsMergeWork(book, format);
+  const consoleError = console.error;
+  console.error = () => {};
+  try {
+    const out = (XLSX as any).write(book, {
+      bookType: format,
+      type: 'array',
+      compression: true,
+    });
+    return new Uint8Array(out as ArrayBufferLike);
+  } finally {
+    console.error = consoleError;
+  }
+}
+
+/**
+ * Single-sheet high-fidelity exporter. Replaces the CSV-based pipeline.
+ * Throws {@link WorkbookTooLargeError} or {@link ExportMergeWorkTooLargeError}.
+ */
 export function sheetViewToBinaryWorkbook(
   view: SocialCalcSheetView,
   format: BinaryFormat,
   sheetName: string = 'Sheet1',
 ): Uint8Array {
   const ws = sheetViewToWorksheet(view);
-  const book = (XLSX as any).utils.book_new();
+  const book = newExportWorkbook();
   (XLSX as any).utils.book_append_sheet(book, ws, sheetName);
-  const out = (XLSX as any).write(book, {
-    bookType: format,
-    type: 'array',
-    compression: true,
-  });
-  return new Uint8Array(out as ArrayBufferLike);
+  return writeWorkbook(book, format);
 }
 
 /** Multi-sheet high-fidelity exporter. Parallels `buildMultiSheetWorkbook`. */
@@ -275,7 +443,7 @@ export function buildMultiSheetWorkbookFromSheets(
   sheets: ReadonlyArray<{ readonly name: string; readonly view: SocialCalcSheetView }>,
   format: BinaryFormat,
 ): Uint8Array {
-  const book = (XLSX as any).utils.book_new();
+  const book = newExportWorkbook();
   const used: string[] = [];
   if (sheets.length === 0) {
     const blank = (XLSX as any).utils.aoa_to_sheet([['']]);
@@ -287,12 +455,7 @@ export function buildMultiSheetWorkbookFromSheets(
     used.push(name);
     (XLSX as any).utils.book_append_sheet(book, ws, name);
   }
-  const out = (XLSX as any).write(book, {
-    bookType: format,
-    type: 'array',
-    compression: true,
-  });
-  return new Uint8Array(out as ArrayBufferLike);
+  return writeWorkbook(book, format);
 }
 
 /**
@@ -307,14 +470,9 @@ export function csvToBinaryWorkbook(csv: string, format: BinaryFormat): Uint8Arr
   // an empty-but-valid Sheet1 for an empty room.
   const aoa: unknown[][] = grid.length === 0 ? [['']] : coerceNumericCells(grid);
   const sheet = (XLSX as any).utils.aoa_to_sheet(aoa);
-  const book = (XLSX as any).utils.book_new();
+  const book = newExportWorkbook();
   (XLSX as any).utils.book_append_sheet(book, sheet, 'Sheet1');
-  const out = (XLSX as any).write(book, {
-    bookType: format,
-    type: 'array',
-    compression: true,
-  });
-  return new Uint8Array(out as ArrayBufferLike);
+  return writeWorkbook(book, format);
 }
 
 /**
@@ -432,7 +590,7 @@ export function buildMultiSheetWorkbook(
   sheets: ReadonlyArray<{ readonly name: string; readonly csv: string }>,
   format: BinaryFormat,
 ): Uint8Array {
-  const book = (XLSX as any).utils.book_new();
+  const book = newExportWorkbook();
   const used: string[] = [];
   // If the caller handed us zero sheets, produce a single blank Sheet1 so
   // the output is still a valid workbook (matches legacy `j` behavior for
@@ -450,12 +608,7 @@ export function buildMultiSheetWorkbook(
     used.push(name);
     (XLSX as any).utils.book_append_sheet(book, ws, name);
   }
-  const out = (XLSX as any).write(book, {
-    bookType: format,
-    type: 'array',
-    compression: true,
-  });
-  return new Uint8Array(out as ArrayBufferLike);
+  return writeWorkbook(book, format);
 }
 
 /**

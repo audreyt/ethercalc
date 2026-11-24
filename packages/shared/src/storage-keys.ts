@@ -20,13 +20,18 @@ export const STORAGE_KEYS = {
    */
   snapshot: "snapshot",
   /**
-   * Object `{ chunks: number }` — present iff the snapshot is split
-   * across `snapshot:chunk:<i>` keys. Absent for small snapshots.
+   * Object `{ chunks: number; bytes?: number }` — present iff the snapshot is
+   * split across `snapshot:chunk:<i>` keys. Absent for small snapshots.
    */
   snapshotMeta: "snapshot:meta",
   /** Prefix for chunked snapshot parts: `snapshot:chunk:<padSeq(i)>`. */
   snapshotChunkPrefix: "snapshot:chunk:",
-  /** Number — ms since epoch. Updated on every snapshot write. */
+  /**
+   * Number — ms since epoch. Updated on every snapshot write. The
+   * housekeeping alarm also sets it once on a room that has stored keys
+   * but no timestamp (chat / cursors only), so `ETHERCALC_EXPIRE` has a
+   * clock to run against.
+   */
   metaUpdatedAt: "meta:updated_at",
   /**
    * String — room access mode. Absent on legacy/public rooms (the

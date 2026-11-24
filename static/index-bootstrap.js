@@ -1,11 +1,13 @@
-if (!(window.location.hash.replace('#', ''))) {
-    if (window.location.href.match(/\/([^_][^\*\$\/\?]*)(?:\?.*)?$/)) {
-        window.EtherCalc = window.SocialCalc = { _room: RegExp.$1 };
-        document.title = SocialCalc._room + " – EtherCalc";
-    }
-    else {
-        window.location = './_start';
-    }
+// The room is the one the server authorized and served this page for: the
+// path. A fragment names the room only where the path names none (legacy
+// `/#room`); it must never override the path, or `/private#other` would edit
+// `other` under the access badge of `private`.
+if (window.location.pathname.match(/\/([^_][^\*\$\/]*)$/)) {
+    window.EtherCalc = window.SocialCalc = { _room: RegExp.$1 };
+    document.title = SocialCalc._room + " – EtherCalc";
+}
+else if (!(window.location.hash.replace('#', ''))) {
+    window.location = './_start';
 }
 window.addEventListener("message", function(it) {
     if (window.parent === window || it.source !== window.parent) return;

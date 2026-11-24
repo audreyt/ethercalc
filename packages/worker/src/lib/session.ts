@@ -18,6 +18,21 @@ export type SessionVerifier = (
 const SESSION_VALUE_PATTERN = /^[A-Za-z0-9._~-]+$/;
 
 /**
+ * Strip the only whitespace cookie syntax knows: SP and HTAB. `String#trim()`
+ * also drops Unicode spaces (U+00A0, U+2000, U+FEFF, ...), which browsers keep
+ * as part of a cookie name, so a sibling subdomain could plant
+ * U+2000 + `__Host-ec_sess` for the whole domain: that name does not start
+ * with `__Host-`. A plain scan, so long whitespace runs stay linear.
+ */
+function trimCookieWhitespace(text: string): string {
+  let start = 0;
+  let end = text.length;
+  while (start < end && (text[start] === ' ' || text[start] === '\t')) start++;
+  while (end > start && (text[end - 1] === ' ' || text[end - 1] === '\t')) end--;
+  return text.slice(start, end);
+}
+
+/**
  * Extract one unambiguous EtherCalc session token from a Cookie header.
  * Duplicate names fail closed to avoid cookie-shadowing ambiguity.
  */
@@ -27,9 +42,10 @@ export function parseSessionCookie(cookieHeader: string | null): string | null {
   for (const segment of cookieHeader.split(';')) {
     const equals = segment.indexOf('=');
     if (equals < 0) continue;
-    if (segment.slice(0, equals).trim() !== SESSION_COOKIE_NAME) continue;
+    const name = trimCookieWhitespace(segment.slice(0, equals));
+    if (name !== SESSION_COOKIE_NAME) continue;
     if (session !== null) return null;
-    const value = segment.slice(equals + 1).trim();
+    const value = trimCookieWhitespace(segment.slice(equals + 1));
     if (!SESSION_VALUE_PATTERN.test(value)) return null;
     session = value;
   }

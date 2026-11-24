@@ -155,6 +155,29 @@ describe('<App /> integration', () => {
     expect(foldr.rows[0]?.title).toBe('Sheet1');
   });
 
+  it('ignores Rename while a non-workbook room shows no tabs', async () => {
+    const foldr = createMockFoldr();
+    foldr.rows = [];
+    const promptMock = vi.fn().mockReturnValue('Renamed');
+
+    render(
+      <App
+        foldr={foldr}
+        basePath="http://localhost"
+        suffix=""
+        index="room"
+        isReadOnly={false}
+        prompt={promptMock}
+      />,
+    );
+
+    expect(screen.queryAllByRole('tab')).toHaveLength(0);
+    await userEvent.click(screen.getByRole('button', { name: 'Rename...' }));
+
+    expect(promptMock).not.toHaveBeenCalled();
+    expect(foldr.rows).toEqual([]);
+  });
+
   it('adds a new sheet when Add button is clicked', async () => {
     const foldr = createMockFoldr();
 

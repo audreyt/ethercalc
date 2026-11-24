@@ -6,6 +6,7 @@ import {
   isRateLimitExemptPath,
   parseRateLimitConfig,
   rateLimitConfigFromEnv,
+  rateLimitKey,
 } from '../src/lib/rate-limit.ts';
 
 describe('parseRateLimitConfig', () => {
@@ -130,6 +131,39 @@ describe('clientIpFromHeaders', () => {
     ['X-Forwarded-For', 'unknown'],
   ])('rejects malformed %s values', (name, value) => {
     expect(clientIpFromHeaders(new Headers({ [name]: value }))).toBe('unknown');
+  });
+});
+
+describe('rateLimitKey', () => {
+  it.each([
+    ['2001:db8:aaaa:bbbb::1', '2001:db8:aaaa:bbbb::/64'],
+    ['2001:db8:aaaa:bbbb:1:2:3:4', '2001:db8:aaaa:bbbb::/64'],
+    ['2001:db8:aaaa:bbbb::', '2001:db8:aaaa:bbbb::/64'],
+    ['2001:0DB8:0:00cd::28', '2001:db8:0:cd::/64'],
+    ['2001:db8::1', '2001:db8:0:0::/64'],
+    ['2001:db8:1::2:3:4:5', '2001:db8:1:0::/64'],
+    ['::1:2:3:4:5:6:7', '0:1:2:3::/64'],
+    ['1::2:3:4:5:198.51.100.2', '1:0:2:3::/64'],
+    ['1:2:3:4:5:6:7:8::9', '1:2:3:4::/64'],
+  ])('keys IPv6 %s on its /64', (ip, key) => {
+    expect(rateLimitKey(ip)).toBe(key);
+  });
+
+  it.each([
+    '203.0.113.1',
+    'unknown',
+    // All-zero prefix: loopback and IPv4-mapped peers are single hosts.
+    '::',
+    '::1',
+    '::ffff:203.0.113.1',
+    '::ffff:cb00:7101',
+    '0:0:0:0:0:ffff:cb00:7101',
+    // Not address-shaped: no prefix to share.
+    '1:2:3',
+    '2001:db8:12345:1::1',
+    '203.0.113.1:2:3:4:5',
+  ])('keeps %s as its own key', (ip) => {
+    expect(rateLimitKey(ip)).toBe(ip);
   });
 });
 

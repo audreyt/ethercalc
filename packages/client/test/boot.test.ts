@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vite-plus/test';
 
 import {
   buildLegacyExportUrl,
+  deriveExportFilename,
   initializeSpreadsheet,
   installLegacyExportBindings,
   installSocialCalcLogoLink,
@@ -9,6 +10,7 @@ import {
   type BootHost,
   type DialogHostElement,
 } from '../src/boot.ts';
+import { createSocialCalcFactory } from '../../socialcalc-headless/src/socialcalc.bundled.ts';
 import { makeSocialCalc, makeSpreadsheet } from './mock-socialcalc.ts';
 
 interface FakeDialogElement extends DialogHostElement {
@@ -207,6 +209,37 @@ describe('initializeSpreadsheet', () => {
 
     expect(() => initializeSpreadsheet(host)).not.toThrow();
     expect(host.spreadsheet).toBeUndefined();
+  });
+});
+
+describe('deriveExportFilename', () => {
+  it('reads a quoted filename up to its closing quote', () => {
+    expect(deriveExportFilename('./room1.csv', 'attachment; filename="room1.csv"')).toBe(
+      'room1.csv',
+    );
+    // `;` is legal in a room name and inside a quoted-string; stopping there
+    // would save the CSV of room `a.hta;b` as `a.hta`.
+    expect(deriveExportFilename('./a.hta;b.csv', 'attachment; filename="a.hta;b.csv"')).toBe(
+      'a.hta;b.csv',
+    );
+    expect(
+      deriveExportFilename('./a.xlsx', 'attachment; filename="a;filename=b.hta;.xlsx"'),
+    ).toBe('a;filename=b.hta;.xlsx');
+  });
+
+  it('ends an unquoted filename at the next parameter', () => {
+    expect(deriveExportFilename('./x.csv', 'attachment; filename=room1.csv; size=3')).toBe(
+      'room1.csv',
+    );
+  });
+
+  it('falls back to the last path segment of the URL', () => {
+    expect(deriveExportFilename('../sheet1.html', null)).toBe('sheet1.html');
+    expect(deriveExportFilename('./sheet1.csv?x=/y', 'attachment')).toBe('sheet1.csv');
+    expect(deriveExportFilename('./sheet1.csv', 'attachment; filename=""')).toBe('sheet1.csv');
+    expect(deriveExportFilename('./sheet1.csv', 'attachment; filename="sheet1')).toBe(
+      'sheet1.csv',
+    );
   });
 });
 
@@ -467,5 +500,45 @@ describe('installSocialCalcLogoLink', () => {
     // so the handler never attaches and the flag stays false.
     installSocialCalcLogoLink(host);
     expect(host.__ETHERCALC_LOGO_BOUND__).toBeUndefined();
+  });
+});
+
+describe('page boot', () => {
+  it('bounds formula evaluation before it connects to the room', async () => {
+    const SocialCalc = createSocialCalcFactory() as unknown as BootHost['SocialCalc'] & {
+      Sheet: new () => unknown;
+      Formula: {
+        FunctionList: Record<string, [unknown]>;
+        ParseFormulaIntoTokens: (formula: string) => unknown;
+        evaluate_parsed_formula: (
+          parsed: unknown,
+          sheet: unknown,
+          allowRange: boolean,
+        ) => { value: unknown; type: string };
+      };
+    };
+    const formula = SocialCalc.Formula;
+    const upstreamSubstitute = formula.FunctionList['SUBSTITUTE']![0];
+    vi.stubGlobal('document', { readyState: 'complete' });
+    vi.stubGlobal('window', {
+      SocialCalc,
+      location: { search: '', hash: '', pathname: '/' },
+    });
+    vi.resetModules();
+    try {
+      await import('../src/boot.ts');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(SocialCalc.isConnected).toBe(true);
+
+    expect(formula.FunctionList['SUBSTITUTE']![0]).not.toBe(upstreamSubstitute);
+    expect(
+      formula.evaluate_parsed_formula(
+        formula.ParseFormulaIntoTokens('SUBSTITUTE("x","","")'),
+        new SocialCalc.Sheet(),
+        false,
+      ),
+    ).toMatchObject({ type: 't', value: 'x' });
   });
 });

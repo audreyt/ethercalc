@@ -2,10 +2,13 @@ import { describe, it, expect, vi } from 'vite-plus/test';
 
 import {
   DoUnavailableError,
+  RoomBusyError,
   doFetch,
   doUnavailableResponse,
   roomStub,
+  roomStubForId,
 } from '../src/lib/do-dispatch.ts';
+import { resetLiveRooms } from '../src/lib/live-rooms.ts';
 import type { Env } from '../src/env.ts';
 
 interface RecordedFetch {
@@ -119,6 +122,80 @@ describe('do-dispatch', () => {
     );
     const headers = new Headers(calls[0]?.init?.headers);
     expect(headers.get('X-EC-Uid')).toBe('uid-verified');
+  });
+});
+
+describe('live-room budget at the stub (ETHERCALC_LIVE_ROOM_LIMIT)', () => {
+  /** Env that allows one awake room; ids are the encoded room names. */
+  function makeLimitedEnv(limit = '1'): { env: Env; woken: string[] } {
+    resetLiveRooms();
+    const woken: string[] = [];
+    const env: Env = {
+      ETHERCALC_LIVE_ROOM_LIMIT: limit,
+      ROOM: {
+        idFromName: (name: string) => ({ toString: () => name }) as DurableObjectId,
+        get: (id: DurableObjectId) => {
+          woken.push(id.toString());
+          return { fetch: async () => new Response('from the room') };
+        },
+      } as unknown as DurableObjectNamespace,
+    };
+    return { env, woken };
+  }
+
+  it('does not wake a room beyond the budget; its stand-in answers 503', async () => {
+    const { env, woken } = makeLimitedEnv();
+    expect(await (await roomStub(env, 'a').fetch('https://do.local/')).text()).toBe(
+      'from the room',
+    );
+    const refused = await roomStubForId(env, env.ROOM.idFromName('b')).fetch('https://do.local/');
+    expect(refused.status).toBe(503);
+    expect(refused.headers.get('Retry-After')).toBe('1');
+    expect(await refused.text()).toBe('Service temporarily unavailable');
+    expect((await roomStub(env, 'b').fetch('https://do.local/')).status).toBe(503);
+    expect((await roomStub(env, 'a').fetch('https://do.local/')).status).toBe(200);
+    expect(woken).toEqual(['a', 'a']);
+  });
+
+  it('doFetch reports a refused room as RoomBusyError, reads and writes alike', async () => {
+    const { env, woken } = makeLimitedEnv();
+    expect((await doFetch(env, 'a', '/_do/snapshot')).status).toBe(200);
+    for (const method of ['GET', 'PUT']) {
+      const err = await doFetch(env, 'b', '/_do/snapshot', { method }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(RoomBusyError);
+      expect(err).toBeInstanceOf(DoUnavailableError);
+      expect((err as Error).name).toBe('RoomBusyError');
+      expect((err as Error).cause).toBe('Too many rooms awake');
+      expect(doUnavailableResponse(err)?.status).toBe(503);
+    }
+    expect((await doFetch(env, 'a', '/_do/snapshot')).status).toBe(200);
+    expect(woken).toEqual(['a', 'a']);
+  });
+
+  it('caps anonymous GETs below editor writes so viewer floods leave headroom', async () => {
+    const { env } = makeLimitedEnv('3');
+    expect((await doFetch(env, 'v1', '/_do/snapshot')).status).toBe(200);
+    expect((await doFetch(env, 'v2', '/_do/snapshot')).status).toBe(200);
+    const viewerRefused = await doFetch(env, 'v3', '/_do/snapshot').catch((e: unknown) => e);
+    expect(viewerRefused).toBeInstanceOf(RoomBusyError);
+    // Explicit viewer=false (e.g. Sandstorm modify GET) can use the reserved editor slot.
+    expect((await doFetch(env, 'sandstorm-editor', '/_do/snapshot', {}, null, false)).status).toBe(
+      200,
+    );
+    // Explicit viewer=true respects viewerRoomLimit even on non-idempotent/authed dispatch.
+    const { env: env2 } = makeLimitedEnv('3');
+    expect((await doFetch(env2, 'a', '/_do/snapshot', {}, null, true)).status).toBe(200);
+    expect((await doFetch(env2, 'b', '/_do/snapshot', {}, null, true)).status).toBe(200);
+    const forcedViewer = await doFetch(
+      env2,
+      'c',
+      '/_do/snapshot',
+      {},
+      { uid: 'u1', exp: Number.MAX_SAFE_INTEGER },
+      true,
+    ).catch((e: unknown) => e);
+    expect(forcedViewer).toBeInstanceOf(RoomBusyError);
+    expect((await doFetch(env2, 'editor', '/_do/snapshot', { method: 'PUT' })).status).toBe(200);
   });
 });
 

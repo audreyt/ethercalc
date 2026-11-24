@@ -143,7 +143,8 @@ per-field validation under that ceiling.
 `packages/socketio-shim/src/translate.ts` now delegates decoded payloads to the
 same `parseClientMessageValue` canonical parser. The adapter also newly adds:
 
-- `MAX_SOCKET_IO_SESSIONS = 1,024` → excess handshake returns 503;
+- `MAX_SOCKET_IO_SESSIONS = 1,024` → a new session at the cap recycles the
+  least recently seen one instead of being refused;
 - `MAX_XHR_POLL_BYTES = 1 MiB` → oversized poll POST returns 413;
 - `MAX_XHR_POLL_FRAMES = 64` → oversized batch returns 413;
 - `MAX_XHR_POLL_QUEUE = 128` → queue overflow closes the session;

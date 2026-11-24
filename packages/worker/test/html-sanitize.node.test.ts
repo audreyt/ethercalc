@@ -4,13 +4,19 @@ import {
   ALLOWED_ATTRIBUTES,
   ALLOWED_ELEMENTS,
   DANGEROUS_ELEMENTS,
+  MAX_ELEMENT_ATTRIBUTES,
   URL_ATTRIBUTES,
   isEventHandlerAttribute,
   isExternalImageSource,
   isUnsafeInlineStyle,
   isUnsafeUrlValue,
   attributeAction,
+  attributesToRemove,
+  escapeTextMarkup,
+  MAX_HTML_EXPORT_ELEMENTS,
+  exceedsHtmlExportElementLimit,
 } from '../src/lib/html-sanitize.ts';
+import { MAX_SHEET_CELLS } from '../src/lib/command-limits.ts';
 
 /**
  * Coverage-gated unit tests for the pure HTML-export sanitisation policy.
@@ -165,6 +171,13 @@ describe('policy lists are pinned, not merely non-empty', () => {
     for (const element of DANGEROUS_ELEMENTS) {
       expect(ALLOWED_ELEMENTS).not.toContain(element);
     }
+  });
+
+  it('caps attributes per element above anything the allowlist can keep', () => {
+    // HTMLRewriter removes attributes in linear time each, so the cap bounds
+    // the work per element; it must still clear every attribute worth keeping.
+    expect(MAX_ELEMENT_ATTRIBUTES).toBe(64);
+    expect(MAX_ELEMENT_ATTRIBUTES).toBeGreaterThan(ALLOWED_ATTRIBUTES.length);
   });
 });
 
@@ -361,6 +374,106 @@ describe('attributeAction', () => {
     expect(
       attributeAction('style', 'background:url(//tracker.test/pixel)'),
     ).toBe('remove');
+  });
+});
+
+describe('attributesToRemove', () => {
+  it('lists each rejected attribute once and keeps the rest', () => {
+    expect(
+      attributesToRemove([
+        ['href', 'https://example.test'],
+        ['onclick', 'alert(1)'],
+        ['class', 'foo'],
+        ['style', 'background:url(//tracker.test/pixel)'],
+      ]),
+    ).toEqual(['onclick', 'style']);
+    expect(attributesToRemove([])).toEqual([]);
+  });
+
+  it('takes every duplicate of a name once any of its values is rejected', () => {
+    // removeAttribute(name) drops the first attribute of that name, so one
+    // call per occurrence is what empties the element of it.
+    expect(
+      attributesToRemove([
+        ['href', 'dup-ok'],
+        ['title', 'kept'],
+        ['href', 'javascript:alert(1)'],
+        ['href', 'dup-ok'],
+      ]),
+    ).toEqual(['href', 'href', 'href']);
+    expect(
+      attributesToRemove([
+        ['src', 'https://tracker.test/pixel'],
+        ['src', '/img/x.png'],
+      ]),
+    ).toEqual(['src', 'src']);
+  });
+
+  it('leaves duplicates alone when every value passes', () => {
+    expect(
+      attributesToRemove([
+        ['href', 'a'],
+        ['href', 'b'],
+      ]),
+    ).toEqual([]);
+  });
+
+  it('matches duplicate names case-insensitively and returns them as given', () => {
+    expect(
+      attributesToRemove([
+        ['href', 'dup-ok'],
+        ['HREF', 'javascript:alert(1)'],
+      ]),
+    ).toEqual(['href', 'HREF']);
+    expect(
+      attributesToRemove([
+        ['STYLE', 'background:url(/x)'],
+        ['style', 'color:red'],
+      ]),
+    ).toEqual(['STYLE', 'style']);
+  });
+});
+
+describe('escapeTextMarkup', () => {
+  it('escapes every `<` so rewriter text cannot open a tag in a browser', () => {
+    // What HTMLRewriter hands over as text after `<svg/><![CDATA[`.
+    expect(escapeTextMarkup('><form action="/_/room"><script>alert(1)</script>')).toBe(
+      '>&lt;form action="/_/room">&lt;script>alert(1)&lt;/script>',
+    );
+    // The lone `<` that `<<svg></svg>script>` leaves in front of `script>`.
+    expect(escapeTextMarkup('<')).toBe('&lt;');
+  });
+
+  it('leaves text without `<` untouched, including existing entities', () => {
+    expect(escapeTextMarkup('a &lt; b &amp; c > d')).toBe('a &lt; b &amp; c > d');
+    expect(escapeTextMarkup('')).toBe('');
+  });
+});
+
+describe('exceedsHtmlExportElementLimit', () => {
+  const exceeds = (markup: string, count: number): boolean =>
+    exceedsHtmlExportElementLimit(markup.repeat(count));
+
+  it('allows a document up to the element limit and refuses one past it', () => {
+    expect(exceeds('', 1)).toBe(false);
+    expect(exceeds('<table><tr><td>1 &lt; 2</td></tr></table>', 1)).toBe(false);
+    expect(exceeds('<hr>', MAX_HTML_EXPORT_ELEMENTS)).toBe(false);
+    expect(exceeds('<hr>', MAX_HTML_EXPORT_ELEMENTS + 1)).toBe(true);
+  });
+
+  it('counts start tags in either case, and nothing else', () => {
+    expect(exceeds('<HR>', MAX_HTML_EXPORT_ELEMENTS + 1)).toBe(true);
+    // End tags, comments and a `<` that opens no tag reach no element handler.
+    expect(exceeds('</b><!----><1< <', MAX_HTML_EXPORT_ELEMENTS + 1)).toBe(false);
+    expect(exceeds('b> ', MAX_HTML_EXPORT_ELEMENTS + 1)).toBe(false);
+  });
+
+  it('leaves room for the grid of any sheet within the cell cap', () => {
+    // The most markup per cell: one column, so every cell has a row of its
+    // own, under SocialCalc's column-width row and table scaffolding.
+    const rows = '<tr><td>&nbsp;</td></tr>'.repeat(MAX_SHEET_CELLS + 1);
+    const grid = `<table><colgroup><col></col></colgroup><tbody>${rows}</tbody></table>`;
+    expect(exceedsHtmlExportElementLimit(grid)).toBe(false);
   });
 });
 

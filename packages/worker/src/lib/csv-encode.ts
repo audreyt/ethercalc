@@ -33,32 +33,50 @@ export function encodeCSVField(field: string): string {
 // of these characters (OWASP CSV-injection guidance). Tab/CR are included
 // because Excel/Sheets trim leading whitespace before evaluating the cell.
 const CSV_INJECTION_LEAD = /^[=+\-@\t\r]/;
+// Non-comma consumers (`;`, `|`, tab, CR/LF) split inside quoted fields once
+// quotes are no longer field-leading; guard any trigger preceded by those
+// separators + optional quotes (including leading U+FEFF BOMs).
+const CSV_INJECTION_INNER = /([;|\t\r\n]"*)(\uFEFF*[=+\-@][^;|\t\r\n]*)/g;
+// Excel and SheetJS consume a first line `sep=<char>` as a delimiter directive.
+const CSV_SEP_DIRECTIVE = /^[\s\ufeff]*sep=/i;
 // Genuinely numeric values (incl. signed and scientific) are NOT formulas —
 // neutralizing `-5` or `+3.14` would corrupt ordinary data, so they're exempt.
 const CSV_NUMERIC = /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+// Readers strip a leading U+FEFF as a byte-order mark.
+const CSV_LEADING_BOM = /^\uFEFF+/;
 
 /**
  * Defang a single CSV field against formula/DDE injection. When a field
- * starts with a formula-trigger character and is not a plain number, prefix
- * it with a single quote so spreadsheet apps render it as literal text
- * instead of evaluating `=HYPERLINK(...)`, `=cmd|'/c calc'!A1`, etc. on
- * download. Everything else is returned unchanged.
+ * starts with a formula-trigger character (looking past leading U+FEFF BOMs)
+ * and is not a plain number, prefix it with a single quote so spreadsheet apps
+ * render it as literal text instead of evaluating formulas on download. Also
+ * quotes triggers following `;`, `|`, tab, or line breaks.
  */
 export function neutralizeCSVFormula(field: string): string {
-  if (CSV_INJECTION_LEAD.test(field) && !CSV_NUMERIC.test(field)) {
-    return `'${field}`;
+  const safe = field.replace(CSV_INJECTION_INNER, (match, split: string, rest: string) => {
+    const visibleRest = rest.replace(CSV_LEADING_BOM, '');
+    return CSV_NUMERIC.test(visibleRest) ? match : `${split}'${rest}`;
+  });
+  const visible = safe.replace(CSV_LEADING_BOM, '');
+  if (CSV_INJECTION_LEAD.test(visible) && !CSV_NUMERIC.test(visible)) {
+    return `'${safe}`;
   }
-  return field;
+  return safe;
 }
 
 /**
  * Re-emit a CSV document with every field defanged against formula
  * injection. Parses the source (the strict subset SocialCalc emits),
- * neutralizes each field, and re-encodes. Benign documents round-trip
- * byte-for-byte; only formula-shaped cells gain a leading `'`.
+ * neutralizes each field (plus any leading `sep=` directive in A1), and
+ * re-encodes. Benign documents round-trip byte-for-byte.
  */
 export function neutralizeCSVDocument(csv: string): string {
-  return encodeCSV(parseCSV(csv).map((row) => row.map(neutralizeCSVFormula)));
+  const rows = parseCSV(csv).map((row) => row.map(neutralizeCSVFormula));
+  const head = rows[0];
+  if (head?.[0] !== undefined && CSV_SEP_DIRECTIVE.test(head[0])) {
+    head[0] = `'${head[0]}`;
+  }
+  return encodeCSV(rows);
 }
 
 /**

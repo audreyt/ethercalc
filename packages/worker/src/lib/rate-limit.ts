@@ -137,6 +137,35 @@ export function clientIpFromHeaders(headers: Headers): string {
   return last ?? 'unknown';
 }
 
+const IPV6_GROUP = /^[0-9a-f]{1,4}$/i;
+
+/**
+ * Bucket identity for a limiter that must hold against one subscriber
+ * rather than one address. An IPv6 subscriber holds a whole /64 and can
+ * connect from any address in it, so a bucket per address is a fresh burst
+ * per address: IPv6 sources map to their /64. Everything else maps to
+ * itself: IPv4, `unknown`, and the all-zero prefix (loopback, IPv4-mapped
+ * peers).
+ */
+export function rateLimitKey(ip: string): string {
+  const [head, tail] = ip.split('::') as [string, string | undefined];
+  const groups = head === '' ? [] : head.split(':');
+  if (tail !== undefined) {
+    const rest = tail === '' ? [] : tail.split(':');
+    // A trailing dotted quad spells the last two groups.
+    const width = groups.length + rest.length + (tail.includes('.') ? 1 : 0);
+    groups.push(...Array<string>(Math.max(0, 8 - width)).fill('0'), ...rest);
+  }
+  const prefix = groups.slice(0, 4);
+  if (prefix.length < 4 || !prefix.every((group) => IPV6_GROUP.test(group))) {
+    return ip;
+  }
+  const key = prefix
+    .map((group) => parseInt(group, 16).toString(16))
+    .join(':');
+  return key === '0:0:0:0' ? ip : `${key}::/64`;
+}
+
 export interface RateLimitStore {
   consume(ip: string, config: RateLimitConfig, nowMs?: number): RateLimitResult;
   /** Test hook — drop all per-IP state. */

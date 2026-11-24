@@ -215,12 +215,16 @@ export async function handleAskLog(
   ctx: WsContext,
   msg: Extract<ClientMessage, { type: 'ask.log' }>,
 ): Promise<void> {
-  const [log, chat, snapshot] = await Promise.all([
-    ctx.storage.listPrefix('log:'),
+  const [chat, snapshot] = await Promise.all([
     ctx.storage.listPrefix('chat:'),
     ctx.storage.getSnapshot(),
   ]);
-  const replayLog = snapshot ? [] : log;
+  // Read the log ONLY when it is going to be sent (same shape as
+  // `#getSpreadsheet`). The ring holds up to LOG_RING commands of
+  // MAX_COMMAND_UTF8_BYTES each (~120 MiB), so listing it on every frame
+  // just to discard it let a few tiny anonymous `ask.log` frames stall the
+  // isolate for every room.
+  const replayLog = snapshot ? [] : await ctx.storage.listPrefix('log:');
   await ctx.reply(buildLogReply(msg, replayLog, chat, snapshot ?? ''));
 }
 
@@ -234,14 +238,13 @@ export async function handleAskRecalc(
   ctx: WsContext,
   msg: Extract<ClientMessage, { type: 'ask.recalc' }>,
 ): Promise<void> {
-  const [log, snapshot] = await Promise.all([
-    ctx.storage.listPrefix('log:'),
-    ctx.storage.getSnapshot(),
-  ]);
+  const snapshot = await ctx.storage.getSnapshot();
+  // As in `handleAskLog`: the log is read only for a log-only room.
+  const log = snapshot ? [] : await ctx.storage.listPrefix('log:');
   await ctx.reply({
     type: 'recalc',
     room: msg.room,
-    log: snapshot ? [] : log,
+    log,
     snapshot: snapshot ?? '',
   });
 }
@@ -275,13 +278,18 @@ export async function handleEcell(
  * `ask.ecell` — cursor-position poll. The asker wants every peer to reply
  * with their current `editor.ecell` (client-side handler does the reply —
  * see the dispatcher in `packages/client/src/main.ts`). Server-side we
- * just rebroadcast to peers; no storage, no auth. Matches the legacy
- * catch-all `@on data` broadcast at `src/main.ls` end-of-switch.
+ * just rebroadcast to peers; no storage. The legacy catch-all `@on data`
+ * broadcast at `src/main.ls` end-of-switch relayed it for anyone; we gate
+ * it like the `ecell` it solicits, because every relayed poll makes each
+ * peer's client send one frame that counts against that peer's own
+ * per-socket rate limit. A sender that may not write must not be able to
+ * spend the editors' allowance and get their next edit dropped.
  */
 export async function handleAskEcell(
   ctx: WsContext,
   msg: Extract<ClientMessage, { type: 'ask.ecell' }>,
 ): Promise<void> {
+  if (!(await ctx.verifyAuth())) return;
   await ctx.broadcast(buildAskEcellBroadcast(msg), false);
 }
 

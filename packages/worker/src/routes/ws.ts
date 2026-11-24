@@ -19,7 +19,9 @@ import {
   MAX_WS_USER_CHARS,
 } from '@ethercalc/shared/messages';
 
+import { verifyAuth } from '../lib/auth.ts';
 import { roomStub } from '../lib/do-dispatch.ts';
+import { isViewerRequest } from '../lib/live-rooms.ts';
 import { getSessionPrincipal } from '../lib/session-middleware.ts';
 import { parseSessionCookie } from '../lib/session.ts';
 import { isAllowedWebSocketOrigin } from '../lib/ws-origin.ts';
@@ -67,7 +69,15 @@ export function registerWs(app: Hono<EtherCalcHonoEnv>): void {
     if (!isAllowedWebSocketOrigin(c.req.raw, c.env.ETHERCALC_ORIGIN, session !== null)) {
       return c.text('Forbidden', 403);
     }
-    const stub = roomStub(c.env, room);
+    const principal = await getSessionPrincipal(c);
+    const hasKeyAuth = Boolean(
+      c.env.ETHERCALC_KEY &&
+      auth.length > 0 &&
+      (await verifyAuth(c.env.ETHERCALC_KEY, room, auth)),
+    );
+    const viewer =
+      isViewerRequest(c.env, c.req.raw.headers, principal) && !hasKeyAuth;
+    const stub = roomStub(c.env, room, viewer);
     const doUrl = buildDoUrl(room, url);
     // The forwarded header set is built from scratch — inbound
     // `X-EC-*` headers are NEVER copied. The DO trusts `X-EC-Uid`
@@ -78,7 +88,6 @@ export function registerWs(app: Hono<EtherCalcHonoEnv>): void {
     if (sandstormPerms) {
       fwd.set('X-Sandstorm-Permissions', sandstormPerms);
     }
-    const principal = await getSessionPrincipal(c);
     if (principal) {
       fwd.set('X-EC-Uid', principal.uid);
       fwd.set('X-EC-Session-Exp', String(principal.exp));

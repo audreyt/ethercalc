@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vite-plus/test';
-import { ShimNode } from '../src/dom-shim.js';
+import { HtmlSizeError, ShimNode, withHtmlLimit } from '../src/dom-shim.js';
 
 describe('ShimNode attribute API', () => {
   it('setAttribute stores a stringified value readable via getAttribute', () => {
@@ -208,5 +208,51 @@ describe('ShimNode textContent', () => {
     const el = new ShimNode('span');
     el.textContent = '';
     expect(el.outerHTML).toBe('<span></span>');
+  });
+});
+
+describe('withHtmlLimit', () => {
+  function row(): ShimNode {
+    const tr = new ShimNode('tr');
+    for (const value of ['1', '2']) {
+      const td = new ShimNode('td');
+      td.style.cssText = 'color:red';
+      td.innerHTML = value;
+      tr.appendChild(td);
+    }
+    return tr;
+  }
+
+  const html = '<tr><td style="color:red">1</td>\n<td style="color:red">2</td></tr>';
+
+  it('charges each node for its tags, attributes and own content', () => {
+    const markup = html.length - 1;
+    expect(withHtmlLimit(markup, () => row().outerHTML)).toBe(html);
+    expect(() => withHtmlLimit(markup - 1, () => row().outerHTML)).toThrow(HtmlSizeError);
+
+    const text = new ShimNode('span');
+    text.textContent = 'four';
+    expect(withHtmlLimit(17, () => text.outerHTML)).toBe('<span>four</span>');
+    expect(() => withHtmlLimit(16, () => text.outerHTML)).toThrow('HTML export exceeds resource limits');
+  });
+
+  it('stops at the first node past the allowance and is unlimited again afterwards', () => {
+    const tr = row();
+    const last = new ShimNode('td');
+    Object.defineProperty(last, 'innerHTML', {
+      get: () => {
+        throw new Error('serialized past the limit');
+      },
+    });
+    tr.appendChild(last);
+    let error: unknown;
+    try {
+      withHtmlLimit(40, () => tr.outerHTML);
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(HtmlSizeError);
+    expect((error as Error).name).toBe('HtmlSizeError');
+    expect(row().outerHTML).toBe(html);
   });
 });

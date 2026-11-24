@@ -13,6 +13,24 @@ EtherCalc bundles SocialCalc from the audreyt/socialcalc fork; see
 Unreleased
 ==============================================================================
 
+Security
+- Opening `/=<room>` no longer writes to a room that already holds a sheet.
+  The multi-sheet page used to create `Sheet1` on load whenever the room had
+  no tab rows, which is also true of every ordinary sheet, so a link from
+  another website could make a signed-in owner's browser append a
+  table-of-contents row to their private room (or overwrite `A1:B2` of a
+  sheet whose cells all render blank). The page now seeds only a room with
+  no stored cells or a workbook whose tab rows were all removed; any other
+  room opens with no tabs until the user presses Add.
+
+Fixes
+- A sheet opened through a percent-encoded address (a name with a space or a
+  non-ASCII character, or a link that spells a letter as `%61`) now connects
+  to that sheet. The single-sheet page escaped the already-encoded name a
+  second time for its WebSocket and joined a different, public room: the page
+  stayed empty, edits were not saved, and anyone could post cells into a tab
+  opened on a private sheet's address.
+
 ==============================================================================
 0.20261101.3 — 2026-11-01
 ==============================================================================

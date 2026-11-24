@@ -3,6 +3,10 @@ import * as XLSX from '@e965/xlsx';
 import type { Env } from '../src/env.ts';
 import { buildApp } from '../src/index.ts';
 import { computeAuth } from '../src/lib/auth.ts';
+import {
+  MAX_CRON_ROWS_GLOBAL,
+  MAX_CRON_ROWS_PER_ROOM,
+} from '../src/lib/cron.ts';
 
 /**
  * Node-env tests for POST /_/:room (command execution). The Hono
@@ -722,6 +726,118 @@ describe('POST /_/:room — command execution', () => {
     // Raw CSV must NOT be sent to the DO.
     expect(dispatches[0]!.bodyText).not.toContain('"#url"');
   });
+
+  it('POST text/csv imports a SYLK-looking body as CSV text, not via SheetJS sniffing', async () => {
+    // `ID` at offset 0 selects SheetJS's SYLK reader, where `C;Y<row>`
+    // allocates every row up to <row> (Y999999999 exhausts the heap). The
+    // CSV route must treat the body as three one-column rows of text. Keep
+    // the row small here so a regression fails the assertions, not the run.
+    const { env, calls } = makeFakeRoomNamespace((call) => {
+      if (call.url.includes('/_do/snapshot')) return new Response('');
+      return new Response(null, { status: 202 });
+    });
+    const res = await buildApp().fetch(
+      new Request('https://t.test/_/r', {
+        method: 'POST',
+        headers: { 'content-type': 'text/csv' },
+        body: 'ID;PWXL;N;E\nC;Y5;X1;K1\nE\n',
+      }),
+      env as never,
+    );
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as { command: string[] };
+    expect(body.command).toHaveLength(2);
+    expect(body.command[0]).toContain('cell\\cA1\\ct\\cID;PWXL;N;E');
+    expect(body.command[0]).toContain('cell\\cA2\\ct\\cC;Y5;X1;K1');
+    expect(body.command[0]).toContain('copiedfrom\\cA1\\cA3');
+    expect(body.command[0]).not.toContain('cell\\cA5');
+    const dispatches = calls.filter((c) => c.url.includes('/_do/commands'));
+    expect(dispatches).toHaveLength(1);
+    expect(dispatches[0]!.bodyText).toBe(body.command.join('\n'));
+  });
+
+  it('POST text/csv decodes the body as UTF-8', async () => {
+    const { env } = makeFakeRoomNamespace((call) => {
+      if (call.url.includes('/_do/snapshot')) return new Response('');
+      return new Response(null, { status: 202 });
+    });
+    const res = await buildApp().fetch(
+      new Request('https://t.test/_/r', {
+        method: 'POST',
+        headers: { 'content-type': 'text/csv' },
+        body: 'caf\u00e9,\u9810\u7b97\n',
+      }),
+      env as never,
+    );
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as { command: string[] };
+    expect(body.command[0]).toContain('cell\\cA1\\ct\\ccaf\u00e9');
+    expect(body.command[0]).toContain('cell\\cB1\\ct\\c\u9810\u7b97');
+  });
+
+  it('POST text/csv with no cells is a no-op 202', async () => {
+    const { env, calls } = makeFakeRoomNamespace(() => {
+      throw new Error('should not reach DO');
+    });
+    const res = await buildApp().fetch(
+      new Request('https://t.test/_/r', {
+        method: 'POST',
+        headers: { 'content-type': 'text/csv' },
+        body: '\n',
+      }),
+      env as never,
+    );
+    expect(res.status).toBe(202);
+    expect(await res.json()).toEqual({ command: [] });
+    expect(calls).toHaveLength(0);
+  });
+
+  // The generated `loadclipboard <save>` is as large as the import budget
+  // however small the (compressed) upload, and JSON escaping grows it again:
+  // echoing it would hold that much per reply a client leaves unread.
+  it.each([
+    [
+      'xlsx',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'paste A1 all',
+      (): Uint8Array => {
+        const text = 'x'.repeat(32_767);
+        const ws: XLSX.WorkSheet = { '!ref': 'A1:A40' };
+        for (let row = 1; row <= 40; row++) ws[`A${row}`] = { t: 's', v: text };
+        const book = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(book, ws, 'Sheet1');
+        return new Uint8Array(
+          XLSX.write(book, { bookType: 'xlsx', type: 'array', compression: true }) as ArrayBufferLike,
+        );
+      },
+    ],
+    [
+      'csv',
+      'text/csv',
+      'paste A2 all',
+      (): Uint8Array => new TextEncoder().encode(`${'x'.repeat(32_767)}\n`.repeat(40)),
+    ],
+  ])('runs a %s import larger than a posted command in full but does not echo it back', async (_name, contentType, paste, body) => {
+    const { env, calls } = makeFakeRoomNamespace((call) => {
+      if (call.url.includes('/_do/snapshot')) return new Response('', { status: 404 });
+      return new Response(null, { status: 202 });
+    });
+    const response = await buildApp().fetch(
+      new Request('https://t.test/_/r', {
+        method: 'POST',
+        headers: { 'content-type': contentType },
+        body: body() as unknown as BodyInit,
+      }),
+      env as never,
+    );
+    expect(response.status).toBe(202);
+    expect(await response.json()).toEqual({ command: ['loadclipboard', paste] });
+    const dispatches = calls.filter((c) => c.url.includes('/_do/commands'));
+    expect(dispatches).toHaveLength(1);
+    expect(dispatches[0]!.bodyText!.startsWith('loadclipboard version\\c1.5\\n')).toBe(true);
+    expect(dispatches[0]!.bodyText!.endsWith(`\n${paste}`)).toBe(true);
+    expect(dispatches[0]!.bodyText!.length).toBeGreaterThan(40 * 32_767);
+  });
 });
 
 function makeFakeZipCentralDirectory(
@@ -875,10 +991,18 @@ describe('POST /_/:room — DO write verdict gating (Phase A)', () => {
     const res = await app.fetch(
       new Request(`https://t.test/_/locked?auth=${await computeAuth('operator-key', 'locked')}`, {
         method: 'POST',
-        headers: { 'content-type': 'text/x-socialcalc' },
+        headers: {
+          'content-type': 'text/x-socialcalc',
+          Authorization: 'Bearer operator-token',
+        },
         body: 'settimetrigger A1 100,200',
       }),
-      { ...env, ETHERCALC_KEY: 'operator-key', DB: makePoisonedDb() } as never,
+      {
+        ...env,
+        ETHERCALC_KEY: 'operator-key',
+        ETHERCALC_MIGRATE_TOKEN: 'operator-token',
+        DB: makePoisonedDb(),
+      } as never,
     );
     // A poisoned D1 stub throws on ANY access — reaching it would
     // surface a 500 instead of the propagated verdict below.
@@ -896,13 +1020,220 @@ describe('POST /_/:room — DO write verdict gating (Phase A)', () => {
     const res = await app.fetch(
       new Request(`https://t.test/_/r?auth=${await computeAuth('operator-key', 'r')}`, {
         method: 'POST',
-        headers: { 'content-type': 'text/x-socialcalc' },
+        headers: {
+          'content-type': 'text/x-socialcalc',
+          Authorization: 'Bearer operator-token',
+        },
         body: 'settimetrigger A1 100,200',
       }),
-      { ...env, ETHERCALC_KEY: 'operator-key', DB: makeRecordingDb(events) } as never,
+      {
+        ...env,
+        ETHERCALC_KEY: 'operator-key',
+        ETHERCALC_MIGRATE_TOKEN: 'operator-token',
+        DB: makeRecordingDb(events),
+      } as never,
     );
     expect(res.status).toBe(202);
     expect(events).toEqual(['do:commands', 'd1:batch']);
+  });
+
+  it('stores a cell that many settimetrigger lines name with one D1 transaction', async () => {
+    const events: string[] = [];
+    const { env } = makeFakeRoomNamespace(() => new Response(null, { status: 202 }));
+    const res = await buildApp().fetch(
+      new Request(`https://t.test/_/r?auth=${await computeAuth('operator-key', 'r')}`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'text/x-socialcalc',
+          Authorization: 'Bearer operator-token',
+        },
+        body: Array.from({ length: 1000 }, (_, i) => `settimetrigger A1 ${i}`).join('\n'),
+      }),
+      {
+        ...env,
+        ETHERCALC_KEY: 'operator-key',
+        ETHERCALC_MIGRATE_TOKEN: 'operator-token',
+        DB: makeRecordingDb(events),
+      } as never,
+    );
+    expect(res.status).toBe(202);
+    expect(events).toEqual(['d1:batch']);
+  });
+
+  it('refuses settimetrigger for more cells than a room may hold rows', async () => {
+    const post = async (cells: readonly string[], DB: D1Database) => {
+      const { env, calls } = makeFakeRoomNamespace(() => new Response(null, { status: 202 }));
+      const res = await buildApp().fetch(
+        new Request(`https://t.test/_/r?auth=${await computeAuth('operator-key', 'r')}`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'text/x-socialcalc',
+            Authorization: 'Bearer operator-token',
+          },
+          body: cells.map((cell) => `settimetrigger ${cell} 100`).join('\n'),
+        }),
+        {
+          ...env,
+          ETHERCALC_KEY: 'operator-key',
+          ETHERCALC_MIGRATE_TOKEN: 'operator-token',
+          DB,
+        } as never,
+      );
+      return { res, calls };
+    };
+    const cells = Array.from({ length: MAX_CRON_ROWS_PER_ROOM + 1 }, (_, i) => `A${i + 1}`);
+    // One cell over: nothing reaches the DO or D1.
+    const over = await post(cells, makePoisonedDb());
+    expect(over.res.status).toBe(413);
+    expect(await over.res.text()).toBe('Too many settimetrigger cells');
+    expect(over.calls).toHaveLength(0);
+    // At the limit the command is still accepted, one D1 batch per cell.
+    const events: string[] = [];
+    const atLimit = await post(cells.slice(1), makeRecordingDb(events));
+    expect(atLimit.res.status).toBe(202);
+    expect(events).toHaveLength(MAX_CRON_ROWS_PER_ROOM);
+  });
+
+  it('replays only the last settimetrigger line of a cell against D1', async () => {
+    const bound: unknown[][] = [];
+    const stmt = {
+      bind: (...args: unknown[]) => {
+        bound.push(args);
+        return stmt;
+      },
+    };
+    const DB = {
+      prepare: () => stmt,
+      batch: async () => [],
+    } as unknown as D1Database;
+    const { env } = makeFakeRoomNamespace(() => new Response(null, { status: 202 }));
+    // More lines than the room quota, but they name two cells only.
+    const lines = [
+      ...Array.from({ length: MAX_CRON_ROWS_PER_ROOM }, () => 'settimetrigger A1 100'),
+      'settimetrigger B2 200',
+      'settimetrigger A1 300',
+    ];
+    const res = await buildApp().fetch(
+      new Request(`https://t.test/_/r?auth=${await computeAuth('operator-key', 'r')}`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'text/x-socialcalc',
+          Authorization: 'Bearer operator-token',
+        },
+        body: lines.join('\n'),
+      }),
+      {
+        ...env,
+        ETHERCALC_KEY: 'operator-key',
+        ETHERCALC_MIGRATE_TOKEN: 'operator-token',
+        DB,
+      } as never,
+    );
+    expect(res.status).toBe(202);
+    // Per cell: the DELETE bind, then one INSERT bind for the last line.
+    expect(bound).toEqual([
+      ['r', 'A1'],
+      ['r', 'A1', 300, MAX_CRON_ROWS_PER_ROOM, MAX_CRON_ROWS_GLOBAL],
+      ['r', 'B2'],
+      ['r', 'B2', 200, MAX_CRON_ROWS_PER_ROOM, MAX_CRON_ROWS_GLOBAL],
+    ]);
+  });
+
+  it('checks the scheduling credential against the encoded room name', async () => {
+    const { env, calls } = makeFakeRoomNamespace((call) =>
+      call.url.includes('/_do/access')
+        ? Response.json({ isPrivate: true, canWrite: true })
+        : new Response(null, { status: 202 }),
+    );
+    const app = buildApp();
+    const token = await computeAuth('operator-key', 'Q3%20budget');
+    const post = (path: string, base: Env): Response | Promise<Response> =>
+      app.fetch(
+        new Request(`https://t.test/_/${path}?auth=${token}`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'text/x-socialcalc',
+            Cookie: AUTH_COOKIE,
+            Authorization: 'Bearer operator-token',
+          },
+          body: 'settimetrigger A1 100,200',
+        }),
+        {
+          ...base,
+          ETHERCALC_KEY: 'operator-key',
+          ETHERCALC_MIGRATE_TOKEN: 'operator-token',
+        } as never,
+      );
+    // The token of "Q3 budget" signs "Q3%20budget" ...
+    expect((await post('Q3%20budget', env)).status).toBe(202);
+    // ... and is not the credential of the room literally named "Q3%20budget",
+    // even for a signed-in writer of that room.
+    calls.length = 0;
+    expect((await post('Q3%2520budget', withAuth(env))).status).toBe(403);
+    expect(calls.some((call) => call.url.includes('/_do/access'))).toBe(true);
+    expect(calls.some((call) => call.url.includes('/_do/commands'))).toBe(false);
+  });
+
+  it('does not schedule for a room token without the operator bearer', async () => {
+    // `GET /_new` hands every visitor the token of a fresh room.
+    const auth = await computeAuth('operator-key', 'r');
+    for (const [token, headers] of [
+      ['operator-token', {}],
+      ['operator-token', { Authorization: 'Bearer wrong-token' }],
+      [undefined, { Authorization: 'Bearer ' }],
+    ] as const) {
+      const { env, calls } = makeFakeRoomNamespace(
+        () => new Response(null, { status: 202 }),
+      );
+      const res = await buildApp().fetch(
+        new Request(`https://t.test/_/r?auth=${auth}`, {
+          method: 'POST',
+          headers: { 'content-type': 'text/x-socialcalc', ...headers },
+          body: 'settimetrigger A1 100,200',
+        }),
+        {
+          ...env,
+          ETHERCALC_KEY: 'operator-key',
+          ETHERCALC_MIGRATE_TOKEN: token,
+          DB: makePoisonedDb(),
+        } as never,
+      );
+      expect(res.status).toBe(403);
+      expect(await res.text()).toBe('Forbidden');
+      expect(calls).toHaveLength(0);
+    }
+  });
+
+  it('does not schedule for the operator bearer without the room token', async () => {
+    // Both requests pass the edit gate (keyless identity path; workbook-parent
+    // token on a TOC room) and stop at the scheduling gate.
+    for (const [key, query] of [
+      [undefined, ''],
+      ['operator-key', `?auth=${await computeAuth('operator-key', '=r')}`],
+    ] as const) {
+      const { env, calls } = makeFakeRoomNamespace(
+        () => new Response(JSON.stringify({ kind: 'multi' }), { status: 200 }),
+      );
+      const res = await buildApp().fetch(
+        new Request(`https://t.test/_/r${query}`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'text/x-socialcalc',
+            Authorization: 'Bearer operator-token',
+          },
+          body: 'settimetrigger A1 100,200',
+        }),
+        {
+          ...env,
+          ETHERCALC_KEY: key,
+          ETHERCALC_MIGRATE_TOKEN: 'operator-token',
+          DB: makePoisonedDb(),
+        } as never,
+      );
+      expect(res.status).toBe(403);
+      expect(await res.text()).toBe('Forbidden');
+      expect(calls.filter((call) => call.url.includes('/_do/commands'))).toHaveLength(0);
+    }
   });
 
   it('does not schedule commands without the operator credential', async () => {

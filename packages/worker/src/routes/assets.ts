@@ -41,6 +41,7 @@ import { buildRoomEntry, buildTemplateFormRedirect } from "../handlers/room-entr
 import { computeAuth } from "../lib/auth.ts";
 import { allowsCloneNavigation } from "../lib/clone-navigation.ts";
 import { doFetch } from "../lib/do-dispatch.ts";
+import { isViewerRequest } from "../lib/live-rooms.ts";
 import { getSessionPrincipal } from "../lib/session-middleware.ts";
 import { encodeRoom, encodeRoomPath, generateRoomId } from "../lib/room-name.ts";
 import { isSandstormEnforced } from "../lib/sandstorm-access.ts";
@@ -139,9 +140,13 @@ export async function serveAsset(env: Env, pathname: string): Promise<Response> 
 
 type WorkbookKind = "absent" | "multi" | "single" | "unknown";
 
-async function getWorkbookKind(env: Env, room: string): Promise<WorkbookKind> {
+async function getWorkbookKind(
+  env: Env,
+  room: string,
+  viewer: boolean,
+): Promise<WorkbookKind> {
   try {
-    const response = await doFetch(env, room, "/_do/workbook-kind");
+    const response = await doFetch(env, room, "/_do/workbook-kind", {}, null, viewer);
     if (!response.ok) return "unknown";
     const body = (await response.json()) as { readonly kind?: unknown };
     if (body.kind === "absent" || body.kind === "multi" || body.kind === "single") {
@@ -175,10 +180,11 @@ export function registerAssets(app: Hono<EtherCalcHonoEnv>): void {
       const basepath = c.env.BASEPATH ?? "";
       const explicitlyMulti = defaultRoom.startsWith("=");
       const room = explicitlyMulti ? defaultRoom.slice(1) : defaultRoom;
+      const viewer = isViewerRequest(c.env, c.req.raw.headers, null);
       let targetRoom = room;
       let multi = explicitlyMulti;
       if (!multi) {
-        const kind = await getWorkbookKind(c.env, room);
+        const kind = await getWorkbookKind(c.env, room, viewer);
         multi = kind === "absent" || kind === "multi";
 
         // Rewrite releases before #838 stored new Sandstorm grains in
@@ -186,7 +192,7 @@ export function registerAssets(app: Hono<EtherCalcHonoEnv>): void {
         // that existing room so an upgrade never hides user data.
         if (kind === "absent" && isSandstormEnforced(c.env)) {
           const fallbackRoom = `${room}1`;
-          const fallbackKind = await getWorkbookKind(c.env, fallbackRoom);
+          const fallbackKind = await getWorkbookKind(c.env, fallbackRoom, viewer);
           if (fallbackKind === "single" || fallbackKind === "multi") {
             targetRoom = fallbackRoom;
             multi = fallbackKind === "multi";
@@ -286,7 +292,7 @@ export function registerAssets(app: Hono<EtherCalcHonoEnv>): void {
   // `/:template/form` — duplicate template snapshot into `<template>_<id>`
   // and redirect to `/app` (legacy main.ls:287-293).
   app.get("/:template/form", async (c) => {
-    if (!allowsCloneNavigation(c.req.header("Sec-Fetch-Site"))) {
+    if (!allowsCloneNavigation(c.req.header("Sec-Fetch-Site"), c.req.header("Sec-Fetch-Mode"))) {
       return new Response("Forbidden", {
         status: 403,
         headers: { "Content-Type": "text/plain; charset=utf-8" },
@@ -355,7 +361,14 @@ export function registerRoomCatchAll(app: Hono<EtherCalcHonoEnv>): void {
     const viewerMode = c.req.query("view") !== undefined;
     if (!viewerMode) {
       const principal = await getSessionPrincipal(c);
-      const accessRes = await doFetch(c.env, roomParam, "/_do/access", {}, principal);
+      const accessRes = await doFetch(
+        c.env,
+        roomParam,
+        "/_do/access",
+        {},
+        principal,
+        isViewerRequest(c.env, c.req.raw.headers, principal),
+      );
       const access: unknown = accessRes.ok ? await accessRes.json().catch(() => null) : null;
       let redirectMode: "edit" | "view" | null = null;
       if (

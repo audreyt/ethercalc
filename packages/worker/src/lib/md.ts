@@ -29,9 +29,16 @@ import { parseCSV } from './csv-parse.ts';
 
 /**
  * Escape a cell value as inert text in GFM table context. In addition to
- * structural table escapes, HTML delimiters and link brackets are encoded so
- * attacker-controlled cells cannot become active HTML, links, or remote
- * images when the downloaded Markdown is rendered by a permissive consumer.
+ * structural table escapes, HTML delimiters, link brackets, emphasis marks and
+ * braces are encoded so attacker-controlled cells cannot become active HTML,
+ * links, remote images, formatting, or MDX/template expressions when the
+ * downloaded Markdown is rendered by a permissive consumer.
+ *
+ * GFM also links bare `scheme://`, `www.` and `user@host` text (autolink
+ * literals). Neither a backslash nor an entity prevents that in every reader
+ * (remark-gfm looks for them again after decoding both), so the sequence is
+ * split with an invisible `<wbr/>` instead; it is self-closing so MDX accepts
+ * it too.
  */
 function escapeCell(value: string): string {
   return value
@@ -43,6 +50,10 @@ function escapeCell(value: string): string {
     .replace(/`/g, '\\`')
     .replace(/\[/g, '\\[')
     .replace(/\]/g, '\\]')
+    .replace(/[*_~]/g, '\\$&')
+    .replace(/\{/g, '&#123;')
+    .replace(/\}/g, '&#125;')
+    .replace(/:(?=\/\/)|www(?=\.)|\S(?=@)/gi, '$&<wbr/>')
     .replace(/\r\n|\n|\r/g, '<br>');
 }
 

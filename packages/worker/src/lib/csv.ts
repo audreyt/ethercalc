@@ -17,9 +17,18 @@
  */
 import { csvToSave } from '@ethercalc/socialcalc-headless';
 
-/** Convert a CSV string to a SocialCalc save string. */
+/**
+ * Convert a CSV string to a SocialCalc save string.
+ *
+ * SocialCalc's CSV parser ends a record only at LF or CRLF and keeps a lone
+ * CR as field data, whereas `enforceTextImportLimits` (and SheetJS on the
+ * `POST /_/:room` path) also end one at a lone CR. Normalize line endings
+ * first so the engine builds the sheet the size preflight measured; otherwise
+ * CR-separated records are counted as many narrow rows but parsed as a
+ * single wide one.
+ */
 export function csvToSocialCalc(csv: string): string {
-  return csvToSave(csv);
+  return csvToSave(csv.replace(/\r\n?/g, '\n'));
 }
 
 /**

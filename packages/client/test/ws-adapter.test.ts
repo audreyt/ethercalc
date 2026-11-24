@@ -24,6 +24,26 @@ describe('ws-adapter URL helpers', () => {
     expect(url).toBe('ws://h/_ws/r?user=u');
   });
 
+  it('joins the room the page URL names: percent-escapes are not escaped again', () => {
+    const endpoint = (room: string) => buildWsEndpoint({ url: 'http://h', room, user: 'u' });
+    // `/%61bc` is room `abc` to every HTTP route; `%2561bc` would be the
+    // room literally named `%61bc`.
+    expect(endpoint('%61bc')).toBe('ws://h/_ws/%61bc?user=u');
+    expect(endpoint('%E5%90%8D')).toBe('ws://h/_ws/%E5%90%8D?user=u');
+    // Escapes the server's decoder repairs are its to read, as for the page.
+    expect(endpoint('%%36%31bc')).toBe('ws://h/_ws/%%36%31bc?user=u');
+    expect(endpoint('50%')).toBe('ws://h/_ws/50%?user=u');
+  });
+
+  it('escapes only what cannot stand in a path segment', () => {
+    const endpoint = (room: string) => buildWsEndpoint({ url: 'http://h', room, user: 'u' });
+    expect(endpoint('a/b?c#d\\e "名"')).toBe(
+      'ws://h/_ws/a%2Fb%3Fc%23d%5Ce%20%22%E5%90%8D%22?user=u',
+    );
+    const legal = "Az09-._~!$&'()*+,;=:@|[]^";
+    expect(endpoint(legal)).toBe(`ws://h/_ws/${legal}?user=u`);
+  });
+
   it('strips MULTIPLE trailing slashes (the `+` quantifier is load-bearing)', () => {
     // Mutation `/\/+$/` → `/\/$/` would only strip one slash. Pin the
     // 3-trailing-slash case so the quantifier is observable.
@@ -120,6 +140,33 @@ describe('createWsAdapter', () => {
     expect(payload.room).toBe('other');
     expect(payload.auth).toBe('hmac123');
     adapter.close();
+  });
+
+  it('labels frames the way the server does and hands back the page spelling', () => {
+    const { factory, sockets } = createMockFactory();
+    const adapter = createWsAdapter({ room: '%61%20c', user: 'u', url: 'ws://h', wsFactory: factory });
+    cleanupFns.push(() => adapter.close());
+    const rooms: unknown[] = [];
+    adapter.onMessage((msg) => rooms.push((msg as { room?: string }).room));
+    sockets[0]!.acceptOpen();
+    adapter.broadcast('ask.log');
+    // The server binds `encodeURI` of the decoded name (`a c`) to the socket.
+    expect(JSON.parse(sockets[0]!.sent[0]!)).toEqual({ type: 'ask.log', user: 'u', room: 'a%20c' });
+    sockets[0]!.acceptMessage('{"type":"stopHuddle","room":"a%20c"}');
+    sockets[0]!.acceptMessage('{"type":"stopHuddle","room":"other"}');
+    sockets[0]!.acceptMessage('{"type":"ignore"}');
+    // A `recalc` room names a cross-sheet reference, not this socket's room.
+    sockets[0]!.acceptMessage('{"type":"recalc","room":"a%20c","log":[],"snapshot":""}');
+    expect(rooms).toEqual(['%61%20c', 'other', undefined, 'a%20c']);
+  });
+
+  it('labels a room whose URL spelling does not decode by its literal name', () => {
+    const { factory, sockets } = createMockFactory();
+    const adapter = createWsAdapter({ room: '50%', user: 'u', url: 'ws://h', wsFactory: factory });
+    cleanupFns.push(() => adapter.close());
+    sockets[0]!.acceptOpen();
+    adapter.broadcast('ask.log');
+    expect(JSON.parse(sockets[0]!.sent[0]!).room).toBe('50%25');
   });
 
   it('delivers decoded server messages and drops invalid frames', () => {

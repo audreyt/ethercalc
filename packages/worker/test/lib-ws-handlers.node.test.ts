@@ -435,6 +435,22 @@ describe("handleAskLog", () => {
     expect(calls.broadcasts).toHaveLength(0);
   });
 
+  it("does not read the log when a snapshot makes it unnecessary", async () => {
+    const state: StorageState = {
+      snapshot: "SAVE",
+      log: new Map([["log:0000000000", "cmd-1"]]),
+      chat: new Map([["chat:0000000000", "hi"]]),
+      ecell: new Map(),
+      wiped: 0,
+    };
+    const { ctx } = makeCtx({ state });
+    const listPrefix = vi.spyOn(ctx.storage, "listPrefix");
+    await handleAskLog(ctx, { type: "ask.log", room: "r", user: "u" });
+    // The log ring can hold >100 MiB; loading it per frame only to drop it
+    // let a handful of tiny `ask.log` frames stall the whole process.
+    expect(listPrefix.mock.calls).toEqual([["chat:"]]);
+  });
+
   it("replies with the log for a log-only room (no snapshot to replay onto)", async () => {
     const state: StorageState = {
       snapshot: undefined,
@@ -492,6 +508,20 @@ describe("handleAskRecalc", () => {
       log: [],
       snapshot: "SAVE",
     });
+  });
+
+  it("does not read the log when a snapshot makes it unnecessary", async () => {
+    const state: StorageState = {
+      snapshot: "SAVE",
+      log: new Map([["log:0000000000", "a"]]),
+      chat: new Map(),
+      ecell: new Map(),
+      wiped: 0,
+    };
+    const { ctx } = makeCtx({ state });
+    const listPrefix = vi.spyOn(ctx.storage, "listPrefix");
+    await handleAskRecalc(ctx, { type: "ask.recalc", room: "r" });
+    expect(listPrefix).not.toHaveBeenCalled();
   });
 
   it("replies with the log for a log-only room (no snapshot)", async () => {
@@ -621,9 +651,17 @@ describe("handleEcell", () => {
 describe("handleAskEcell", () => {
   // Cursor-poll relay (new after the 2026-04-20 browser smoke found the
   // legacy catch-all `@on data` rebroadcast was missing). No storage
-  // touch; no auth gate; pure peer-only broadcast.
-  it("rebroadcasts the ask.ecell frame to peers without auth", async () => {
-    const { ctx, calls, state } = makeCtx({ authOk: false });
+  // touch; pure peer-only broadcast. Auth-gated since every relayed poll
+  // makes each peer answer with an `ecell` frame from its own rate budget.
+  it("drops silently when auth fails", async () => {
+    const { ctx, calls } = makeCtx({ authOk: false });
+    await handleAskEcell(ctx, { type: "ask.ecell", room: "r", user: "alice" });
+    expect(calls.broadcasts).toHaveLength(0);
+    expect(calls.replies).toHaveLength(0);
+  });
+
+  it("rebroadcasts the ask.ecell frame to peers", async () => {
+    const { ctx, calls, state } = makeCtx();
     await handleAskEcell(ctx, { type: "ask.ecell", room: "r", user: "alice" });
     expect(calls.broadcasts).toHaveLength(1);
     expect(calls.broadcasts[0]!.msg).toEqual({
@@ -843,7 +881,7 @@ describe("WsContext wiring corners", () => {
     expect(state.wiped).toBe(0);
   });
 
-  it("verifyAuth gates chat/my.ecell while read and poll types stay public", async () => {
+  it("verifyAuth gates chat/my.ecell/ask.ecell while read types stay public", async () => {
     const authSpy = vi.fn<() => Promise<boolean>>(async () => true);
     const base = makeCtx();
     const ctx: WsContext = { ...base.ctx, verifyAuth: authSpy };
@@ -863,7 +901,7 @@ describe("WsContext wiring corners", () => {
     await dispatchWsMessage(ctx, { type: "ask.log", room: "r", user: "u" });
     await dispatchWsMessage(ctx, { type: "ask.recalc", room: "r" });
     await dispatchWsMessage(ctx, { type: "ask.ecell", room: "r", user: "u" });
-    expect(authSpy).toHaveBeenCalledTimes(2);
+    expect(authSpy).toHaveBeenCalledTimes(3);
   });
 
   it("drops chat and my.ecell when write authorization fails", async () => {

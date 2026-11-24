@@ -44,6 +44,7 @@ import {
 } from './lib/cron.ts';
 import { withCronSchema } from './lib/d1-schema.ts';
 import type { Env } from './env.ts';
+import { roomStubForId } from './lib/do-dispatch.ts';
 import { encodeRoom, isValidRoomName } from './lib/room-name.ts';
 
 /** Bound D1 reads, DO subrequests, and delete statements per invocation. */
@@ -101,23 +102,32 @@ export async function runScheduled(params: {
     (_row, index) => claimResults[index]?.meta.changes === 1,
   );
 
-  for (const row of claimedRows) {
-    if (!isValidRoomName(row.room) || !isValidCronCell(row.cell)) continue;
-    try {
-      const id = env.ROOM.idFromName(encodeRoom(row.room));
-      const stub = env.ROOM.get(id);
-      const cell = encodeURIComponent(row.cell);
-      const response = await stub.fetch(
-        `https://do.local/_do/fire-trigger?cell=${cell}&room=${encodeURIComponent(row.room)}`,
-        { method: 'POST' },
-      );
-      if (!response.ok) continue;
-      fired.push({ room: row.room, cell: row.cell });
-    } catch {
-      // The row was already claimed. At-most-once delivery avoids duplicate
-      // email when a remote send succeeds but its response is lost.
-    }
-  }
+  // Dispatch the claimed rows together. A fire-trigger call waits behind
+  // whatever its room is already doing, and anyone can keep a room of their
+  // own busy; awaited one by one, that room would hold up every row after it,
+  // and those rows are already claimed, so no later run would deliver them.
+  const delivered = await Promise.all(
+    claimedRows.map(async (row: CronTriggerRow) => {
+      if (!isValidRoomName(row.room) || !isValidCronCell(row.cell)) return false;
+      try {
+        const id = env.ROOM.idFromName(encodeRoom(row.room));
+        const stub = roomStubForId(env, id);
+        const cell = encodeURIComponent(row.cell);
+        const response = await stub.fetch(
+          `https://do.local/_do/fire-trigger?cell=${cell}&room=${encodeURIComponent(row.room)}`,
+          { method: 'POST' },
+        );
+        return response.ok;
+      } catch {
+        // The row was already claimed. At-most-once delivery avoids duplicate
+        // email when a remote send succeeds but its response is lost.
+        return false;
+      }
+    }),
+  );
+  claimedRows.forEach((row: CronTriggerRow, index: number) => {
+    if (delivered[index]) fired.push({ room: row.room, cell: row.cell });
+  });
 
   return { due, keep, fired };
 }

@@ -5,6 +5,7 @@ import {
   DisabledEmailSender,
   EMAIL_DISABLED_MESSAGE,
   EMAIL_FAILURE_MESSAGE,
+  MAX_SENDEMAIL_CHARS,
   STUB_SENT_MESSAGE,
   StubEmailSender,
   parseSendemail,
@@ -55,6 +56,16 @@ describe('parseSendemail', () => {
   it('returns null on empty / whitespace-only input', () => {
     expect(parseSendemail('')).toBeNull();
     expect(parseSendemail('   ')).toBeNull();
+  });
+
+  it('returns null for a command above the length cap', () => {
+    const prefix = 'sendemail a@b.com subject ';
+    const body = 'x'.repeat(MAX_SENDEMAIL_CHARS - prefix.length);
+    expect(parseSendemail(prefix + body)?.body).toBe(body);
+    expect(parseSendemail(prefix + body + 'x')).toBeNull();
+    // The cap applies to the raw text, before `trim`, split and `%20` decode.
+    expect(parseSendemail(`sendemail t s b${' '.repeat(MAX_SENDEMAIL_CHARS)}`)).toBeNull();
+    expect(parseSendemail(`sendemail t s ${'%20'.repeat(MAX_SENDEMAIL_CHARS)}`)).toBeNull();
   });
 
   it('returns null when fewer than 4 tokens', () => {

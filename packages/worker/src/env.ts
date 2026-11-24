@@ -121,6 +121,8 @@ export interface Env {
    * Operator bearer token that unlocks migration writes, hosted PITR restore,
    * and the side-effecting legacy `GET /_timetrigger` compatibility route.
    * When unset those surfaces return `404`. See `src/lib/migrate-auth.ts`.
+   * Scheduling mail (`settimetrigger` on `POST /_/:room`) requires it too,
+   * next to the room's `?auth=` HMAC, and answers `403` without it.
    *
    * Typical local flow:
    *   echo 'ETHERCALC_MIGRATE_TOKEN="local-only"' > packages/worker/.dev.vars
@@ -182,6 +184,15 @@ export interface Env {
    * Set by `run_grain.sh`; inert on Cloudflare/Docker self-host.
    */
   readonly ETHERCALC_SANDSTORM?: string;
+
+  /**
+   * Most rooms that may be awake at once under standalone workerd, where
+   * every awake room holds three of the process's file descriptors. Bound
+   * by `workerd/config.capnp` and set by the launchers from `ulimit -n`;
+   * bound but unset → 300. Not bound on Cloudflare → no limit. See
+   * `src/lib/live-rooms.ts`.
+   */
+  readonly ETHERCALC_LIVE_ROOM_LIMIT?: string | null;
 }
 
 /** Shared Hono binding and request-local identity types for every route. */
@@ -189,5 +200,7 @@ export interface EtherCalcHonoEnv {
   Bindings: Env;
   Variables: {
     principal: SessionPrincipal | null | undefined;
+    /** `Date.now()` when `principal` was last asked of AuthDO. */
+    principalVerifiedAt: number;
   };
 }

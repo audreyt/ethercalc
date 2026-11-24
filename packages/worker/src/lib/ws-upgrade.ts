@@ -25,8 +25,8 @@ export interface WsAttachment {
    * True for sockets accepted via the legacy socket.io v0.9 path. Message
    * frames are colon-delimited socket.io packets (`5:::{…}`) rather than
    * raw JSON, and outbound replies must be re-wrapped with
-   * `nativeToSocketIoEvent`. Heartbeats (`2::`) are handled by the DO's
-   * hibernatable `setWebSocketAutoResponse` pair — not a JS timer.
+   * `nativeToSocketIoEvent`. Heartbeats (`2::`) from the client count
+   * against the DO's frame limits and are otherwise ignored.
    */
   readonly legacy?: boolean;
   /** Verified session uid minted by the Worker (X-EC-Uid), if any. */
@@ -39,6 +39,15 @@ export interface WsAttachment {
   readonly rateWindowStartedAt?: number;
   /** Frames consumed in the current rate window. */
   readonly rateMessageCount?: number;
+  /**
+   * Set when the handshake carried no write capability. Such a socket is
+   * charged to the view-only room rate window, never to the writers'.
+   */
+  readonly viewOnly?: boolean;
+  /** Start of the current per-socket outbound byte/char rolling window (Unix ms). */
+  readonly outWindowStartedAt?: number;
+  /** Characters/frames sent on this socket in the current outbound window. */
+  readonly outWindowChars?: number;
 }
 
 /**
@@ -54,6 +63,7 @@ export function upgradeWebSocket(
     readonly uid?: string;
     readonly sessionExp?: number;
     readonly session?: string;
+    readonly viewOnly?: boolean;
   },
 ): Response {
   const url = new URL(request.url);
@@ -74,6 +84,7 @@ export function upgradeWebSocket(
     ...(opts?.uid !== undefined ? { uid: opts.uid } : {}),
     ...(opts?.sessionExp !== undefined ? { sessionExp: opts.sessionExp } : {}),
     ...(opts?.session !== undefined ? { session: opts.session } : {}),
+    ...(opts?.viewOnly ? { viewOnly: true } : {}),
   };
   server.serializeAttachment(attachment);
   return new Response(null, { status: 101, webSocket: client });
@@ -83,8 +94,8 @@ export function upgradeWebSocket(
  * Accept a legacy socket.io v0.9 WebSocket onto the DO via the hibernation
  * API. Tags the socket `legacy` and marks the attachment so
  * `webSocketMessage` / send paths use socket.io framing. Emits the v0.9
- * connect ack (`1::`) immediately; subsequent heartbeats (`2::` ↔ `2::`)
- * are handled by `state.setWebSocketAutoResponse` configured on the DO.
+ * connect ack (`1::`) immediately; subsequent heartbeats (`2::`) from the
+ * client count against the DO's frame limits and are otherwise ignored.
  */
 export function upgradeLegacySocketIo(
   state: DurableObjectState,
@@ -93,6 +104,7 @@ export function upgradeLegacySocketIo(
     readonly uid?: string;
     readonly sessionExp?: number;
     readonly session?: string;
+    readonly viewOnly?: boolean;
   },
 ): Response {
   const pair = new WebSocketPair();
@@ -108,6 +120,7 @@ export function upgradeLegacySocketIo(
     ...(opts?.uid !== undefined ? { uid: opts.uid } : {}),
     ...(opts?.sessionExp !== undefined ? { sessionExp: opts.sessionExp } : {}),
     ...(opts?.session !== undefined ? { session: opts.session } : {}),
+    ...(opts?.viewOnly ? { viewOnly: true } : {}),
   };
   server.serializeAttachment(attachment);
   // v0.9 clients wait for the connect packet before emitting. Safe to send

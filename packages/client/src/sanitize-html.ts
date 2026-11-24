@@ -118,6 +118,157 @@ export const TEXT_HTML_SANITIZE_CONFIG: Readonly<Record<string, unknown>> = {
   RETURN_DOM_FRAGMENT: false,
 };
 
+/** Maximum cell HTML length handed to DOMPurify. */
+export const MAX_TEXT_HTML_LENGTH = 32_768;
+/** Maximum total HTML tags allowed per cell. */
+export const MAX_TEXT_HTML_NODES = 8_192;
+/** Maximum cumulative DOMPurify KEEP_CONTENT unwrap copies across unlisted ancestors. */
+export const MAX_UNLISTED_UNWRAP_WORK = 512;
+/** Maximum cumulative parser formatting-element reconstructions across blocks. */
+export const MAX_FORMATTING_REOPEN_WORK = 512;
+
+const ALLOWED_TAGS: ReadonlySet<string> = new Set(
+  TEXT_HTML_SANITIZE_CONFIG.ALLOWED_TAGS as readonly string[],
+);
+
+const VOID_TAGS: ReadonlySet<string> = new Set([
+  'area',
+  'base',
+  'basefont',
+  'bgsound',
+  'br',
+  'col',
+  'embed',
+  'frame',
+  'hr',
+  'img',
+  'input',
+  'keygen',
+  'link',
+  'meta',
+  'param',
+  'source',
+  'track',
+  'wbr',
+]);
+
+const FORMATTING_TAGS: ReadonlySet<string> = new Set(
+  'a b big code em font i nobr s small strike strong tt u'.split(' '),
+);
+
+const BLOCK_TAGS: ReadonlySet<string> = new Set([
+  'p',
+  'div',
+  'li',
+  'tr',
+  'td',
+  'th',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'blockquote',
+  'table',
+  'ul',
+  'ol',
+  'pre',
+  'hr',
+]);
+
+function popMatchingTag(stack: string[], tag: string): void {
+  const idx = stack.lastIndexOf(tag);
+  if (idx !== -1) stack.length = idx;
+}
+
+/**
+ * Linear stack-based guard bounding the work one `text-html` cell can impose
+ * on the HTML parser (attribute-bearing formatting element reconstruction) and
+ * DOMPurify's KEEP_CONTENT unwrapping (deep-cloning descendants under unlisted
+ * ancestors) without rejecting benign tables, link lists, or allowed formatting.
+ */
+export function exceedsHtmlSanitizeCost(raw: string): boolean {
+  if (raw.length > MAX_TEXT_HTML_LENGTH) return true;
+  const unlistedStack: string[] = [];
+  const attrFormattingStack: string[] = [];
+  let totalTags = 0;
+  let unlistedWork = 0;
+  let formattingWork = 0;
+
+  let pos = 0;
+  while (pos < raw.length) {
+    const lt = raw.indexOf('<', pos);
+    if (lt === -1) break;
+    totalTags += 1;
+    if (totalTags > MAX_TEXT_HTML_NODES) return true;
+
+    if (raw.startsWith('!--', lt + 1)) {
+      const commentEnd = raw.indexOf('-->', lt + 4);
+      pos = commentEnd === -1 ? raw.length : commentEnd + 3;
+      continue;
+    }
+
+    const isClose = raw[lt + 1] === '/';
+    const nameStart = isClose ? lt + 2 : lt + 1;
+    const first = raw[nameStart];
+    if (!first || !/[A-Za-z]/.test(first)) {
+      pos = lt + 1;
+      continue;
+    }
+
+    let i = nameStart;
+    while (i < raw.length && !/[\t\n\f\r />]/.test(raw[i]!)) i += 1;
+    const tag = raw.slice(nameStart, i).toLowerCase();
+
+    const attrStart = i;
+    let quote = '';
+    while (i < raw.length) {
+      const ch = raw[i]!;
+      if (quote) {
+        if (ch === quote) quote = '';
+      } else if (ch === '"' || ch === "'") {
+        quote = ch;
+      } else if (ch === '>') {
+        break;
+      }
+      i += 1;
+    }
+    const attrSlice = raw.slice(attrStart, i).replace(/\/+$/, '').trim();
+    pos = i < raw.length ? i + 1 : raw.length;
+
+    if (isClose) {
+      popMatchingTag(unlistedStack, tag);
+      popMatchingTag(attrFormattingStack, tag);
+      continue;
+    }
+
+    if (unlistedStack.length > 0) {
+      unlistedWork += unlistedStack.length;
+      if (unlistedWork > MAX_UNLISTED_UNWRAP_WORK) return true;
+    }
+    if (!ALLOWED_TAGS.has(tag) && !VOID_TAGS.has(tag)) {
+      unlistedStack.push(tag);
+    }
+    if (BLOCK_TAGS.has(tag)) {
+      formattingWork += attrFormattingStack.length;
+      if (formattingWork > MAX_FORMATTING_REOPEN_WORK) return true;
+    } else if (FORMATTING_TAGS.has(tag) && attrSlice.length > 0) {
+      attrFormattingStack.push(tag);
+    }
+  }
+  return false;
+}
+
+/** `SocialCalc.special_chars`: what SocialCalc shows when it has no sanitiser. */
+function escapeHtml(raw: string): string {
+  return raw
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 /**
  * Install SocialCalc 3.1.0's security policy on the host global.
  *
@@ -135,7 +286,11 @@ export function installSecurityPolicy(host: SecurityPolicyHost, purify: PurifyLi
   const callbacks = host.Callbacks ?? (host.Callbacks = {});
   if (callbacks.untrustedContent) return false;
 
-  const sanitizer = (raw: string): string => purify.sanitize(raw, TEXT_HTML_SANITIZE_CONFIG);
+  // HTML that would cost more than a cell may is shown as its source text.
+  const sanitizer = (raw: string): string =>
+    typeof raw === 'string' && exceedsHtmlSanitizeCost(raw)
+      ? escapeHtml(raw)
+      : purify.sanitize(raw, TEXT_HTML_SANITIZE_CONFIG);
 
   callbacks.untrustedContent = true;
   callbacks.securityPolicy = callbacks.securityPolicy ?? {};

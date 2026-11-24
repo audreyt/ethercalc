@@ -3,9 +3,11 @@ import { describe, expect, it, vi } from 'vite-plus/test';
 import {
   buildMultiSheetImport,
   buildMultiSheetAppendImport,
+  parseAddSheetRequest,
   prepareAppendImportPlan,
   enforceTextImportLimits,
   getMaxSubsheetIndex,
+  MAX_WORKBOOK_GRID_POSITIONS,
   rewriteSheetReferences,
   ImportTooManySheetsError,
   ImportUnsupportedFormatError,
@@ -14,11 +16,13 @@ import {
   ImportArchiveTooLargeError,
   ImportColumnOutOfRangeError,
   ImportDimensionsTooLargeError,
+  ImportTooLargeError,
   MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES,
   MAX_IMPORT_CELLS,
   worksheetToSave,
 } from '../src/lib/xlsx-import.ts';
-import { MAX_MULTI_SHEETS } from '@ethercalc/shared';
+import { MAX_MULTI_SHEETS, MAX_MULTI_SHEET_TITLE_LENGTH } from '@ethercalc/shared';
+import { createSpreadsheet } from '@ethercalc/socialcalc-headless';
 import { MAX_SOCIALCALC_COL } from '../src/lib/command-limits.ts';
 
 function workbookBytes(sheets: Array<{ name: string; aoa: (string | number | boolean)[][] }>): Uint8Array {
@@ -27,6 +31,22 @@ function workbookBytes(sheets: Array<{ name: string; aoa: (string | number | boo
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(s.aoa), s.name);
   }
   return new Uint8Array(XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer);
+}
+/** A reader that returns these worksheets, named `Sheet1`, `Sheet2`, and so on. */
+function readSheets(worksheets: Array<Record<string, unknown>>): typeof XLSX.read {
+  const names = worksheets.map((_, index) => `Sheet${index + 1}`);
+  return (() => ({
+    SheetNames: names,
+    Sheets: Object.fromEntries(names.map((name, index) => [name, worksheets[index]])),
+  })) as unknown as typeof XLSX.read;
+}
+/** Two cells `rows` apart: a save visits every position between them. */
+function sparseSheet(rows: number): Record<string, unknown> {
+  return { '!ref': `A1:A${rows}`, A1: { t: 'n', v: 1 }, [`A${rows}`]: { t: 'n', v: 2 } };
+}
+/** One formula that spends 6,000 of the 10,000 loop steps of a recalculation. */
+function loopSheet(): Record<string, unknown> {
+  return { '!ref': 'A1', A1: { t: 'n', v: 1, f: 'DDB(1000,0,6000,6000)' } };
 }
 function makeFakeZipCentralDirectory(
   entries: Array<{ name: string; compressedSize: number; uncompressedSize: number; extraLength?: number; commentLength?: number }>
@@ -141,6 +161,22 @@ describe('buildMultiSheetImport', () => {
     expect(readFn).not.toHaveBeenCalled();
   });
 
+  it('hands the workbook parser flat ODF from its root tag on both import paths', () => {
+    const bytes = new TextEncoder().encode(
+      '<?xml version="1.0"?><?x <Workbook><Worksheet><Table><Column ss:Span="900000000"/>' +
+      '</Table></Worksheet></Workbook>?><office:document></office:document>',
+    );
+    const read = vi.fn((_data: Uint8Array) => ({ SheetNames: [], Sheets: {} }));
+    const readFn = read as unknown as typeof XLSX.read;
+    buildMultiSheetImport(bytes, 'room', readFn);
+    prepareAppendImportPlan(bytes, 'fods', undefined, readFn);
+    expect(read.mock.calls.map(([data]) => new TextDecoder().decode(data))).toEqual([
+      '<?xml version="1.0"?><office:document></office:document>',
+      '<?xml version="1.0"?><office:document></office:document>',
+    ]);
+    expect(buildMultiSheetImport(bytes, 'room').subSheets).toEqual([]);
+  });
+
   it('produces one sub-room per worksheet, named <room>.<N>', () => {
     const bytes = workbookBytes([
       { name: 'Alpha', aoa: [['a']] },
@@ -161,6 +197,41 @@ describe('buildMultiSheetImport', () => {
     expect(out.tocSave).toContain('Alpha');
     expect(out.tocSave).toContain('/demo.2');
     expect(out.tocSave).toContain('Beta');
+  });
+
+  it('stores each sheet name in the TOC as text, whatever it looks like', () => {
+    // SheetJS does not validate sheet names when reading. A CSV importer
+    // types its fields: the first name would become a formula that RoomDO
+    // resolves against the room `other-room`, the next two numbers.
+    const names = ["='other-room'!A1", '=1+1', '007', '2024-01-02', 'a:b\\c "q", x'];
+    const readFn = (() => ({
+      SheetNames: names,
+      Sheets: Object.fromEntries(names.map((name) => [name, XLSX.utils.aoa_to_sheet([[1]])])),
+    })) as unknown as typeof XLSX.read;
+    const out = buildMultiSheetImport(new Uint8Array([1]), 'demo', readFn);
+    const toc = createSpreadsheet({ snapshot: out.tocSave });
+    const cells = toc.exportCells() as Record<string, { datatype?: string; datavalue?: unknown }>;
+    names.forEach((name, i) => {
+      expect(cells[`A${i + 2}`]).toMatchObject({ datatype: 't', datavalue: `/demo.${i + 1}` });
+      expect(cells[`B${i + 2}`]).toMatchObject({ datatype: 't', datavalue: name });
+    });
+    expect(cells.A1).toMatchObject({ datatype: 't', datavalue: '#url' });
+    expect(cells.B1).toMatchObject({ datatype: 't', datavalue: '#title' });
+    expect(toc.findCrossSheetRefs()).toEqual([]);
+  });
+
+  it('clamps a TOC title to the length every other title door allows', () => {
+    const name = 'n'.repeat(MAX_MULTI_SHEET_TITLE_LENGTH + 1);
+    const readFn = (() => ({
+      SheetNames: [name],
+      Sheets: { [name]: XLSX.utils.aoa_to_sheet([[1]]) },
+    })) as unknown as typeof XLSX.read;
+    const out = buildMultiSheetImport(new Uint8Array([1]), 'demo', readFn);
+    const cells = createSpreadsheet({ snapshot: out.tocSave }).exportCells() as Record<
+      string,
+      { datavalue?: unknown }
+    >;
+    expect(cells.B2?.datavalue).toBe('n'.repeat(MAX_MULTI_SHEET_TITLE_LENGTH));
   });
 
   it('each worksheet becomes its own sub-sheet save (second sheet is real, not the first)', () => {
@@ -195,6 +266,99 @@ describe('buildMultiSheetImport', () => {
     expect(() => buildMultiSheetImport(new Uint8Array(), 'big', readFn)).toThrow(/exceeds/);
     expect(readFn).toHaveBeenCalledOnce();
   }, 15_000);
+
+  it('enforces the text limit across the whole workbook', () => {
+    // One string shared by every cell, as SheetJS hands out xlsx shared
+    // strings. Either sheet alone fits; the workbook does not.
+    const text = 'x'.repeat(1024 * 1024);
+    const cells = Object.fromEntries(
+      Array.from({ length: 13 }, (_, index) => [`A${index + 1}`, { t: 's', v: text }]),
+    );
+    const readFn = vi.fn(() => ({
+      SheetNames: ['A', 'B'],
+      Sheets: { A: cells, B: cells },
+    })) as unknown as typeof XLSX.read;
+    expect(() => buildMultiSheetImport(new Uint8Array(), 'big', readFn))
+      .toThrow(ImportArchiveTooLargeError);
+    expect(() => prepareAppendImportPlan(new Uint8Array(), 'xlsx', undefined, readFn))
+      .toThrow(ImportArchiveTooLargeError);
+    const readOne = vi.fn(() => ({
+      SheetNames: ['A'],
+      Sheets: { A: cells },
+    })) as unknown as typeof XLSX.read;
+    expect(prepareAppendImportPlan(new Uint8Array(), 'xlsx', undefined, readOne).count).toBe(1);
+  });
+
+  it('enforces the merged-cell limit across the whole workbook', () => {
+    // One populated cell per sheet and an in-bounds extent, so only the
+    // summed merge area can refuse the workbook before the merges replay.
+    const mergedSheet = (rows: number) => ({
+      '!ref': `A1:A${rows}`,
+      '!merges': [{ s: { r: 0, c: 0 }, e: { r: rows - 1, c: 0 } }],
+      A1: { t: 'n', v: 1 },
+    });
+    const readWith = (rows: number) =>
+      (() => ({
+        SheetNames: ['A', 'B'],
+        Sheets: { A: mergedSheet(rows), B: mergedSheet(rows) },
+      })) as unknown as typeof XLSX.read;
+
+    const half = MAX_IMPORT_CELLS / 2;
+    const atLimit = buildMultiSheetImport(new Uint8Array(), 'room', readWith(half));
+    expect(atLimit.subSheets).toHaveLength(2);
+    expect(atLimit.subSheets[1]?.save).toContain(`:rowspan:${half}`);
+    const plan = prepareAppendImportPlan(new Uint8Array(), 'xlsx', undefined, readWith(half));
+    expect(plan.materializeSaves('room', 1)[1]).toContain(`:rowspan:${half}`);
+
+    expect(() => buildMultiSheetImport(new Uint8Array(), 'room', readWith(half + 1)))
+      .toThrow(ImportTooLargeError);
+    expect(() => prepareAppendImportPlan(new Uint8Array(), 'xlsx', undefined, readWith(half + 1)))
+      .toThrow(ImportTooLargeError);
+  });
+
+  it('validates merge endpoints on every sheet before counting or replaying them', () => {
+    const readFn = (() => ({
+      SheetNames: ['A', 'B'],
+      Sheets: {
+        A: { '!ref': 'A1', A1: { t: 'n', v: 1 } },
+        B: { '!ref': 'A1', '!merges': [{ s: { r: 0, c: 0 } }], A1: { t: 'n', v: 1 } },
+      },
+    })) as unknown as typeof XLSX.read;
+    expect(() => buildMultiSheetImport(new Uint8Array(), 'room', readFn)).toThrow(
+      ImportColumnOutOfRangeError,
+    );
+  });
+
+  it('enforces the combined grid position limit across the whole workbook', () => {
+    // 10 x 200,000 = MAX_WORKBOOK_GRID_POSITIONS (2,000,000) fits; 11th overflows.
+    const ok = Array.from({ length: 10 }, () => sparseSheet(MAX_IMPORT_CELLS));
+    const over = Array.from({ length: 11 }, () => sparseSheet(MAX_IMPORT_CELLS));
+    expect(buildMultiSheetImport(new Uint8Array(), 'grid', readSheets(ok)).subSheets).toHaveLength(10);
+    expect(prepareAppendImportPlan(new Uint8Array(), 'xlsx', undefined, readSheets(ok)).count).toBe(10);
+    expect(() => buildMultiSheetImport(new Uint8Array(), 'grid', readSheets(over)))
+      .toThrow(ImportDimensionsTooLargeError);
+    expect(() => prepareAppendImportPlan(new Uint8Array(), 'xlsx', undefined, readSheets(over)))
+      .toThrow(ImportDimensionsTooLargeError);
+    expect(MAX_WORKBOOK_GRID_POSITIONS).toBe(2_000_000);
+  });
+
+  it('recalculates the sheets of one workbook on one formula budget', () => {
+    // WORKBOOK_RECALC_MULTIPLIER = 4 => 40,000 DDB steps shared across all sheets.
+    const seven = Array.from({ length: 7 }, loopSheet);
+    const out = buildMultiSheetImport(new Uint8Array(), 'loops', readSheets(seven)).subSheets;
+    for (let i = 0; i < 6; i++) {
+      expect(out[i]?.save).toContain('cell:A1:vtf:n$:');
+    }
+    expect(out[6]?.save).toContain('cell:A1:vtf:e#NUM!:');
+    // A sheet the workbook lists but does not contain costs nothing.
+    const gap = { SheetNames: ['a', 'gone', 'b'], Sheets: { a: seven[0], b: seven[1] } };
+    expect(
+      buildMultiSheetImport(new Uint8Array(), 'loops', (() => gap) as unknown as typeof XLSX.read).subSheets,
+    ).toHaveLength(2);
+    // The budget belongs to one import.
+    const [again] = buildMultiSheetImport(new Uint8Array(), 'loops', readSheets([loopSheet()])).subSheets;
+    expect(again?.save).toContain('cell:A1:vtf:n$:');
+  });
 
   it('rejects workbook fan-out beyond the shared sheet limit', () => {
     const names = Array.from(
@@ -244,6 +408,60 @@ describe('buildMultiSheetImport', () => {
     const out = buildMultiSheetImport(new Uint8Array(), 'demo', mockRead);
     expect(out.subSheets).toHaveLength(1);
     expect(out.subSheets[0]?.subroom).toBe('demo.1');
+  });
+
+  it('imports the value of a formula that refers to a sheet the file does not bring along', () => {
+    const outside = [
+      // Excel's spelling of a cell in another workbook.
+      "'[1]Price List'!B2*100",
+      "SUM('Q1:Q4'!B2)",
+      // Excel matches titles without regard to case; a room name does not.
+      'rates!B2*100',
+      '"Rates"!B2*100',
+      'Rates !B2*100',
+      "Rates!B2+'Deleted'!B2",
+      'Gone!B2',
+      'A2!B2',
+      '!B2',
+    ];
+    const summary: XLSX.WorkSheet = XLSX.utils.aoa_to_sheet([[0]]);
+    outside.forEach((f, row) => {
+      summary[`A${row + 1}`] = { t: 'n', v: 700 + row, f };
+    });
+    summary.B1 = { t: 'n', v: 7, f: "Rates!B2+'Other Data'!A1" };
+    summary.B2 = { t: 's', v: 'x', f: '"Rates up!"&A1' };
+    summary.B3 = { t: 's', v: 'see Rates!B2' };
+    summary.B4 = { t: 's', v: 'Widget', f: "'[1]Price List'!A2" };
+    summary.B5 = { t: 'e', v: 0x17, f: "'[1]Price List'!A3" };
+    summary['!ref'] = 'A1:B9';
+    const mockRead = (() => ({
+      SheetNames: ['Summary', 'Rates', 'Other Data'],
+      Sheets: {
+        Summary: summary,
+        Rates: XLSX.utils.aoa_to_sheet([['rate', 7]]),
+        'Other Data': XLSX.utils.aoa_to_sheet([[7]]),
+      },
+    })) as unknown as typeof XLSX.read;
+    const saves = [
+      buildMultiSheetImport(new Uint8Array(), 'demo', mockRead, 5).subSheets[0]!.save,
+      prepareAppendImportPlan(new Uint8Array(), 'xlsx', undefined, mockRead).materializeSaves('demo', 5)[0]!,
+    ];
+    for (const save of saves) {
+      outside.forEach((_, row) => {
+        expect(save).toContain(`\ncell:A${row + 1}:v:${700 + row}\n`);
+      });
+      expect(save).not.toMatch(/^cell:A\d+:vtf:/m);
+      // The value is whatever the file carries: text stays text, and a cell
+      // whose cached value is an error is left empty.
+      expect(save).toContain('\ncell:B4:t:Widget\n');
+      expect(save).not.toMatch(/^cell:B5:/m);
+      // References inside the file still follow the sheets to their rooms …
+      expect(save).toMatch(/^cell:B1:vtf:[^\n]*:'demo\.6'!B2\+'demo\.7'!A1/m);
+      // … and a `!` that is not a reference is left as the file has it.
+      expect(save).toMatch(/^cell:B2:vtf:[^\n]*:"Rates up!"&A1/m);
+      expect(save).toContain('\ncell:B3:t:see Rates!B2\n');
+      expect(save).not.toContain('Price List');
+    }
   });
 
 });
@@ -500,6 +718,75 @@ describe('getMaxSubsheetIndex & rewriteSheetReferences', () => {
     );
     expect(rewriteSheetReferences('body', [], 'room', 6)).toBe('body');
   });
+
+  it('rewriteSheetReferences bounds what the room name may add', () => {
+    // `a!` (2 chars) becomes `'room.1'!` (9 chars): 7 added per reference.
+    const atLimit = MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES - 7;
+    expect(rewriteSheetReferences('a!', ['a'], 'room', 1, atLimit)).toBe("'room.1'!");
+    expect(() => rewriteSheetReferences('a!', ['a'], 'room', 1, atLimit + 1)).toThrow(
+      new ImportArchiveTooLargeError('a!'.length + MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES + 1),
+    );
+    // A long sheet name shrinks the save and gives that room back.
+    expect(rewriteSheetReferences('LongSheetName!a!', ['LongSheetName', 'a'], 'r', 1, atLimit)).toBe(
+      "'r.1'!'r.2'!",
+    );
+  });
+
+  it('rewriteSheetReferences reads the name before each `!` off the text', () => {
+    const names = ['Data', "It's", 'My Sheet', 'v1.2', 'Größe_2', '数据', "'", ''];
+    const rewrite = (body: string): string => rewriteSheetReferences(body, names, 'r', 1);
+    // Unquoted: the whole run of name characters before the `!`, no less.
+    expect(rewrite('Data!A1')).toBe("'r.1'!A1");
+    expect(rewrite('=v1.2!A1+Größe_2!B2-数据!C3')).toBe("='r.4'!A1+'r.5'!B2-'r.6'!C3");
+    expect(rewrite('1+Data!A1*(Data!B2)')).toBe("1+'r.1'!A1*('r.1'!B2)");
+    for (const other of ['MyData!A1', 'my.Data!A1', 'x_Data!A1', '9Data!A1', 'éData!A1', 'data!A1']) {
+      expect(rewrite(other)).toBe(other);
+    }
+    for (const before of ['`', '{', '@', '[', '/', ':', '^', ' ', '\x7f']) {
+      expect(rewrite(`${before}Data!A1`)).toBe(`${before}'r.1'!A1`);
+    }
+    expect(rewriteSheetReferences('+azAZ09_.\x80!', ['azAZ09_.\x80'], 'r', 1)).toBe("+'r.1'!");
+    // Quoted: everything between the quotes, `''` standing for one apostrophe.
+    expect(rewrite("'Data'!A1+'My Sheet'!B2")).toBe("'r.1'!A1+'r.3'!B2");
+    expect(rewrite("'It''s'!A1")).toBe("'r.2'!A1");
+    expect(rewrite("''''!A1")).toBe("'r.7'!A1");
+    expect(rewrite("'Other Data'!A1")).toBe("'Other Data'!A1");
+    expect(rewrite("'It''s not'!A1")).toBe("'It''s not'!A1");
+    expect(rewrite('My Sheet!A1')).toBe('My Sheet!A1');
+    // Apostrophes in text neither hide a later reference nor open a name.
+    expect(rewrite(`IF(A1="don't",Data!A1,"isn't")`)).toBe(`IF(A1="don't",'r.1'!A1,"isn't")`);
+    expect(rewrite(`"it's"&'Data'!A1&'My Sheet'!B2`)).toBe(`"it's"&'r.1'!A1&'r.3'!B2`);
+    expect(rewrite("Data'!A1")).toBe("Data'!A1");
+    expect(rewrite("''Data'!A1")).toBe("''Data'!A1");
+    expect(rewrite("'!")).toBe("'!");
+    expect(rewrite("'''!")).toBe("'''!");
+    // An empty name is only ever a quoted one, and nothing precedes a leading `!`.
+    expect(rewrite("''!A1+!A1")).toBe("'r.8'!A1+!A1");
+    expect(rewrite('!A1')).toBe('!A1');
+    expect(rewrite('!Data!!Data!')).toBe("!'r.1'!!'r.1'!");
+  });
+
+  it('rewriteSheetReferences keeps a `!` inside a quoted sheet name with that name', () => {
+    const names = ['Sales', 'Sales! 2024', '!'];
+    const rewrite = (body: string): string => rewriteSheetReferences(body, names, 'r', 1);
+    expect(rewrite("Sales!A1+'Sales! 2024'!B2+'Sales'!C3")).toBe("'r.1'!A1+'r.2'!B2+'r.1'!C3");
+    expect(rewrite("'!'!A1")).toBe("'r.3'!A1");
+    // A sheet that is not part of the upload keeps its name.
+    expect(rewrite("'Costs! 2024'!A1+Sales!B2")).toBe("'Costs! 2024'!A1+'r.1'!B2");
+  });
+
+  it('rewriteSheetReferences does not search the text for uploaded sheet names', () => {
+    // Each sheet name used to be an alternative of one pattern tried at every
+    // word, which took seconds for this input; reading it takes milliseconds.
+    const longName = `${'a '.repeat(10_000)}c ${'a '.repeat(10_000)}a`;
+    const body = 'a '.repeat(1_000_000);
+    const started = performance.now();
+    expect(rewriteSheetReferences(body, ['Data', longName], 'room', 1)).toBe(body);
+    expect(rewriteSheetReferences(`${body}'${longName}'!A1`, ['Data', longName], 'room', 1)).toBe(
+      `${body}'room.2'!A1`,
+    );
+    expect(performance.now() - started).toBeLessThan(1_000);
+  });
 });
 
 describe('prepareAppendImportPlan', () => {
@@ -557,6 +844,99 @@ describe('prepareAppendImportPlan', () => {
       ImportUnsupportedFormatError,
     );
   });
+
+  it('refuses a socialcalc append whose rewritten references outgrow the import limit', () => {
+    const room = 'r'.repeat(2000);
+    const body = new TextEncoder().encode(
+      `version:1.5\ncell:A1:t:${'a!'.repeat(20_000)}\nsheet:c:1:r:1\n`,
+    );
+    expect(() =>
+      prepareAppendImportPlan(body, 'socialcalc', 'a').materializeSaves(room, 1),
+    ).toThrow(ImportArchiveTooLargeError);
+    // The same bytes under a title they do not mention are stored as uploaded.
+    expect(prepareAppendImportPlan(body, 'socialcalc', 'b').materializeSaves(room, 1)[0]).toHaveLength(
+      body.length,
+    );
+  });
+
+  it('shares the rewrite allowance and total save budget between the sheets of one workbook', () => {
+    const room = 'r'.repeat(2000);
+    // Each sheet adds about 16 MiB on its own; only both together pass 25 MiB.
+    const formula = Array.from({ length: 8_000 }, () => 'a!A1').join('+');
+    const sheet = (): Record<string, unknown> => ({ '!ref': 'A1', A1: { t: 'n', v: 1, f: formula } });
+    const plan = (names: string[]) =>
+      prepareAppendImportPlan(new Uint8Array(), 'xlsx', undefined, (() => ({
+        SheetNames: names,
+        Sheets: Object.fromEntries(names.map((name) => [name, sheet()])),
+      })) as unknown as typeof XLSX.read);
+    const single = plan(['a']).materializeSaves(room, 1);
+    expect(single[0]!.length).toBeGreaterThan(8_000 * 2000);
+    expect(() => plan(['a', 'b']).materializeSaves(room, 1)).toThrow(ImportArchiveTooLargeError);
+
+    // Total materialized save bytes across sheets also obeys MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES
+    // even when reference growth alone stayed under 25 MiB.
+    const literalSheet: Record<string, unknown> = { '!ref': 'A1:A14' };
+    for (let i = 1; i <= 14; i++) literalSheet[`A${i}`] = { t: 's', v: 'x'.repeat(1_000_000) };
+    const mediumFormula = Array.from({ length: 7_000 }, () => 'a!A1').join('+');
+    const readCombined = (() => ({
+      SheetNames: ['a', 'b'],
+      Sheets: { a: literalSheet, b: { '!ref': 'A1', A1: { t: 'n', v: 1, f: mediumFormula } } },
+    })) as unknown as typeof XLSX.read;
+    expect(() =>
+      prepareAppendImportPlan(new Uint8Array(), 'xlsx', undefined, readCombined).materializeSaves(room, 1),
+    ).toThrow(ImportArchiveTooLargeError);
+  });
+
+  it('recalculates the sheets of one plan on one formula budget', () => {
+    const plan = (count: number) =>
+      prepareAppendImportPlan(
+        new Uint8Array(),
+        'xlsx',
+        undefined,
+        readSheets(Array.from({ length: count }, loopSheet)),
+      );
+    const seven = plan(7).materializeSaves('loops', 1);
+    for (let i = 0; i < 6; i++) {
+      expect(seven[i]).toContain('cell:A1:vtf:n$:');
+    }
+    expect(seven[6]).toContain('cell:A1:vtf:e#NUM!:');
+    // The budget belongs to one import.
+    expect(plan(1).materializeSaves('loops', 1)[0]).toContain('cell:A1:vtf:n$:');
+  });
+});
+
+describe('parseAddSheetRequest', () => {
+  it('returns only the title and request id', () => {
+    expect(
+      parseAddSheetRequest('{"title":"Sheet","requestId":"a-B_1","extra":{"34":{"34":0}}}'),
+    ).toEqual({ title: 'Sheet', requestId: 'a-B_1' });
+  });
+
+  it.each([
+    'null',
+    '"text"',
+    '{"requestId":"r"}',
+    '{"title":1,"requestId":"r"}',
+    '{"title":"t"}',
+    '{"title":"t","requestId":1}',
+    '{"title":"t","requestId":""}',
+    `{"title":"t","requestId":"${'r'.repeat(129)}"}`,
+    '{"title":"t","requestId":"a b"}',
+  ])('returns null for %s', (text) => {
+    expect(parseAddSheetRequest(text)).toBeNull();
+  });
+
+  it('accepts a request id of exactly 128 characters', () => {
+    const requestId = 'r'.repeat(128);
+    expect(parseAddSheetRequest(JSON.stringify({ title: '', requestId }))).toEqual({
+      title: '',
+      requestId,
+    });
+  });
+
+  it('throws on invalid JSON', () => {
+    expect(() => parseAddSheetRequest('{')).toThrow(SyntaxError);
+  });
 });
 
 describe('multi-sheet-import mutation pins', () => {
@@ -612,9 +992,9 @@ describe('multi-sheet-import mutation pins', () => {
     expect(rewriteSheetReferences(body, ['First', 'Second', "O'Brien"], 'room', 6)).toBe(
       "cell:A1:vtf:n:1:'room.7'!A1+'room.8'!B2",
     );
-    // Special-char sheet name must be escaped in the regex (kills empty replace mutants).
-    const weird = rewriteSheetReferences('cell:A1:vtf:n:1:A+B!A1', ['A+B'], 'r', 1);
-    expect(weird).toBe("cell:A1:vtf:n:1:'r.1'!A1");
+    // Special-char sheet names are referenced quoted and matched literally.
+    const weird = rewriteSheetReferences("cell:A1:vtf:n:1:'A+B'!A1+'AAB'!A1", ['A+B'], 'r', 1);
+    expect(weird).toBe("cell:A1:vtf:n:1:'r.1'!A1+'AAB'!A1");
   });
 
   it('mutation pins for upload size boundary and format gates', () => {
@@ -791,6 +1171,24 @@ describe('text import limits', () => {
       .toThrow(ImportDimensionsTooLargeError);
   }, 30_000);
 
+  it('counts a final record left open by an unterminated quote', () => {
+    const open = `${','.repeat(MAX_SOCIALCALC_COL)}"`;
+    expect(() => enforceTextImportLimits(bytes(`${open}\n`), 'csv'))
+      .toThrow(ImportDimensionsTooLargeError);
+    expect(() => enforceTextImportLimits(bytes(`${open}\r`), 'csv'))
+      .toThrow(ImportDimensionsTooLargeError);
+    expect(() => enforceTextImportLimits(bytes(`${'\n'.repeat(MAX_IMPORT_CELLS)}"\n`), 'csv'))
+      .toThrow(ImportDimensionsTooLargeError);
+    expect(() => enforceTextImportLimits(bytes(`${'\n'.repeat(MAX_IMPORT_CELLS - 1)}"x"\n`), 'csv'))
+      .not.toThrow();
+  });
+
+  it('materializes lone-CR records as the rows the preflight counted', () => {
+    const [save] = prepareAppendImportPlan(bytes('a,b\r1,2\r'), 'csv').materializeSaves('room', 1);
+    expect(save).toContain('cell:B2:v:2');
+    expect(save).toContain('sheet:c:2:r:2');
+  });
+
   it('caps the populated rectangle even when rows and columns each fit', () => {
     const row = `${Array(500).fill('x').join(',')}\n`;
     expect(() => enforceTextImportLimits(bytes(row.repeat(MAX_IMPORT_CELLS / 500)), 'csv'))
@@ -896,5 +1294,89 @@ describe('multi-sheet-import final mutation kills', () => {
     expect(getMaxSubsheetIndex(['/roomy.12', '/room.4'], 'room')).toBe(4);
     // If startsWith(prefix) is forced true for all, "/zz.7" would yield max 7 for room "room".
     expect(getMaxSubsheetIndex(['/zz.7'], 'room')).toBe(0);
+  });
+});
+
+describe('workbook sheets that may share one archive member', () => {
+  const MAIN = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+  const OFFICE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+  const SHEET_ML = 'application/vnd.openxmlformats-officedocument.spreadsheetml';
+
+  function zip(members: Record<string, string | Uint8Array>, from?: Uint8Array): Uint8Array {
+    const cfb = from ? XLSX.CFB.read(from, { type: 'buffer' }) : XLSX.CFB.utils.cfb_new();
+    for (const [name, content] of Object.entries(members)) {
+      XLSX.CFB.utils.cfb_add(
+        cfb,
+        name,
+        typeof content === 'string' ? new TextEncoder().encode(content) : content,
+      );
+    }
+    return new Uint8Array(XLSX.CFB.write(cfb, { fileType: 'zip', type: 'buffer' }));
+  }
+
+  /** An xlsx in which every `<sheet>` entry resolves to the same worksheet part. */
+  function sharedPartWorkbook(
+    entries: number,
+    sheetXml = `<worksheet xmlns="${MAIN}"><sheetData><row><c><v>7</v></c><c><v>8</v></c></row></sheetData></worksheet>`,
+    extra: Record<string, Uint8Array> = {},
+  ): Uint8Array {
+    const ids = Array.from({ length: entries }, (_unused, index) => index + 1);
+    return zip({
+      '[Content_Types].xml':
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+        `<Override PartName="/xl/workbook.xml" ContentType="${SHEET_ML}.sheet.main+xml"/>` +
+        `<Override PartName="/xl/worksheets/sheet1.xml" ContentType="${SHEET_ML}.worksheet+xml"/></Types>`,
+      'xl/workbook.xml':
+        `<workbook xmlns="${MAIN}" xmlns:r="${OFFICE}"><sheets>` +
+        ids.map((id) => `<sheet name="s${id}" sheetId="${id}" r:id="rId${id}"/>`).join('') +
+        '</sheets></workbook>',
+      'xl/_rels/workbook.xml.rels':
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        ids.map((id) =>
+          `<Relationship Id="rId${id}" Type="${OFFICE}/worksheet" Target="worksheets/sheet1.xml"/>`,
+        ).join('') +
+        '</Relationships>',
+      'xl/worksheets/sheet1.xml': sheetXml,
+      ...extra,
+    });
+  }
+
+  it('accepts an ordinary shared-part workbook and rejects > MAX_MULTI_SHEETS entries', () => {
+    const small = sharedPartWorkbook(3);
+    const out = buildMultiSheetImport(small, 'room');
+    expect(out.subSheets.map((sheet) => sheet.subroom)).toEqual(['room.1', 'room.2', 'room.3']);
+    expect(out.subSheets[2]!.save).toContain('cell:B1:v:8');
+
+    const tooMany = sharedPartWorkbook(MAX_MULTI_SHEETS + 44);
+    expect(() => buildMultiSheetImport(tooMany, 'room')).toThrow(
+      new ImportTooManySheetsError(MAX_MULTI_SHEETS + 44),
+    );
+    expect(() => prepareAppendImportPlan(tooMany, 'xlsx')).toThrow(
+      ImportTooManySheetsError,
+    );
+  });
+
+  it('bounds repeated reads across aliased worksheet parts while allowing large unreferenced media', () => {
+    // 9.5 MiB single worksheet part: 1 sheet (~9.5 MiB read) succeeds, while
+    // 12 aliased <sheet> entries (~114 MiB total read > MAX_WORKBOOK_READ_BYTES) throw quickly.
+    const heavySheetXml =
+      `<worksheet xmlns="${MAIN}"><sheetData><row><c><v>7</v></c></row></sheetData></worksheet>` +
+      `<!--${'a'.repeat(9_500_000)}-->`;
+    const singleOk = sharedPartWorkbook(1, heavySheetXml);
+    expect(buildMultiSheetImport(singleOk, 'room').subSheets[0]?.save).toContain('cell:A1:v:7');
+
+    const aliasedBomb = sharedPartWorkbook(12, heavySheetXml);
+    const started = performance.now();
+    expect(() => buildMultiSheetImport(aliasedBomb, 'room')).toThrow(ImportArchiveTooLargeError);
+    expect(() => prepareAppendImportPlan(aliasedBomb, 'xlsx')).toThrow(ImportArchiveTooLargeError);
+    expect(performance.now() - started).toBeLessThan(2_000);
+
+    // An unreferenced media part > 12 MiB does not count against member reads.
+    const withMedia = sharedPartWorkbook(
+      6,
+      undefined,
+      { 'xl/media/padding.bin': new Uint8Array(Math.floor(MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES / 2)) },
+    );
+    expect(buildMultiSheetImport(withMedia, 'room').subSheets).toHaveLength(6);
   });
 });

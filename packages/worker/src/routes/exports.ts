@@ -31,26 +31,34 @@
  * `src/index.ts` is documented there.
  */
 /* istanbul ignore file */
-import type { Hono } from 'hono';
+import type { Context, Hono } from 'hono';
 import {
   MAX_MULTI_SHEETS,
   MAX_MULTI_SHEET_TITLE_LENGTH,
   isWorkbookChildLink,
 } from '@ethercalc/shared';
 
+import { MAX_LEGACY_SHEET_CELLS } from '../lib/command-limits.ts';
 import { doFetch } from '../lib/do-dispatch.ts';
+import { isViewerRequest } from '../lib/live-rooms.ts';
 import { readBoundedResponseText } from '../lib/cross-sheet.ts';
-import { getSessionPrincipal } from '../lib/session-middleware.ts';
+import { getFreshSessionPrincipal, getSessionPrincipal } from '../lib/session-middleware.ts';
 import type { SessionPrincipal } from '../lib/session.ts';
 import {
   BINARY_CONTENT_TYPES,
   type BinaryFormat,
+  ExportMergeWorkTooLargeError,
+  WorkbookTooLargeError,
   buildMultiSheetWorkbookFromSheets,
+  exportGridArea,
 } from '../lib/xlsx-build.ts';
 import {
   ALLOWED_ELEMENTS,
   DANGEROUS_ELEMENTS,
-  attributeAction,
+  MAX_ELEMENT_ATTRIBUTES,
+  attributesToRemove,
+  escapeTextMarkup,
+  exceedsHtmlExportElementLimit,
 } from '../lib/html-sanitize.ts';
 import { MAX_IMPORT_CELLS } from '../lib/xlsx-import.ts';
 import type { Env, EtherCalcHonoEnv } from '../env.ts';
@@ -68,6 +76,7 @@ function singleSheetFormatOnWorkbook(key: string): Response {
 const MAX_MULTI_EXPORT_TOC_BYTES = 1024 * 1024;
 const MAX_MULTI_EXPORT_SHEET_BYTES = 8 * 1024 * 1024;
 const MAX_MULTI_EXPORT_TOTAL_CHARS = 12 * 1024 * 1024;
+const MAX_MULTI_EXPORT_GRID_CELLS = MAX_LEGACY_SHEET_CELLS;
 
 function multiExportTooLarge(): Response {
   return new Response('multi-sheet export exceeds resource limits', {
@@ -102,11 +111,14 @@ async function authVerdict(res: Response): Promise<Response | null> {
  * propagates the verdict instead of masking it as a 404.
  */
 async function fetchMultiSheetBundle(
-  env: Env,
+  c: Context<EtherCalcHonoEnv>,
   room: string,
-  principal: SessionPrincipal | null,
 ): Promise<Array<{ name: string; view: unknown }> | Response | null> {
-  const tocRes = await doFetch(env, room, '/_do/csv.json', {}, principal);
+  const env = c.env;
+  let principal = await getSessionPrincipal(c);
+  const viewer = (p: SessionPrincipal | null): boolean =>
+    isViewerRequest(env, c.req.raw.headers, p);
+  const tocRes = await doFetch(env, room, '/_do/csv.json', {}, principal, viewer(principal));
   const tocDenied = await authVerdict(tocRes);
   if (tocDenied) return tocDenied;
   if (tocRes.status !== 200) return null;
@@ -131,17 +143,33 @@ async function fetchMultiSheetBundle(
   const bundle: Array<{ name: string; view: unknown }> = [];
   let totalChars = 0;
   let totalCells = 0;
+  let totalArea = 0;
   for (const raw of tocRows) {
     if (!Array.isArray(raw)) continue;
     const link = typeof raw[0] === 'string' ? raw[0] : '';
     if (!isWorkbookChildLink(link, room)) continue;
+    // Under standalone workerd every child answers from this same process,
+    // so yield to the event loop between children to avoid starving other rooms.
+    const { promise: yielded, resolve } = Promise.withResolvers<void>();
+    setTimeout(resolve, 0);
+    await yielded;
     const subroom = decodeURIComponent(link.slice(1));
     const rawTitle = typeof raw[1] === 'string' ? raw[1] : '';
     const title =
       rawTitle.length > 0 && rawTitle.length <= MAX_MULTI_SHEET_TITLE_LENGTH
         ? rawTitle
         : `Sheet${bundle.length + 1}`;
-    const sheetRes = await doFetch(env, subroom, '/_do/sheet-data', {}, principal);
+    // Each sheet answers in its own time, so the session is confirmed again
+    // before every further read: a sign-out must stop what is still unsent.
+    principal = await getFreshSessionPrincipal(c);
+    const sheetRes = await doFetch(
+      env,
+      subroom,
+      '/_do/sheet-data',
+      {},
+      principal,
+      viewer(principal),
+    );
     const sheetDenied = await authVerdict(sheetRes);
     if (sheetDenied) return sheetDenied;
     if (sheetRes.status !== 200) continue;
@@ -161,42 +189,58 @@ async function fetchMultiSheetBundle(
     } catch {
       continue;
     }
-    const cells =
+    const coords =
       view !== null &&
       typeof view === 'object' &&
       'cells' in view &&
       view.cells !== null &&
       typeof view.cells === 'object' &&
       !Array.isArray(view.cells)
-        ? Object.keys(view.cells).length
-        : 0;
-    if (totalCells + cells > MAX_IMPORT_CELLS) {
+        ? Object.keys(view.cells)
+        : [];
+    const cells = coords.length;
+    const area = exportGridArea(coords);
+    if (
+      totalCells + cells > MAX_IMPORT_CELLS ||
+      totalArea + area > MAX_MULTI_EXPORT_GRID_CELLS
+    ) {
       return multiExportTooLarge();
     }
     totalChars += sheetText.length;
     totalCells += cells;
+    totalArea += area;
     bundle.push({ name: title, view });
   }
   return bundle.length > 0 ? bundle : null;
 }
 
 async function dispatchMultiSheetExport(
-  env: Env,
+  c: Context<EtherCalcHonoEnv>,
   room: string,
   format: BinaryFormat,
-  principal: SessionPrincipal | null,
 ): Promise<Response> {
-  const bundle = await fetchMultiSheetBundle(env, room, principal);
+  const bundle = await fetchMultiSheetBundle(c, room);
   if (bundle instanceof Response) return bundle;
   if (!bundle) {
     return new Response('', { status: 404, headers: { 'Content-Type': TEXT_CT } });
   }
   // `buildMultiSheetWorkbookFromSheets` expects `SocialCalcSheetView` —
   // the JSON we got from the DO is structurally identical.
-  const bytes = buildMultiSheetWorkbookFromSheets(
-    bundle as ReadonlyArray<{ name: string; view: Parameters<typeof buildMultiSheetWorkbookFromSheets>[0][number]['view'] }>,
-    format,
-  );
+  let bytes: Uint8Array;
+  try {
+    bytes = buildMultiSheetWorkbookFromSheets(
+      bundle as ReadonlyArray<{ name: string; view: Parameters<typeof buildMultiSheetWorkbookFromSheets>[0][number]['view'] }>,
+      format,
+    );
+  } catch (err) {
+    if (
+      err instanceof WorkbookTooLargeError ||
+      err instanceof ExportMergeWorkTooLargeError
+    ) {
+      return multiExportTooLarge();
+    }
+    throw err;
+  }
   // `bytes as unknown as BodyInit`: workerd accepts a `Uint8Array` body at
   // runtime; the cast satisfies the stricter `Uint8Array<ArrayBufferLike>`
   // lib typing that doesn't structurally match `BodyInit`.
@@ -223,11 +267,14 @@ async function dispatchMultiSheetExport(
  *   - `style-src 'unsafe-inline'` keeps the table's inline cell styling.
  *   - `img-src` is intentionally omitted (covered by `default-src 'none'`)
  *     so injected `<img>` never loads its `onerror` payload.
+ *   - `form-action 'none'` and `base-uri 'none'` close what `default-src`
+ *     does not fall back to.
  *
  * `frame-ancestors` is deliberately NOT set — the HTML export is a
  * documented external-embed surface (§13 Q8), so we must stay iframe-able.
  */
-const HTML_EXPORT_CSP = "default-src 'none'; style-src 'unsafe-inline'";
+const HTML_EXPORT_CSP =
+  "default-src 'none'; style-src 'unsafe-inline'; form-action 'none'; base-uri 'none'";
 
 /** Format registry for dispatcher. Keyed by URL suffix / slot. */
 interface ExportFormat {
@@ -249,15 +296,26 @@ interface ExportFormat {
   readonly sanitizeHtml?: boolean;
 }
 
+function htmlExportTooLarge(): Response {
+  return new Response('HTML export exceeds resource limits', {
+    status: 413,
+    headers: { 'Content-Type': TEXT_CT },
+  });
+}
+
 /**
  * Sanitize the export with the same element/attribute allowlist as the live
  * client. Active and parser-state elements are removed with their contents;
- * unknown inert tags are unwrapped so their text survives.
+ * unknown inert tags (and allowed elements carrying > MAX_ELEMENT_ATTRIBUTES)
+ * are unwrapped so their text survives, with any `<` in text escaped.
  *
  * The decision rules live in `lib/html-sanitize.ts` (pure, coverage-gated);
  * this wiring is workerd-only so the file carries `istanbul ignore file`.
  */
-function sanitizeHtmlBody(html: string, headers: Record<string, string>): Response {
+async function sanitizeHtmlBody(
+  html: string,
+  headers: Record<string, string>,
+): Promise<Response> {
   const rewriter = new HTMLRewriter().on('*', {
     element(el) {
       const tag = el.tagName.toLowerCase();
@@ -271,22 +329,37 @@ function sanitizeHtmlBody(html: string, headers: Record<string, string>): Respon
       }
       // `el.attributes` yields `[name, value]` pairs at runtime (workerd).
       // Collect first because removeAttribute mutates the iterator.
-      const attrIter = el.attributes as unknown as Iterable<readonly string[]>;
-      const attrs: Array<readonly string[]> = [];
-      for (const attr of attrIter) attrs.push(attr);
-      for (const attr of attrs) {
-        const name = attr[0] ?? '';
-        const value = attr[1] ?? '';
-        if (attributeAction(name, value) === 'remove') {
-          el.removeAttribute(name);
+      const attrIter = el.attributes as unknown as Iterable<readonly [string, string]>;
+      const attrs: Array<readonly [string, string]> = [];
+      for (const attr of attrIter) {
+        // Each removeAttribute is linear in the element's attribute count;
+        // unwrap an attribute flood rather than strip it quadratically.
+        if (attrs.length === MAX_ELEMENT_ATTRIBUTES) {
+          el.removeAndKeepContent();
+          return;
         }
+        attrs.push(attr);
       }
+      // Duplicates included: removeAttribute drops one occurrence per call.
+      for (const name of attributesToRemove(attrs)) el.removeAttribute(name);
       if (tag === 'a' && el.getAttribute('target')?.toLowerCase() === '_blank') {
         el.setAttribute('rel', 'noopener noreferrer');
       }
     },
   });
-  return rewriter.transform(new Response(html, { headers }));
+  rewriter.onDocument({
+    text(chunk) {
+      const escaped = escapeTextMarkup(chunk.text);
+      if (escaped !== chunk.text) chunk.replace(escaped, { html: true });
+    },
+  });
+  let sanitized: string;
+  try {
+    sanitized = await rewriter.transform(new Response(html)).text();
+  } catch {
+    return htmlExportTooLarge();
+  }
+  return new Response(sanitized, { headers });
 }
 
 const FORMATS: Readonly<Record<string, ExportFormat>> = {
@@ -345,8 +418,9 @@ async function dispatchExport(
   room: string,
   format: ExportFormat,
   principal: SessionPrincipal | null,
+  viewer: boolean,
 ): Promise<Response> {
-  const res = await doFetch(env, room, format.doPath, {}, principal);
+  const res = await doFetch(env, room, format.doPath, {}, principal, viewer);
   const denied = await authVerdict(res);
   if (denied) return denied;
   if (res.status === 404) {
@@ -373,6 +447,7 @@ async function dispatchExport(
   }
   const body = await res.text();
   if (format.sanitizeHtml) {
+    if (exceedsHtmlExportElementLimit(body)) return htmlExportTooLarge();
     return sanitizeHtmlBody(body, headers);
   }
   return new Response(body, { status: res.status, headers });
@@ -391,17 +466,12 @@ export function registerExports(app: Hono<EtherCalcHonoEnv>): void {
   // one workbook with formula-fidelity per sub-sheet.
   for (const fmt of ['xlsx', 'ods', 'fods'] as const) {
     app.get(`/_/=:room/${fmt}`, async (c) =>
-      dispatchMultiSheetExport(
-        c.env,
-        c.req.param('room') ?? '',
-        fmt,
-        await getSessionPrincipal(c),
-      ),
+      dispatchMultiSheetExport(c, c.req.param('room') ?? '', fmt),
     );
     app.get(`/=:room.${fmt}`, async (c) => {
       const raw = c.req.param('room') ?? '';
       const room = raw.slice(0, raw.length - fmt.length - 1);
-      return dispatchMultiSheetExport(c.env, room, fmt, await getSessionPrincipal(c));
+      return dispatchMultiSheetExport(c, room, fmt);
     });
   }
 
@@ -417,15 +487,16 @@ export function registerExports(app: Hono<EtherCalcHonoEnv>): void {
     // to the multi-sheet export, single-sheet formats get a 400.
     app.get(`/_/:room/${key}`, async (c) => {
       const room = c.req.param('room') ?? '';
-      const principal = await getSessionPrincipal(c);
       if (room.startsWith('=')) {
         // Multi-sheet only supports binary formats.
         if (format.binary && format.attachmentExt) {
-          return dispatchMultiSheetExport(c.env, room.slice(1), format.attachmentExt as BinaryFormat, principal);
+          return dispatchMultiSheetExport(c, room.slice(1), format.attachmentExt as BinaryFormat);
         }
         return singleSheetFormatOnWorkbook(key);
       }
-      return dispatchExport(c.env, room, format, principal);
+      const principal = await getSessionPrincipal(c);
+      const viewer = isViewerRequest(c.env, c.req.raw.headers, principal);
+      return dispatchExport(c.env, room, format, principal, viewer);
     });
     // `/:room.<key>` form — the room name may NOT contain a dot-extension
     // matching another registered format (legacy rule; rooms with dots are
@@ -437,14 +508,15 @@ export function registerExports(app: Hono<EtherCalcHonoEnv>): void {
     app.get(`/:room{.+\\.${key.replace('.', '\\.')}}`, async (c) => {
       const raw = c.req.param('room') ?? '';
       const room = raw.slice(0, raw.length - key.length - 1);
-      const principal = await getSessionPrincipal(c);
       if (room.startsWith('=')) {
         if (format.binary && format.attachmentExt) {
-          return dispatchMultiSheetExport(c.env, room.slice(1), format.attachmentExt as BinaryFormat, principal);
+          return dispatchMultiSheetExport(c, room.slice(1), format.attachmentExt as BinaryFormat);
         }
         return singleSheetFormatOnWorkbook(key);
       }
-      return dispatchExport(c.env, room, format, principal);
+      const principal = await getSessionPrincipal(c);
+      const viewer = isViewerRequest(c.env, c.req.raw.headers, principal);
+      return dispatchExport(c.env, room, format, principal, viewer);
     });
   }
 }

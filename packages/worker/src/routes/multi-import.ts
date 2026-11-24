@@ -23,18 +23,19 @@
  * their TOC rows are committed. Private replacements choose unused child
  * names when an existing room cannot be safely reused.
  */
-import type { Hono } from "hono";
+import type { Context, Hono } from "hono";
 
 import type { Env, EtherCalcHonoEnv } from "../env.ts";
 import { verifyAuth } from "../lib/auth.ts";
 import { doFetch } from "../lib/do-dispatch.ts";
 import { encodeRoom, isValidRoomName } from "../lib/room-name.ts";
-import { getSessionPrincipal } from "../lib/session-middleware.ts";
+import { getFreshSessionPrincipal, getSessionPrincipal } from "../lib/session-middleware.ts";
 import type { SessionPrincipal } from "../lib/session.ts";
 import {
   APPEND_IMPORT_FORMATS,
   WORKBOOK_IMPORT_FORMATS,
   buildMultiSheetImport,
+  parseAddSheetRequest,
   prepareAppendImportPlan,
   ImportTooManySheetsError,
   ImportUnsupportedFormatError,
@@ -118,7 +119,7 @@ async function getParentAccessInfo(
   }
   let accessRes: Response;
   try {
-    accessRes = await doFetch(env, base, "/_do/access", {}, principal);
+    accessRes = await doFetch(env, base, "/_do/access", {}, principal, false);
   } catch {
     return {
       errorResponse: new Response("import failed", {
@@ -283,13 +284,17 @@ async function probePrivateChildren(
 }
 
 async function reserveInitializeCommit(
-  env: Env,
+  c: Context<EtherCalcHonoEnv>,
   base: string,
-  principal: SessionPrincipal | null,
   requestId: string,
   titles: readonly string[],
   materializeSaves: (firstIndex: number) => readonly string[],
 ): Promise<{ ok: true; sheets: CommittedSheet[] } | { ok: false; response: Response }> {
+  const env = c.env;
+  // Every room answers in its own time, the caller's access check included,
+  // so the session is confirmed again before each write: a sign-out must
+  // stop what is still unsent.
+  let principal = await getFreshSessionPrincipal(c);
   const reserve = await parentedProtocolFetch(
     env,
     base,
@@ -371,9 +376,17 @@ async function reserveInitializeCommit(
     });
   }
 
-  const saves = materializeSaves(allocation.firstIndex);
+  let saves: readonly string[];
+  try {
+    saves = materializeSaves(allocation.firstIndex);
+  } catch (err) {
+    const mapped = mapImportBuildError(err);
+    if (mapped) return { ok: false, response: mapped };
+    throw err;
+  }
   for (let index = 0; index < sheets.length; index++) {
     const sheet = sheets[index]!;
+    principal = await getFreshSessionPrincipal(c);
     const child = await parentedProtocolFetch(
       env,
       sheet.subroom,
@@ -408,6 +421,7 @@ async function reserveInitializeCommit(
     }
   }
 
+  principal = await getFreshSessionPrincipal(c);
   const commit = await parentedProtocolFetch(
     env,
     base,
@@ -486,13 +500,14 @@ async function reserveInitializeCommit(
 }
 
 async function importWorkbook(
-  env: Env,
+  c: Context<EtherCalcHonoEnv>,
   base: string,
   bytes: Uint8Array,
-  principal: SessionPrincipal | null,
   format: WorkbookImportFormat,
   suppliedAuth: string,
 ): Promise<Response> {
+  const env = c.env;
+  let principal = await getSessionPrincipal(c);
   const { isPrivate, errorResponse } = await getParentAccessInfo(env, base, principal, suppliedAuth);
   if (errorResponse) return errorResponse;
 
@@ -534,6 +549,10 @@ async function importWorkbook(
   }
 
   for (const { subroom, save } of subSheets) {
+    // The access check, the probes and every earlier sheet each waited for
+    // a room that may have been kept busy. Confirm the session again before
+    // each write, so a sign-out stops the sheets that are still unsent.
+    principal = await getFreshSessionPrincipal(c);
     let res = await parentedProtocolFetch(
       env,
       subroom,
@@ -550,6 +569,7 @@ async function importWorkbook(
     // Existing public workbooks may predate parent markers. Keep their
     // established write behavior while private replacements use fresh names.
     if (res.status === 409 && !isPrivate) {
+      principal = await getFreshSessionPrincipal(c);
       res = await doFetch(env, subroom, "/_do/snapshot", { method: "PUT", body: save }, principal);
     }
     const denied = await authVerdict(res);
@@ -562,6 +582,7 @@ async function importWorkbook(
       });
     }
   }
+  principal = await getFreshSessionPrincipal(c);
   const toc = await doFetch(
     env,
     base,
@@ -584,15 +605,15 @@ async function importWorkbook(
 }
 
 async function appendWorkbook(
-  env: Env,
+  c: Context<EtherCalcHonoEnv>,
   base: string,
   bytes: Uint8Array,
-  principal: SessionPrincipal | null,
   format: string,
   titleHint?: string,
   suppliedAuth = "",
 ): Promise<Response> {
-  const { errorResponse } = await getParentAccessInfo(env, base, principal, suppliedAuth);
+  const principal = await getSessionPrincipal(c);
+  const { errorResponse } = await getParentAccessInfo(c.env, base, principal, suppliedAuth);
   if (errorResponse) return errorResponse;
 
   let plan;
@@ -613,9 +634,8 @@ async function appendWorkbook(
     });
   }
   const result = await reserveInitializeCommit(
-    env,
+    c,
     base,
-    principal,
     crypto.randomUUID(),
     plan.preferredTitles,
     (firstIndex) => plan.materializeSaves(base, firstIndex),
@@ -642,26 +662,18 @@ export function registerMultiSheetImport(app: Hono<EtherCalcHonoEnv>): void {
     const room = c.req.param("room") ?? "";
     if (!room.startsWith("=")) return next();
     const base = room.slice(1);
-    let raw: unknown;
+    // Keep no parsed body in this scope (or in Hono's `c.req.json()` cache):
+    // an async handler holds its locals until the last DO call has answered.
+    let sheetRequest: ReturnType<typeof parseAddSheetRequest>;
     try {
-      raw = await c.req.json();
+      sheetRequest = parseAddSheetRequest(await c.req.text());
     } catch {
       return new Response("sheet body must be valid JSON", {
         status: 400,
         headers: { "Content-Type": TEXT_CT },
       });
     }
-    if (
-      raw === null ||
-      typeof raw !== "object" ||
-      !("title" in raw) ||
-      typeof raw.title !== "string" ||
-      !("requestId" in raw) ||
-      typeof raw.requestId !== "string" ||
-      raw.requestId.length === 0 ||
-      raw.requestId.length > 128 ||
-      !/^[A-Za-z0-9_-]+$/.test(raw.requestId)
-    ) {
+    if (sheetRequest === null) {
       return new Response("sheet body must be {title,requestId}", {
         status: 400,
         headers: { "Content-Type": TEXT_CT },
@@ -671,11 +683,10 @@ export function registerMultiSheetImport(app: Hono<EtherCalcHonoEnv>): void {
     const { errorResponse } = await getParentAccessInfo(c.env, base, principal, c.req.query("auth") ?? "");
     if (errorResponse) return errorResponse;
     const result = await reserveInitializeCommit(
-      c.env,
+      c,
       base,
-      principal,
-      raw.requestId,
-      [raw.title],
+      sheetRequest.requestId,
+      [sheetRequest.title],
       () => [""],
     );
     if (!result.ok) return result.response;
@@ -696,7 +707,7 @@ export function registerMultiSheetImport(app: Hono<EtherCalcHonoEnv>): void {
     }
     const base = room.slice(1);
     const bytes = new Uint8Array(await c.req.raw.arrayBuffer());
-    return importWorkbook(c.env, base, bytes, await getSessionPrincipal(c), fmt as WorkbookImportFormat, c.req.query("auth") ?? "");
+    return importWorkbook(c, base, bytes, fmt as WorkbookImportFormat, c.req.query("auth") ?? "");
   });
 
   // 2. `/=:room.<fmt>` form — suffix form (workbook replace only).
@@ -711,7 +722,7 @@ export function registerMultiSheetImport(app: Hono<EtherCalcHonoEnv>): void {
     }
     const base = room.slice(1, room.length - fmt.length - 1);
     const bytes = new Uint8Array(await c.req.raw.arrayBuffer());
-    return importWorkbook(c.env, base, bytes, await getSessionPrincipal(c), fmt, c.req.query("auth") ?? "");
+    return importWorkbook(c, base, bytes, fmt, c.req.query("auth") ?? "");
   });
 
   // 3. `POST /_/:room/:fmt` append form — workbook + text formats.
@@ -724,10 +735,9 @@ export function registerMultiSheetImport(app: Hono<EtherCalcHonoEnv>): void {
     const base = room.slice(1);
     const bytes = new Uint8Array(await c.req.raw.arrayBuffer());
     return appendWorkbook(
-      c.env,
+      c,
       base,
       bytes,
-      await getSessionPrincipal(c),
       fmt,
       titleHintFromRequest(c.req.raw),
       c.req.query("auth") ?? "",
@@ -747,10 +757,9 @@ export function registerMultiSheetImport(app: Hono<EtherCalcHonoEnv>): void {
     const base = room.slice(1, room.length - fmt.length - 1);
     const bytes = new Uint8Array(await c.req.raw.arrayBuffer());
     return appendWorkbook(
-      c.env,
+      c,
       base,
       bytes,
-      await getSessionPrincipal(c),
       fmt,
       titleHintFromRequest(c.req.raw),
       c.req.query("auth") ?? "",

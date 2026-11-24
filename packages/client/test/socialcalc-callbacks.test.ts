@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
+import { MAX_CROSS_SHEET_REFS } from '@ethercalc/shared';
 import {
   parseQuery,
   installCallbacks,
@@ -188,6 +189,48 @@ describe('installCallbacks', () => {
 
     sc.ScheduleSheetCommands!(sheet, 'set A1 text remote-snapshot-change', false, true);
     expect(localApplications).toBe(2);
+  });
+
+  it('drops local settimetrigger and sendemail commands from recalculation, keeps remote and batches', () => {
+    const sc = makeSocialCalc();
+    const broadcasts: Array<[string, unknown]> = [];
+    installBroadcast(sc, (type, data) => broadcasts.push([type, data]));
+    const applied: string[] = [];
+    sc.ScheduleSheetCommands = (_sheet, cmdstr) => {
+      applied.push(cmdstr);
+    };
+    installCallbacks(sc, { broadcast: () => {} });
+    const sheet = makeSheet();
+    sheet._room = 'r1';
+
+    // What `Formula.StoreIoEventFormula` schedules for EMAILAT / EMAILATIF / EMAILONEDIT:
+    for (let row = 1; row <= 400; row++) {
+      (sc.Sheet!.prototype.ScheduleSheetCommands as unknown as (cmd: string) => void).call(
+        sheet,
+        `settimetrigger A${row} 28000000`,
+      );
+      (sc.Sheet!.prototype.ScheduleSheetCommands as unknown as (cmd: string) => void).call(
+        sheet,
+        `sendemail {"to":"a@example.com"}`,
+      );
+    }
+    expect(broadcasts).toHaveLength(0);
+    expect(applied).toHaveLength(0);
+
+    // Remote copies still pass through locally (no-op in engine).
+    sc.ScheduleSheetCommands!(sheet, 'settimetrigger A1 28000000', false, true);
+    sc.ScheduleSheetCommands!(sheet, 'sendemail {"to":"a@example.com"}', false, true);
+    expect(applied).toEqual([
+      'settimetrigger A1 28000000',
+      'sendemail {"to":"a@example.com"}',
+    ]);
+    expect(broadcasts).toHaveLength(0);
+
+    // Multi-line batches led by one still run and broadcast as normal mutations.
+    sc.ScheduleSheetCommands!(sheet, 'settimetrigger A1 1\nset A1 value n 1', true, false);
+    sc.ScheduleSheetCommands!(sheet, 'sendemail {"to":"a@example.com"}\nset A2 value n 2', true, false);
+    expect(applied).toHaveLength(4);
+    expect(broadcasts).toHaveLength(2);
   });
 
   it('ScheduleSheetCommands rewrites multi-sheet $Title refs', () => {
@@ -422,6 +465,23 @@ describe('installRecalcLoader', () => {
     installRecalcLoader(sc, b);
     sc.RecalcInfo.LoadSheet!('MYROOM');
     expect(calls).toEqual([['ask.recalc', { room: 'myroom' }]]);
+  });
+
+  it('stops asking after MAX_CROSS_SHEET_REFS distinct sheet names', () => {
+    const sc = makeSocialCalc();
+    const rooms: unknown[] = [];
+    const b = (_t: string, d?: Record<string, unknown>): void => void rooms.push(d?.room);
+    installRecalcLoader(sc, b);
+    const names = Array.from({ length: MAX_CROSS_SHEET_REFS + 5 }, (_, i) => `Sheet-${i}`);
+    for (const name of names) sc.RecalcInfo.LoadSheet!(name);
+    const admitted = names.slice(0, MAX_CROSS_SHEET_REFS).map((name) => name.toLowerCase());
+    expect(rooms).toEqual(admitted);
+
+    // An admitted name can be re-requested (forced recalc), in any case;
+    // a name past the cap still cannot.
+    sc.RecalcInfo.LoadSheet!('SHEET-0');
+    sc.RecalcInfo.LoadSheet!(names[MAX_CROSS_SHEET_REFS]!);
+    expect(rooms).toEqual([...admitted, 'sheet-0']);
   });
 });
 

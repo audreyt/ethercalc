@@ -62,6 +62,16 @@ describe('sandstormBlocksMutation', () => {
     expect(sandstormBlocksMutation(env, 'GET', '/_/x', viewer)).toBe(false);
   });
 
+  it('blocks a viewer HEAD on the room-minting GET routes', () => {
+    const env = { ETHERCALC_SANDSTORM: '1' };
+    const viewer = new Headers({ 'X-Sandstorm-Permissions': '' });
+    const editor = new Headers({ 'X-Sandstorm-Permissions': 'modify' });
+    expect(sandstormBlocksMutation(env, 'HEAD', '/_from/tpl', viewer)).toBe(true);
+    expect(sandstormBlocksMutation(env, 'HEAD', '/tpl/form', viewer)).toBe(true);
+    expect(sandstormBlocksMutation(env, 'HEAD', '/tpl/form', editor)).toBe(false);
+    expect(sandstormBlocksMutation(env, 'HEAD', '/_/tpl', viewer)).toBe(false);
+  });
+
   it('separates direct migration traffic from bridge requests', () => {
     const env = { ETHERCALC_SANDSTORM: '1' };
     const direct = new Headers({ Authorization: 'Bearer temporary-test-bearer' });
@@ -119,6 +129,12 @@ describe('sandstorm route and permission matching', () => {
     ['GET', '/room', false],
     ['GET', '/_', false],
     ['HEAD', '/_', false],
+    ['HEAD', '/_new', true],
+    ['HEAD', '/=_new', true],
+    ['HEAD', '/_from/tpl', true],
+    ['HEAD', '/tpl/form', true],
+    ['HEAD', '/room', false],
+    ['OPTIONS', '/_new', false],
   ] as const)('classifies %s %s as mutating=%s', (method, pathname, expected) => {
     expect(isSandstormMutationRoute(method, pathname)).toBe(expected);
   });

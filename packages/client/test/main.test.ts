@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
+import { MAX_CROSS_SHEET_TOTAL_CHARS } from '@ethercalc/shared';
 import { runMain, deriveBaseUrl, createDispatcher, stripRoom, type MainHost } from '../src/main.ts';
 import { makeSocialCalc, makeSpreadsheet } from './mock-socialcalc.ts';
 import { createMockFactory, createFakeTimers } from './mock-ws.ts';
@@ -152,6 +153,27 @@ describe('runMain', () => {
       wsFactory: factory,
     });
     expect(sockets[0]?.url.startsWith('wss://explicit.example')).toBe(true);
+    handle?.stop();
+  });
+
+  it('joins and follows the room its URL names when that URL percent-encodes it', () => {
+    const host = makeHost({ location: { search: '?auth=1', hash: '', pathname: '/%61bc' } });
+    host.SocialCalc._room = '%61bc';
+    const cmds: string[] = [];
+    host.spreadsheet!.context.sheetobj.ScheduleSheetCommands = (c) => cmds.push(c);
+    const { factory, sockets } = createMockFactory();
+    const handle = runMain({ host, randomUsername: () => 'me', wsFactory: factory });
+    // `/%61bc` is room `abc` to every HTTP route; `/_ws/%2561bc` would join
+    // the unrelated room literally named `%61bc`.
+    expect(sockets[0]?.url).toBe('/_ws/%61bc?user=me&auth=1');
+    sockets[0]!.acceptOpen();
+    // Frames in both directions carry the server's label for that room.
+    handle?.broadcast('ask.log', {});
+    expect(JSON.parse(sockets[0]!.sent[0]!).room).toBe('abc');
+    sockets[0]!.acceptMessage(
+      JSON.stringify({ type: 'execute', room: 'abc', user: 'peer', cmdstr: 'set A1 text t x' }),
+    );
+    expect(cmds).toEqual(['set A1 text t x']);
     handle?.stop();
   });
 
@@ -338,7 +360,7 @@ describe('createDispatcher', () => {
       room: 'room1',
       ecells: { me: 'A1', her: 'B2' },
     });
-    expect(fakeCell.element.className).toContain('her defaultPeer');
+    expect(fakeCell.element.className).toBe(' peer-her defaultPeer');
     // In _app mode, no-op.
     fakeCell.element.className = '';
     sc._app = true;
@@ -367,7 +389,7 @@ describe('createDispatcher', () => {
     const { dispatch, sc, ss } = setup();
     const bcastCalls: string[] = [];
     sc.Callbacks.broadcast = (t) => bcastCalls.push(t);
-    const cellA = { element: { className: ' u defaultPeer foo' } };
+    const cellA = { element: { className: ' peer-u defaultPeer foo' } };
     const cellB = { element: { className: '' } };
     const map: Record<string, { element: { className: string } }> = { '1,1': cellA, '2,1': cellB };
     sc.GetEditorCellElement = (_e, r, c) => map[`${r},${c}`];
@@ -391,12 +413,49 @@ describe('createDispatcher', () => {
       user: 'u',
       ecell: 'B1',
     });
-    expect(cellB.element.className).toContain('u defaultPeer');
+    expect(cellB.element.className).toBe(' peer-u defaultPeer');
+  });
+
+  it('ecell/ecells: peer username is one literal class token, never a pattern or class list', () => {
+    const { dispatch, sc } = setup();
+    const cell = { element: { className: '' } };
+    const elsewhere = { element: { className: '' } };
+    sc.GetEditorCellElement = (_e, r) => (r === 1 ? cell : elsewhere);
+    sc.coordToCr = (coord) => ({ coord, row: coord === 'B1' ? 1 : 2, col: 2 });
+    // Catastrophic-backtracking pair, CSS class smuggling, invalid RegExp.
+    const users = ['a'.repeat(200), '(a+)+b', 'ui-widget-overlay ui-front', '('];
+    for (const user of users) {
+      dispatch({ type: 'ecell', room: 'room1', user, ecell: 'B1', original: 'B1' });
+    }
+    const expected = [
+      `peer-${'a'.repeat(200)}`,
+      'defaultPeer',
+      'peer-_a___b',
+      'defaultPeer',
+      'peer-ui-widget-overlay_ui-front',
+      'defaultPeer',
+      'peer-_',
+      'defaultPeer',
+    ];
+    expect(cell.element.className.trim().split(/\s+/)).toEqual(expected);
+    // The `ecells` roster takes the same path and finds them already there.
+    dispatch({
+      type: 'ecells',
+      room: 'room1',
+      ecells: Object.fromEntries(users.map((u) => [u, 'B1'])),
+    });
+    expect(cell.element.className.trim().split(/\s+/)).toEqual(expected);
+    // A cursor move away removes exactly that peer's token pair.
+    dispatch({ type: 'ecell', room: 'room1', user: '(a+)+b', ecell: 'B2', original: 'B1' });
+    expect(cell.element.className.trim().split(/\s+/)).toEqual(
+      expected.filter((_, i) => i !== 2 && i !== 3),
+    );
+    expect(elsewhere.element.className).toBe(' peer-_a___b defaultPeer');
   });
 
   it('ecell: no-op in app mode after original cleanup', () => {
     const { dispatch, sc, ss } = setup();
-    const cellA = { element: { className: ' u defaultPeer' } };
+    const cellA = { element: { className: ' peer-u defaultPeer' } };
     sc.GetEditorCellElement = () => cellA;
     sc.coordToCr = (c) => ({ coord: c, row: 1, col: 1 });
     sc._app = true;
@@ -434,16 +493,16 @@ describe('createDispatcher', () => {
   });
 
   it('ecell: cell already has peer class (no double-add)', () => {
-    // Covers the `cell && className.search(find) === -1` false branch in
-    // applyEcell — the regex already matches the existing className.
+    // Covers the `cell && !className.includes(peerClass)` false branch in
+    // applyEcell — the existing className already carries the peer class.
     const { dispatch, sc, ss } = setup();
-    const existing = { element: { className: ' u defaultPeer' } };
+    const existing = { element: { className: ' peer-u defaultPeer' } };
     sc.GetEditorCellElement = () => existing;
     sc.coordToCr = (coord) => ({ coord, row: 2, col: 2 });
     ss.editor.ecell = { coord: 'A1', row: 1, col: 1 };
     dispatch({ type: 'ecell', room: 'room1', user: 'u', ecell: 'B2' });
     // unchanged
-    expect(existing.element.className).toBe(' u defaultPeer');
+    expect(existing.element.className).toBe(' peer-u defaultPeer');
   });
 
   it('log: applies snapshot, schedules commands, calls addmsg', () => {
@@ -723,6 +782,32 @@ describe('createDispatcher', () => {
     ss.context.sheetobj.ScheduleSheetCommands = (c) => cmds.push(c);
     dispatch({ type: 'recalc', room: 'r', log: [], snapshot: 'SAVE_' });
     expect(cmds).toHaveLength(0);
+  });
+
+  it('recalc: keeps at most MAX_CROSS_SHEET_TOTAL_CHARS of sibling sheet text', () => {
+    const { dispatch, sc, ss } = setup();
+    const half = 'x'.repeat(MAX_CROSS_SHEET_TOTAL_CHARS / 2);
+    const cache: Record<string, string> = { a: half, b: 'stale' };
+    sc.RecalcInfo.LoadSheetCache = cache;
+    ss.DecodeSpreadsheetSave = (save) => ({ sheet: { start: 0, end: save.length } });
+    const loaded: unknown[] = [];
+    sc.RecalcLoadedSheet = (room, data, flag) => loaded.push([room, data, flag]);
+    const cmds: string[] = [];
+    ss.context.sheetobj.ScheduleSheetCommands = (c) => cmds.push(c);
+
+    // `b`'s own stale entry is replaced, not counted: a + b lands exactly on the cap.
+    dispatch({ type: 'recalc', room: 'b', log: [], snapshot: half });
+    expect(loaded).toEqual([['b', half, true]]);
+    expect(cache.b).toBe(half);
+    expect(cmds).toEqual(['recalc\n']);
+
+    // One more character than fits: the reply is ignored, nothing is parsed or
+    // rescheduled, and the copies already kept stay as they are.
+    dispatch({ type: 'recalc', room: 'c', log: [], snapshot: 'y' });
+    dispatch({ type: 'recalc', room: 'b', log: [], snapshot: `${half}y` });
+    expect(loaded).toHaveLength(1);
+    expect(cache).toEqual({ a: half, b: half });
+    expect(cmds).toEqual(['recalc\n']);
   });
 
   it('execute: schedules + triggers graph tab redraw', () => {

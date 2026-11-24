@@ -151,6 +151,16 @@ function jsonBody(body: unknown): { method: string; headers: Record<string, stri
   };
 }
 
+/**
+ * A `response.response` AuthDO lets through to the (mocked) verifier: both
+ * base64url members are strings (`{}` and a CBOR `fmt: 'none'` attestation
+ * object).
+ */
+const ATTESTATION = {
+  clientDataJSON: 'e30',
+  attestationObject: 'o2NmbXRkbm9uZWdhdHRTdG10oGhhdXRoRGF0YUA',
+};
+
 async function readChallenge(response: Response): Promise<string> {
   const body: unknown = await response.json();
   if (body === null || typeof body !== 'object' || !('options' in body)) {
@@ -375,6 +385,35 @@ describe('AuthDO', () => {
       expect(denied.headers.get('Retry-After')).toBe('2');
     });
 
+    it('rate-limits the addresses of one IPv6 /64 as a single client', async () => {
+      mockGenerateRegistrationOptions.mockResolvedValue({
+        challenge: 'one-subscriber',
+        rp: { name: RP_NAME, id: RP_ID },
+        user: { id: 'u', name: 'u', displayName: '' },
+        pubKeyCredParams: [],
+        excludeCredentials: [],
+        authenticatorSelection: {},
+      });
+      const request = (ip: string) =>
+        makeRequest('/_auth/register-init', {
+          ...jsonBody({}),
+          headers: {
+            'Content-Type': 'application/json',
+            'X-EC-Client-IP': ip,
+          },
+        });
+      for (let host = 1; host <= 30; host += 1) {
+        const ip = `2001:db8:aaaa:bbbb::${host.toString(16)}`;
+        expect((await auth.fetch(request(ip))).status).toBe(200);
+      }
+      // A fresh address of the same /64 is not a fresh client…
+      const denied = await auth.fetch(request('2001:db8:aaaa:bbbb::ff'));
+      expect(denied.status).toBe(429);
+      // …while another /64 still has its own allowance.
+      const other = await auth.fetch(request('2001:db8:aaaa:cccc::1'));
+      expect(other.status).toBe(200);
+    });
+
     it('purges stale records and safely replaces a repeated challenge', async () => {
       const now = Date.now();
       record.map.set('challenge:expired', {
@@ -489,7 +528,7 @@ describe('AuthDO', () => {
         makeRequest(
           '/_auth/register-complete',
           jsonBody({
-            response: { id: credentialID, response: {} },
+            response: { id: credentialID, response: ATTESTATION },
             uid,
             challenge,
           }),
@@ -565,7 +604,7 @@ describe('AuthDO', () => {
         makeRequest(
           '/_auth/register-complete',
           jsonBody({
-            response: { id: 'cred-origin-test', response: {} },
+            response: { id: 'cred-origin-test', response: ATTESTATION },
             uid: initBody.uid,
             challenge: initBody.options.challenge,
             origin: 'https://evil.com',
@@ -588,7 +627,7 @@ describe('AuthDO', () => {
         makeRequest(
           '/_auth/register-complete',
           jsonBody({
-            response: { id: 'x', response: {} },
+            response: { id: 'x', response: ATTESTATION },
             uid: 'u',
             challenge: 'wrong-challenge',
           }),
@@ -620,7 +659,7 @@ describe('AuthDO', () => {
         makeRequest(
           '/_auth/register-complete',
           jsonBody({
-            response: { id: 'malformed-registration', response: {} },
+            response: { id: 'malformed-registration', response: ATTESTATION },
             uid: init.uid,
             challenge: init.challenge,
           }),
@@ -630,6 +669,196 @@ describe('AuthDO', () => {
       expect(response.status).toBe(400);
       expect(await response.text()).toBe('Registration verification failed');
       expect(record.map.has(`challenge:${init.challenge}`)).toBe(false);
+    });
+
+    it('refuses a response whose base64url members are not strings, before the verifier decodes them', async () => {
+      // The verifier's decoder sizes its output from `length` before reading
+      // a character, so an object that merely claims one must never reach it
+      // (`{"length": 2000000000}` would allocate 1.5 GB).
+      const claimsLength = { length: 4 };
+      const malformed: unknown[] = [
+        null,
+        'AA',
+        [ATTESTATION],
+        { id: 'x' },
+        { id: 'x', response: null },
+        { id: 'x', response: 'AA' },
+        { id: 'x', response: [ATTESTATION] },
+        { id: 'x', response: {} },
+        { id: 'x', response: { clientDataJSON: ATTESTATION.clientDataJSON } },
+        { id: 'x', response: { attestationObject: ATTESTATION.attestationObject } },
+        { id: 'x', response: { ...ATTESTATION, clientDataJSON: claimsLength } },
+        { id: 'x', response: { ...ATTESTATION, attestationObject: claimsLength } },
+        { id: 'x', response: { ...ATTESTATION, clientDataJSON: ['e30'] } },
+        { id: 'x', response: { ...ATTESTATION, attestationObject: 42 } },
+        { id: 'x', response: { ...ATTESTATION, attestationObject: null } },
+      ];
+      mockGenerateRegistrationOptions.mockResolvedValue({
+        challenge: 'non-string-attestation',
+      });
+      const init = await readRegistrationInit(
+        await auth.fetch(makeRequest('/_auth/register-init', jsonBody({}))),
+      );
+      for (const response of malformed) {
+        const res = await auth.fetch(
+          makeRequest(
+            '/_auth/register-complete',
+            jsonBody({ response, uid: init.uid, challenge: init.challenge }),
+          ),
+        );
+
+        expect(res.status).toBe(400);
+        expect(await res.text()).toBe('Missing response, uid, or challenge');
+      }
+      expect(mockVerifyRegistrationResponse).not.toHaveBeenCalled();
+      // A malformed body is refused before it can spend the challenge.
+      expect(record.map.has(`challenge:${init.challenge}`)).toBe(true);
+    });
+
+    it('refuses an attestation registration never asked for, without verifying it', async () => {
+      // base64url CBOR `{fmt, attStmt, authData: h''}`: the formats whose
+      // verification parses client-supplied certificates, `packed` with a
+      // certificate chain or with no statement to look for one in, then
+      // values that do not decode to an attestation object at all.
+      const unrequested: string[] = [
+        'o2NmbXRoZmlkby11MmZnYXR0U3RtdKBoYXV0aERhdGFA', // fido-u2f
+        'o2NmbXRlYXBwbGVnYXR0U3RtdKBoYXV0aERhdGFA', // apple
+        'o2NmbXRrYW5kcm9pZC1rZXlnYXR0U3RtdKBoYXV0aERhdGFA', // android-key
+        'o2NmbXRxYW5kcm9pZC1zYWZldHluZXRnYXR0U3RtdKBoYXV0aERhdGFA', // android-safetynet
+        'o2NmbXRjdHBtZ2F0dFN0bXSgaGF1dGhEYXRhQA', // tpm
+        'o2NmbXRmcGFja2VkZ2F0dFN0bXSjY2FsZyZjc2lnQQBjeDVjgUBoYXV0aERhdGFA', // packed, attStmt {alg, sig, x5c: [h'']}
+        'o2NmbXRmcGFja2VkZ2F0dFN0bXSjY2FsZyZjc2lnQQBjeDVjgGhhdXRoRGF0YUA', // packed, attStmt {alg, sig, x5c: []}
+        'omNmbXRmcGFja2VkaGF1dGhEYXRhQA', // packed, no attStmt
+        'AQ', // CBOR integer, not a map
+        '_w', // not CBOR
+        '',
+      ];
+      for (const [index, attestationObject] of unrequested.entries()) {
+        mockGenerateRegistrationOptions.mockResolvedValue({
+          challenge: `unrequested-attestation-${index}`,
+        });
+        const init = await readRegistrationInit(
+          await auth.fetch(makeRequest('/_auth/register-init', jsonBody({}))),
+        );
+
+        const response = await auth.fetch(
+          makeRequest(
+            '/_auth/register-complete',
+            jsonBody({
+              response: {
+                id: 'x',
+                response: { clientDataJSON: ATTESTATION.clientDataJSON, attestationObject },
+              },
+              uid: init.uid,
+              challenge: init.challenge,
+            }),
+          ),
+        );
+
+        expect(response.status).toBe(400);
+        expect(await response.text()).toBe('Registration verification failed');
+        expect(record.map.has(`challenge:${init.challenge}`)).toBe(false);
+      }
+      expect(mockVerifyRegistrationResponse).not.toHaveBeenCalled();
+    });
+
+    it('hands the attestation registration asked for to the verifier', async () => {
+      mockVerifyRegistrationResponse.mockResolvedValue({ verified: false });
+      const requested: string[] = [
+        'o2NmbXRkbm9uZWdhdHRTdG10oGhhdXRoRGF0YUA', // none
+        'o2NmbXRmcGFja2VkZ2F0dFN0bXSgaGF1dGhEYXRhQA', // packed, attStmt {}
+        // packed self attestation, attStmt {alg, sig}
+        'o2NmbXRmcGFja2VkZ2F0dFN0bXSiY2FsZyZjc2lnQQBoYXV0aERhdGFA',
+      ];
+      for (const [index, attestationObject] of requested.entries()) {
+        mockGenerateRegistrationOptions.mockResolvedValue({
+          challenge: `requested-attestation-${index}`,
+        });
+        const init = await readRegistrationInit(
+          await auth.fetch(makeRequest('/_auth/register-init', jsonBody({}))),
+        );
+        const credential = {
+          id: 'x',
+          response: { clientDataJSON: ATTESTATION.clientDataJSON, attestationObject },
+        };
+
+        const response = await auth.fetch(
+          makeRequest(
+            '/_auth/register-complete',
+            jsonBody({
+              response: credential,
+              uid: init.uid,
+              challenge: init.challenge,
+            }),
+          ),
+        );
+
+        expect(response.status).toBe(400);
+        expect(mockVerifyRegistrationResponse).toHaveBeenCalledTimes(index + 1);
+        expect(mockVerifyRegistrationResponse.mock.calls[index]![0].response).toEqual(
+          credential,
+        );
+      }
+    });
+
+    it('refuses an unreadable or oversized attestation before spending the challenge', async () => {
+      // The attestation object is CBOR-decoded before anything in it is
+      // verified, in time quadratic in chosen input, so it may be no longer
+      // than an authenticator produces (8192 base64url characters).
+      record.map.set('challenge:bounded-attestation', {
+        purpose: 'register',
+        uid: 'uid-bounded-attestation',
+        exp: Date.now() + 60_000,
+      });
+      const complete = (response: unknown): Promise<Response> =>
+        auth.fetch(
+          makeRequest(
+            '/_auth/register-complete',
+            jsonBody({
+              response,
+              uid: 'uid-bounded-attestation',
+              challenge: 'bounded-attestation',
+            }),
+          ),
+        );
+
+      for (const response of [
+        { id: 'x' },
+        { id: 'x', response: null },
+        { id: 'x', response: 'AA' },
+        { id: 'x', response: [{}] },
+        {
+          id: 'x',
+          response: {
+            clientDataJSON: ATTESTATION.clientDataJSON,
+            attestationObject: 'A'.repeat(8_193),
+          },
+        },
+      ]) {
+        const refused = await complete(response);
+        expect(refused.status).toBe(400);
+        expect(await refused.text()).toBe('Missing response, uid, or challenge');
+      }
+      expect(mockVerifyRegistrationResponse).not.toHaveBeenCalled();
+      expect(record.map.has('challenge:bounded-attestation')).toBe(true);
+
+      // The longest permitted `none` attestation still reaches the verifier.
+      mockVerifyRegistrationResponse.mockResolvedValue({ verified: false });
+      const longestNoneAttestation =
+        'o2NmbXRkbm9uZWdhdHRTdG10oGhhdXRoRGF0YVkX4Q' + 'A'.repeat(8_150);
+      expect(longestNoneAttestation).toHaveLength(8_192);
+      const longest = {
+        id: 'x',
+        response: {
+          clientDataJSON: ATTESTATION.clientDataJSON,
+          attestationObject: longestNoneAttestation,
+        },
+      };
+      const verifierRefused = await complete(longest);
+      expect(verifierRefused.status).toBe(400);
+      expect(await verifierRefused.text()).toBe('Registration verification failed');
+      expect(mockVerifyRegistrationResponse).toHaveBeenCalledOnce();
+      expect(mockVerifyRegistrationResponse.mock.calls[0]![0].response).toEqual(longest);
     });
 
     it('rejects registration with unknown uid (no matching challenge)', async () => {
@@ -652,7 +881,7 @@ describe('AuthDO', () => {
         makeRequest(
           '/_auth/register-complete',
           jsonBody({
-            response: { id: 'x', response: {} },
+            response: { id: 'x', response: ATTESTATION },
             uid: 'never-registered',
             challenge: 'never-stored',
           }),
@@ -664,8 +893,8 @@ describe('AuthDO', () => {
     it('requires response, uid, and challenge fields', async () => {
       for (const body of [
         {},
-        { response: { id: 'x', response: {} } },
-        { response: { id: 'x', response: {} }, uid: 'u' },
+        { response: { id: 'x', response: ATTESTATION } },
+        { response: { id: 'x', response: ATTESTATION }, uid: 'u' },
       ]) {
         const response = await auth.fetch(
           makeRequest('/_auth/register-complete', jsonBody(body)),
@@ -701,7 +930,7 @@ describe('AuthDO', () => {
           makeRequest(
             '/_auth/register-complete',
             jsonBody({
-              response: { id: 'x', response: {} },
+              response: { id: 'x', response: ATTESTATION },
               uid: entry.uid,
               challenge: entry.challenge,
             }),
@@ -734,7 +963,7 @@ describe('AuthDO', () => {
         makeRequest(
           '/_auth/register-complete',
           jsonBody({
-            response: { id: 'x', response: {} },
+            response: { id: 'x', response: ATTESTATION },
             uid: 'uid-unverified',
             challenge: 'unverified',
           }),
@@ -744,7 +973,7 @@ describe('AuthDO', () => {
         makeRequest(
           '/_auth/register-complete',
           jsonBody({
-            response: { id: 'x', response: {} },
+            response: { id: 'x', response: ATTESTATION },
             uid: 'uid-no-info',
             challenge: 'no-info',
           }),
@@ -787,7 +1016,7 @@ describe('AuthDO', () => {
         makeRequest(
           '/_auth/register-complete',
           jsonBody({
-            response: { id: credentialID, response: {} },
+            response: { id: credentialID, response: ATTESTATION },
             uid: 'uid-duplicate',
             challenge: 'duplicate-credential',
           }),
@@ -1210,6 +1439,62 @@ describe('AuthDO', () => {
         );
         expect(response.status).toBe(400);
       }
+    });
+
+    it('refuses an unreadable or oversized assertion before spending the challenge', async () => {
+      // Both members are decoded before the signature is checked, in time
+      // quadratic in chosen input, so neither may be longer than an
+      // authenticator produces (4096 and 2048 base64url characters).
+      const credentialID = 'credential-bounded-assertion';
+      record.map.set(`cred:${credentialID}`, {
+        uid: 'uid-bounded-assertion',
+        publicKey: new Uint8Array([9]),
+        counter: 0,
+        transports: ['internal'],
+        deviceType: 'singleDevice',
+        backedUp: false,
+      });
+      record.map.set('challenge:bounded-assertion', {
+        purpose: 'login',
+        exp: Date.now() + 60_000,
+      });
+      const complete = (response: unknown): Promise<Response> =>
+        auth.fetch(
+          makeRequest(
+            '/_auth/login-complete',
+            jsonBody({ response, challenge: 'bounded-assertion' }),
+          ),
+        );
+
+      for (const response of [
+        { id: credentialID },
+        { id: credentialID, response: null },
+        { id: credentialID, response: 'AA' },
+        { id: credentialID, response: [{}] },
+        { id: credentialID, response: { authenticatorData: 'A'.repeat(4_097) } },
+        { id: credentialID, response: { signature: 'A'.repeat(2_049) } },
+      ]) {
+        const refused = await complete(response);
+        expect(refused.status).toBe(400);
+        expect(await refused.text()).toBe('Missing response or challenge');
+      }
+      expect(mockVerifyAuthenticationResponse).not.toHaveBeenCalled();
+      expect(record.map.has('challenge:bounded-assertion')).toBe(true);
+
+      // Members of the longest permitted length still reach the verifier.
+      mockVerifyAuthenticationResponse.mockResolvedValue({ verified: false });
+      const longest = {
+        id: credentialID,
+        response: {
+          authenticatorData: 'A'.repeat(4_096),
+          signature: 'A'.repeat(2_048),
+        },
+      };
+      const verifierRefused = await complete(longest);
+      expect(verifierRefused.status).toBe(401);
+      expect(await verifierRefused.text()).toBe('Authentication verification failed');
+      expect(mockVerifyAuthenticationResponse).toHaveBeenCalledOnce();
+      expect(mockVerifyAuthenticationResponse.mock.calls[0]![0].response).toEqual(longest);
     });
 
     it('rejects and deletes an expired login challenge', async () => {
@@ -1908,7 +2193,7 @@ describe('AuthDO', () => {
       const invalidChallenge = await auth.fetch(
         makeRequest(
           '/_auth/register-complete',
-          jsonBody({ response: { id: 'x', response: {} }, uid: 'u', challenge: 'nope' }),
+          jsonBody({ response: { id: 'x', response: ATTESTATION }, uid: 'u', challenge: 'nope' }),
         ),
       );
       expect(await invalidChallenge.text()).toBe('Invalid or expired challenge');
@@ -1999,7 +2284,7 @@ describe('AuthDO', () => {
           makeRequest(
             '/_auth/register-complete',
             jsonBody({
-              response: { id: 'padding-cred', response: {} },
+              response: { id: 'padding-cred', response: ATTESTATION },
               uid: initBody.uid,
               challenge: initBody.options.challenge,
             }),
@@ -2132,7 +2417,7 @@ describe('AuthDO', () => {
         makeRequest(
           '/_auth/register-complete',
           jsonBody({
-            response: { id: 'valid-register-cred', response: {} },
+            response: { id: 'valid-register-cred', response: ATTESTATION },
             uid: 'uid-valid',
             challenge: 'valid-register',
           }),
@@ -2146,7 +2431,7 @@ describe('AuthDO', () => {
         makeRequest(
           '/_auth/register-complete',
           jsonBody({
-            response: { id: 'x', response: {} },
+            response: { id: 'x', response: ATTESTATION },
             uid: 'uid-any',
             challenge: 'wrong-purpose',
           }),
@@ -2161,7 +2446,7 @@ describe('AuthDO', () => {
         makeRequest(
           '/_auth/register-complete',
           jsonBody({
-            response: { id: 'x', response: {} },
+            response: { id: 'x', response: ATTESTATION },
             uid: 'uid-expired',
             challenge: 'already-expired',
           }),
@@ -2362,7 +2647,7 @@ describe('AuthDO', () => {
         makeRequest(
           '/_auth/register-complete',
           jsonBody({
-            response: { id: 'verifier-guard-cred', response: {} },
+            response: { id: 'verifier-guard-cred', response: ATTESTATION },
             uid: initBody.uid,
             challenge: initBody.options.challenge,
           }),
@@ -2384,7 +2669,7 @@ describe('AuthDO', () => {
         makeRequest(
           '/_auth/register-complete',
           jsonBody({
-            response: { id: 'x', response: {} },
+            response: { id: 'x', response: ATTESTATION },
             uid: 'uid-no-info-2',
             challenge: 'no-registration-info',
           }),
@@ -2448,7 +2733,7 @@ describe('AuthDO', () => {
         makeRequest(
           '/_auth/register-complete',
           jsonBody({
-            response: { id: 'no-transports-cred', response: {} },
+            response: { id: 'no-transports-cred', response: ATTESTATION },
             uid: 'uid-no-transports',
             challenge: 'no-transports',
           }),
@@ -2456,6 +2741,60 @@ describe('AuthDO', () => {
       );
       const stored = record.map.get('cred:no-transports-cred') as { transports: unknown[] };
       expect(stored.transports).toEqual([]);
+    });
+
+    it.each([
+      [
+        'unknown and repeated transport names',
+        { transports: ['usb', 'A'.repeat(1_000), 'internal', 'usb'] },
+        200,
+        ['internal', 'usb'],
+      ],
+      ['a transports value that is not an array', { transports: 'usb' }, 200, []],
+      [
+        'the largest accepted credential id and public key',
+        { id: 'i'.repeat(1_364), publicKey: new Uint8Array(2_048) },
+        200,
+        [],
+      ],
+      ['an oversized credential id', { id: 'i'.repeat(1_365) }, 400, undefined],
+      ['an oversized public key', { publicKey: new Uint8Array(2_049) }, 400, undefined],
+    ])('bounds the stored credential record for %s', async (_name, sent, status, transports) => {
+      const credential = { id: 'bounded-cred', publicKey: new Uint8Array(77), counter: 0, ...sent };
+      record.map.set('challenge:bounded', {
+        purpose: 'register',
+        uid: 'uid-bounded',
+        exp: Date.now() + 60_000,
+      });
+      mockVerifyRegistrationResponse.mockResolvedValue({
+        verified: true,
+        registrationInfo: {
+          credential,
+          credentialDeviceType: 'singleDevice',
+          credentialBackedUp: false,
+          fmt: 'none',
+          aaguid: '',
+          credentialType: 'public-key',
+          attestationObject: new Uint8Array(),
+          userVerified: true,
+          origin: ORIGIN,
+          rpID: RP_ID,
+        },
+      });
+      const res = await auth.fetch(
+        makeRequest(
+          '/_auth/register-complete',
+          jsonBody({
+            response: { id: credential.id, response: ATTESTATION },
+            uid: 'uid-bounded',
+            challenge: 'bounded',
+          }),
+        ),
+      );
+      expect(res.status).toBe(status);
+      if (status === 400) expect(await res.text()).toBe('Registration verification failed');
+      const stored = record.map.get(`cred:${credential.id}`) as { transports: unknown } | undefined;
+      expect(stored?.transports).toEqual(transports);
     });
   });
 
@@ -2576,7 +2915,7 @@ describe('AuthDO', () => {
         makeRequest(
           '/_auth/register-complete',
           jsonBody({
-            response: { id: 'exact-shape-cred', response: {} },
+            response: { id: 'exact-shape-cred', response: ATTESTATION },
             uid: initBody.uid,
             challenge: initBody.options.challenge,
           }),
@@ -2776,7 +3115,7 @@ describe('AuthDO', () => {
         makeRequest(
           '/_auth/register-complete',
           jsonBody({
-            response: { id: 'x', response: {} },
+            response: { id: 'x', response: ATTESTATION },
             uid: 'u',
             challenge: 'never-stored-anywhere',
           }),
@@ -2825,7 +3164,7 @@ describe('AuthDO', () => {
         makeRequest(
           '/_auth/register-complete',
           jsonBody({
-            response: { id: credentialID, response: {} },
+            response: { id: credentialID, response: ATTESTATION },
             uid: 'uid-phaseb-duplicate-body',
             challenge: 'phaseb-duplicate-body',
           }),
@@ -2850,7 +3189,7 @@ describe('AuthDO', () => {
       const badUid = await auth.fetch(
         makeRequest(
           '/_auth/register-complete',
-          jsonBody({ response: { id: 'x', response: {} }, uid: 42, challenge: 'valid-challenge' }),
+          jsonBody({ response: { id: 'x', response: ATTESTATION }, uid: 42, challenge: 'valid-challenge' }),
         ),
       );
       expect(badUid.status).toBe(400);
@@ -2860,7 +3199,7 @@ describe('AuthDO', () => {
       const badChallenge = await auth.fetch(
         makeRequest(
           '/_auth/register-complete',
-          jsonBody({ response: { id: 'x', response: {} }, uid: 'valid-uid', challenge: 42 }),
+          jsonBody({ response: { id: 'x', response: ATTESTATION }, uid: 'valid-uid', challenge: 42 }),
         ),
       );
       expect(badChallenge.status).toBe(400);
@@ -2876,7 +3215,7 @@ describe('AuthDO', () => {
         makeRequest(
           '/_auth/register-complete',
           jsonBody({
-            response: { id: 'x', response: {} },
+            response: { id: 'x', response: ATTESTATION },
             uid: 'valid-uid',
             challenge: 'valid-but-nonexistent-challenge',
           }),
@@ -3170,7 +3509,7 @@ describe('AuthDO', () => {
         makeRequest(
           '/_auth/register-complete',
           jsonBody({
-            response: { id: 'x', response: {} },
+            response: { id: 'x', response: ATTESTATION },
             uid: 'u',
             challenge: 'phaseb2-null-tombstone',
           }),
@@ -3198,7 +3537,7 @@ describe('AuthDO', () => {
           makeRequest(
             '/_auth/register-complete',
             jsonBody({
-              response: { id: 'x', response: {} },
+              response: { id: 'x', response: ATTESTATION },
               uid: 'uid-phaseb2-exact-exp',
               challenge: 'phaseb2-exact-exp',
             }),
@@ -3413,7 +3752,7 @@ describe('AuthDO', () => {
           makeRequest(
             '/_auth/register-complete',
             jsonBody({
-              response: { id: credentialID, response: {} },
+              response: { id: credentialID, response: ATTESTATION },
               uid: init.uid,
               challenge: init.challenge,
             }),
@@ -3437,13 +3776,17 @@ describe('AuthDO', () => {
         const secret = 'revocation-merge-secret';
         const uid = 'uid-revocation-merge';
         record.map.set('session-secret', secret);
-        const session = await signSessionPayload(
-          secret,
-          JSON.stringify({ uid, iat: start, exp: start + 60_000 }),
-        );
-        await auth.fetch(
-          makeRequest('/_auth/revoke-session', jsonBody({ session })),
-        );
+        // Each logout presents a session from its own, still-live sign-in.
+        const logout = async (iat: number): Promise<void> => {
+          const session = await signSessionPayload(
+            secret,
+            JSON.stringify({ uid, iat, exp: start + 60_000 }),
+          );
+          await auth.fetch(
+            makeRequest('/_auth/revoke-session', jsonBody({ session })),
+          );
+        };
+        await logout(start);
         const first = record.map.get(`session-revoked:${uid}`) as {
           before: number;
           exp: number;
@@ -3452,9 +3795,7 @@ describe('AuthDO', () => {
 
         // A later logout moves `before` forward and extends `exp`.
         vi.setSystemTime(start + 5_000);
-        await auth.fetch(
-          makeRequest('/_auth/revoke-session', jsonBody({ session })),
-        );
+        await logout(start + 4_000);
         const second = record.map.get(`session-revoked:${uid}`) as {
           before: number;
           exp: number;
@@ -3464,15 +3805,77 @@ describe('AuthDO', () => {
 
         // An out-of-order (earlier) revocation must not walk it back.
         vi.setSystemTime(start + 1_000);
-        await auth.fetch(
-          makeRequest('/_auth/revoke-session', jsonBody({ session })),
-        );
+        await logout(start + 6_000);
         const third = record.map.get(`session-revoked:${uid}`) as {
           before: number;
           exp: number;
         };
         expect(third.before).toBe(start + 5_000);
         expect(third.exp).toBe(second.exp);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('ignores a logout from a session that is already revoked', async () => {
+      vi.useFakeTimers();
+      try {
+        const start = 1_800_000_000_000;
+        vi.setSystemTime(start);
+        const secret = 'revoked-logout-secret';
+        const uid = 'uid-revoked-logout';
+        record.map.set('session-secret', secret);
+        const sign = (iat: number, auth?: number): Promise<string> =>
+          signSessionPayload(
+            secret,
+            JSON.stringify({ uid, iat, exp: start + 60_000, auth }),
+          );
+        const post = (path: string, session: string): Promise<Response> =>
+          auth.fetch(makeRequest(path, jsonBody({ session })));
+        const copied = await sign(start);
+
+        // The owner signs out, which revokes the copy, then signs in again.
+        vi.setSystemTime(start + 1_000);
+        await post('/_auth/revoke-session', copied);
+        const revocation = record.map.get(`session-revoked:${uid}`);
+        expect(revocation).toEqual({
+          before: start + 1_000,
+          exp: start + 1_000 + 30 * 24 * 60 * 60 * 1000,
+        });
+        vi.setSystemTime(start + 2_000);
+        const later = await sign(start + 2_000);
+
+        // Neither the revoked copy, nor a renewal of its chain, nor a token
+        // signed in at the cutoff itself can end the later sign-in.
+        vi.setSystemTime(start + 3_000);
+        for (const revoked of [
+          copied,
+          await sign(start + 2_500, start),
+          await sign(start + 1_000),
+        ]) {
+          expect((await post('/_auth/revoke-session', revoked)).status).toBe(204);
+          expect(record.map.get(`session-revoked:${uid}`)).toEqual(revocation);
+          expect((await post('/_auth/verify-session', later)).status).toBe(200);
+        }
+
+        // The later, live session still logs the uid out.
+        await post('/_auth/revoke-session', later);
+        expect(record.map.get(`session-revoked:${uid}`)).toMatchObject({
+          before: start + 3_000,
+        });
+        expect((await post('/_auth/verify-session', later)).status).toBe(401);
+
+        // A corrupt record is no cutoff to compare with: logout replaces it.
+        vi.setSystemTime(start + 4_000);
+        record.map.set(`session-revoked:${uid}`, {
+          before: Number.POSITIVE_INFINITY,
+          exp: Number.POSITIVE_INFINITY,
+        });
+        await post('/_auth/revoke-session', later);
+        expect(record.map.get(`session-revoked:${uid}`)).toEqual({
+          before: start + 4_000,
+          exp: start + 4_000 + 30 * 24 * 60 * 60 * 1000,
+        });
       } finally {
         vi.useRealTimers();
       }

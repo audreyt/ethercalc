@@ -123,6 +123,18 @@ export const ALLOWED_ATTRIBUTES: readonly string[] = [
 ];
 
 /**
+ * Most attributes an allowed element may carry and still be sanitised in
+ * place. `HTMLRewriter`'s `removeAttribute` is linear in the element's
+ * attribute count, so stripping n disallowed attributes one call at a time is
+ * O(n²) synchronous work — a single start tag with a few hundred thousand
+ * attributes fits in one cell and would pin the isolate for minutes. The
+ * allowlist above has 20 names and HTML ignores repeats, so no legitimate
+ * element comes close; one past the cap is unwrapped like an unknown tag
+ * (its text survives, its attributes do not).
+ */
+export const MAX_ELEMENT_ATTRIBUTES = 64;
+
+/**
  * True for an `on*` inline event-handler attribute (`onerror`, `onclick`,
  * `onload`, …). Case-insensitive — HTML attribute names are ASCII
  * case-insensitive and an attacker may use mixed case to dodge a naive
@@ -212,4 +224,56 @@ export function attributeAction(name: string, value: string): 'keep' | 'remove' 
   if (normalized === 'src' && isExternalImageSource(value)) return 'remove';
   if (normalized === 'style' && isUnsafeInlineStyle(value)) return 'remove';
   return 'keep';
+}
+
+/**
+ * Names to hand to `removeAttribute` for one element, given its attributes
+ * in source order as `[name, value]` pairs — one entry per occurrence.
+ *
+ * The tokenizer keeps duplicate attributes (`href="x" href="javascript:…"`)
+ * and `HTMLRewriter`'s `removeAttribute(name)` drops only the first of that
+ * name. Removing once per rejected *value* would therefore strip the harmless
+ * first value and promote the rejected one to the element's only attribute,
+ * so a rejected value takes every attribute of its name with it.
+ */
+export function attributesToRemove(
+  attrs: ReadonlyArray<readonly [name: string, value: string]>,
+): string[] {
+  const rejected = new Set<string>();
+  for (const [name, value] of attrs) {
+    if (attributeAction(name, value) === 'remove') {
+      rejected.add(name.toLowerCase());
+    }
+  }
+  return attrs
+    .map(([name]) => name)
+    .filter((name) => rejected.has(name.toLowerCase()));
+}
+
+/**
+ * Escape every `<` in a run of text that `HTMLRewriter` copies to the output.
+ *
+ * The element rules above only see what `HTMLRewriter` tokenizes as a tag, so
+ * whatever it treats as text must not be able to open one in a browser.
+ */
+export function escapeTextMarkup(text: string): string {
+  return text.replaceAll('<', '&lt;');
+}
+
+/**
+ * Most elements one HTML export may hand to the sanitizer.
+ */
+export const MAX_HTML_EXPORT_ELEMENTS = 500_000;
+
+/**
+ * True when a document has more start tags than `MAX_HTML_EXPORT_ELEMENTS`.
+ */
+export function exceedsHtmlExportElementLimit(html: string): boolean {
+  const startTag = /<[a-z]/gi;
+  let elements = 0;
+  while (startTag.exec(html) !== null) {
+    elements += 1;
+    if (elements > MAX_HTML_EXPORT_ELEMENTS) return true;
+  }
+  return false;
 }

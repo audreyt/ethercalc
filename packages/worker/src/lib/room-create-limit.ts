@@ -94,14 +94,17 @@ export function isRoomCreationRoute(method: string, pathname: string): boolean {
   if (method === 'POST' && (pathname === '/_' || pathname === '/_/private')) {
     return true;
   }
-  if (method === 'GET' && (pathname === '/_new' || pathname === '/=_new')) {
+  // Hono answers HEAD by running the matching GET handler, so HEAD creates
+  // rooms on the GET routes below exactly like GET does.
+  const isGet = method === 'GET' || method === 'HEAD';
+  if (isGet && (pathname === '/_new' || pathname === '/=_new')) {
     return true;
   }
-  if (method === 'GET' && /^\/_from\/[^/]+$/.test(pathname)) return true;
+  if (isGet && /^\/_from\/[^/]+$/.test(pathname)) return true;
   if (method === 'POST' && /^\/_from\/[^/]+\/private$/.test(pathname)) {
     return true;
   }
-  if (method === 'GET' && /^\/[^/]+\/form$/.test(pathname)) return true;
+  if (isGet && /^\/[^/]+\/form$/.test(pathname)) return true;
   if (
     method === 'PUT' &&
     (/^\/=[^/]+\.(?:xlsx|ods|fods)$/.test(pathname) ||

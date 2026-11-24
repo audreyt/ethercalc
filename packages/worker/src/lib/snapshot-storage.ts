@@ -36,22 +36,41 @@ import { getStorageValuesBatched } from './storage-batch.ts';
 export const SNAPSHOT_CHUNK_BYTES = 100 * 1024;
 /** Defense-in-depth cap for chunk-upload metadata (about 200 MiB). */
 export const MAX_SNAPSHOT_CHUNKS = 2_048;
+/**
+ * UTF-8 ceiling for a snapshot produced by a command batch: the 25 MiB
+ * request-body cap that already bounds an uploaded one. Range fills and
+ * accumulated edits multiply their payload, so the 1 MiB command-body cap
+ * does not bound the save they leave behind.
+ */
+export const MAX_SNAPSHOT_BYTES = 25 * 1024 * 1024;
 
 /** Shape of the `snapshot:meta` value when chunking is in use. */
 export interface SnapshotMeta {
   /** Number of `snapshot:chunk:<i>` entries, 1-based count. */
   readonly chunks: number;
+  /** Exact UTF-8 byte length of the assembled snapshot, when recorded. */
+  readonly bytes?: number;
 }
 
 function isValidSnapshotMeta(value: unknown): value is SnapshotMeta {
-  return (
-    value !== null &&
-    typeof value === 'object' &&
-    'chunks' in value &&
-    Number.isSafeInteger(value.chunks) &&
-    (value.chunks as number) >= 1 &&
-    (value.chunks as number) <= MAX_SNAPSHOT_CHUNKS
-  );
+  if (
+    value === null ||
+    typeof value !== 'object' ||
+    !('chunks' in value) ||
+    !Number.isSafeInteger(value.chunks) ||
+    (value.chunks as number) < 1 ||
+    (value.chunks as number) > MAX_SNAPSHOT_CHUNKS
+  ) {
+    return false;
+  }
+  if (
+    'bytes' in value &&
+    value.bytes !== undefined &&
+    (!Number.isSafeInteger(value.bytes) || (value.bytes as number) < 0)
+  ) {
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -104,11 +123,25 @@ export async function readSnapshot(
 }
 
 /**
+ * Whether a command batch may replace the `stored` snapshot with `next`.
+ * Rooms already over {@link MAX_SNAPSHOT_BYTES} (chunked migrations, edits
+ * that predate the ceiling) stay editable, but can no longer grow.
+ */
+export function isSnapshotWithinSizeLimit(
+  next: string,
+  stored: string | null,
+): boolean {
+  const bytes = utf8Bytes(next);
+  if (bytes <= MAX_SNAPSHOT_BYTES) return true;
+  return stored !== null && bytes <= utf8Bytes(stored);
+}
+
+/**
  * Produce snapshot-related key-value entries for callers to store with the
  * platform-sized batch helpers. This function does not perform I/O.
  *
  * For snapshots ≤ {@link SNAPSHOT_CHUNK_BYTES}, returns `{snapshot: …}`.
- * For larger, returns `{snapshot:meta: {chunks}, snapshot:chunk:<i>: …}`.
+ * For larger, returns `{snapshot:meta: {chunks, bytes}, snapshot:chunk:<i>: …}`.
  *
  * Empty-snapshot contract: the caller decides whether to call this at
  * all. Passing `""` produces an entries map with the single-key form
@@ -122,16 +155,20 @@ export function snapshotEntries(snapshot: string): Record<string, unknown> {
   }
   const chunks = chunkString(snapshot, SNAPSHOT_CHUNK_BYTES);
   // Defense in depth only: `#postSnapshotChunk` already refuses uploads
-  // declaring more than MAX_SNAPSHOT_CHUNKS chunks, and every other caller
-  // is bounded by the 25 MiB request-body cap, so no reachable input
-  // reaches 200 MiB. The chunker is O(n) over code units; this guard is a
-  // hard ceiling, not a performance hot path.
+  // declaring more than MAX_SNAPSHOT_CHUNKS chunks, command batches are held
+  // to `isSnapshotWithinSizeLimit`, and every other caller is bounded by the
+  // 25 MiB request-body cap, so no reachable input reaches 200 MiB. The
+  // chunker is O(n) over code units; this guard is a hard ceiling, not a
+  // performance hot path.
   /* istanbul ignore next -- @preserve: unreachable below the upload caps */
   if (chunks.length > MAX_SNAPSHOT_CHUNKS) {
     throw new RangeError('snapshot exceeds chunk limit');
   }
   const out: Record<string, unknown> = {
-    [STORAGE_KEYS.snapshotMeta]: { chunks: chunks.length } satisfies SnapshotMeta,
+    [STORAGE_KEYS.snapshotMeta]: {
+      chunks: chunks.length,
+      bytes,
+    } satisfies SnapshotMeta,
   };
   for (let i = 0; i < chunks.length; i++) {
     out[snapshotChunkKey(i)] = chunks[i];

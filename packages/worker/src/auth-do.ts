@@ -31,11 +31,12 @@ import {
   type VerifiedAuthenticationResponse,
   type WebAuthnCredential,
 } from '@simplewebauthn/server';
+import { decodeAttestationObject, isoBase64URL } from '@simplewebauthn/server/helpers';
 import {
   defaultWebAuthnOps,
   type WebAuthnOps,
 } from './lib/webauthn-ops.ts';
-import { createRateLimitStore } from './lib/rate-limit.ts';
+import { createRateLimitStore, rateLimitKey } from './lib/rate-limit.ts';
 import { deleteStorageKeysBatched } from './lib/storage-batch.ts';
 
 /**
@@ -106,6 +107,35 @@ const CEREMONY_RATE_LIMIT = {
   capacity: 30,
   refillPerSec: 30 / 60,
 } as const;
+// Both completion requests are decoded before any signature in them is
+// checked, by decoders that take quadratic time on chosen input: a CBOR
+// map whose integer keys collide in V8's `Map`, an ASN.1 BOOLEAN that
+// asn1js copies once per byte. So each member they read is held, in
+// base64url characters, to what an authenticator can produce. With no
+// attestation requested, an attestation object is little more than the
+// credential ID (at most 1023 bytes) and the public key (under 600 even
+// for 4096-bit RSA); a login's authenticator data is 37 bytes plus
+// extension output, of which none is requested; a signature is 72 bytes
+// for ES256, 512 for 4096-bit RSA.
+const MAX_ATTESTATION_OBJECT_CHARS = 8_192;
+const MAX_AUTHENTICATOR_DATA_CHARS = 4_096;
+const MAX_SIGNATURE_CHARS = 2_048;
+// Bounds on what one registration may persist: the credential ID and COSE
+// key come from unsigned `authData` (attestation `none`) and `transports`
+// straight from the request body, so only the /_auth body cap limits them.
+// WebAuthn caps a credential ID at 1023 bytes (1364 base64url characters);
+// an RSA-4096 COSE key is about 530 bytes.
+const MAX_CREDENTIAL_ID_LENGTH = 1_364;
+const MAX_PUBLIC_KEY_BYTES = 2_048;
+const KNOWN_TRANSPORTS: StoredCredential['transports'] = [
+  'ble',
+  'cable',
+  'hybrid',
+  'internal',
+  'nfc',
+  'smart-card',
+  'usb',
+];
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -132,6 +162,61 @@ function challengeCapacityResponse(): Response {
 }
 function isJsonObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * Whether a ceremony response member is a string past its length bound.
+ * Any other type is left to the verifier, which rejects it undecoded.
+ */
+function isLongerThan(value: unknown, maxChars: number): boolean {
+  return typeof value === 'string' && value.length > maxChars;
+}
+
+/**
+ * Whether a registration response carries its two base64url members as
+ * strings. The verifier decodes both without checking, and its decoder
+ * allocates three quarters of the value's `length` before it reads a
+ * character: the JSON object `{"length": 2000000000}` in place of either
+ * would cost 1.5 GB.
+ */
+function hasAttestationStrings(
+  response: unknown,
+): response is { response: { clientDataJSON: string; attestationObject: string } } {
+  if (!isJsonObject(response) || !isJsonObject(response.response)) return false;
+  const { clientDataJSON, attestationObject } = response.response;
+  return typeof clientDataJSON === 'string' && typeof attestationObject === 'string';
+}
+
+/**
+ * `#registerInit` asks for no attestation, so a conforming client answers
+ * with `none`, or with `packed` self attestation passed through unchanged.
+ * Neither carries certificates. Anything else is unrequested and must not
+ * reach the verifier, which would parse and path-validate certificates the
+ * client wrote itself: `packed` with an `x5c` chain and every other
+ * certificate-backed format go through an ASN.1 parser whose cost is
+ * quadratic in the length of a single INTEGER. The object is decoded
+ * exactly as the verifier decodes it.
+ */
+function isUnrequestedAttestation(attestationObject: string): boolean {
+  try {
+    const attestation = decodeAttestationObject(
+      isoBase64URL.toBuffer(attestationObject),
+    );
+    const fmt = attestation.get('fmt');
+    if (fmt === 'none') return false;
+    return fmt !== 'packed' || attestation.get('attStmt').get('x5c') !== undefined;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * The verifier returns `transports` as the client sent it, unchecked. Keep
+ * only registered WebAuthn transport names, each at most once.
+ */
+function knownTransports(sent: unknown): StoredCredential['transports'] {
+  if (!Array.isArray(sent)) return [];
+  return KNOWN_TRANSPORTS.filter((name) => sent.includes(name));
 }
 
 async function readJsonObject(request: Request): Promise<Record<string, unknown> | null> {
@@ -273,8 +358,10 @@ export class AuthDO implements DurableObject {
       (path === '/_auth/register-init' || path === '/_auth/login-init') &&
       request.method === 'POST'
     ) {
+      // Every unfinished ceremony holds one of MAX_ACTIVE_CHALLENGES slots
+      // shared by all users, so an IPv6 client is limited as its /64.
       const rate = this.#ceremonyRateLimit.consume(
-        request.headers.get('X-EC-Client-IP') ?? 'unknown',
+        rateLimitKey(request.headers.get('X-EC-Client-IP') ?? 'unknown'),
         CEREMONY_RATE_LIMIT,
       );
       if (!rate.allowed) {
@@ -454,7 +541,8 @@ export class AuthDO implements DurableObject {
     const body = await readJsonObject(request);
     if (
       body === null ||
-      !isJsonObject(body.response) ||
+      !hasAttestationStrings(body.response) ||
+      body.response.response.attestationObject.length > MAX_ATTESTATION_OBJECT_CHARS ||
       typeof body.uid !== 'string' ||
       typeof body.challenge !== 'string'
     ) {
@@ -463,6 +551,9 @@ export class AuthDO implements DurableObject {
     const challengeRecord = await this.#consumeChallenge(body.challenge, 'register');
     if (challengeRecord === null || challengeRecord.uid !== body.uid) {
       return plainResponse('Invalid or expired challenge', 400);
+    }
+    if (isUnrequestedAttestation(body.response.response.attestationObject)) {
+      return plainResponse('Registration verification failed', 400);
     }
     let verified: VerifiedRegistrationResponse;
     try {
@@ -481,6 +572,12 @@ export class AuthDO implements DurableObject {
     }
     const info = verified.registrationInfo;
     const credentialID = info.credential.id;
+    if (
+      credentialID.length > MAX_CREDENTIAL_ID_LENGTH ||
+      info.credential.publicKey.byteLength > MAX_PUBLIC_KEY_BYTES
+    ) {
+      return plainResponse('Registration verification failed', 400);
+    }
     const existing = await this.#state.storage.get(`cred:${credentialID}`);
     if (existing !== undefined) {
       return plainResponse('Credential already registered', 409);
@@ -489,7 +586,7 @@ export class AuthDO implements DurableObject {
       uid: body.uid,
       publicKey: info.credential.publicKey,
       counter: info.credential.counter,
-      transports: info.credential.transports ?? [],
+      transports: knownTransports(info.credential.transports),
       deviceType: info.credentialDeviceType,
       backedUp: info.credentialBackedUp,
     };
@@ -522,6 +619,12 @@ export class AuthDO implements DurableObject {
     if (
       body === null ||
       !isJsonObject(body.response) ||
+      !isJsonObject(body.response.response) ||
+      isLongerThan(
+        body.response.response.authenticatorData,
+        MAX_AUTHENTICATOR_DATA_CHARS,
+      ) ||
+      isLongerThan(body.response.response.signature, MAX_SIGNATURE_CHARS) ||
       typeof body.response.id !== 'string' ||
       typeof body.challenge !== 'string'
     ) {
@@ -609,6 +712,15 @@ export class AuthDO implements DurableObject {
       const key = `${SESSION_REVOCATION_PREFIX}${payload.uid}`;
       const current =
         await this.#state.storage.get<SessionRevocation>(key);
+      // A token an earlier logout already revoked is not a live session (see
+      // #liveSession): it must not move the cutoff past later sign-ins.
+      if (
+        current &&
+        Number.isFinite(current.before) &&
+        authenticatedAt(payload) <= current.before
+      ) {
+        return;
+      }
       const now = Date.now();
       const before =
         current && Number.isFinite(current.before)

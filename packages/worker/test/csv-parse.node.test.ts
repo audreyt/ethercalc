@@ -29,11 +29,15 @@ describe('parseCSV', () => {
     ]);
   });
 
-  it('parses lone CR line terminators', () => {
-    expect(parseCSV('a,b\r1,2')).toEqual([
-      ['a', 'b'],
+  it('keeps a lone CR as field data instead of ending the record', () => {
+    // SocialCalc's CSV export does not quote a field for containing a CR, so
+    // a CR-filled cell must stay one cell — not become one row per CR.
+    expect(parseCSV('a\rb,\r\r\n1,2\n')).toEqual([
+      ['a\rb', '\r'],
       ['1', '2'],
     ]);
+    expect(parseCSV('a,b\r1,2')).toEqual([['a', 'b\r1', '2']]);
+    expect(parseCSV('\r'.repeat(1000) + ',end\n')).toEqual([['\r'.repeat(1000), 'end']]);
   });
 
   it('handles quoted fields with commas', () => {
@@ -79,6 +83,34 @@ describe('parseCSV', () => {
   it('preserves a literal " that follows a closing quote (non-doubled)', () => {
     // "foo""bar" — inside the quoted field, "" doubles to " — we get foo"bar.
     expect(parseCSV('"foo""bar"\n')).toEqual([['foo"bar']]);
+  });
+
+  it('keeps an unterminated quoted field up to the end of the input', () => {
+    // The quote never closes, so delimiters and the final LF stay in the field.
+    expect(parseCSV('a,"b""c,d\n')).toEqual([['a', 'b"c,d\n']]);
+  });
+
+  it('emits nothing for an unterminated quote with no content', () => {
+    expect(parseCSV('"')).toEqual([]);
+    expect(parseCSV('a\n"')).toEqual([['a']]);
+    expect(parseCSV('a,"')).toEqual([['a', '']]);
+  });
+
+  it('appends text that trails a closing quote verbatim', () => {
+    expect(parseCSV('"a"b"c,d\n')).toEqual([['ab"c', 'd']]);
+    expect(parseCSV('""x"y')).toEqual([['x"y']]);
+  });
+
+  it('collapses consecutive doubled quotes pairwise', () => {
+    expect(parseCSV('"""","a"""""\n')).toEqual([['"', 'a""']]);
+  });
+
+  it('returns long quoted and unquoted fields intact', () => {
+    const plain = 'x'.repeat(100_000);
+    const quoted = `${'y,"'.repeat(50_000)}\n`;
+    expect(parseCSV(`${plain},"${quoted.replaceAll('"', '""')}"\n`)).toEqual([
+      [plain, quoted],
+    ]);
   });
 
   it('multi-row with mixed quoting and empties', () => {

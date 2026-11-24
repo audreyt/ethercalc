@@ -65,7 +65,12 @@ const mainWorker :Workerd.Worker = (
   # Keep this at or below the workerd version pinned in bun.lock; Wrangler
   # may safely use a newer date because it clamps with a warning.
   compatibilityDate = "2026-07-14",
-  compatibilityFlags = ["nodejs_compat"],
+  # `no_web_socket_compression`: at this date workerd otherwise accepts any
+  # client's permessage-deflate offer on `/_ws` and the legacy `/socket.io`
+  # upgrade, and inflates a ~30 KB frame to as much as 32 MiB before RoomDO's
+  # MAX_WS_FRAME_CHARS check can see its size. Keep in step with
+  # wrangler.toml (scripts/vite-workflow.test.ts).
+  compatibilityFlags = ["nodejs_compat", "no_web_socket_compression"],
 
   bindings = [
     # Per-room Durable Object. The wrangler.toml uniqueKey and class
@@ -105,6 +110,10 @@ const mainWorker :Workerd.Worker = (
     (name = "ETHERCALC_RATELIMIT", fromEnvironment = "ETHERCALC_RATELIMIT"),
     (name = "ETHERCALC_ROOM_CREATE_LIMIT", fromEnvironment = "ETHERCALC_ROOM_CREATE_LIMIT"),
     (name = "ETHERCALC_SANDSTORM", fromEnvironment = "ETHERCALC_SANDSTORM"),
+    # Most rooms awake at once; see `durableObjectStorage` below. The
+    # launchers (bin/workerd-entrypoint.sh, run_grain.sh) derive it from
+    # `ulimit -n`. Unset, the Worker allows 300, which fits 1024 descriptors.
+    (name = "ETHERCALC_LIVE_ROOM_LIMIT", fromEnvironment = "ETHERCALC_LIVE_ROOM_LIMIT"),
     (name = "DEVMODE", fromEnvironment = "DEVMODE"),
 
     # Phase A — passkey auth. All four must be set for `/_auth/*` to
@@ -142,5 +151,11 @@ const mainWorker :Workerd.Worker = (
 
   # On-disk storage for DO state. Points at the `do` service above;
   # workerd creates `<uniqueKey>/<objectId>.sqlite` under it.
+  #
+  # Every awake object keeps three descriptors open (`.sqlite`, `-wal`,
+  # `-shm`) until it has been idle for ten seconds, and workerd exits when
+  # `accept()` finds none left. The Worker therefore wakes at most
+  # ETHERCALC_LIVE_ROOM_LIMIT rooms at a time (src/lib/live-rooms.ts); keep
+  # three times that number well below the process's `ulimit -n`.
   durableObjectStorage = (localDisk = "do"),
 );

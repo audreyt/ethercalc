@@ -47,6 +47,16 @@ export function stripHeaderInjection(value: string): string {
 }
 
 /**
+ * Longest `sendemail` command `parseSendemail` accepts, in UTF-16 code
+ * units of the still `%20`-encoded text. The command is the whole text of
+ * a scheduled cell, which a raw snapshot save can make as large as the
+ * 25 MiB request body, and one cron run parses up to
+ * `MAX_CRON_ROWS_PER_RUN` of them on the thread every room shares — so the
+ * split/join/decode below must never see more than a mail-sized input.
+ */
+export const MAX_SENDEMAIL_CHARS = 64 * 1024;
+
+/**
  * Parse a raw SocialCalc command of the form
  *   sendemail <to> <subject> <body>
  *
@@ -57,9 +67,13 @@ export function stripHeaderInjection(value: string): string {
  * Legacy splits on a single space per token and only ever consumes
  * three tokens total — any trailing tokens are dropped silently. We
  * mirror that exactly so the shape of the recorded fixtures holds.
+ *
+ * Input longer than `MAX_SENDEMAIL_CHARS` is rejected before any of it is
+ * scanned, like every other malformed command.
  */
 export function parseSendemail(cmdstr: string): SendemailParsed | null {
   if (typeof cmdstr !== 'string') return null;
+  if (cmdstr.length > MAX_SENDEMAIL_CHARS) return null;
   const trimmed = cmdstr.trim();
   if (trimmed.length === 0) return null;
   // Legacy `.split(' ')` splits on a SINGLE space (not whitespace runs);

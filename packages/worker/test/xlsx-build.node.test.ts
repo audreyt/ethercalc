@@ -1,19 +1,26 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as XLSX from '@e965/xlsx';
-import { describe, expect, it } from 'vite-plus/test';
+import { describe, expect, it, vi } from 'vite-plus/test';
 
 import {
   BINARY_CONTENT_TYPES,
+  ExportMergeWorkTooLargeError,
+  MAX_NUMBER_FORMAT_CHARS,
+  MAX_ODS_MERGE_WORK,
+  MAX_WORKBOOK_TEXT_CHARS,
+  WorkbookTooLargeError,
   buildMultiSheetWorkbook,
   buildMultiSheetWorkbookFromSheets,
   csvToBinaryWorkbook,
   encodeColumn,
+  exportGridArea,
   parseCoord,
   parseMultiSheetWorkbook,
   sanitizeSheetName,
   sheetViewToBinaryWorkbook,
   sheetViewToWorksheet,
   translateCell,
+  writtenTextChars,
 } from '../src/lib/xlsx-build.ts';
 
 /**
@@ -410,6 +417,28 @@ describe('parseCoord / encodeColumn', () => {
   });
 });
 
+describe('exportGridArea', () => {
+  it('is zero for a sheet with no cells', () => {
+    expect(exportGridArea([])).toBe(0);
+  });
+
+  it('counts a single cell by its distance from A1', () => {
+    expect(exportGridArea(['A1'])).toBe(1);
+    expect(exportGridArea(['C2'])).toBe(6);
+  });
+
+  it('charges the span between distant cells, not the number stored', () => {
+    expect(exportGridArea(['A1', 'A200000'])).toBe(200_000);
+    expect(exportGridArea(['A200000', 'A1'])).toBe(200_000);
+    expect(exportGridArea(['ZZ1', 'A10'])).toBe(7_020);
+    expect(exportGridArea(['A10', 'ZZ1'])).toBe(7_020);
+  });
+
+  it('ignores keys that are not cell coordinates', () => {
+    expect(exportGridArea(['bogus', 'B2', 'a9', 'A0'])).toBe(4);
+  });
+});
+
 describe('translateCell', () => {
   it('numeric cell → {t:"n", v:<number>}', () => {
     expect(translateCell({ valuetype: 'n', datatype: 'v', datavalue: 42 })).toEqual({
@@ -585,6 +614,14 @@ describe('translateCell', () => {
     expect(out).not.toHaveProperty('z');
   });
 
+  it('formats longer than Excel allows are dropped', () => {
+    const cell = { valuetype: 'n', datatype: 'v', datavalue: 1, nontextvalueformat: 1 } as const;
+    const longest = '0'.repeat(MAX_NUMBER_FORMAT_CHARS);
+    expect(MAX_NUMBER_FORMAT_CHARS).toBe(255);
+    expect(translateCell(cell, ['', longest])).toEqual({ t: 'n', v: 1, z: longest });
+    expect(translateCell(cell, ['', `${longest}0`])).toEqual({ t: 'n', v: 1 });
+  });
+
   it('text-* formats are dropped (SocialCalc-specific, graceful degrade)', () => {
     const fmts = ['', 'text-wiki'];
     const out = translateCell(
@@ -592,6 +629,14 @@ describe('translateCell', () => {
       fmts,
     );
     expect(out).not.toHaveProperty('z');
+  });
+
+  it('formats longer than Excel allows are dropped', () => {
+    const cell = { valuetype: 'n', datatype: 'v', datavalue: 1, nontextvalueformat: 1 } as const;
+    const longest = '0'.repeat(MAX_NUMBER_FORMAT_CHARS);
+    expect(MAX_NUMBER_FORMAT_CHARS).toBe(255);
+    expect(translateCell(cell, ['', longest])).toEqual({ t: 'n', v: 1, z: longest });
+    expect(translateCell(cell, ['', `${longest}0`])).toEqual({ t: 'n', v: 1 });
   });
 
   it('nontextvalueformat=0 or negative is ignored', () => {
@@ -866,6 +911,250 @@ describe('sheetViewToBinaryWorkbook', () => {
   });
 });
 
+function unconvertibleFormatView() {
+  const cell = { valuetype: 'n', datatype: 'v', datavalue: 1, nontextvalueformat: 1 };
+  return { cells: { A1: cell, A2: cell }, valueformats: ['', 'dddddxx'] };
+}
+
+describe('SheetJS format diagnostics', () => {
+  it('stay out of the log for every exporter and format', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const view = unconvertibleFormatView();
+      for (const format of ['ods', 'fods', 'xlsx'] as const) {
+        const single = (XLSX as any).read(sheetViewToBinaryWorkbook(view, format), {
+          type: 'array',
+        });
+        expect(single.Sheets.Sheet1.A2.v).toBe(1);
+        const multi = (XLSX as any).read(
+          buildMultiSheetWorkbookFromSheets([{ name: 'One', view }], format),
+          { type: 'array' },
+        );
+        expect(multi.Sheets.One.A2.v).toBe(1);
+      }
+      expect(consoleError).not.toHaveBeenCalled();
+      expect(console.error).toBe(consoleError);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('are switched back on when the writer throws', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(() =>
+        sheetViewToBinaryWorkbook(unconvertibleFormatView(), 'no-such-format' as any),
+      ).toThrow();
+      expect(console.error).toBe(consoleError);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+});
+
+describe('workbook text budget', () => {
+  const textView = (text: string) => ({
+    cells: { A1: { valuetype: 't', datatype: 't', datavalue: text, comment: text } },
+  });
+
+  const samples = [
+    'plain',
+    '&<>\'"',
+    '\t\n',
+    '\u0000\u0008\u000b\u000d\u001f\ufffe\uffff',
+    ' ',
+    '  ',
+    ' a b ',
+    'a  b' + ' '.repeat(12) + 'c   ',
+    'é中😀',
+  ];
+
+  it('counts a cell and its comment as the FODS writer writes them', () => {
+    for (const text of samples) {
+      const fods = new TextDecoder().decode(sheetViewToBinaryWorkbook(textView(text), 'fods'));
+      const written = /<text:p>(.*?)<\/text:p><\/office:annotation><text:p>(.*)<\/text:p><\/table:table-cell>/s.exec(fods);
+      expect(written, JSON.stringify(text)).not.toBeNull();
+      expect(writtenTextChars(text, true), JSON.stringify(text)).toBe(written![1]!.length);
+      expect(written![2]).toBe(written![1]);
+    }
+  });
+
+  it('counts text as the XLSX writer escapes it', () => {
+    for (const text of samples) {
+      const zip = (XLSX as any).CFB.read(sheetViewToBinaryWorkbook(textView(text), 'xlsx'), {
+        type: 'array',
+      });
+      const entry = (XLSX as any).CFB.find(zip, '/xl/worksheets/sheet1.xml');
+      const sheet = new TextDecoder().decode(new Uint8Array(entry.content));
+      const written = /<v(?: xml:space="preserve")?>(.*)<\/v>/s.exec(sheet);
+      expect(written, JSON.stringify(text)).not.toBeNull();
+      expect(writtenTextChars(text), JSON.stringify(text)).toBe(written![1]!.length);
+    }
+  });
+
+  it('counts a formula as each writer writes it', () => {
+    const view = {
+      cells: {
+        A1: { valuetype: 'n', datatype: 'f', datavalue: 3, formula: 'B1+$C$2&"<"+SUM(D1:E9)' },
+      },
+    };
+    const fods = new TextDecoder().decode(sheetViewToBinaryWorkbook(view, 'fods'));
+    expect(fods).toContain(
+      'table:formula="of:=[.B1]+[.$C$2]&amp;&quot;&lt;&quot;+SUM([.D1:.E9])"',
+    );
+    const tabs = { valuetype: 't', datatype: 't', datavalue: '\t'.repeat(4096) };
+    const filled = (count: number) => {
+      const cells: Record<string, unknown> = { ...view.cells };
+      for (let row = 2; row <= count + 1; row++) cells[`A${row}`] = tabs;
+      return { cells };
+    };
+    const room = MAX_WORKBOOK_TEXT_CHARS - 744 * 4096 * 11;
+    expect(room).toBe(32_768);
+    const pad = (chars: number) => ({
+      valuetype: 't',
+      datatype: 't',
+      datavalue: 'a'.repeat(chars),
+    });
+    const atLimit = filled(744);
+    atLimit.cells['B1'] = pad(room - 51);
+    expect(sheetViewToBinaryWorkbook(atLimit, 'fods').byteLength).toBeGreaterThan(
+      MAX_WORKBOOK_TEXT_CHARS,
+    );
+    const over = filled(744);
+    over.cells['B1'] = pad(room - 50);
+    expect(() => sheetViewToBinaryWorkbook(over, 'fods')).toThrow(WorkbookTooLargeError);
+    expect(sheetViewToBinaryWorkbook(over, 'xlsx').byteLength).toBeGreaterThan(0);
+  });
+
+  it('refuses a workbook whose written text is over the limit, in every exporter', () => {
+    const value = '\t'.repeat(3200);
+    const cells: Record<string, unknown> = {};
+    for (let row = 1; row <= 1024; row++) {
+      cells[`A${row}`] = { valuetype: 't', datatype: 't', datavalue: value };
+    }
+    const view = { cells };
+    for (const format of ['ods', 'fods'] as const) {
+      expect(() => sheetViewToBinaryWorkbook(view, format)).toThrow(WorkbookTooLargeError);
+    }
+    expect(readBack(sheetViewToBinaryWorkbook(view, 'xlsx'))).toHaveLength(1024);
+
+    const half = { cells: Object.fromEntries(Object.entries(cells).slice(0, 512)) };
+    expect(
+      buildMultiSheetWorkbookFromSheets([{ name: 'a', view: half }], 'fods').byteLength,
+    ).toBeGreaterThan(512 * 3200 * 11);
+    expect(() =>
+      buildMultiSheetWorkbookFromSheets(
+        [
+          { name: 'a', view: half },
+          { name: 'b', view: half },
+        ],
+        'fods',
+      ),
+    ).toThrow(new WorkbookTooLargeError());
+
+    const controls = '\u0001'.repeat(32_767);
+    const controlCells: Record<string, unknown> = {};
+    for (let row = 1; row <= 147; row++) {
+      controlCells[`A${row}`] = { valuetype: 't', datatype: 't', datavalue: controls };
+    }
+    expect(() => sheetViewToBinaryWorkbook({ cells: controlCells }, 'xlsx')).toThrow(
+      WorkbookTooLargeError,
+    );
+
+    const csv = `${Array.from({ length: 1024 }, () => `"${value}"`).join('\n')}\n`;
+    expect(() => csvToBinaryWorkbook(csv, 'fods')).toThrow(WorkbookTooLargeError);
+    expect(() => buildMultiSheetWorkbook([{ name: 'a', csv }], 'ods')).toThrow(
+      WorkbookTooLargeError,
+    );
+  });
+});
+
+describe('ods/fods merge-work budget', () => {
+  function mergedColumn(rows: number): { cells: Record<string, unknown> } {
+    const cells: Record<string, unknown> = {};
+    for (let r = 1; r <= rows; r++) {
+      cells[`A${r}`] = { valuetype: 'n', datatype: 'v', datavalue: 1, colspan: 2 };
+    }
+    return { cells };
+  }
+
+  it('budget is 2,000 merges on a full 200,000-cell sheet', () => {
+    expect(MAX_ODS_MERGE_WORK).toBe(400_000_000);
+  });
+
+  it.each(['ods', 'fods'] as const)('rejects a %s sheet one row past the budget', (format) => {
+    const view = mergedColumn(20_001);
+    let thrown: unknown;
+    try {
+      sheetViewToBinaryWorkbook(view, format);
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(ExportMergeWorkTooLargeError);
+    const err = thrown as ExportMergeWorkTooLargeError;
+    expect(err.name).toBe('ExportMergeWorkTooLargeError');
+    expect(err.work).toBe(20_001 * 20_001);
+    expect(err.message).toBe(
+      'ods/fods export exceeds 400000000 merge lookups (400040001); export as xlsx instead',
+    );
+  });
+
+  it('exports a sheet exactly at the budget', () => {
+    const bytes = sheetViewToBinaryWorkbook(mergedColumn(20_000), 'fods');
+    const text = new TextDecoder().decode(bytes);
+    expect(text.match(/table:number-columns-spanned="2"/g)).toHaveLength(20_000);
+  });
+
+  it('leaves xlsx unbounded: its writer emits merges in one pass', () => {
+    const bytes = sheetViewToBinaryWorkbook(mergedColumn(20_001), 'xlsx');
+    const wb = (XLSX as any).read(bytes, { type: 'array' });
+    expect(wb.Sheets[wb.SheetNames[0]]['!merges']).toHaveLength(20_001);
+  });
+
+  it('counts every cell of !ref, not only the merged ones', () => {
+    const view = mergedColumn(2_001);
+    view.cells['A200000'] = { valuetype: 'n', datatype: 'v', datavalue: 1 };
+    expect(() => sheetViewToBinaryWorkbook(view, 'ods')).toThrow(ExportMergeWorkTooLargeError);
+    expect(() => sheetViewToBinaryWorkbook(mergedColumn(2_001), 'ods')).not.toThrow();
+  });
+
+  it('shares one budget across the sheets of a multi-sheet workbook', () => {
+    const sheets = [
+      { name: 'One', view: mergedColumn(15_000) },
+      { name: 'Two', view: mergedColumn(15_000) },
+    ];
+    for (const format of ['ods', 'fods'] as const) {
+      expect(() => buildMultiSheetWorkbookFromSheets(sheets, format)).toThrow(
+        new ExportMergeWorkTooLargeError(2 * 15_000 * 15_000),
+      );
+    }
+    const wb = (XLSX as any).read(buildMultiSheetWorkbookFromSheets(sheets, 'xlsx'), {
+      type: 'array',
+    });
+    expect(wb.SheetNames).toEqual(['One', 'Two']);
+    expect(wb.Sheets['Two']['!merges']).toHaveLength(15_000);
+  });
+
+  it('multi-sheet ods under the budget keeps its merges', () => {
+    const bytes = buildMultiSheetWorkbookFromSheets(
+      [
+        { name: 'Merged', view: mergedColumn(3) },
+        { name: 'Plain', view: { cells: {} } },
+      ],
+      'ods',
+    );
+    const wb = (XLSX as any).read(bytes, { type: 'array' });
+    expect(wb.SheetNames).toEqual(['Merged', 'Plain']);
+    expect(wb.Sheets['Merged']['!merges']).toHaveLength(3);
+    expect(wb.Sheets['Plain']['!merges']).toBeUndefined();
+  });
+
+  it('zero-sheet ods fallback is not affected', () => {
+    const wb = (XLSX as any).read(buildMultiSheetWorkbookFromSheets([], 'ods'), { type: 'array' });
+    expect(wb.SheetNames).toEqual(['Sheet1']);
+  });
+});
+
 describe('buildMultiSheetWorkbookFromSheets', () => {
   it('builds a workbook with one view per sheet', () => {
     const bytes = buildMultiSheetWorkbookFromSheets(
@@ -974,5 +1263,44 @@ describe('parseMultiSheetWorkbook', () => {
     const mockRead = () => ({ Sheets: {} });
     const out = parseMultiSheetWorkbook(new Uint8Array(), mockRead);
     expect(out).toEqual([]);
+  });
+});
+
+describe('number formats of earlier workbooks', () => {
+  const CANARY = '"Offer for Initech: $"0"M"';
+  const plain = { cells: { A1: { valuetype: 'n', datavalue: 5 } } };
+  const formatted = {
+    cells: { A1: { valuetype: 'n', datavalue: 48, nontextvalueformat: 1 } },
+    valueformats: ['', CANARY],
+  };
+  const styles = (bytes: Uint8Array): string => {
+    const zip = (XLSX as any).CFB.read(bytes, { type: 'array' });
+    const file = (XLSX as any).CFB.find(zip, '/xl/styles.xml');
+    return new TextDecoder().decode(Uint8Array.from(file.content));
+  };
+  const displayedA1 = (bytes: Uint8Array): string => {
+    const wb = (XLSX as any).read(bytes, { type: 'array' });
+    return wb.Sheets[wb.SheetNames[0]].A1.w;
+  };
+  const builders: Array<[string, () => Uint8Array]> = [
+    ['sheetViewToBinaryWorkbook', () => sheetViewToBinaryWorkbook(plain, 'xlsx')],
+    [
+      'buildMultiSheetWorkbookFromSheets',
+      () => buildMultiSheetWorkbookFromSheets([{ name: 'S', view: plain }], 'xlsx'),
+    ],
+    ['csvToBinaryWorkbook', () => csvToBinaryWorkbook('5', 'xlsx')],
+    ['buildMultiSheetWorkbook', () => buildMultiSheetWorkbook([{ name: 'S', csv: '5' }], 'xlsx')],
+  ];
+
+  it.each(builders)('%s does not publish them', (_name, build) => {
+    expect(styles(sheetViewToBinaryWorkbook(formatted, 'xlsx'))).toContain('Initech');
+    expect(styles(build())).not.toContain('Initech');
+  });
+
+  it.each(builders)('%s does not take its format ids from them', (_name, build) => {
+    (XLSX as any).SSF.load('General', 9);
+    const bytes = build();
+    expect(displayedA1(bytes)).toBe('5');
+    expect(styles(bytes)).not.toMatch(/<xf numFmtId="(?!0")/);
   });
 });
