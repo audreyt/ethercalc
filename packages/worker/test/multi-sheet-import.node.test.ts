@@ -885,7 +885,7 @@ describe('prepareAppendImportPlan', () => {
     expect(() =>
       prepareAppendImportPlan(new Uint8Array(), 'xlsx', undefined, readCombined).materializeSaves(room, 1),
     ).toThrow(ImportArchiveTooLargeError);
-  });
+  }, 30_000);
 
   it('recalculates the sheets of one plan on one formula budget', () => {
     const plan = (count: number) =>

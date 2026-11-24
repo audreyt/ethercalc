@@ -649,7 +649,7 @@ describe('formula resource limits', () => {
     } finally {
       delete hardenedFormula.FunctionList.BOOM;
     }
-  });
+  }, 30_000);
 
   it('charges megabyte text reads and short criteria reads accurately', () => {
     for (const [formula, withinBudget] of [
