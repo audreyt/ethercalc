@@ -1,4 +1,4 @@
-# 2026.11.24.0
+# 2026.11.24.1
 
 - Hardened spreadsheet imports, exports, formula processing, and session handling.
 - Improved live collaboration and corrected how the editor opens percent-encoded sheet addresses.

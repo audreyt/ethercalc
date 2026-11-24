@@ -4,8 +4,8 @@ description: EtherCalc — multi-user spreadsheet server (TypeScript rewrite, se
 type: application
 # Chart version bumps on chart changes; appVersion follows the image tag
 # produced by `.github/workflows/publish-image.yml`.
-version: 0.3.7
-appVersion: "0.20261124.0"
+version: 0.3.8
+appVersion: "0.20261124.1"
 home: https://ethercalc.net/
 sources:
   - https://github.com/audreyt/ethercalc
