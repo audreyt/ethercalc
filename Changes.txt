@@ -13,7 +13,13 @@ EtherCalc bundles SocialCalc from the audreyt/socialcalc fork; see
 Unreleased
 ==============================================================================
 
+==============================================================================
+0.20261124.0 — 2026-11-24
+==============================================================================
+
 Security
+- Tightened file, formula, and command limits; improved export sanitization and
+  session validation.
 - Opening `/=<room>` no longer writes to a room that already holds a sheet.
   The multi-sheet page used to create `Sheet1` on load whenever the room had
   no tab rows, which is also true of every ordinary sheet, so a link from

@@ -1,4 +1,4 @@
-# 2026.11.01.3
+# 2026.11.24.0
 
-- New spreadsheets now open with their first sheet on servers reached over plain HTTP.
-- Improved compatibility and the multi-sheet interface.
+- Hardened spreadsheet imports, exports, formula processing, and session handling.
+- Improved live collaboration and corrected how the editor opens percent-encoded sheet addresses.
