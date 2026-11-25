@@ -1128,6 +1128,12 @@ describe('text import limits', () => {
       .toThrow(ImportDimensionsTooLargeError);
   });
 
+  it('reports the first byte past the ceiling of an unquoted field', () => {
+    expect(() => enforceTextImportLimits(new Uint8Array(), 'csv')).not.toThrow();
+    expect(() => enforceTextImportLimits(bytes('x'.repeat(maxFieldBytes + 5)), 'csv'))
+      .toThrow(new ImportArchiveTooLargeError(maxFieldBytes + 1, maxFieldBytes));
+  });
+
   it('bounds each field independently, including quoted content', () => {
     expect(() => enforceTextImportLimits(new Uint8Array(maxFieldBytes).fill(0x78), 'txt'))
       .not.toThrow();
