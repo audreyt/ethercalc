@@ -44,7 +44,11 @@ jobs:
   mutation:
     name: mutation (${{ matrix.package }})
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Worker is the long cell (~10.5k mutants). The same run that the PR
+    # gate cancelled at 45m (45574566670) was only 7557/10551 mutants in,
+    # with about an hour still estimated. The other packages finish in
+    # well under a minute; this ceiling only has to let worker report a score.
+    timeout-minutes: 120
     permissions:
       contents: read
       issues: write

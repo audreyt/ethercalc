@@ -247,15 +247,59 @@ function enforceImportUploadBytes(bytes: Uint8Array): void {
   }
 }
 
+/** A single text-import field may not exceed 1 MiB. */
+const MAX_TEXT_FIELD_BYTES = 1024 * 1024;
+
+function enforceUnquotedTextImportLimits(
+  bytes: Uint8Array,
+  format: 'csv' | 'tsv' | 'txt',
+): void {
+  if (bytes.length === 0) return;
+  // Latin-1 keeps one character per byte, so field lengths stay byte counts.
+  const text = new TextDecoder('latin1').decode(bytes);
+  const lines = text.split(/\r\n|\n|\r/);
+  const last = bytes[bytes.length - 1];
+  const records = last === 0x0a || last === 0x0d ? lines.length - 1 : lines.length;
+  let rows = 0;
+  let widest = 0;
+  for (let row = 0; row < records; row++) {
+    const line = lines[row]!;
+    const fields = format === 'tsv' ? line.split(/[,\t]/) : line.split(',');
+    for (const field of fields) {
+      if (field.length > MAX_TEXT_FIELD_BYTES) {
+        throw new ImportArchiveTooLargeError(MAX_TEXT_FIELD_BYTES + 1, MAX_TEXT_FIELD_BYTES);
+      }
+    }
+    rows++;
+    widest = Math.max(widest, fields.length);
+    if (
+      rows > MAX_SOCIALCALC_ROW || widest > MAX_SOCIALCALC_COL ||
+      rows * widest > MAX_SHEET_CELLS
+    ) {
+      throw new ImportDimensionsTooLargeError(rows, widest);
+    }
+  }
+}
+
 export function enforceTextImportLimits(bytes: Uint8Array, format: 'csv' | 'tsv' | 'txt'): void {
+  // A quote-free body is one field between commas (and tabs, for TSV) and
+  // one record per line break. The import fixtures that sit near the command
+  // echo ceiling are a megabyte of plain text; counting them one byte at a
+  // time exceeds the mutation dry-run timeout once every branch is
+  // instrumented. Quoted bodies still take the scan below, which is what
+  // keeps a separator inside quotes from splitting a field.
+  if (!bytes.includes(0x22)) {
+    enforceUnquotedTextImportLimits(bytes, format);
+    return;
+  }
   let rows = 0;
   let columns = 1;
   let widest = 0;
   let fieldBytes = 0;
   let quoted = false;
   const checkField = (): void => {
-    if (fieldBytes > 1024 * 1024) {
-      throw new ImportArchiveTooLargeError(fieldBytes, 1024 * 1024);
+    if (fieldBytes > MAX_TEXT_FIELD_BYTES) {
+      throw new ImportArchiveTooLargeError(fieldBytes, MAX_TEXT_FIELD_BYTES);
     }
     fieldBytes = 0;
   };
@@ -285,7 +329,7 @@ export function enforceTextImportLimits(bytes: Uint8Array, format: 'csv' | 'tsv'
       if (byte === 0x0d && bytes[i + 1] === 0x0a) i++;
     } else {
       fieldBytes++;
-      if (fieldBytes > 1024 * 1024) checkField();
+      if (fieldBytes > MAX_TEXT_FIELD_BYTES) checkField();
     }
   }
   // A line ending inside an unterminated quote is field content, not the end

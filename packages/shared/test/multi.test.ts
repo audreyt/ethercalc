@@ -65,4 +65,12 @@ describe('multi-sheet trust policy', () => {
     expect(isWorkbookChildLink('/book.01', 'book')).toBe(false);
     expect(isWorkbookChildLink('/book.1.extra', 'book')).toBe(false);
   });
+
+  it('rejects a child the later checks would accept when the guard fails', () => {
+    // `/.1` is safe, and an empty workbook's prefix is `.`, so the suffix
+    // check would accept it if this guard were removed or became &&.
+    // `/%` throws in decodeURIComponent unless the safety check returns first.
+    expect(isWorkbookChildLink('/.1', '')).toBe(false);
+    expect(isWorkbookChildLink('/%', 'book')).toBe(false);
+  });
 });

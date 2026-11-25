@@ -562,6 +562,11 @@ describe('xlsxToSave — roundtrip', () => {
       B3: { t: 'e', v: 42 },
       B4: { t: 's', v: 'a\\b:c\nd' },
     })).toBe(1000 + 1000 + ('SUM(B1:B2)'.length + 2) + 'shown'.length + ('a\\b:c\nd'.length + 6));
+    // Two of each escaped character, so a `*` → `/` on the overhead still
+    // changes the total (one occurrence would not: 2/1 === 2*1).
+    expect(countWorksheetText({ A1: { t: 's', v: '::' } })).toBe(6);
+    expect(countWorksheetText({ A1: { t: 's', v: '\\\\' } })).toBe(6);
+    expect(countWorksheetText({ A1: { t: 's', v: '\n\n' } })).toBe(6);
   });
 
   it('bounds the text that cells sharing one string expand to', () => {
