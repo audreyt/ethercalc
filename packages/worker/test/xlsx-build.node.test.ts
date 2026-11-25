@@ -969,6 +969,21 @@ describe('workbook text budget', () => {
     'é中😀',
   ];
 
+  it('counts a run of tabs as a fixed multiple', () => {
+    const tabs = '\t'.repeat(4096);
+    expect(writtenTextChars(tabs, true)).toBe(4096 * 11);
+    expect(writtenTextChars(tabs, false)).toBe(4096);
+    // A tab next to another character still has to take the per-unit walk.
+    expect(writtenTextChars('\ta', true)).toBe(12);
+    expect(writtenTextChars('a\t', true)).toBe(12);
+    expect(writtenTextChars('\t\n', true)).toBe(28);
+    const controls = '\u0001'.repeat(32);
+    expect(writtenTextChars(controls, true)).toBe(32 * 7);
+    expect(writtenTextChars(controls, false)).toBe(32 * 7);
+    expect(writtenTextChars('\u0001a', false)).toBe(8);
+    expect(writtenTextChars('a\u0001', false)).toBe(8);
+  });
+
   it('counts a cell and its comment as the FODS writer writes them', () => {
     for (const text of samples) {
       const fods = new TextDecoder().decode(sheetViewToBinaryWorkbook(textView(text), 'fods'));

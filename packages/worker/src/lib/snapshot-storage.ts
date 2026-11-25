@@ -204,6 +204,17 @@ export async function readSnapshotMeta(
  * each scalar's encoded width, and slice only at chunk boundaries.
  */
 function chunkString(s: string, maxBytes: number): string[] {
+  // ASCII is one byte per code unit, so each chunk is a plain slice. The
+  // in-flight budget fixture holds 32 MiB of spaces; counting that one code
+  // unit at a time exceeds the mutation dry-run timeout once every branch
+  // is instrumented. Non-ASCII still takes the scalar-width scan below.
+  if (/^[\u0000-\u007f]*$/.test(s)) {
+    const pieces: string[] = [];
+    for (let start = 0; start < s.length; start += maxBytes) {
+      pieces.push(s.slice(start, start + maxBytes));
+    }
+    return pieces;
+  }
   const out: string[] = [];
   let start = 0;
   let index = 0;

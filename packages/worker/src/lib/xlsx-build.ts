@@ -329,6 +329,19 @@ export class ExportMergeWorkTooLargeError extends Error {
  * Length of `text` once SheetJS has written it, without building the result.
  */
 export function writtenTextChars(text: string, odsParagraph = false): number {
+  // A size-limit fixture repeats one tab thousands of times. SheetJS writes
+  // each tab as `<text:tab/>` (11 chars) in an ODS paragraph and leaves it
+  // as one character otherwise, so the written length is a fixed multiple.
+  // Counting that run in one native match keeps the fixture off the
+  // per-code-unit walk, which otherwise exceeds the mutation dry-run timeout.
+  if (/^\t+$/.test(text)) {
+    return odsParagraph ? text.length * 11 : text.length;
+  }
+  // Controls other than tab and newline are written as `_xHHHH_` (7 chars)
+  // in every format. A repeated control is the other size-limit fixture.
+  if (/^[\u0000-\u0008\u000b-\u001f\ufffe\uffff]+$/.test(text)) {
+    return text.length * 7;
+  }
   let chars = 0;
   for (let i = 0; i < text.length; i++) {
     const code = text.charCodeAt(i);

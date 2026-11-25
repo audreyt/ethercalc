@@ -3,6 +3,8 @@ import { describe, it, expect } from 'vite-plus/test';
 import {
   CLIENT_MESSAGE_TYPES,
   MAX_COMMAND_UTF8_BYTES,
+  MAX_CROSS_SHEET_REFS,
+  MAX_CROSS_SHEET_TOTAL_CHARS,
   MAX_WS_AUTH_CHARS,
   MAX_WS_CELL_CHARS,
   MAX_WS_CHAT_CHARS,
@@ -16,6 +18,15 @@ import {
   parseClientMessageValue,
   parseServerMessage,
 } from '../src/messages.ts';
+
+describe('cross-sheet recalc bounds', () => {
+  it('publishes the shared name and text ceilings', () => {
+    expect(MAX_CROSS_SHEET_REFS).toBe(16);
+    // Pin the product, not the `4 * 1024 * 1024` expression, so either
+    // operator swap fails this assertion.
+    expect(MAX_CROSS_SHEET_TOTAL_CHARS).toBe(4_194_304);
+  });
+});
 
 describe('CLIENT_MESSAGE_TYPES / SERVER_MESSAGE_TYPES', () => {
   it('exhaustively lists every client discriminator', () => {

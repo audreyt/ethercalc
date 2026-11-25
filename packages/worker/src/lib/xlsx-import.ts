@@ -584,12 +584,12 @@ function sheetJsMemberName(name: string): string {
 }
 
 function encodedTextLength(text: string): number {
-  let n = text.length;
-  for (let i = 0; i < text.length; i++) {
-    const code = text.charCodeAt(i);
-    if (code === 0x5c || code === 0x3a || code === 0x0a) n += 2;
-  }
-  return n;
+  // Backslash, colon, and newline each cost two extra characters in a
+  // SocialCalc save. Counting them with native replacements keeps the import
+  // text-limit fixtures (a megabyte of plain text, repeated) off a
+  // per-code-unit walk, which otherwise exceeds the mutation dry-run timeout.
+  const extra = (ch: string) => text.length - text.replaceAll(ch, '').length;
+  return text.length + 2 * extra('\\') + 2 * extra(':') + 2 * extra('\n');
 }
 
 /**
